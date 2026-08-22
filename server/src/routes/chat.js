@@ -14,6 +14,10 @@ const MAX_MSGS = 200;         // 보관할 최근 메시지 수
 const MAX_FILES = 120;        // 보관할 파일 수
 const IMG_MAX = 8 * 1024 * 1024;
 const FILE_MAX = 20 * 1024 * 1024;
+// 채팅 사진/파일은 전부 RAM(오프힙 Buffer)에 둔다. 개수 제한만으로는 대용량
+// 파일 120개(최대 2.4GB)가 노려지므로 '총 바이트 예산'으로도 잠근다.
+// apply.sh 가 12GB 박스에서 512MB(SDY_CHAT_FILE_MB)를 주입한다.
+const FILE_BUDGET = Math.max(64, parseInt(process.env.SDY_CHAT_FILE_MB || '512', 10)) * 1024 * 1024;
 const REACTIONS = ['👍', '❤️', '😂', '🔥', '😮', '🎉'];
 
 // 라이브와 동일한 파스텔 팔레트 (닉네임 색 = 라이브 커서 색과 같은 톤)
@@ -24,6 +28,7 @@ const state = {
   members: new Map(),   // uid -> {uid,name,color,ts,voice,mute}
   msgs: [],             // {id,kind,uid,name,color,text?,file?,reactions?,ts}
   files: new Map(),     // fileId -> {buf,mime,name,size}
+  fileBytes: 0,         // files Map 에 들고 있는 Buffer 총량 (예산 초과 시 오래된 것부터 삭제)
   bgm: null,            // {action,track,pos,ts} — 음성참가 배경음악(같이 듣기)
   lastAct: Date.now() / 1000,
   seq: 0,
@@ -262,8 +267,15 @@ const publicMembers = () =>
   }));
 
 function writeSse(client, evt) {
+  // 큐가 가득 찬 스트림은 '느려서 버려졌다'는 뜻이다. 이 상태에서 shift 하며
+  // offer/ICE 를 밀어내면 통화가 영원히 '연결 중'에 멈춘다 — 스트림을 죽이고
+  // pending 큐(재연결 시 재전송)로 넘어가게 한다.
   if (!client || client.closed) return;
-  if (client.queue.length >= 128) client.queue.shift();
+  if (client.queue.length >= 128) {
+    client.closed = true;
+    try { client.raw.destroy(); } catch { /* noop */ }
+    return;
+  }
   // presence 는 최신 값 하나면 충분하다. 재접속/느린 수신자 큐가 낡은 상태로
   // 차서 실제 메시지나 시그널을 밀어내지 않게 한다.
   if (evt.type === 'presence') {
@@ -283,11 +295,20 @@ function flushSse(client) {
       const ok = client.raw.write(`event: yp\ndata: ${JSON.stringify(evt)}\n\n`);
       if (!ok) {
         client.waitingDrain = true;
-        client.raw.once('drain', () => {
+        const onDrain = () => {
           client.waitingDrain = false;
           client.flushing = false;
           flushSse(client);
-        });
+        };
+        client.raw.once('drain', onDrain);
+        // drain 이 영영 안 오면(죽은 소켓) 스트림을 버린다 — 15초 keep-alive
+        // 까지 기다리면 그 사이 offer/ICE 가 이 쓰레기 스트림에 쌓여 유실된다.
+        const drainTimer = setTimeout(() => {
+          client.raw.off('drain', onDrain);
+          client.closed = true;
+          try { client.raw.destroy(); } catch { /* noop */ }
+        }, 30000);
+        if (drainTimer.unref) drainTimer.unref();
         return;
       }
     }
@@ -312,7 +333,15 @@ function remember(uid, evt) {
 function chatSend(uid, evt) {
   const set = streams.get(uid);
   if (!set || !set.size) { remember(uid, evt); return; }
-  for (const client of set) writeSse(client, evt);
+  const dead = [];
+  for (const client of set) {
+    writeSse(client, evt);
+    if (client.closed) dead.push(client);
+  }
+  for (const client of dead) set.delete(client);
+  if (dead.length && !set.size) streams.delete(uid);
+  // 스트림이 하나도 남지 않았으면 이 이벤트를 pending 큐에 남겨 재연결 시 전달한다.
+  if (dead.length && set.size === 0) remember(uid, evt);
 }
 function chatBroadcast(evt) {
   // 스트림이 잠시 끊겨도 멤버별 pending 큐에 남겨 재연결 즉시 전달한다.
@@ -331,6 +360,25 @@ function pushMsg(m) {
   state.lastAct = nowSec();
   chatBroadcast({ type: 'msg', msg: m });
   return m;
+}
+
+// 채팅 파일 RAM 예산: 개수(기본 120) 와 총 바이트(FILE_BUDGET) 를 모두 지킨다.
+// 새로 들어온 파일이 예산보다 크면 최신 1개는 남겨 둔다(메시지가 참조하는 파일이
+// 즉시 사라지는 것보다 낫다). 12GB 박스에서 채팅 파일이 메모리를 다 먹는 것을 막는다.
+function fileEvict() {
+  while (state.files.size > 1 && (state.files.size > MAX_FILES || state.fileBytes > FILE_BUDGET)) {
+    const k = state.files.keys().next().value;
+    const f = state.files.get(k);
+    state.files.delete(k);
+    state.fileBytes -= (f && f.buf && f.buf.length) || 0;
+  }
+  // 단일 파일이 예산을 넘는 경우: 그 1개는 남긴다(위 조건이 size>1 이므로)
+}
+function fileDrop(fileId) {
+  const f = state.files.get(String(fileId || ''));
+  if (!f) return;
+  state.files.delete(String(fileId));
+  state.fileBytes -= (f.buf && f.buf.length) || 0;
 }
 
 function sanitizeName(s) {
@@ -362,6 +410,7 @@ function startGC() {
     if (now - state.lastAct > CHAT_TTL && (state.msgs.length || state.files.size)) {
       state.msgs = [];
       state.files.clear();
+      state.fileBytes = 0;
       state.lastAct = now;
       chatBroadcast({ type: 'reset', ts: now });
     }
@@ -454,10 +503,8 @@ export function registerChat(app) {
     const fileId = crypto.randomBytes(8).toString('hex');
     const fname = String(data.filename || (kind === 'img' ? 'image.jpg' : 'file')).slice(0, 120);
     state.files.set(fileId, { buf, mime, name: fname, size: buf.length });
-    while (state.files.size > MAX_FILES) {
-      const k = state.files.keys().next().value;
-      state.files.delete(k);
-    }
+    state.fileBytes += buf.length;
+    fileEvict();   // 개수 + 총 바이트 예산 모두 적용
     const msg = pushMsg({
       kind, uid, name: me.name, color: me.color,
       file: { id: fileId, name: fname, size: buf.length, mime }, reactions: {},
@@ -511,7 +558,7 @@ export function registerChat(app) {
     const msg = state.msgs[i];
     if (msg.uid !== uid) return reply.code(403).send({ ok: false, error: '내 메시지만 지울 수 있어요' });
     state.msgs.splice(i, 1);
-    if (msg.file && msg.file.id) state.files.delete(msg.file.id);
+    if (msg.file && msg.file.id) fileDrop(msg.file.id);
     state.lastAct = nowSec();
     chatBroadcast({ type: 'del', id });
     return reply.send({ ok: true });
@@ -565,11 +612,42 @@ export function registerChat(app) {
       { urls: ['stun:stun.cloudflare.com:3478'] },
     ];
     const externalTurn = (process.env.SDY_TURN_URL || '').trim();
+    const externalTlsTurn = (process.env.SDY_TURN_TLS_URL || '').trim();
     const localTurn = (process.env.SDY_LOCAL_TURN_URL || '').trim();
+    const localTlsTurn = (process.env.SDY_LOCAL_TURN_TLS_URL || '').trim();
     const secret = (process.env.SDY_TURN_SECRET || '').trim();
     const uid = String((req.query && req.query.uid) || 'guest')
       .replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 40) || 'guest';
     let turnReady = false;
+
+    // TURN 호스트 결정: SDY_TURN_HOST(명시) → 접속 도메인(Host 헤더) → 공인 IP.
+    // HTTPS 도메인으로 접속 중이라면 IP 대신 도메인을 쓰는 게 좋다 — 통신사가
+    // IP:3478 을 막는 정책이 있어도 DNS 이름은 뚫리는 경우가 많고, turns:(5349)
+    // TLS 인증서 SNI 도 도메인으로만 맞기 때문이다.
+    const explicitTurnHost = (process.env.SDY_TURN_HOST || '').trim()
+      .split(':')[0].toLowerCase();
+    const headerHost = String((req.headers && req.headers.host) || '')
+      .split(':')[0].trim().toLowerCase();
+    const turnHost = explicitTurnHost
+      || (/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(headerHost)
+          && headerHost.includes('.')
+          && !/^\d+(\.\d+){3}$/.test(headerHost) ? headerHost : '')
+      || (process.env.SDY_TURN_PUBLIC_IP || '').trim();
+    // apply.sh 가 만든 자체 TURN(turn/turns:공인IP:포트)만 도메인으로 바꾼다.
+    // 외부 TURN(SDY_TURN_URL)은 사용자가 준 주소를 그대로 쓴다.
+    const rewriteLocalHost = (txt) => {
+      const u = String(txt || '').trim();
+      if (!u || !turnHost) return u;
+      const m = u.match(/^(turns?:)([^:]+)([:].*)?$/i);
+      if (!m) return u;
+      const hostNow = m[2];
+      const hostIsIp = /^\d+(\.\d+){3}$/.test(hostNow);
+      const pub = (process.env.SDY_TURN_PUBLIC_IP || '').trim();
+      if (explicitTurnHost || hostIsIp || (pub && hostNow === pub)) {
+        return `${m[1]}${turnHost}${m[3] || ''}`;
+      }
+      return u;
+    };
 
     // turn:host:3478 (쿼리 없음) 은 브라우저에서 UDP 전용이다. 통신사 CGNAT·
     // UDP 차단 망은 TCP 3478 이 열려 있어도 브라우저가 시도하지 않아 '연결 중'에
@@ -630,17 +708,22 @@ export function registerChat(app) {
     };
 
     // 외부 TURN(있으면) → 같은 호스트라도 별도 엔트리로 추가해 인증 방식 차이를 보존.
+    // 평문(turn:)과 TLS(turns:)는 각각 별도 iceServer 로 내려 준다.
     addTurn(externalTurn, true);
+    addTurn(externalTlsTurn, true);
     // apply.sh 가 만든 Oracle TURN. SDY_LOCAL_TURN_URL 이 비어있지 않으면
     // 외부와 같은 호스트라도 항상 push 한다 — 사용자가 명시적으로 두 라인을
     // 켠 의도(고정 인증 + HMAC 임시 인증)를 그대로 전달하는 게 안전하다.
     // 브라우저는 같은 호스트 + 다른 credential 을 별도 iceServer 로 받아도
     // 한쪽이 실패하면 다른쪽으로 candidate 를 다시 만든다.
     if (localTurn) {
-      addTurn(localTurn, false);
+      addTurn(rewriteLocalHost(localTurn), false);
+    }
+    if (localTlsTurn) {
+      addTurn(rewriteLocalHost(localTlsTurn), false);
     }
     reply.header('Cache-Control', 'no-store');
-    return reply.send({ ok: true, turn: turnReady, ice: { iceServers } });
+    return reply.send({ ok: true, turn: turnReady, host: turnHost || null, ice: { iceServers } });
   });
 
   // ── 통화(TURN) 진단 — curl http://127.0.0.1:5000/api/chat/diag ──
@@ -650,13 +733,15 @@ export function registerChat(app) {
     const env = process.env;
     const localTurn = (env.SDY_LOCAL_TURN_URL || '').trim();
     const externalTurn = (env.SDY_TURN_URL || '').trim();
+    const localTlsTurn = (env.SDY_LOCAL_TURN_TLS_URL || '').trim();
+    const externalTlsTurn = (env.SDY_TURN_TLS_URL || '').trim();
     const secret = (env.SDY_TURN_SECRET || '').trim();
     const publicIp = (env.SDY_TURN_PUBLIC_IP || '').trim();
     const configuredLocalIp = (env.SDY_TURN_PRIVATE_IP || '').trim();
     const localAddresses = localTurnAddresses(configuredLocalIp);
     const targets = [];
     const seen = new Set();
-    for (const t of [localTurn, externalTurn]) {
+    for (const t of [localTurn, externalTurn, localTlsTurn, externalTlsTurn]) {
       const u = String(t || '').trim();
       if (!u || seen.has(u)) continue;
       seen.add(u);
@@ -665,10 +750,12 @@ export function registerChat(app) {
     const out = {
       ok: false,
       ts: new Date().toISOString(),
-      note: 'local=서버의 실제 NIC/localhost(서버 안) · public=공인IP(외부 경로, hairpin 이면 서버 안에서는 실패로 보일 수 있음)',
+      note: 'local=서버의 실제 NIC/localhost(서버 안) · public=공인IP(외부 경로, hairpin 이면 서버 안에서는 실패로 보일 수 있음) · tls=5349/tcp(turns:) 는 TCP 개방 여부만 확인',
       env: {
         SDY_LOCAL_TURN_URL: localTurn || null,
         SDY_TURN_URL: externalTurn || null,
+        SDY_LOCAL_TURN_TLS_URL: localTlsTurn || null,
+        SDY_TURN_TLS_URL: externalTlsTurn || null,
         SDY_TURN_PUBLIC_IP: publicIp || null,
         SDY_TURN_PRIVATE_IP: configuredLocalIp || null,
         hasSecret: !!secret,
@@ -680,13 +767,19 @@ export function registerChat(app) {
     const uname = `${expiry}:diag-${crypto.randomBytes(4).toString('hex')}`;
     const password = secret ? crypto.createHmac('sha1', secret).update(uname).digest('base64') : '';
     for (const u of targets) {
+      const isTls = /^turns:/i.test(u);
       const { host, port } = turnHostPort(u);
       const key = u;
-      const rec = { host, port };
-      // 서버 자신 → coturn 프로세스가 실제로 3478 에 떠 있는지 확인한다.
-      // listening-ip가 사설 NIC로 고정된 Oracle 구성에서는 127.0.0.1 검사가
-      // 실패하는 것이 정상이므로 모든 로컬 IPv4를 동시에 검사해 응답 주소를 고른다.
+      const rec = { host, port, tls: !!isTls };
+      // 서버 자신 → coturn 프로세스가 실제로 3478(또는 5349 TLS)에 떠 있는지
+      // 확인한다. listening-ip가 사설 NIC로 고정된 Oracle 구성에서는
+      // 127.0.0.1 검사가 실패하는 것이 정상이므로 모든 로컬 IPv4를 동시에
+      // 검사해 응답 주소를 고른다. turns: 는 TLS/TCP 이므로 TCP 개방만 본다.
       const localProbe = await Promise.all(localAddresses.map(async (address) => {
+        if (isTls) {
+          const tcpTls = await tcpCheck(address, port, 4000);
+          return { address, tcp: tcpTls, udp: { ok: false, err: 'tls' } };
+        }
         const [tcp, udp] = await Promise.all([
           tcpCheck(address, port, 4000), stunPing(address, port, 4000),
         ]);
@@ -701,30 +794,43 @@ export function registerChat(app) {
       // 공인 경로와 로컬 Allocate를 병렬 실행한다. 공인 IP hairpin이 timeout이어도
       // 배포 스크립트의 15초 진단 제한 안에 결과가 돌아오게 한다.
       const allocAddress = udpHit ? udpHit.address : (localHit ? localHit.address : localAddresses[0]);
-      const localAllocP = secret
+      // turns:(TLS) 는 STUN Binding/Allocate(평문)와 다른 프로토콜이라
+      // 여기서는 TCP 개방까지만 확인한다(브라우저 TLS 핸드셰이크는 별개).
+      const localAllocP = (!isTls && secret)
         ? turnAllocate(allocAddress, port, uname, password, 8000)
         : Promise.resolve(null);
       let publicP = Promise.resolve(null);
       // 공인 IP → VCN 인그레스 규칙이 실제로 열려 있는지 (서버 밖에서만 확정 가능)
       if (publicIp && host !== '127.0.0.1' && host !== 'localhost') {
-        publicP = Promise.all([
-          tcpCheck(host, port, 5000),
-          stunPing(host, port, 5000),
-          secret ? turnAllocate(host, port, uname, password, 8000) : Promise.resolve(null),
-        ]);
+        publicP = isTls
+          ? Promise.all([tcpCheck(host, port, 5000)])
+          : Promise.all([
+            tcpCheck(host, port, 5000),
+            stunPing(host, port, 5000),
+            secret ? turnAllocate(host, port, uname, password, 8000) : Promise.resolve(null),
+          ]);
       }
       const [la, publicResult] = await Promise.all([localAllocP, publicP]);
       if (publicResult) {
-        const [pt, pu, pa] = publicResult;
-        rec.publicTcp = pt.ok ? 'ok' : `fail(${pt.err})`;
-        rec.publicUdp = pu.ok ? 'ok' : `fail(${pu.err})`;
-        rec.publicAlloc = secret
-          ? (pa.ok ? `ok(${pa.err})` : `fail(${pa.err})`)
+        if (isTls) {
+          const [pt] = publicResult;
+          rec.publicTlsTcp = pt.ok ? 'ok' : `fail(${pt.err})`;
+        } else {
+          const [pt, pu, pa] = publicResult;
+          rec.publicTcp = pt.ok ? 'ok' : `fail(${pt.err})`;
+          rec.publicUdp = pu.ok ? 'ok' : `fail(${pu.err})`;
+          rec.publicAlloc = secret
+            ? (pa.ok ? `ok(${pa.err})` : `fail(${pa.err})`)
+            : 'skip(secret 없음)';
+        }
+      }
+      if (isTls) {
+        rec.localAlloc = 'skip(tls)';
+      } else {
+        rec.localAlloc = secret
+          ? (la.ok ? `ok(${la.err})` : `fail(${la.err})`)
           : 'skip(secret 없음)';
       }
-      rec.localAlloc = secret
-        ? (la.ok ? `ok(${la.err})` : `fail(${la.err})`)
-        : 'skip(secret 없음)';
       out.checks[key] = rec;
     }
     out.ok = Object.keys(out.checks).length > 0;
@@ -788,11 +894,15 @@ export function registerChat(app) {
     }, 15000);
     if (keepAlive.unref) keepAlive.unref();
 
-    req.raw.on('close', () => {
+    // close/error 어느 쪽으로 끊겨도 스트림 집합에서 바로 제거한다. 제거가
+    // 늦으면 offer/ICE 가 죽은 소켓에 쓰여 '재연결 시 재전송'을 못 타고 유실된다.
+    const cleanup = () => {
       clearInterval(keepAlive);
       client.closed = true;
       const set = streams.get(uid);
       if (set) { set.delete(client); if (!set.size) streams.delete(uid); }
-    });
+    };
+    req.raw.on('close', cleanup);
+    req.raw.on('error', cleanup);
   });
 }

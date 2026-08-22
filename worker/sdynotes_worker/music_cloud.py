@@ -29,7 +29,8 @@ from .common import (CLOUD_READY, MUSIC_DIR, _cleanup_old_temp_files,
 from .core import app
 from .music import (MUSIC_EXTS, MUSIC_MAX_MB, TAG_ALGO, _TAG_UA, _aco_key,
                     _acoustid_lookup, _fetch_cover, _fetch_lyrics, _fp_bin,
-                    _music_autotag, _music_load, _music_public, _music_rebuild,
+                    _music_autotag, _music_cover_search, _music_load,
+                    _music_lyrics, _music_public, _music_rebuild,
                     _music_save, _parse_filename, _tag_collect, _tag_rank,
                     _yt_fetch_audio, _yt_tools, _yt_url_id)
 
@@ -330,7 +331,12 @@ def _music_lyrics_cloud(mid):
 
 
 def _cloud_music_autotag(mid, force=True, qhint=None, alt=0, replace_cover=False, lyrics_only=False):
-    """로컬 음원 없이도 파일명/메타데이터로 자동 태그·표지·가사를 채운다."""
+    """로컬 음원 없이 파일명/메타데이터로 '정보(제목·가수·앨범·연도·장르)'만 채운다.
+
+    14.11 — 한 번의 사용자 동작 = 한 기능. 표지는 cover_only 경로
+    (_cloud_cover_pick)가, 가사는 lyrics_only/synced-lyrics 가 전담하므로
+    여기서 연쇄하지 않는다. (replace_cover/lyrics_only 인자는 하위 호환 유지)
+    """
     try:
         rec = _remote_track(mid)
         if not rec:
@@ -360,27 +366,12 @@ def _cloud_music_autotag(mid, force=True, qhint=None, alt=0, replace_cover=False
                         "tag_state": "done", "tag_src": cand.get("src") or "",
                         "tag_score": round(float(score), 4), "tag_algo": TAG_ALGO,
                         "tag_tries": 0, "tag_next": 0})
-            art = cand.get("art") or ""
-            if not art:
-                for sc, c in scored:
-                    if c.get("art") and sc >= score - 0.15:
-                        art = c["art"]; break
-            if art and (replace_cover or not rec.get("cover_url")):
-                b = _fetch_cover(art)
-                if b:
-                    cu = _cloud_cover_upload(b, mid)
-                    rec.update({"cover": True, "cover_public_id": cu.get("public_id"),
-                                "cover_url": cu.get("secure_url") or "",
-                                "cover_v": int(time.time())})
         else:
             rec["tag_state"] = rec.get("tag_state") or "none"
             rec["tag_algo"] = TAG_ALGO
             rec["tag_tries"] = int(rec.get("tag_tries") or 0) + 1
             rec["tag_next"] = time.time() + min(86400, 1800 * (2 ** min(6, rec["tag_tries"] - 1)))
-        rec = _music_track_save(rec)
-        if rec.get("tag_state") == "done" and not (rec.get("lyrics") or rec.get("lyrics_plain")):
-            rec = _music_lyrics_cloud(mid) or rec
-        return rec
+        return _music_track_save(rec)
     except Exception as e:
         print("[music] cloud autotag failed:", _sb_error_text(e))
         return None
@@ -484,7 +475,8 @@ def music_reset_cloud():
                 "lyrics": "", "lyrics_plain": "", "lyrics_src": "", "lyrics_tries": 0,
                 "recog_tried": 0})
     rec = _remote_music_update(mid, rec, remove_cover=True)
-    threading.Thread(target=_cloud_music_autotag, args=(mid,), daemon=True).start()
+    # 14.11 — '초기화'는 초기화만 한다. 방금 지운 정보를 다시 자동 태깅으로
+    # 채우면 초기화 의미가 없어지므로 연쇄하지 않는다.
     return jsonify({"ok": True, "track": _music_public_cloud(rec)})
 
 
@@ -500,6 +492,42 @@ def music_synced_lyrics_cloud():
     rec.update({"lyrics": sync, "lyrics_plain": plain, "lyrics_src": src, "lyrics_tries": 9})
     _music_track_save(rec)
     return jsonify({"ok": True, "lyrics": sync, "src": src})
+
+
+def _cloud_cover_pick(mid, alt=0):
+    """'표지만' 찾아 바꾼다. 정보·가사는 건드리지 않는다 (14.11 한 동작 = 한 기능).
+
+    표지 후보는 같은 검색 결과를 점수순으로 돌려 alt 번째를 쓰고,
+    최대 6개까지만 시도한다 (전부 실패해도 오래 걸리지 않게).
+    """
+    rec = _remote_track(mid)
+    if not rec:
+        return {"ok": False, "error": "없는 곡입니다", "count": 0}
+    emb = {"title": rec.get("title") or "", "artist": rec.get("artist") or "",
+           "album": rec.get("album") or "", "year": rec.get("year") or "",
+           "genre": rec.get("genre") or "", "dur": rec.get("duration")}
+    scored, _, _, _ = _tag_collect(rec, emb, (rec.get("title"), rec.get("artist")), deep=True)
+    arts = []; seen = set()
+    for score, cand in scored:
+        art = (cand.get("art") or "").strip()
+        key = art.split("?")[0]
+        if art and key not in seen and score >= 0.30:
+            seen.add(key); arts.append(art)
+    if not arts:
+        return {"ok": False, "error": "표지를 찾지 못했어요", "count": 0}
+    for n in range(min(6, len(arts))):
+        raw = _fetch_cover(arts[(int(alt or 0) + n) % len(arts)])
+        if not raw:
+            continue
+        try:
+            cu = _cloud_cover_upload(raw, mid)
+            rec.update({"cover": True, "cover_public_id": cu.get("public_id"),
+                        "cover_url": cu.get("secure_url") or "", "cover_v": int(time.time())})
+            rec = _music_track_save(rec)
+            return {"ok": True, "track": rec, "cover": True, "count": len(arts)}
+        except Exception:
+            pass
+    return {"ok": False, "error": "표지를 받지 못했어요", "count": len(arts)}
 
 
 def music_lookup_cloud():
@@ -520,33 +548,12 @@ def music_lookup_cloud():
     except Exception:
         alt = 0
     if d.get("cover_only"):
-        # 표지 후보는 같은 검색 결과를 점수순으로 돌려 alt 번째를 쓴다.
-        emb = {"title": rec.get("title") or "", "artist": rec.get("artist") or "",
-               "album": rec.get("album") or "", "year": rec.get("year") or "",
-               "genre": rec.get("genre") or "", "dur": rec.get("duration")}
-        scored, _, _, _ = _tag_collect(rec, emb, (rec.get("title"), rec.get("artist")), deep=True)
-        arts=[]; seen=set()
-        for score, cand in scored:
-            art=(cand.get("art") or "").strip()
-            key=art.split("?")[0]
-            if art and key not in seen and score >= 0.30:
-                seen.add(key); arts.append(art)
-        if not arts:
-            return jsonify({"ok": False, "error": "표지를 찾지 못했어요", "count": 0})
-        # 14.9 · 표지 후보를 최대 6개까지만 시도한다. 전부 실패해도 오래 걸리지
-        #  않게 하고, '다시 누르면 다음 표지'가 alt 를 올려 그 다음부터 본다.
-        for n in range(min(6, len(arts))):
-            raw = _fetch_cover(arts[(alt+n) % len(arts)])
-            if not raw: continue
-            try:
-                cu = _cloud_cover_upload(raw, mid)
-                rec.update({"cover": True, "cover_public_id": cu.get("public_id"),
-                            "cover_url": cu.get("secure_url") or "", "cover_v": int(time.time())})
-                rec = _music_track_save(rec)
-                return jsonify({"ok": True, "track": _music_public_cloud(rec),
-                                "cover": True, "count": len(arts)})
-            except Exception: pass
-        return jsonify({"ok": False, "error": "표지를 받지 못했어요", "count": len(arts)})
+        res = _cloud_cover_pick(mid, alt)
+        if res.get("ok"):
+            return jsonify({"ok": True, "track": _music_public_cloud(res["track"]),
+                            "cover": True, "count": res.get("count") or 0})
+        return jsonify({"ok": False, "error": res.get("error") or "표지를 찾지 못했어요",
+                        "count": res.get("count") or 0}), 400
     out = _cloud_music_autotag(mid, qhint=qhint, alt=alt,
                                replace_cover=bool(d.get("replace_cover"))) or rec
     return jsonify({"ok": True, "track": _music_public_cloud(out),
@@ -590,7 +597,8 @@ def _yt_cloud_add(url):
         if info.get("duration"):
             rec["duration"] = info["duration"]
             _music_track_save(rec)
-        threading.Thread(target=_cloud_music_autotag, args=(rec["id"],), daemon=True).start()
+        # 14.11 — 유튜브 추가는 영상 메타(제목·가수·표지)를 이미 그대로 쓰므로
+        # 그 뒤에 자동 태그 검색을 연쇄하지 않는다.
         return {"ok": True, "track": rec}
     except Exception as e:
         return {"ok": False, "error": "클라우드 저장 실패: " + _sb_error_text(e)}
@@ -785,8 +793,8 @@ def _recog_try(mid, local_path=None):
 def _cloud_music_pipeline(mid, tmp=None):
     """14.9 · 업로드 직후 정리 흐름:
     1) 소리 인식(음성인식·AcoustID)으로 제목·가수·앨범을 먼저 채우고
-    2) 자동검색으로 표지·가사·나머지 정보를 마저 채운다.
-    인식이 실패하거나 도구/키가 없어도 자동검색은 항상 이어진다."""
+    2) 인식이 안 되면 자동검색으로 정보만 채운다.
+    (14.11 — 표지·가사는 연쇄하지 않는다. 각자 전용 버튼/백필 담당)"""
     try:
         _recog_try(mid, tmp)
     finally:
@@ -850,7 +858,8 @@ def music_recognize_cloud():
                     "tag_state": "done", "tag_src": "AcoustID",
                     "recog_score": result.get("score"), "recog_tried": int(time.time())})
         rec = _music_track_save(rec)
-        threading.Thread(target=_cloud_music_autotag, args=(mid,), daemon=True).start()
+        # 14.11 — '소리 인식' 클릭에 표지/가사 되찾기를 연쇄하지 않는다.
+        # 그 뒤에 태깅이 덧붙는 것도 없앴다(각 기능은 전용 버튼).
         return jsonify({"ok": True, "track": _music_public_cloud(rec), "recog": result})
     except Exception as e:
         return jsonify({"ok": False, "error": "인식 실패: " + _sb_error_text(e)}), 502
@@ -917,7 +926,7 @@ def _cloud_music_backfill():
                     elif mid in nolyr:
                         _music_lyrics_cloud(mid)
                     elif mid in nocov:
-                        _cloud_music_autotag(mid, force=True, replace_cover=True)
+                        _cloud_cover_pick(mid)
                 except Exception as e:
                     print("[music] 클라우드 백필 항목 실패:", mid, _sb_error_text(e))
                 time.sleep(sleep_gap)
@@ -928,27 +937,55 @@ def _cloud_music_backfill():
 threading.Thread(target=_cloud_music_backfill, daemon=True).start()
 @app.route("/api/music/background-work", methods=["POST"])
 def music_background_work():
-    """13.0 · 클라이언트 유휴(Idle) 상태 진입 시 백그라운드 태그/가사 작업 가속 트리거."""
+    """13.0 · 클라이언트 유휴(Idle) 상태 진입 시 백그라운드 태그/가사 작업 가속 트리거.
+
+    14.11 — 곡마다 '한 가지 기능'만 수행한다 (태그 → 가사 → 표지 순서로
+    필요 항목을 고르고, 자동 태그가 가사까지 끌어가지 않는다).
+    """
     def _run():
         try:
+            def _needs(r):
+                if r.get("tag_state") == "manual":
+                    return None
+                if (r.get("tag_algo") != TAG_ALGO or not r.get("tag_state")
+                        or r.get("tag_state") in ("pending", "none")) \
+                        and float(r.get("tag_next") or 0) <= time.time():
+                    return "tag"
+                if not ((r.get("lyrics") or "") or (r.get("lyrics_plain") or "")) \
+                        and int(r.get("lyrics_tries") or 0) < 5 \
+                        and float(r.get("lyrics_next") or 0) <= time.time():
+                    return "lyr"
+                if not (r.get("cover") or r.get("cover_url")):
+                    return "cover"
+                return None
             if _sb_enabled():
-                tracks = _remote_tracks()
-                todo = [r.get("id") for r in tracks if r.get("tag_state") != "manual" and (
-                    r.get("tag_algo") != TAG_ALGO or not (r.get("lyrics") or r.get("lyrics_plain"))
-                    or (r.get("tag_state") in ("pending", "none"))
-                )]
-                for mid in todo[:6]:
-                    _cloud_music_autotag(mid, force=True)
+                todo = []
+                for r in _remote_tracks():
+                    k = _needs(r)
+                    if k:
+                        todo.append((k, r.get("id")))
+                for kind, mid in todo[:6]:
+                    if kind == "tag":
+                        _cloud_music_autotag(mid, force=True)
+                    elif kind == "lyr":
+                        _music_lyrics_cloud(mid)
+                    else:
+                        _cloud_cover_pick(mid)
                     time.sleep(1.0)
             else:
                 with _music_lock:
-                    m = _music_load()
-                    todo = [mid for mid, r in m.items() if r.get("tag_state") != "manual" and (
-                        r.get("tag_algo") != TAG_ALGO or not (r.get("lyrics") or r.get("lyrics_plain"))
-                        or (r.get("tag_state") in ("pending", "none"))
-                    )]
-                for mid in todo[:6]:
-                    _music_autotag(mid, force=True, algo=TAG_ALGO)
+                    todo = []
+                    for mid, r in _music_load().items():
+                        k = _needs(r)
+                        if k:
+                            todo.append((k, mid))
+                for kind, mid in todo[:6]:
+                    if kind == "tag":
+                        _music_autotag(mid, force=True, algo=TAG_ALGO)
+                    elif kind == "lyr":
+                        _music_lyrics(mid)
+                    else:
+                        _music_cover_search(mid)
                     time.sleep(1.0)
         except Exception:
             pass

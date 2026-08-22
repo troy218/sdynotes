@@ -107,7 +107,43 @@ bash apply.sh
   - `sdynotes`        (Node, :5000, 단일 프로세스)
   - `sdynotes-worker` (Python, 127.0.0.1:5100, 단일 프로세스)
 - `.env` 보존, vault 데이터 보존, nginx(SSE 버퍼링 해제 + 512M 업로드 + 900초 타임아웃),
-  swap, deno/bgutil(유튜브), fpcalc(소리인식), coturn(통화 릴레이) 자동 준비.
+  swap(12GB → 4GB, swappiness=10), deno/bgutil(유튜브), fpcalc(소리인식),
+  coturn(통화 릴레이, 3478 + 인증서 있으면 5349 TLS) 자동 준비.
+
+#### 12GB 메모리 배분 (14.11)
+
+`apply.sh`가 RAM 을 보고 아래처럼 잠근다(Node 힙을 62%로 크게 주지 않는다 —
+V8 이 회수를 미뤄 RSS 가 부풀고, Python 변환 자식과 겹치면 스왑쓰래싱/OOM 이 났다).
+
+| 항목 | 12GB 박스 | 설명 |
+|---|---|---|
+| Node `--max-old-space-size` | **2048MB** | JSON CRUD/SSE 는 수백 MB면 충분 |
+| Node 오프힙 예산(SDY_CHAT_FILE_MB) | **512MB** | 채팅 사진/파일 총 바이트 — 초과 시 오래된 것부터 삭제 |
+| Python 변환 자식 | **전역 최대 4 × 1GB** | `SDY_IMP_MAX_CHUNKS` 세마포로 모든 잡의 청크 합계를 잠금 |
+| worker 동시 잡(IMP_CONC) | 2 | |
+| libuv 스레드풀 | CPU×2 (8~24) | |
+| swap | 4GB | `vm.swappiness=10` |
+
+9GB 미만 박스는 비율을 자동으로 낮춘다. 음악 목록(`music/_index.json`)은
+가사 본문까지 담겨 수 MB 이상이므로 mtime 캐시 + 곡 단위 얕은 복사로
+매 요청 JSON 재파싱을 없앴다.
+
+#### 한 번의 사용자 동작 = 한 기능 (14.11)
+
+가사/정보 찾기가 다른 기능을 덩달아 돌리지 않는다:
+
+| 동작 | 실행되는 기능 |
+|---|---|
+| **재생** | 재생만 (예전엔 자동 태그 + 가사 검색이 연쇄) |
+| **가사 탭 열기** | 저장된 가사 표시만 (검색은 버튼을 누를 때) |
+| **자동 찾기** | 제목·가수·앨범·연도·장르 정보만 |
+| **표지만 찾기** | 표지 검색만 |
+| **가사 찾기 / 싱크 가사** | 가사 검색만 (LRCLIB → lyrics.ovh) |
+| **소리 인식** | AcoustID 인식 + 제목·가수 반영만 |
+| **초기화 / 유튜브 추가** | 각자 자기 일만 (연쇄 자동태깅 없음) |
+
+유휴 백필(백그라운드)은 곡마다 하나의 기능만 수행하며, 표지·가사·정보를
+순서대로 처리한다.
 
 ### Oracle Cloud에서 서로 다른 망 통화 허용 (필수 1회)
 
@@ -123,6 +159,7 @@ Oracle Console → Networking → VCN → Security Lists
 | `0.0.0.0/0` | UDP | `3478` | TURN 기본 경로(LTE/Wi-Fi 권장) |
 | `0.0.0.0/0` | TCP | `3478` | UDP 차단 망의 대체 경로 |
 | `0.0.0.0/0` | UDP | `49160-49200` | TURN 미디어 릴레이 |
+| `0.0.0.0/0` | TCP | `5349` | TURN over TLS(인증서 있을 때만, 평문이 막힌 망용) |
 
 그 뒤 서버에서 `bash apply.sh`를 다시 실행하고 마지막 결과의
 `통화 TURN : 준비됨`을 확인합니다. 웹 마이크는 보안 컨텍스트에서만 열리므로 실제
@@ -133,7 +170,7 @@ Oracle Console → Networking → VCN → Security Lists
 ```bash
 systemctl status coturn --no-pager
 curl -s 'http://127.0.0.1:5000/api/chat/config?uid=test'
-# 결과에 "turn":true 및 turn:<Oracle 공인 IP>:3478 이 있어야 함
+# 결과에 "turn":true 및 turn:호스트:3478 (+인증서 있으면 turns:호스트:5349) 이 있어야 함
 curl -s 'http://127.0.0.1:5000/api/chat/diag'
 # TURN 진단:
 #   localUdp/localTcp  : 'ok' 면 서버 안에서 coturn(STUN) 정상 응답
@@ -141,6 +178,8 @@ curl -s 'http://127.0.0.1:5000/api/chat/diag'
 #                        (401 챌린지 → HMAC 인증 → 릴레이 할당) 까지 성공
 #   publicTcp/publicUdp: 외부 경로(VCN 인그레스) 확인용 — hairpin 이면 서버
 #                        안에서 fail 로 보여도 실제 외부에선 정상일 수 있음
+#   publicTlsTcp       : turns:5349(TLS) 외부 경로 — TCP 개방 확인
+#   (turns: 항목은 localAlloc 을 skip(tls) 로 표시한다 — TLS 핸드셰이크는 브라우저가 수행)
 ```
 
 공인 IP 자동 감지가 실패하면 `/var/www/memo/.env`에
@@ -193,6 +232,16 @@ curl -s 'http://127.0.0.1:5000/api/chat/diag'
    브라우저 캐시(특히 ICE 설정은 45분 캐시) 때문에 서버를 고친 직후엔
    시크릿 창으로 다시 시도하거나, 새 버전은 릴레이 재시도 시 ICE 설정을
    자동으로 다시 받아 온다.
+10. **3478 이 전부 막힌 통신사/회사망** — HTTPS 도메인이 있고 Let's Encrypt
+    인증서가 있으면 `apply.sh`가 coturn TLS 를 켜서 `turns:도메인:5349` 를
+    함께 내려 준다(443과 같은 방식으로 뚫리는 망이 많다). VCN 인그레스에
+    **TCP 5349** 만 열면 된다. 인증서가 없으면 건너뛰므로,
+    `curl /api/chat/config` 응답에 `turns:` 항목이 있는지 확인한다.
+11. **TURN 주소에 IP 대신 도메인 쓰고 싶다면** — Node 가 접속 도메인
+    (Host 헤더)을 자동으로 쓴다. 직접 고정하려면 `.env` 에
+    `SDY_TURN_HOST=메모.example.com` 을 넣고 `bash apply.sh` 재실행.
+    (Cloudflare 프록시처럼 도메인이 서버 공인 IP가 아닌 곳에서는
+    TURN 호스트로 쓰지 말 것.)
 
 ## 주의 (기존 운영 규칙 그대로)
 
@@ -237,6 +286,9 @@ node test/merge3_prop.cjs       # 무작위 3000건 수렴성·무손실
 # 설정 동기화 rev 충돌·커서 버그(핀 폴더 이름 스왑) 재현/수정 검증
 node test/pinbug_sim.mjs        # 수정 전 발산 재현
 node test/pinbug_fix_sim.mjs    # 수정 후 수렴 검증
+
+# 14.11 — 12GB 메모리 배분 / 한 동작=한 기능 / TURN TLS+도메인 계약
+node test/tuning_one_action_contract.mjs
 
 # 클라우드 모드 (실제 키 없이 모의 서버로)
 python3 test/cloud_smoke.py     # worker 클라우드 음악 변이 (모의 Supabase+Cloudinary)

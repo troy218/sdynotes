@@ -115,7 +115,7 @@ ok "Supabase 테이블 SQL 생성: $APP_DIR/SUPABASE_SCHEMA.sql"
 ENV_FILE="$APP_DIR/.env"
 touch "$ENV_FILE"
 chmod 600 "$ENV_FILE"
-for EK in SUPABASE_URL SUPABASE_SERVICE_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_KEY CLOUDINARY_CLOUD_NAME CLOUDINARY_API_KEY CLOUDINARY_API_SECRET ACOUSTID_KEY SDY_TURN_URL SDY_LOCAL_TURN_URL SDY_TURN_USER SDY_TURN_PASS SDY_TURN_SECRET SDY_TURN_PUBLIC_IP SDY_TURN_PRIVATE_IP SDY_SETUP_TURN; do
+for EK in SUPABASE_URL SUPABASE_SERVICE_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_KEY CLOUDINARY_CLOUD_NAME CLOUDINARY_API_KEY CLOUDINARY_API_SECRET ACOUSTID_KEY SDY_TURN_URL SDY_LOCAL_TURN_URL SDY_TURN_TLS_URL SDY_LOCAL_TURN_TLS_URL SDY_TURN_HOST SDY_TURN_USER SDY_TURN_PASS SDY_TURN_SECRET SDY_TURN_PUBLIC_IP SDY_TURN_PRIVATE_IP SDY_SETUP_TURN; do
     EV="${!EK:-}"
     if [ -n "$EV" ] && ! grep -qE "^${EK}=" "$ENV_FILE"; then
         printf '%s=%s\n' "$EK" "$EV" >> "$ENV_FILE"
@@ -250,6 +250,40 @@ if [ "$TURN_SETUP" != "0" ]; then
             else TURN_SECRET=$(python3 -c 'import secrets;print(secrets.token_hex(32))'); fi
         fi
 
+        # 통신사/회사망은 UDP 3478 과 평문 TCP 3478 을 막는 경우가 많다.
+        # HTTPS(443) 도메인용 Let's Encrypt 인증서가 있으면 coturn 에 TLS 를
+        # 켜서 turns:host:5349 (TLS/TCP, 443과 동일하게 뚫리는 망이 많다)를
+        # 같은 방식으로 추가 제공한다. 인증서가 없으면 조용히 건너뛴다.
+        TURN_TLS_CONF=""
+        TURN_TLS_DISABLE="no-tls"
+        TURN_TLS_URL=""
+        for _d in /etc/letsencrypt/live/*/; do
+            if [ -f "${_d}fullchain.pem" ] && [ -f "${_d}privkey.pem" ]; then
+                # coturn 은 turnserver 유저로 돈다. Let's Encrypt 키(600 root)를
+                # 그대로 읽을 수 없으므로 ssl-cert 그룹으로 열어 준다(표준 방식).
+                sudo usermod -a -G ssl-cert turnserver 2>/dev/null || true
+                sudo chgrp -R ssl-cert /etc/letsencrypt/archive /etc/letsencrypt/live 2>/dev/null || true
+                sudo chmod -R g+rX /etc/letsencrypt/archive /etc/letsencrypt/live 2>/dev/null || true
+                TURN_TLS_CONF="tls-listening-port=5349
+cert=${_d}fullchain.pem
+pkey=${_d}privkey.pem"
+                TURN_TLS_DISABLE=""
+                TURN_TLS_URL="turns:${TURN_PUBLIC_IP:-호스트}:5349"
+                if command -v certbot >/dev/null 2>&1; then
+                    sudo mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+                    sudo tee /etc/letsencrypt/renewal-hooks/deploy/sdy-turn.sh >/dev/null <<'HOOK'
+#!/bin/sh
+# SDYnotes — TURN(TLS) 용 coturn 인증서 권한 복구 + coturn 재시작
+chgrp -R ssl-cert /etc/letsencrypt/archive /etc/letsencrypt/live 2>/dev/null || true
+chmod -R g+rX /etc/letsencrypt/archive /etc/letsencrypt/live 2>/dev/null || true
+systemctl restart coturn 2>/dev/null || true
+HOOK
+                    sudo chmod 755 /etc/letsencrypt/renewal-hooks/deploy/sdy-turn.sh
+                fi
+                break
+            fi
+        done
+
         # Oracle 이미지에 따라 공인 IP 가 (a) VCN 1:1 NAT 로 사설 IP 뒤에 숨어 있거나
         # (b) NIC 에 직접 붙어 있을 수 있다. (b) 는 external-ip 가 오히려 릴레이를
         # 망가뜨리고 listening-ip 를 사설로 고정하면 외부 패킷이 coturn 에 안 닿는다.
@@ -274,6 +308,12 @@ if [ "$TURN_SETUP" != "0" ]; then
             # 별도 iceServers 엔트리로 다루게 chat.js 에서 분리하므로 여기선 베이스
             # URL만 저장한다.
             env_set SDY_LOCAL_TURN_URL "turn:$TURN_PUBLIC_IP:$TURN_PORT"
+            if [ -n "$TURN_TLS_URL" ]; then
+                env_set SDY_LOCAL_TURN_TLS_URL "$TURN_TLS_URL"
+            else
+                # TLS 를 끈 경우 이전에 남은 값이 브라우저로 나가지 않게 지운다.
+                sed -i '/^SDY_LOCAL_TURN_TLS_URL=/d' "$ENV_FILE" 2>/dev/null || true
+            fi
 
             # 최초 한 번은 사용자가 만들었던 기존 설정을 백업한다.
             if [ -f /etc/turnserver.conf ] && [ ! -f /etc/turnserver.conf.sdy-before ]; then
@@ -300,7 +340,8 @@ stale-nonce=600
 no-multicast-peers
 no-loopback-peers
 no-cli
-no-tls
+$TURN_TLS_DISABLE
+$TURN_TLS_CONF
 no-dtls
 # 일부 브라우저/미들박스 가 long-term credential + STUN long-term
 # 인증 메시지의 MESSAGE-INTEGRITY 검사를 엄격하게 한다. 명시적으로 켜두면
@@ -330,11 +371,17 @@ EOF
                 sudo ufw allow "$TURN_PORT/udp" comment 'SDYnotes TURN' >/dev/null || true
                 sudo ufw allow "$TURN_PORT/tcp" comment 'SDYnotes TURN' >/dev/null || true
                 sudo ufw allow "$TURN_MIN_PORT:$TURN_MAX_PORT/udp" comment 'SDYnotes TURN relay' >/dev/null || true
+                if [ -n "$TURN_TLS_CONF" ]; then
+                    sudo ufw allow 5349/tcp comment 'SDYnotes TURN TLS' >/dev/null || true
+                fi
                 ok "UFW TURN 규칙 적용"
             elif command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then
                 sudo firewall-cmd --permanent --add-port="$TURN_PORT/udp" >/dev/null || true
                 sudo firewall-cmd --permanent --add-port="$TURN_PORT/tcp" >/dev/null || true
                 sudo firewall-cmd --permanent --add-port="$TURN_MIN_PORT-$TURN_MAX_PORT/udp" >/dev/null || true
+                if [ -n "$TURN_TLS_CONF" ]; then
+                    sudo firewall-cmd --permanent --add-port=5349/tcp >/dev/null || true
+                fi
                 sudo firewall-cmd --reload >/dev/null || true
                 ok "firewalld TURN 규칙 적용"
             elif command -v iptables >/dev/null 2>&1; then
@@ -346,6 +393,9 @@ EOF
                 ipt_allow udp "$TURN_PORT"
                 ipt_allow tcp "$TURN_PORT"
                 ipt_allow udp "$TURN_MIN_PORT:$TURN_MAX_PORT"
+                if [ -n "$TURN_TLS_CONF" ]; then
+                    ipt_allow tcp 5349
+                fi
                 # Oracle Ubuntu의 /etc/iptables/rules.v4 또는 netfilter-persistent가
                 # 있으면 재부팅 뒤에도 유지한다. 둘 다 없으면 현재 부팅에는 즉시 적용.
                 if command -v netfilter-persistent >/dev/null 2>&1; then
@@ -357,22 +407,32 @@ EOF
             fi
             if systemctl is-active --quiet coturn; then
                 ok "TURN 실행 중 ($TURN_PUBLIC_IP:$TURN_PORT, 임시 인증)"
-                # 실제로 3478(UDP/TCP) 이 떠 있는지 확인 — 켜져 있는데도 안 되면
-                # Oracle VCN 인그레스 규칙을 의심할 수 있다.
+                # 실제로 3478(UDP/TCP) / 5349(TLS) 이 떠 있는지 확인 — 켜져
+                # 있는데도 안 되면 Oracle VCN 인그레스 규칙을 의심할 수 있다.
                 if command -v ss >/dev/null 2>&1; then
                     UDP_OK=$(ss -lun 2>/dev/null | grep -c ":$TURN_PORT " || true)
                     TCP_OK=$(ss -ltn 2>/dev/null | grep -c ":$TURN_PORT " || true)
                     [ "$UDP_OK" -gt 0 ] && [ "$TCP_OK" -gt 0 ] \
                         && ok "coturn 포트 확인: $TURN_PORT UDP+TCP 수신 중" \
                         || echo "  ⚠️ coturn 이 $TURN_PORT 를 못 열고 있을 수 있음: journalctl -u coturn -n 50"
+                    if [ -n "$TURN_TLS_CONF" ]; then
+                        TLS_OK=$(ss -ltn 2>/dev/null | grep -c ":5349 " || true)
+                        [ "$TLS_OK" -gt 0 ] \
+                            && ok "coturn TLS 확인: 5349(TLS/TCP) 수신 중" \
+                            || echo "  ⚠️ coturn 가 5349(TLS) 를 못 열고 있음: journalctl -u coturn -n 50"
+                    fi
                 fi
             else
                 echo "  ⚠️ coturn 이 시작되지 않았습니다: journalctl -u coturn -n 50"
             fi
             echo "  ★ Oracle Cloud 인그레스에 UDP/TCP $TURN_PORT 및 UDP $TURN_MIN_PORT-$TURN_MAX_PORT 를 열어야 외부망 통화가 됩니다."
+            if [ -n "$TURN_TLS_CONF" ]; then
+                echo "  ★ + TCP 5349 (TURN over TLS) — 평문 TCP/UDP 가 막힌 통신사·회사망에서 씁니다 (인증서 있으면 자동)."
+            fi
             echo "  ★ 자기 공인 IP 로의 self-traffic 이 VCN 의 hairpin 차단으로 'No route to host' 가 나올 수 있으나"
             echo "    외부 클라이언트 → 공인 IP 경로는 정상이며 통화에는 영향이 없습니다."
             echo "  ★ 같은 호스트(SDY_TURN_URL = SDY_LOCAL_TURN_URL) 라면 외부용 정적 인증을 비워서 HMAC 임시 인증만 쓰는 것을 권장합니다."
+            echo "  ★ 도메인(HTTPS) 으로 접속 중이면 TURN 호스트도 자동으로 그 도메인을 사용합니다. 원하면 .env 에 SDY_TURN_HOST=도메인 을 지정하세요."
         else
             echo "  ⚠️ 공인/사설 IP를 확인하지 못해 TURN 자동 설정을 건너뜁니다."
             echo "     .env 에 SDY_TURN_PUBLIC_IP=오라클_공인IP 를 넣고 다시 실행하세요."
@@ -392,21 +452,44 @@ ENV_LINES=""
 
 # 서버 메모리를 확인해 Node 힙·Python 워커 동시성·스레드풀을 한 번에 튜닝한다.
 # Node(프런트/SSE)와 Python 워커(PDF/음악)가 같은 박스에서 돌고 워커는 자식
-# 프로세스를 여러 개 띄우므로, RAM 전체를 Node에 몰아주지 않고 OS/웍커에
-# 일부를 예약해 둔다. 12GB 박스에서 Node 힙은 7.5GB, 나머지를 워커/OS 가 쓴다.
+# 프로세스를 여러 개 띄우므로, RAM 전체를 Node에 몰아주지 않는다.
+# 12GB 박스 배분 (RAM_MB ≈ 11700~12000):
+#   OS+nginx+coturn 예약      ≈ 1.5GB
+#   Node  (힙 2GB + 채팅 파일 버퍼/업로드/SSE) ≈ 4.5GB 이하
+#   worker(본체 0.9GB + 변환 자식 전역 최대 4×1GB)   ≈ 5.0GB 이하
+#   ─ 합계 약 11GB — 페이지 캐시/스왑 여유 1GB+
+# 예전처럼 Node 힙을 62%(≈7.5GB)로 키우면 V8이 회수를 미뤄 RSS가 부풀고,
+# 워커의 PyMuPDF 자식과 겹칠 때 스왑쓰래싱/OOM이 났다. 힙은 '실제로 필요한
+# 만큼만' 주고, 오프힙 버퍼(채팅 파일)는 별도 예산으로 잠근다.
 RAM_MB=$(awk '/MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 2048)
-NODE_HEAP_MB=$((RAM_MB * 62 / 100))
-[ "$NODE_HEAP_MB" -lt 512 ] && NODE_HEAP_MB=512
-[ "$NODE_HEAP_MB" -gt 9216 ] && NODE_HEAP_MB=9216   # 12GB 박스 → 9GB 까지만
-
-# Python 임포트 자식 프로세스 동시성. 한 잡이 내부에서 청크를 최대 3개까지
-# 병렬로 띄우고, 잡 자체도 IMP_CONC 개까지 동시에 돈다. 자식은 RLIMIT_AS 로
-# 메모리 상한이 잡히지만, 여유를 두어 합산 RSS 가 RAM 을 넘지 않게 한다.
-if   [ "$RAM_MB" -ge 10240 ]; then IMP_CONC=3; IMP_CHILD_MEM_MB=1536
-elif [ "$RAM_MB" -ge 6144  ]; then IMP_CONC=2; IMP_CHILD_MEM_MB=1536
-elif [ "$RAM_MB" -ge 3072  ]; then IMP_CONC=2; IMP_CHILD_MEM_MB=1200
-else                               IMP_CONC=1; IMP_CHILD_MEM_MB=1024
+if   [ "$RAM_MB" -ge 10240 ]; then NODE_HEAP_MB=2048
+elif [ "$RAM_MB" -ge 6144  ]; then NODE_HEAP_MB=1536
+elif [ "$RAM_MB" -ge 3072  ]; then NODE_HEAP_MB=1024
+else                                NODE_HEAP_MB=512
 fi
+NODE_MAX_MB=$((NODE_HEAP_MB + 2560))   # 힙 + 채팅파일/업로드/SSE 버퍼 오프힙 예산
+if   [ "$RAM_MB" -ge 10240 ]; then WORKER_MAX_MB=$((RAM_MB - NODE_MAX_MB - 1536))
+elif [ "$RAM_MB" -ge 6144  ]; then WORKER_MAX_MB=$((RAM_MB - NODE_MAX_MB - 1280))
+else                                WORKER_MAX_MB=$((RAM_MB - NODE_MAX_MB - 900))
+fi
+[ "$WORKER_MAX_MB" -lt 2048 ] && WORKER_MAX_MB=2048
+CHAT_FILE_MB=$((NODE_HEAP_MB / 4))      # 채팅 사진/파일 인메모리 총 예산(12GB→512MB)
+[ "$CHAT_FILE_MB" -lt 128 ] && CHAT_FILE_MB=128
+
+# Python 임포트 자식 프로세스 동시성. 한 잡이 내부에서 청크를 여러 개
+# 병렬로 띄우고, 잡 자체도 IMP_CONC 개까지 동시에 돈다. 자식은 RLIMIT_AS 로
+# 메모리 상한이 잡히지만, 잡 수 × 청크 수가 RAM 을 넘지 않도록 아래에서
+# '전역 자식 상한(SDY_IMP_MAX_CHUNKS)'을 만들어 실제로 막는다.
+if   [ "$RAM_MB" -ge 10240 ]; then IMP_CONC=2; IMP_CHILD_MEM_MB=1024
+elif [ "$RAM_MB" -ge 6144  ]; then IMP_CONC=2; IMP_CHILD_MEM_MB=1024
+elif [ "$RAM_MB" -ge 3072  ]; then IMP_CONC=1; IMP_CHILD_MEM_MB=1024
+else                               IMP_CONC=1; IMP_CHILD_MEM_MB=768
+fi
+IMP_CHILD_BUDGET_MB=$((WORKER_MAX_MB - 900))   # 워커 본체+Flask 예약 후 남는 몫
+[ "$IMP_CHILD_BUDGET_MB" -lt 2048 ] && IMP_CHILD_BUDGET_MB=2048
+IMP_MAX_CHUNKS=$((IMP_CHILD_BUDGET_MB / IMP_CHILD_MEM_MB))
+[ "$IMP_MAX_CHUNKS" -lt 2 ] && IMP_MAX_CHUNKS=2
+[ "$IMP_MAX_CHUNKS" -gt $((IMP_CONC * 3)) ] && IMP_MAX_CHUNKS=$((IMP_CONC * 3))
 
 # libuv 스레드풀(sharp·crypto·파일 I/O 백그라운드). CPU 수에 비례해 키운다.
 CPU_N=$(nproc 2>/dev/null || echo 2)
@@ -414,7 +497,7 @@ UV_THREADS=$((CPU_N * 2))
 [ "$UV_THREADS" -lt 8 ]  && UV_THREADS=8
 [ "$UV_THREADS" -gt 24 ] && UV_THREADS=24
 
-ok "메모리 튜닝: RAM ${RAM_MB}MB → Node 힙 ${NODE_HEAP_MB}MB / 가져오기 동시 ${IMP_CONC} (자식당 ${IMP_CHILD_MEM_MB}MB) / UV 스레드 ${UV_THREADS}"
+ok "메모리 튜닝: RAM ${RAM_MB}MB → Node 힙 ${NODE_HEAP_MB}MB(전체 예산 ${NODE_MAX_MB}MB, 채팅파일 ${CHAT_FILE_MB}MB) / 워커 예산 ${WORKER_MAX_MB}MB (자식 ${IMP_MAX_CHUNKS}×${IMP_CHILD_MEM_MB}MB, 동시잡 ${IMP_CONC}) / UV 스레드 ${UV_THREADS}"
 
 sudo tee "/etc/systemd/system/$SVC.service" > /dev/null <<EOF
 [Unit]
@@ -429,6 +512,7 @@ Environment="PORT=$PORT"
 Environment="HOME=$HOME"
 Environment="NODE_OPTIONS=--max-old-space-size=$NODE_HEAP_MB"
 Environment="UV_THREADPOOL_SIZE=$UV_THREADS"
+Environment="SDY_CHAT_FILE_MB=$CHAT_FILE_MB"
 $ENV_LINES
 LimitNOFILE=65535
 ExecStart=$(command -v node) $APP_DIR/server/src/index.js
@@ -454,6 +538,8 @@ Environment="SDY_NODE_URL=http://127.0.0.1:$PORT"
 Environment="PYTHONUNBUFFERED=1"
 Environment="SDY_IMP_MAX_CONCURRENT=$IMP_CONC"
 Environment="SDY_IMP_CHILD_MEM_MB=$IMP_CHILD_MEM_MB"
+Environment="SDY_IMP_MAX_CHUNKS=$IMP_MAX_CHUNKS"
+Environment="MALLOC_ARENA_MAX=2"
 $ENV_LINES
 LimitNOFILE=65535
 ExecStart=$APP_DIR/venv/bin/python $APP_DIR/worker/run.py
@@ -518,14 +604,21 @@ else
     echo "  nginx 없음 → http://주소:$PORT 로 접속하세요"
 fi
 
-# swap (저사양 서버 대용량 변환 보호)
+# swap (대용량 변환/스파이크 보호 — RAM 의 1/4, 최소 2GB, 최대 6GB)
 if ! swapon --show 2>/dev/null | grep -q .; then
     say "5.5/6  swap 만들기"
-    if sudo fallocate -l 2G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none 2>/dev/null; then
+    SWAP_GB=2
+    [ "$RAM_MB" -ge 8192 ]  && SWAP_GB=4
+    [ "$RAM_MB" -ge 16384 ] && SWAP_GB=6
+    SWAP_MB=$((SWAP_GB * 1024))
+    if sudo fallocate -l "${SWAP_GB}G" /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=$SWAP_MB status=none 2>/dev/null; then
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile >/dev/null && sudo swapon /swapfile || true
         grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab > /dev/null
-        ok "swap 2GB 활성화"
+        # 서버형 워크로드: 캐시보다 스왑을 천천히, 페이지 캐시를 우선 유지
+        sudo sysctl -w vm.swappiness=10 >/dev/null 2>&1 || true
+        grep -q 'vm.swappiness' /etc/sysctl.conf || echo 'vm.swappiness = 10' | sudo tee -a /etc/sysctl.conf > /dev/null
+        ok "swap ${SWAP_GB}GB 활성화 (swappiness=10)"
     fi
 else
     echo "  swap 이미 사용 중 (건너뜀)"

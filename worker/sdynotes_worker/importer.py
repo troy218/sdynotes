@@ -3761,6 +3761,12 @@ IMP_CHILD_MEM_MB = _imp_env_int("SDY_IMP_CHILD_MEM_MB", 2000)   # 자식 메모�
 IMP_MAX_CONCURRENT = _imp_env_int("SDY_IMP_MAX_CONCURRENT", 2)  # 동시 변환 잡 상한
 IMP_SLICE = int(os.environ.get("SDY_IMP_SLICE", "8") or 8)      # 보관 배치 크기
 _imp_sem = threading.Semaphore(IMP_MAX_CONCURRENT)
+# 전역 '자식 프로세스' 상한. 잡별 동시성(IMP_MAX_CONCURRENT)만으로는 여러 잡의
+# 청크가 겹쳐(예: 잡 3 × 청크 3) 자식 총합이 RAM 을 넘었다. apply.sh 가 12GB
+# 박스 기준 SDY_IMP_MAX_CHUNKS(=워커 예산 ÷ 자식 메모리, 예: 5×1GB)를 주입하고,
+# 모든 잡의 청크가 이 세마포를 공유해 실제 동시 자식 수를 한 번에 잠근다.
+IMP_MAX_CHUNKS = _imp_env_int("SDY_IMP_MAX_CHUNKS", max(2, IMP_MAX_CONCURRENT * 2))
+_imp_chunk_sem = threading.BoundedSemaphore(IMP_MAX_CHUNKS)
 # 현재 가져오기 잡을 몇 개나 처리 중인지(세마포가 잡혀 있는 수). 여러 잡이
 # 동시에 청크를 띄울 때 자식 총합이 RAM 을 넘지 않도록 문서당 병렬을 줄인다.
 _imp_active = 0
@@ -3807,34 +3813,43 @@ def _chunk_pages(src, pnos, out_path, safe, total=1):
 
 
 def _run_chunk_start(src, pnos, safe, total=1):
-    """자식 프로세스 시작만 (병렬 실행용)."""
+    """자식 프로세스 시작만 (병렬 실행용). 전역 청크 세마포로 자식 총합을 잠근다."""
     import multiprocessing
     out = os.path.join(IMG_DIR, f"chunk_{uuid.uuid4().hex}.json")
     ctx = multiprocessing.get_context("fork")
-    proc = ctx.Process(target=_chunk_pages, args=(src, pnos, out, safe, total))
-    proc.start()
+    _imp_chunk_sem.acquire()
+    try:
+        proc = ctx.Process(target=_chunk_pages, args=(src, pnos, out, safe, total))
+        proc.start()
+    except BaseException:
+        _imp_chunk_sem.release()
+        raise
     return proc, out
 
 
 def _run_chunk_collect(proc, out):
     """자식 수확. 죽으면 None (호출측이 재시도)."""
-    proc.join(IMP_CHUNK_TIMEOUT)
-    if proc.is_alive():
-        proc.kill()
-        proc.join()
-    code = proc.exitcode
     try:
-        if code == 0 and os.path.exists(out):
-            with open(out, encoding="utf-8") as fp:
-                data_ = json.load(fp)
-            if isinstance(data_, list):
-                return data_
-    finally:
+        proc.join(IMP_CHUNK_TIMEOUT)
+        if proc.is_alive():
+            proc.kill()
+            proc.join()
+        code = proc.exitcode
         try:
-            os.remove(out)
-        except Exception:
-            pass
-    return None
+            if code == 0 and os.path.exists(out):
+                with open(out, encoding="utf-8") as fp:
+                    data_ = json.load(fp)
+                if isinstance(data_, list):
+                    return data_
+        finally:
+            try:
+                os.remove(out)
+            except Exception:
+                pass
+        return None
+    finally:
+        # 시작 시 잡은 전역 청크 세마포를 항상 여기서 반납한다(예외 포함).
+        _imp_chunk_sem.release()
 
 
 def _run_chunk(src, pnos, safe, total=1):
