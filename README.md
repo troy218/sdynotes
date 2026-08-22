@@ -136,6 +136,31 @@ curl -s 'http://127.0.0.1:5000/api/chat/config?uid=test'
 공인 IP 자동 감지가 실패하면 `/var/www/memo/.env`에
 `SDY_TURN_PUBLIC_IP=오라클_공인_IP`를 추가한 뒤 `bash apply.sh`를 다시 실행합니다.
 
+#### 자주 막히는 함정 (체크리스트)
+
+1. **VCN 인그레스가 다 열렸는데도 통화 안 됨** — `curl /api/chat/config` 가
+   `turn:true` 를 주는지 확인. `turn:false` 면 Node 가 TURN 인증을 못 만들고
+   있다는 뜻이므로 `SDY_TURN_SECRET` (또는 `SDY_TURN_USER`+`SDY_TURN_PASS`) 이
+   `systemctl show sdynotes -p Environment` 결과에 포함되는지 확인.
+2. **"연결 중"에서 멈춤, ICE candidate 가 `relay` 가 안 잡힘** — 브라우저
+   DevTools → `chrome://webrtc-internals` 에서 `Local Address` 가 49160~49200
+   사이로 잡히면 정상. 안 잡히면 `relay-ip` 를 안 박은 현재 설정(자동 라우팅)
+   으로 해결된다. 옛 버전의 `relay-ip=$TURN_PRIVATE_IP` 는 VCN 환경에서
+   hairpin 함정에 빠져 일부 클라이언트가 relay candidate 를 버린다.
+3. **VM 안에서 `bash -c 'exec 3<>/dev/tcp/$PUBIP/3478'` 가 `No route to host`** —
+   Oracle VCN 의 source/dest check 또는 hairpin 차단. 외부 클라이언트 →
+   공인 IP 경로에는 영향이 없으니 **무시해도 된다.** 정말로 외부에서도 막힌
+   것이라면 VCN Security List 의 Source CIDR 가 `0.0.0.0/0` 가 맞는지 다시 확인.
+4. **WebRTC 표준이 아닌 `?transport=udp` 쿼리가 url 에 그대로 붙어 있는 경우** —
+   일부 브라우저는 `urls:["turn:host:3478?transport=udp"]` 를 잘못 파싱해
+   candidate 를 한 줄만 시도하고 끝낸다. Node 가 transport 를 떼고 별도
+   iceServers 엔트리로 분리하므로, 예전 버전에서 업그레이드했다면 브라우저
+   캐시(특히 service-worker)와 `localStorage` 의 옛 ICE 응답을 비워야 한다.
+5. **TURN 인증이 401 로 reject** — `lt-cred-mech` 가 켜져 있는지 확인
+   (`grep ^lt-cred-mech /etc/turnserver.conf`). 그리고 VM 시계가
+   `date` 기준 ±5 분 이내여야 HMAC 임시 인증이 통과한다
+   (`sudo apt-get install -y chrony` 로 NTP 동기화).
+
 ## 주의 (기존 운영 규칙 그대로)
 
 - **단일 프로세스 전제** — worker 를 여러 개 띄우면 `music/_index.json` 이
