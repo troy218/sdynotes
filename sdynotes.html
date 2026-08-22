@@ -21311,7 +21311,7 @@ $('mpTagModal').addEventListener('click',e=>{
 });
 // 음악 변이 API가 worker에서 멈추면 버튼이 영원히 로딩 상태가 되지 않도록
 // 프론트에서도 제한 시간을 둔다. (인식은 음원 다운로드 때문에 더 길게 사용)
-async function musicApiFetch(url, opts, timeoutMs=60000){
+async function musicApiFetch(url, opts, timeoutMs=120000){
   const ac=new AbortController();
   const tm=setTimeout(()=>ac.abort(),timeoutMs);
   try { return await fetch(url,{...(opts||{}),signal:ac.signal}); }
@@ -21454,7 +21454,7 @@ async function lookupTrack(id,opts){
   // 14.9 · 서버 검색은 출처·질의가 많아 오래 걸릴 수 있다. 타임아웃 없이
   //  기다리면 '찾는 중…'이 영원히 돌고 다음 곡 검색까지 막힌다.
   const ac=new AbortController();
-  const tm=setTimeout(()=>ac.abort(),45000);
+  const tm=setTimeout(()=>ac.abort(),120000);
   try{
     const r=await fetch('/api/music/lookup',{method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -21526,7 +21526,7 @@ $('mpTagRecog').onclick=async()=>{
     btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 듣는 중…';
     const id=TAG_EDIT;
     const r=await musicApiFetch('/api/music/recognize',{method:'POST',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({id})},90000);
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({id})},180000);
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok){ toast(d.error||'소리로는 찾지 못했어요',2800); return; }
     P.coverV=Date.now();
@@ -21736,7 +21736,7 @@ async function ensureLyrics(t){
   if(!t.has_lyrics&&!t.has_sync) return false;
   t._lyrLoading=true;
   const ac=new AbortController();
-  const tm=setTimeout(()=>ac.abort(),10000);
+  const tm=setTimeout(()=>ac.abort(),120000);
   try{
     const r=await fetch('/api/music/lyrics/'+t.id,{cache:'no-store',signal:ac.signal});
     const d=await r.json();
