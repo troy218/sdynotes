@@ -24243,7 +24243,8 @@ body.sdy-booting #mpReopen{display:none !important;}
     var kind=file.type&&file.type.indexOf('image/')===0?'img':'file';
     var cap=kind==='img'?8*1024*1024:20*1024*1024;
     if(file.size>cap){ toast(kind==='img'?'사진은 8MB 이하만 가능해요':'파일은 20MB 이하만 가능해요',2400); return; }
-    var fd=new FormData(); fd.append('file',file,file.name||'file'); fd.append('uid',YP.uid);
+    // uid 를 파일보다 먼저 넣어 multipart 파서가 입장 정보를 즉시 읽게 한다.
+    var fd=new FormData(); fd.append('uid',YP.uid); fd.append('file',file,file.name||'file');
     fetch('/api/chat/upload',{method:'POST',body:fd})
       .then(function(r){return r.json();})
       .then(function(d){ if(d&&d.ok&&d.msg) ypAddMsg(d.msg); else if(d&&d.error) toast(d.error,2400); })
