@@ -24007,7 +24007,12 @@ body.sdy-booting #mpReopen{display:none !important;}
         var m=YP.members.get(uid);
         if(!relay){
           toast((m&&m.name||'상대')+' 와(과) 직접 연결이 안 돼요 · TURN 릴레이로 다시 붙일게요',2800);
-          if(YP.uid<uid) setTimeout(function(){ ypRefreshIce(); ypOffer(uid,{fresh:true,relay:true}); },400);
+          if(YP.uid<uid) setTimeout(function(){
+            // 새 TURN 설정을 받은 뒤에야 relay 전용 PC를 만들어야 한다.
+            // 이전에는 캐시를 비운 직후 즉시 PC를 만들어 STUN 폴백만 넣었고,
+            // relay 정책에서는 후보가 0개가 되어 서로 다른 망 통화가 실패했다.
+            ypRefreshIce().then(function(){ ypOffer(uid,{fresh:true,relay:true}); });
+          },400);
         } else {
           toast((m&&m.name||'상대')+' 와(과) 음성 연결에 실패했어요 · 네트워크(NAT) 환경이 달라서일 수 있어요',3200);
         }
@@ -24019,8 +24024,11 @@ body.sdy-booting #mpReopen{display:none !important;}
     if(!relay && ypIceHasTurn()){
       pc.__watch=setTimeout(function(){
         if(!YP.inVoice || pc.connectionState==='connected' || pc.connectionState==='closed') return;
-        if(YP.uid<uid){ ypRefreshIce(); ypOffer(uid,{fresh:true,relay:true}); }
-        else ypRefreshIce();
+        if(YP.uid<uid){
+          // ICE/TURN 재조회가 끝나기 전에 offer를 만들면 relay 전용 연결이
+          // STUN 폴백으로 생성된다. 반드시 최신 TURN을 받은 뒤 재시도한다.
+          ypRefreshIce().then(function(){ ypOffer(uid,{fresh:true,relay:true}); });
+        } else ypRefreshIce();
       },6500);
     }
     // relay 전용 PC 는 TURN 이 죽어 있으면 '연결 중'에 오래 갇힐 수 있어

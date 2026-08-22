@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server/src/index.js",
     "test:music": "node test/music_controls.mjs",
-    "test:save": "node test/save_outbox_contract.mjs"
+    "test:save": "node test/save_outbox_contract.mjs",
+    "test:call": "node test/call_relay_contract.mjs && node test/chat_endpoint.mjs && node test/yp_smoke_v4.cjs"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",
