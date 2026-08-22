@@ -355,6 +355,28 @@ export function registerChat(app) {
       .replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 40) || 'guest';
     let turnReady = false;
 
+    // "turn:host:3478?transport=udp" 같은 ?transport= 쿼리는 WebRTC 표준이 아니라
+    // (RFC 7064 는 STUN URI 에서만 정의) 브라우저 구현에 따라 다르게 취급된다.
+    // 같은 호스트에 UDP/TCP 두 transport 를 쓰고 싶으면 별도 iceServers 엔트리로
+    // 분리하는 게 안전하다.
+    const splitTransport = (txt) => {
+      const out = [];
+      for (const raw of String(txt).split(',')) {
+        const u = raw.trim();
+        if (!u) continue;
+        if (u.includes('?transport=')) {
+          // 혹시 어디선가 쿼리가 섞여 들어오면 transport 별로 잘라낸다.
+          const [base, qs] = u.split('?', 2);
+          const t = (qs || '').split('&').find((s) => s.startsWith('transport='));
+          if (t) out.push(`${base}?${t}`);
+          else out.push(base);
+        } else {
+          out.push(u);
+        }
+      }
+      return out;
+    };
+
     const addTurn = (urlsText, preferStatic) => {
       if (!urlsText) return;
       let username = preferStatic ? (process.env.SDY_TURN_USER || '').trim() : '';
@@ -365,15 +387,24 @@ export function registerChat(app) {
         username = `${Math.floor(nowSec()) + 3600}:${uid}`;
         credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
       }
+      const urls = splitTransport(urlsText);
+      if (!urls.length) return;
       turnReady = turnReady || Boolean(username && credential);
       iceServers.push({
-        urls: urlsText.split(',').map((s) => s.trim()).filter(Boolean),
-        username, credential, credentialType: 'password',
+        urls, username, credential, credentialType: 'password',
       });
     };
 
-    addTurn(externalTurn, true);       // 사용자가 지정한 외부 TURN(있으면 그대로 보존)
-    if (localTurn !== externalTurn) addTurn(localTurn, false); // apply.sh 가 만든 Oracle TURN
+    // 외부 TURN(있으면) → 같은 호스트라도 별도 엔트리로 추가해 인증 방식 차이를 보존.
+    addTurn(externalTurn, true);
+    // apply.sh 가 만든 Oracle TURN. SDY_LOCAL_TURN_URL 이 비어있지 않으면
+    // 외부와 같은 호스트라도 항상 push 한다 — 사용자가 명시적으로 두 라인을
+    // 켠 의도(고정 인증 + HMAC 임시 인증)를 그대로 전달하는 게 안전하다.
+    // 브라우저는 같은 호스트 + 다른 credential 을 별도 iceServer 로 받아도
+    // 한쪽이 실패하면 다른쪽으로 candidate 를 다시 만든다.
+    if (localTurn) {
+      addTurn(localTurn, false);
+    }
     reply.header('Cache-Control', 'no-store');
     return reply.send({ ok: true, turn: turnReady, ice: { iceServers } });
   });

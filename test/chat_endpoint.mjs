@@ -118,6 +118,42 @@ ok('config: TURN 임시 인증 제공', turnCfg.turn === true && turn && /^\d+:d
 delete process.env.SDY_LOCAL_TURN_URL;
 delete process.env.SDY_TURN_SECRET;
 
+// 6-6) transport= 쿼리가 한 줄 안에 콤마와 섞여 와도 별도 iceServers 엔트리로
+//      분리되어야 한다 (브라우저가 transport=udp 한 줄만 시도하는 함정 방지).
+process.env.SDY_LOCAL_TURN_URL = 'turn:198.51.100.7:3478?transport=udp,turn:198.51.100.7:3478?transport=tcp';
+process.env.SDY_TURN_SECRET = 'split-secret';
+const splitCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=split-test`).then((r) => r.json());
+const splitTurns = splitCfg.ice.iceServers.filter((x) => (Array.isArray(x.urls) ? x.urls : [x.urls])
+  .some((u) => String(u).includes('198.51.100.7')));
+const allTurnUrls = (splitTurns[0] ? splitTurns[0].urls : []);
+ok('config: UDP/TCP TURN 둘 다 노출', allTurnUrls.includes('turn:198.51.100.7:3478?transport=udp')
+  && allTurnUrls.includes('turn:198.51.100.7:3478?transport=tcp'));
+// HMAC 이 그 단일 iceServer 엔트리에 일관되게 적용되는지 확인
+const expected = (username) => crypto.createHmac('sha1', 'split-secret').update(username).digest('base64');
+ok('config: TURN HMAC 인증 일관', splitTurns.length === 1
+  && splitTurns[0].credential === expected(splitTurns[0].username)
+  && /^\d+:split-test$/.test(splitTurns[0].username));
+delete process.env.SDY_LOCAL_TURN_URL;
+delete process.env.SDY_TURN_SECRET;
+
+// 6-7) 외부 TURN(정적 인증)과 로컬 TURN(HMAC)이 같은 호스트면 두 줄 다 push
+process.env.SDY_TURN_URL = 'turn:192.0.2.55:3478';
+process.env.SDY_TURN_USER = 'extuser';
+process.env.SDY_TURN_PASS = 'extpass';
+process.env.SDY_LOCAL_TURN_URL = 'turn:192.0.2.55:3478';
+process.env.SDY_TURN_SECRET = 'dup-secret';
+const dupCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=dup-test`).then((r) => r.json());
+const dupTurns = dupCfg.ice.iceServers.filter((x) => (Array.isArray(x.urls) ? x.urls : [x.urls])
+  .some((u) => String(u).startsWith('turn:192.0.2.55')));
+ok('config: 같은 호스트라도 외부/로컬 두 줄', dupTurns.length === 2
+  && dupTurns.some((x) => x.username === 'extuser' && x.credential === 'extpass')
+  && dupTurns.some((x) => /^\d+:dup-test$/.test(x.username)));
+delete process.env.SDY_TURN_URL;
+delete process.env.SDY_TURN_USER;
+delete process.env.SDY_TURN_PASS;
+delete process.env.SDY_LOCAL_TURN_URL;
+delete process.env.SDY_TURN_SECRET;
+
 // 7) 히스토리 보존
 ok('history: 재입장 시 최근 메시지', jR.msgs.length >= 2);
 
