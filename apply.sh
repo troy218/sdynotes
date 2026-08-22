@@ -115,7 +115,7 @@ ok "Supabase 테이블 SQL 생성: $APP_DIR/SUPABASE_SCHEMA.sql"
 ENV_FILE="$APP_DIR/.env"
 touch "$ENV_FILE"
 chmod 600 "$ENV_FILE"
-for EK in SUPABASE_URL SUPABASE_SERVICE_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_KEY CLOUDINARY_CLOUD_NAME CLOUDINARY_API_KEY CLOUDINARY_API_SECRET ACOUSTID_KEY SDY_TURN_URL SDY_LOCAL_TURN_URL SDY_TURN_USER SDY_TURN_PASS SDY_TURN_SECRET SDY_TURN_PUBLIC_IP SDY_SETUP_TURN; do
+for EK in SUPABASE_URL SUPABASE_SERVICE_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_KEY CLOUDINARY_CLOUD_NAME CLOUDINARY_API_KEY CLOUDINARY_API_SECRET ACOUSTID_KEY SDY_TURN_URL SDY_LOCAL_TURN_URL SDY_TURN_USER SDY_TURN_PASS SDY_TURN_SECRET SDY_TURN_PUBLIC_IP SDY_TURN_PRIVATE_IP SDY_SETUP_TURN; do
     EV="${!EK:-}"
     if [ -n "$EV" ] && ! grep -qE "^${EK}=" "$ENV_FILE"; then
         printf '%s=%s\n' "$EK" "$EV" >> "$ENV_FILE"
@@ -263,6 +263,7 @@ if [ "$TURN_SETUP" != "0" ]; then
         if [ -n "$TURN_PUBLIC_IP" ] && [ -n "$TURN_PRIVATE_IP" ] && [ -n "$TURN_SECRET" ]; then
             env_set SDY_TURN_SECRET "$TURN_SECRET"
             env_set SDY_TURN_PUBLIC_IP "$TURN_PUBLIC_IP"
+            env_set SDY_TURN_PRIVATE_IP "$TURN_PRIVATE_IP"
             # 콤마로 묶지 않는다 — 브라우저는 urls 배열에 같은 호스트가 두 번 들어가면
             # ICE candidate 중복을 피하려고 한 쪽을 버리는 경우가 있다. UDP와 TCP를
             # 별도 iceServers 엔트리로 다루게 chat.js 에서 분리하므로 여기선 베이스
@@ -316,12 +317,38 @@ EOF
             fi
             sudo timedatectl set-ntp true 2>/dev/null || true
 
-            # UFW 를 쓰는 서버라면 OS 방화벽도 함께 연다. Oracle VCN 보안 목록은
-            # VM 밖의 방화벽이라 스크립트로 열 수 없어 아래에 별도 안내한다.
+            # OS 방화벽도 연다. OCI Compute 이미지는 VCN/NSG와 별개로 iptables의
+            # 마지막 REJECT 규칙을 기본 제공하는 경우가 있다. UFW가 inactive여도
+            # 이 규칙 때문에 외부 패킷이 EHOSTUNREACH로 막힐 수 있으므로 현재
+            # 방화벽 관리자를 감지해 필요한 포트만 허용한다 (전체 flush는 금지).
             if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
                 sudo ufw allow "$TURN_PORT/udp" comment 'SDYnotes TURN' >/dev/null || true
                 sudo ufw allow "$TURN_PORT/tcp" comment 'SDYnotes TURN' >/dev/null || true
                 sudo ufw allow "$TURN_MIN_PORT:$TURN_MAX_PORT/udp" comment 'SDYnotes TURN relay' >/dev/null || true
+                ok "UFW TURN 규칙 적용"
+            elif command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then
+                sudo firewall-cmd --permanent --add-port="$TURN_PORT/udp" >/dev/null || true
+                sudo firewall-cmd --permanent --add-port="$TURN_PORT/tcp" >/dev/null || true
+                sudo firewall-cmd --permanent --add-port="$TURN_MIN_PORT-$TURN_MAX_PORT/udp" >/dev/null || true
+                sudo firewall-cmd --reload >/dev/null || true
+                ok "firewalld TURN 규칙 적용"
+            elif command -v iptables >/dev/null 2>&1; then
+                ipt_allow(){
+                    local proto="$1" ports="$2"
+                    sudo iptables -w -C INPUT -p "$proto" -m "$proto" --dport "$ports" -m comment --comment 'SDYnotes TURN' -j ACCEPT 2>/dev/null \
+                        || sudo iptables -w -I INPUT 1 -p "$proto" -m "$proto" --dport "$ports" -m comment --comment 'SDYnotes TURN' -j ACCEPT
+                }
+                ipt_allow udp "$TURN_PORT"
+                ipt_allow tcp "$TURN_PORT"
+                ipt_allow udp "$TURN_MIN_PORT:$TURN_MAX_PORT"
+                # Oracle Ubuntu의 /etc/iptables/rules.v4 또는 netfilter-persistent가
+                # 있으면 재부팅 뒤에도 유지한다. 둘 다 없으면 현재 부팅에는 즉시 적용.
+                if command -v netfilter-persistent >/dev/null 2>&1; then
+                    sudo netfilter-persistent save >/dev/null 2>&1 || true
+                elif [ -d /etc/iptables ] && command -v iptables-save >/dev/null 2>&1; then
+                    sudo sh -c 'iptables-save > /etc/iptables/rules.v4' || true
+                fi
+                ok "iptables TURN 규칙 적용 (기존 REJECT 규칙보다 우선)"
             fi
             if systemctl is-active --quiet coturn; then
                 ok "TURN 실행 중 ($TURN_PUBLIC_IP:$TURN_PORT, 임시 인증)"

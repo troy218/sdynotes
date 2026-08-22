@@ -111,8 +111,11 @@ bash apply.sh
 
 ### Oracle Cloud에서 서로 다른 망 통화 허용 (필수 1회)
 
-`apply.sh`가 VM 안의 coturn/UFW는 설정하지만 **VM 밖에 있는 Oracle VCN 방화벽은
-코드로 변경할 수 없습니다.** Oracle Console → Networking → VCN → Security Lists
+`apply.sh`가 VM 안의 coturn과 OS 방화벽(UFW/firewalld/iptables)은 설정하지만
+**VM 밖에 있는 Oracle VCN 방화벽은 코드로 변경할 수 없습니다.** OCI Ubuntu는
+VCN 규칙과 별도로 마지막 iptables REJECT 규칙이 있는 이미지도 있으므로, 최신
+`apply.sh`는 TURN 허용 규칙을 그보다 앞에 넣고 가능한 경우 재부팅 후에도 보존합니다.
+Oracle Console → Networking → VCN → Security Lists
 (또는 해당 NSG) → Ingress Rules에서 다음을 한 번 열어 주세요.
 
 | Source CIDR | Protocol | Destination port | 용도 |
@@ -177,7 +180,12 @@ curl -s 'http://127.0.0.1:5000/api/chat/diag'
 7. **인스턴스가 Security List 가 아니라 NSG 를 쓰는지** — Oracle Console →
    인스턴스 상세 → VNIC 에 NSG 가 걸려 있으면 **그 NSG 에도 같은 규칙을**
    열어야 한다. Security List 에만 열면 소용없다.
-8. **같은 망은 되고 다른 망만 안 되는 경우** — 브라우저
+8. **VCN/NSG를 열었는데 외부에서 `No route to host`** — OCI는 VCN 가상
+   방화벽과 인스턴스 OS 방화벽을 둘 다 적용한다. 최신 `apply.sh`를 재실행하거나
+   `sudo iptables -S INPUT | grep -E '3478|49160|REJECT'`에서 TURN ACCEPT가
+   마지막 REJECT보다 앞에 있는지 확인한다. 방화벽 전체 flush는 SSH까지 노출하므로
+   하지 않는다.
+9. **같은 망은 되고 다른 망만 안 되는 경우** — 브라우저
    `chrome://webrtc-internals` 에서 `Local Address` 가 49160~49200 사이
    (relay candidate) 로 잡히는지 확인. 안 잡히면 서버에서
    `curl -s http://127.0.0.1:5000/api/chat/diag` → `localUdp` 가 fail 이면
