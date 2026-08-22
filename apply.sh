@@ -390,6 +390,15 @@ say "4/6  자동 실행 서비스"
 # 통화와 음악 인식이 계속 옛 설정으로 실행될 수 있다.
 ENV_LINES=""
 
+# 서버 메모리를 확인해 Node 힙을 기본값보다 넉넉하게 잡는다. 기본 Node 힙은
+# 실제 RAM이 커도 보수적으로 제한될 수 있어, 대량 음악 목록/채팅 파일/SSE가
+# 함께 살아 있는 운영 서버에서는 불필요한 GC가 발생한다.
+RAM_MB=$(awk '/MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 2048)
+NODE_HEAP_MB=$((RAM_MB * 70 / 100))
+[ "$NODE_HEAP_MB" -lt 512 ] && NODE_HEAP_MB=512
+[ "$NODE_HEAP_MB" -gt 8192 ] && NODE_HEAP_MB=8192
+ok "Node 메모리: ${RAM_MB}MB RAM 중 ${NODE_HEAP_MB}MB 힙 사용"
+
 sudo tee "/etc/systemd/system/$SVC.service" > /dev/null <<EOF
 [Unit]
 Description=SDYnotes backend (Fastify)
@@ -401,7 +410,10 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=-$APP_DIR/.env
 Environment="PORT=$PORT"
 Environment="HOME=$HOME"
+Environment="NODE_OPTIONS=--max-old-space-size=$NODE_HEAP_MB"
+Environment="UV_THREADPOOL_SIZE=8"
 $ENV_LINES
+LimitNOFILE=65535
 ExecStart=$(command -v node) $APP_DIR/server/src/index.js
 Restart=always
 RestartSec=3
@@ -422,7 +434,9 @@ EnvironmentFile=-$APP_DIR/.env
 Environment="HOME=$HOME"
 Environment="SDY_WORKER_PORT=$WORKER_PORT"
 Environment="SDY_NODE_URL=http://127.0.0.1:$PORT"
+Environment="PYTHONUNBUFFERED=1"
 $ENV_LINES
+LimitNOFILE=65535
 ExecStart=$APP_DIR/venv/bin/python $APP_DIR/worker/run.py
 Restart=always
 RestartSec=3
