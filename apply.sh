@@ -384,12 +384,11 @@ fi
 
 # ── 4. 서비스 등록 (단일 프로세스 유지) ──────────────────────
 say "4/6  자동 실행 서비스"
-# 기존 Environment=(키 등) 보존
+# 설정은 항상 APP_DIR/.env 를 단일 기준으로 사용한다.
+# 이전 버전은 기존 systemd Environment= 줄을 복사했는데, 그러면 마이그레이션
+# 뒤 .env의 TURN/AcoustID 값을 바꿔도 오래된 값이 EnvironmentFile보다 우선되어
+# 통화와 음악 인식이 계속 옛 설정으로 실행될 수 있다.
 ENV_LINES=""
-if [ -f "/etc/systemd/system/$SVC.service" ]; then
-    ENV_LINES=$(grep -E '^[[:space:]]*Environment=' "/etc/systemd/system/$SVC.service" 2>/dev/null \
-        | grep -vE 'Environment="PORT=' || true)
-fi
 
 sudo tee "/etc/systemd/system/$SVC.service" > /dev/null <<EOF
 [Unit]
