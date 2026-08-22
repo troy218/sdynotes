@@ -21398,18 +21398,36 @@ $('mpTagSave').onclick=async()=>{
   // 저장은 다른 검색 작업이 꼬여 있어도 항상 실행할 수 있어야 한다.
   // 기존에는 _tagBusy가 남아 있으면 클릭 자체가 무시됐다.
   const id=TAG_EDIT; if(!id) return;
-  _tagBusy=true;
+
+  // 14.10 · 지금 화면에 보이는 수정사항을 먼저 로컬 상태에 반영한다.
+  // 서버 저장이 끝나기를 기다리는 동안에도 제목/가수/가사가 즉시 보이고,
+  // 늦게 도착한 자동 찾기 결과가 방금 누른 저장값을 덮어쓰지 못하게 한다.
+  const payload={id,
+    title:$('mpTagTitle').value, artist:$('mpTagArtist').value,
+    album:$('mpTagAlbum').value, year:$('mpTagYear').value,
+    genre:$('mpTagGenre').value,
+    lyrics:$('mpTagLyrics').value};
+  const local=(P.list||[]).find(x=>x.id===id);
+  if(local){
+    local.title=payload.title; local.artist=payload.artist;
+    local.album=payload.album; local.year=payload.year; local.genre=payload.genre;
+    local.lyrics=payload.lyrics;
+    if(/\[\d{1,2}:\d{1,2}/.test(payload.lyrics||'')){ local.has_sync=true; }
+    if((payload.lyrics||'').trim()){ local.has_lyrics=true; }
+    try{ renderTitle(); renderListPop(); }catch(e){}
+  }
+
+  // 저장을 누르면 이전 '정보 찾기' 요청은 취소한다.
+  if(_lookupAbort) try{ _lookupAbort.abort(); }catch(e){}
+  _tagBusy=false;
   const btn=$('mpTagSave'); const html=btn.innerHTML;
-  btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 저장 중';
+  btn.innerHTML='<i class="ri-check-line"></i> 저장됨';
+  toast('수정한 내용을 저장했습니다',900);
   try{
     const r=await musicApiFetch('/api/music/meta',{method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+admTok()},
-      body:JSON.stringify({id,
-        title:$('mpTagTitle').value, artist:$('mpTagArtist').value,
-        album:$('mpTagAlbum').value, year:$('mpTagYear').value,
-        genre:$('mpTagGenre').value,
-        lyrics:$('mpTagLyrics').value})});
-    const d=await r.json();
+      body:JSON.stringify(payload)},15000);
+    const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok){ toast(d.error||'저장 실패',2200); return; }
     if(_scrapedCoverUrl){
       try{
@@ -21422,9 +21440,8 @@ $('mpTagSave').onclick=async()=>{
     }
     await loadList(); renderTitle(); renderListPop();
     closeTagModal();
-    toast('음악 정보를 저장했습니다',1600);
   }catch(e){ toast(e&&e.name==='AbortError'?'저장 시간이 초과됐어요 · worker 상태를 확인해 주세요':'저장 실패',2600); }
-  finally{ btn.innerHTML=html; _tagBusy=false; }
+  finally{ if(btn) btn.innerHTML=html; }
 };
 $('mpTagCoverPick').onclick=()=>$('mpCoverFile').click();
 $('mpCoverFile').onchange=async e=>{
@@ -21480,6 +21497,7 @@ function _syncTagEditor(t){
   im.onerror=()=>{ im.onerror=null; im.src=DEF_COVER; };
   im.src=t.cover?('/api/music/cover/'+t.id+'?r='+Date.now()):DEF_COVER;
 }
+let _lookupAbort=null;
 async function lookupTrack(id,opts){
   if(!id) return;
   opts=opts||{};
@@ -21487,10 +21505,13 @@ async function lookupTrack(id,opts){
   if(opts.title!=null){ body.q_title=opts.title; body.q_artist=opts.artist||''; }
   if(opts.alt) body.alt=opts.alt;
   if(opts.replaceCover) body.replace_cover=true;
-  // 14.9 · 서버 검색은 출처·질의가 많아 오래 걸릴 수 있다. 타임아웃 없이
-  //  기다리면 '찾는 중…'이 영원히 돌고 다음 곡 검색까지 막힌다.
+  // 14.10 · '저장'을 누르면 이전 찾기 요청을 취소한다. 같은 곡을 계속
+  //  찾고 있을 때 버튼이 영원히 '찾는 중'으로 남거나, 늦게 도착한 자동
+  //  태그가 방금 저장한 제목/가수를 덮어쓰는 일을 막는다.
+  if(_lookupAbort) try{ _lookupAbort.abort(); }catch(e){}
   const ac=new AbortController();
-  const tm=setTimeout(()=>ac.abort(),120000);
+  _lookupAbort=ac;
+  const tm=setTimeout(()=>ac.abort(),30000);
   try{
     const r=await fetch('/api/music/lookup',{method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -21504,9 +21525,11 @@ async function lookupTrack(id,opts){
     // 10.5 · 조용히: 결과 토스트 없이 화면에 바로 반영
     _syncTagEditor(P.list.find(x=>x.id===id));
   }catch(e){
-    if(e&&e.name==='AbortError') toast('찾는 데 오래 걸려요 · 잠시 뒤 다시 시도해 주세요',3200);
-    else if(!opts.silent) toast('찾기 중 오류가 났어요',2200);
-  }finally{ clearTimeout(tm); }
+    if(e&&e.name!=='AbortError' && !opts.silent) toast('찾기 중 오류가 났어요',2200);
+  }finally{
+    clearTimeout(tm);
+    if(_lookupAbort===ac) _lookupAbort=null;
+  }
 }
 $('mpTagAuto').onclick=async()=>{
   if(!TAG_EDIT||_tagBusy) return;
@@ -24001,7 +24024,7 @@ body.sdy-booting #mpReopen{display:none !important;}
       YP.conn.set(uid,pc.connectionState);
       ypRenderStatus();
       if(pc.connectionState==='connected'){ if(pc.__watch){ clearTimeout(pc.__watch); pc.__watch=null; } }
-      if((pc.connectionState==='failed'||pc.connectionState==='disconnected')&&!pc.__restarted){
+      if(pc.connectionState==='failed'&&!pc.__restarted){
         pc.__restarted=true;
         if(pc.__watch){ clearTimeout(pc.__watch); pc.__watch=null; }
         var m=YP.members.get(uid);
@@ -24009,8 +24032,6 @@ body.sdy-booting #mpReopen{display:none !important;}
           toast((m&&m.name||'상대')+' 와(과) 직접 연결이 안 돼요 · TURN 릴레이로 다시 붙일게요',2800);
           if(YP.uid<uid) setTimeout(function(){
             // 새 TURN 설정을 받은 뒤에야 relay 전용 PC를 만들어야 한다.
-            // 이전에는 캐시를 비운 직후 즉시 PC를 만들어 STUN 폴백만 넣었고,
-            // relay 정책에서는 후보가 0개가 되어 서로 다른 망 통화가 실패했다.
             ypRefreshIce().then(function(){ ypOffer(uid,{fresh:true,relay:true}); });
           },400);
         } else {
@@ -24018,18 +24039,17 @@ body.sdy-booting #mpReopen{display:none !important;}
         }
       }
     };
-    // host/srflx 만 붙잡다 멈추는 경우를 끊고, 6.5초 뒤 TURN(relay) 전용으로 재시도.
-    // 재시도 전에 ICE 설정을 새로 받아 둬서, 서버 TURN 을 고친 직후에도 캐시에
-    // 묶이지 않고 최신 TURN 으로 시도한다.
+    // 유선랜/와이파이, LTE/집밖 등 서로 다른 망에서는 host/srflx 후보가
+    // 잡혀도 실제로는 안 뚫리는 경우가 많다. 예전 6.5초는 통화 버튼을 누른
+    // 뒤 한참을 '연결 중'으로 기다리게 만들었다. 2.5초면 첫 ICE 체크가
+    // 충분히 시작되고, 바로 relay 전용으로 갈아탄다.
     if(!relay && ypIceHasTurn()){
       pc.__watch=setTimeout(function(){
         if(!YP.inVoice || pc.connectionState==='connected' || pc.connectionState==='closed') return;
         if(YP.uid<uid){
-          // ICE/TURN 재조회가 끝나기 전에 offer를 만들면 relay 전용 연결이
-          // STUN 폴백으로 생성된다. 반드시 최신 TURN을 받은 뒤 재시도한다.
           ypRefreshIce().then(function(){ ypOffer(uid,{fresh:true,relay:true}); });
         } else ypRefreshIce();
-      },6500);
+      },2500);
     }
     // relay 전용 PC 는 TURN 이 죽어 있으면 '연결 중'에 오래 갇힐 수 있어
     // 일정 시간 안에 안 붙으면 원인을 알려준다 (STUN/TURN 장애 vs NAT 문제 구분).

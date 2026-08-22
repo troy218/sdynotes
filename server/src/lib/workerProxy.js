@@ -49,12 +49,19 @@ export function createWorkerProxy({ app, logger }) {
         signal: AbortSignal.timeout(30 * 60 * 1000),
         redirect: 'follow',
       });
+      // 응답을 통째로 Buffer 에 적재하지 않고 그대로 클라이언트로 흘려 보낸다.
+      // 가져온 문서/이미지/음원은 수백 MB 까지 커질 수 있어, arrayBuffer() 를
+      // 쓰면 Node 힙(12GB 박스여도 7~9GB 할당)에 고스란히 얹혀 GC/피크를 유발한다.
       const rct = r.headers.get('content-type') || 'application/json';
-      const bodyBuf = Buffer.from(await r.arrayBuffer());
+      reply.code(r.status);
       reply.header('Content-Type', rct);
       reply.header('Cache-Control', r.headers.get('cache-control') || 'no-store');
       if (r.headers.get('content-disposition')) reply.header('Content-Disposition', r.headers.get('content-disposition'));
-      return reply.code(r.status).send(bodyBuf);
+      if (r.body) {
+        // Fastify 가 스트림을 라이프사이클에 맞춰 파이프한다 (종료/오류 정리).
+        return reply.send(Readable.fromWeb(r.body));
+      }
+      return reply.send();
     } catch (e) {
       console.error(`[worker] proxy 실패 ${req.method} ${req.url}: ${e?.message || e} cause=${e?.cause?.message || ''}`);
       logger?.warn(`[worker] proxy 실패 ${req.url}: ${e?.message || e}`);

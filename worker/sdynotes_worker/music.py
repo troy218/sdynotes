@@ -294,6 +294,30 @@ def _music_rebuild():
 # ═══════════════════════════════════════════════════════════
 import difflib
 import unicodedata
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
+# 태그/가사 검색은 I/O 바운드(외부 API). 출처·질의를 스레드풀로 병렬 호출해
+# 예전처럼 iTunes→Deezer→MusicBrainz 를 직렬로(합 15~20초) 기다리지 않게 한다.
+# 풀은 모듈 전역에서 단 하나만 만들어 데몬 스레드로 유지한다.
+_TAG_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="tag")
+
+# 수동 저장이 일어나면 해당 곡의 이전 자동 태깅 결과가 늦게 도착해 덮어쓰지
+# 않도록 세대(generation)를 둔다. music_meta 가 태그를 저장할 때마다 증가.
+_tag_generation = {}
+_tag_generation_lock = threading.Lock()
+
+
+def _tag_generation_bump(mid):
+    with _tag_generation_lock:
+        g = time.time_ns()
+        _tag_generation[mid] = g
+        return g
+
+
+def _tag_generation_current(mid):
+    with _tag_generation_lock:
+        return _tag_generation.get(mid, 0)
+
 
 _TAG_UA = {"User-Agent": "SDYnotes/10.6 (music tag&lyrics helper) "
                          "(https://sdynotes; admin@sdynotes.local)"}
@@ -1035,17 +1059,35 @@ def _tag_collect(rec, emb, qhint=None, deep=False):
     # 정확히 강한 후보가 있어도 최소한 title-only/다른 출처 하나는 확인한다.
     strong=False
     has_artist_hint=bool(artist_variants)
-    # 14.9 · 깊은 검색(다음 후보)은 질의가 많아 수십 초까지 늘어질 수 있다.
-    #  전체 예산을 정해 두고 넘치면 그때까지 모은 후보로만 판단한다.
-    deadline = time.monotonic() + 15
+    # 14.10 · 출처×질의를 스레드풀로 동시에 호출한다. 직렬로는 세 출처를
+    #  각각 최대 6초씩(국가 4번) 기다려 합 15초 이상 걸렸다. 병렬화로 가장
+    #  느린 출처 한 개 시간만큼만 기다리면 된다. 예산도 15→7초로 단축.
+    deadline = time.monotonic() + 7
+
+    def _run_one(src, q):
+        try:
+            return src(q)
+        except Exception:
+            return []
+
+    pending = set()
+    qi_by_fut = {}
     for src in (_src_itunes, _src_deezer, _src_musicbrainz):
-        if time.monotonic() > deadline:
-            break
         for qi, q in enumerate(queries):
-            if time.monotonic() > deadline:
+            fut = _TAG_POOL.submit(_run_one, src, q)
+            pending.add(fut)
+            qi_by_fut[fut] = qi
+
+    while pending and time.monotonic() <= deadline:
+        done, pending = wait(pending, timeout=0.35, return_when=FIRST_COMPLETED)
+        if not done:
+            if strong and not deep:
                 break
+            continue
+        for fut in done:
+            qi = qi_by_fut.get(fut, 99)
             try:
-                cands = src(q)
+                cands = fut.result(timeout=0)
             except Exception:
                 cands = []
             for c in cands:
@@ -1053,13 +1095,12 @@ def _tag_collect(rec, emb, qhint=None, deep=False):
                                               q_album, meta.get("hints"), dur)
                 scored.append((score, c))
                 if has_artist_hint and score >= 0.995 and qi <= 1:
-                    strong=True
-            # deep/대체 후보 요청은 전부 훑는다. 일반 자동 태깅은 정확한
-            # full query에서 0.985 이상이며 duration/artist가 맞을 때만 조기 종료.
-            if strong and not deep and qi >= 1:
-                break
+                    strong = True
+        # 일반 자동 태깅은 강한 후보가 잡히면 나머지 질의를 기다리지 않는다.
         if strong and not deep:
             break
+    for fut in pending:
+        fut.cancel()
 
     scored.sort(key=lambda u: -u[0])
     return scored, q_title_base, q_artist, dur
@@ -1122,8 +1163,13 @@ def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
         path = os.path.join(MUSIC_DIR, hits[0])
         emb = _read_embedded(path)
         alt_n = max(0, int(alt or 0))
+        gen = _tag_generation_current(mid)
         scored, q_title, q_artist, dur = _tag_collect(rec, emb, qhint,
                                                       deep=(alt_n > 0))
+        # 긴 검색 도중 사용자가 저장했으면 이 자동 태깅은 포기한다.
+        if gen != _tag_generation_current(mid):
+            print(f"[music] 태그 찾기 중단: {mid} (저장 발생)")
+            return rec
         ranked = _tag_rank(scored)
         best = ranked[alt_n % len(ranked)] if ranked else None
 
@@ -2520,6 +2566,7 @@ def music_meta():
     def _s(k, n):
         return str(d.get(k) or "").strip()[:n]
     year = re.search(r"(19|20)\d{2}", _s("year", 6))
+    _tag_generation_bump(mid)
     with _music_lock:
         m = _music_load()
         rec = m.get(mid)
@@ -2646,48 +2693,80 @@ def _scrape_music_url(raw_url):
         return text.strip()
 
     # 1. Spotify
+    # oEmbed 는 {title:"곡명", author_name:"아티스트", thumbnail_url:...}
+    # 형태로 온다. 예전엔 title 을 " by " 로만 갈랐는데 한국어/비영어 제목은
+    # 구분자가 없어 아티스트가 비어 오는 경우가 많았다. author_name 을 우선
+    # 쓰고, 모자란 필드만 og/HTML 로 보강한다.
     if "spotify.com" in domain:
-        title, artist, album, year, genre, cover_url, lyrics, src = "", "", "", "", "", "", "", "Spotify"
-        try:
-            oe_url = f"https://open.spotify.com/oembed?url={urllib.parse.quote(raw_url)}"
-            r_oe = requests.get(oe_url, headers=headers, timeout=6)
-            if r_oe.ok:
-                oe = r_oe.json()
-                cover_url = oe.get("thumbnail_url") or ""
-                oe_title = oe.get("title") or ""
-                if " by " in oe_title:
-                    parts = oe_title.split(" by ", 1)
-                    title, artist = _c_txt(parts[0]), _c_txt(parts[1])
-                else:
-                    title = _c_txt(oe_title)
-        except Exception:
-            pass
-        try:
-            r = requests.get(raw_url, headers=headers, timeout=8)
-            if r.ok:
-                soup = BeautifulSoup(r.text, 'html.parser')
-                og_title = soup.find('meta', property='og:title')
-                if og_title and og_title.get('content') and not title:
-                    title = _c_txt(og_title['content'])
-                og_img = soup.find('meta', property='og:image')
-                if og_img and og_img.get('content'):
-                    cover_url = og_img['content']
-                og_desc = soup.find('meta', property='og:description')
-                if og_desc and og_desc.get('content'):
-                    parts = [_c_txt(p) for p in og_desc['content'].split('·')]
-                    if len(parts) >= 1 and not artist:
-                        artist = parts[0]
-                    for p in parts:
-                        ym = re.search(r'(19|20)\d{2}', p)
-                        if ym and not year:
-                            year = ym.group(0)
-                m_album = soup.find('meta', property='music:album')
-                if m_album and m_album.get('content'):
-                    album = _c_txt(m_album['content'])
-        except Exception:
-            pass
-        return {"ok": True, "title": title, "artist": artist, "album": album, "year": year,
-                "genre": genre, "cover_url": cover_url, "lyrics": lyrics, "src": src}
+        title = artist = album = year = genre = cover_url = lyrics = ""
+        src = "Spotify"
+
+        def _spotify_oembed(u):
+            try:
+                r = requests.get(u, headers=headers, timeout=6)
+                if not r.ok:
+                    return None
+                oe = r.json() or {}
+                t = _c_txt(oe.get("title") or "")
+                a = _c_txt(oe.get("author_name") or "")
+                if not a and " by " in t:
+                    t, a = (_c_txt(x) for x in t.split(" by ", 1))
+                return {"title": t, "artist": a,
+                        "cover": oe.get("thumbnail_url") or ""}
+            except Exception:
+                return None
+
+        oe = _spotify_oembed(
+            "https://open.spotify.com/oembed?format=json&url="
+            + urllib.parse.quote(raw_url, safe=""))
+        if oe:
+            title, artist, cover_url = oe["title"], oe["artist"], oe["cover"]
+
+        if not (title and artist):
+            try:
+                r = requests.get(raw_url, headers=headers, timeout=6)
+                if r.ok:
+                    soup = BeautifulSoup(r.text, "html.parser")
+                    og_title = soup.find("meta", property="og:title")
+                    if og_title and og_title.get("content") and not title:
+                        title = _c_txt(og_title["content"])
+                    og_img = soup.find("meta", property="og:image")
+                    if og_img and og_img.get("content"):
+                        cover_url = og_img["content"] or cover_url
+                    og_desc = soup.find("meta", property="og:description")
+                    if og_desc and og_desc.get("content"):
+                        parts = [_c_txt(x) for x in og_desc["content"].split("·")]
+                        if parts and not artist:
+                            artist = parts[0]
+                        for pp in parts:
+                            ym = re.search(r"(19|20)\d{2}", pp)
+                            if ym and not year:
+                                year = ym.group(0)
+                    m_album = soup.find("meta", property="music:album")
+                    if m_album and m_album.get("content"):
+                        album = _c_txt(m_album["content"])
+            except Exception:
+                pass
+        # Spotify oEmbed/og 는 앨범/연도를 잘 안 준다. 제목+가수가 있으면
+        # Apple Music/Deezer 에서 한 번만 더 보강해 넣는다.
+        if title and artist and not (album and year):
+            try:
+                q = (artist + " " + title).strip()
+                for src_fn in (_src_itunes, _src_deezer):
+                    for c in src_fn(q):
+                        if _sim(c.get("title"), title) >= 0.82 and _sim(c.get("artist"), artist) >= 0.70:
+                            album = album or c.get("album") or ""
+                            year = year or c.get("year") or ""
+                            genre = genre or c.get("genre") or ""
+                            cover_url = cover_url or c.get("art") or ""
+                            break
+                    if album and year:
+                        break
+            except Exception:
+                pass
+        return {"ok": True, "title": title, "artist": artist, "album": album,
+                "year": year, "genre": genre, "cover_url": cover_url,
+                "lyrics": lyrics, "src": src}
 
     # 2. Melon
     if "melon.com" in domain:

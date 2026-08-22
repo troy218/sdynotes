@@ -3746,10 +3746,25 @@ def _pdf_one_page_safe(doc, pno):
 # 자식이 세그폴트/OOM 으로 죽어도 메인 서버는 절대 죽지 않는다.
 # 죽으면 안전 모드(텍스트만)로 해당 청크를 재시도하고,
 # 그것도 죽으면 빈 쪽으로 채워 '무조건 끝까지' 완료한다.
-IMP_CHILD_MEM_MB = 2000       # 자식 메모리 상한 (넘으면 자만 죽고 재시도)
-IMP_MAX_CONCURRENT = 2        # 동시 변환 잡 상한 (저사양 서버 메모리 보호)
-IMP_SLICE = 8                 # 문서 보관 배치 크기 (작게 잘라 빨리 스트리밍)
+# 메모리/동시성은 배포 시 RAM 에 맞춰 apply.sh 가 주입한다
+# (SDY_IMP_MAX_CONCURRENT, SDY_IMP_CHILD_MEM_MB).
+# 기본값은 저사양 박스 보호용으로 보수적으로 유지.
+def _imp_env_int(name, default):
+    try:
+        v = int(os.environ.get(name, ""))
+        return v if v >= 1 else default
+    except (TypeError, ValueError):
+        return default
+
+
+IMP_CHILD_MEM_MB = _imp_env_int("SDY_IMP_CHILD_MEM_MB", 2000)   # 자식 메모리 상한
+IMP_MAX_CONCURRENT = _imp_env_int("SDY_IMP_MAX_CONCURRENT", 2)  # 동시 변환 잡 상한
+IMP_SLICE = int(os.environ.get("SDY_IMP_SLICE", "8") or 8)      # 보관 배치 크기
 _imp_sem = threading.Semaphore(IMP_MAX_CONCURRENT)
+# 현재 가져오기 잡을 몇 개나 처리 중인지(세마포가 잡혀 있는 수). 여러 잡이
+# 동시에 청크를 띄울 때 자식 총합이 RAM 을 넘지 않도록 문서당 병렬을 줄인다.
+_imp_active = 0
+_imp_active_lock = threading.Lock()
 IMP_CHUNK = 4
 IMP_CHUNK_TIMEOUT = 240       # 청크 하나 당 허용 시간(초)
 
@@ -3838,12 +3853,21 @@ def _imp_convert_pdf(src, jid):
     _imp_job(jid, page=0, total=total)
 
     sz = os.path.getsize(src)
+    # 단일 문서 안의 청크 병렬성. 동시에 여러 '문서' 잡이 돌 수 있으므로
+    # (세마포 IMP_MAX_CONCURRENT), 지금 활성 잡 수에 비례해 문서당 상한을
+    # 낮춰 자식 프로세스 총합이 RAM 을 넘지 않게 한다.
+    with _imp_active_lock:
+        active = _imp_active
+    cpu = os.cpu_count() or 2
+    # 활성 잡 1개 → 최대 3, 2개 → 2, 3개 → 1 (대/중형 파일은 더 낮춤)
+    share = max(1, (IMP_MAX_CONCURRENT + 1) // max(1, active))
+    cap = max(1, min(cpu, IMP_MAX_CONCURRENT, share, 3))
     if sz > 60 * 1024 * 1024:
         CONC = 1                      # 거대 파일: 직렬로 안정적으로
     elif sz > 25 * 1024 * 1024:
-        CONC = 2
+        CONC = min(2, cap)
     else:
-        CONC = max(2, min(4, (os.cpu_count() or 2)))
+        CONC = cap
     pending = list(range(0, total, IMP_SLICE))
     running = []
     by_start = {}
@@ -4116,8 +4140,11 @@ def _imp_detect_kind(raw, ext):
 def _imp_worker(jid, src, name, kind):
     """백그라운드 변환. 본문은 디스크(docfile)에만 두고 잡엔 메타만.
     동시에 여러 잡이 메모리를 쌓지 않도록 세마포어로 제한한다."""
+    global _imp_active
     import traceback
     _imp_sem.acquire()
+    with _imp_active_lock:
+        _imp_active += 1
     try:
         if kind == "pdf":
             pages = _imp_convert_pdf(src, jid)
@@ -4195,6 +4222,8 @@ def _imp_worker(jid, src, name, kind):
         _notify_add("error", "문서 변환을 마치지 못했어요",
                     f"{name} · {msg}", dedupe=f"import-error:{jid}")
     finally:
+        with _imp_active_lock:
+            _imp_active = max(0, _imp_active - 1)
         try:
             _imp_sem.release()
         except Exception:
