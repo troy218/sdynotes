@@ -79,6 +79,14 @@ curl -s 'http://127.0.0.1:5000/api/chat/config?uid=deploy-check' | head -c 800
 # 3) 외부 도달 (이미 확인됨 — 깨지지 않았으면 그대로)
 timeout 4 bash -c 'exec 3<>/dev/tcp/161.33.181.176/3478 && echo TCP-3478-OK'
 
+# 3-1) TURN 진단 (포트 열었는데도 안 될 때)
+curl -s 'http://127.0.0.1:5000/api/chat/diag'
+#   localUdp          : 'ok' 면 서버 안에서 coturn(STUN) 정상 응답
+#   localAlloc        : 'ok(relay=...)' 면 브라우저와 동일한 TURN Allocate
+#                       (401 챌린지 → HMAC 인증 → 릴레이 할당) 까지 성공
+#   publicTcp/publicUdp : 'fail' 이면 VCN 인그레스(3478) 또는 NSG 문제
+#   localUdp 까지 fail 이면 coturn 미기동/설정 문제 (journalctl -u coturn -n 50)
+
 # 4) 브라우저에서 — 두 명이 서로 다른 망(LTE ↔ Wi-Fi)으로 동시에 마이크 켜고
 #    DevTools → chrome://webrtc-internals 에서
 #    Local Address 가 49160~49200 사이 + Connection: relay 로 잡히면 성공

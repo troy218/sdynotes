@@ -245,6 +245,21 @@ if [ "$TURN_SETUP" != "0" ]; then
             else TURN_SECRET=$(python3 -c 'import secrets;print(secrets.token_hex(32))'); fi
         fi
 
+        # Oracle 이미지에 따라 공인 IP 가 (a) VCN 1:1 NAT 로 사설 IP 뒤에 숨어 있거나
+        # (b) NIC 에 직접 붙어 있을 수 있다. (b) 는 external-ip 가 오히려 릴레이를
+        # 망가뜨리고 listening-ip 를 사설로 고정하면 외부 패킷이 coturn 에 안 닿는다.
+        # NIC 에 공인 IP 가 있는지 실제로 확인해서 설정을 갈라 준다.
+        ON_NIC=$(ip -4 addr show 2>/dev/null | grep -c "inet ${TURN_PUBLIC_IP}/" || true)
+        if [ "$ON_NIC" -gt 0 ]; then
+            echo "  공인 IP $TURN_PUBLIC_IP 가 NIC 에 직접 붙어 있음 → external-ip 생략, 전체 인터페이스 수신"
+            LISTEN_LINE=""
+            TURN_EXTERNAL=""
+        else
+            LISTEN_LINE="listening-ip=$TURN_PRIVATE_IP"
+            TURN_EXTERNAL="external-ip=$TURN_PUBLIC_IP"
+            [ "$TURN_PUBLIC_IP" = "$TURN_PRIVATE_IP" ] || TURN_EXTERNAL="external-ip=$TURN_PUBLIC_IP/$TURN_PRIVATE_IP"
+        fi
+
         if [ -n "$TURN_PUBLIC_IP" ] && [ -n "$TURN_PRIVATE_IP" ] && [ -n "$TURN_SECRET" ]; then
             env_set SDY_TURN_SECRET "$TURN_SECRET"
             env_set SDY_TURN_PUBLIC_IP "$TURN_PUBLIC_IP"
@@ -258,17 +273,16 @@ if [ "$TURN_SETUP" != "0" ]; then
             if [ -f /etc/turnserver.conf ] && [ ! -f /etc/turnserver.conf.sdy-before ]; then
                 sudo cp /etc/turnserver.conf /etc/turnserver.conf.sdy-before
             fi
-            TURN_EXTERNAL="external-ip=$TURN_PUBLIC_IP"
-            [ "$TURN_PUBLIC_IP" = "$TURN_PRIVATE_IP" ] || TURN_EXTERNAL="external-ip=$TURN_PUBLIC_IP/$TURN_PRIVATE_IP"
             # relay-ip 를 사설 IP 로 강제하면 VCN 의 source-NAT 가 외부 클라이언트로
             # 보낼 패킷을 10.0.0.0/16 으로 라우팅하다가 hairpin 함정에 빠져 일부
             # 클라이언트는 "srflx 는 잡히는데 relay 가 안 잡히는" 증상을 보인다.
             # external-ip 만 두면 coturn 이 OS 의 라우팅 테이블을 따라 자동으로
             # 릴레이 소스 IP 를 결정하므로 VCN/클라우드 환경에서 안정적이다.
+            # (공인 IP 가 NIC 에 직접 붙은 이미지에서는 위에서 외부 설정을 비웠다.)
             sudo tee /etc/turnserver.conf >/dev/null <<EOF
 # SDYnotes managed coturn — apply.sh
 listening-port=$TURN_PORT
-listening-ip=$TURN_PRIVATE_IP
+$LISTEN_LINE
 $TURN_EXTERNAL
 min-port=$TURN_MIN_PORT
 max-port=$TURN_MAX_PORT
@@ -294,6 +308,14 @@ EOF
             sudo systemctl enable coturn -q 2>/dev/null || true
             sudo systemctl restart coturn 2>/dev/null || true
 
+            # TURN 임시 인증(HMAC)은 서버 시계와 브라우저 시계 차이에 민감하다.
+            # 시계가 틀어지면 401 로 통화가 안 되므로 chrony(NTP)를 미리 맞춰 둔다.
+            if ! systemctl is-active --quiet chrony 2>/dev/null && ! systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
+                DEBIAN_FRONTEND=noninteractive sudo apt-get install -y -qq chrony >/dev/null 2>&1 \
+                    && sudo systemctl enable --now chrony -q 2>/dev/null || true
+            fi
+            sudo timedatectl set-ntp true 2>/dev/null || true
+
             # UFW 를 쓰는 서버라면 OS 방화벽도 함께 연다. Oracle VCN 보안 목록은
             # VM 밖의 방화벽이라 스크립트로 열 수 없어 아래에 별도 안내한다.
             if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
@@ -303,6 +325,15 @@ EOF
             fi
             if systemctl is-active --quiet coturn; then
                 ok "TURN 실행 중 ($TURN_PUBLIC_IP:$TURN_PORT, 임시 인증)"
+                # 실제로 3478(UDP/TCP) 이 떠 있는지 확인 — 켜져 있는데도 안 되면
+                # Oracle VCN 인그레스 규칙을 의심할 수 있다.
+                if command -v ss >/dev/null 2>&1; then
+                    UDP_OK=$(ss -lun 2>/dev/null | grep -c ":$TURN_PORT " || true)
+                    TCP_OK=$(ss -ltn 2>/dev/null | grep -c ":$TURN_PORT " || true)
+                    [ "$UDP_OK" -gt 0 ] && [ "$TCP_OK" -gt 0 ] \
+                        && ok "coturn 포트 확인: $TURN_PORT UDP+TCP 수신 중" \
+                        || echo "  ⚠️ coturn 이 $TURN_PORT 를 못 열고 있을 수 있음: journalctl -u coturn -n 50"
+                fi
             else
                 echo "  ⚠️ coturn 이 시작되지 않았습니다: journalctl -u coturn -n 50"
             fi
@@ -498,8 +529,15 @@ echo "  클라우드 상태  : $CLOUD"
 echo "  유튜브(worker) : $YT"
 if echo "$TURN_CFG" | grep -q '"turn":true'; then
     echo "  통화 TURN      : 준비됨 (Oracle 인그레스 규칙도 확인하세요)"
+    TURN_DIAG=$(curl -s -m 15 "http://127.0.0.1:$PORT/api/chat/diag" || true)
+    if echo "$TURN_DIAG" | grep -q '"localUdp":"ok"'; then
+        echo "  TURN 진단      : 서버 안에서 STUN/TCP 응답 정상 — 외부 경로는 'curl :5000/api/chat/diag' 로 재확인"
+    else
+        echo "  TURN 진단      : ⚠️ 서버 안에서도 TURN 에 닿지 못함 — journalctl -u coturn -n 50 확인"
+    fi
 else
     echo "  통화 TURN      : ⚠️ 미설정 — 서로 다른 망 통화가 실패할 수 있습니다"
+    echo "                  → $APP_DIR/.env 에 SDY_TURN_SECRET 이 있는지 확인 후 apply.sh 재실행"
 fi
 if echo "$CLOUD" | grep -q '"supabase":true' && echo "$CLOUD" | grep -q '"cloudinary":true'; then
     echo "  ✅ 영구 저장소 준비됨"
