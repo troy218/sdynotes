@@ -21361,7 +21361,9 @@ $('mpTagSyncLrc').onclick=async()=>{
   finally{ btn.innerHTML=html; _tagBusy=false; }
 };
 $('mpTagSave').onclick=async()=>{
-  const id=TAG_EDIT; if(!id||_tagBusy) return;
+  // 저장은 다른 검색 작업이 꼬여 있어도 항상 실행할 수 있어야 한다.
+  // 기존에는 _tagBusy가 남아 있으면 클릭 자체가 무시됐다.
+  const id=TAG_EDIT; if(!id) return;
   _tagBusy=true;
   const btn=$('mpTagSave'); const html=btn.innerHTML;
   btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 저장 중';
