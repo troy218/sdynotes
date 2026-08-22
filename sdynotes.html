@@ -24063,6 +24063,14 @@ body.sdy-booting #mpReopen{display:none !important;}
   }
   function ypJoinVoice(){
     if(YP.inVoice||YP.joiningVoice) return;
+    // getUserMedia는 HTTPS(또는 localhost)에서만 동작한다. Oracle IP로
+    // http:// 접속하면 TURN이 정상이어도 브라우저가 마이크 요청 자체를
+    // 거부하므로, 이를 일반적인 "통화 연결 안 됨" 원인으로 명확히 안내한다.
+    var localHost=location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.hostname==='::1';
+    if(window.isSecureContext===false&&!localHost){
+      toast('통화는 HTTPS 접속이 필요해요 · http:// 대신 https:// 주소로 접속해 주세요',4200);
+      return;
+    }
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ toast('이 브라우저는 마이크를 지원하지 않아요',2400); return; }
     // 클릭 즉시 상태를 바꾸고, ICE 설정과 마이크 권한 요청을 병렬 실행한다.
     // 예전에는 config 왕복 뒤에 권한창을 열어 버튼이 안 먹은 것처럼 보였다.
