@@ -21500,14 +21500,18 @@ async function askAcoustIdKey(){
 }
 $('mpTagRecog').onclick=async()=>{
   if(!TAG_EDIT||_tagBusy) return;
-  const st=await recogStatus();
-  if(!st.fpcalc){ toast('서버에 인식 도구(fpcalc)가 없어요 · apply.sh 를 다시 실행해 주세요',3600); return; }
-  if(!st.key){ if(!await askAcoustIdKey()) return; }
+  // 상태 확인과 관리자 키 입력도 네트워크 작업이다. 기존에는 이 작업이
+  // 끝날 때까지 버튼 표시가 그대로라서, 클릭이 무시된 것처럼 보였다.
   _tagBusy=true;
   const btn=$('mpTagRecog'); const html=btn.innerHTML;
-  btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 듣는 중…';
-  const id=TAG_EDIT;
+  btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 확인 중…';
   try{
+    const st=await recogStatus();
+    if(!st||st.ok===false){ toast('인식 서버에 연결할 수 없어요 · worker 상태를 확인해 주세요',3600); return; }
+    if(!st.fpcalc){ toast('서버에 인식 도구(fpcalc)가 없어요 · apply.sh 를 다시 실행해 주세요',3600); return; }
+    if(!st.key){ if(!await askAcoustIdKey()) return; }
+    btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 듣는 중…';
+    const id=TAG_EDIT;
     const r=await fetch('/api/music/recognize',{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     const d=await r.json().catch(()=>({}));
