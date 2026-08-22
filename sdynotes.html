@@ -21309,6 +21309,15 @@ $('mpTagModal').addEventListener('click',e=>{
   if(e.target.id==='mpTagModal' && !(_tagDragOff && sel)) closeTagModal();
   _tagDragOff=false;
 });
+// 음악 변이 API가 worker에서 멈추면 버튼이 영원히 로딩 상태가 되지 않도록
+// 프론트에서도 제한 시간을 둔다. (인식은 음원 다운로드 때문에 더 길게 사용)
+async function musicApiFetch(url, opts, timeoutMs=60000){
+  const ac=new AbortController();
+  const tm=setTimeout(()=>ac.abort(),timeoutMs);
+  try { return await fetch(url,{...(opts||{}),signal:ac.signal}); }
+  finally { clearTimeout(tm); }
+}
+
 // 12.2 · '초기화' — 제목만 되돌리는 게 아니라, 웹으로 붙은 모든 정보
 //   (제목·가수·앨범·연도·장르·가사·표지)를 처음 올렸을 때 상태로 되돌린다 (누구나 가능).
 $('mpTagOrigBtn').onclick=async()=>{
@@ -21318,7 +21327,7 @@ $('mpTagOrigBtn').onclick=async()=>{
   const btn=$('mpTagOrigBtn'); const html=btn.innerHTML;
   btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 초기화 중';
   try{
-    const r=await fetch('/api/music/reset',{method:'POST',
+    const r=await musicApiFetch('/api/music/reset',{method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+admTok()},
       body:JSON.stringify({id})});
     const d=await r.json().catch(()=>({}));
@@ -21338,7 +21347,7 @@ $('mpTagSyncLrc').onclick=async()=>{
   const btn=$('mpTagSyncLrc'); const html=btn.innerHTML;
   btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 가사 찾는 중';
   try{
-    const r=await fetch('/api/music/synced-lyrics',{method:'POST',
+    const r=await musicApiFetch('/api/music/synced-lyrics',{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({id})});
     const d=await r.json().catch(()=>({}));
@@ -21352,9 +21361,12 @@ $('mpTagSyncLrc').onclick=async()=>{
   finally{ btn.innerHTML=html; _tagBusy=false; }
 };
 $('mpTagSave').onclick=async()=>{
-  const id=TAG_EDIT; if(!id) return;
+  const id=TAG_EDIT; if(!id||_tagBusy) return;
+  _tagBusy=true;
+  const btn=$('mpTagSave'); const html=btn.innerHTML;
+  btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 저장 중';
   try{
-    const r=await fetch('/api/music/meta',{method:'POST',
+    const r=await musicApiFetch('/api/music/meta',{method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+admTok()},
       body:JSON.stringify({id,
         title:$('mpTagTitle').value, artist:$('mpTagArtist').value,
@@ -21375,7 +21387,8 @@ $('mpTagSave').onclick=async()=>{
     await loadList(); renderTitle(); renderListPop();
     closeTagModal();
     toast('음악 정보를 저장했습니다',1600);
-  }catch(e){ toast('저장 실패',2000); }
+  }catch(e){ toast(e&&e.name==='AbortError'?'저장 시간이 초과됐어요 · worker 상태를 확인해 주세요':'저장 실패',2600); }
+  finally{ btn.innerHTML=html; _tagBusy=false; }
 };
 $('mpTagCoverPick').onclick=()=>$('mpCoverFile').click();
 $('mpCoverFile').onchange=async e=>{
@@ -21512,8 +21525,8 @@ $('mpTagRecog').onclick=async()=>{
     if(!st.key){ if(!await askAcoustIdKey()) return; }
     btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 듣는 중…';
     const id=TAG_EDIT;
-    const r=await fetch('/api/music/recognize',{method:'POST',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    const r=await musicApiFetch('/api/music/recognize',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({id})},90000);
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok){ toast(d.error||'소리로는 찾지 못했어요',2800); return; }
     P.coverV=Date.now();
@@ -21524,7 +21537,7 @@ $('mpTagRecog').onclick=async()=>{
     // 12.2 · 0.85 미만은 서버가 적용을 안 한다. 안내만.
     if(g.score&&g.score<0.85) toast('다른 곡으로 인식돼 적용하지 않았어요 (점수 '+(g.score*100|0)+'점)',2800);
     else toast('🎧 '+(g.artist?g.artist+' · ':'')+(g.title||'인식 완료'),2400);
-  }catch(e){ toast('인식하지 못했어요',2200); }
+  }catch(e){ toast(e&&e.name==='AbortError'?'인식 시간이 초과됐어요 · worker 상태를 확인해 주세요':'인식하지 못했어요',3200); }
   finally{ btn.innerHTML=html; _tagBusy=false; }
 };
 // 11.2 · 표지만 다시 찾기 — 노래 정보는 그대로, 누를 때마다 다음 표지
