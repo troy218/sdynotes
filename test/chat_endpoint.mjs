@@ -118,21 +118,33 @@ ok('config: TURN 임시 인증 제공', turnCfg.turn === true && turn && /^\d+:d
 delete process.env.SDY_LOCAL_TURN_URL;
 delete process.env.SDY_TURN_SECRET;
 
-// 6-6) transport= 쿼리가 한 줄 안에 콤마와 섞여 와도 별도 iceServers 엔트리로
-//      분리되어야 한다 (브라우저가 transport=udp 한 줄만 시도하는 함정 방지).
+// 6-6) transport= 쿼리가 한 줄 안에 콤마와 섞여 와도 UDP(쿼리 없음) + TCP 를
+//      별도 iceServers 엔트리로 나눠야 한다 (브라우저가 한쪽만 시도하는 함정 방지).
+const turnUrlsOf = (s) => (Array.isArray(s.urls) ? s.urls : [s.urls]).map(String);
 process.env.SDY_LOCAL_TURN_URL = 'turn:198.51.100.7:3478?transport=udp,turn:198.51.100.7:3478?transport=tcp';
 process.env.SDY_TURN_SECRET = 'split-secret';
 const splitCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=split-test`).then((r) => r.json());
-const splitTurns = splitCfg.ice.iceServers.filter((x) => (Array.isArray(x.urls) ? x.urls : [x.urls])
-  .some((u) => String(u).includes('198.51.100.7')));
-const allTurnUrls = (splitTurns[0] ? splitTurns[0].urls : []);
-ok('config: UDP/TCP TURN 둘 다 노출', allTurnUrls.includes('turn:198.51.100.7:3478?transport=udp')
-  && allTurnUrls.includes('turn:198.51.100.7:3478?transport=tcp'));
-// HMAC 이 그 단일 iceServer 엔트리에 일관되게 적용되는지 확인
+const splitTurns = splitCfg.ice.iceServers.filter((x) => turnUrlsOf(x).some((u) => u.includes('198.51.100.7')));
+const splitUrlList = splitTurns.flatMap(turnUrlsOf);
+ok('config: UDP/TCP TURN 별도 엔트리', splitTurns.length >= 2
+  && splitUrlList.includes('turn:198.51.100.7:3478')
+  && splitUrlList.includes('turn:198.51.100.7:3478?transport=tcp')
+  && !splitUrlList.some((u) => u.includes('?transport=udp')));
 const expected = (username) => crypto.createHmac('sha1', 'split-secret').update(username).digest('base64');
-ok('config: TURN HMAC 인증 일관', splitTurns.length === 1
-  && splitTurns[0].credential === expected(splitTurns[0].username)
-  && /^\d+:split-test$/.test(splitTurns[0].username));
+ok('config: TURN HMAC 인증 일관', splitTurns.length >= 2
+  && splitTurns.every((x) => x.credential === expected(x.username) && /^\d+:split-test$/.test(x.username)));
+delete process.env.SDY_LOCAL_TURN_URL;
+delete process.env.SDY_TURN_SECRET;
+
+// 6-6b) apply.sh 가 넣는 베이스 URL(쿼리 없음) 만으로도 TCP 엔트리가 생겨야 한다.
+process.env.SDY_LOCAL_TURN_URL = 'turn:203.0.113.88:3478';
+process.env.SDY_TURN_SECRET = 'bare-secret';
+const bareCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=bare-test`).then((r) => r.json());
+const bareTurns = bareCfg.ice.iceServers.filter((x) => turnUrlsOf(x).some((u) => u.includes('203.0.113.88')));
+const bareUrls = bareTurns.flatMap(turnUrlsOf);
+ok('config: 베이스 URL 에서 TCP TURN 자동 추가', bareCfg.turn === true && bareTurns.length === 2
+  && bareUrls.includes('turn:203.0.113.88:3478')
+  && bareUrls.includes('turn:203.0.113.88:3478?transport=tcp'));
 delete process.env.SDY_LOCAL_TURN_URL;
 delete process.env.SDY_TURN_SECRET;
 
@@ -145,7 +157,7 @@ process.env.SDY_TURN_SECRET = 'dup-secret';
 const dupCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=dup-test`).then((r) => r.json());
 const dupTurns = dupCfg.ice.iceServers.filter((x) => (Array.isArray(x.urls) ? x.urls : [x.urls])
   .some((u) => String(u).startsWith('turn:192.0.2.55')));
-ok('config: 같은 호스트라도 외부/로컬 두 줄', dupTurns.length === 2
+ok('config: 같은 호스트라도 외부/로컬 두 줄', dupTurns.length >= 2
   && dupTurns.some((x) => x.username === 'extuser' && x.credential === 'extpass')
   && dupTurns.some((x) => /^\d+:dup-test$/.test(x.username)));
 delete process.env.SDY_TURN_URL;
