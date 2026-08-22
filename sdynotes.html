@@ -20839,7 +20839,11 @@ function renderBigList(){
       ||_emptyBox('q');
     if(pinfo) pinfo.textContent=total+'곡'+(pages>1?` · ${P.bigPage+1}/${pages}`:'');
   }else if(P.bigTab==='a'){
-    const gs=bucketArtists(P.list); total=gs.length;
+    // 현재 곡의 가수명을 누른 경우에는 그 가수의 곡만 보인다. 가수별 탭을
+    // 직접 누르면(bigArtist를 비우면) 전체 가수 목록으로 돌아간다.
+    const allGroups=bucketArtists(P.list);
+    const gs=P.bigArtist ? allGroups.filter(g=>g.name===P.bigArtist) : allGroups;
+    total=gs.length;
     const pages=Math.max(1,Math.ceil(total/per));
     P.bigPage=Math.max(0,Math.min(P.bigPage||0,pages-1));
     start=P.bigPage*per;
@@ -20938,7 +20942,11 @@ $('mpBBody').addEventListener('click',e=>{
 $('mpExpand').onclick=e=>{ e.stopPropagation(); openBig(); };
 $('mpBX').onclick=closeBig;
 $('mpBCwrap').onclick=()=>{ const t=cur(); if(t) openTrackMenu(innerWidth/2,120,t.id); };
-$('mpBArtist').onclick=()=>{ const t=cur(); if(t){ P.bigTab='a'; P.bigPage=0; if(mpbEl.classList.contains('open')) renderBigList(); } };
+$('mpBArtist').onclick=()=>{ const t=cur(); if(t){
+  // '이 가수의 곡 보기'는 가수별 목록 전체가 아니라 현재 가수만 보여 준다.
+  P.bigTab='a'; P.bigPage=0; P.bigArtist=(t.artist||'').trim();
+  if(mpbEl.classList.contains('open')) renderBigList();
+} };
 $('mpBPP').onclick=pp;
 $('mpBPrev').onclick=()=>playIdx(P.idx-1);
 $('mpBNext').onclick=()=>playIdx(P.idx+1);
@@ -21148,7 +21156,7 @@ $('mpYtInput').onkeydown=e=>{
 $('mpBVol').oninput=e=>setVol(e.target.value/100);
 $('mpBTabD').onclick=()=>{ P.bigTab='d'; P.bigPage=0; P.recoFilter='all'; renderBigList(); };
 $('mpBTabQ').onclick=()=>{ P.bigTab='q'; P.bigPage=0; renderBigList(); };
-$('mpBTabA').onclick=()=>{ P.bigTab='a'; P.bigPage=0; renderBigList(); };
+$('mpBTabA').onclick=()=>{ P.bigTab='a'; P.bigPage=0; P.bigArtist=''; renderBigList(); };
 $('mpBTabL').onclick=()=>{ P.bigTab='l'; P.bigPage=0; renderBigList(); };
 $('mpBTabY').onclick=()=>{ P.bigTab='y'; renderBigList(); };
 // ── 10.9 · 확장 플레이어 검색 (아이콘 버튼) ──

@@ -5,7 +5,8 @@
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs",
   "main": "server/src/index.js",
   "scripts": {
-    "start": "node server/src/index.js"
+    "start": "node server/src/index.js",
+    "test:music": "node test/music_controls.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",
