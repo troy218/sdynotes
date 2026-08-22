@@ -8,7 +8,7 @@ function isLoopback(ip) {
 }
 
 export function createWorkerProxy({ app, logger }) {
-  async function proxy(req, reply) {
+  async function proxy(req, reply, options = {}) {
     const target = `${WORKER_URL}${req.url}`;
     const headers = {};
     for (const h of ['content-type', 'content-length', 'accept', 'authorization', 'x-admin-token', 'admin-token', 'cookie']) {
@@ -18,8 +18,20 @@ export function createWorkerProxy({ app, logger }) {
     let body;
     const ct = req.headers['content-type'] || '';
     if (ct.includes('multipart/form-data')) {
-      body = Readable.toWeb(req.raw);
-      headers['content-length'] = req.headers['content-length'];
+      // Fastify's multipart plugin and the worker cannot share the incoming
+      // request stream.  In particular, handing req.raw to fetch directly can
+      // race with Fastify's parser and leaves Flask with an empty file after a
+      // migration/restart. Music uploads are capped at 50 MB, so buffer that
+      // small upload explicitly; keep the streaming path for PDF imports.
+      if (options.bufferMultipart) {
+        const chunks = [];
+        for await (const chunk of req.raw) chunks.push(chunk);
+        body = Buffer.concat(chunks);
+        headers['content-length'] = String(body.length);
+      } else {
+        body = Readable.toWeb(req.raw);
+        headers['content-length'] = req.headers['content-length'];
+      }
     } else if (req.body !== undefined && req.body !== null && typeof req.body === 'object') {
       body = JSON.stringify(req.body);
       headers['content-type'] = 'application/json';

@@ -210,13 +210,18 @@ if [ ! -x "$APP_DIR/venv/bin/python" ]; then
     "$APP_DIR/venv/bin/pip" install -q $PKGS
     ok "워커 파이썬 설치 완료"
 else
-    "$APP_DIR/venv/bin/pip" install -q -U yt-dlp 2>/dev/null \
-        && ok "yt-dlp 최신화" || echo "  (yt-dlp 갱신 실패 — 기존 버전으로 계속)"
-    if ! "$APP_DIR/venv/bin/python" -c "import pymupdf, docx, requests, openpyxl" 2>/dev/null; then
-        "$APP_DIR/venv/bin/pip" install -q pymupdf python-docx deep-translator requests openpyxl
-        ok "추가 설치 완료"
+    # 기존 서버도 마이그레이션 후 음악 worker에 필요한 패키지를 빠짐없이
+    # 확인한다. 예전에는 PDF 관련 모듈만 확인해서 cloudinary/pillow-heif/
+    # mutagen이 빠진 기존 venv에서는 Node·채팅은 살아 있어도 음악 기능만
+    # 조용히 실패할 수 있었다.
+    if ! "$APP_DIR/venv/bin/python" -c "import flask, flask_cors, cloudinary, pillow_heif, fitz, docx, deep_translator, requests, mutagen, openpyxl" 2>/dev/null; then
+        echo "  음악/worker 의존성 보강 설치 중..."
+        "$APP_DIR/venv/bin/pip" install -q $PKGS
+        ok "worker 의존성 보강 완료"
     else
-        ok "이미 설치됨 (건너뜀)"
+        "$APP_DIR/venv/bin/pip" install -q -U yt-dlp 2>/dev/null \
+            && ok "yt-dlp 최신화" || echo "  (yt-dlp 갱신 실패 — 기존 버전으로 계속)"
+        ok "worker 의존성 이미 설치됨 (건너뜀)"
     fi
 fi
 
@@ -379,12 +384,20 @@ fi
 
 # ── 4. 서비스 등록 (단일 프로세스 유지) ──────────────────────
 say "4/6  자동 실행 서비스"
-# 기존 Environment=(키 등) 보존
+# 설정은 항상 APP_DIR/.env 를 단일 기준으로 사용한다.
+# 이전 버전은 기존 systemd Environment= 줄을 복사했는데, 그러면 마이그레이션
+# 뒤 .env의 TURN/AcoustID 값을 바꿔도 오래된 값이 EnvironmentFile보다 우선되어
+# 통화와 음악 인식이 계속 옛 설정으로 실행될 수 있다.
 ENV_LINES=""
-if [ -f "/etc/systemd/system/$SVC.service" ]; then
-    ENV_LINES=$(grep -E '^[[:space:]]*Environment=' "/etc/systemd/system/$SVC.service" 2>/dev/null \
-        | grep -vE 'Environment="PORT=' || true)
-fi
+
+# 서버 메모리를 확인해 Node 힙을 기본값보다 넉넉하게 잡는다. 기본 Node 힙은
+# 실제 RAM이 커도 보수적으로 제한될 수 있어, 대량 음악 목록/채팅 파일/SSE가
+# 함께 살아 있는 운영 서버에서는 불필요한 GC가 발생한다.
+RAM_MB=$(awk '/MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 2048)
+NODE_HEAP_MB=$((RAM_MB * 70 / 100))
+[ "$NODE_HEAP_MB" -lt 512 ] && NODE_HEAP_MB=512
+[ "$NODE_HEAP_MB" -gt 8192 ] && NODE_HEAP_MB=8192
+ok "Node 메모리: ${RAM_MB}MB RAM 중 ${NODE_HEAP_MB}MB 힙 사용"
 
 sudo tee "/etc/systemd/system/$SVC.service" > /dev/null <<EOF
 [Unit]
@@ -397,7 +410,10 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=-$APP_DIR/.env
 Environment="PORT=$PORT"
 Environment="HOME=$HOME"
+Environment="NODE_OPTIONS=--max-old-space-size=$NODE_HEAP_MB"
+Environment="UV_THREADPOOL_SIZE=8"
 $ENV_LINES
+LimitNOFILE=65535
 ExecStart=$(command -v node) $APP_DIR/server/src/index.js
 Restart=always
 RestartSec=3
@@ -418,7 +434,9 @@ EnvironmentFile=-$APP_DIR/.env
 Environment="HOME=$HOME"
 Environment="SDY_WORKER_PORT=$WORKER_PORT"
 Environment="SDY_NODE_URL=http://127.0.0.1:$PORT"
+Environment="PYTHONUNBUFFERED=1"
 $ENV_LINES
+LimitNOFILE=65535
 ExecStart=$APP_DIR/venv/bin/python $APP_DIR/worker/run.py
 Restart=always
 RestartSec=3
@@ -545,6 +563,7 @@ H=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/health" || true)
 A=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/api/admin/status" || true)
 P=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)
 YT=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/youtube/status" || true)
+RECOG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/recognize/status" || true)
 CLOUD=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/cloud/status" || true)
 TURN_CFG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/chat/config?uid=deploy-check" || true)
 
@@ -554,6 +573,12 @@ echo "  관리자 API    : $A   $([ "$A" = 200 ] && echo '(정상)' || echo '(�
 echo "  health        : $H"
 echo "  클라우드 상태  : $CLOUD"
 echo "  유튜브(worker) : $YT"
+echo "  소리 인식      : $RECOG"
+if echo "$RECOG" | grep -q '"ready"[[:space:]]*:[[:space:]]*true'; then
+    echo "  ✅ 소리 인식 준비됨 (fpcalc + AcoustID 키)"
+else
+    echo "  ⚠️  소리 인식 미준비 — fpcalc 또는 ACOUSTID_KEY/music/_acoustid.json 확인"
+fi
 if echo "$TURN_CFG" | grep -q '"turn":true'; then
     echo "  통화 TURN      : 준비됨 (Oracle 인그레스 규칙도 확인하세요)"
     TURN_DIAG=$(curl -s -m 15 "http://127.0.0.1:$PORT/api/chat/diag" || true)

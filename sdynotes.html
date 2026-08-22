@@ -21309,6 +21309,15 @@ $('mpTagModal').addEventListener('click',e=>{
   if(e.target.id==='mpTagModal' && !(_tagDragOff && sel)) closeTagModal();
   _tagDragOff=false;
 });
+// 음악 변이 API가 worker에서 멈추면 버튼이 영원히 로딩 상태가 되지 않도록
+// 프론트에서도 제한 시간을 둔다. (인식은 음원 다운로드 때문에 더 길게 사용)
+async function musicApiFetch(url, opts, timeoutMs=120000){
+  const ac=new AbortController();
+  const tm=setTimeout(()=>ac.abort(),timeoutMs);
+  try { return await fetch(url,{...(opts||{}),signal:ac.signal}); }
+  finally { clearTimeout(tm); }
+}
+
 // 12.2 · '초기화' — 제목만 되돌리는 게 아니라, 웹으로 붙은 모든 정보
 //   (제목·가수·앨범·연도·장르·가사·표지)를 처음 올렸을 때 상태로 되돌린다 (누구나 가능).
 $('mpTagOrigBtn').onclick=async()=>{
@@ -21318,7 +21327,7 @@ $('mpTagOrigBtn').onclick=async()=>{
   const btn=$('mpTagOrigBtn'); const html=btn.innerHTML;
   btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 초기화 중';
   try{
-    const r=await fetch('/api/music/reset',{method:'POST',
+    const r=await musicApiFetch('/api/music/reset',{method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+admTok()},
       body:JSON.stringify({id})});
     const d=await r.json().catch(()=>({}));
@@ -21338,7 +21347,7 @@ $('mpTagSyncLrc').onclick=async()=>{
   const btn=$('mpTagSyncLrc'); const html=btn.innerHTML;
   btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 가사 찾는 중';
   try{
-    const r=await fetch('/api/music/synced-lyrics',{method:'POST',
+    const r=await musicApiFetch('/api/music/synced-lyrics',{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({id})});
     const d=await r.json().catch(()=>({}));
@@ -21352,9 +21361,14 @@ $('mpTagSyncLrc').onclick=async()=>{
   finally{ btn.innerHTML=html; _tagBusy=false; }
 };
 $('mpTagSave').onclick=async()=>{
+  // 저장은 다른 검색 작업이 꼬여 있어도 항상 실행할 수 있어야 한다.
+  // 기존에는 _tagBusy가 남아 있으면 클릭 자체가 무시됐다.
   const id=TAG_EDIT; if(!id) return;
+  _tagBusy=true;
+  const btn=$('mpTagSave'); const html=btn.innerHTML;
+  btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 저장 중';
   try{
-    const r=await fetch('/api/music/meta',{method:'POST',
+    const r=await musicApiFetch('/api/music/meta',{method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+admTok()},
       body:JSON.stringify({id,
         title:$('mpTagTitle').value, artist:$('mpTagArtist').value,
@@ -21375,7 +21389,8 @@ $('mpTagSave').onclick=async()=>{
     await loadList(); renderTitle(); renderListPop();
     closeTagModal();
     toast('음악 정보를 저장했습니다',1600);
-  }catch(e){ toast('저장 실패',2000); }
+  }catch(e){ toast(e&&e.name==='AbortError'?'저장 시간이 초과됐어요 · worker 상태를 확인해 주세요':'저장 실패',2600); }
+  finally{ btn.innerHTML=html; _tagBusy=false; }
 };
 $('mpTagCoverPick').onclick=()=>$('mpCoverFile').click();
 $('mpCoverFile').onchange=async e=>{
@@ -21441,7 +21456,7 @@ async function lookupTrack(id,opts){
   // 14.9 · 서버 검색은 출처·질의가 많아 오래 걸릴 수 있다. 타임아웃 없이
   //  기다리면 '찾는 중…'이 영원히 돌고 다음 곡 검색까지 막힌다.
   const ac=new AbortController();
-  const tm=setTimeout(()=>ac.abort(),45000);
+  const tm=setTimeout(()=>ac.abort(),120000);
   try{
     const r=await fetch('/api/music/lookup',{method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -21500,16 +21515,20 @@ async function askAcoustIdKey(){
 }
 $('mpTagRecog').onclick=async()=>{
   if(!TAG_EDIT||_tagBusy) return;
-  const st=await recogStatus();
-  if(!st.fpcalc){ toast('서버에 인식 도구(fpcalc)가 없어요 · apply.sh 를 다시 실행해 주세요',3600); return; }
-  if(!st.key){ if(!await askAcoustIdKey()) return; }
+  // 상태 확인과 관리자 키 입력도 네트워크 작업이다. 기존에는 이 작업이
+  // 끝날 때까지 버튼 표시가 그대로라서, 클릭이 무시된 것처럼 보였다.
   _tagBusy=true;
   const btn=$('mpTagRecog'); const html=btn.innerHTML;
-  btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 듣는 중…';
-  const id=TAG_EDIT;
+  btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 확인 중…';
   try{
-    const r=await fetch('/api/music/recognize',{method:'POST',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    const st=await recogStatus();
+    if(!st||st.ok===false){ toast('인식 서버에 연결할 수 없어요 · worker 상태를 확인해 주세요',3600); return; }
+    if(!st.fpcalc){ toast('서버에 인식 도구(fpcalc)가 없어요 · apply.sh 를 다시 실행해 주세요',3600); return; }
+    if(!st.key){ if(!await askAcoustIdKey()) return; }
+    btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 듣는 중…';
+    const id=TAG_EDIT;
+    const r=await musicApiFetch('/api/music/recognize',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({id})},180000);
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok){ toast(d.error||'소리로는 찾지 못했어요',2800); return; }
     P.coverV=Date.now();
@@ -21520,7 +21539,7 @@ $('mpTagRecog').onclick=async()=>{
     // 12.2 · 0.85 미만은 서버가 적용을 안 한다. 안내만.
     if(g.score&&g.score<0.85) toast('다른 곡으로 인식돼 적용하지 않았어요 (점수 '+(g.score*100|0)+'점)',2800);
     else toast('🎧 '+(g.artist?g.artist+' · ':'')+(g.title||'인식 완료'),2400);
-  }catch(e){ toast('인식하지 못했어요',2200); }
+  }catch(e){ toast(e&&e.name==='AbortError'?'인식 시간이 초과됐어요 · worker 상태를 확인해 주세요':'인식하지 못했어요',3200); }
   finally{ btn.innerHTML=html; _tagBusy=false; }
 };
 // 11.2 · 표지만 다시 찾기 — 노래 정보는 그대로, 누를 때마다 다음 표지
@@ -21718,13 +21737,21 @@ async function ensureLyrics(t){
   if(!t||t.lyrics!==undefined||t._lyrLoading) return false;
   if(!t.has_lyrics&&!t.has_sync) return false;
   t._lyrLoading=true;
+  const ac=new AbortController();
+  const tm=setTimeout(()=>ac.abort(),120000);
   try{
-    const r=await fetch('/api/music/lyrics/'+t.id,{cache:'no-store'});
+    const r=await fetch('/api/music/lyrics/'+t.id,{cache:'no-store',signal:ac.signal});
     const d=await r.json();
     if(d&&d.ok){ t.lyrics=d.lyrics||''; t.lyrics_plain=d.lyrics_plain||'';
                  t.lyrics_src=d.lyrics_src||''; t.lyrics_tries=d.lyrics_tries||0; }
-  }catch(e){}
-  t._lyrLoading=false;
+    else { t.lyrics=''; t.lyrics_plain=''; t._lyrError=true; }
+  }catch(e){
+    // 목록의 has_lyrics 플래그만 남고 본문 요청이 멈추면 무한히
+    // '가사를 불러오는 중'으로 남던 문제를 막는다.
+    t.lyrics=''; t.lyrics_plain=''; t._lyrError=true;
+  }finally{
+    clearTimeout(tm); t._lyrLoading=false;
+  }
   return true;
 }
 function renderLyrics(){
@@ -24046,6 +24073,14 @@ body.sdy-booting #mpReopen{display:none !important;}
   }
   function ypJoinVoice(){
     if(YP.inVoice||YP.joiningVoice) return;
+    // getUserMedia는 HTTPS(또는 localhost)에서만 동작한다. Oracle IP로
+    // http:// 접속하면 TURN이 정상이어도 브라우저가 마이크 요청 자체를
+    // 거부하므로, 이를 일반적인 "통화 연결 안 됨" 원인으로 명확히 안내한다.
+    var localHost=location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.hostname==='::1';
+    if(window.isSecureContext===false&&!localHost){
+      toast('통화는 HTTPS 접속이 필요해요 · http:// 대신 https:// 주소로 접속해 주세요',4200);
+      return;
+    }
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ toast('이 브라우저는 마이크를 지원하지 않아요',2400); return; }
     // 클릭 즉시 상태를 바꾸고, ICE 설정과 마이크 권한 요청을 병렬 실행한다.
     // 예전에는 config 왕복 뒤에 권한창을 열어 버튼이 안 먹은 것처럼 보였다.
@@ -24243,7 +24278,8 @@ body.sdy-booting #mpReopen{display:none !important;}
     var kind=file.type&&file.type.indexOf('image/')===0?'img':'file';
     var cap=kind==='img'?8*1024*1024:20*1024*1024;
     if(file.size>cap){ toast(kind==='img'?'사진은 8MB 이하만 가능해요':'파일은 20MB 이하만 가능해요',2400); return; }
-    var fd=new FormData(); fd.append('file',file,file.name||'file'); fd.append('uid',YP.uid);
+    // uid 를 파일보다 먼저 넣어 multipart 파서가 입장 정보를 즉시 읽게 한다.
+    var fd=new FormData(); fd.append('uid',YP.uid); fd.append('file',file,file.name||'file');
     fetch('/api/chat/upload',{method:'POST',body:fd})
       .then(function(r){return r.json();})
       .then(function(d){ if(d&&d.ok&&d.msg) ypAddMsg(d.msg); else if(d&&d.error) toast(d.error,2400); })
