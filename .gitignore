@@ -1,0 +1,22 @@
+node_modules/
+venv/
+.env
+*.log
+__pycache__/
+*.py[cod]
+
+# Runtime/user data (kept on the deployed server, never committed)
+.admin_sessions.json
+.sdy_escrow.key
+notifications.json
+imported/
+imported_docs/
+import_uploads/
+import_jobs/
+stickers/
+cards/
+wallpaper/
+music/
+sync/
+vault/
+_yt_cookies.txt.bak
