@@ -6,6 +6,7 @@
 import crypto from 'node:crypto';
 import net from 'node:net';
 import dgram from 'node:dgram';
+import os from 'node:os';
 
 const CHAT_TTL = parseInt(process.env.SDY_CHAT_TTL || '86400', 10); // 마지막 대화 후 이 시간 지나면 방 초기화(펑)
 const MEMBER_TTL = 70;        // 핑 없이 이 시간 지나면 접속 종료로 간주
@@ -124,11 +125,14 @@ function stunRawAttr(type, buf) {
   return { type, value: buf };
 }
 function stunAttrWithMi(type, txid, attrs, miKey) {
-  // MESSAGE-INTEGRITY 는 마지막 자리에 20바이트 0 으로 채워 넣고 HMAC 을 계산한다.
-  let msg = stunMsg(type, txid, [...attrs, { type: 0x0008, value: Buffer.alloc(20) }]);
+  // RFC 5389 §15.4: 헤더의 length 는 MESSAGE-INTEGRITY 끝까지 포함해야 하지만,
+  // HMAC 입력은 MI 속성 자체(4바이트 헤더 + 20바이트 값) 직전까지만이다.
+  // 0으로 채운 MI까지 HMAC에 넣으면 coturn은 패킷을 무결성 오류로 버린다.
+  const msg = stunMsg(type, txid, [...attrs, { type: 0x0008, value: Buffer.alloc(20) }]);
   const key = crypto.createHash('md5').update(miKey, 'utf8').digest();
-  const mi = crypto.createHmac('sha1', key).update(msg).digest();
-  mi.copy(msg, msg.length - 20);
+  const miOffset = msg.length - 24;
+  const mi = crypto.createHmac('sha1', key).update(msg.subarray(0, miOffset)).digest();
+  mi.copy(msg, miOffset + 4);
   return msg;
 }
 function turnAllocate(host, port, username, password, timeoutMs) {
@@ -216,6 +220,24 @@ function tcpCheck(host, port, timeoutMs) {
     s.once('error', (e) => finish(false, String((e && e.message) || e)));
     s.once('timeout', () => finish(false, 'timeout'));
   });
+}
+
+function localTurnAddresses(configured) {
+  // Oracle VM의 coturn은 보통 listening-ip=10.x.x.x 로 떠서 127.0.0.1에는
+  // 일부러 바인딩하지 않는다. localhost만 검사하면 정상 서버도 fail로 오진한다.
+  const out = [];
+  const add = (v) => {
+    const ip = String(v || '').trim();
+    if (net.isIPv4(ip) && !out.includes(ip)) out.push(ip);
+  };
+  add(configured);
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const item of list || []) {
+      if (item && item.family === 'IPv4' && !item.internal) add(item.address);
+    }
+  }
+  add('127.0.0.1');
+  return out;
 }
 
 function pickPastel() {
@@ -618,6 +640,8 @@ export function registerChat(app) {
     const externalTurn = (env.SDY_TURN_URL || '').trim();
     const secret = (env.SDY_TURN_SECRET || '').trim();
     const publicIp = (env.SDY_TURN_PUBLIC_IP || '').trim();
+    const configuredLocalIp = (env.SDY_TURN_PRIVATE_IP || '').trim();
+    const localAddresses = localTurnAddresses(configuredLocalIp);
     const targets = [];
     const seen = new Set();
     for (const t of [localTurn, externalTurn]) {
@@ -629,11 +653,12 @@ export function registerChat(app) {
     const out = {
       ok: false,
       ts: new Date().toISOString(),
-      note: 'local=127.0.0.1(서버 안) · public=공인IP(외부 경로, hairpin 이면 서버 안에서는 실패로 보일 수 있음)',
+      note: 'local=서버의 실제 NIC/localhost(서버 안) · public=공인IP(외부 경로, hairpin 이면 서버 안에서는 실패로 보일 수 있음)',
       env: {
         SDY_LOCAL_TURN_URL: localTurn || null,
         SDY_TURN_URL: externalTurn || null,
         SDY_TURN_PUBLIC_IP: publicIp || null,
+        SDY_TURN_PRIVATE_IP: configuredLocalIp || null,
         hasSecret: !!secret,
       },
       checks: {},
@@ -646,11 +671,21 @@ export function registerChat(app) {
       const { host, port } = turnHostPort(u);
       const key = u;
       const rec = { host, port };
-      // 서버 자신(localhost) → coturn 프로세스가 실제로 3478 에 떠 있는지
-      const lt = await tcpCheck('127.0.0.1', port, 4000);
-      const lu = await stunPing('127.0.0.1', port, 4000);
-      rec.localTcp = lt.ok ? 'ok' : 'fail';
-      rec.localUdp = lu.ok ? 'ok' : `fail(${lu.err})`;
+      // 서버 자신 → coturn 프로세스가 실제로 3478 에 떠 있는지 확인한다.
+      // listening-ip가 사설 NIC로 고정된 Oracle 구성에서는 127.0.0.1 검사가
+      // 실패하는 것이 정상이므로 모든 로컬 IPv4를 동시에 검사해 응답 주소를 고른다.
+      const localProbe = await Promise.all(localAddresses.map(async (address) => {
+        const [tcp, udp] = await Promise.all([
+          tcpCheck(address, port, 4000), stunPing(address, port, 4000),
+        ]);
+        return { address, tcp, udp };
+      }));
+      const tcpHit = localProbe.find((x) => x.tcp.ok);
+      const udpHit = localProbe.find((x) => x.udp.ok);
+      const localHit = localProbe.find((x) => x.tcp.ok && x.udp.ok) || udpHit || tcpHit;
+      rec.localAddress = localHit ? localHit.address : localAddresses.join(',');
+      rec.localTcp = tcpHit ? 'ok' : `fail(${localProbe.map((x) => `${x.address}:${x.tcp.err || 'fail'}`).join(', ')})`;
+      rec.localUdp = udpHit ? 'ok' : `fail(${localProbe.map((x) => `${x.address}:${x.udp.err || 'fail'}`).join(', ')})`;
       // 공인 IP → VCN 인그레스 규칙이 실제로 열려 있는지 (서버 밖에서만 확정 가능)
       if (publicIp && host !== '127.0.0.1' && host !== 'localhost') {
         const pt = await tcpCheck(host, port, 5000);
@@ -665,7 +700,8 @@ export function registerChat(app) {
         }
       }
       if (secret) {
-        const la = await turnAllocate('127.0.0.1', port, uname, password, 8000);
+        const allocAddress = udpHit ? udpHit.address : (localHit ? localHit.address : localAddresses[0]);
+        const la = await turnAllocate(allocAddress, port, uname, password, 8000);
         rec.localAlloc = la.ok ? `ok(${la.err})` : `fail(${la.err})`;
       } else {
         rec.localAlloc = 'skip(secret 없음)';
