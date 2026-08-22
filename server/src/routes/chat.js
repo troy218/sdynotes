@@ -124,6 +124,20 @@ function stunStrAttr(type, s) {
 function stunRawAttr(type, buf) {
   return { type, value: buf };
 }
+function stunUInt32Attr(type, n) {
+  const value = Buffer.alloc(4);
+  value.writeUInt32BE(n >>> 0, 0);
+  return { type, value };
+}
+function xorRelayedAddress(value) {
+  // XOR-RELAYED-ADDRESS: reserved(1), family(1), XOR-port(2), XOR-address(4).
+  if (!value || value.length < 8 || value.readUInt8(1) !== 0x01) return '?';
+  const cookie = Buffer.from([0x21, 0x12, 0xa4, 0x42]);
+  const port = value.readUInt16BE(2) ^ 0x2112;
+  const octets = [];
+  for (let i = 0; i < 4; i++) octets.push(value.readUInt8(4 + i) ^ cookie[i]);
+  return `${octets.join('.')}:${port}`;
+}
 function stunAttrWithMi(type, txid, attrs, miKey) {
   // RFC 5389 §15.4: 헤더의 length 는 MESSAGE-INTEGRITY 끝까지 포함해야 하지만,
   // HMAC 입력은 MI 속성 자체(4바이트 헤더 + 20바이트 값) 직전까지만이다.
@@ -158,10 +172,7 @@ function turnAllocate(host, port, username, password, timeoutMs) {
       const t0 = msg.length >= 2 ? msg.readUInt16BE(0) : 0;
       if (t0 === 0x0103) {
         const ra = stunAttrs(msg, 20).get(0x0016);
-        const addr = ra && ra.length >= 8
-          ? `${ra.readUInt8(2)}.${ra.readUInt8(3)}.${ra.readUInt8(4)}.${ra.readUInt8(5)}:${ra.readUInt16BE(6)}`
-          : '?';
-        return finish(true, `relay=${addr}`);
+        return finish(true, `relay=${xorRelayedAddress(ra)}`);
       }
       const attrs = stunAttrs(msg, 20);
       const realm = attrs.get(0x0014);
@@ -187,13 +198,10 @@ function turnAllocate(host, port, username, password, timeoutMs) {
             stunStrAttr(0x0006, username),
             stunRawAttr(0x0014, realm),
             stunRawAttr(0x0015, nonce),
+            stunUInt32Attr(0x000d, 0), // LIFETIME=0: 진단이 만든 allocation 즉시 해제
           ], miKey);
           try { sock.send(refresh, 0, refresh.length, port, host, () => {}); } catch { /* noop */ }
-          // RELAYED-ADDRESS 값(8바이트): family(1) + reserved(1) + IPv4(4) + port(2)
-          const addr = relayed && relayed.length >= 8
-            ? `${relayed.readUInt8(2)}.${relayed.readUInt8(3)}.${relayed.readUInt8(4)}.${relayed.readUInt8(5)}:${relayed.readUInt16BE(6)}`
-            : '?';
-          return finish(true, `relay=${addr}`);
+          return finish(true, `relay=${xorRelayedAddress(relayed)}`);
         }
         const errCode = attrs2.get(0x0009);
         // ERROR-CODE 값: 예약 2바이트 + 클래스(백의 자리) 1바이트 + 번호 1바이트
@@ -686,26 +694,33 @@ export function registerChat(app) {
       rec.localAddress = localHit ? localHit.address : localAddresses.join(',');
       rec.localTcp = tcpHit ? 'ok' : `fail(${localProbe.map((x) => `${x.address}:${x.tcp.err || 'fail'}`).join(', ')})`;
       rec.localUdp = udpHit ? 'ok' : `fail(${localProbe.map((x) => `${x.address}:${x.udp.err || 'fail'}`).join(', ')})`;
+      // 공인 경로와 로컬 Allocate를 병렬 실행한다. 공인 IP hairpin이 timeout이어도
+      // 배포 스크립트의 15초 진단 제한 안에 결과가 돌아오게 한다.
+      const allocAddress = udpHit ? udpHit.address : (localHit ? localHit.address : localAddresses[0]);
+      const localAllocP = secret
+        ? turnAllocate(allocAddress, port, uname, password, 8000)
+        : Promise.resolve(null);
+      let publicP = Promise.resolve(null);
       // 공인 IP → VCN 인그레스 규칙이 실제로 열려 있는지 (서버 밖에서만 확정 가능)
       if (publicIp && host !== '127.0.0.1' && host !== 'localhost') {
-        const pt = await tcpCheck(host, port, 5000);
-        const pu = await stunPing(host, port, 5000);
+        publicP = Promise.all([
+          tcpCheck(host, port, 5000),
+          stunPing(host, port, 5000),
+          secret ? turnAllocate(host, port, uname, password, 8000) : Promise.resolve(null),
+        ]);
+      }
+      const [la, publicResult] = await Promise.all([localAllocP, publicP]);
+      if (publicResult) {
+        const [pt, pu, pa] = publicResult;
         rec.publicTcp = pt.ok ? 'ok' : `fail(${pt.err})`;
         rec.publicUdp = pu.ok ? 'ok' : `fail(${pu.err})`;
-        if (secret) {
-          const pa = await turnAllocate(host, port, uname, password, 8000);
-          rec.publicAlloc = pa.ok ? `ok(${pa.err})` : `fail(${pa.err})`;
-        } else {
-          rec.publicAlloc = 'skip(secret 없음)';
-        }
+        rec.publicAlloc = secret
+          ? (pa.ok ? `ok(${pa.err})` : `fail(${pa.err})`)
+          : 'skip(secret 없음)';
       }
-      if (secret) {
-        const allocAddress = udpHit ? udpHit.address : (localHit ? localHit.address : localAddresses[0]);
-        const la = await turnAllocate(allocAddress, port, uname, password, 8000);
-        rec.localAlloc = la.ok ? `ok(${la.err})` : `fail(${la.err})`;
-      } else {
-        rec.localAlloc = 'skip(secret 없음)';
-      }
+      rec.localAlloc = secret
+        ? (la.ok ? `ok(${la.err})` : `fail(${la.err})`)
+        : 'skip(secret 없음)';
       out.checks[key] = rec;
     }
     out.ok = Object.keys(out.checks).length > 0;
