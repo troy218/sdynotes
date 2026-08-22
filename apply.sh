@@ -210,13 +210,18 @@ if [ ! -x "$APP_DIR/venv/bin/python" ]; then
     "$APP_DIR/venv/bin/pip" install -q $PKGS
     ok "워커 파이썬 설치 완료"
 else
-    "$APP_DIR/venv/bin/pip" install -q -U yt-dlp 2>/dev/null \
-        && ok "yt-dlp 최신화" || echo "  (yt-dlp 갱신 실패 — 기존 버전으로 계속)"
-    if ! "$APP_DIR/venv/bin/python" -c "import pymupdf, docx, requests, openpyxl" 2>/dev/null; then
-        "$APP_DIR/venv/bin/pip" install -q pymupdf python-docx deep-translator requests openpyxl
-        ok "추가 설치 완료"
+    # 기존 서버도 마이그레이션 후 음악 worker에 필요한 패키지를 빠짐없이
+    # 확인한다. 예전에는 PDF 관련 모듈만 확인해서 cloudinary/pillow-heif/
+    # mutagen이 빠진 기존 venv에서는 Node·채팅은 살아 있어도 음악 기능만
+    # 조용히 실패할 수 있었다.
+    if ! "$APP_DIR/venv/bin/python" -c "import flask, flask_cors, cloudinary, pillow_heif, fitz, docx, deep_translator, requests, mutagen, openpyxl" 2>/dev/null; then
+        echo "  음악/worker 의존성 보강 설치 중..."
+        "$APP_DIR/venv/bin/pip" install -q $PKGS
+        ok "worker 의존성 보강 완료"
     else
-        ok "이미 설치됨 (건너뜀)"
+        "$APP_DIR/venv/bin/pip" install -q -U yt-dlp 2>/dev/null \
+            && ok "yt-dlp 최신화" || echo "  (yt-dlp 갱신 실패 — 기존 버전으로 계속)"
+        ok "worker 의존성 이미 설치됨 (건너뜀)"
     fi
 fi
 
@@ -545,6 +550,7 @@ H=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/health" || true)
 A=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/api/admin/status" || true)
 P=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)
 YT=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/youtube/status" || true)
+RECOG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/recognize/status" || true)
 CLOUD=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/cloud/status" || true)
 TURN_CFG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/chat/config?uid=deploy-check" || true)
 
@@ -554,6 +560,12 @@ echo "  관리자 API    : $A   $([ "$A" = 200 ] && echo '(정상)' || echo '(�
 echo "  health        : $H"
 echo "  클라우드 상태  : $CLOUD"
 echo "  유튜브(worker) : $YT"
+echo "  소리 인식      : $RECOG"
+if echo "$RECOG" | grep -q '"ready"[[:space:]]*:[[:space:]]*true'; then
+    echo "  ✅ 소리 인식 준비됨 (fpcalc + AcoustID 키)"
+else
+    echo "  ⚠️  소리 인식 미준비 — fpcalc 또는 ACOUSTID_KEY/music/_acoustid.json 확인"
+fi
 if echo "$TURN_CFG" | grep -q '"turn":true'; then
     echo "  통화 TURN      : 준비됨 (Oracle 인그레스 규칙도 확인하세요)"
     TURN_DIAG=$(curl -s -m 15 "http://127.0.0.1:$PORT/api/chat/diag" || true)
