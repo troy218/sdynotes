@@ -355,26 +355,42 @@ export function registerChat(app) {
       .replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 40) || 'guest';
     let turnReady = false;
 
-    // "turn:host:3478?transport=udp" 같은 ?transport= 쿼리는 WebRTC 표준이 아니라
-    // (RFC 7064 는 STUN URI 에서만 정의) 브라우저 구현에 따라 다르게 취급된다.
-    // 같은 호스트에 UDP/TCP 두 transport 를 쓰고 싶으면 별도 iceServers 엔트리로
-    // 분리하는 게 안전하다.
-    const splitTransport = (txt) => {
-      const out = [];
+    // turn:host:3478 (쿼리 없음) 은 브라우저에서 UDP 전용이다. 통신사 CGNAT·
+    // UDP 차단 망은 TCP 3478 이 열려 있어도 브라우저가 시도하지 않아 '연결 중'에
+    // 멈춘다. 베이스 URL 만 오면 UDP 엔트리와 `?transport=tcp` 엔트리를 따로 만든다.
+    // `?transport=` 를 같은 urls[] 에 섞으면 일부 브라우저가 한쪽만 시도하고
+    // 끝나므로 iceServers 를 URL 당 한 줄로 분리한다.
+    const expandTurnUrls = (txt) => {
+      const udp = [];
+      const tcp = [];
+      const seen = new Set();
+      const add = (arr, u) => {
+        const key = String(u || '').toLowerCase();
+        if (!u || seen.has(key)) return;
+        seen.add(key);
+        arr.push(u);
+      };
       for (const raw of String(txt).split(',')) {
-        const u = raw.trim();
-        if (!u) continue;
-        if (u.includes('?transport=')) {
-          // 혹시 어디선가 쿼리가 섞여 들어오면 transport 별로 잘라낸다.
-          const [base, qs] = u.split('?', 2);
-          const t = (qs || '').split('&').find((s) => s.startsWith('transport='));
-          if (t) out.push(`${base}?${t}`);
-          else out.push(base);
-        } else {
-          out.push(u);
+        let u = raw.trim();
+        if (!u || !/^turns?:/i.test(u)) continue;
+        let transport = '';
+        const q = u.indexOf('?');
+        if (q >= 0) {
+          const qs = u.slice(q + 1);
+          u = u.slice(0, q);
+          const t = qs.split('&').find((s) => s.startsWith('transport='));
+          transport = t ? t.slice('transport='.length).toLowerCase() : '';
+        }
+        if (transport === 'tcp') add(tcp, `${u}?transport=tcp`);
+        else add(udp, u); // udp / 미지정 → 쿼리 없는 UDP (브라우저 기본)
+      }
+      // 베이스 URL 만 온 경우 TCP 를 빠뜨리면 열어 둔 TCP 3478 이 영원히 안 쓰인다.
+      if (udp.length && !tcp.length) {
+        for (const u of udp) {
+          if (!/^turns:/i.test(u)) add(tcp, `${u}?transport=tcp`);
         }
       }
-      return out;
+      return [...udp, ...tcp];
     };
 
     const addTurn = (urlsText, preferStatic) => {
@@ -387,12 +403,14 @@ export function registerChat(app) {
         username = `${Math.floor(nowSec()) + 3600}:${uid}`;
         credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
       }
-      const urls = splitTransport(urlsText);
+      const urls = expandTurnUrls(urlsText);
       if (!urls.length) return;
       turnReady = turnReady || Boolean(username && credential);
-      iceServers.push({
-        urls, username, credential, credentialType: 'password',
-      });
+      for (const url of urls) {
+        iceServers.push({
+          urls: [url], username, credential, credentialType: 'password',
+        });
+      }
     };
 
     // 외부 TURN(있으면) → 같은 호스트라도 별도 엔트리로 추가해 인증 방식 차이를 보존.

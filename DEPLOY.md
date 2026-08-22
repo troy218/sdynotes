@@ -74,7 +74,7 @@ grep -E '^(relay-ip|lt-cred-mech|fingerprint|use-auth-secret|external-ip)' /etc/
 
 # 2) 새 ICE config 가 TURN 을 잘 주는지
 curl -s 'http://127.0.0.1:5000/api/chat/config?uid=deploy-check' | head -c 800
-# 기대: "turn":true, urls 배열에 turn:161.33.181.176:3478 가 정확히 2번 (외부+로컬)
+# 기대: "turn":true, turn:161.33.181.176:3478 과 ?transport=tcp 가 각각 있어야 함
 
 # 3) 외부 도달 (이미 확인됨 — 깨지지 않았으면 그대로)
 timeout 4 bash -c 'exec 3<>/dev/tcp/161.33.181.176/3478 && echo TCP-3478-OK'

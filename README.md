@@ -151,11 +151,13 @@ curl -s 'http://127.0.0.1:5000/api/chat/config?uid=test'
    Oracle VCN 의 source/dest check 또는 hairpin 차단. 외부 클라이언트 →
    공인 IP 경로에는 영향이 없으니 **무시해도 된다.** 정말로 외부에서도 막힌
    것이라면 VCN Security List 의 Source CIDR 가 `0.0.0.0/0` 가 맞는지 다시 확인.
-4. **WebRTC 표준이 아닌 `?transport=udp` 쿼리가 url 에 그대로 붙어 있는 경우** —
-   일부 브라우저는 `urls:["turn:host:3478?transport=udp"]` 를 잘못 파싱해
-   candidate 를 한 줄만 시도하고 끝낸다. Node 가 transport 를 떼고 별도
-   iceServers 엔트리로 분리하므로, 예전 버전에서 업그레이드했다면 브라우저
-   캐시(특히 service-worker)와 `localStorage` 의 옛 ICE 응답을 비워야 한다.
+4. **`turn:host:3478` 만 주고 TCP 를 안 붙인 경우** — 브라우저는 쿼리 없는
+   `turn:` URL 을 UDP 전용으로 취급한다. Oracle 인그레스에 TCP 3478 을 열어
+   둬도 브라우저가 시도하지 않아 통신사 UDP 차단 망에서 '연결 중'에 멈춘다.
+   Node 는 베이스 URL 에서 UDP(쿼리 없음) + `?transport=tcp` 를 **별도
+   iceServers 엔트리**로 나눠 내려 준다. 예전 버전에서 업그레이드했다면
+   브라우저 캐시를 비우고 `curl /api/chat/config` 결과에
+   `turn:IP:3478?transport=tcp` 가 있는지 확인한다.
 5. **TURN 인증이 401 로 reject** — `lt-cred-mech` 가 켜져 있는지 확인
    (`grep ^lt-cred-mech /etc/turnserver.conf`). 그리고 VM 시계가
    `date` 기준 ±5 분 이내여야 HMAC 임시 인증이 통과한다
