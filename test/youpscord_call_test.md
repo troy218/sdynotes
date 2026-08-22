@@ -32,6 +32,14 @@ node --check server/src/index.js
 
 결과: 통과
 
+실행 결과:
+
+```text
+채팅 테스트: PASS 18 / FAIL 0
+```
+
+세부적으로 입장, 메시지, 파일, SSE, 시그널 전달, offer 보류 큐, STUN 설정, TURN HMAC 인증, UDP/TCP 엔드포인트 분리, TTL 초기화를 확인했다.
+
 ### 2. 배포 스크립트 문법 검사
 
 ```bash
