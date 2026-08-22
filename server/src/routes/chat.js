@@ -431,13 +431,17 @@ export function registerChat(app) {
     let data;
     try { data = await req.file(); } catch { data = null; }
     if (!data) return reply.code(400).send({ ok: false, error: '파일 없음' });
+    // FormData 는 현재 file 필드를 uid 보다 먼저 붙인다. @fastify/multipart 는
+    // 파일 스트림을 전부 소비하기 전에는 뒤에 있는 field 를 data.fields 에
+    // 채우지 않으므로, uid 를 먼저 읽으면 항상 "먼저 입장"으로 실패한다.
+    // 파일을 소비한 뒤 fields 를 확인해 필드 순서와 무관하게 처리한다.
+    let buf;
+    try { buf = await data.toBuffer(); } catch { buf = null; }
+    if (!buf || !buf.length) return reply.code(400).send({ ok: false, error: '빈 파일입니다' });
     let uid = '';
     try { uid = String((data.fields && data.fields.uid && data.fields.uid.value) || '').trim(); } catch { uid = ''; }
     const me = state.members.get(uid);
     if (!me) return reply.code(400).send({ ok: false, error: '먼저 입장해 주세요' });
-    let buf;
-    try { buf = await data.toBuffer(); } catch { buf = null; }
-    if (!buf || !buf.length) return reply.code(400).send({ ok: false, error: '빈 파일입니다' });
     const mime = String(data.mimetype || 'application/octet-stream').toLowerCase();
     const kind = mime.startsWith('image/') ? 'img' : 'file';
     const cap = kind === 'img' ? IMG_MAX : FILE_MAX;
