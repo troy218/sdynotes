@@ -21735,13 +21735,21 @@ async function ensureLyrics(t){
   if(!t||t.lyrics!==undefined||t._lyrLoading) return false;
   if(!t.has_lyrics&&!t.has_sync) return false;
   t._lyrLoading=true;
+  const ac=new AbortController();
+  const tm=setTimeout(()=>ac.abort(),10000);
   try{
-    const r=await fetch('/api/music/lyrics/'+t.id,{cache:'no-store'});
+    const r=await fetch('/api/music/lyrics/'+t.id,{cache:'no-store',signal:ac.signal});
     const d=await r.json();
     if(d&&d.ok){ t.lyrics=d.lyrics||''; t.lyrics_plain=d.lyrics_plain||'';
                  t.lyrics_src=d.lyrics_src||''; t.lyrics_tries=d.lyrics_tries||0; }
-  }catch(e){}
-  t._lyrLoading=false;
+    else { t.lyrics=''; t.lyrics_plain=''; t._lyrError=true; }
+  }catch(e){
+    // 목록의 has_lyrics 플래그만 남고 본문 요청이 멈추면 무한히
+    // '가사를 불러오는 중'으로 남던 문제를 막는다.
+    t.lyrics=''; t.lyrics_plain=''; t._lyrError=true;
+  }finally{
+    clearTimeout(tm); t._lyrLoading=false;
+  }
   return true;
 }
 function renderLyrics(){
