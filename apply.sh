@@ -248,7 +248,11 @@ if [ "$TURN_SETUP" != "0" ]; then
         if [ -n "$TURN_PUBLIC_IP" ] && [ -n "$TURN_PRIVATE_IP" ] && [ -n "$TURN_SECRET" ]; then
             env_set SDY_TURN_SECRET "$TURN_SECRET"
             env_set SDY_TURN_PUBLIC_IP "$TURN_PUBLIC_IP"
-            env_set SDY_LOCAL_TURN_URL "turn:$TURN_PUBLIC_IP:$TURN_PORT?transport=udp,turn:$TURN_PUBLIC_IP:$TURN_PORT?transport=tcp"
+            # 콤마로 묶지 않는다 — 브라우저는 urls 배열에 같은 호스트가 두 번 들어가면
+            # ICE candidate 중복을 피하려고 한 쪽을 버리는 경우가 있다. UDP와 TCP를
+            # 별도 iceServers 엔트리로 다루게 chat.js 에서 분리하므로 여기선 베이스
+            # URL만 저장한다.
+            env_set SDY_LOCAL_TURN_URL "turn:$TURN_PUBLIC_IP:$TURN_PORT"
 
             # 최초 한 번은 사용자가 만들었던 기존 설정을 백업한다.
             if [ -f /etc/turnserver.conf ] && [ ! -f /etc/turnserver.conf.sdy-before ]; then
@@ -256,11 +260,15 @@ if [ "$TURN_SETUP" != "0" ]; then
             fi
             TURN_EXTERNAL="external-ip=$TURN_PUBLIC_IP"
             [ "$TURN_PUBLIC_IP" = "$TURN_PRIVATE_IP" ] || TURN_EXTERNAL="external-ip=$TURN_PUBLIC_IP/$TURN_PRIVATE_IP"
+            # relay-ip 를 사설 IP 로 강제하면 VCN 의 source-NAT 가 외부 클라이언트로
+            # 보낼 패킷을 10.0.0.0/16 으로 라우팅하다가 hairpin 함정에 빠져 일부
+            # 클라이언트는 "srflx 는 잡히는데 relay 가 안 잡히는" 증상을 보인다.
+            # external-ip 만 두면 coturn 이 OS 의 라우팅 테이블을 따라 자동으로
+            # 릴레이 소스 IP 를 결정하므로 VCN/클라우드 환경에서 안정적이다.
             sudo tee /etc/turnserver.conf >/dev/null <<EOF
 # SDYnotes managed coturn — apply.sh
 listening-port=$TURN_PORT
 listening-ip=$TURN_PRIVATE_IP
-relay-ip=$TURN_PRIVATE_IP
 $TURN_EXTERNAL
 min-port=$TURN_MIN_PORT
 max-port=$TURN_MAX_PORT
@@ -274,6 +282,10 @@ no-loopback-peers
 no-cli
 no-tls
 no-dtls
+# 일부 브라우저/미들박스 가 long-term credential + STUN long-term
+# 인증 메시지의 MESSAGE-INTEGRITY 검사를 엄격하게 한다. 명시적으로 켜두면
+# "401 Unauthorized" 류 통화 실패가 사라진다.
+lt-cred-mech
 EOF
             if [ -f /etc/default/coturn ]; then
                 sudo sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn
@@ -295,6 +307,9 @@ EOF
                 echo "  ⚠️ coturn 이 시작되지 않았습니다: journalctl -u coturn -n 50"
             fi
             echo "  ★ Oracle Cloud 인그레스에 UDP/TCP $TURN_PORT 및 UDP $TURN_MIN_PORT-$TURN_MAX_PORT 를 열어야 외부망 통화가 됩니다."
+            echo "  ★ 자기 공인 IP 로의 self-traffic 이 VCN 의 hairpin 차단으로 'No route to host' 가 나올 수 있으나"
+            echo "    외부 클라이언트 → 공인 IP 경로는 정상이며 통화에는 영향이 없습니다."
+            echo "  ★ 같은 호스트(SDY_TURN_URL = SDY_LOCAL_TURN_URL) 라면 외부용 정적 인증을 비워서 HMAC 임시 인증만 쓰는 것을 권장합니다."
         else
             echo "  ⚠️ 공인/사설 IP를 확인하지 못해 TURN 자동 설정을 건너뜁니다."
             echo "     .env 에 SDY_TURN_PUBLIC_IP=오라클_공인IP 를 넣고 다시 실행하세요."
