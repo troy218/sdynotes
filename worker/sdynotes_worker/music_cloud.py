@@ -642,6 +642,25 @@ def _migrate_local_music():
             # 이전 시도에서 음원만 올라가고 표지가 빠졌을 수 있다.
             # 그런 레코드는 원본을 다시 올리지 않고 표지만 보충한다.
             if remote:
+                # 부분 이관으로 Cloudinary/Supabase 레코드만 먼저 생긴 경우,
+                # 기존 로컬 메타데이터(특히 가사)가 누락될 수 있다. 예전에는
+                # remote가 있으면 무조건 건너뛰어 '가사를 찾는 중'만 반복됐다.
+                # 클라우드 전용 필드는 보존하고, 비어 있는 메타데이터만 로컬에서
+                # 보충한다.
+                merged = False
+                for key in ("title", "artist", "album", "year", "genre", "lyrics",
+                            "lyrics_plain", "lyrics_src", "lyrics_tries", "has_lyrics",
+                            "has_sync", "tag_state", "tag_src", "tag_algo", "orig_title"):
+                    old_value = old.get(key)
+                    if old_value not in (None, "", [], {}) and remote.get(key) in (None, "", [], {}):
+                        remote[key] = old_value
+                        merged = True
+                if merged:
+                    try:
+                        _music_track_save(remote)
+                        print("[music] 기존 메타데이터 보충:", mid)
+                    except Exception as e:
+                        print("[music] 기존 메타데이터 보충 실패:", _sb_error_text(e))
                 if (not remote.get("cover_url")) and os.path.exists(cp):
                     try:
                         with open(cp, "rb") as fp: cover = fp.read()
