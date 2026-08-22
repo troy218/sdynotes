@@ -131,6 +131,13 @@ bash apply.sh
 systemctl status coturn --no-pager
 curl -s 'http://127.0.0.1:5000/api/chat/config?uid=test'
 # 결과에 "turn":true 및 turn:<Oracle 공인 IP>:3478 이 있어야 함
+curl -s 'http://127.0.0.1:5000/api/chat/diag'
+# TURN 진단:
+#   localUdp/localTcp  : 'ok' 면 서버 안에서 coturn(STUN) 정상 응답
+#   localAlloc         : 'ok(relay=...)' 면 브라우저와 동일한 TURN Allocate
+#                        (401 챌린지 → HMAC 인증 → 릴레이 할당) 까지 성공
+#   publicTcp/publicUdp: 외부 경로(VCN 인그레스) 확인용 — hairpin 이면 서버
+#                        안에서 fail 로 보여도 실제 외부에선 정상일 수 있음
 ```
 
 공인 IP 자동 감지가 실패하면 `/var/www/memo/.env`에
@@ -161,7 +168,23 @@ curl -s 'http://127.0.0.1:5000/api/chat/config?uid=test'
 5. **TURN 인증이 401 로 reject** — `lt-cred-mech` 가 켜져 있는지 확인
    (`grep ^lt-cred-mech /etc/turnserver.conf`). 그리고 VM 시계가
    `date` 기준 ±5 분 이내여야 HMAC 임시 인증이 통과한다
-   (`sudo apt-get install -y chrony` 로 NTP 동기화).
+   (`sudo apt-get install -y chrony` 로 NTP 동기화). 최신 `apply.sh` 는
+   chrony 를 자동 설치/기동하고 `timedatectl set-ntp true` 를 적용한다.
+6. **Oracle Console 에서 연 규칙이 'Stateless' 로 들어갔는지** — Security
+   List / NSG 규칙을 추가할 때 **Stateless 체크박스가 꺼져 있는지** 확인.
+   stateless 로 넣으면 요청만 열리고 돌아오는 응답(UDP 미디어)이 막혀
+   '연결 중'에 멈춘다. stateful 로 다시 추가하세요.
+7. **인스턴스가 Security List 가 아니라 NSG 를 쓰는지** — Oracle Console →
+   인스턴스 상세 → VNIC 에 NSG 가 걸려 있으면 **그 NSG 에도 같은 규칙을**
+   열어야 한다. Security List 에만 열면 소용없다.
+8. **같은 망은 되고 다른 망만 안 되는 경우** — 브라우저
+   `chrome://webrtc-internals` 에서 `Local Address` 가 49160~49200 사이
+   (relay candidate) 로 잡히는지 확인. 안 잡히면 서버에서
+   `curl -s http://127.0.0.1:5000/api/chat/diag` → `localUdp` 가 fail 이면
+   coturn 문제, `publicUdp` 만 fail 이면 VCN 인그레스 문제다.
+   브라우저 캐시(특히 ICE 설정은 45분 캐시) 때문에 서버를 고친 직후엔
+   시크릿 창으로 다시 시도하거나, 새 버전은 릴레이 재시도 시 ICE 설정을
+   자동으로 다시 받아 온다.
 
 ## 주의 (기존 운영 규칙 그대로)
 

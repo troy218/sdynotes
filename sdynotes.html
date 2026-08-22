@@ -23653,7 +23653,14 @@ body.sdy-booting #mpReopen{display:none !important;}
     ypRender(true);
   }
   function ypAddMsg(m){
+    if(!m) return;
     for(var i=0;i<YP.msgs.length;i++){ if(YP.msgs[i].id===m.id) return; }
+    // 서버가 준 진짜 메시지가 오면 같은 내용의 임시 메시지를 먼저 찾아 치환한다.
+    // (SSE echo 와 POST 응답 중 먼저 도착하는 쪽이 처리하고, 나중 쪽은 id 중복으로 무시)
+    if(!m.temp && m.uid && m.text){
+      var j=ypFindTemp(m);
+      if(j>=0){ YP.msgs.splice(j,1,m); if(YP.msgs.length>200) YP.msgs.shift(); ypRender(true); return; }
+    }
     YP.msgs.push(m);
     if(YP.msgs.length>200) YP.msgs.shift();
     ypRender(true);
@@ -23798,9 +23805,10 @@ body.sdy-booting #mpReopen{display:none !important;}
   }
 
   // ── 음성 (WebRTC mesh) ──
-  function ypGetIce(){
-    if(YP.ice&&Date.now()-YP._iceAt<45*60*1000) return Promise.resolve(YP.ice);
-    if(YP._iceP) return YP._iceP;
+  function ypGetIce(force){
+    if(!force && YP.ice&&Date.now()-YP._iceAt<45*60*1000) return Promise.resolve(YP.ice);
+    if(!force && YP._iceP) return YP._iceP;
+    if(force){ YP._iceP=null; YP.ice=null; YP._iceAt=0; YP.turn=false; }
     function once(ms){
       var ctl=typeof AbortController!=='undefined'?new AbortController():null;
       var tm=setTimeout(function(){ try{ctl&&ctl.abort();}catch(e){} },ms);
@@ -23818,6 +23826,12 @@ body.sdy-booting #mpReopen{display:none !important;}
       .catch(function(){ YP.ice=null; YP._iceAt=0; YP.turn=false; return null; })
       .then(function(v){ YP._iceP=null; return v; });
     return YP._iceP;
+  }
+  // 캐시를 비우고 ICE 설정을 다시 받는다 — 서버에서 TURN 을 고친 직후에도
+  // 45분짜리 캐시에 묶이지 않도록 릴레이 재시도 전에 부른다.
+  function ypRefreshIce(){
+    YP._iceP=null; YP.ice=null; YP._iceAt=0; YP.turn=false;
+    return ypGetIce(true);
   }
   // 서버가 준 STUN/TURN. 옛 응답이 turn:host:3478 만 주면 TCP 를 옆에 붙인다
   // (브라우저는 쿼리 없는 turn: 을 UDP 전용으로 취급한다).
@@ -23905,12 +23919,19 @@ body.sdy-booting #mpReopen{display:none !important;}
     pc.onicecandidate=function(e){
       if(e.candidate){ pc.__candidateOk=true; ypSig(uid,'ice',{candidate:e.candidate.toJSON()}); }
     };
-    pc.onicecandidateerror=function(){
+    pc.onicecandidateerror=function(ev){
       // 여러 STUN 중 하나만 실패해도 이 이벤트가 오므로 즉시 실패로 표시하지 않는다.
       // 실제 후보가 하나도 없고 연결도 안 된 경우에만 네트워크 문제를 알린다.
+      // TURN(turn:) 서버가 실패로 찍히면 릴레이 자체가 안 되는 것이므로 따로 표시한다.
+      var u=String((ev&&ev.url)||'');
+      if(/^turns?:/i.test(u)) pc.__turnErr=true;
       setTimeout(function(){
         if(!pc.__candidateOk&&pc.connectionState!=='connected'&&pc.connectionState!=='closed'){
           YP.conn.set(uid,'candidate-error'); ypRenderStatus();
+          if(/^turns?:/i.test(u)&&!pc.__turnWarned){
+            pc.__turnWarned=true;
+            toast('TURN 서버에 닿지 못했어요 · 서버에서 bash apply.sh 재실행 + VCN 포트 3478(UDP/TCP) 확인',3600);
+          }
         }
       },1800);
     };
@@ -23925,18 +23946,34 @@ body.sdy-booting #mpReopen{display:none !important;}
         var m=YP.members.get(uid);
         if(!relay){
           toast((m&&m.name||'상대')+' 와(과) 직접 연결이 안 돼요 · TURN 릴레이로 다시 붙일게요',2800);
-          if(YP.uid<uid) setTimeout(function(){ ypOffer(uid,{fresh:true,relay:true}); },400);
+          if(YP.uid<uid) setTimeout(function(){ ypRefreshIce(); ypOffer(uid,{fresh:true,relay:true}); },400);
         } else {
           toast((m&&m.name||'상대')+' 와(과) 음성 연결에 실패했어요 · 네트워크(NAT) 환경이 달라서일 수 있어요',3200);
         }
       }
     };
     // host/srflx 만 붙잡다 멈추는 경우를 끊고, 6.5초 뒤 TURN(relay) 전용으로 재시도.
+    // 재시도 전에 ICE 설정을 새로 받아 둬서, 서버 TURN 을 고친 직후에도 캐시에
+    // 묶이지 않고 최신 TURN 으로 시도한다.
     if(!relay && ypIceHasTurn()){
       pc.__watch=setTimeout(function(){
         if(!YP.inVoice || pc.connectionState==='connected' || pc.connectionState==='closed') return;
-        if(YP.uid<uid) ypOffer(uid,{fresh:true,relay:true});
+        if(YP.uid<uid){ ypRefreshIce(); ypOffer(uid,{fresh:true,relay:true}); }
+        else ypRefreshIce();
       },6500);
+    }
+    // relay 전용 PC 는 TURN 이 죽어 있으면 '연결 중'에 오래 갇힐 수 있어
+    // 일정 시간 안에 안 붙으면 원인을 알려준다 (STUN/TURN 장애 vs NAT 문제 구분).
+    if(relay){
+      pc.__watch=setTimeout(function(){
+        if(!YP.inVoice || pc.connectionState==='connected' || pc.connectionState==='closed') return;
+        var m=YP.members.get(uid);
+        if(!pc.__candidateOk || pc.__turnErr){
+          toast((m&&m.name||'상대')+' 와(과) 연결 실패 · TURN 서버에 닿지 못하고 있어요 — 서버에서 bash apply.sh 재실행, VCN 3478(UDP/TCP)+49160-49200(UDP) 확인',4600);
+        } else {
+          toast((m&&m.name||'상대')+' 와(과) 음성 연결에 실패했어요 · 네트워크(NAT) 환경이 달라서일 수 있어요',3400);
+        }
+      },14000);
     }
     return pc;
   }
@@ -24024,6 +24061,11 @@ body.sdy-booting #mpReopen{display:none !important;}
         fetch('/api/chat/voice',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({uid:YP.uid,on:true,mute:YP.muted})}).catch(function(){});
         if(YP.bgm && YP.bgm.action!=='stop') ypBgmApply(YP.bgm);
+        // TURN 이 없으면 같은 망만 되고 다른 망(LTE↔Wi-Fi) 통화는 안 된다. 미리 알려 준다.
+        if(!YP.turn && !YP._turnWarned){
+          YP._turnWarned=true;
+          setTimeout(function(){ toast('TURN 서버가 설정되지 않았어요 · 서로 다른 망 통화가 안 될 수 있어요 (서버에서 bash apply.sh 재실행)',4200); },600);
+        }
       })
       .catch(function(err){
         YP.joiningVoice=false; ypRenderStatus();
@@ -24151,14 +24193,43 @@ body.sdy-booting #mpReopen{display:none !important;}
   function ypChipShake(){ var c=$('ypReopen'); if(!c) return; c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); }
 
   // ── 메시지/파일 ──
+  // 즉시 전송: 내 메시지는 서버 왕복을 기다리지 않고 먼저 화면에 띄우고,
+  // 서버가 내려준 진짜 메시지(id)가 오면 임시 메시지를 그걸로 치환한다.
+  function ypTempId(){ return 'tmp_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+  function ypFindTemp(m){
+    if(!m) return -1;
+    for(var i=0;i<YP.msgs.length;i++){
+      var x=YP.msgs[i];
+      if(x.temp && x.uid===m.uid && x.text===m.text) return i;
+    }
+    return -1;
+  }
+  function ypResolveTemp(m){
+    var i=ypFindTemp(m);
+    if(i<0) return;
+    YP.msgs.splice(i,1,m);
+    if(YP.msgs.length>200) YP.msgs.shift();
+    ypRender(true);
+  }
+  function ypDropTemp(m){
+    for(var i=0;i<YP.msgs.length;i++){
+      if(YP.msgs[i].id===m.id){ YP.msgs.splice(i,1); ypRender(true); return; }
+    }
+  }
   function ypSendText(){
     var ta=$('ypTxt'); var t=ta.value.trim(); if(!t) return;
     ta.value=''; ypAutoGrow(ta); ta.focus();
+    var local={id:ypTempId(),kind:'txt',uid:YP.uid,name:YP.name||'나',
+      color:(YP.me&&YP.me.color)||'#a5b4fc',text:t,reactions:{},ts:Date.now()/1000,temp:true};
+    ypAddMsg(local);
     fetch('/api/chat/msg',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({uid:YP.uid,text:t})})
       .then(function(r){return r.json();})
-      .then(function(d){ if(d&&d.ok&&d.msg) ypAddMsg(d.msg); })
-      .catch(function(){ toast('보내지 못했어요',2000); });
+      .then(function(d){
+        if(d&&d.ok&&d.msg){ ypResolveTemp(d.msg); ypAddMsg(d.msg); }
+        else { ypDropTemp(local); if(d&&d.error) toast(d.error,2000); }
+      })
+      .catch(function(){ ypDropTemp(local); toast('보내지 못했어요 · 연결을 확인해 주세요',2000); });
   }
   function ypDeleteMsg(id){
     fetch('/api/chat/del',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -24455,18 +24526,6 @@ body.sdy-booting #mpReopen{display:none !important;}
         wasShown=true;
         setTimeout(function(){ pl.style.display='none'; exiting=false; wasShown=false; }, 245);
       }
-    });
-    mo.observe(pl,{attributes:true,attributeFilter:['style']});
-  })();
-
-  ypDrag();
-  ypJoin();
-})();
-</script>
-
-</body>
-</html>
-}
     });
     mo.observe(pl,{attributes:true,attributeFilter:['style']});
   })();

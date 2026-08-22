@@ -4,6 +4,8 @@
 // 방은 영구 저장하지 않는다(인메모리): 마지막 대화 후 CHAT_TTL(24시간)이 지나면
 // 메시지·파일이 '펑' 하고 사라진다. 닉네임은 라이브 새 이름 + 파스텔 색(라이브와 동일 팔레트).
 import crypto from 'node:crypto';
+import net from 'node:net';
+import dgram from 'node:dgram';
 
 const CHAT_TTL = parseInt(process.env.SDY_CHAT_TTL || '86400', 10); // 마지막 대화 후 이 시간 지나면 방 초기화(펑)
 const MEMBER_TTL = 70;        // 핑 없이 이 시간 지나면 접속 종료로 간주
@@ -35,6 +37,186 @@ const streams = new Map();
 const pending = new Map(); // uid -> event[]
 
 const nowSec = () => Date.now() / 1000;
+
+// ── TURN 진단용 STUN 바인딩 요청 (UDP liveness) ──
+// coturn 은 인증 없이도 STUN Binding request 에 응답하므로, UDP 로 한 방
+// 보내서 응답이 오는지만 본다. TCP 는 net.connect 로 검사한다.
+function stunPing(host, port, timeoutMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    let sock;
+    try { sock = dgram.createSocket('udp4'); } catch { return resolve({ ok: false, err: 'socket 생성 실패' }); }
+    const finish = (ok, err) => {
+      if (done) return;
+      done = true;
+      clearTimeout(tm);
+      try { sock.close(); } catch { /* noop */ }
+      resolve(ok ? { ok: true } : { ok: false, err: err || 'timeout' });
+    };
+    const tm = setTimeout(() => finish(false), timeoutMs);
+    sock.once('message', (msg) => {
+      // 내 transaction id 가 실린 응답이어야 정상. (응답 0x0101 / 오류 0x0111 둘 다 liveness 확인)
+      const t = msg.length >= 20 ? msg.readUInt16BE(0) : 0;
+      const sameTx = msg.length >= 20 && txid.equals(msg.subarray(8, 20));
+      if (sameTx && (t === 0x0101 || t === 0x0111)) return finish(true);
+    });
+    sock.once('error', (e) => finish(false, String((e && e.message) || e)));
+    const tx = Buffer.alloc(20);
+    tx.writeUInt16BE(0x0001, 0);            // STUN Binding request
+    tx.writeUInt16BE(0x0000, 2);            // message length = 0
+    tx.writeUInt32BE(0x2112a442, 4);        // magic cookie
+    const txid = crypto.randomBytes(12);
+    txid.copy(tx, 8);                       // transaction id
+    sock.send(tx, 0, tx.length, port, host, (e) => {
+      if (e) finish(false, String((e && e.message) || e));
+    });
+  });
+}
+
+function turnHostPort(urlText) {
+  // turn:host:3478?transport=tcp / turns:host:3478 → {host, port}
+  const m = String(urlText || '').replace(/^turns?:/i, '').split(/[\/?#]/)[0].split(':');
+  return { host: m[0] || '', port: parseInt(m[1], 10) || 3478 };
+}
+
+// ── TURN Allocate 실측 (RFC 5766 + long-term credential) ──
+// STUN binding 이 성공해도 "TURN 릴레이 할당"은 인증·포트 정책 때문에 별도로
+// 실패할 수 있다. 브라우저가 하는 것과 동일한 흐름(401 챌린지 → Allocate →
+// Refresh)을 직접 수행해서 "TURN 으로 실제 통화가 가능한가"를 판정한다.
+function stunAttrs(buf, start) {
+  // buf: STUN 메시지. start: 20(헤더). → Map<type, Buffer>
+  const out = new Map();
+  let off = start;
+  while (off + 4 <= buf.length) {
+    const type = buf.readUInt16BE(off);
+    const len = buf.readUInt16BE(off + 2);
+    if (off + 4 + len > buf.length) break;
+    out.set(type, buf.subarray(off + 4, off + 4 + len));
+    off += 4 + len + (len % 4 ? 4 - (len % 4) : 0);
+  }
+  return out;
+}
+function stunMsg(type, txid, attrParts) {
+  // RFC 5389: 모든 속성 값은 4바이트 정렬로 패딩해야 한다. 패딩을 빼먹으면
+  // 속성 경계가 어긋나 coturn/브라우저가 MESSAGE-INTEGRITY 를 못 찾는다.
+  const parts = attrParts.map((p) => {
+    const v = p.value;
+    const pad = (4 - (v.length % 4)) % 4;
+    const buf = Buffer.alloc(4 + v.length + pad);
+    buf.writeUInt16BE(p.type, 0);
+    buf.writeUInt16BE(v.length, 2);
+    v.copy(buf, 4);
+    return buf;
+  });
+  const body = Buffer.concat(parts);
+  const msg = Buffer.alloc(20 + body.length);
+  msg.writeUInt16BE(type, 0);
+  msg.writeUInt16BE(body.length, 2);
+  msg.writeUInt32BE(0x2112a442, 4);
+  txid.copy(msg, 8);
+  body.copy(msg, 20);
+  return msg;
+}
+function stunStrAttr(type, s) {
+  return { type, value: Buffer.from(String(s), 'utf8') };
+}
+function stunRawAttr(type, buf) {
+  return { type, value: buf };
+}
+function stunAttrWithMi(type, txid, attrs, miKey) {
+  // MESSAGE-INTEGRITY 는 마지막 자리에 20바이트 0 으로 채워 넣고 HMAC 을 계산한다.
+  let msg = stunMsg(type, txid, [...attrs, { type: 0x0008, value: Buffer.alloc(20) }]);
+  const key = crypto.createHash('md5').update(miKey, 'utf8').digest();
+  const mi = crypto.createHmac('sha1', key).update(msg).digest();
+  mi.copy(msg, msg.length - 20);
+  return msg;
+}
+function turnAllocate(host, port, username, password, timeoutMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    let sock;
+    try { sock = dgram.createSocket('udp4'); } catch { return resolve({ ok: false, err: 'socket 생성 실패' }); }
+    const finish = (ok, err) => {
+      if (done) return;
+      done = true;
+      clearTimeout(tm);
+      try { sock.close(); } catch { /* noop */ }
+      // 성공이면 err 에 상세(relay=...)를 실어 보낸다.
+      resolve(ok ? { ok: true, err } : { ok: false, err: err || 'timeout' });
+    };
+    const tm = setTimeout(() => finish(false, 'timeout'), timeoutMs);
+    sock.once('error', (e) => finish(false, String((e && e.message) || e)));
+    const txid = crypto.randomBytes(12);
+    const reqTransport = stunRawAttr(0x0019, Buffer.from([0x11, 0x00, 0x00, 0x00])); // UDP
+    const first = stunMsg(0x0003, txid, [reqTransport]); // Allocate (no auth → 401)
+    sock.once('message', (msg) => {
+      // 1차: (a) 인증 없는 TURN 이면 곧바로 성공, (b) 401 챌린지 → REALM/NONCE 추출
+      const t0 = msg.length >= 2 ? msg.readUInt16BE(0) : 0;
+      if (t0 === 0x0103) {
+        const ra = stunAttrs(msg, 20).get(0x0016);
+        const addr = ra && ra.length >= 8
+          ? `${ra.readUInt8(2)}.${ra.readUInt8(3)}.${ra.readUInt8(4)}.${ra.readUInt8(5)}:${ra.readUInt16BE(6)}`
+          : '?';
+        return finish(true, `relay=${addr}`);
+      }
+      const attrs = stunAttrs(msg, 20);
+      const realm = attrs.get(0x0014);
+      const nonce = attrs.get(0x0015);
+      if (!realm || !nonce) return finish(false, '401 응답에 realm/nonce 없음');
+      const miKey = `${username}:${realm.toString('utf8')}:${password}`;
+      const authAttrs = [
+        reqTransport,
+        stunStrAttr(0x0006, username),          // USERNAME
+        stunRawAttr(0x0014, realm),             // REALM
+        stunRawAttr(0x0015, nonce),             // NONCE
+      ];
+      const txid2 = crypto.randomBytes(12);
+      const second = stunAttrWithMi(0x0003, txid2, authAttrs, miKey);
+      sock.once('message', (msg2) => {
+        const type2 = msg2.length >= 2 ? msg2.readUInt16BE(0) : 0;
+        const attrs2 = stunAttrs(msg2, 20);
+        if (type2 === 0x0103) {
+          // 성공 → RELAYED-ADDRESS 확인 후 Refresh 로 할당 해제
+          const relayed = attrs2.get(0x0016);
+          const txid3 = crypto.randomBytes(12);
+          const refresh = stunAttrWithMi(0x0004, txid3, [
+            stunStrAttr(0x0006, username),
+            stunRawAttr(0x0014, realm),
+            stunRawAttr(0x0015, nonce),
+          ], miKey);
+          try { sock.send(refresh, 0, refresh.length, port, host, () => {}); } catch { /* noop */ }
+          // RELAYED-ADDRESS 값(8바이트): family(1) + reserved(1) + IPv4(4) + port(2)
+          const addr = relayed && relayed.length >= 8
+            ? `${relayed.readUInt8(2)}.${relayed.readUInt8(3)}.${relayed.readUInt8(4)}.${relayed.readUInt8(5)}:${relayed.readUInt16BE(6)}`
+            : '?';
+          return finish(true, `relay=${addr}`);
+        }
+        const errCode = attrs2.get(0x0009);
+        // ERROR-CODE 값: 예약 2바이트 + 클래스(백의 자리) 1바이트 + 번호 1바이트
+        const code = errCode && errCode.length >= 4 ? (errCode[2] * 100 + errCode[3]) : type2;
+        return finish(false, `Allocate 실패 type=${type2} code=${code}`);
+      });
+      try { sock.send(second, 0, second.length, port, host, (e) => { if (e) finish(false, String((e && e.message) || e)); }); } catch (e) { finish(false, String((e && e.message) || e)); }
+    });
+    try { sock.send(first, 0, first.length, port, host, (e) => { if (e) finish(false, String((e && e.message) || e)); }); } catch (e) { finish(false, String((e && e.message) || e)); }
+  });
+}
+
+function tcpCheck(host, port, timeoutMs) {
+  return new Promise((resolve) => {
+    const s = net.connect({ host, port, timeout: timeoutMs });
+    let done = false;
+    const finish = (ok, err) => {
+      if (done) return;
+      done = true;
+      try { s.destroy(); } catch { /* noop */ }
+      resolve(ok ? { ok: true } : { ok: false, err: err || 'timeout' });
+    };
+    s.once('connect', () => finish(true));
+    s.once('error', (e) => finish(false, String((e && e.message) || e)));
+    s.once('timeout', () => finish(false, 'timeout'));
+  });
+}
 
 function pickPastel() {
   const used = new Set();
@@ -425,6 +607,74 @@ export function registerChat(app) {
     }
     reply.header('Cache-Control', 'no-store');
     return reply.send({ ok: true, turn: turnReady, ice: { iceServers } });
+  });
+
+  // ── 통화(TURN) 진단 — curl http://127.0.0.1:5000/api/chat/diag ──
+  // 포트를 다 열었는데도 서로 다른 망 통화가 안 될 때, 서버 안에서 coturn 이
+  // 살아 있는지 / 외부 경로(공인IP)가 닿는지를 한 번에 보여 준다.
+  app.get('/api/chat/diag', async (req, reply) => {
+    const env = process.env;
+    const localTurn = (env.SDY_LOCAL_TURN_URL || '').trim();
+    const externalTurn = (env.SDY_TURN_URL || '').trim();
+    const secret = (env.SDY_TURN_SECRET || '').trim();
+    const publicIp = (env.SDY_TURN_PUBLIC_IP || '').trim();
+    const targets = [];
+    const seen = new Set();
+    for (const t of [localTurn, externalTurn]) {
+      const u = String(t || '').trim();
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      targets.push(u);
+    }
+    const out = {
+      ok: false,
+      ts: new Date().toISOString(),
+      note: 'local=127.0.0.1(서버 안) · public=공인IP(외부 경로, hairpin 이면 서버 안에서는 실패로 보일 수 있음)',
+      env: {
+        SDY_LOCAL_TURN_URL: localTurn || null,
+        SDY_TURN_URL: externalTurn || null,
+        SDY_TURN_PUBLIC_IP: publicIp || null,
+        hasSecret: !!secret,
+      },
+      checks: {},
+    };
+    // HMAC 임시 인증이 가능하면 브라우저와 동일한 TURN Allocate 를 실제로 시도한다.
+    const expiry = Math.floor(nowSec()) + 3600;
+    const uname = `${expiry}:diag-${crypto.randomBytes(4).toString('hex')}`;
+    const password = secret ? crypto.createHmac('sha1', secret).update(uname).digest('base64') : '';
+    for (const u of targets) {
+      const { host, port } = turnHostPort(u);
+      const key = u;
+      const rec = { host, port };
+      // 서버 자신(localhost) → coturn 프로세스가 실제로 3478 에 떠 있는지
+      const lt = await tcpCheck('127.0.0.1', port, 4000);
+      const lu = await stunPing('127.0.0.1', port, 4000);
+      rec.localTcp = lt.ok ? 'ok' : 'fail';
+      rec.localUdp = lu.ok ? 'ok' : `fail(${lu.err})`;
+      // 공인 IP → VCN 인그레스 규칙이 실제로 열려 있는지 (서버 밖에서만 확정 가능)
+      if (publicIp && host !== '127.0.0.1' && host !== 'localhost') {
+        const pt = await tcpCheck(host, port, 5000);
+        const pu = await stunPing(host, port, 5000);
+        rec.publicTcp = pt.ok ? 'ok' : `fail(${pt.err})`;
+        rec.publicUdp = pu.ok ? 'ok' : `fail(${pu.err})`;
+        if (secret) {
+          const pa = await turnAllocate(host, port, uname, password, 8000);
+          rec.publicAlloc = pa.ok ? `ok(${pa.err})` : `fail(${pa.err})`;
+        } else {
+          rec.publicAlloc = 'skip(secret 없음)';
+        }
+      }
+      if (secret) {
+        const la = await turnAllocate('127.0.0.1', port, uname, password, 8000);
+        rec.localAlloc = la.ok ? `ok(${la.err})` : `fail(${la.err})`;
+      } else {
+        rec.localAlloc = 'skip(secret 없음)';
+      }
+      out.checks[key] = rec;
+    }
+    out.ok = Object.keys(out.checks).length > 0;
+    reply.header('Cache-Control', 'no-store');
+    return reply.send(out);
   });
 
   // ── 음성 상태 ──
