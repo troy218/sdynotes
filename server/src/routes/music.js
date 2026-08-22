@@ -254,6 +254,16 @@ export function registerMusic(app, { worker }) {
     ['DELETE', '/api/music/youtube/cookies'],
   ];
   for (const [method, url] of heavyMusicRoutes) {
-    app.route({ method, url, handler: (req, reply) => worker.proxy(req, reply) });
+    app.route({
+      method,
+      url,
+      // Unlike the import endpoints, music uploads are limited to 50 MB.
+      // Buffering here prevents Fastify multipart parsing from consuming the
+      // request before it reaches Flask (the source of empty-file uploads
+      // after the Node/worker migration).
+      handler: (req, reply) => worker.proxy(req, reply, {
+        bufferMultipart: url === '/api/music/upload',
+      }),
+    });
   }
 }
