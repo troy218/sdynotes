@@ -390,14 +390,31 @@ say "4/6  자동 실행 서비스"
 # 통화와 음악 인식이 계속 옛 설정으로 실행될 수 있다.
 ENV_LINES=""
 
-# 서버 메모리를 확인해 Node 힙을 기본값보다 넉넉하게 잡는다. 기본 Node 힙은
-# 실제 RAM이 커도 보수적으로 제한될 수 있어, 대량 음악 목록/채팅 파일/SSE가
-# 함께 살아 있는 운영 서버에서는 불필요한 GC가 발생한다.
+# 서버 메모리를 확인해 Node 힙·Python 워커 동시성·스레드풀을 한 번에 튜닝한다.
+# Node(프런트/SSE)와 Python 워커(PDF/음악)가 같은 박스에서 돌고 워커는 자식
+# 프로세스를 여러 개 띄우므로, RAM 전체를 Node에 몰아주지 않고 OS/웍커에
+# 일부를 예약해 둔다. 12GB 박스에서 Node 힙은 7.5GB, 나머지를 워커/OS 가 쓴다.
 RAM_MB=$(awk '/MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 2048)
-NODE_HEAP_MB=$((RAM_MB * 70 / 100))
+NODE_HEAP_MB=$((RAM_MB * 62 / 100))
 [ "$NODE_HEAP_MB" -lt 512 ] && NODE_HEAP_MB=512
-[ "$NODE_HEAP_MB" -gt 8192 ] && NODE_HEAP_MB=8192
-ok "Node 메모리: ${RAM_MB}MB RAM 중 ${NODE_HEAP_MB}MB 힙 사용"
+[ "$NODE_HEAP_MB" -gt 9216 ] && NODE_HEAP_MB=9216   # 12GB 박스 → 9GB 까지만
+
+# Python 임포트 자식 프로세스 동시성. 한 잡이 내부에서 청크를 최대 3개까지
+# 병렬로 띄우고, 잡 자체도 IMP_CONC 개까지 동시에 돈다. 자식은 RLIMIT_AS 로
+# 메모리 상한이 잡히지만, 여유를 두어 합산 RSS 가 RAM 을 넘지 않게 한다.
+if   [ "$RAM_MB" -ge 10240 ]; then IMP_CONC=3; IMP_CHILD_MEM_MB=1536
+elif [ "$RAM_MB" -ge 6144  ]; then IMP_CONC=2; IMP_CHILD_MEM_MB=1536
+elif [ "$RAM_MB" -ge 3072  ]; then IMP_CONC=2; IMP_CHILD_MEM_MB=1200
+else                               IMP_CONC=1; IMP_CHILD_MEM_MB=1024
+fi
+
+# libuv 스레드풀(sharp·crypto·파일 I/O 백그라운드). CPU 수에 비례해 키운다.
+CPU_N=$(nproc 2>/dev/null || echo 2)
+UV_THREADS=$((CPU_N * 2))
+[ "$UV_THREADS" -lt 8 ]  && UV_THREADS=8
+[ "$UV_THREADS" -gt 24 ] && UV_THREADS=24
+
+ok "메모리 튜닝: RAM ${RAM_MB}MB → Node 힙 ${NODE_HEAP_MB}MB / 가져오기 동시 ${IMP_CONC} (자식당 ${IMP_CHILD_MEM_MB}MB) / UV 스레드 ${UV_THREADS}"
 
 sudo tee "/etc/systemd/system/$SVC.service" > /dev/null <<EOF
 [Unit]
@@ -411,7 +428,7 @@ EnvironmentFile=-$APP_DIR/.env
 Environment="PORT=$PORT"
 Environment="HOME=$HOME"
 Environment="NODE_OPTIONS=--max-old-space-size=$NODE_HEAP_MB"
-Environment="UV_THREADPOOL_SIZE=8"
+Environment="UV_THREADPOOL_SIZE=$UV_THREADS"
 $ENV_LINES
 LimitNOFILE=65535
 ExecStart=$(command -v node) $APP_DIR/server/src/index.js
@@ -435,6 +452,8 @@ Environment="HOME=$HOME"
 Environment="SDY_WORKER_PORT=$WORKER_PORT"
 Environment="SDY_NODE_URL=http://127.0.0.1:$PORT"
 Environment="PYTHONUNBUFFERED=1"
+Environment="SDY_IMP_MAX_CONCURRENT=$IMP_CONC"
+Environment="SDY_IMP_CHILD_MEM_MB=$IMP_CHILD_MEM_MB"
 $ENV_LINES
 LimitNOFILE=65535
 ExecStart=$APP_DIR/venv/bin/python $APP_DIR/worker/run.py

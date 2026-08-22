@@ -12,15 +12,50 @@ export function syncPath(nb) {
   return path.join(DIRS.sync, String(nb).replace(/[^0-9a-zA-Z-]/g, '') + '.json');
 }
 
+// 짧은 메모리 캐시. 여러 기기가 같은 노트를 동시에 편집하면 1초에도 여러 번
+// pullSync(전체 상태 getState)이 돈다. Supabase 모드에선 매번 원격에서 문서
+// 전체를 받아오고, 로컬 모드도 파일 전체를 JSON.parse 한다. 12GB 박스에서도
+// 이 반복이 CPU/대역폭을 잡아먹어 협업 입력이 밀릴 수 있다.
+// push 는 즉시 캐시를 갱신하고, pull 은 아주 짧은 TTL(=최대 지연) 안에서
+// 캐시를 재사용한다.
+const STATE_CACHE = new Map(); // nb -> {state, at}
+const LOCAL_TTL = 700;
+const SB_TTL = 1500;
+
+function cacheGet(nb) {
+  const hit = STATE_CACHE.get(nb);
+  if (!hit) return null;
+  const ttl = sbEnabled() ? SB_TTL : LOCAL_TTL;
+  if (Date.now() - hit.at > ttl) return null;
+  return hit.state;
+}
+
+function cacheSet(nb, state) {
+  STATE_CACHE.set(nb, { state, at: Date.now() });
+  if (STATE_CACHE.size > 200) STATE_CACHE.delete(STATE_CACHE.keys().next().value);
+}
+
+export function syncCacheInvalidate(nb) {
+  STATE_CACHE.delete(nb);
+}
+
 export async function getState(nb) {
+  const cached = cacheGet(nb);
+  if (cached) return cached;
   if (sbEnabled()) {
-    try { return (await sbGet('sdy_sync_states', nb)) || {}; }
-    catch (e) { throw e; }
+    try {
+      const s = (await sbGet('sdy_sync_states', nb)) || {};
+      cacheSet(nb, s);
+      return s;
+    } catch (e) { throw e; }
   }
-  return readJson(syncPath(nb), {});
+  const s = await readJson(syncPath(nb), {});
+  cacheSet(nb, s);
+  return s;
 }
 
 export async function putState(nb, state) {
+  cacheSet(nb, state);
   if (sbEnabled()) {
     await sbPut('sdy_sync_states', nb, state);
     return;
