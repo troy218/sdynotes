@@ -6,7 +6,8 @@
   "main": "server/src/index.js",
   "scripts": {
     "start": "node server/src/index.js",
-    "test:music": "node test/music_controls.mjs"
+    "test:music": "node test/music_controls.mjs",
+    "test:save": "node test/save_outbox_contract.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",
