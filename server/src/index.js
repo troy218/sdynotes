@@ -1,4 +1,4 @@
-// SDYnotes backend — Fastify main server (14.8.0 renewed).
+// SDYnotes backend — Fastify main server (14.9.0 renewed).
 // Lightweight endpoints run here; heavy jobs (PDF import, music tagging,
 // AcoustID, YouTube) run in the Python worker and are proxied.
 import Fastify from 'fastify';
@@ -21,7 +21,6 @@ import { registerNotify } from './routes/notify.js';
 import { registerLive } from './routes/live.js';
 import { registerMisc } from './routes/misc.js';
 import { registerMusic } from './routes/music.js';
-import { registerChat } from './routes/chat.js';
 
 ensureDirs();
 
@@ -50,7 +49,6 @@ registerNotify(app);
 registerLive(app);
 registerMisc(app);
 registerMusic(app, { worker });
-registerChat(app);
 
 // worker proxy for the import pipeline (kept verbatim in Python)
 for (const [method, url] of [

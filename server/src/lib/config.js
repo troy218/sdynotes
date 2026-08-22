@@ -1,7 +1,7 @@
 // Environment-derived configuration (mirrors sdynotes/common.py + per-module consts).
 import crypto from 'node:crypto';
 
-export const APP_VERSION = '14.8.0';
+export const APP_VERSION = '14.9.0';
 export const SETTINGS_SCHEMA = 3;
 
 export const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || 'os8j8bnv';

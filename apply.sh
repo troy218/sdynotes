@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-#  SDYnotes 14.8.0 적용 스크립트 (Fastify + Python worker 개편판)
+#  SDYnotes 14.9.0 적용 스크립트 (Fastify + Python worker 개편판)
 #  ★서버 안에서 실행★
 #
 #  구조:
@@ -21,9 +21,6 @@ set -e
 APP_DIR=/var/www/memo
 PORT=5000
 WORKER_PORT=5100
-TURN_PORT=3478
-TURN_MIN_PORT=49160
-TURN_MAX_PORT=49200
 SVC=sdynotes
 SVC_WORKER=sdynotes-worker
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -115,7 +112,7 @@ ok "Supabase 테이블 SQL 생성: $APP_DIR/SUPABASE_SCHEMA.sql"
 ENV_FILE="$APP_DIR/.env"
 touch "$ENV_FILE"
 chmod 600 "$ENV_FILE"
-for EK in SUPABASE_URL SUPABASE_SERVICE_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_KEY CLOUDINARY_CLOUD_NAME CLOUDINARY_API_KEY CLOUDINARY_API_SECRET ACOUSTID_KEY SDY_TURN_URL SDY_LOCAL_TURN_URL SDY_TURN_USER SDY_TURN_PASS SDY_TURN_SECRET SDY_TURN_PUBLIC_IP SDY_SETUP_TURN; do
+for EK in SUPABASE_URL SUPABASE_SERVICE_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_KEY CLOUDINARY_CLOUD_NAME CLOUDINARY_API_KEY CLOUDINARY_API_SECRET ACOUSTID_KEY; do
     EV="${!EK:-}"
     if [ -n "$EV" ] && ! grep -qE "^${EK}=" "$ENV_FILE"; then
         printf '%s=%s\n' "$EK" "$EV" >> "$ENV_FILE"
@@ -220,103 +217,20 @@ else
     fi
 fi
 
-# ── 3.5. TURN 릴레이 (LTE ↔ Wi-Fi / 서로 다른 공유기 통화) ─────────
-# WebRTC 의 STUN 만으로는 통신사 CGNAT·대칭 NAT 를 통과할 수 없다. Oracle 서버에
-# coturn 을 함께 띄우고, 브라우저에는 1시간짜리 임시 자격 증명만 내려 준다.
-TURN_SETUP="${SDY_SETUP_TURN:-$(env_get SDY_SETUP_TURN)}"
-[ -n "$TURN_SETUP" ] || TURN_SETUP=1
-if [ "$TURN_SETUP" != "0" ]; then
-    say "3.5/6  통화용 TURN 릴레이"
-    if ! command -v turnserver >/dev/null 2>&1; then
-        echo "  coturn 설치 중..."
-        sudo apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive sudo apt-get install -y -qq coturn >/dev/null 2>&1 \
-            || echo "  ⚠️ coturn 설치 실패 — 아래 README의 TURN 설정을 확인하세요"
-    fi
-
-    if command -v turnserver >/dev/null 2>&1; then
-        TURN_PUBLIC_IP="${SDY_TURN_PUBLIC_IP:-$(env_get SDY_TURN_PUBLIC_IP)}"
-        [ -n "$TURN_PUBLIC_IP" ] || TURN_PUBLIC_IP=$(curl -4 -fsS --max-time 6 https://api.ipify.org 2>/dev/null || true)
-        TURN_PRIVATE_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')
-        [ -n "$TURN_PRIVATE_IP" ] || TURN_PRIVATE_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-        TURN_SECRET="${SDY_TURN_SECRET:-$(env_get SDY_TURN_SECRET)}"
-        if [ -z "$TURN_SECRET" ]; then
-            if command -v openssl >/dev/null 2>&1; then TURN_SECRET=$(openssl rand -hex 32)
-            else TURN_SECRET=$(python3 -c 'import secrets;print(secrets.token_hex(32))'); fi
-        fi
-
-        if [ -n "$TURN_PUBLIC_IP" ] && [ -n "$TURN_PRIVATE_IP" ] && [ -n "$TURN_SECRET" ]; then
-            env_set SDY_TURN_SECRET "$TURN_SECRET"
-            env_set SDY_TURN_PUBLIC_IP "$TURN_PUBLIC_IP"
-            # 콤마로 묶지 않는다 — 브라우저는 urls 배열에 같은 호스트가 두 번 들어가면
-            # ICE candidate 중복을 피하려고 한 쪽을 버리는 경우가 있다. UDP와 TCP를
-            # 별도 iceServers 엔트리로 다루게 chat.js 에서 분리하므로 여기선 베이스
-            # URL만 저장한다.
-            env_set SDY_LOCAL_TURN_URL "turn:$TURN_PUBLIC_IP:$TURN_PORT"
-
-            # 최초 한 번은 사용자가 만들었던 기존 설정을 백업한다.
-            if [ -f /etc/turnserver.conf ] && [ ! -f /etc/turnserver.conf.sdy-before ]; then
-                sudo cp /etc/turnserver.conf /etc/turnserver.conf.sdy-before
-            fi
-            TURN_EXTERNAL="external-ip=$TURN_PUBLIC_IP"
-            [ "$TURN_PUBLIC_IP" = "$TURN_PRIVATE_IP" ] || TURN_EXTERNAL="external-ip=$TURN_PUBLIC_IP/$TURN_PRIVATE_IP"
-            # relay-ip 를 사설 IP 로 강제하면 VCN 의 source-NAT 가 외부 클라이언트로
-            # 보낼 패킷을 10.0.0.0/16 으로 라우팅하다가 hairpin 함정에 빠져 일부
-            # 클라이언트는 "srflx 는 잡히는데 relay 가 안 잡히는" 증상을 보인다.
-            # external-ip 만 두면 coturn 이 OS 의 라우팅 테이블을 따라 자동으로
-            # 릴레이 소스 IP 를 결정하므로 VCN/클라우드 환경에서 안정적이다.
-            sudo tee /etc/turnserver.conf >/dev/null <<EOF
-# SDYnotes managed coturn — apply.sh
-listening-port=$TURN_PORT
-listening-ip=$TURN_PRIVATE_IP
-$TURN_EXTERNAL
-min-port=$TURN_MIN_PORT
-max-port=$TURN_MAX_PORT
-fingerprint
-use-auth-secret
-static-auth-secret=$TURN_SECRET
-realm=sdynotes
-stale-nonce=600
-no-multicast-peers
-no-loopback-peers
-no-cli
-no-tls
-no-dtls
-# 일부 브라우저/미들박스 가 long-term credential + STUN long-term
-# 인증 메시지의 MESSAGE-INTEGRITY 검사를 엄격하게 한다. 명시적으로 켜두면
-# "401 Unauthorized" 류 통화 실패가 사라진다.
-lt-cred-mech
-EOF
-            if [ -f /etc/default/coturn ]; then
-                sudo sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn
-                grep -q '^TURNSERVER_ENABLED=' /etc/default/coturn || echo 'TURNSERVER_ENABLED=1' | sudo tee -a /etc/default/coturn >/dev/null
-            fi
-            sudo systemctl enable coturn -q 2>/dev/null || true
-            sudo systemctl restart coturn 2>/dev/null || true
-
-            # UFW 를 쓰는 서버라면 OS 방화벽도 함께 연다. Oracle VCN 보안 목록은
-            # VM 밖의 방화벽이라 스크립트로 열 수 없어 아래에 별도 안내한다.
-            if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
-                sudo ufw allow "$TURN_PORT/udp" comment 'SDYnotes TURN' >/dev/null || true
-                sudo ufw allow "$TURN_PORT/tcp" comment 'SDYnotes TURN' >/dev/null || true
-                sudo ufw allow "$TURN_MIN_PORT:$TURN_MAX_PORT/udp" comment 'SDYnotes TURN relay' >/dev/null || true
-            fi
-            if systemctl is-active --quiet coturn; then
-                ok "TURN 실행 중 ($TURN_PUBLIC_IP:$TURN_PORT, 임시 인증)"
-            else
-                echo "  ⚠️ coturn 이 시작되지 않았습니다: journalctl -u coturn -n 50"
-            fi
-            echo "  ★ Oracle Cloud 인그레스에 UDP/TCP $TURN_PORT 및 UDP $TURN_MIN_PORT-$TURN_MAX_PORT 를 열어야 외부망 통화가 됩니다."
-            echo "  ★ 자기 공인 IP 로의 self-traffic 이 VCN 의 hairpin 차단으로 'No route to host' 가 나올 수 있으나"
-            echo "    외부 클라이언트 → 공인 IP 경로는 정상이며 통화에는 영향이 없습니다."
-            echo "  ★ 같은 호스트(SDY_TURN_URL = SDY_LOCAL_TURN_URL) 라면 외부용 정적 인증을 비워서 HMAC 임시 인증만 쓰는 것을 권장합니다."
-        else
-            echo "  ⚠️ 공인/사설 IP를 확인하지 못해 TURN 자동 설정을 건너뜁니다."
-            echo "     .env 에 SDY_TURN_PUBLIC_IP=오라클_공인IP 를 넣고 다시 실행하세요."
-        fi
-    fi
-else
-    echo "  TURN 자동 설치 꺼짐 (SDY_SETUP_TURN=0)"
+# ── 3.5. 구 엽스코드(채팅·음성) 정리 — coturn · TURN 포트 닫기 ────────
+# 14.9 · 엽스코드(Youpscord) 채팅·WebRTC 음성은 프런트/서버에서 제거되었다.
+# 이전 버전이 설치한 coturn 과 UFW 규칙만 남아 있으면 여기서 중지한다.
+# Oracle VCN/NSG 인그레스(3478, 49160-49200)는 콘솔에서 직접 닫아야 한다.
+say "3.5/6  채팅 기능 정리 (TURN 포트 닫기)"
+if systemctl list-unit-files 2>/dev/null | grep -q '^coturn'; then
+    sudo systemctl disable --now coturn >/dev/null 2>&1 || true
+    sudo rm -f /etc/turnserver.conf
+    ok "coturn 중지·비활성화 — TURN(3478, 49160-49200) 포트 닫힘"
+fi
+if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
+    sudo ufw delete allow 3478/udp >/dev/null 2>&1 || true
+    sudo ufw delete allow 3478/tcp >/dev/null 2>&1 || true
+    sudo ufw delete allow 49160:49200/udp >/dev/null 2>&1 || true
 fi
 
 # ── 4. 서비스 등록 (단일 프로세스 유지) ──────────────────────
@@ -488,7 +402,6 @@ A=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/api/admi
 P=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)
 YT=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/youtube/status" || true)
 CLOUD=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/cloud/status" || true)
-TURN_CFG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/chat/config?uid=deploy-check" || true)
 
 echo
 echo "  페이지        : $P"
@@ -496,11 +409,6 @@ echo "  관리자 API    : $A   $([ "$A" = 200 ] && echo '(정상)' || echo '(�
 echo "  health        : $H"
 echo "  클라우드 상태  : $CLOUD"
 echo "  유튜브(worker) : $YT"
-if echo "$TURN_CFG" | grep -q '"turn":true'; then
-    echo "  통화 TURN      : 준비됨 (Oracle 인그레스 규칙도 확인하세요)"
-else
-    echo "  통화 TURN      : ⚠️ 미설정 — 서로 다른 망 통화가 실패할 수 있습니다"
-fi
 if echo "$CLOUD" | grep -q '"supabase":true' && echo "$CLOUD" | grep -q '"cloudinary":true'; then
     echo "  ✅ 영구 저장소 준비됨"
 else

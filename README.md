@@ -1,8 +1,8 @@
-# SDYnotes 14.8.0 — Fastify + Python worker (renewed, fast)
+# SDYnotes 14.9.0 — Fastify + Python worker (renewed, fast)
 
 기존 단일 `app.py`(약 11,000줄)를 **"빠른 부분은 Node, 무거운 부분만 Python"** 으로
 재설계한 백엔드입니다. 모든 엔드포인트 URL·응답 모양·로컬 폴백·Supabase/Cloudinary
-동작은 원본(14.8.0)과 동일합니다. 프런트(`sdynotes.html`)에는 14.9 에서 아래 두
+동작은 원본(14.8.0)과 동일합니다. 프런트(`sdynotes.html`)에는 14.9.0 에서 아래 두
 가지가 추가되었습니다(그 외는 원본 그대로).
 
 - **같은 텍스트상자 동시 편집 병합**: 서버가 텍스트 요소의 최근 버전을 보관하고,
@@ -65,23 +65,6 @@ sdynotes-fast/
   `/api/music/rescan`, `/api/music/reset`, `/api/music/meta`,
   `/api/music/cover`, `/api/music/synced-lyrics`, `/api/music/from_url`,
   `/api/music/background-work`
-- 엽스코드(Youpscord) 채팅(전부 인메모리 — 영구 저장 없음):
-  `/api/chat/join|ping|leave|msg|upload|react|voice|signal|del|bgm|knock`,
-  `/api/chat/file/:id`, `/api/chat/stream`(SSE), `/api/chat/config`(ICE 설정).
-  앱 전체 공용 1개 방. 닉네임은 라이브 새 이름 + 파스텔 색.
-  실시간 음성은 WebRTC mesh(시그널링만 Node가 릴레이).
-  - 채팅·offer/answer/ICE는 SSE 응답에 **즉시 push**한다. LTE↔Wi-Fi 전환으로
-    EventSource가 잠시 끊겨도 사용자별 대기 큐에 보관했다가 재연결 즉시 전달한다.
-  - STUN(Google + Cloudflare)은 기본 내장. **같은 네트워크가 아니면 대칭 NAT·
-    통신사 CGNAT·방화벽 뒤에서 STUN만으로는 연결이 안 되므로 TURN이 필수다.**
-  - `apply.sh`는 Oracle VM에 coturn을 자동 설치하고, `.env`의
-    `SDY_LOCAL_TURN_URL`/`SDY_TURN_SECRET`을 자동 생성한다. 브라우저에는 HMAC
-    기반 1시간짜리 임시 인증만 전달한다. 자동 설치를 끄려면
-    `SDY_SETUP_TURN=0`을 사용한다.
-  - 외부 TURN을 따로 쓰는 경우 기존 방식도 함께 지원한다:
-    `SDY_TURN_URL=turn:도메인:3478`, `SDY_TURN_USER=...`, `SDY_TURN_PASS=...`.
-  마지막 대화 후 24시간(`SDY_CHAT_TTL`, 기본 86400초)이 지나면 메시지·파일이
-  '펑' 하고 사라진다.
 
 ## 로컬 실행
 
@@ -107,61 +90,7 @@ bash apply.sh
   - `sdynotes`        (Node, :5000, 단일 프로세스)
   - `sdynotes-worker` (Python, 127.0.0.1:5100, 단일 프로세스)
 - `.env` 보존, vault 데이터 보존, nginx(SSE 버퍼링 해제 + 512M 업로드 + 900초 타임아웃),
-  swap, deno/bgutil(유튜브), fpcalc(소리인식), coturn(통화 릴레이) 자동 준비.
-
-### Oracle Cloud에서 서로 다른 망 통화 허용 (필수 1회)
-
-`apply.sh`가 VM 안의 coturn/UFW는 설정하지만 **VM 밖에 있는 Oracle VCN 방화벽은
-코드로 변경할 수 없습니다.** Oracle Console → Networking → VCN → Security Lists
-(또는 해당 NSG) → Ingress Rules에서 다음을 한 번 열어 주세요.
-
-| Source CIDR | Protocol | Destination port | 용도 |
-|---|---|---:|---|
-| `0.0.0.0/0` | UDP | `3478` | TURN 기본 경로(LTE/Wi-Fi 권장) |
-| `0.0.0.0/0` | TCP | `3478` | UDP 차단 망의 대체 경로 |
-| `0.0.0.0/0` | UDP | `49160-49200` | TURN 미디어 릴레이 |
-
-그 뒤 서버에서 `bash apply.sh`를 다시 실행하고 마지막 결과의
-`통화 TURN : 준비됨`을 확인합니다. 웹 마이크는 보안 컨텍스트에서만 열리므로 실제
-접속 주소도 **HTTPS 도메인**이어야 합니다(`localhost`만 예외).
-
-확인 명령:
-
-```bash
-systemctl status coturn --no-pager
-curl -s 'http://127.0.0.1:5000/api/chat/config?uid=test'
-# 결과에 "turn":true 및 turn:<Oracle 공인 IP>:3478 이 있어야 함
-```
-
-공인 IP 자동 감지가 실패하면 `/var/www/memo/.env`에
-`SDY_TURN_PUBLIC_IP=오라클_공인_IP`를 추가한 뒤 `bash apply.sh`를 다시 실행합니다.
-
-#### 자주 막히는 함정 (체크리스트)
-
-1. **VCN 인그레스가 다 열렸는데도 통화 안 됨** — `curl /api/chat/config` 가
-   `turn:true` 를 주는지 확인. `turn:false` 면 Node 가 TURN 인증을 못 만들고
-   있다는 뜻이므로 `SDY_TURN_SECRET` (또는 `SDY_TURN_USER`+`SDY_TURN_PASS`) 이
-   `systemctl show sdynotes -p Environment` 결과에 포함되는지 확인.
-2. **"연결 중"에서 멈춤, ICE candidate 가 `relay` 가 안 잡힘** — 브라우저
-   DevTools → `chrome://webrtc-internals` 에서 `Local Address` 가 49160~49200
-   사이로 잡히면 정상. 안 잡히면 `relay-ip` 를 안 박은 현재 설정(자동 라우팅)
-   으로 해결된다. 옛 버전의 `relay-ip=$TURN_PRIVATE_IP` 는 VCN 환경에서
-   hairpin 함정에 빠져 일부 클라이언트가 relay candidate 를 버린다.
-3. **VM 안에서 `bash -c 'exec 3<>/dev/tcp/$PUBIP/3478'` 가 `No route to host`** —
-   Oracle VCN 의 source/dest check 또는 hairpin 차단. 외부 클라이언트 →
-   공인 IP 경로에는 영향이 없으니 **무시해도 된다.** 정말로 외부에서도 막힌
-   것이라면 VCN Security List 의 Source CIDR 가 `0.0.0.0/0` 가 맞는지 다시 확인.
-4. **`turn:host:3478` 만 주고 TCP 를 안 붙인 경우** — 브라우저는 쿼리 없는
-   `turn:` URL 을 UDP 전용으로 취급한다. Oracle 인그레스에 TCP 3478 을 열어
-   둬도 브라우저가 시도하지 않아 통신사 UDP 차단 망에서 '연결 중'에 멈춘다.
-   Node 는 베이스 URL 에서 UDP(쿼리 없음) + `?transport=tcp` 를 **별도
-   iceServers 엔트리**로 나눠 내려 준다. 예전 버전에서 업그레이드했다면
-   브라우저 캐시를 비우고 `curl /api/chat/config` 결과에
-   `turn:IP:3478?transport=tcp` 가 있는지 확인한다.
-5. **TURN 인증이 401 로 reject** — `lt-cred-mech` 가 켜져 있는지 확인
-   (`grep ^lt-cred-mech /etc/turnserver.conf`). 그리고 VM 시계가
-   `date` 기준 ±5 분 이내여야 HMAC 임시 인증이 통과한다
-   (`sudo apt-get install -y chrony` 로 NTP 동기화).
+  swap, deno/bgutil(유튜브), fpcalc(소리인식) 자동 준비.
 
 ## 주의 (기존 운영 규칙 그대로)
 
@@ -169,8 +98,12 @@ curl -s 'http://127.0.0.1:5000/api/chat/config?uid=test'
   서로 덮어써져 곡이 사라질 수 있습니다. gunicorn 다중 worker 금지.
 - `SUPABASE_SERVICE_KEY` 등 비밀키는 zip/로그/프런트에 절대 노출 금지.
 - 키가 없으면 로컬 폴더 폴백으로 그대로 동작합니다.
-- `APP_VERSION` 은 프런트 `<meta name="application-version">`(14.8.0) 와 일치해야
+- `APP_VERSION` 은 프런트 `<meta name="application-version">`(14.9.0) 와 일치해야
   합니다.
+- **14.9.0 에서 엽스코드(Youpscord) 채팅·WebRTC 음성 통화를 제거**했습니다.
+  프런트의 둥근 채팅 버튼, `/api/chat/*` 엔드포인트, coturn(TURN) 설치와
+  Oracle 인그레스(UDP/TCP 3478, UDP 49160-49200)가 모두 필요 없어졌습니다.
+  구버전 서버라면 `bash apply.sh` 를 다시 실행해 coturn 을 중지하면 됩니다.
 - 이스터에그(쫄라맨 야구)는 프런트 전용 — `sdynotes.html` 그대로 서빙하므로 유지.
 
 ## 단계별 이관 상태

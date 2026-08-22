@@ -58,44 +58,29 @@ cd /tmp/newsite && sudo bash ./apply.sh
 
 - `npm install --omit=dev --no-audit --no-fund` (의존성)
 - Node/Fastify `:5000` + Python worker `:5100` systemd 서비스 재기동
-- `/var/www/memo/.env` 보존 + `SDY_TURN_*` 자동 갱신
-- `coturn` 설정 재작성 → `systemctl restart coturn` (이번 PR #2 의
-  `relay-ip` 제거 + `lt-cred-mech` 추가 반영)
+- `/var/www/memo/.env` 보존 (비밀키 유지)
 - nginx, swap, deno, bgutil, fpcalc 자동 준비
-- 마지막에 `통화 TURN : 준비됨` 출력
+- **14.9.0 부터 엽스코드(채팅·음성 통화) 제거**: 구버전이 설치한 `coturn` 을
+  중지·비활성화하고 UFW 의 TURN 규칙(3478, 49160-49200)을 삭제한다.
+  Oracle VCN/NSG 인그레스 규칙은 코드로 닫을 수 없으므로 콘솔에서 직접 닫아야 한다.
 
-## 배포 직후 검증 (4단계)
+## 배포 직후 검증 (2단계)
 
 ```bash
-# 1) 새 coturn 설정 적용 확인
-grep -E '^(relay-ip|lt-cred-mech|fingerprint|use-auth-secret|external-ip)' /etc/turnserver.conf
-# 기대: fingerprint / use-auth-secret / external-ip=161.33.181.176 / lt-cred-mech
-#       relay-ip 줄이 사라졌어야 함
+# 1) 서버 API 응답 확인
+curl -s http://127.0.0.1:5000/api/health
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5000/
 
-# 2) 새 ICE config 가 TURN 을 잘 주는지
-curl -s 'http://127.0.0.1:5000/api/chat/config?uid=deploy-check' | head -c 800
-# 기대: "turn":true, turn:161.33.181.176:3478 과 ?transport=tcp 가 각각 있어야 함
-
-# 3) 외부 도달 (이미 확인됨 — 깨지지 않았으면 그대로)
-timeout 4 bash -c 'exec 3<>/dev/tcp/161.33.181.176/3478 && echo TCP-3478-OK'
-
-# 4) 브라우저에서 — 두 명이 서로 다른 망(LTE ↔ Wi-Fi)으로 동시에 마이크 켜고
-#    DevTools → chrome://webrtc-internals 에서
-#    Local Address 가 49160~49200 사이 + Connection: relay 로 잡히면 성공
+# 2) coturn 이 꺼져 있는지 (구버전에서 업그레이드한 경우)
+systemctl is-active coturn   # inactive 또는 not-found 여야 함
 ```
 
 ## 자주 터지는 에러
 
 - **`Permission denied (publickey)`** — Deploy key 안 걸고 `git@` 로 clone 시도.
   → 위 Deploy Key 방식 1) 키 등록 + 3) `GIT_SSH_COMMAND='ssh -o IdentitiesOnly=yes'`
-- **`Could not resolve host: api.ipify.org`** — apply.sh 가 공인 IP 자동 감지 실패.
-  → `export SDY_TURN_PUBLIC_IP=161.33.181.176` 후 `bash apply.sh` 다시.
-- **`systemctl restart coturn` 가 hang** — 옛 PID 가 살아있을 때. `sudo systemctl kill -s SIGKILL coturn` 한 번.
 - **`fatal: Authentication failed for 'https://troy218@github.com/...'`** — 옛
   `troy218:PAT@` URL 은 2025-08 부터 차단됨. 반드시 `x-access-token:$GH_TOKEN@` 형태로.
-- **여전히 '연결 중' 에서 멈춤** — DevTools → Network → WebSocket 차단 여부.
-  `chrome://webrtc-internals` 의 `STUN ping` rtt 가 비어있으면 STUN 자체가 막힌
-  것이니 VCN 의 UDP 인그레스를 다시 확인.
 
 ## 더 빠르게 (main 머지 시 자동)
 

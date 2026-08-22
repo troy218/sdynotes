@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.8.0",
+  "version": "14.9.0",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs",
   "main": "server/src/index.js",

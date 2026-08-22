@@ -39,7 +39,7 @@ for _d in (IMG_DIR, DOCS_DIR, UPLOAD_DIR, JOBS_DIR, MUSIC_DIR, SYNC_DIR):
     except Exception:
         pass
 
-APP_VERSION = "14.8.0"
+APP_VERSION = "14.9.0"
 SETTINGS_SCHEMA = 3
 
 CLOUD_READY = bool(os.environ.get("CLOUDINARY_API_KEY")

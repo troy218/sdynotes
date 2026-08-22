@@ -1,6 +1,6 @@
 # 오라클 AMD → ARM(Ampere A1) 마이그레이션 가이드
 
-> SDYnotes 14.8.0 · AMD(x86_64) 인스턴스에서 ARM(aarch64, Ampere A1) 인스턴스로 옮기는 순서.
+> SDYnotes 14.9.0 · AMD(x86_64) 인스턴스에서 ARM(aarch64, Ampere A1) 인스턴스로 옮기는 순서.
 > 핵심 원칙: **코드는 새로 깔고, 데이터 폴더는 통째로 옮긴다.** x86 전용 바이너리는 새 서버에서 다시 설치한다.
 
 ---
@@ -21,7 +21,8 @@
 | `.admin_sessions.json`, `notifications.json`, `_yt_cookies.txt.bak` | 관리자 세션·알림·쿠키 백업 |
 
 - **Supabase / Cloudinary 는 원격**이므로 그대로 유지된다. 클라우드 모드라면 노트·카드·음악 메타·스티커 메타는 자동으로 복구된다. 다만 **음악 파일, 가져온 PDF 이미지, 보관함, 배경화면은 디스크에만 있으므로 반드시 복사**해야 한다.
-- 엽스코드(채팅·음성)는 전부 인메모리라 영구 저장이 없다 → 옮기면 대화는 비워진다(정상).
+- 엽스코드(채팅·음성)는 14.9.0 에서 제거되었다. 기존 `.env` 의 `SDY_TURN_*`
+  값과 coturn 설정은 남아 있어도 동작에 영향을 주지 않는다.
 
 ---
 
@@ -54,10 +55,10 @@ sudo apt-get update -y
 
 ```bash
 # 로컬에서
-scp sdynotes-14.8.0-fast.zip ubuntu@새서버IP:~/
+scp sdynotes-X.zip ubuntu@새서버IP:~/
 # 새 서버에서
 ssh ubuntu@새서버IP
-unzip sdynotes-14.8.0-fast.zip -d ~/deploy
+unzip sdynotes-X.zip -d ~/deploy
 ```
 
 ### 3-2. 데이터 rsync (새 서버에서, 구 서버에서 당겨오기)
@@ -181,9 +182,9 @@ sudo systemctl stop sdynotes sdynotes-worker
 
 - **worker는 단일 프로세스**를 유지한다 (gunicorn 다중 worker 금지 — `music/_index.json` 덮어쓰기로 곡 유실 위험).
 - bgutil의 `canvas` 의존성이 ARM에서 빌드 실패해도 **무해** — "(공급기 의존성 세팅 실패 — deno 만으로 시도)"만 나오고 유튜브 다운로드는 동작한다 (14.10 수정으로 PO 토큰 강제가 제거됨).
-- `apply.sh`가 coturn과 `SDY_LOCAL_TURN_URL`/임시 인증을 자동 구성한다. Oracle VCN/NSG에는
-  UDP·TCP `3478`, UDP `49160-49200` 인그레스를 별도로 열어야 한다. 기존 외부 TURN
-  (`SDY_TURN_URL`/USER/PASS)은 `.env`에 있으면 함께 사용한다.
+- 14.9.0 부터 엽스코드(채팅·음성 통화)를 제거해 coturn/TURN 포트
+  (UDP·TCP `3478`, UDP `49160-49200`)는 더 이상 열 필요가 없다. `apply.sh` 가
+  구버전이 설치한 coturn 을 중지·비활성화한다. Oracle 인그레스 규칙은 콘솔에서 닫는다.
 - 비밀키(`SUPABASE_SERVICE_KEY` 등)는 zip·로그·프런트에 노출 금지 (기존 운영 규칙 그대로).
 - **구 서버와 Ubuntu 버전이 같으므로** certbot·nginx 설정 문법은 동일. 다만 ARM용 패키지 저장소에서 다시 설치된다는 점만 다르다.
 - nginx `default` 사이트는 apply.sh가 삭제하므로, 기존에 기본 사이트에 걸린 443 설정은 새 서버에서 다시 만들어야 한다 (4-1 참조).
