@@ -1554,11 +1554,18 @@ def _music_backfill():
                         time.sleep(sleep_gap)
                 except Exception:
                     pass
-            work_items = ([("tag", x) for x in retag + retry] + [("lyr", x) for x in nolyr])[:batch_size]
+            # 표지가 없는 곡도 todo에만 넣고 실제 처리하지 않으면 백필이
+            # 계속 활성 상태로 남는다. 태그·가사와 같은 배치에서 표지 검색도
+            # 실행해 다음 순회에는 완료 상태가 되게 한다.
+            work_items = ([("tag", x) for x in retag + retry]
+                          + [("lyr", x) for x in nolyr]
+                          + [("cover", x) for x in nocov])[:batch_size]
             for kind, mid in work_items:
                 try:
                     if kind == "tag":
                         _music_autotag(mid, force=True, algo=TAG_ALGO)
+                    elif kind == "cover":
+                        _music_cover_search(mid)
                     else:
                         _music_lyrics(mid)
                 except Exception:
