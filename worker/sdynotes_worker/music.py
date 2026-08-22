@@ -32,31 +32,74 @@ MUSIC_EXTS = {"mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "webm", "weba"}
 
 
 
+# mtime 기준 캐시. 주의: _music_load 는 호출측이 _music_lock 을 잡은 채로
+# 불리는 경우가 많다(threading.Lock 은 재진입 불가) → 캐시는 전용 락으로만
+# 보호하고 _music_lock 은 절대 건드리지 않는다.
+_music_cache = {"key": None, "data": None}
+_music_cache_lock = threading.Lock()
+
+
+def _music_shallow(m):
+    """목록 dict 를 '곡 단위' 얕은 복사로 돌려준다.
+
+    JSON 파싱(수 MB~수십 MB 문자열 → 객체)보다 훨씬 싸고, 호출측이
+    리턴받은 dict 를 수정해도 캐시가 오염되지 않는다.
+    """
+    return {k: (dict(v) if isinstance(v, dict) else v) for k, v in m.items()}
+
+
 def _music_load():
-    """목록 읽기. 본 파일이 깨졌으면 백업본으로 되살린다 (11.4)."""
+    """목록 읽기 (mtime 기준 캐시 + 깨진 파일 백업 복구 11.4).
+
+    목록 파일은 가사 본문까지 담고 있어 곡이 많으면 수 MB 가 넘는다.
+    매 요청마다 json.load 를 하면 list/play/lookup/백필이 몰릴 때 CPU·GC
+    부담이 커지므로, 파일이 안 바뀌었으면 캐시에서 '얕은 복사'만 돌려준다.
+    """
+    key = None
+    try:
+        st = os.stat(MUSIC_META)
+        key = (st.st_mtime_ns, st.st_size)
+    except Exception:
+        key = None
+    with _music_cache_lock:
+        c = _music_cache
+        if c["data"] is not None and c["key"] == key:
+            return _music_shallow(c["data"])
+    m = None
     try:
         with open(MUSIC_META, encoding="utf-8") as fp:
-            m = json.load(fp)
-        if isinstance(m, dict):
-            return m
+            _m = json.load(fp)
+        if isinstance(_m, dict):
+            m = _m
     except Exception:
-        pass
-    try:
-        with open(MUSIC_BAK, encoding="utf-8") as fp:
-            m = json.load(fp)
-        if isinstance(m, dict) and m:
-            print(f"[music] 목록 파일이 깨져 백업본({len(m)}곡)으로 되살립니다")
-            try:
-                tmp = "%s.tmp.%s" % (MUSIC_META, uuid.uuid4().hex[:8])
-                with open(tmp, "w", encoding="utf-8") as fp:
-                    json.dump(m, fp, ensure_ascii=False)
-                os.replace(tmp, MUSIC_META)
-            except Exception:
-                pass
-            return m
-    except Exception:
-        pass
-    return {}
+        m = None
+    if m is None:
+        try:
+            with open(MUSIC_BAK, encoding="utf-8") as fp:
+                bm = json.load(fp)
+            if isinstance(bm, dict) and bm:
+                print(f"[music] 목록 파일이 깨져 백업본({len(bm)}곡)으로 되살립니다")
+                try:
+                    tmp = "%s.tmp.%s" % (MUSIC_META, uuid.uuid4().hex[:8])
+                    with open(tmp, "w", encoding="utf-8") as fp:
+                        json.dump(bm, fp, ensure_ascii=False)
+                    os.replace(tmp, MUSIC_META)
+                    st = os.stat(MUSIC_META)
+                    key = (st.st_mtime_ns, st.st_size)
+                except Exception:
+                    pass
+                m = bm
+        except Exception:
+            m = None
+    if m is None:
+        with _music_cache_lock:
+            _music_cache["key"] = key
+            _music_cache["data"] = {}
+        return {}
+    with _music_cache_lock:
+        _music_cache["key"] = key
+        _music_cache["data"] = m
+    return _music_shallow(m)
 
 
 _SIDE_KEYS = ("id", "title", "artist", "album", "year", "genre", "ext", "bytes",
@@ -134,6 +177,18 @@ def _music_save(m):
         except Exception:
             pass
     os.replace(tmp, MUSIC_META)
+    # 14.11 · 저장 즉시 캐시도 갱신한다. mtime/size 키만 믿으면 저장 직후
+    # (특히 1초 단위 타임스탬프 파일시스템) 다음 _music_load 가 낡은 목록을
+    # 돌려줄 수 있다. 같은 m 이 다시 뿌려져 곡 단위 사본도 일관된다.
+    try:
+        st2 = os.stat(MUSIC_META)
+        key2 = (st2.st_mtime_ns, st2.st_size)
+        with _music_cache_lock:
+            # 사본을 넣는다 — 호출자가 m 을 저장 뒤에도 수정해도 캐시가 오염되지 않는다.
+            _music_cache["key"] = key2
+            _music_cache["data"] = _music_shallow(m)
+    except Exception:
+        pass
     # 11.5 · 바뀐 곡만 쪽지 갱신 (되살리기용 사본)
     try:
         for mid, rec in m.items():
@@ -672,7 +727,7 @@ def _acoustid_lookup(path):
 
 
 def _music_recognize(mid, apply_tags=True):
-    """한 곡을 '소리'로 인식하고, 그 이름으로 태그·표지·가사까지 채운다."""
+    """한 곡을 '소리'로 인식하고 제목·가수만 반영한다 (가사·표지는 연쇄하지 않음)."""
     with _music_lock:
         rec = dict((_music_load().get(mid) or {}))
     if not rec:
@@ -716,9 +771,9 @@ def _music_recognize(mid, apply_tags=True):
             _music_save(m)
     print(f"[recog] 소리 인식: {res['title']} / {res['artist']} (score {res['score']})")
     if apply_tags:
-        # 인식한 이름으로 기존 검색을 돌려 앨범·표지·연도·장르를 채운다
-        out = _music_autotag(mid, force=True, algo=TAG_ALGO,
-                             qhint=(res["title"], res["artist"]), replace_cover=True)
+        # 인식 결과(제목·가수)만 반영한다. 가사·표지·연도·장르는 각자의 동작에서.
+        # 14.11 — '소리 인식' 클릭 한 번에 다른 기능(가사 검색 등)이 연쇄로
+        # 돌지 않도록 한다. (제목·가수는 인식 자체의 결과물이다)
         with _music_lock:
             m = _music_load()
             r2 = m.get(mid)
@@ -732,10 +787,6 @@ def _music_recognize(mid, apply_tags=True):
                 r2["tag_src"] = ("소리 인식 · " + (r2.get("tag_src") or "AcoustID"))[:60]
                 m[mid] = r2
                 _music_save(m)
-        try:
-            _music_lyrics(mid)
-        except Exception:
-            pass
     with _music_lock:
         out = _music_load().get(mid) or rec
     return {"ok": True, "track": out, "recog": res}
@@ -1128,13 +1179,19 @@ def _tag_rank(scored):
 
 def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
                    replace_cover=False):
-    """한 곡의 태그를 자동으로 정리한다. 리턴: 갱신된 rec (또는 None).
+    """한 곡의 '정보(제목·가수·앨범·연도·장르)'만 자동으로 정리한다.
 
+    리턴: 갱신된 rec (또는 None).
     qhint=(title, artist) — 사용자가 편집창에 적어둔 값. 주어지면 그 값을
     검색어로 쓴다 (수정 뒤 '자동으로 찾기'를 누른 경우).
-    alt — 11.2 · 0 이면 가장 잘 맞는 것, 1·2·3… 이면 그 다음 후보.
+    alt — 0 이면 가장 잘 맞는 것, 1·2·3… 이면 그 다음 후보.
           (같은 제목·가수의 다른 곡을 눌러서 넘겨 볼 수 있게)
-    replace_cover — 사용자가 직접 누른 경우엔 표지도 그 후보 것으로 바꾼다.
+
+    ＊ 14.11 — '한 번의 사용자 동작 = 한 기능' 원칙.
+    표지는 전용 버튼('표지만 찾기' → cover_only)이, 가사는 전용 버튼
+    ('가사/싱크 가사' → lyrics_only/synced-lyrics)이 따로 담당한다.
+    여기서는 태그 정보만 채우고, 표지·가사·소리 인식·유튜브 등 다른 기능을
+    연쇄로 끌어들이지 않는다. (replace_cover 인자는 하위 호환용으로만 유지)
     """
     try:
         with _music_lock:
@@ -1173,26 +1230,6 @@ def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
         ranked = _tag_rank(scored)
         best = ranked[alt_n % len(ranked)] if ranked else None
 
-        # 10.3 · 표지 사각지대 해소: 최고점 후보에 표지가 없으면
-        #   비슷한 점수대(−0.15)의 다른 후보 표지를 가져다 쓴다.
-        def _cover_url(best):
-            if not best:
-                return ""
-            b0, bc = best
-            if bc.get("art"):
-                return bc["art"]
-            bk = (_tag_norm(bc.get("title")), _tag_norm(bc.get("artist")))
-            for s, c in scored:          # ① 같은 곡의 다른 출처 표지
-                if c.get("art") and (_tag_norm(c.get("title")),
-                                     _tag_norm(c.get("artist"))) == bk:
-                    return c["art"]
-            if alt_n > 0:
-                return ""                # 다음 후보를 보는 중엔 남의 표지를 끌어오지 않는다
-            for s, c in scored:          # ② 비슷한 점수대의 표지
-                if s >= b0 - 0.15 and c.get("art"):
-                    return c["art"]
-            return ""
-
         # 12.2 · 파일 안 태그가 완전해도 너른 범위로 매칭되면 엉뚱한 곡이 붙던 문제.
         #   임계값을 크게 올려 (제목·가수가 거의 같을 때만 적용) 틀린 태그를 막는다.
         #   qhint(사용자가 편집창에 적어준 검색어)가 있으면 좀 더 너그럽게 본다.
@@ -1213,7 +1250,6 @@ def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
                         "genre": (c.get("genre") or emb["genre"] or "")[:40],
                         "tag_src": c.get("src") or "", "tag_state": "done",
                         "tag_tries": 0, "tag_next": 0})
-            cover_url = _cover_url(best)
         else:
             # 못 찾았다: 웹 결과 대신 '파일 안 태그 + 이름 분석'만 반영하고
             # 제목은 함부로 바꾸지 않는다 (수동 편집으로 넘긴다)
@@ -1229,7 +1265,6 @@ def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
             upd["tag_next"] = time.time() + min(24 * 3600, 1800 * (2 ** (_tries - 1)))
             if emb["title"]:
                 upd["title"] = emb["title"][:120]
-            cover_url = ""
         if not rec.get("orig_title"):
             upd["orig_title"] = rec.get("title") or ""
         with _music_lock:
@@ -1243,42 +1278,10 @@ def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
             m2[mid] = r2
             _music_save(m2)
             rec = dict(r2)
-        # 웹 표지는 '파일 표지가 없을 때만' 내려받는다.
-        # 11.2 · 사용자가 직접 다음 후보로 넘긴 경우엔 표지도 그 곡 것으로 바꾼다.
-        _has_cover = os.path.exists(os.path.join(MUSIC_DIR, mid + ".cover"))
-        if cover_url and ((not _has_cover) or replace_cover or alt_n > 0):
-            b = _fetch_cover(cover_url)
-            if b:
-                try:
-                    with open(os.path.join(MUSIC_DIR, mid + ".cover"), "wb") as fp:
-                        fp.write(b)
-                    with _music_lock:
-                        m3 = _music_load()
-                        if m3.get(mid):
-                            m3[mid]["cover"] = True
-                            m3[mid]["cover_v"] = int(time.time())
-                            _music_save(m3)
-                    rec["cover"] = True
-                except Exception:
-                    pass
-        # 11.6 · 이름·태그로 못 찾았으면 '소리 인식' 으로 한 번 더 (준비됐을 때만)
-        if (rec.get("tag_state") == "none" and not rec.get("recog_tried")
-                and not qhint and alt_n == 0 and _fp_bin() and _aco_key()):
-            try:
-                def _later(_m=mid):
-                    time.sleep(2)          # 지금 태깅이 끝난 뒤에 시작
-                    _music_recognize(_m, apply_tags=True)
-                threading.Thread(target=_later, daemon=True).start()
-            except Exception:
-                pass
-        # 10.5 · 태그를 찾았으면 싱크 가사도 바로 찾아 둔다
-        if rec.get("tag_state") == "done" and not (rec.get("lyrics") or rec.get("lyrics_plain")):
-            _music_lyrics(mid)
-            with _music_lock:
-                rec = dict((_music_load().get(mid) or rec))
+        # 14.11 — 연쇄 제거: 표지(cover_only)·가사(lyrics_only)·소리 인식은
+        # 각자의 사용자 동작에서만 실행된다. 여기서는 태그 정보만 남긴다.
         print(f"[music] 태그 정리: {rec.get('title')} / {rec.get('artist')} "
-              f"({rec.get('tag_src') or '출처 없음'})"
-              f"{' · 가사 O' if rec.get('lyrics') or rec.get('lyrics_plain') else ''}")
+              f"({rec.get('tag_src') or '출처 없음'})")
         return rec
     except Exception as e:
         print(f"[music] 자동 태깅 실패 {mid}: {e}")

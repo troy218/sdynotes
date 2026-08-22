@@ -18893,6 +18893,8 @@ body.sdy-booting #musicListPop{z-index:10001;}
     .mpb-lyr .ll{font-size:16.5px;padding:10px 2px;}
 }
 .mpb-lyrempty{padding:26px 12px;text-align:center;color:var(--text3);font-size:12px;line-height:1.7;}
+.mp-lyrfind{margin-top:12px;padding:7px 16px;border:1px solid #3b4252;border-radius:8px;background:#1a1e27;color:#dbe2f0;cursor:pointer;font-size:13px;}
+.mp-lyrfind:hover{background:#232936;border-color:#4a5470;}
 @media(max-width:640px){
     .mpb-lyr{padding:0 14px;}
     .mpb-lyr .ll{font-size:15px;padding:9px 3px;}
@@ -19515,20 +19517,12 @@ function playIdx(i){ const L=curList(); if(!L.length)return;
   logMusicPlay(t.id); saveMusicView();
   const tok=++_playTok;
   A.src=t.stream_url||('/api/music/file/'+t.id); saveMusicState(true); renderTitle();
-  // 10.6 · 지금 듣는 곡이 준비 안 됐으면 제일 먼저 찾는다 (실시간 반영)
-  // 11.2 · '아직 아무것도 못 찾은 곡'은 재생할 때마다 다시 찾아본다
-  //        (가수·표지가 비어 있는 곡도 포함 — 조용히)
-  // 11.5 · 서버가 '다음에 다시 찾기'로 예약해 둔 시간 전에는 조르지 않는다
-  //   (못 찾는 곡을 매번 재검색해 서버가 바빠지던 문제)
-  const _due=!(t.tag_next)|| (Date.now()/1000)>=t.tag_next;
-  const _bare=(t.tag_state!=='done'&&t.tag_state!=='manual')
-            ||!((t.artist||'').trim())||!t.cover;
-  if(_bare&&_due&&t.tag_state!=='manual'&&(t.tag_tries||0)<8)
-    lookupTrack(t.id,{silent:true});
-  // 10.9 · 싱크 가사가 없으면 일반 가사라도 받아 온다 (서버가 알아서 골라 준다)
-  else if(!(t.has_sync||(t.lyrics&&String(t.lyrics).indexOf('[')>=0))
-          &&(t.lyrics_tries||0)<3)
-    lookupTrack(t.id,{lyricsOnly:true,silent:true});
+  // 14.11 · '재생'은 재생만 한다. 곡 정보/가사 재탐색은 재생에 연쇄하지
+  // 않는다 — 사용자가 뭔가를 하면 한 번에 한 기능만 실행되도록:
+  //   · 자동 정보 채우기: 서버 백필(유휴 시)·업로드 파이프라인
+  //   · 정보 다시 찾기: '자동 찾기' 버튼  · 가사: '가사 찾기/싱크 가사' 버튼
+  //   · 표지: '표지만 찾기' 버튼  · 소리 인식: '소리 인식' 버튼
+  // (예전엔 재생만 해도 자동 태그 + 가사 검색이 몰려 서버가 바빴다)
   if(!$('mpBig').classList.contains('open')){ pl.style.display='flex'; }
   P.collapsed=false;
   A.play().catch(e=>{
@@ -21879,16 +21873,13 @@ function renderLyrics(){
     const el2=$('mpBLyr'); if(el2){ el2._sig=t.id+'|p|'+plain.length; el2._plain=true; }
     return;
   }
-  body.innerHTML='<div class="mpb-lyrempty">가사를 찾는 중이에요<br>'
-    +'<span style="font-size:11px;opacity:.75">싱크 가사가 없으면 일반 가사라도 찾아서 넣어 둡니다 · 잠시만요</span></div>';
-  // 아직 없으면 지금 한 번 더 찾아본다 (같은 곡은 20초에 한 번만)
-  if((t.lyrics_tries||0)<3){
-    P._lyrAsk=P._lyrAsk||{};
-    if(!(P._lyrAsk[t.id]>Date.now()-20000)){
-      P._lyrAsk[t.id]=Date.now();
-      lookupTrack(t.id,{lyricsOnly:true});
-    }
-  }
+  body.innerHTML='<div class="mpb-lyrempty">가사가 없어요<br>'
+    +'<span style="font-size:11px;opacity:.75">가사 탭을 여는 것만으로는 검색하지 않아요 · 필요한 때에만 아래 버튼을 누르세요</span>'
+    +'<br><button class="mp-lyrfind" id="mpLyrFind">가사 찾기</button></div>';
+  // 14.11 · 사용자가 버튼을 누른 경우에만 가사를 찾는다 (한 번에 한 기능).
+  //          찾기 후 lookupTrack 이 목록/화면을 갱신한다.
+  const _bf=$('mpLyrFind');
+  if(_bf) _bf.onclick=()=>{ lookupTrack(t.id,{lyricsOnly:true}); };
 }
 // 위·아래 빈 자리를 '창 높이의 절반 - 한 줄 높이의 절반' 으로 맞춘다
 function fitLyrPads(el){
@@ -24024,7 +24015,9 @@ body.sdy-booting #mpReopen{display:none !important;}
       YP.conn.set(uid,pc.connectionState);
       ypRenderStatus();
       if(pc.connectionState==='connected'){ if(pc.__watch){ clearTimeout(pc.__watch); pc.__watch=null; } }
-      if(pc.connectionState==='failed'&&!pc.__restarted){
+      // 일부 브라우저는 connectionState 가 'failed' 로 늦게 갱신되고
+      // iceConnectionState 만 먼저 실패한다. ICE 쪽도 같은 복구를 태운다.
+      if((pc.connectionState==='failed'||pc.iceConnectionState==='failed')&&!pc.__restarted){
         pc.__restarted=true;
         if(pc.__watch){ clearTimeout(pc.__watch); pc.__watch=null; }
         var m=YP.members.get(uid);
@@ -24039,13 +24032,17 @@ body.sdy-booting #mpReopen{display:none !important;}
         }
       }
     };
+    // connectionState 만으론 실패를 놓칠 수 있어 ICE 상태 변화도 같은
+    // 복구(위 핸들러)로 연결한다(중복 실패는 __restarted 가 막는다).
+    pc.oniceconnectionstatechange=pc.onconnectionstatechange;
     // 유선랜/와이파이, LTE/집밖 등 서로 다른 망에서는 host/srflx 후보가
     // 잡혀도 실제로는 안 뚫리는 경우가 많다. 예전 6.5초는 통화 버튼을 누른
     // 뒤 한참을 '연결 중'으로 기다리게 만들었다. 2.5초면 첫 ICE 체크가
     // 충분히 시작되고, 바로 relay 전용으로 갈아탄다.
     if(!relay && ypIceHasTurn()){
       pc.__watch=setTimeout(function(){
-        if(!YP.inVoice || pc.connectionState==='connected' || pc.connectionState==='closed') return;
+        if(!YP.inVoice || pc.__restarted) return;
+        if(pc.connectionState==='connected' || pc.connectionState==='closed') return;
         if(YP.uid<uid){
           ypRefreshIce().then(function(){ ypOffer(uid,{fresh:true,relay:true}); });
         } else ypRefreshIce();
@@ -24078,8 +24075,20 @@ body.sdy-booting #mpReopen{display:none !important;}
     ypWatchStream(uid,stream);
   }
   function ypSig(to,kind,payload){
-    fetch('/api/chat/signal',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({uid:YP.uid,to:to,kind:kind,payload:payload})}).catch(function(){});
+    // offer/answer/ICE 는 한 번 놓치면 통화가 '연결 중'에 멈춘다.
+    // LTE↔Wi-Fi 전환 직후엔 첫 요청이 끊길 수 있으므로 짧게 재시도하고,
+    // keepalive 로 페이지 전환 중에도 도착하게 한다.
+    var body=JSON.stringify({uid:YP.uid,to:to,kind:kind,payload:payload});
+    function attempt(n){
+      fetch('/api/chat/signal',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:body,keepalive:true}).then(function(r){
+          if(r.ok) return;
+          throw new Error('signal '+r.status);
+        }).catch(function(){
+          if(n<3) setTimeout(function(){ attempt(n+1); }, 400*(n+1));
+        });
+    }
+    attempt(0);
   }
   function ypFlushIce(pc){
     var q=pc.__pendingIce||[]; pc.__pendingIce=[];

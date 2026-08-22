@@ -102,6 +102,22 @@ ok('signal: SSE 재접속 전 offer 보존', queuedOffer && queuedOffer.from ===
 sD.close();
 sA.close(); sB.close();
 
+// 6-3b) 끊긴 스트림이 streams 맵에 남아 있으면 offer 가 죽은 소켓으로 쓰여
+// 유실되고, 재연결한 상대에게는 아무것도 안 온다. close 감지 → 제거 → pending
+// 보존 순서를 확인한다.
+await post('/api/chat/join', { uid: 'E', name: '끊김 테스트' });
+const sE = await openSse('E');
+await sE.next('hello');
+sE.close();
+await new Promise((r) => setTimeout(r, 600)); // 서버가 close 를 감지할 시간
+await post('/api/chat/signal', { uid: 'A', to: 'E', kind: 'offer', payload: { sdp: { type: 'offer', sdp: 'after-close' } } });
+const sE2 = await openSse('E');
+await sE2.next('hello');
+const afterClose = await sE2.next('signal');
+ok('signal: close 후 offer 도 pending 보존', afterClose && afterClose.from === 'A'
+  && afterClose.kind === 'offer' && afterClose.payload.sdp.sdp === 'after-close');
+sE2.close();
+
 // 6-4) ICE 설정 (STUN 기본)
 const cfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config`).then((r) => r.json());
 ok('config: ICE(STUN) 제공', cfg.ok && cfg.ice && cfg.ice.iceServers.length >= 1);
