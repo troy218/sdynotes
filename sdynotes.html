@@ -4830,6 +4830,44 @@
         }catch(e){ return String(Date.now()); }
     }
     let _lastGridSig='';
+    // ── 16.x · 최근 본 노트 추적 (기기별 로컬) ──
+    function _getRecentIds(){
+        try{ return JSON.parse(localStorage.getItem('sdy_recent_notes')||'[]'); }catch(e){ return []; }
+    }
+    function _trackRecent(nbId){
+        if(!nbId) return;
+        try{
+            let r=_getRecentIds().filter(id=>id!==nbId);
+            r.unshift(nbId);
+            if(r.length>12) r=r.slice(0,12);
+            localStorage.setItem('sdy_recent_notes',JSON.stringify(r));
+        }catch(e){}
+    }
+    // ── 스택 뷰: 카드 transforms 계산 ──
+    function _stackTransforms(cards,fanned){
+        const n=cards.length; if(!n) return;
+        const mid=(n-1)/2;
+        const maxW=Math.min(620,innerWidth-80);
+        cards.forEach((c,i)=>{
+            const off=i-mid;
+            if(fanned){
+                const spread=n>1?maxW/(n-1):0;
+                const x=off*spread;
+                const rot=off*4.5;
+                c.style.transform=`translateX(${x}px) rotate(${rot}deg) scale(1)`;
+                c.style.zIndex=i+1;
+                c.style.opacity='1';
+            }else{
+                const rot=off*3.2;
+                const y=Math.abs(off)*7;
+                const x=off*14;
+                const sc=1-Math.abs(off)*0.018;
+                c.style.transform=`translateX(${x}px) rotate(${rot}deg) translateY(${y}px) scale(${sc})`;
+                c.style.zIndex=n-Math.abs(Math.round(off));
+                c.style.opacity=String(Math.max(0.55,1-Math.abs(off)*0.08));
+            }
+        });
+    }
     function renderGrid(force){
         const g=document.getElementById('noteGrid');
         if(!g) return;
@@ -4887,26 +4925,33 @@
                 g.appendChild(fc);
             });
         }
-        getFiltered().forEach(nb=>{
-            const d=loadDoc(nb.id);   // 해제된 노트는 decCache 에서 평문 반환
+        // ── 16.x · 홈 화면: 스택 뷰 / 폴더·검색: 기존 그리드 ──
+        const isHomeStack=!searchQuery&&!curFolder&&!selectMode;
+        const filtered=getFiltered();
+        const recentIds=isHomeStack?_getRecentIds():[];
+        const recentSet=new Set(recentIds);
+        const stackNotes=isHomeStack?filtered.filter(nb=>!recentSet.has(nb.id)):filtered;
+        const recentNotes=isHomeStack?filtered.filter(nb=>recentSet.has(nb.id)):[];
+        if(recentNotes.length>1){
+            const rIdx=new Map(recentIds.map((id,i)=>[id,i]));
+            recentNotes.sort((a,b)=>(rIdx.get(a.id)||0)-(rIdx.get(b.id)||0));
+        }
+
+        function _makeCard(nb){
+            const d=loadDoc(nb.id);
             const size=paperSize(d);
             const paperCls='paper-'+(d.paper||'blank');
-            const dateStr=new Date(nb.updated_at||nb.created_at).toLocaleDateString('ko-KR',{month:'short',day:'numeric'});
-
             const cfgRaw=getCfg(nb.id);
             const hasLock=!!(cfgRaw.lock&&cfgRaw.lock.enc);
-            const opened=hasLock&&isUnlocked(nb.id);      // 이번 세션에서 이미 푼 노트
-            const locked=hasLock&&!opened;                // 아직 잠긴 상태만 가림
-            const adminSeen=hasLock&&adminMode;           // 관리자 열람 표시
+            const opened=hasLock&&isUnlocked(nb.id);
+            const locked=hasLock&&!opened;
+            const adminSeen=hasLock&&adminMode;
             const pinned=!!cfgRaw.pinned;
-
             const card=document.createElement('div');
             card.className='note-card'+(locked?' locked':'');
             card.dataset.nbId=nb.id;
             if(selectedNBs.has(nb.id)) card.classList.add('selected');
-
             const nPages=(d.pages||[]).length;
-
             card.innerHTML=`
                 <div class="select-check"><i class="ri-check-line"></i></div>
                 <div class="emoji-badge ${d.emoji?'has-emoji':''}" onclick="event.stopPropagation();toggleEmojiPicker(event.currentTarget)">${d.emoji||'<span style="font-size:16px;opacity:.35;">◌</span>'}</div>
@@ -4922,16 +4967,14 @@
                 <div class="card-menu" title="메뉴"><i class="ri-more-2-fill"></i></div>
                 <div class="note-card-name">
                     <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nb.title||'새 노트')}</span>
-                    <span class="live-dot" data-nb="${nb.id}" style="display:none;flex-shrink:0;margin-left:8px;
-                          font-size:10.5px;font-weight:700;color:#059669;">●</span>
+                    <span class="live-dot" data-nb="${nb.id}" style="display:none;flex-shrink:0;margin-left:8px;font-size:10.5px;font-weight:700;color:#059669;">●</span>
                 </div>`;
-
             const startLP=(ev)=>{
                 clearTimeout(longPressTimer);
                 longPressTimer=setTimeout(()=>{
-                    lpFired=true;               // 뒤따라오는 클릭 1회 무시
+                    lpFired=true;
                     if(selectMode&&selectedNBs.has(nb.id)){
-                        beginLiftDrag(ev,card,nb);      // 선택된 걸 다시 꾹 → 집어서 이동
+                        beginLiftDrag(ev,card,nb);
                     }else{
                         enterSelectMode(nb.id);
                         if(navigator.vibrate) navigator.vibrate(18);
@@ -4944,18 +4987,14 @@
             card.addEventListener('touchstart',startLP,{passive:true});
             card.addEventListener('touchend',()=>clearTimeout(longPressTimer));
             card.addEventListener('touchmove',()=>clearTimeout(longPressTimer),{passive:true});
-            // Android Chrome은 draggable 카드 위에서 손가락 이동을 HTML5 드래그로
-            // 오인해 페이지 스크롤을 멈추는 문제가 있다. 터치 화면은 선택 후 꾹 눌러
-            // 이동(beginLiftDrag)을 쓰므로 네이티브 draggable을 완전히 끈다.
             const touchScreen=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
             card.draggable=!touchScreen;
             card.addEventListener('dragstart',ev=>{
-                clearTimeout(longPressTimer);   // 네이티브 드래그가 시작되면 대기 중 롱프레스 취소
+                clearTimeout(longPressTimer);
                 try{ window.getSelection().removeAllRanges(); }catch(e){}
                 const ids=selectMode&&selectedNBs.size?Array.from(selectedNBs):[nb.id];
                 ev.dataTransfer.setData('text/plain',ids.join(','));
                 ev.dataTransfer.effectAllowed='move';
-                // 기본 드래그 고스트(카드 스냅샷=파일 이름)가 남지 않도록 투명 고스트로 교체
                 try{
                     const img=new Image();
                     img.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
@@ -4964,15 +5003,13 @@
                 card.classList.add('dragging');
             });
             card.addEventListener('dragend',()=>{ card.classList.remove('dragging'); try{ window.getSelection().removeAllRanges(); }catch(e){} });
-
             card.querySelector('.card-menu').onclick=(e)=>{ e.stopPropagation(); openCardMenu(e,nb); };
             card.oncontextmenu=(e)=>{ e.preventDefault(); openCardMenu(e,nb); };
             card.onclick=(e)=>{
-                if(lpFired){ lpFired=false; e.stopPropagation(); return; }   // 꾹 누른 직후의 클릭은 무시
+                if(lpFired){ lpFired=false; e.stopPropagation(); return; }
                 if(selectMode){ e.stopPropagation(); toggleSelectNB(nb.id,card); }
                 else openNB(nb);
             };
-            // 미리보기 내용은 카드가 보일 때 그린다 (초기 렌더 비용 최소화)
             card._render=async()=>{
                 if(locked) return;
                 const f=card.querySelector('.note-preview-frame');
@@ -4982,7 +5019,6 @@
                     let rd=d, rs=size, rp=paperCls;
                     const first=rd.pages&&rd.pages[0];
                     const empty=!first||(!(first.els||[]).length&&!(first.tables||[]).length);
-                    // 가져온 대용량 문서는 카드용 첫 쪽을 서버에서 1쪽만 가볍게 받는다.
                     if(empty&&(cfgRaw.serverDoc||cfgRaw.__ref)){
                         const got=await loadPreviewDoc(nb.id);
                         if(!got) throw new Error('preview unavailable');
@@ -5005,25 +5041,74 @@
                 }finally{ delete f.dataset.loading; }
             };
             cardObserver.observe(card);
-            g.appendChild(card);
-        });
-
-        if(!selectMode){
-            const add=document.createElement('div');
-            add.className='add-card';
-            add.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
-            add.onclick=openCreateModal;
-            g.appendChild(add);
+            return card;
         }
-        requestAnimationFrame(rescalePreviews);
-        // 일부 데스크톱 환경에서 fixed/transform 조합 때문에 IntersectionObserver의
-        // 첫 통지가 누락되는 경우를 보완한다. 화면 근처 카드만 직접 한 번 확인.
-        setTimeout(()=>{
-            document.querySelectorAll('#noteGrid .note-card').forEach(c=>{
-                const r=c.getBoundingClientRect();
-                if(r.bottom>-300&&r.top<innerHeight+500&&c._render) c._render();
+
+        if(isHomeStack && (stackNotes.length||recentNotes.length)){
+            const scene=document.createElement('div');
+            scene.className='stack-scene';
+            const stackWrap=document.createElement('div');
+            stackWrap.className='note-stack';
+            const stackCards=[];
+            stackNotes.forEach(nb=>{
+                const card=_makeCard(nb);
+                stackWrap.appendChild(card);
+                stackCards.push(card);
             });
-        },120);
+            requestAnimationFrame(()=>_stackTransforms(stackCards,false));
+            let _fanT=null;
+            const fanIn=()=>{ clearTimeout(_fanT); stackWrap.classList.add('fanned'); _stackTransforms(stackCards,true); };
+            const fanOut=()=>{ _fanT=setTimeout(()=>{ stackWrap.classList.remove('fanned'); _stackTransforms(stackCards,false); },280); };
+            stackWrap.addEventListener('mouseenter',fanIn);
+            stackWrap.addEventListener('mouseleave',fanOut);
+            stackWrap.addEventListener('touchstart',fanIn,{passive:true});
+            scene.addEventListener('touchend',e=>{ if(!e.target.closest('.note-card')) fanOut(); },{passive:true});
+            scene.appendChild(stackWrap);
+            if(recentNotes.length){
+                const sec=document.createElement('div');
+                sec.className='recent-section';
+                sec.innerHTML='<div class="recent-label">최근 본 노트</div>';
+                const row=document.createElement('div');
+                row.className='recent-row';
+                recentNotes.forEach(nb=>{ row.appendChild(_makeCard(nb)); });
+                sec.appendChild(row);
+                scene.appendChild(sec);
+            }
+            if(!selectMode){
+                const addWrap=document.createElement('div');
+                addWrap.style.cssText='margin-top:18px;display:flex;justify-content:center;';
+                const add=document.createElement('div');
+                add.className='add-card';
+                add.style.cssText='flex:none;width:120px;min-height:160px;';
+                add.innerHTML='<i class="ri-add-line" style="font-size:32px;opacity:.8"></i>';
+                add.onclick=openCreateModal;
+                addWrap.appendChild(add);
+                scene.appendChild(addWrap);
+            }
+            g.appendChild(scene);
+            setTimeout(()=>{
+                scene.querySelectorAll('.note-card').forEach(c=>{
+                    const r=c.getBoundingClientRect();
+                    if(r.bottom>-300&&r.top<innerHeight+500&&c._render) c._render();
+                });
+            },120);
+        }else{
+            filtered.forEach(nb=>{ g.appendChild(_makeCard(nb)); });
+            if(!selectMode){
+                const add=document.createElement('div');
+                add.className='add-card';
+                add.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
+                add.onclick=openCreateModal;
+                g.appendChild(add);
+            }
+            requestAnimationFrame(rescalePreviews);
+            setTimeout(()=>{
+                document.querySelectorAll('#noteGrid .note-card').forEach(c=>{
+                    const r=c.getBoundingClientRect();
+                    if(r.bottom>-300&&r.top<innerHeight+500&&c._render) c._render();
+                });
+            },120);
+        }
     }
 
     const cardObserver=new IntersectionObserver((ents)=>{
@@ -8237,6 +8322,7 @@
     // ============ Editor: 열기/닫기 ============
     async function openNB(nb){
         if(window._closeEdT){ clearTimeout(window._closeEdT); window._closeEdT=null; }
+        try{ _trackRecent(nb.id); }catch(_){}
         if(curNB && doc){
             try{
                 commitEditingText();
@@ -18893,8 +18979,8 @@ body.sdy-booting #musicListPop{z-index:10001;}
 #mpBKnob{position:absolute;top:50%;left:0;width:13px;height:13px;border-radius:50%;
     background:var(--accent);border:2px solid var(--card);box-shadow:0 1px 5px rgba(0,0,0,.3);
     transform:translate(-50%,-50%);pointer-events:none;}
-.mpb-time{display:flex;font-size:10.5px;color:var(--text3);}
-.mpb-time .sp{flex:1;}
+.mpb-time{display:flex;font-size:10.5px;color:var(--text3);gap:6px;}
+.mpb-time .sp{flex:1;min-width:8px;}
 .mpb-ctl{display:flex;align-items:center;justify-content:center;gap:8px;}
 .mpb-ctl button{width:36px;height:36px;border:none;background:transparent;color:var(--text2);
     border-radius:10px;cursor:pointer;font-size:19px;display:flex;align-items:center;justify-content:center;}
@@ -19104,7 +19190,7 @@ body.sdy-booting #musicListPop{z-index:10001;}
 .mp-tagm .cbtns button:hover{color:var(--text1);border-color:var(--text3);}
 .mp-tagm label{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:700;
     color:var(--text3);}
-.mp-tagm .two{display:flex;gap:8px;}
+.mp-tagm .two{display:flex;gap:8px;width:100%;}
 .mp-tagm .two label{flex:1;}
 .mp-tagm input[type=text]{height:34px;padding:0 10px;border:1px solid var(--border);border-radius:8px;
     background:var(--bg2);color:var(--text1);font-size:13px;outline:none;}
@@ -19889,24 +19975,29 @@ function pp(){
     // 14.14 · 아무것도 안 물려 있으면 대기열(없으면 라이브러리)의 현재 자리부터
     const L=curList();
     if(L&&L.length){ playIdx(P.idx>=0&&P.idx<L.length?P.idx:0); return; }
-    // 목록이 아직 비어 있으면(부팅 중) 로딩이 끝나기를 기다렸다가 자동으로 튼다
-    if(P.loading || (!P.list.length && !P.listDirty)){
-      if(_ppWait) return;
-      toast('노래 목록을 불러오는 중이에요…',1200);
-      let tries=0;
-      _ppWait=setInterval(()=>{
-        tries++;
+    // 목록이 아직 비어 있으면(부팅 중 또는 이전 로드 실패) 로딩이 끝나기를 기다렸다가 자동으로 튼다
+    if(_ppWait) return;
+    // 이전 로드가 실패했으면(P.listDirty) 다시 시도
+    if(P.listDirty && !P.loading){
+      P.listDirty=false;
+      loadList({quiet:true}).then(()=>{
         const L2=curList();
-        if(L2&&L2.length){
-          clearInterval(_ppWait); _ppWait=null;
-          playIdx(P.idx>=0&&P.idx<L2.length?P.idx:0);
-        } else if(tries>60 || P.listDirty){
-          clearInterval(_ppWait); _ppWait=null;
-          toast('노래 목록을 아직 받지 못했어요 · 잠시 뒤 다시 눌러 주세요',2200);
-        }
-      },250);
-      return;
+        if(L2&&L2.length){ playIdx(P.idx>=0&&P.idx<L2.length?P.idx:0); }
+      }).catch(()=>{});
     }
+    toast('노래 목록을 불러오는 중이에요…',1200);
+    let tries=0;
+    _ppWait=setInterval(()=>{
+      tries++;
+      const L2=curList();
+      if(L2&&L2.length){
+        clearInterval(_ppWait); _ppWait=null;
+        playIdx(P.idx>=0&&P.idx<L2.length?P.idx:0);
+      } else if(tries>60){
+        clearInterval(_ppWait); _ppWait=null;
+        toast('노래 목록을 아직 받지 못했어요 · 잠시 뒤 다시 눌러 주세요',2200);
+      }
+    },250);
     return;
   }
   if(A.paused)A.play(); else smoothPause(); }
@@ -22636,7 +22727,10 @@ $('mpTagAuto').onclick=async()=>{
       if(!got) missed.push('가사');
     }
     // ④ 표지 — 없을 때만 (있는 표지는 절대 갈지 않는다)
-    if(!hadCover){
+    //   hasTrackCover가 true여도 실제 표지 파일이 없을 수 있으므로,
+    //   서버에 cover_only:true 로 요청하면 서버가 '이미 있으면 건너뛰고'
+    //   없으면 찾아서 저장해 준다. → 항상 요청해도 안전하다.
+    {
       setBtn('표지 찾는 중…');
       const qq=qNow();
       try{
@@ -22645,10 +22739,10 @@ $('mpTagAuto').onclick=async()=>{
           body:JSON.stringify({id,cover_only:true,alt:_coverAlt,
             q_title:qq.title,q_artist:qq.artist})},90000);
         const d=await r.json().catch(()=>({}));
-        if(r.ok&&d.ok&&d.cover) P.coverV=Date.now();
-        else missed.push('표지');
+        if(r.ok&&d.ok&&d.cover){ P.coverV=Date.now(); _coverAlt++; }
+        else if(!hadCover) missed.push('표지');
         applyServer(await reload());
-      }catch(e){ missed.push('표지'); }
+      }catch(e){ if(!hadCover) missed.push('표지'); }
     }
     // 마무리 — 화면 최신화
     const t=await reload(); applyServer(t);
@@ -24607,7 +24701,7 @@ body.mpb-playing #mpBig:fullscreen .mpb-cwrap .mpb-cover{
   background:#fff;border-color:rgba(0,0,0,.16);box-shadow:0 2px 8px rgba(0,0,0,.5);
   opacity:0;transition:opacity .15s;}
 #mpBig.mpb-fs .mpb-prog:hover #mpBKnob,#mpBig:fullscreen .mpb-prog:hover #mpBKnob{opacity:1;}
-#mpBig.mpb-fs .mpb-time,#mpBig:fullscreen .mpb-time{color:rgba(255,255,255,.62);font-size:11px;}
+#mpBig.mpb-fs .mpb-time,#mpBig:fullscreen .mpb-time{color:rgba(255,255,255,.62);font-size:12px;gap:10px;letter-spacing:.02em;}
 #mpBig.mpb-fs .mpb-ctl,#mpBig:fullscreen .mpb-ctl{gap:clamp(10px,2vw,20px);margin-top:clamp(4px,1.4vh,12px);}
 #mpBig.mpb-fs .mpb-ctl button,#mpBig:fullscreen .mpb-ctl button{
   width:52px;height:52px;font-size:25px;color:rgba(255,255,255,.86);}
@@ -26545,6 +26639,67 @@ body.sdy-booting #mpReopen{display:none !important;}
      · 음악 전체화면 .mpb-fs 규칙 (이미 유리의 기준)
      · #cardsModal 의 backdrop-filter:none !important (성능 예외 유지)
    ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 16.x · 카드 스택 뷰 (홈 화면 전용) ──────────────────────── */
+.stack-scene{
+    position:relative;
+    display:flex;flex-direction:column;align-items:center;
+    min-height:min(70vh,580px);
+    padding:40px 20px 30px;
+    perspective:1200px;
+}
+.note-stack{
+    position:relative;
+    display:flex;align-items:center;justify-content:center;
+    width:100%;min-height:340px;
+    cursor:pointer;
+}
+.note-stack .note-card{
+    position:absolute;
+    transition:transform .55s cubic-bezier(.22,.9,.3,1.08),
+               box-shadow .4s ease,opacity .4s ease;
+    transform-origin:50% 110%;
+    will-change:transform;
+}
+.note-stack .note-card:hover{
+    z-index:60!important;
+    box-shadow:0 22px 50px rgba(0,0,0,.22)!important;
+}
+.note-stack.fanned .note-card{ cursor:pointer; }
+/* 접힌 상태에서 맨 위 카드만 살짝 크게 */
+.note-stack:not(.fanned) .note-card:last-child{
+    box-shadow:0 8px 28px rgba(0,0,0,.14);
+}
+/* 최근 본 노트 구간 */
+.recent-section{
+    width:100%;max-width:900px;
+    margin-top:28px;padding-top:22px;
+    border-top:1px solid var(--border);
+}
+.recent-label{
+    font-size:11.5px;font-weight:800;color:var(--text3);
+    text-align:center;margin-bottom:14px;
+    letter-spacing:.06em;text-transform:uppercase;
+}
+.recent-row{
+    display:flex;flex-wrap:wrap;gap:14px;
+    justify-content:center;
+}
+.recent-row .note-card{
+    flex:0 0 160px;width:160px;
+    animation:recentIn .4s cubic-bezier(.22,.9,.3,1.08) both;
+}
+@keyframes recentIn{
+    from{opacity:0;transform:translateY(18px) scale(.92);}
+    to{opacity:1;transform:none;}
+}
+.recent-row .note-preview{ height:200px; }
+@media(max-width:640px){
+    .stack-scene{min-height:min(60vh,440px);padding:24px 10px 20px;}
+    .note-stack{min-height:260px;}
+    .recent-row .note-card{flex:0 0 140px;width:140px;}
+    .recent-row .note-preview{height:170px;}
+}
 
 /* ── ① 유리 토큰 ─────────────────────────────────────────────── */
 :root{
