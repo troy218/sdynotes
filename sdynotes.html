@@ -22480,6 +22480,7 @@ $('mpTagCoverReset').onclick=async()=>{
 //        (제목·가수가 같은 다른 곡이 있을 수 있으니)
 //        편집창을 닫았다 다시 열면 처음 결과부터 다시.
 let _tagAlt=0, _coverAlt=0, _tagBusy=false;
+const _lyrAutoTried=new Set();
 function _syncTagEditor(t){
   if(!t||TAG_EDIT!==t.id) return;
   $('mpTagTitle').value=t.title||''; $('mpTagArtist').value=t.artist||'';
@@ -22545,7 +22546,7 @@ $('mpTagAuto').onclick=async()=>{
   TAG_FIELDS.forEach(([k,el])=>{ snap[k]=$(el).value.trim(); });
   snap.lyrics=$('mpTagLyrics').value.trim();
   let t0=P.list.find(x=>x.id===id)||{};
-  const hadCover=!!(t0.cover||_scrapedCoverUrl);
+  const hadCover=!!(t0.cover_url||(t0.cover&&t0.cover!==false)||_scrapedCoverUrl);
   const anyEmpty=TAG_FIELDS.some(([k])=>!snap[k])||!snap.lyrics||!hadCover;
   if(!anyEmpty){ toast('모든 칸이 이미 채워져 있어요 · 찾을 빈칸이 없습니다',2400); return; }
   _tagBusy=true;
@@ -23010,13 +23011,15 @@ function renderLyrics(){
     const el2=$('mpBLyr'); if(el2){ el2._sig=t.id+'|p|'+plain.length; el2._plain=true; }
     return;
   }
-  body.innerHTML='<div class="mpb-lyrempty">가사가 없어요<br>'
-    +'<span style="font-size:11px;opacity:.75">가사 탭을 여는 것만으로는 검색하지 않아요 · 필요한 때에만 아래 버튼을 누르세요</span>'
-    +'<br><button class="mp-lyrfind" id="mpLyrFind">가사 찾기</button></div>';
-  // 14.11 · 사용자가 버튼을 누른 경우에만 가사를 찾는다 (한 번에 한 기능).
-  //          찾기 후 lookupTrack 이 목록/화면을 갱신한다.
-  const _bf=$('mpLyrFind');
-  if(_bf) _bf.onclick=()=>{ lookupTrack(t.id,{lyricsOnly:true}); };
+  if(!_lyrAutoTried.has(t.id)){
+    _lyrAutoTried.add(t.id);
+    body.innerHTML='<div class="mpb-lyrempty">가사를 찾는 중…</div>';
+    lookupTrack(t.id,{lyricsOnly:true,silent:true,timeoutMs:60000}).then(()=>{
+      try{ if(P.bigTab==='y') renderLyrics(); }catch(e){}
+    });
+    return;
+  }
+  body.innerHTML='<div class="mpb-lyrempty">가사가 없어요</div>';
 }
 // 위·아래 빈 자리를 '창 높이의 절반 - 한 줄 높이의 절반' 으로 맞춘다
 function fitLyrPads(el){
