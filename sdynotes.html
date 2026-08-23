@@ -99,6 +99,11 @@
             background:color-mix(in srgb, var(--card) 86%, transparent);}
         /* 노트를 열면(편집 화면) 배경 사진은 방해되지 않게 숨긴다 */
         body:has(#editorView.open) #wallLayer{opacity:0;}
+        /* 15.1 수정 · 에디터가 열려 있을 땐 오로라(#sdyAmbient)도 숨긴다.
+           오로라는 will-change + 무한 애니메이션을 가진 레이어라, 그 위에
+           전체 화면 에디터가 덮이면 합성 부답이 커져 에디터 본문이 하얗게
+           비어 보이는 렌더링 문제의 원인이 된다. 배경 사진 숨김과 같은 맥락. */
+        body:has(#editorView.open) #sdyAmbient{opacity:0;}
         .wall-prev{width:74px;height:46px;border-radius:5px;border:1px solid var(--border);
             background-size:cover;background-position:center;flex:none;background-color:var(--bg2);}
 
@@ -26982,17 +26987,14 @@ body.has-wall #sdyAmbient{opacity:0;}
 }
 #mpReopen:hover{box-shadow:var(--g-hi),var(--g-shadow-lg);}
 
-/* ── ⑨ 에디터 — 글쓰기 집중은 유지하되 유리 질감만 살짝 ───────
-   노트를 열면 배경화면이 숨겨지는 기존 집중 설계를 해치지 않게
-   오로라는 아주 희미하게만 비친다(종이 바깥 여백 부분). */
-.editor{background:color-mix(in srgb,var(--bg) 92%,transparent);}
-@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-    .editor{
-        background:color-mix(in srgb,var(--bg) 86%,transparent);
-        backdrop-filter:blur(18px) saturate(115%);
-        -webkit-backdrop-filter:blur(18px) saturate(115%);
-    }
-}
+/* ── ⑨ 에디터 — 글쓰기 집중 화면은 불투명하게 ───────────────────
+   15.1 에서 에디터를 반투명 + backdrop-filter 로 바꿨더니, 전체 화면을
+   덮는 에디터( transform slide-in )가 뒤에 깔린 오로라·유리 카드 등
+   복잡한 화면 위에서 합성 레이어를 제대로 그리지 못해 **본문이 하얗게
+   비어 보이는** 렌더링 문제가 폰·PC 가릴 것 없이 생겼다.
+   에디터는 글쓰기 집중 화면이므로 불투명이 더 자연스럽고 안정적이다.
+   (툴바·사이드바의 유리 질감은 그대로 둔다) */
+.editor{background:var(--bg);}
 .editor-toolbar{
     --bg2:var(--g-in);
     background:color-mix(in srgb,var(--bg) 62%,transparent);
