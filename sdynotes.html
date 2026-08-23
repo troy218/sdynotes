@@ -15867,6 +15867,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         doc.__baseRev=doc.__baseRev||new Map();// 14.9 · 공통 조상의 서버 rev (prevRev 전송용)
         return doc;
     }
+    // 14.13 · 노트 요소 rev 시계 — 단조 증가 + pull 뒤 Lamport 캐치업.
+    //   예전엔 Date.now() 원값을 써서, 시계가 몇 초 느린 기기(LTE 폰·PC 오차)의
+    //   편집 rev 가 서버에 이미 있는 rev 보다 계속 작아졌다. 그러면 서버 LWW 가
+    //   그 기기의 모든 이후 편집을 버려 "처음 몇 번만 동기화되고 이후엔 아예 안
+    //   되고, 써 놓은 게 지워져 보이는" 증상이 생긴다. (설정 동기화는 14.9 에서
+    //   이미 같은 문제를 이 방식으로 고쳤다 — 노트 편집기에만 빠져 있었다.)
+    let _nbRev=Date.now();
+    function _nbNow(){ _nbRev=Math.max(_nbRev+1, Date.now()+Math.random()); return _nbRev; }
     // ══════════════════════════════════════════════════════════════
     //  14.9 · 같은 텍스트상자 협업 편집 (구글독스식 3-way 병합)
     //   예전엔 상자 단위 LWW라서, 두 기기가 같은 상자를 동시에 타이핑하면
@@ -16106,7 +16114,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         // 원격에서 받은 요소는 해시 등록(재푸시 방지),
         // 서버에 없던 로컬 요소는 초기 상태로 푸시(양방향 기반 공유)
         const remoteIds=new Set((pulled||[]).map(o=>o.id));
-        const ops=[]; const now=Date.now(); let seq=0;
+        const ops=[];
         const skipPush=!!doc.__ref; // 가져온 PDF: 슬라이스가 원본. 열자마자 원문을 푸시하면 번역이 덮인다.
         (doc.pages||[]).forEach((pg,pi)=>{(pg.els||[]).forEach(el=>{
             doc.__lastHash.set(el.id,JSON.stringify(el));
@@ -16114,7 +16122,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             doc.__baseRev.set(el.id, doc.__localRev.get(el.id)||0);
             if(skipPush) return;
             if(!remoteIds.has(el.id)){
-                const rev=now+seq+Math.random()*0.9; seq++;
+                const rev=_nbNow();
                 doc.__localRev.set(el.id,rev);
                 ops.push({id:el.id,kind:'put',page:pi,rev,data:el,dev:SYNC_DEV});
             }
@@ -16161,14 +16169,28 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     async function pullSync(init){
         try{
             if(!curNB||!doc) return [];
+            // 14.13 · 노트 전환 경쟁 방지: pull 사이에 다른 노트를 열면 응답 ops 가
+            //   새 노트의 doc 에 적용돼 '다른 문서 내용이 덮어 나오는' 사고가 난다.
+            //   (push 는 14.6 에서 막았지만 pull 에는 가드가 없었다)
+            const _d0=doc, _nb0=curNB.id;
             // 14.8 · since(전역 커서)로 걸러내지 않는다. rev 는 각 기기의 시계로
-            //  찍히므로, 시계가 조금만 느린 기기의 편집은 '이미 지난 rev'로 오인돼
-            //  영영 안 받아지던 버그가 있었다. 항상 전체를 받고, 아래 __localRev
-            //  (요소별 LWW)로 이미 반영한 것/내 최신 편집만 걸러낸다.
+            //   찍히므로, 시계가 조금만 느린 기기의 편집은 '이미 지난 rev'로 오인돼
+            //   영영 안 받아지던 버그가 있었다. 항상 전체를 받고, 아래 __localRev
+            //   (요소별 LWW)로 이미 반영한 것/내 최신 편집만 걸러낸다.
             const r=await fetch('/api/sync/pull?nb='+encodeURIComponent(curNB.id)
                 +'&since=0',{cache:'no-store'});
             const d=await r.json(); if(!r.ok||!d.ok) return [];
+            if(doc!==_d0||!curNB||curNB.id!==_nb0) return [];
+            // 14.13 · Lamport 시계 캐치업: 서버가 본 최대 rev 로 내 시계를 올려,
+            //   시계가 느린 기기의 다음 편집도 서버 LWW 에서 이기게 한다.
+            _nbRev=Math.max(_nbRev, d.version||0);
             const ops=(d.ops||[]).sort((a,b)=>(a.rev||0)-(b.rev||0));
+            // 14.13 · __pages__ op(페이지 목록)을 요소 op 보다 먼저 적용한다.
+            //   새 페이지가 생긴 직후의 요소 op 이 페이지 목록보다 먼저 오면
+            //   upsertEl 이 index 를 '마지막 페이지'로 잘라 붙여, 한 페이지의
+            //   내용이 엉뚱한 페이지/문서 위에 복사돼 보였다.
+            const _pgs=ops.filter(o=>o.id==='__pages__');
+            const ordered=_pgs.length?_pgs.concat(ops.filter(o=>o.id!=='__pages__')):ops;
             _stCacheReset=false;
             let changed=false; const chPages=new Set();
 
@@ -16177,7 +16199,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const activeEditId=activeEditEl?activeEditEl.dataset.id:null;
             const activeEditPage=activeEditEl?parseInt(activeEditEl.dataset.pageIdx,10):-1;
 
-            for(const op of ops){
+            for(const op of ordered){
+                if(doc!==_d0) return [];   // 14.13 · 루프 안 await(loadBatch) 너머로 노트가 바뀌면 중단
                 if(op.id==='__pages__'){
                     if((op.rev||0)>(doc.__pagesRev||0)){ applyPagesOp(op); changed=true; chPages.add(-1); }
                     continue;
@@ -16226,6 +16249,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     }
                 }
             }
+            if(doc!==_d0) return [];   // 14.13 · 마지막 await 뒤에도 노트가 같은지 확인
             doc.__since=d.version||0;
             if(changed){
                 if(chPages.has(-1)) renderPages();
@@ -16336,7 +16360,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     function genOps(){
         syncState();
-        const ops=[]; const now=Date.now(); let seq=0;
+        const ops=[];
         const seen=new Set();
         (doc.pages||[]).forEach((pg,pi)=>{
             (pg.els||[]).forEach(el=>{
@@ -16344,7 +16368,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const h=JSON.stringify(el);
                 if(doc.__lastHash.get(el.id)!==h){
                     doc.__lastHash.set(el.id,h);
-                    const rev=now+seq+Math.random()*0.9; seq++;
+                    const rev=_nbNow();
                     doc.__localRev.set(el.id,rev);
                     ops.push({id:el.id,kind:'put',page:pi,rev,data:el,dev:SYNC_DEV,
                               prevRev:(doc.__baseRev&&doc.__baseRev.get(el.id))||0});
@@ -16353,7 +16377,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         });
         doc.__lastHash.forEach((h,id)=>{
             if(!seen.has(id)){
-                const rev=now+seq+Math.random()*0.9; seq++;
+                const rev=_nbNow();
                 doc.__localRev.set(id,rev);
                 ops.push({id,kind:'del',rev,dev:SYNC_DEV});
                 doc.__lastHash.delete(id);
@@ -16362,7 +16386,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const ph=(doc.pages||[]).map(p=>p.id).join(',');
         if(doc.__lastPages!==ph){
             doc.__lastPages=ph;
-            const rev=now+seq+Math.random()*0.9; seq++;
+            const rev=_nbNow();
             doc.__pagesRev=rev;
             ops.push({id:'__pages__',kind:'pages',rev,
                 ids:(doc.pages||[]).map(p=>p.id),dev:SYNC_DEV});
@@ -16379,6 +16403,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     async function pushOps(pre){
         if(!doc||!curNB) return;
+        const d0=doc;
         const ops=pre||genOps();
         if(!ops.length) return;
         // 14.6 · 노트 id 를 시작 시점에 고정한다. 전송 중 다른 노트로 넘어가면
@@ -16412,8 +16437,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             return false;
         };
         const CHUNK_OPS=40;
+        const failedIds=[];
         for(let i=0;i<ops.length;i+=CHUNK_OPS){
-            await send(ops.slice(i,i+CHUNK_OPS));
+            const batch=ops.slice(i,i+CHUNK_OPS);
+            if(!(await send(batch))) failedIds.push(...batch.filter(o=>o.kind==='put').map(o=>o.id));
+        }
+        // 14.13 · 전송 실패한 put 은 '이미 보낸 상태' 표시(__lastHash)를 걷어낸다.
+        //   genOps 가 보내기 전에 해시를 갱신하므로, LTE 순단처럼 push 가 실패하면
+        //   편집이 영영 재전송되지 않고 뒤늦은 pull 이 서버 쪽 옛 내용으로 화면을
+        //   덮어 '써 놓은 게 지워진' 것처럼 보였다.
+        if(failedIds.length){
+            failedIds.forEach(id=>{ try{ d0.__lastHash.delete(id); }catch(e){} });
+            if(doc===d0&&curNB&&curNB.id===nbId)
+                setTimeout(()=>{ try{ if(doc===d0&&curNB&&curNB.id===nbId) pushOps(); }catch(e){} },3000);
         }
         // 14.7 · push 직후 pull 로 맞춘다. 내 ops 는 __localRev 로 건너뛰고,
         //  그 사이 온 다른 기기의 변경만 받아 적용해 동시 편집이 어긋나지 않게 한다.
