@@ -15,6 +15,7 @@
   - `/api/chat/stream` SSE (채팅/노크/presence)
 - 배포: `apply.sh`
   - nginx `location /api/chat/voice-ws` Upgrade
+    (기존 site 파일이 있어도 `scripts/ensure_nginx_voice_ws.py` 로 보강)
   - coturn / TURN 포트 / `SDY_TURN_*` 를 새로 깔거나 쓰지 않음
 
 WebRTC mesh · TURN/STUN · `/api/chat/signal` · `/api/chat/diag` ·

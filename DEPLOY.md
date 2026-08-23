@@ -68,6 +68,7 @@ cd /tmp/newsite && sudo bash ./apply.sh
 - Node/Fastify `:5000` + Python worker `:5100` systemd 서비스 재기동
 - `/var/www/memo/.env` 보존 (TURN 변수는 더 이상 쓰지 않음)
 - nginx 에 `/api/chat/voice-ws` WebSocket Upgrade 경로 추가
+  (파일이 이미 있어도 보강 — 예전엔 신규 site 에만 넣어서 재실행해도 경고가 남았음)
 - swap, deno, bgutil, fpcalc 자동 준비
 - 마지막에 `음성 릴레이 : 준비됨` 출력
 
@@ -94,7 +95,13 @@ grep -A12 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo
   `troy218:PAT@` URL 은 2025-08 부터 차단됨. 반드시 `x-access-token:$GH_TOKEN@` 형태로.
 - **여전히 '연결 중' 에서 멈춤** — DevTools → Network 에서 `/api/chat/voice-ws`
   가 101 인지 확인. 400/404 이면 nginx Upgrade location 이 빠진 것 → `apply.sh`
-  재실행. HTTP 로 접속 중이면 마이크가 막힌다 (`https://`).
+  재실행(기존 site 파일에도 이제 경로를 보강함). HTTP 로 접속 중이면 마이크가
+  막힌다 (`https://`).
+- **`음성 nginx : location 없음` 이 재실행해도 그대로** — 예전 `apply.sh` 는
+  `/etc/nginx/sites-available/memo` 가 없을 때만 location 을 썼다. 지금 버전은
+  기존 파일의 80/443 블록에도 끼워 넣는다. 배포 후에도 경고면
+  `sudo grep -n 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo`
+  로 파일을 직접 확인한다.
 
 ## 더 빠르게 (main 머지 시 자동)
 

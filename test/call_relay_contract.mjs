@@ -34,6 +34,7 @@ assert.match(chat, /d\.t === 'ping'/, '클라 ping 에 pong 해야 한다');
 
 assert.match(apply, /location \/api\/chat\/voice-ws/, 'nginx 가 음성 WS Upgrade 경로를 연다');
 assert.match(apply, /proxy_set_header Connection "upgrade"/, 'nginx 가 WebSocket Upgrade 를 통과시킨다');
+assert.match(apply, /ensure_nginx_voice_ws\.py/, '이미 있는 nginx site 에도 voice-ws 를 보강해야 한다');
 assert.doesNotMatch(apply, /apt-get install -y -qq coturn/, 'coturn 을 새로 깔면 안 된다');
 assert.doesNotMatch(apply, /tls-listening-port=5349/, 'TURN TLS 설정을 쓰면 안 된다');
 assert.match(apply, /음성은 서버 릴레이/, 'apply.sh 가 TURN 대신 릴레이를 안내한다');
