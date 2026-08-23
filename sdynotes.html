@@ -24169,9 +24169,13 @@ body.sdy-booting #mpReopen{display:none !important;}
       pc.__watch=setTimeout(function(){
         if(!YP.inVoice || pc.connectionState==='connected' || pc.connectionState==='closed') return;
         var m=YP.members.get(uid);
-        if(!pc.__candidateOk || pc.__turnErr){
-          toast((m&&m.name||'상대')+' 와(과) 연결 실패 · TURN 서버에 닿지 못하고 있어요 — 서버에서 bash apply.sh 재실행, VCN 3478(UDP/TCP)+49160-49200(UDP) 확인',4600);
-        } else {
+        // 14.13 · 안내를 나눈다 — 후보가 아예 없으면 TURN 서버 자체 문제,
+        //   후보는 있는데 연결이 안 되면 서버쪽 릴레이 포트(49160-49200/UDP) 문제.
+        if(!pc.__candidateOk){
+          toast((m&&m.name||'상대')+' 와(과) 연결 실패 · TURN 서버에 닿지 못하고 있어요 — 서버에서 bash apply.sh 재실행, VCN 3478(UDP/TCP) 확인',4600);
+        }else if(pc.__turnErr){
+          toast((m&&m.name||'상대')+' 와(과) 릴레이 연결이 막혔어요 — VCN 의 TURN 릴레이 포트 49160-49200(UDP) 를 확인해 주세요',4600);
+        }else{
           toast((m&&m.name||'상대')+' 와(과) 음성 연결에 실패했어요 · 네트워크(NAT) 환경이 달라서일 수 있어요',3400);
         }
       },14000);

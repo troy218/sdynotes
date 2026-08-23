@@ -4,6 +4,7 @@ process.env.SDY_CHAT_TTL = '2';
 process.env.SDY_CHAT_GC_MS = '400';
 
 import crypto from 'node:crypto';
+import net from 'node:net';
 const { registerChat } = await import('../server/src/routes/chat.js');
 const { default: Fastify } = await import('fastify');
 const { default: multipart } = await import('@fastify/multipart');
@@ -13,6 +14,12 @@ const app = Fastify({ logger: false });
 await app.register(multipart, { limits: { fileSize: 512 * 1024 * 1024, files: 1 } });
 registerChat(app);
 await app.listen({ port: PORT, host: '127.0.0.1' });
+
+// 14.13 · /api/chat/config 는 자체 TURN 이 '그 포트를 로컬에서 실제로 듣고
+// 있는지' 확인 뒤에만 내려준다. 테스트용 가짜 TURN(127.0.0.1:3478)을 띄워
+// alive 경로를 만들고, 5349 는 그대로 두고 dead 경로도 함께 검증한다.
+const dummyTurn = net.createServer(() => {});
+await new Promise((res) => dummyTurn.listen(3478, '127.0.0.1', res));
 
 const post = (p, body) => fetch(`http://127.0.0.1:${PORT}${p}`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -180,6 +187,19 @@ delete process.env.SDY_TURN_URL;
 delete process.env.SDY_TURN_USER;
 delete process.env.SDY_TURN_PASS;
 delete process.env.SDY_LOCAL_TURN_URL;
+delete process.env.SDY_TURN_SECRET;
+
+// 6-8) 14.13 · 죽은 자체 TURN(turns:, 수신 없음)은 iceServers 에 넣지 않고
+//      droppedTurn 으로 알린다 — 실제 사고: coturn 이 TLS 를 안 켰는데 .env 의
+//      turns:5349 이 그대로 나가 candidate error 로 통화가 굳어 보였다.
+process.env.SDY_LOCAL_TURN_TLS_URL = 'turns:203.0.113.77:5349';
+process.env.SDY_TURN_SECRET = 'dead-secret';
+const deadCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=dead-test`).then((r) => r.json());
+const deadUrls = deadCfg.ice.iceServers.flatMap((x) => (Array.isArray(x.urls) ? x.urls : [x.urls])).map(String);
+ok('config: 죽은 자체 TURN 은 광고에서 제외', Array.isArray(deadCfg.droppedTurn)
+  && deadCfg.droppedTurn.includes('turns:203.0.113.77:5349')
+  && !deadUrls.some((u) => u.includes('203.0.113.77')));
+delete process.env.SDY_LOCAL_TURN_TLS_URL;
 delete process.env.SDY_TURN_SECRET;
 
 // 7) 히스토리 보존
