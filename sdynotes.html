@@ -2406,6 +2406,9 @@
   chip.style.display='flex';
 })();
 </script>
+    <!-- 15.1 · 유리 디자인 오로라 배경 — 음악 전체화면(.mpb-ambient)과 같은 질감.
+         배경화면이 있으면(body.has-wall) #wallLayer(z-index:-1)가 이 위를 덮는다. -->
+    <div id="sdyAmbient" aria-hidden="true"><i class="ga a"></i><i class="ga b"></i><i class="ga c"></i></div>
     <div id="wallLayer"><video id="wallVideo" muted loop playsinline autoplay></video></div>
     <div id="splash">
         <div class="sp-logo"><i class="ri-quill-pen-fill"></i></div>
@@ -26483,6 +26486,314 @@ body.sdy-booting #mpReopen{display:none !important;}
   else boot();
 })();
 </script>
+
+<style id="glassUI">
+/* ═══════════════════════════════════════════════════════════════════
+   15.1 · 통합 유리 디자인 (Glass UI)
+   음악 전체화면(애플뮤직 풍 몰입 화면)의 유리 질감을 사이트 전체로
+   통일한다: 오로라 배경 + 반투명 유리 패널 + backdrop-blur +
+   밝은 테두리 + 깊은 부드러운 그림자.
+   이 블록은 문서 맨 마지막에 실려 같은 특이도의 이전 규칙을 덮어쓴다.
+   건드리지 않는 것:
+     · 이스터에그 #bbEgg / #bbTap (캔버스·버튼 자체와 그 색상 변수)
+     · 음악 전체화면 .mpb-fs 규칙 (이미 유리의 기준)
+     · #cardsModal 의 backdrop-filter:none !important (성능 예외 유지)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── ① 유리 토큰 ─────────────────────────────────────────────── */
+:root{
+    --g-blur:14px;
+    --g-blur-lg:22px;
+    --g-fill:rgba(255,255,255,.58);          /* 카드 등 기본 유리 */
+    --g-fill-strong:rgba(255,255,255,.74);    /* 헤더·모달 등 읽기 중요한 유리 */
+    --g-in:rgba(255,255,255,.55);            /* 유리 안쪽 컨트롤 채움(스콥 --bg2) */
+    --g-brd:rgba(255,255,255,.62);           /* 유리 테두리(밝은 결) */
+    --g-line:rgba(15,23,42,.09);             /* 구조 헤어라인 */
+    --g-hi:inset 0 1px 0 rgba(255,255,255,.55);
+    --g-shadow:0 1px 2px rgba(15,23,42,.05),0 14px 34px -14px rgba(15,23,42,.25);
+    --g-shadow-lg:0 2px 8px rgba(15,23,42,.07),0 30px 70px -24px rgba(15,23,42,.42);
+}
+.dark{
+    --g-fill:rgba(22,25,34,.55);
+    --g-fill-strong:rgba(25,28,39,.76);
+    --g-in:rgba(255,255,255,.07);
+    --g-brd:rgba(255,255,255,.10);
+    --g-line:rgba(255,255,255,.08);
+    --g-hi:inset 0 1px 0 rgba(255,255,255,.07);
+    --g-shadow:0 1px 2px rgba(0,0,0,.30),0 14px 34px -14px rgba(0,0,0,.55);
+    --g-shadow-lg:0 2px 8px rgba(0,0,0,.35),0 30px 70px -24px rgba(0,0,0,.68);
+}
+
+/* ── ② 오로라 배경 (음악 전체화면 .mpb-ambient 와 같은 팔레트) ── */
+#sdyAmbient{
+    position:fixed;inset:0;z-index:-2;pointer-events:none;overflow:hidden;
+    background:
+        radial-gradient(120% 90% at 50% 0%,#f5f7ff 0%,#f4f1fc 46%,#edf3f9 100%);
+    transition:opacity .6s ease;
+}
+#sdyAmbient::before{ /* 위쪽에서 내려오는 부드러운 빛 */
+    content:'';position:absolute;inset:0;
+    background:radial-gradient(62% 42% at 50% -6%,rgba(255,255,255,.85),transparent 70%);
+}
+#sdyAmbient .ga{position:absolute;border-radius:50%;filter:blur(72px);will-change:transform;}
+#sdyAmbient .ga.a{
+    width:58vmax;height:58vmax;left:-17vmax;top:-21vmax;
+    background:radial-gradient(circle at 50% 50%,rgba(79,110,247,.32) 0%,transparent 62%);
+    animation:gAmbA 26s ease-in-out infinite alternate;
+}
+#sdyAmbient .ga.b{
+    width:52vmax;height:52vmax;right:-16vmax;top:-8vmax;
+    background:radial-gradient(circle at 50% 50%,rgba(142,92,247,.27) 0%,transparent 62%);
+    animation:gAmbB 31s ease-in-out infinite alternate;
+}
+#sdyAmbient .ga.c{
+    width:56vmax;height:56vmax;left:12vmax;bottom:-26vmax;
+    background:radial-gradient(circle at 50% 50%,rgba(224,97,155,.20) 0%,transparent 62%);
+    animation:gAmbC 36s ease-in-out infinite alternate;
+}
+@keyframes gAmbA{to{transform:translate(9vmax,7vmax) scale(1.16);}}
+@keyframes gAmbB{to{transform:translate(-8vmax,9vmax) scale(1.12);}}
+@keyframes gAmbC{to{transform:translate(7vmax,-8vmax) scale(1.18);}}
+/* 다크: 음악 전체화면(#0a0c13 + 오로라)과 같은 톤 */
+.dark #sdyAmbient{
+    background:
+        radial-gradient(120% 90% at 50% 0%,#0b0d16 0%,#0c0a15 48%,#090e15 100%);
+}
+.dark #sdyAmbient::before{
+    background:radial-gradient(62% 42% at 50% -6%,rgba(120,140,255,.10),transparent 70%);
+}
+.dark #sdyAmbient .ga{mix-blend-mode:screen;}
+.dark #sdyAmbient .ga.a{background:radial-gradient(circle at 50% 50%,rgba(79,110,247,.34) 0%,transparent 62%);}
+.dark #sdyAmbient .ga.b{background:radial-gradient(circle at 50% 50%,rgba(142,92,247,.30) 0%,transparent 62%);}
+.dark #sdyAmbient .ga.c{background:radial-gradient(circle at 50% 50%,rgba(224,97,155,.22) 0%,transparent 62%);}
+/* 배경화면이 있으면 사진이 주인공 — 오로라는 조용히 물러난다 */
+body.has-wall #sdyAmbient{opacity:0;}
+@media (prefers-reduced-motion:reduce){
+    #sdyAmbient .ga{animation:none;}
+}
+
+/* ── ③ 상단 헤더 ─────────────────────────────────────────────── */
+.header{
+    --bg2:var(--g-in);
+    background:var(--g-fill-strong);
+    backdrop-filter:blur(var(--g-blur-lg)) saturate(160%);
+    -webkit-backdrop-filter:blur(var(--g-blur-lg)) saturate(160%);
+    border-bottom:1px solid var(--g-line);
+    box-shadow:var(--g-hi),0 6px 24px -18px rgba(15,23,42,.35);
+}
+.header #searchInput{
+    border-radius:10px !important;   /* 테두리 색은 인라인(포커스 시 강조색)이 계속 담당 */
+}
+
+/* ── ④ 홈 그리드 카드 · 폴더 ─────────────────────────────────── */
+.note-card,.folder-card{
+    --bg2:var(--g-in);
+    background:var(--g-fill);
+    backdrop-filter:blur(var(--g-blur)) saturate(140%);
+    -webkit-backdrop-filter:blur(var(--g-blur)) saturate(140%);
+    border:1px solid var(--g-brd);
+    border-radius:18px;
+    box-shadow:var(--g-hi),var(--g-shadow);
+}
+.dark .note-card,.dark .folder-card{border-color:var(--g-brd);}
+.note-card:hover,.folder-card:hover{
+    transform:translateY(-6px) scale(1.012);
+    border-color:color-mix(in srgb,var(--accent) 45%,var(--g-brd));
+    box-shadow:var(--g-hi),var(--g-shadow-lg),
+               0 0 0 1px color-mix(in srgb,var(--accent) 22%,transparent);
+}
+.note-card.selected{border:2px solid var(--accent);}
+.note-preview{background:transparent;}
+.note-card-name{
+    background:color-mix(in srgb,var(--card) 40%,transparent);
+    border-top:1px solid var(--g-line);
+}
+.folder-thumb{background:color-mix(in srgb,var(--bg2) 55%,transparent);}
+.folder-lock{
+    background:var(--g-fill-strong);
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    border-color:var(--g-brd);
+}
+.folder-card.drop{background:color-mix(in srgb,var(--accent) 12%,var(--g-fill));}
+/* 새 노트(점선) 카드도 유리로 */
+.add-card{
+    border-radius:18px;
+    border-color:color-mix(in srgb,var(--border) 72%,transparent);
+    background:color-mix(in srgb,var(--card) 22%,transparent);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+}
+.add-card:hover{
+    border-color:color-mix(in srgb,var(--accent) 60%,transparent);
+    background:color-mix(in srgb,var(--accent) 8%,color-mix(in srgb,var(--card) 26%,transparent));
+}
+.breadcrumb button:hover{background:var(--g-in);}
+
+/* ── ⑤ 모달 — 유리 시트 ─────────────────────────────────────── */
+.modal-bg{
+    background:rgba(15,18,28,.42);
+    backdrop-filter:blur(9px) saturate(130%);
+    -webkit-backdrop-filter:blur(9px) saturate(130%);
+}
+.dark .modal-bg{background:rgba(2,4,9,.58);}
+.modal-box:not(.cards-box){
+    --bg2:var(--g-in);
+    background:var(--g-fill-strong);
+    backdrop-filter:blur(26px) saturate(150%);
+    -webkit-backdrop-filter:blur(26px) saturate(150%);
+    border:1px solid var(--g-brd);
+    border-radius:20px;
+    box-shadow:var(--g-hi),var(--g-shadow-lg);
+}
+.dark .modal-box:not(.cards-box){border-color:var(--g-brd);}
+.modal-box:not(.cards-box) .set-row{border-bottom-color:var(--g-line);}
+/* 인라인 4px 각진 버튼까지 통일 (스와치·아이콘 그리드 등 원형 계열은 예외) */
+.modal-box:not(.cards-box) button:not(.ficon-btn):not(.fcolor-dot):not(.accent-swatch){
+    border-radius:10px !important;
+}
+.modal-box:not(.cards-box) .import-btn{border-color:var(--g-line);}
+/* 모달 안 입력칸 */
+.modal-box:not(.cards-box) input:not([type=range]):not([type=checkbox]):not([type=file]),
+.modal-box:not(.cards-box) select,
+.modal-box:not(.cards-box) textarea{
+    border-radius:10px;
+    border-color:var(--g-line);
+}
+
+/* ── ⑥ 토스트 · 우클릭 메뉴 ─────────────────────────────────── */
+.toast{
+    background:rgba(17,20,30,.80);
+    color:#fff;
+    border:1px solid rgba(255,255,255,.14);
+    border-radius:13px;
+    backdrop-filter:blur(14px) saturate(140%);
+    -webkit-backdrop-filter:blur(14px) saturate(140%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.10),var(--g-shadow-lg);
+}
+.ctx-menu{
+    background:var(--g-fill-strong);
+    backdrop-filter:blur(20px) saturate(150%);
+    -webkit-backdrop-filter:blur(20px) saturate(150%);
+    border:1px solid var(--g-brd);
+    border-radius:calc(14px * var(--ctxz));
+    box-shadow:var(--g-hi),var(--g-shadow-lg);
+}
+.ctx-item:hover{background:color-mix(in srgb,var(--accent) 12%,transparent);}
+
+/* ── ⑦ 팝오버 (서버 상태 · 알림 · 악보 · 음악 목록 등) ──────── */
+.srv-pop,.notif-pop,.more-panel,.mp-list,#plPickPop,#mpVolPop,#musicListPop{
+    background:var(--g-fill-strong);
+    backdrop-filter:blur(var(--g-blur-lg)) saturate(150%);
+    -webkit-backdrop-filter:blur(var(--g-blur-lg)) saturate(150%);
+    border:1px solid var(--g-brd);
+    box-shadow:var(--g-hi),var(--g-shadow-lg);
+}
+.more-panel{border-radius:16px;}
+.notif-item:hover{background:var(--g-in);}
+.notif-head button{background:var(--g-in);}
+.mp-list{--bg2:var(--g-in);}
+.mp-list .mp-search{border-color:var(--g-line);}
+.mp-tabs button{border-color:var(--g-line);}
+@media (min-width:641px){ .mp-list{border-radius:16px;} }
+
+/* ── ⑧ 하단 음악 바 · 음악 칩 ─────────────────────────────── */
+.mp.mp-bar{
+    --bg2:var(--g-in);
+    background:var(--g-fill-strong);
+    backdrop-filter:blur(20px) saturate(155%);
+    -webkit-backdrop-filter:blur(20px) saturate(155%);
+    border:1px solid var(--g-brd);
+    border-radius:18px;
+    box-shadow:var(--g-hi),var(--g-shadow-lg);
+}
+.dark .mp.mp-bar{border-color:var(--g-brd);}
+.mp-xtra{
+    background:var(--g-fill-strong);
+    backdrop-filter:blur(18px) saturate(150%);
+    -webkit-backdrop-filter:blur(18px) saturate(150%);
+    border:1px solid var(--g-brd);
+    border-radius:14px;
+    box-shadow:var(--g-hi),var(--g-shadow-lg);
+}
+/* 음악이 접혔을 때 떠 있는 다시 열기 칩 — 유리 원반 */
+#mpReopen{
+    background:var(--g-fill-strong);
+    color:var(--accent);
+    border:1px solid var(--g-brd);
+    backdrop-filter:blur(14px) saturate(150%);
+    -webkit-backdrop-filter:blur(14px) saturate(150%);
+    box-shadow:var(--g-hi),var(--g-shadow);
+}
+#mpReopen:hover{box-shadow:var(--g-hi),var(--g-shadow-lg);}
+
+/* ── ⑨ 에디터 — 글쓰기 집중은 유지하되 유리 질감만 살짝 ───────
+   노트를 열면 배경화면이 숨겨지는 기존 집중 설계를 해치지 않게
+   오로라는 아주 희미하게만 비친다(종이 바깥 여백 부분). */
+.editor{background:color-mix(in srgb,var(--bg) 92%,transparent);}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    .editor{
+        background:color-mix(in srgb,var(--bg) 86%,transparent);
+        backdrop-filter:blur(18px) saturate(115%);
+        -webkit-backdrop-filter:blur(18px) saturate(115%);
+    }
+}
+.editor-toolbar{
+    --bg2:var(--g-in);
+    background:color-mix(in srgb,var(--bg) 62%,transparent);
+    backdrop-filter:blur(18px) saturate(150%);
+    -webkit-backdrop-filter:blur(18px) saturate(150%);
+    border-bottom:1px solid var(--g-line);
+    box-shadow:var(--g-hi);
+}
+.tool-sep{background:var(--g-line);}
+.side-bar{
+    background:color-mix(in srgb,var(--bg) 46%,transparent);
+    border-right-color:var(--g-line);
+}
+.side-panel{background:color-mix(in srgb,var(--bg) 46%,transparent);}
+.side-panel.show{border-right-color:var(--g-line);}
+.side-open{
+    background:var(--g-fill-strong);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    border-color:var(--g-line);border-radius:0 10px 10px 0;
+}
+/* 종이 자체는 읽기 영역이라 불투명 유지 — 그림자만 부드럽게 */
+.paper{border-radius:8px;}
+
+/* ── ⑩ 로딩·스플래시·환영·알림 바 ──────────────────────────── */
+#splash{
+    background:color-mix(in srgb,var(--bg) 52%,transparent);
+    backdrop-filter:blur(30px) saturate(150%);
+    -webkit-backdrop-filter:blur(30px) saturate(150%);
+}
+#edLoading{
+    background:color-mix(in srgb,var(--bg) 55%,transparent);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+}
+#welcomeToast{
+    background:rgba(17,24,39,.82);
+    backdrop-filter:blur(18px) saturate(140%);
+    -webkit-backdrop-filter:blur(18px) saturate(140%);
+    border:1px solid rgba(255,255,255,.14);
+    border-radius:18px;
+}
+#welcomeToast .wc-ico{border-radius:12px;}
+#trProg{
+    background:var(--g-fill-strong);
+    backdrop-filter:blur(18px) saturate(150%);
+    -webkit-backdrop-filter:blur(18px) saturate(150%);
+    border-color:var(--g-brd);
+}
+#staleBar{border-radius:16px;}
+
+/* ── ⑪ 스크롤바 — 유리 위에 떠 보이는 반투명 막대 ─────────── */
+*::-webkit-scrollbar-thumb{
+    background:color-mix(in srgb,var(--text3) 42%,transparent);
+    border-radius:8px;border:2px solid transparent;background-clip:padding-box;
+}
+*::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--text3) 66%,transparent);
+    border:2px solid transparent;background-clip:padding-box;}
+*{scrollbar-color:color-mix(in srgb,var(--text3) 42%,transparent) transparent;}
+</style>
 
 </body>
 </html>
