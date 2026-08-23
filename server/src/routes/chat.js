@@ -253,6 +253,30 @@ function localTurnAddresses(configured) {
   return out;
 }
 
+// 14.13 · 자체 TURN 살아있기 확인(로컬 TCP, 30초 캐시).
+//   .env 에 turns:…:5349 이 남아 있는데 coturn 이 TLS(인증서 유실·갱신 실패 등)를
+//   안 켜고 있으면, 브라우저는 반드시 실패하는 후보를 계속 시도한다. 그러면
+//   ICE candidate error 로 "TURN 서버에 닿지 못했어요" 오해가 뜨고, 되는
+//   turn:3478 과 섞여 통화 자체가 굳어 보였다(실제 보고).
+//   coturn 은 TCP 도 같은 포트로 함께 여는 것이 기본이라, 로컬 NIC 기준
+//   TCP 연결 실패 = 그 포트를 아무도 안 듣고 있다는 뜻이다. (공인 IP hairpin
+//   은 OCI 에서 막히는 일이 흔하니 사설 NIC/localhost 로만 확인한다.)
+const turnAliveCache = { at: 0, ok: new Map() };
+async function localTurnAlive(urlText) {
+  const u = String(urlText || '').trim();
+  if (!u || !/^turns?:/i.test(u)) return true;
+  const now = Date.now();
+  if (now - turnAliveCache.at > 30000) { turnAliveCache.ok.clear(); turnAliveCache.at = now; }
+  if (turnAliveCache.ok.has(u)) return turnAliveCache.ok.get(u);
+  const { port } = turnHostPort(u);
+  const addrs = localTurnAddresses(process.env.SDY_TURN_PRIVATE_IP);
+  const checks = await Promise.all(addrs.map((a) => tcpCheck(a, port, 700)));
+  const alive = checks.some((c) => c && c.ok);
+  turnAliveCache.ok.set(u, alive);
+  console.log(`[chat] 자체 TURN ${u} → ${alive ? '정상' : '응답 없음, 이번엔 광고에서 제외'}`);
+  return alive;
+}
+
 function pickPastel() {
   const used = new Set();
   for (const m of state.members.values()) if (m.color) used.add(m.color);
@@ -716,14 +740,20 @@ export function registerChat(app) {
     // 켠 의도(고정 인증 + HMAC 임시 인증)를 그대로 전달하는 게 안전하다.
     // 브라우저는 같은 호스트 + 다른 credential 을 별도 iceServer 로 받아도
     // 한쪽이 실패하면 다른쪽으로 candidate 를 다시 만든다.
+    // 14.13 · 단, 살아 있는 것만 내려준다 — 죽은 turns:5349 이 섞여 나가면
+    //   브라우저가 그 후보에서 반드시 실패해 'TURN 불통' 오해가 떴다.
+    const droppedTurn = [];
     if (localTurn) {
-      addTurn(rewriteLocalHost(localTurn), false);
+      if (await localTurnAlive(localTurn)) addTurn(rewriteLocalHost(localTurn), false);
+      else droppedTurn.push(localTurn);
     }
     if (localTlsTurn) {
-      addTurn(rewriteLocalHost(localTlsTurn), false);
+      if (await localTurnAlive(localTlsTurn)) addTurn(rewriteLocalHost(localTlsTurn), false);
+      else droppedTurn.push(localTlsTurn);
     }
     reply.header('Cache-Control', 'no-store');
-    return reply.send({ ok: true, turn: turnReady, host: turnHost || null, ice: { iceServers } });
+    return reply.send({ ok: true, turn: turnReady, host: turnHost || null,
+                        droppedTurn, ice: { iceServers } });
   });
 
   // ── 통화(TURN) 진단 — curl http://127.0.0.1:5000/api/chat/diag ──

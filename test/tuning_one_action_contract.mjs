@@ -61,6 +61,34 @@ assert.match(cloud, /def _cloud_cover_pick\(mid, alt=0\)/, '표지 전용 헬퍼
 assert.doesNotMatch(cloud, /threading\.Thread\(target=_cloud_music_autotag/,
   '소리 인식 뒤 자동 태그 스레드를 연쇄하면 안 된다');
 
+// ── 2.5 · 수동 버튼 = 결과 반영 (14.13) ──
+// '소리 인식' 버튼을 직접 누르면 이미 제목이 있어도(tag_state=done/manual)
+// 인식 결과를 제목·가수에 반영해야 한다. (배경 백필은 보수적으로 유지)
+assert.match(music, /def _music_recognize\(mid, apply_tags=True, force=False\)/,
+  '소리 인식은 force 매개변수를 가진다 (버튼=강제, 배경=보수)');
+assert.match(recognize, /if force or not \(r2\.get\("title"\) or ""\)\.strip\(\)/,
+  'force 요청은 제목이 이미 있어도 인식 결과를 덮어 적용한다');
+const recognizeApi = music.slice(music.indexOf('def music_recognize_api'),
+  music.indexOf('def music_recognize_status'));
+assert.match(recognizeApi, /_music_recognize\(mid, apply_tags=True, force=True\)/,
+  '인식 API(버튼)는 force=True 로 호출한다');
+// 배경 백필의 두 호출 지점은 여전히 보수 모드여야 한다
+assert.ok((music.match(/_music_recognize\(mid, apply_tags=True\)\n/g) || []).length >= 2,
+  '배경 백필/복구 경로는 force 없이 그대로 2곳');
+// 싱크 가사·표지 찾기는 편집창에 적어둔 제목/가수 힌트를 쓴다
+const synced = music.slice(music.indexOf('def music_synced_lyrics'),
+  music.indexOf('@app.route("/api/music/meta"'));
+assert.match(synced, /d\.get\("q_title"\)/, '싱크 가사 API 는 편집창 제목 힌트를 받는다');
+assert.match(synced, /q_t or \(rec\.get\("title"\)/, '힌트가 있으면 저장된 제목보다 우선한다');
+assert.match(music, /_music_cover_search\(mid, d\.get\("alt"\) or 0, qh\)/,
+  '표지 찾기 API 가 편집창 힌트(qh)를 전달한다');
+assert.match(music, /def _music_cover_search\(mid, alt=0, qh=None\)/,
+  '표지 검색 헬퍼가 qh 매개변수를 가진다');
+// 프런트: 인식 응답의 recog 값을 편집창에 다시 심는다 (목록 새로고침과 무관하게)
+assert.match(html, /\$\('mpTagTitle'\)\.value=g\.title/, 'recog 결과가 제목 칸에 반영된다');
+assert.match(html, /q_title:\$\('mpTagTitle'\)\.value\.trim\(\)/,
+  '싱크 가사·표지 찾기 버튼이 편집창 제목을 검색 힌트로 보낸다');
+
 // ── 3. TURN — 도메인 호스트 + TLS(5349) ──
 assert.match(apply, /tls-listening-port=5349/, 'apply.sh 가 TURN TLS(5349) 를 켠다');
 assert.match(apply, /SDY_LOCAL_TURN_TLS_URL/, 'TLS TURN 주소를 .env 에 기록한다');

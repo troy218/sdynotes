@@ -89,5 +89,71 @@ document.getElementById('mpBTabA').click();
 assert.equal(state.bigArtist, '');
 assert.match(document.getElementById('mpBBody').textContent, /B one/);
 
+// ── 14.13 · 수동 버튼 결과가 편집창에 반영되는지 (소리 인식 · 가사 · 표지) ──
+// 증상: '소리 인식' 을 누르면 토스트에는 결과가 떴지만 편집창 위쪽 입력칸이
+// 계속 옛 제목 그대로였다. 버튼이 보낸/받은 값과 화면 반영을 단언한다.
+const apiCalls = [];
+window.fetch = async (url, opts = {}) => {
+  const u = String(url);
+  apiCalls.push({ url: u, method: opts.method || 'GET', body: opts.body || null });
+  const json = (obj) => new Response(JSON.stringify(obj), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  });
+  if (u.includes('/api/music/recognize/status'))
+    return json({ ok: true, fpcalc: true, key: true, ready: true });
+  if (u.includes('/api/music/recognize')) {
+    // 서버는 force 반영 뒤의 곡 레코드와 인식 결과를 함께 돌려준다
+    return json({ ok: true, track: { id: 'rec1', title: '인식된 제목', artist: '인식된 가수' },
+                  recog: { title: '인식된 제목', artist: '인식된 가수', score: 0.93 } });
+  }
+  if (u.includes('/api/music/synced-lyrics'))
+    return json({ ok: true, lyrics: '[00:01.00] 첫 줄', src: 'LRCLIB' });
+  if (u.includes('/api/music/lookup'))
+    return json({ ok: true, track: { id: 'rec1', title: '인식된 제목', artist: '인식된 가수' },
+                  cover: true, count: 1 });
+  if (u.includes('/api/music/list'))
+    // 일부러 '예전 서버'처럼: 인식 결과를 아직 목록에 안 붙인 응답.
+    // 이 경우에도 화면은 응답의 recog 값을 반영해야 한다 (원래 증상 재현).
+    return json({ ok: true, tracks: [
+      { id: 'rec1', title: '잘못된 이전 제목', artist: '이전 가수', created_at: '20260101000000Z' },
+    ], tagging: false, count: 1 });
+  return json({ ok: true, tracks: [] });
+};
+
+state.list = [{ id: 'rec1', title: '잘못된 이전 제목', artist: '이전 가수', tag_state: 'done' }];
+window.sdyMusic.tagEditor('rec1');
+document.getElementById('mpTagTitle').value = '잘못된 이전 제목';
+document.getElementById('mpTagArtist').value = '이전 가수';
+document.getElementById('mpTagRecog').click();
+await new Promise((resolve) => setTimeout(resolve, 100));
+assert.equal(document.getElementById('mpTagTitle').value, '인식된 제목',
+  '소리 인식 결과가 제목 칸에 반영되어야 한다');
+assert.equal(document.getElementById('mpTagArtist').value, '인식된 가수',
+  '소리 인식 결과가 가수 칸에 반영되어야 한다');
+assert.ok(apiCalls.some((c) => c.url.includes('/api/music/recognize') && c.method === 'POST'
+  && !(c.url.includes('status') || c.url.includes('key'))), '인식 API 를 호출해야 한다');
+const recCall = apiCalls.find((c) => c.url.includes('/api/music/recognize') && c.method === 'POST');
+assert.ok(recCall, 'recognize 호출 기록');
+
+// 싱크 가사 버튼 — 편집창에 적어둔 제목/가수를 검색어로 보내는지
+document.getElementById('mpTagSyncLrc').click();
+await new Promise((resolve) => setTimeout(resolve, 100));
+const lrcCall = apiCalls.find((c) => c.url.includes('/api/music/synced-lyrics'));
+assert.ok(lrcCall, '싱크 가사 API 를 호출해야 한다');
+assert.match(String(lrcCall.body || ''), /"q_title":"인식된 제목"/,
+  '편집창 제목을 가사 검색 힌트로 보내야 한다');
+assert.match(String(lrcCall.body || ''), /"q_artist":"인식된 가수"/);
+assert.equal(document.getElementById('mpTagLyrics').value, '[00:01.00] 첫 줄',
+  '찾은 싱크 가사가 가사 칸에 반영되어야 한다');
+
+// 표지만 찾기 버튼 — 마찬가지로 편집창 값을 검색어로 보내는지
+document.getElementById('mpTagCoverFind').click();
+await new Promise((resolve) => setTimeout(resolve, 100));
+const covCall = apiCalls.find((c) => c.url.includes('/api/music/lookup')
+  && String(c.body || '').includes('cover_only'));
+assert.ok(covCall, '표지 찾기 API 를 호출해야 한다');
+assert.match(String(covCall.body || ''), /"q_title":"인식된 제목"/,
+  '편집창 제목을 표지 검색 힌트로 보내야 한다');
+
 dom.window.close();
-console.log(`Music controls: ${actionIds.length} fixed actions wired; artist filter verified.`);
+console.log(`Music controls: ${actionIds.length} fixed actions wired; artist filter + manual tag buttons verified.`);

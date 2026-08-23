@@ -21,4 +21,21 @@ assert.match(makePc[1], /iceTransportPolicy: relay\?'relay':'all'/,
 assert.match(makePc[1], /iceServers:ypIceServers\(\)/,
   'retry peer must receive current ICE/TURN servers');
 
-console.log('Call relay contract: refreshed TURN is awaited before relay-only offer.');
+// ── 14.13 · 죽은 자체 TURN 은 내려주지 않는다 ──
+// 실제 사고: .env 의 turns:…:5349 (coturn 이 TLS 를 안 켬) 이 그대로 브라우저로
+// 나가 candidate error 를 내면, 되는 turn:3478 과 섞여 'TURN 불통'으로 통화가
+// 굳어 보였다. 서버가 로컬 TCP 확인으로 걸러내고, 프런트는 안내를 나눈다.
+const chat = fs.readFileSync(new URL('../server/src/routes/chat.js', import.meta.url), 'utf8');
+assert.match(chat, /async function localTurnAlive\(urlText\)/, '자체 TURN 생존 확인 헬퍼');
+assert.match(chat, /localTurnAddresses\(process\.env\.SDY_TURN_PRIVATE_IP\)/,
+  '생존 확인은 사설 NIC/localhost 기준(hairpin 아님)');
+assert.match(chat, /if \(await localTurnAlive\(localTlsTurn\)\) addTurn\(rewriteLocalHost\(localTlsTurn\), false\);\s*\n\s*else droppedTurn\.push\(localTlsTurn\);/,
+  '죽은 turns: 는 iceServers 에 넣지 않고 droppedTurn 으로 알린다');
+assert.match(chat, /droppedTurn, ice: \{ iceServers \}/, '응답에 droppedTurn 포함');
+assert.match(chat, /turnAliveCache = \{ at: 0, ok: new Map\(\) \}/, '생존 확인 결과 캐시(30초)');
+assert.match(makePc[1], /릴레이 연결이 막혔어요 — VCN 의 TURN 릴레이 포트 49160-49200\(UDP\)/,
+  '후보는 있는데 연결 안 될 때는 릴레이 포트 안내로 구분');
+assert.doesNotMatch(makePc[1], /if\(!pc\.__candidateOk \|\| pc\.__turnErr\)\{/,
+  'turnErr 하나만으로 ' + "'TURN 서버에 닿지 못했어요'" + ' 오해 메시지를 띄우면 안 된다');
+
+console.log('Call relay contract: refreshed TURN awaited; dead local TURN filtered server-side.');

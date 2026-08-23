@@ -125,7 +125,15 @@ export async function syncPush(body) {
         if (op.kind === 'del') {
           els[oid] = { rev, dev: op.dev, del: 1 };
         } else if (op.kind === 'pages') {
-          state.pages = { rev, ids: op.ids || [] };
+          // 14.13 · 페이지 목록도 rev 로 LWW. 예전엔 무조건 덮어써서, 느리게 도착한
+          //   옛 페이지 목록이(rev 가 낮아도) 방금 생긴 새 페이지를 통째로 지웠다.
+          const curPages = state.pages;
+          if (!curPages || parseFloat(curPages.rev || 0) < rev) {
+            state.pages = { rev, ids: op.ids || [] };
+          } else {
+            rejected.push(oid);
+            continue;
+          }
         } else {
           // 14.9 · 텍스트 op 는 최근 버전들(hist, 유계)을 보관한다. 같은 공통
           //  조상에서 갈라진 동시 편집(prevRev 가 hist 에 존재)이면 서버가 3-way
