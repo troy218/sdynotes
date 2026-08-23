@@ -8595,6 +8595,12 @@
         try{ pageUnloader.disconnect(); }catch(e){}
         Object.keys(chunkTimers).forEach(k=>clearTimeout(chunkTimers[k]));
         renderedPages.clear();
+        // 14.12 · 노트 전환 시 기존 DOM과 비동기 콜백이 새 노트에 영향을 주지 못하게
+        // renderVersion 은 콜백에서 확인하여旧的 콜백이 새 페이지를 건드리는 것을 방지한다.
+        const rv=++window._renderVersion;
+        window._renderVersion=rv;
+        // doc 에도 버전을 기록하여 renderPageEls 에서 doc===_d 외에 추가로 검증
+        if(doc) doc.__rv=rv;
         stage.innerHTML='';
         const size=paperSize();
         doc.pages.forEach((pg,i)=>{
@@ -8658,6 +8664,13 @@
         layoutPages();
         try{ applyTint(); renderAllTblDivs(); if(sidePanel) renderPanel(); }catch(e){}
         try{ if(wfOn) setTimeout(()=>{ wfAnalyze(); wfPaint(); },30); }catch(e){}
+        // 14.12 · 모든 Observer 콜백이 새로운 DOM에만 반응하도록 보장
+        try{ pageObserver.disconnect(); }catch(e){}
+        try{ pageUnloader.disconnect(); }catch(e){}
+        stage.querySelectorAll('.paper').forEach(p=>{
+            pageObserver.observe(p);
+            pageUnloader.observe(p);
+        });
     }
 
     // ===== 유동 로딩 =====
@@ -8672,6 +8685,8 @@
 
     const pageObserver=new IntersectionObserver((entries)=>{
         entries.forEach(en=>{
+            // 14.12 · 노트가 전환되면旧的 콜백은 무시
+            if(window._renderVersion !== (doc&&doc.__rv)) return;
             const i=+en.target.dataset.pageIdx;
             if(en.isIntersecting){
                 if(!renderedPages.has(i)) renderPageEls(i);
@@ -8682,6 +8697,8 @@
     // 멀리 있는 페이지는 비워 둔다 (되돌아오면 위 관찰자가 다시 그린다)
     const pageUnloader=new IntersectionObserver((entries)=>{
         entries.forEach(en=>{
+            // 14.12 · 노트가 전환되면旧的 콜백은 무시
+            if(window._renderVersion !== (doc&&doc.__rv)) return;
             if(en.isIntersecting) return;
             const i=+en.target.dataset.pageIdx;
             if(!renderedPages.has(i)) return;
@@ -8754,12 +8771,15 @@
         const pgz=doc&&doc.pages[idx];
         if(pgz&&pgz.__lazy!=null){
             const _d=doc;   // 14.9 · 로드가 끝나도 같은 노트일 때만 그린다
-            ensureLazyPage(idx).then(()=>{ if(doc===_d) renderPageEls(idx); });
+            ensureLazyPage(idx).then(()=>{ if(doc===_d && window._renderVersion===_d.__rv) renderPageEls(idx); });
             return;
         }
         renderedPages.add(idx);
         const paper=paperAt(idx);
-        if(!paper) return;
+        // 14.12 · DOM에 없거나 다른 노트의 요소라면 무시
+        if(!paper || !paper.parentNode) return;
+        // renderVersion 이 다르면 (노트가 전환됐으면) 건드리지 않는다
+        if(window._renderVersion !== (doc&&doc.__rv)) return;
         const tok=_pageRenderTok[idx]=(_pageRenderTok[idx]||0)+1;
         const size=paperSize();
         const imgL=paper.querySelector('.layer-img');
@@ -8786,6 +8806,8 @@
             else if(el.type==='latex') txtL.appendChild(buildLatexEl(el,idx));
         };
         const finish=()=>{
+            // 14.12 · finish 도 renderVersion 검증을 통과해야 실행
+            if(window._renderVersion !== (doc&&doc.__rv)) return;
             try{ renderTblDivs(idx); }catch(e){}
             try{ renderPins(idx); }catch(e){}
             try{ if(findOpen) paintFindHits(); }catch(e){}
@@ -8806,6 +8828,8 @@
         let at=0;
         const step=()=>{
             if(_pageRenderTok[idx]!==tok) return;
+            // 14.12 · step 실행 중 노트가 전환되면 중단
+            if(window._renderVersion !== (doc&&doc.__rv)) return;
             const end=Math.min(els.length, at+CHUNK);
             for(;at<end;at++) put(els[at]);
             if(at<els.length){
@@ -8900,7 +8924,11 @@
     function resetZoom(){ zoomPct=100; layoutPages(); sizeTextGhost(); toast('확대 100%',900); }
 
     function editorPapers(){ return Array.from(document.querySelectorAll('#pagesStage .paper')); }
-    function paperAt(i){ return document.querySelector(`#pagesStage .paper[data-page-idx="${i}"]`); }
+    // 14.12 · paperAt 은 DOM 에서 찾되, 부모가 없으면 (이미 제거됨) null 반환
+    function paperAt(i){
+        const el=document.querySelector(`#pagesStage .paper[data-page-idx="${i}"]`);
+        return (el && el.parentNode) ? el : null;
+    }
 
     function updatePageInfo(){
         const pinfo=document.getElementById('pageInfo');
@@ -16332,10 +16360,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     async function retryPage(idx){
         const d=doc;                    // 14.9 · 노트 전환 후 이어지는 재시도를 차단
         if(!d||!d.__ref) return;
+        // 14.12 · renderVersion 도 함께 검증
+        if(window._renderVersion !== (d&&d.__rv)) return;
         const s0=Math.floor(idx/LAZY_SLICE)*LAZY_SLICE;
         try{
             const dd=await fetchSlice(d.__ref,s0,(d.pages||[]).length);
             if(doc!==d) return;
+            if(window._renderVersion !== (d&&d.__rv)) return;
             if(dd&&Array.isArray(dd.pages)){
                 dd.pages.forEach((p,j)=>{ const i=s0+j;
                     if(i>=(d.pages||[]).length) return;
@@ -16344,6 +16375,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     d.pages[i]=p; });
             }
         }catch(e){}
+        // renderPageEls 에서도 검증하므로 여기서는 doc===d 만 확인
         if(doc===d) renderPageEls(idx);
     }
     function rehashAll(){
