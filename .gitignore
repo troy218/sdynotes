@@ -8,6 +8,8 @@ __pycache__/
 # Runtime/user data (kept on the deployed server, never committed)
 .admin_sessions.json
 .sdy_escrow.key
+.sdy_users.json
+.sdy_user_sessions.json
 notifications.json
 imported/
 imported_docs/

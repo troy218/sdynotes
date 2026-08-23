@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 from flask import Response, jsonify, request, send_from_directory
 from PIL import Image
 
-from .admin import _require_admin
+from .admin import _require_admin, requests_post_internal
 from .cloud import SYNC_TABLE, _sb_enabled, _sb_get, _sb_put
 from .common import (ACOUSTID_FILE, BASE_DIR, MUSIC_BAK, MUSIC_DIR, MUSIC_META,
                      SYNC_DIR, YT_COOKIES_BAK, YT_COOKIES_FILE,
@@ -104,7 +104,8 @@ def _music_load():
 
 _SIDE_KEYS = ("id", "title", "artist", "album", "year", "genre", "ext", "bytes",
               "orig_title", "tag_state", "tag_src", "tag_algo", "cover",
-              "lyrics", "lyrics_plain", "lyrics_src", "lyrics_tries", "created_at")
+              "lyrics", "lyrics_plain", "lyrics_src", "lyrics_tries", "created_at",
+              "uploader", "uploader_uid")
 _last_saved = {}
 
 
@@ -1681,6 +1682,41 @@ def _music_boot_check():
 threading.Thread(target=_music_boot_check, daemon=True).start()
 
 
+# 16.2 · 로그인(이메일 OTP) 사용자 확인 — 곡에 "누가 올렸는지" 표시를 붙인다.
+#   브라우저가 x-sdy-auth 헤더로 세션 토큰을 실어 보내면 Node 가 신원을
+#   답해 준다(/internal/whoami, loopback 전용). 곡마다 물어보지 않게 5분 캐시.
+_SDY_AUTH_TTL = 300
+_sdy_auth_cache = {}
+
+
+def _sdy_auth_user():
+    """x-sdy-auth 토큰 → {"uid","nick"} 또는 None (비회원)."""
+    tok = (request.headers.get("x-sdy-auth") or "").strip()
+    if not tok:
+        return None
+    now = time.time()
+    hit = _sdy_auth_cache.get(tok)
+    if hit and hit[0] > now:
+        return hit[1]
+    user = None
+    try:
+        r = requests_post_internal("/internal/whoami", {"token": tok})
+        user = r.get("user") if r.get("ok") else None
+    except Exception:
+        user = None
+    _sdy_auth_cache[tok] = (now + _SDY_AUTH_TTL, user)
+    return user
+
+
+def _sdy_auth_fields():
+    """곡 레코드에 심을 업로더 필드 (비회원이면 빈 딕셔너리)."""
+    u = _sdy_auth_user()
+    if not u:
+        return {}
+    return {"uploader": str(u.get("nick") or "")[:24],
+            "uploader_uid": str(u.get("uid") or "")[:40]}
+
+
 def _music_upload_pipeline(mid):
     """14.9 · 업로드 직후 정리 흐름 (로컬 폴백 모드):
     1) 소리 인식(AcoustID)으로 제목·가수·앨범을 먼저 채우고
@@ -1747,7 +1783,8 @@ def music_upload():
            "year": emb.get("year") or "", "genre": (emb.get("genre") or "")[:40],
            "orig_title": title[:120],
            "tag_state": "pending", "tag_src": "",
-           "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ")}
+           "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+           **_sdy_auth_fields()}
     with _music_lock:
         m = _music_load()
         m[mid] = rec
@@ -2230,7 +2267,8 @@ def _yt_add(url):
                "genre": str(info.get("genre") or "")[:40],
                "orig_title": vtitle[:120],
                "tag_state": "done", "tag_src": "YouTube",
-               "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ")}
+               "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+               **_sdy_auth_fields()}
         with _music_lock:
             m = _music_load()
             m[mid] = rec

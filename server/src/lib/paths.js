@@ -30,6 +30,9 @@ export const FILES = {
   vaultMeta:   path.join(DIRS.vault, '_index.json'),
   adminSessions: path.join(BASE_DIR, '.admin_sessions.json'),
   escrowKey:   path.join(BASE_DIR, '.sdy_escrow.key'),
+  // 16.2 · 회원(이메일 OTP 로그인)
+  authUsers:    path.join(BASE_DIR, '.sdy_users.json'),
+  authSessions: path.join(BASE_DIR, '.sdy_user_sessions.json'),
   notifications: path.join(BASE_DIR, 'notifications.json'),
   acoustid:    path.join(DIRS.music, '_acoustid.json'),
   ytCookies:   path.join(DIRS.music, '_yt_cookies.txt'),

@@ -237,6 +237,40 @@ grep -n 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo
   스크립트(`scripts/migrate_to_oracle.mjs`). 예전 클라우드 모드는
   `SDY_STORAGE=cloud` 로 보존.
 
+## 16.2 · 로그인/회원 (이메일 OTP · 선택 사항)
+
+로그인하지 않아도 사이트 전부를 쓸 수 있다. 로그인하면:
+
+- **엽스코드 고정 닉네임** — 엽스코드 진입 시 `로그인하고 입장 / 비회원으로 입장`
+  두 문 중에서 고른다. 회원은 서버가 고정 닉네임을 강제하고(게스트가 흉내 내면 409),
+  이름 옆에 회원 배지(✔)가 붙는다.
+- **올린 곡 표시** — 로그인한 상태에서 올린 곡(파일·유튜브)은 음악 목록에서
+  제목 옆에 `👤 닉네임` 마크가 작게 붙는다(worker 가 `/internal/whoami` 로 신원 확인).
+
+비밀번호가 없다: 이메일로 오는 6자리 인증 코드(OTP, 10분·일회용)로만 로그인한다.
+
+```
+POST /api/auth/otp      {email}              → 코드 발송(SMTP) · registered 여부
+POST /api/auth/verify   {email,code,nick?}   → 토큰 발급 (새 이메일이면 닉네임 등록)
+GET  /api/auth/me       (x-sdy-auth 헤더)    → 내 정보 (세션 30일 자동 연장)
+POST /api/auth/nick     {nick}               → 고정 닉네임 변경 (유일해야 함)
+POST /api/auth/logout                          → 토큰 무효화
+POST /internal/whoami   {token}              → loopback 전용 (worker 용 신원 조회)
+```
+
+**SMTP 설정** (설정하지 않으면 코드를 서버 콘솔에만 찍는다):
+
+```
+SDY_SMTP_HOST=smtp.example.com
+SDY_SMTP_PORT=587          # 465면 암시적 SSL, 587는 STARTTLS
+SDY_SMTP_USER=no-reply@example.com
+SDY_SMTP_PASS=앱비밀번호
+SDY_SMTP_FROM=no-reply@example.com   # 생략하면 USER 사용
+SDY_AUTH_DEV_CODE=1        # (개발/점검 전용) SMTP 없이 응답에 코드를 실어 준다
+```
+
+상태 파일: `.sdy_users.json`(회원) · `.sdy_user_sessions.json`(세션) — 서버 디스크에만 있다.
+
 ## 검증
 
 ```bash
@@ -255,6 +289,10 @@ node test/pinbug_fix_sim.mjs    # 수정 후 수렴 검증
 # 14.11 — 12GB 메모리 배분 / 한 동작=한 기능 / 서버 릴레이 음성 계약
 node test/tuning_one_action_contract.mjs
 npm run test:call                 # 채팅 + 음성 릴레이 + nginx voice-ws 보강 + 프론트 스모크
+
+# 16.2 — 로그인(이메일 OTP) + 엽스코드 입장 게이트 + 올린 곡 표시
+node test/auth_contract.mjs        # OTP 발급/검증·회원가입·고정닉 보호·whoami·목록 통과  (npm run test:auth)
+node test/yp_gate_contract.cjs     # 입장 게이트 두 문·비회원/로그인 흐름·마크 소스 계약  (npm run test:gate)
 
 # 14.12 — Oracle 자체 저장소 (로컬 DB·shim·이전 시뮬레이션)
 node test/oracle_db_contract.mjs   # dbstore/db 라우트 + 노트 이미지 로컬 저장

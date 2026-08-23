@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
-import { servePage } from '../lib/page.js';
+import { servePage, serveAsset } from '../lib/page.js';
 import { DIRS } from '../lib/paths.js';
 import { CLOUD_READY } from '../lib/config.js';
 import { uploadStream, destroy } from '../lib/cloudinary.js';
@@ -28,6 +28,10 @@ function localPublicId(url) {
 export function registerPages(app) {
   app.get('/', (req, reply) => servePage(req, reply));
   app.get('/sdynotes.html', (req, reply) => servePage(req, reply));
+
+  // 16.2 · 정적 에셋 (운영은 nginx 가 먼저 준다 — 여기는 개발/미리보기 경로)
+  app.get('/sdynotes.js', (req, reply) => { if (!serveAsset(req, reply, '/sdynotes.js')) reply.code(404).send(); });
+  app.get('/sdynotes.css', (req, reply) => { if (!serveAsset(req, reply, '/sdynotes.css')) reply.code(404).send(); });
 
   // 노트에 붙이는 이미지 업로드 (HEIF 변환 + 오라클 서버 저장 또는 Cloudinary)
   app.post('/api/upload', async (req, reply) => {
