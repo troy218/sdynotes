@@ -19207,7 +19207,7 @@ body.sdy-booting #musicListPop{z-index:10001;}
             <button id="mpBEq" class="mpb-ric" title="이퀄라이저"><i class="ri-equalizer-line"></i></button>
             <button id="mpBSleep" class="mpb-ric" title="수면 타이머"><i class="ri-timer-line"></i><em id="mpBSleepLeft"></em></button>
             <span class="mpb-vol"><i class="ri-volume-up-line" id="mpBVolIco"></i><input id="mpBVol" type="range" min="0" max="100" value="100"></span>
-            <button id="mpBLyrBtn" class="mpb-ric mpb-fsonly" title="가사"><i class="ri-lyrics-line"></i></button>
+            <button id="mpBLyrBtn" class="mpb-ric mpb-fsonly" title="가사"><i class="ri-music-2-line"></i></button>
             <button id="mpBList" class="mpb-ric mpb-fsonly" title="재생 목록"><i class="ri-list-music"></i></button>
           </div>
         </div>
@@ -19767,7 +19767,7 @@ async function refreshMusic(deep){
 try{ window.sdyRefreshMusic=refreshMusic; }catch(e){}
 function coverURL(t){ if(!t||!t.cover) return DEF_COVER;
   if(t.cover_url) return t.cover_url;
-  return '/api/music/cover/'+t.id+'?v='+(t.cover_v||1)+'_'+(P.coverV||'1'); }
+  return '/api/music/cover/'+t.id+'?v='+(t.cover_v||1)+'_'+(P.coverV||'1')+'&s=512'; }
 function setCover(t){ const im=$('mpCover');
   im.onerror=()=>{ im.onerror=null; im.src=DEF_COVER; };
   im.src=coverURL(t); }
@@ -24555,6 +24555,8 @@ body.mpb-playing #mpBig:fullscreen .mpb-cwrap .mpb-cover{
 .mpb-ric.live em{display:block;animation:mpbump .3s both;}
 .mpb-fsonly{display:none!important;}
 #mpBig.mpb-fs .mpb-fsonly,#mpBig:fullscreen .mpb-fsonly{display:inline-flex!important;}
+/* 전체 모드에서는 가사 탭을 서랍에서 숨긴다 (row2 전용 버튼으로 대체) */
+#mpBig.mpb-fs .mpb-tabs button#mpBTabY,#mpBig:fullscreen .mpb-tabs button#mpBTabY{display:none!important;}
 #mpBig.mpb-fs .mpb-row2,#mpBig:fullscreen .mpb-row2{justify-content:center;gap:12px;margin-top:clamp(2px,.8vh,8px);}
 #mpBig.mpb-fs .mpb-row2 #mpBRate,#mpBig:fullscreen .mpb-row2 #mpBRate{
   height:38px;padding:0 13px;border-radius:99px;font-size:12px;
@@ -25120,9 +25122,10 @@ body.sdy-booting #mpReopen{display:none !important;}
     <button class="ypv-gear" id="ypSetBtn" title="설정"><i class="ri-settings-3-line"></i></button>
   </div>
   <div class="yp-bgm" id="ypBgm" style="display:none">
+    <button id="ypBgmPause" class="ypv-icon" title="일시정지"><i class="ri-pause-fill"></i></button>
     <div class="yp-bgm-meta"><b id="ypBgmTitle">배경음악</b><span id="ypBgmArtist"></span></div>
     <input id="ypBgmSearch" type="text" placeholder="노래 검색…" autocomplete="off" spellcheck="false">
-    <input id="ypBgmVol" type="range" min="0" max="100" value="30">
+    <input id="ypBgmVol" type="range" min="0" max="100" value="15">
     <div class="yp-bgm-res" id="ypBgmRes"></div>
   </div>
   <div class="yp-body" id="ypBody">
@@ -25441,20 +25444,20 @@ body.sdy-booting #mpReopen{display:none !important;}
         if(uid===YP.uid) return;
         var was=prev.get(uid);
         if(!was){
-          ypSys('🐦 '+(m.name||'익명')+' 님이 들어왔어요');
+          ypSys((m.name||'익명')+' 님이 들어왔어요');
         } else {
           // 16.x · 통화 음성 참가 변화 — 보이스톡처럼 음성으로 알려 준다
           if(YP.inVoice){
-            if(m.voice && !was.voice) ypSay((m.name||'누군가')+' 님이 통화에 들어왔어요');
-            else if(!m.voice && was.voice) ypSay((m.name||'누군가')+' 님이 통화에서 나갔어요');
+            if(m.voice && !was.voice) ypBeep('msg');
+            else if(!m.voice && was.voice) ypBeep('msg');
           }
         }
       });
       prev.forEach(function(o,uid){
         if(!next.has(uid)&&uid!==YP.uid){
-          ypSys('👋 '+(o.name||'익명')+' 님이 나갔어요');
+          ypSys((o.name||'익명')+' 님이 나갔어요');
           // 16.x · 통화 중이던 사람이 방 자체를 나가면 통화에서도 빠진 것으로 본다
-          if(YP.inVoice && o.voice) ypSay((o.name||'누군가')+' 님이 통화에서 나갔어요');
+          if(YP.inVoice && o.voice) ypBeep('msg');
         }
       });
     }
@@ -25484,8 +25487,9 @@ body.sdy-booting #mpReopen{display:none !important;}
   }
   var RELAY_SR=16000;            // 음성 샘플레이트 (16kHz = 광대역 음질)
   var RELAY_CHUNK=1600;          // 한 프레임 샘플 수 = 100ms
-  var RELAY_JBUF=0.18;           // 수신 지터 버퍼(초)
+  var RELAY_JBUF=0.28;           // 수신 지터 버퍼(초) — 지지직 방지 위해 확대
   var RELAY_HB=20000;            // 프록시가 유휴 WS 를 끊지 않게 핑
+  var _relayLastFrame={};        // 프레임 손실 은닉용 마지막 프레임 보관
   // G.711 μ-law 디코딩 테이블 (수신측)
   var MULAW_D=(function(){
     var t=new Float32Array(256);
@@ -25670,7 +25674,7 @@ body.sdy-booting #mpReopen{display:none !important;}
       ypRelayStart(YP.localStream).then(function(){
         YP._relayRT=null;
         toast('음성 연결을 다시 이었어요',1600);
-        try{ ypSay('통화를 다시 연결했어요'); }catch(e){}
+        try{ ypBeep('msg'); }catch(e){}
       }).catch(function(){
         tries++;
         if(tries>=6){ YP._relayRT=null; ypLeaveVoice(); toast('음성 연결을 되살리지 못했어요',2600); return; }
@@ -25762,7 +25766,7 @@ body.sdy-booting #mpReopen{display:none !important;}
         ypWatchStream(YP.uid,st);
         ypReconcileVoice(); ypRenderStatus();
         if(YP.bgm && YP.bgm.action!=='stop') ypBgmApply(YP.bgm);
-        try{ ypSay('통화에 연결되었어요'); setTimeout(ypAnnouncePeers,900); }catch(e){}
+        try{ ypBeep('msg'); }catch(e){}
         toast('통화 시작 · 이어폰을 쓰면 에코가 줄어요',2400);
       }).catch(function(err){
         YP.joiningVoice=false; ypRenderStatus();
@@ -25784,7 +25788,7 @@ body.sdy-booting #mpReopen{display:none !important;}
     if(BGM.on){ BGM.on=false; try{BGM.audio&&BGM.audio.pause();}catch(e){} ypBgmCast('stop'); }
     var bgm=$('ypBgm'); if(bgm) bgm.style.display='none';
     ypRenderStatus();
-    if(wasInVoice){ try{ ypSay('통화가 종료되었어요'); }catch(e){} }
+    if(wasInVoice){ try{ ypBeep('msg'); }catch(e){} }
   }
   function ypToggleMute(){
     YP.muted=!YP.muted;
@@ -25797,12 +25801,28 @@ body.sdy-booting #mpReopen{display:none !important;}
 
   // ── 배경음악 (음성참가 · 검색 기반 · 같이 듣기 · 랜덤 다음곡) ──
   var BGM={list:[],on:false,audio:null,loaded:false,owner:null};
+  var BGM_PAUSED=false;
   function ypBgmAudio(){
     if(!BGM.audio){
-      BGM.audio=new Audio(); BGM.audio.volume=0.3;
-      BGM.audio.onended=function(){ if(BGM.on && BGM.owner===YP.uid) ypBgmRandomNext(); };
+      BGM.audio=new Audio(); BGM.audio.volume=0.15;
+      BGM.audio.onended=function(){ if(BGM.on && BGM.owner===YP.uid && !BGM_PAUSED) ypBgmRandomNext(); };
     }
     return BGM.audio;
+  }
+  function ypBgmPause(){
+    if(!BGM.audio||!BGM.on) return;
+    var btn=$('ypBgmPause');
+    if(BGM_PAUSED){
+      BGM_PAUSED=false;
+      BGM.audio.play().catch(function(){});
+      if(btn){ btn.innerHTML='<i class="ri-pause-fill"></i>'; btn.title='일시정지'; }
+      ypBgmCast('play', {id:BGM.audio.getAttribute('src')}, BGM.audio.currentTime||0);
+    } else {
+      BGM_PAUSED=true;
+      BGM.audio.pause();
+      if(btn){ btn.innerHTML='<i class="ri-play-fill"></i>'; btn.title='재생'; }
+      ypBgmCast('pause', null, 0);
+    }
   }
   function ypBgmLoadList(cb){
     if(BGM.loaded && BGM.list.length){ cb&&cb(); return; }
@@ -26013,10 +26033,8 @@ body.sdy-booting #mpReopen{display:none !important;}
       '  <button class="yp-set-btn yp-set-refresh" id="ypSetBird" title="새 닉네임">'+REFRESH+'</button></div>'+
       '<div class="yp-set-title">알림</div>'+
       '<div class="yp-set-row"><label>알림 소리<span class="sub">새 메시지가 오면 소리</span></label><span class="yp-switch '+(YPS.sound?'on':'')+'" data-k="sound"><i></i></span></div>'+
-      '<div class="yp-set-row"><label>입장·퇴장 알림<span class="sub">들어오고 나가는 안내 · 통화 음성 피드백</span></label><span class="yp-switch '+(YPS.sys?'on':'')+'" data-k="sys"><i></i></span></div>'+
-      '<div class="yp-set-row"><label>데스크톱 알림<span class="sub">노크·새 메시지 창 알림</span></label><span class="yp-switch '+(YPS.desk?'on':'')+'" data-k="desk"><i></i></span></div>'+
-      '<div class="yp-set-title">음성 통화</div>'+
-      '<div class="yp-set-row"><label>서버 릴레이<span class="sub">사이트가 열리는 망이면 통화도 됩니다 · TURN/NAT 불필요</span></label></div>';
+      '<div class="yp-set-row"><label>입장·퇴장 알림<span class="sub">들어오고 나가는 안내</span></label><span class="yp-switch '+(YPS.sys?'on':'')+'" data-k="sys"><i></i></span></div>'+
+      '<div class="yp-set-row"><label>데스크톱 알림<span class="sub">노크·새 메시지 창 알림</span></label><span class="yp-switch '+(YPS.desk?'on':'')+'" data-k="desk"><i></i></span></div>';
   }
   function ypSettingsClick(e){
     var sw=e.target.closest&&e.target.closest('.yp-switch');
@@ -26139,6 +26157,7 @@ body.sdy-booting #mpReopen{display:none !important;}
   $('ypFileInp').onchange=function(){ ypUpload(this.files[0]); this.value=''; };
   $('ypKnockBtn').onclick=ypKnock;
   $('ypBgmBtn').onclick=ypBgmToggleBar;
+  $('ypBgmPause').onclick=ypBgmPause;
   $('ypBgmVol').oninput=function(e){ if(BGM.audio) BGM.audio.volume=(+e.target.value)/100; };
   var bgmSearch=$('ypBgmSearch');
   bgmSearch.addEventListener('input',function(){ ypBgmLoadList(ypBgmSearch); });
