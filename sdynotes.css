@@ -4633,3 +4633,108 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .home-add-icon{background:var(--card) !important;border-color:var(--border) !important;color:var(--text1) !important;}
 .home-add-note:hover .home-add-icon{color:#fff !important;background:var(--accent) !important;border-color:var(--accent) !important;}
 
+
+
+/* ═══════════════════════════════════════════════════════════════════
+     16.2 · 로그인/회원 (이메일 OTP · 선택) + 엽스코드 입장 게이트
+       · 헤더 계정 버튼(#sdyAccBtn) — 로그인하면 점이 켜진다
+       · 로그인 모달(#sdyAuthWrap) — 이메일 → 6자리 코드 → (새 회원) 고정 닉네임
+       · 엽스코드 게이트(#ypGate) — '로그인하고 입장 / 비회원으로 입장'
+       · 회원 배지(.yp-verified) · 올린 곡 표시(.mp-upmark)
+     ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 헤더 계정 버튼 ── */
+#sdyAccBtn{position:relative;}
+#sdyAccBtn.on{color:var(--accent);}
+.acc-dot{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;
+  background:#22c55e;box-shadow:0 0 0 2px var(--bg);pointer-events:none;}
+
+/* ── 로그인 모달 ── */
+#sdyAuthWrap{position:fixed;inset:0;z-index:12000;display:flex;align-items:center;justify-content:center;
+  background:rgba(15,18,28,.45);backdrop-filter:blur(6px);}
+.sa-card{width:min(360px,calc(100vw - 36px));background:var(--card);border:1px solid var(--border);
+  border-radius:18px;padding:26px 24px 22px;box-shadow:0 24px 70px rgba(10,14,30,.28);
+  display:flex;flex-direction:column;gap:12px;position:relative;animation:saPop .22s cubic-bezier(.2,.9,.3,1.2);}
+@keyframes saPop{from{opacity:0;transform:translateY(14px) scale(.97);}to{opacity:1;transform:none;}}
+.sa-x{position:absolute;top:10px;right:10px;border:none;background:transparent;color:var(--text3);
+  font-size:19px;cursor:pointer;width:30px;height:30px;border-radius:8px;}
+.sa-x:hover{background:var(--bg2);color:var(--text1);}
+.sa-logo{width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff;font-size:22px;}
+.sa-ttl{font-size:19px;font-weight:800;}
+.sa-sub{font-size:12px;color:var(--text3);line-height:1.45;margin-top:-6px;}
+.sa-step{display:flex;flex-direction:column;gap:9px;}
+.sa-step input{height:42px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);
+  color:var(--text1);font-size:14px;padding:0 13px;outline:none;width:100%;}
+.sa-step input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,110,247,.15);}
+.sa-btn{height:42px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;
+  font-weight:700;cursor:pointer;transition:filter .15s;}
+.sa-btn:hover{filter:brightness(1.08);}
+.sa-btn:disabled{opacity:.55;cursor:not-allowed;}
+.sa-btn.ghost{background:var(--bg2);color:var(--text1);border:1px solid var(--border);}
+.sa-sent{font-size:12px;color:var(--text2);background:var(--bg2);border-radius:9px;padding:8px 11px;
+  word-break:break-all;}
+#saCode{letter-spacing:7px;text-align:center;font-size:17px;font-weight:700;}
+.sa-nickrow{display:flex;flex-direction:column;gap:4px;}
+.sa-nicksub{font-size:11px;color:var(--text3);}
+.sa-linkbtn{border:none;background:transparent;color:var(--text3);font-size:12px;cursor:pointer;
+  text-decoration:underline;padding:2px;}
+.sa-linkbtn:hover{color:var(--text1);}
+.sa-linkbtn:disabled{opacity:.5;cursor:not-allowed;text-decoration:none;}
+.sa-me{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:800;padding:2px 0 4px;}
+.sa-me>i:first-child{width:34px;height:34px;border-radius:10px;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:16px;flex:none;}
+.sa-row{display:flex;align-items:center;gap:10px;font-size:13px;min-height:36px;}
+.sa-row>label{width:88px;flex:none;color:var(--text3);font-size:12px;}
+.sa-row>span:not(.sa-nickedit){color:var(--text1);word-break:break-all;}
+.sa-nickedit{display:flex;gap:6px;flex:1;min-width:0;}
+.sa-nickedit input{flex:1;min-width:0;height:34px;border:1px solid var(--border);border-radius:8px;
+  background:var(--bg2);color:var(--text1);font-size:13px;padding:0 10px;outline:none;}
+.sa-nickedit input:focus{border-color:var(--accent);}
+.sa-mini{border:1px solid var(--border);background:var(--bg2);color:var(--text1);border-radius:8px;
+  font-size:12px;padding:0 12px;cursor:pointer;flex:none;}
+.sa-mini:hover{border-color:var(--accent);color:var(--accent);}
+.sa-err{font-size:12px;color:#ef4444;background:rgba(239,68,68,.08);border-radius:8px;padding:7px 10px;}
+
+/* ── 엽스코드 입장 게이트 ── */
+#ypGate{position:fixed;inset:0;z-index:11900;display:flex;align-items:center;justify-content:center;
+  background:rgba(8,10,16,.55);backdrop-filter:blur(7px);}
+.ypg-card{width:min(330px,calc(100vw - 36px));background:#14181f;border:1px solid #262b36;border-radius:18px;
+  padding:24px 20px;display:flex;flex-direction:column;gap:12px;box-shadow:0 24px 70px rgba(0,0,0,.5);
+  animation:saPop .22s cubic-bezier(.2,.9,.3,1.2);}
+.ypg-ttl{font-size:19px;font-weight:800;color:#f2f4f8;display:flex;align-items:center;gap:8px;}
+.ypg-sub{font-size:11.5px;color:#8b93a5;line-height:1.5;margin-top:-6px;}
+.ypg-btn{display:flex;align-items:center;gap:12px;border:1px solid #2a303c;background:#1a1f29;color:#e7eaf0;
+  border-radius:13px;padding:13px 14px;cursor:pointer;text-align:left;transition:background .15s,border-color .15s,transform .15s;}
+.ypg-btn:hover{background:#222836;border-color:#39414f;transform:translateY(-1px);}
+.ypg-btn>i{font-size:21px;color:#8b93a5;flex:none;}
+.ypg-btn span{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.ypg-btn b{font-size:14px;}
+.ypg-btn em{font-style:normal;font-size:11px;color:#8b93a5;}
+.ypg-btn.main{background:linear-gradient(135deg,#5865f2,#7c5cf0);border-color:transparent;}
+.ypg-btn.main:hover{background:linear-gradient(135deg,#6673f4,#8a6df2);}
+.ypg-btn.main>i{color:#fff;}
+.ypg-btn.main em{color:rgba(255,255,255,.75);}
+
+/* ── 엽스코드 회원 배지 (말풍선 이름·음성 칩·설정) ── */
+.yp-verified{display:inline-flex;align-items:center;color:#5865f2;font-size:11px;vertical-align:middle;
+  margin-left:4px;line-height:1;flex:none;}
+.yp-verified i{font-size:12.5px;}
+.yp-who .yp-verified{margin-left:5px;}
+.yp-vchip .yp-verified{margin-left:3px;font-size:9px;}
+.yp-vchip .yp-verified i{font-size:10.5px;}
+.yp-set-member label{display:flex;align-items:center;gap:6px;min-width:0;}
+.yp-set-member .yp-verified{margin-left:0;}
+.yp-set-member .sub{margin-left:26px;}
+.yp-set-login{flex:1;border:1px dashed #39414f;background:#1a1f29;color:#c9d2e0;border-radius:8px;
+  font-size:11.5px;padding:8px 10px;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.yp-set-login:hover{border-color:#5865f2;color:#fff;background:#222836;}
+.yp-set-login i{font-size:13px;}
+
+/* ── 음악 목록 · '올린 사람' 마크 (작게) ── */
+.mp-li .mp-upmark{flex:none;display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--text3);
+  background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:1.5px 7px;
+  max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3;}
+.mp-li .mp-upmark i{font-size:9px;flex:none;opacity:.85;}
+.mp-li .mp-upmark:hover{color:var(--accent);border-color:var(--accent);}
+.mp-li.on .mp-upmark{color:var(--accent);background:rgba(79,110,247,.12);border-color:rgba(79,110,247,.35);}

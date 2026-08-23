@@ -8,6 +8,13 @@
 // 채팅(SSE)이 열리는 망이면 통화도 된다.
 import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
+import { userByTokenSync, nickTaken } from '../lib/userauth.js';
+
+// 비회원이 써도 되는 이름인지 — 회원 고정닉과 겹치면 거짓.
+// (userauth 가 부팅되지 않은 테스트 환경에선 항상 참)
+async function ypNickFree(name) {
+  try { return !(await nickTaken(name)); } catch { return true; }
+}
 
 const CHAT_TTL = parseInt(process.env.SDY_CHAT_TTL || '86400', 10); // 마지막 대화 후 이 시간 지나면 방 초기화(펑)
 const MEMBER_TTL = 70;        // 핑 없이 이 시간 지나면 접속 종료로 간주
@@ -55,6 +62,7 @@ function pickPastel() {
 const publicMembers = () =>
   [...state.members.values()].map((m) => ({
     uid: m.uid, name: m.name, color: m.color, voice: !!m.voice, mute: !!m.mute,
+    verified: !!m.verified,
   }));
 
 function writeSse(client, evt) {
@@ -176,7 +184,7 @@ function voicePeers() {
   const out = [];
   for (const [uid, ws] of voiceSockets) {
     const m = state.members.get(uid);
-    if (m && ws.readyState === 1) out.push({ uid, name: m.name, color: m.color, mute: !!m.mute });
+    if (m && ws.readyState === 1) out.push({ uid, name: m.name, color: m.color, mute: !!m.mute, verified: !!m.verified });
   }
   return out;
 }
@@ -216,7 +224,7 @@ function registerVoiceRelay(app) {
         m.ts = nowSec();
         chatPresence();
         try { ws.send(JSON.stringify({ t: 'welcome', uid, peers: voicePeers() })); } catch { /* noop */ }
-        voiceSendAll({ t: 'join', uid, name: m.name, color: m.color, mute: !!m.mute }, uid);
+        voiceSendAll({ t: 'join', uid, name: m.name, color: m.color, mute: !!m.mute, verified: !!m.verified }, uid);
 
         const hb = setInterval(() => {
           if (ws.readyState !== 1) return;
@@ -339,23 +347,42 @@ export function registerChat(app) {
   registerVoiceRelay(app);
 
   // ── 입장 (닉네임 = 새 이름, 색 = 파스텔) ──
+  // 16.2 · 회원 토큰을 들고 오면(Authorization: Bearer … 또는 body.token)
+  // 고정 닉네임이 강제되고 회원 배지가 붙는다. 비회원이 회원 닉네임을
+  // 흉내 내는 것은 서버가 거절한다(409 nickname_protected).
   app.post('/api/chat/join', async (req, reply) => {
     const d = req.body || {};
     const uid = String(d.uid || '').trim().slice(0, 40);
     if (!uid) return reply.code(400).send({ ok: false, error: 'uid 필요' });
-    const name = sanitizeName(d.name);
+    let authToken = String(d.token || '').trim();
+    if (!authToken) authToken = String(req.headers['x-sdy-auth'] || '').trim();
+    if (!authToken) {
+      const auth = req.headers.authorization || '';
+      if (auth.startsWith('Bearer ')) authToken = auth.slice(7).trim();
+    }
+    const user = authToken ? userByTokenSync(authToken) : null;
+    let name = sanitizeName(d.name);
+    if (user) {
+      name = user.nick;   // 회원은 무조건 고정 닉네임
+    } else if (name && !(await ypNickFree(name))) {
+      // 비회원이 회원 고정닉을 쓰려 함 — 새 이름으로 바꿔 달라는 안내
+      return reply.code(409).send({
+        ok: false, nickname_protected: true,
+        error: '그 닉네임은 회원 고정닉이에요. 로그인하거나 다른 이름을 써 주세요',
+      });
+    }
     let me = state.members.get(uid);
     if (!me) {
-      me = { uid, name, color: pickPastel(), ts: nowSec(), voice: false, mute: false };
+      me = { uid, name, color: pickPastel(), ts: nowSec(), voice: false, mute: false, verified: !!user };
       state.members.set(uid, me);
       chatPresence();
     } else {
-      if (me.name !== name) { me.name = name; chatPresence(); }
+      if (me.name !== name || !!me.verified !== !!user) { me.name = name; me.verified = !!user; chatPresence(); }
       me.ts = nowSec();
     }
     return reply.send({
       ok: true,
-      me: { uid: me.uid, name: me.name, color: me.color },
+      me: { uid: me.uid, name: me.name, color: me.color, verified: !!me.verified },
       members: publicMembers(),
       msgs: state.msgs.slice(-80),
       ttl: CHAT_TTL,
@@ -390,7 +417,7 @@ export function registerChat(app) {
     if (!me) return reply.code(400).send({ ok: false, error: '먼저 입장해 주세요' });
     const text = sanitizeText(d.text);
     if (!text) return reply.code(400).send({ ok: false, error: '내용이 없습니다' });
-    const msg = pushMsg({ kind: 'txt', uid, name: me.name, color: me.color, text, reactions: {} });
+    const msg = pushMsg({ kind: 'txt', uid, name: me.name, color: me.color, verified: !!me.verified, text, reactions: {} });
     return reply.send({ ok: true, msg });
   });
 
@@ -425,7 +452,7 @@ export function registerChat(app) {
     state.fileBytes += buf.length;
     fileEvict();   // 개수 + 총 바이트 예산 모두 적용
     const msg = pushMsg({
-      kind, uid, name: me.name, color: me.color,
+      kind, uid, name: me.name, color: me.color, verified: !!me.verified,
       file: { id: fileId, name: fname, size: buf.length, mime }, reactions: {},
     });
     return reply.send({ ok: true, msg });
@@ -504,7 +531,7 @@ export function registerChat(app) {
       if (!track.id) return reply.code(400).send({ ok: false, error: '곡이 없습니다' });
     }
     const evt = {
-      type: 'bgm', from: { uid, name: me.name, color: me.color },
+      type: 'bgm', from: { uid, name: me.name, color: me.color, verified: !!me.verified },
       action, track, pos: Math.max(0, parseFloat(d.pos) || 0), ts: nowSec(),
     };
     state.bgm = action === 'stop' ? null : { action, track, pos: evt.pos, ts: evt.ts };
@@ -518,7 +545,7 @@ export function registerChat(app) {
     const uid = String(d.uid || '').trim();
     const me = state.members.get(uid);
     if (!me) return reply.code(400).send({ ok: false, error: '먼저 입장해 주세요' });
-    chatBroadcast({ type: 'knock', from: { uid, name: me.name, color: me.color }, ts: nowSec() });
+    chatBroadcast({ type: 'knock', from: { uid, name: me.name, color: me.color, verified: !!me.verified }, ts: nowSec() });
     return reply.send({ ok: true });
   });
 

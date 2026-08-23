@@ -90,6 +90,9 @@
                     <button id="notifBtn" onclick="toggleNotifications(event)" class="tool-btn notif-btn" title="알림">
                         <i class="ri-notification-3-line"></i><span id="notifBadge" class="notif-badge" style="display:none">0</span>
                     </button>
+                    <button id="sdyAccBtn" onclick="sdyAccClick(event)" class="tool-btn acc-btn" title="로그인 · 회원">
+                        <i class="ri-user-3-line"></i><span id="sdyAccDot" class="acc-dot" style="display:none"></span>
+                    </button>
                     <button onclick="openCards()" class="tool-btn" title="암기 카드"><i class="ri-flashlight-line"></i></button>
                     <button id="clockBtn" onclick="openFocusClock()" class="tool-btn clock-btn"
                             title="시계 · 스톱워치 · 타이머 (집중 화면)"><i class="ri-time-line"></i><span id="clockDot" class="clock-dot" style="display:none"></span></button>
@@ -1340,6 +1343,59 @@
 
 
 
+
+<!-- ═══════════════ 16.2 · 로그인/회원 (이메일 OTP · 선택 사항) ═══════════════
+  로그인하지 않아도 사이트 전부를 쓸 수 있다. 로그인하면:
+    · 엽스코드에서 고정 닉네임(회원 배지) — 게스트는 흉내 낼 수 없다
+    · 내가 올린 곡에 '올린 사람' 표시가 작게 붙는다
+  비밀번호 대신 이메일로 오는 6자리 인증 코드(OTP)로 로그인한다. -->
+<div id="sdyAuthWrap" style="display:none" role="dialog" aria-label="로그인">
+  <div class="sa-card">
+    <button class="sa-x" onclick="sdyAuthClose()" title="닫기"><i class="ri-close-line"></i></button>
+    <div class="sa-logo"><i class="ri-mail-lock-line"></i></div>
+    <b class="sa-ttl" id="saTtl">로그인</b>
+    <span class="sa-sub">이메일로 오는 인증 코드(OTP)로 로그인해요 · 비밀번호 없음</span>
+
+    <!-- 1단계 · 이메일 -->
+    <div class="sa-step" id="saStepEmail">
+      <input type="email" id="saEmail" placeholder="이메일 주소" autocomplete="email" spellcheck="false">
+      <button class="sa-btn" id="saSendBtn" onclick="sdyAuthSend()">인증 코드 받기</button>
+    </div>
+
+    <!-- 2단계 · 코드 입력 (+ 새 회원은 고정 닉네임) -->
+    <div class="sa-step" id="saStepCode" style="display:none">
+      <div class="sa-sent" id="saSent"></div>
+      <input type="text" id="saCode" placeholder="6자리 코드" inputmode="numeric" maxlength="6" autocomplete="one-time-code" spellcheck="false">
+      <div class="sa-nickrow" id="saNickRow" style="display:none">
+        <input type="text" id="saNick" placeholder="고정 닉네임 (최대 16자)" maxlength="16" spellcheck="false">
+        <span class="sa-nicksub">새 회원이에요! 엽스코드와 곡 올리기에 쓸 고정 닉네임을 정해 주세요</span>
+      </div>
+      <button class="sa-btn" id="saVerifyBtn" onclick="sdyAuthVerify()">확인하고 로그인</button>
+      <button class="sa-linkbtn" id="saResend" onclick="sdyAuthSend(true)">코드 다시 받기</button>
+    </div>
+
+    <!-- 3단계 · 로그인됨 -->
+    <div class="sa-step" id="saStepDone" style="display:none">
+      <div class="sa-me"><i class="ri-user-3-fill"></i><b id="saMeNick"></b><span class="yp-verified" title="회원 · 고정 닉네임"><i class="ri-verified-badge-fill"></i></span></div>
+      <div class="sa-row"><label>이메일</label><span id="saMeEmail"></span></div>
+      <div class="sa-row"><label>고정 닉네임</label>
+        <span class="sa-nickedit"><input type="text" id="saNickEdit" maxlength="16" spellcheck="false"><button class="sa-mini" onclick="sdyNickChange()">변경</button></span>
+      </div>
+      <button class="sa-btn ghost" onclick="sdyAuthLogout()">로그아웃</button>
+    </div>
+    <div class="sa-err" id="saErr" style="display:none"></div>
+  </div>
+</div>
+
+<!-- 엽스코드 입장 선택 — 로그인 / 비회원 (16.2) -->
+<div id="ypGate" style="display:none" role="dialog" aria-label="엽스코드 입장">
+  <div class="ypg-card">
+    <b class="ypg-ttl">엽스코드 입장</b>
+    <span class="ypg-sub">로그인하지 않아도 모든 기능을 그대로 쓸 수 있어요</span>
+    <button class="ypg-btn main" id="ypgLogin"><i class="ri-user-3-fill"></i><span><b>로그인하고 입장</b><em>고정 닉네임으로 대화해요</em></span></button>
+    <button class="ypg-btn" id="ypgGuest"><i class="ri-feather-line"></i><span><b>비회원으로 입장</b><em>임의 새 이름으로 가볍게</em></span></button>
+  </div>
+</div>
 
 <!-- ═══════════════ 엽스코드 (Youpscord) v4 ═══════════════
   앱 전체 공용 익명 채팅방 — 다크 디자인 · 텍스트·사진·파일·이모지·반응·

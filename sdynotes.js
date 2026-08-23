@@ -16101,8 +16101,9 @@ $('mpUp').onclick=e=>{ e.stopPropagation(); openAddPop($('mpUp')); };
 let _mpUpBusy=false;
 async function _upOne(f){
   const fd=new FormData(); fd.append('file',f);
+  const auH=window.sdyAuthHeaders?window.sdyAuthHeaders():{};
   try{
-    const r=await fetch('/api/music/upload',{method:'POST',body:fd});
+    const r=await fetch('/api/music/upload',{method:'POST',body:fd,headers:auH});
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok) return {ok:false,name:f.name};
     return {ok:true,id:d.id,name:f.name};
@@ -16253,6 +16254,7 @@ function renderListPop(){
     return `<div class="mp-li" data-i="${i}" data-tid="${t.id}" draggable="true">`+
       `<span><i class="nowic ri-volume-up-fill mp-cur" style="display:none"></i>${esc2(t.title)}</span>`+
       (t.artist?`<em>${esc2(t.artist)}</em>`:'')+
+      (t.uploader?`<span class="mp-upmark" title="${esc2(t.uploader)} 님이 올린 곡"><i class="ri-user-3-fill"></i>${esc2(t.uploader)}</span>`:'')+
       `<i class="ri-price-tag-3-line" data-tag="${t.id}" title="태그·표지 편집" style="color:var(--text3);font-size:13px;flex:none;padding:2px;cursor:pointer;font-style:normal;"></i>`+
       `<i class="pl-add" data-pladd="${t.id}" title="재생목록에 담기">＋</i>`+
       (isAdm()?`<i class="mp-del ri-delete-bin-line" data-del="${t.id}" title="삭제"></i>`:'')+
@@ -18103,7 +18105,8 @@ async function _ytRunOne(j){
   j.status='run'; renderYtQueue();
   try{
     const r=await fetch('/api/music/youtube',{method:'POST',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({url:j.url})});
+      headers:Object.assign({'Content-Type':'application/json'},window.sdyAuthHeaders?window.sdyAuthHeaders():{}),
+      body:JSON.stringify({url:j.url})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok) throw new Error(d.error||('오류 '+r.status));
     j.status='ok'; j.title=String(d.title||'').slice(0,60); j.id=d.id;
@@ -20090,6 +20093,8 @@ refreshEgg();
   function ypsSave(){ try{ localStorage.setItem('sdy_yp_settings', JSON.stringify(YPS)); }catch(e){} }
 
   function ypName(){
+    // 16.2 · 로그인 중이면 무조건 회원 고정닉 (서버도 강제한다)
+    try{ var au=window.sdyUser&&window.sdyUser(); if(au&&au.nick) return String(au.nick).trim().slice(0,24); }catch(e){}
     if(YPS.nick && YPS.nick.trim()) return String(YPS.nick).trim().slice(0,24);
     try{ if(typeof liveName==='function'){ var n=liveName(); if(n&&n.trim()) return n; } }catch(e){}
     try{ var v=localStorage.getItem('sdy_uname_v2'); if(v&&v.trim()) return v; }catch(e){}
@@ -20213,7 +20218,7 @@ refreshEgg();
       if(m.kind==='sys'){ groups.push({kind:'sys',text:m.text}); cur=null; return; }
       var same = cur && cur.kind==='msgs' && cur.uid===m.uid && (m.ts-(cur.lastTs||0)) <= 60;
       if(same){ cur.msgs.push(m); cur.lastTs=m.ts; }
-      else { cur={kind:'msgs',uid:m.uid,name:m.name,color:m.color,msgs:[m],lastTs:m.ts}; groups.push(cur); }
+      else { cur={kind:'msgs',uid:m.uid,name:m.name,color:m.color,msgs:[m],lastTs:m.ts,verified:!!m.verified}; groups.push(cur); }
     });
     return groups;
   }
@@ -20270,7 +20275,9 @@ refreshEgg();
       ava.style.background=g.color||'#e2e8f0'; ava.textContent=(g.name||'?').slice(0,2); line.appendChild(ava);
     }
     var stack=document.createElement('div'); stack.className='yp-stack';
-    if(!mine){ var who=document.createElement('div'); who.className='yp-who'; who.textContent=g.name||'익명'; stack.appendChild(who); }
+    if(!mine){ var who=document.createElement('div'); who.className='yp-who'; who.textContent=g.name||'익명';
+      if(g.verified){ var vb=document.createElement('span'); vb.className='yp-verified'; vb.title='회원 · 고정 닉네임'; vb.innerHTML='<i class="ri-verified-badge-fill"></i>'; who.appendChild(vb); }
+      stack.appendChild(who); }
     g.msgs.forEach(function(m){ stack.appendChild(ypBubbleEl(m)); });
     var tm=document.createElement('div'); tm.className='yp-time'; tm.textContent=ypTime(g.lastTs); stack.appendChild(tm);
     line.appendChild(stack);
@@ -20340,7 +20347,7 @@ refreshEgg();
         var nm=self?('나('+(m.name||'익명')+')'):(m.name||'익명');
         return '<span class="yp-vchip '+(self?'self':'')+(spk?' spk':'')+'">'+
           '<span class="dot" style="background:'+(m.color||'#cbd5e1')+'"></span>'+
-          '<span class="nm">'+esc(nm)+(m.mute?' <i class="ri-mic-off-line"></i>':'')+'</span>'+st+'</span>';
+          '<span class="nm">'+esc(nm)+(m.verified?'<span class="yp-verified" title="회원"><i class="ri-verified-badge-fill"></i></span>':'')+(m.mute?' <i class="ri-mic-off-line"></i>':'')+'</span>'+st+'</span>';
       }).join('');
     }
     // 접힌 아이콘: 음성참가자(나 제외) 초록 글로우 배지만 표시
@@ -20917,10 +20924,18 @@ refreshEgg();
     },25000);
   }
   function ypJoin(){
-    fetch('/api/chat/join',{method:'POST',headers:{'Content-Type':'application/json'},
+    var jh={'Content-Type':'application/json'};
+    try{ var jt=window.sdyAuthToken&&window.sdyAuthToken(); if(jt) jh['x-sdy-auth']=jt; }catch(e){}
+    fetch('/api/chat/join',{method:'POST',headers:jh,
       body:JSON.stringify({uid:YP.uid,name:ypName()})})
-      .then(function(r){return r.json();})
-      .then(function(d){
+      .then(function(r){ return r.json().then(function(j){ return {s:r.status,d:j}; }); })
+      .then(function(res){
+        var d=res.d;
+        // 16.2 · 비회원 이름이 회원 고정닉과 겹치면 새 이름으로 갈아입고 재시도
+        if(res.s===409 && d && d.nickname_protected){
+          YPS.nick=ypNewBird(); ypsSave();
+          return ypJoin();
+        }
         if(!d||!d.ok) throw new Error(d&&d.error||'입장 실패');
         YP.me=d.me; YP.msgs=(d.msgs||[]).slice(); YP.ttl=d.ttl||86400; YP.name=d.me&&d.me.name;
         YP.bgm=d.bgm||null;
@@ -20928,6 +20943,11 @@ refreshEgg();
         YP.members.clear();
         ypMembersFrom(d.members||[]);
         YP.joined=true;
+        if(!YP._welcomed){
+          YP._welcomed=true;
+          var wu=null; try{ wu=window.sdyUser&&window.sdyUser(); }catch(e){}
+          ypSys(wu&&wu.nick ? '회원 고정닉 "'+wu.nick+'" 으로 입장했어요' : '비회원으로 입장했어요 · ⚙ 설정에서 이름을 바꿀 수 있어요');
+        }
         YP.stick=true;
         ypRender(false);
         var b=$('ypBody'); b.scrollTop=b.scrollHeight;
@@ -20941,16 +20961,23 @@ refreshEgg();
   // ── 설정 UI ──
   function ypBuildSettings(){
     var box=$('ypSettings'); if(!box) return;
+    var me=null; try{ me=window.sdyUser&&window.sdyUser(); }catch(e){}
     box.innerHTML=
       '<div class="yp-set-title">사용자</div>'+
-      '<div class="yp-set-row"><input type="text" id="ypSetNick" placeholder="닉네임 (빈 값 = 새 이름)" value="'+esc(YPS.nick)+'">'+
-      '  <button class="yp-set-btn yp-set-refresh" id="ypSetBird" title="새 닉네임">'+REFRESH+'</button></div>'+
+      (me
+        ? '<div class="yp-set-row yp-set-member"><label><span class="yp-verified" title="회원 · 고정 닉네임"><i class="ri-verified-badge-fill"></i></span> '+esc(me.nick)+'<span class="sub">회원 고정닉 · 로그인 중</span></label>'+
+          '<button class="yp-set-btn" id="ypSetAcc" title="내 계정 (이메일 · 닉네임)"><i class="ri-user-3-line"></i></button></div>'
+        : '<div class="yp-set-row"><input type="text" id="ypSetNick" placeholder="닉네임 (빈 값 = 새 이름)" value="'+esc(YPS.nick)+'">'+
+          '  <button class="yp-set-btn yp-set-refresh" id="ypSetBird" title="새 닉네임">'+REFRESH+'</button></div>'+
+          '<div class="yp-set-row"><button class="yp-set-login" id="ypSetLogin"><i class="ri-user-3-line"></i> 로그인 · 고정 닉네임 쓰기</button></div>')+
       '<div class="yp-set-title">알림</div>'+
       '<div class="yp-set-row"><label>알림 소리<span class="sub">새 메시지가 오면 소리</span></label><span class="yp-switch '+(YPS.sound?'on':'')+'" data-k="sound"><i></i></span></div>'+
       '<div class="yp-set-row"><label>입장·퇴장 알림<span class="sub">들어오고 나가는 안내</span></label><span class="yp-switch '+(YPS.sys?'on':'')+'" data-k="sys"><i></i></span></div>'+
       '<div class="yp-set-row"><label>데스크톱 알림<span class="sub">노크·새 메시지 창 알림</span></label><span class="yp-switch '+(YPS.desk?'on':'')+'" data-k="desk"><i></i></span></div>';
   }
   function ypSettingsClick(e){
+    if(e.target.closest&&e.target.closest('#ypSetAcc')){ if(window.sdyAuthOpen) window.sdyAuthOpen(); return; }
+    if(e.target.closest&&e.target.closest('#ypSetLogin')){ if(window.sdyAuthOpen) window.sdyAuthOpen(); return; }
     var sw=e.target.closest&&e.target.closest('.yp-switch');
     if(sw){ var k=sw.getAttribute('data-k'); YPS[k]=!YPS[k]; ypsSave(); if(k==='desk'&&YPS[k]) ypAskNotify(); ypBuildSettings(); return; }
     if(e.target.closest&&e.target.closest('.yp-set-refresh')){
@@ -20966,7 +20993,18 @@ refreshEgg();
     YP.name=String(name||ypName()).slice(0,24);
     if(YP.me) YP.me.name=YP.name;
     fetch('/api/chat/join',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({uid:YP.uid,name:YP.name})}).catch(function(){});
+      body:JSON.stringify({uid:YP.uid,name:YP.name})})
+      .then(function(r){ return r.json().then(function(j){ return {s:r.status,d:j}; }); })
+      .then(function(res){
+        if(res.s===409&&res.d&&res.d.nickname_protected){
+          var prev=YP.name; YPS.nick=ypNewBird(); ypsSave(); YP.name=YPS.nick;
+          if(YP.me) YP.me.name=YP.name;
+          if(window.toast) toast('그 닉네임은 회원 고정닉이에요. 새 이름으로 바꿨어요',2600);
+          var inp=$('ypSetNick'); if(inp) inp.value=YPS.nick;
+          ypRename(YP.name);
+        }
+      })
+      .catch(function(){});
   }
   function ypSetNickCommit(){
     var inp=$('ypSetNick'); if(!inp) return;
@@ -21047,7 +21085,7 @@ refreshEgg();
   var chip=document.createElement('button');
   chip.id='ypReopen'; chip.title='엽스코드 · 채팅';
   chip.innerHTML=TTEK+'<span class="yp-badge yp-voice" id="ypChipVoice"></span>';
-  chip.onclick=function(){ if(YP.open) ypClose(); else ypOpen(); };
+  chip.onclick=function(){ if(YP.open) ypClose(); else ypEnter(); };
   document.body.appendChild(chip);
   chip.style.display='flex';
 
@@ -21159,7 +21197,37 @@ refreshEgg();
   })();
 
   ypDrag();
-  ypJoin();
+
+  // ── 16.2 · 입장 게이트: '로그인' 또는 '비회원' ──
+  // 페이지를 열자마자 자동으로 방에 들어가지 않는다. 칩을 눌러 엽스코드에
+  // 처음 들어올 때 두 가지 문을 내준다. 로그인 상태면 게이트 없이 바로.
+  function ypEnter(){
+    if(YP.joined){ ypOpen(); return; }
+    var me=null; try{ me=window.sdyUser&&window.sdyUser(); }catch(e){}
+    if(me){ ypJoin(); ypOpen(); return; }
+    var g=$('ypGate');
+    if(!g){ ypJoin(); ypOpen(); return; }
+    g.style.display='flex';
+  }
+  window.__ypEnter=ypEnter;
+  (function(){
+    var g=$('ypGate'); if(!g) return;
+    var hide=function(){ g.style.display='none'; };
+    $('ypgLogin').onclick=function(){
+      hide();
+      // 로그인 모달을 열고, 성공하면 자동으로 엽스코드 입장
+      window.__sdyAfterLogin=function(){ window.__sdyAfterLogin=null; ypJoin(); ypOpen(); };
+      if(window.sdyAuthOpen) window.sdyAuthOpen();
+      else { ypJoin(); ypOpen(); }
+    };
+    $('ypgGuest').onclick=function(){ hide(); ypJoin(); ypOpen(); };
+    g.addEventListener('click',function(e){ if(e.target===g) hide(); });
+  })();
+
+  // 로그인/로그아웃 → 닉네임 전환 (회원은 고정닉, 비회원은 저장한 이름)
+  window.addEventListener('sdy-auth',function(){
+    if(YP.joined) ypJoin();
+  });
 })();
 
 
@@ -21229,3 +21297,199 @@ refreshEgg();
   else boot();
 })();
 
+
+
+/* === script block 12 === */
+
+/* ═══════════════════════════════════════════════════════════════════
+     16.2 · 로그인/회원 — 이메일 OTP (선택 사항)
+     로그인 없이도 사이트 전부를 쓸 수 있다. 로그인하면:
+       · 엽스코드에서 고정 닉네임(회원 배지)
+       · 내가 올린 곡에 작은 '올린 사람' 표시
+     비밀번호 없이 이메일로 오는 6자리 코드(OTP)로만 로그인한다.
+     ═══════════════════════════════════════════════════════════════════ */
+(function(){
+  if(window.__sdyAuthInit) return; window.__sdyAuthInit=true;
+  var $=function(id){return document.getElementById(id);};
+  var KEY='sdy_auth_v1';
+  var SDYA={token:'',user:null};
+  try{
+    var v=JSON.parse(localStorage.getItem(KEY)||'null');
+    if(v&&v.token) SDYA=v;
+  }catch(e){}
+
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify({token:SDYA.token,user:SDYA.user})); }catch(e){} }
+  function emit(){ try{ window.dispatchEvent(new CustomEvent('sdy-auth',{detail:{user:SDYA.user}})); }catch(e){} }
+
+  window.sdyUser=function(){ return SDYA.user||null; };
+  window.sdyAuthToken=function(){ return SDYA.token||''; };
+  window.sdyAuthHeaders=function(){ return SDYA.token?{'x-sdy-auth':SDYA.token}:{}; };
+
+  function paintBtn(){
+    var b=$('sdyAccBtn'), d=$('sdyAccDot');
+    if(!b) return;
+    if(SDYA.user){
+      b.classList.add('on');
+      b.title='회원 · '+SDYA.user.nick+' (클릭하면 내 계정)';
+      if(d) d.style.display='block';
+    }else{
+      b.classList.remove('on');
+      b.title='로그인 · 회원 (선택)';
+      if(d) d.style.display='none';
+    }
+  }
+
+  // 부팅: 저장된 토큰 확인 (유효하면 세션 연장은 서버가)
+  paintBtn();
+  if(SDYA.token){
+    fetch('/api/auth/me',{headers:{'x-sdy-auth':SDYA.token}})
+      .then(function(r){ if(!r.ok) throw new Error('401'); return r.json(); })
+      .then(function(d){
+        if(d&&d.ok&&d.user){ SDYA.user=d.user; save(); paintBtn(); emit(); }
+        else throw new Error('bad');
+      })
+      .catch(function(){ SDYA.token=''; SDYA.user=null; save(); paintBtn(); emit(); });
+  }
+
+  // ── 모달 상태 ──
+  var SA_EMAIL='', SA_REGISTERED=false, SA_COOL=0;
+  function saErr(msg){ var e=$('saErr'); if(!e) return; e.textContent=msg||''; e.style.display=msg?'block':'none'; }
+  function saStep(step){
+    $('saStepEmail').style.display=step==='email'?'block':'none';
+    $('saStepCode').style.display=step==='code'?'block':'none';
+    $('saStepDone').style.display=step==='done'?'block':'none';
+    saErr('');
+  }
+  function saShowDone(){
+    saStep('done');
+    $('saTtl').textContent='내 계정';
+    $('saMeNick').textContent=SDYA.user.nick;
+    $('saMeEmail').textContent=SDYA.user.email;
+    $('saNickEdit').value=SDYA.user.nick;
+  }
+
+  window.sdyAuthOpen=function(afterLogin){
+    var w=$('sdyAuthWrap'); if(!w) return;
+    if(typeof afterLogin==='function') window.__sdyAfterLogin=afterLogin;
+    w.style.display='flex';
+    if(SDYA.user){ saShowDone(); }
+    else{
+      $('saTtl').textContent='로그인';
+      saStep('email');
+      setTimeout(function(){ try{ $('saEmail').focus(); }catch(e){} },60);
+    }
+  };
+  window.sdyAuthClose=function(){
+    var w=$('sdyAuthWrap'); if(w) w.style.display='none';
+    window.__sdyAfterLogin=null; saErr('');
+  };
+  window.sdyAccClick=function(e){ if(e&&e.stopPropagation) e.stopPropagation(); window.sdyAuthOpen(); };
+
+  function coolPaint(){
+    var b=$('saResend'); if(!b) return;
+    var left=Math.max(0,Math.ceil(SA_COOL-(Date.now()/1000)));
+    b.disabled=left>0;
+    b.textContent=left>0?('다시 받기 ('+left+'초)'):'코드 다시 받기';
+  }
+  setInterval(function(){
+    try{
+      if($('sdyAuthWrap').style.display==='flex'&&$('saStepCode').style.display==='block') coolPaint();
+    }catch(e){}
+  },1000);
+
+  var EMAIL_RE=/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/;
+  window.sdyAuthSend=function(again){
+    saErr('');
+    var email=($('saEmail').value||'').trim().toLowerCase();
+    if(!EMAIL_RE.test(email)){ saErr('이메일 주소를 바르게 입력해 주세요'); return; }
+    SA_EMAIL=email;
+    var btn=again?$('saResend'):$('saSendBtn'); if(btn) btn.disabled=true;
+    fetch('/api/auth/otp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email})})
+      .then(function(r){ return r.json().then(function(j){ return {s:r.status,d:j}; }); })
+      .then(function(res){
+        var d=res.d;
+        if(btn) btn.disabled=false;
+        if(!d||!d.ok){ saErr((d&&d.error)||'코드를 보내지 못했어요'); coolPaint(); return; }
+        SA_REGISTERED=!!d.registered;
+        $('saNickRow').style.display=SA_REGISTERED?'none':'block';
+        $('saSent').textContent=email+' 로 인증 코드를 보냈어요 · 10분 안에 입력해 주세요'+(d.dev_code?' · (개발 모드: 코드를 넣어뒀어요)':'');
+        saStep('code');
+        SA_COOL=Date.now()/1000+45; coolPaint();
+        if(d.dev_code){ $('saCode').value=d.dev_code; }
+        setTimeout(function(){ try{ $('saCode').focus(); }catch(e){} },60);
+      })
+      .catch(function(){ if(btn) btn.disabled=false; saErr('서버에 연결하지 못했어요'); });
+  };
+
+  window.sdyAuthVerify=function(){
+    saErr('');
+    var code=($('saCode').value||'').replace(/\D/g,'');
+    if(code.length!==6){ saErr('이메일에서 받은 6자리 코드를 입력해 주세요'); return; }
+    // 등록된 회원은 닉네임 없이 로그인한다 (새 회원만 고정 닉네임)
+    var payload={email:SA_EMAIL,code:code};
+    if(!SA_REGISTERED){
+      var nick=($('saNick').value||'').trim();
+      if(!nick){ saErr('고정 닉네임을 정해 주세요 (최대 16자)'); return; }
+      payload.nick=nick;
+    }
+    var b=$('saVerifyBtn'); if(b) b.disabled=true;
+    fetch('/api/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)})
+      .then(function(r){ return r.json().then(function(j){ return {s:r.status,d:j}; }); })
+      .then(function(res){
+        var d=res.d;
+        if(b) b.disabled=false;
+        if(!d||!d.ok){ saErr((d&&d.error)||'로그인하지 못했어요'); return; }
+        SDYA.token=d.token; SDYA.user=d.user; save(); paintBtn(); emit();
+        if(window.toast) toast('로그인됐어요 · '+d.user.nick,2000);
+        // 엽스코드 게이트에서 흘러온 로그인이면 자동으로 입장한다
+        if(window.__sdyAfterLogin){
+          var f=window.__sdyAfterLogin; window.__sdyAfterLogin=null;
+          window.sdyAuthClose();
+          try{ f(); }catch(e){}
+          return;
+        }
+        saShowDone();
+      })
+      .catch(function(){ if(b) b.disabled=false; saErr('서버에 연결하지 못했어요'); });
+  };
+
+  window.sdyAuthLogout=function(){
+    fetch('/api/auth/logout',{method:'POST',headers:{'x-sdy-auth':SDYA.token}}).catch(function(){});
+    SDYA.token=''; SDYA.user=null; save(); paintBtn(); emit();
+    $('saTtl').textContent='로그인';
+    saStep('email');
+    try{ $('saEmail').value=''; $('saCode').value=''; $('saNick').value=''; }catch(e){}
+    if(window.toast) toast('로그아웃했어요',1600);
+  };
+
+  window.sdyNickChange=function(){
+    saErr('');
+    var nick=($('saNickEdit').value||'').trim();
+    if(!nick){ saErr('닉네임을 입력해 주세요'); return; }
+    fetch('/api/auth/nick',{method:'POST',
+      headers:{'Content-Type':'application/json','x-sdy-auth':SDYA.token},
+      body:JSON.stringify({nick:nick})})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d||!d.ok){ saErr((d&&d.error)||'변경하지 못했어요'); return; }
+        SDYA.user.nick=d.nick; save(); paintBtn(); emit(); saShowDone();
+        if(window.toast) toast('고정 닉네임을 "'+d.nick+'" 로 바꿨어요',1800);
+      })
+      .catch(function(){ saErr('서버에 연결하지 못했어요'); });
+  };
+
+  // Enter 로 다음 단계로, 오버레이 밖을 누르면 닫기
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Enter') return;
+    var w=$('sdyAuthWrap'); if(!w||w.style.display!=='flex') return;
+    if($('saStepEmail').style.display!=='none'&&document.activeElement===$('saEmail')){ e.preventDefault(); window.sdyAuthSend(); }
+    else if($('saStepCode').style.display!=='none'&&(document.activeElement===$('saCode')||document.activeElement===$('saNick'))){ e.preventDefault(); window.sdyAuthVerify(); }
+  });
+  document.addEventListener('click',function(e){
+    var w=$('sdyAuthWrap');
+    if(w&&w.style.display==='flex'&&e.target===w) window.sdyAuthClose();
+  },true);
+  // 엽스코드 로그인 진입(게이트)에서 열 수 있게 전역 노출
+  window.__sdyAuthState=SDYA;
+})();

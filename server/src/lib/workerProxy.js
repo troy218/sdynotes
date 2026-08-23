@@ -11,7 +11,7 @@ export function createWorkerProxy({ app, logger }) {
   async function proxy(req, reply, options = {}) {
     const target = `${WORKER_URL}${req.url}`;
     const headers = {};
-    for (const h of ['content-type', 'content-length', 'accept', 'authorization', 'x-admin-token', 'admin-token', 'cookie']) {
+    for (const h of ['content-type', 'content-length', 'accept', 'authorization', 'x-admin-token', 'admin-token', 'cookie', 'x-sdy-auth']) {
       const v = req.headers[h];
       if (v !== undefined) headers[h] = v;
     }

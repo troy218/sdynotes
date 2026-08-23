@@ -1,6 +1,7 @@
 // SDYnotes backend — Fastify main server (14.8.0 renewed).
 // Lightweight endpoints run here; heavy jobs (PDF import, music tagging,
 // AcoustID, YouTube) run in the Python worker and are proxied.
+import './lib/env.js';   // 16.2 · .env 로더 — config 가 env 를 읽기 전에(가장 먼저)
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
@@ -23,6 +24,8 @@ import { registerMisc } from './routes/misc.js';
 import { registerMusic } from './routes/music.js';
 import { registerChat } from './routes/chat.js';
 import { registerDb } from './routes/db.js';
+import { registerAuth } from './routes/auth.js';
+import { userAuthBoot } from './lib/userauth.js';
 
 ensureDirs();
 
@@ -53,6 +56,7 @@ registerMisc(app);
 registerMusic(app, { worker });
 registerChat(app);
 registerDb(app);
+registerAuth(app);
 
 // worker proxy for the import pipeline (kept verbatim in Python)
 for (const [method, url] of [
@@ -68,6 +72,7 @@ for (const [method, url] of [
 }
 
 await sessionsLoad();
+await userAuthBoot();   // 16.2 · 회원(이메일 OTP) 사용자·세션 읽어 두기
 
 const port = parseInt(process.env.PORT || '5000', 10);
 
