@@ -1,50 +1,72 @@
-# SDYnotes 14.8.0 — Fastify + Python worker (renewed, fast)
+# SDYnotes 14.12.0 — Fastify + Python worker + Oracle 자체 저장소
 
 기존 단일 `app.py`(약 11,000줄)를 **"빠른 부분은 Node, 무거운 부분만 Python"** 으로
-재설계한 백엔드입니다. 모든 엔드포인트 URL·응답 모양·로컬 폴백·Supabase/Cloudinary
-동작은 원본(14.8.0)과 동일합니다. 프런트(`sdynotes.html`)에는 14.9 에서 아래 두
-가지가 추가되었습니다(그 외는 원본 그대로).
+재설계한 백엔드입니다. **14.12 부터 모든 데이터(상태·파일)는 이 Oracle VM 디스크에
+저장·실행됩니다** — Supabase/Cloudinary 는 기본적으로 전혀 호출하지 않습니다
+(쿼터 초과·과금 걱정 없음). 예전 클라우드 모드는 `SDY_STORAGE=cloud` 로 언제든
+롤백할 수 있고, 기존 데이터 이전은 `scripts/migrate_to_oracle.mjs` 가 자동으로
+합니다 (자세한 것은 `ORACLE_MIGRATION.md`).
 
-- **같은 텍스트상자 동시 편집 병합**: 서버가 텍스트 요소의 최근 버전을 보관하고,
-  같은 공통 조상에서 갈라진 두 기기의 편집을 3-way 병합해 양쪽을 모두 남깁니다
-  (구글독스식). 프런트는 `prevRev`/`__base` 로 재기반하고, 편집 중인 상자도
-  커서를 보존하며 실시간 반영합니다.
-- **고정(pin) 시 폴더 이름 스왑 수정**: 설정 동기화의 rev 가 `Date.now()`(ms)라
-  기기 간 rev 충돌 + `since` 커서 제외로 폴더/고정 연산이 유실·되돌림 되던 버그를
-  고쳤습니다. (서브 ms 난수 rev + `since=0` 전체 pull + `_stApplied` 워터마크 +
-  Lamport 시계 캐치업)
+프런트(`sdynotes.html`)의 주요 변화:
+
+- **Supabase 직접 접속 제거**: 노트 목록/본문(notebooks·memos·images)을 예전엔
+  브라우저에서 Supabase 로 직접 저장했지만, 이제 같은 서버의 `/api/db/query`
+  (오라클 디스크 저장소)가 담당합니다. 기존 코드가 그대로 동작하도록 supabase-js
+  와 같은 체인을 제공하는 SDB shim 을 내장했습니다 (CDN·API 키 제거).
+- **이미지 업로드 전부 서버 디스크로**: 노트 이미지는 `/api/upload` →
+  `imported/` 폴더 → `/api/img/<file>` 로 서빙됩니다. 예전의 Cloudinary 직접
+  업로드 폴백은 삭제됐습니다.
+- **같은 텍스트상자 동시 편집 병합** (14.9): 서버가 텍스트 요소의 최근 버전을
+  보관하고, 같은 공통 조상에서 갈라진 두 기기의 편집을 3-way 병합해 양쪽을 모두
+  남깁니다.
+- **고정(pin) 시 폴더 이름 스왑 수정** (14.9): 서브 ms 난수 rev + `since=0` 전체
+  pull + `_stApplied` 워터마크 + Lamport 시계 캐치업.
 
 ## 왜 이 구조인가
 
 | 작업 | 어디서 | 이유 |
 |---|---|---|
-| 프런트 서빙, 동기화, 카드, 스티커, 배경화면, 알림, SSE, 관리자, 보관함 | **Node(Fastify)** | JSON CRUD + 스트리밍에 최적. 기동 수 ms, 동시 요청 빠름 |
+| 프런트 서빙, 동기화, 카드, 스티커, 배경화면, 알림, SSE, 관리자, 보관함, 노트 DB | **Node(Fastify)** | JSON CRUD + 스트리밍에 최적. 기동 수 ms, 동시 요청 빠름 |
 | PDF/Word 가져오기 | **Python worker** | PyMuPDF·python-docx 그대로 사용 (원본 코드 보존) |
 | 음악 태깅·유튜브·소리인식 | **Python worker** | yt-dlp·mutagen·AcoustID(fpcalc) 그대로 사용 (원본 코드 보존) |
+| 모든 상태·파일 저장 | **Oracle 서버 디스크** | `sync/`·`cards/`·`music/`·`stickers/`·`wallpaper/`·`vault/`·`imported/`·`db/` — 외부 클라우드 무료 한도 초과 원천 해소 |
 
 Node 는 **읽기 전용**으로 `music/_index.json` 을 읽고, 그 파일의 **작성자는
 worker 하나**뿐입니다 (원자적 교체라 읽는 쪽은 항상 안전). 알림/관리자 세션/SSE 는
 Node 가 단일 소유하고, worker 가 내부 엔드포인트(`/internal/*`)로 위임합니다.
+
+## 저장소 모드 (14.12)
+
+| 모드 | 상태(JSON) | 파일(이미지·음악·보관함) | 언제 |
+|---|---|---|---|
+| **oracle** (기본) | 이 서버 디스크: `sync/`, `cards/`, `db/`, `music/_index.json`, `stickers/_index.json` | 이 서버 디스크: `imported/`, `music/`, `stickers/`, `wallpaper/`, `vault/` | 기본. Supabase/Cloudinary 트래픽 0 |
+| cloud (legacy) | Supabase 4 테이블 | Cloudinary | `SDY_STORAGE=cloud` 로 배포할 때만 (롤백용) |
+
+`.env` 에 옛 키(SUPABASE_*/CLOUDINARY_*)가 남아 있어도 oracle 모드에서는
+**전혀 읽히지 않습니다**. `/api/cloud/status` 는 현재 모드와 로컬 보유량
+(`local.files`, `local.bytes`) 을 알려 줍니다.
 
 ## 구조
 
 ```
 sdynotes-fast/
 ├── package.json          Node 의존성
-├── sdynotes.html         프런트 (원본 그대로)
-├── apply.sh              배포 스크립트 (★서버에서 실행)
+├── sdynotes.html         프런트 (SDB 로컬 DB shim 내장)
+├── apply.sh              배포 스크립트 (★서버에서 실행 — 최초 1회 데이터 자동 이전)
+├── scripts/
+│   └── migrate_to_oracle.mjs   Supabase/Cloudinary → Oracle 디스크 일괄 이전
 ├── server/               Node(Fastify) 메인 서버
 │   └── src/
 │       ├── index.js      앱 조립 + 기동 (:5000)
-│       ├── lib/          경로/설정/락/SSE/관리자/클라우드/워커프록시
+│       ├── lib/          경로/설정/락/SSE/관리자/저장소(dbstore)/워커프록시
 │       └── routes/       pages·sync·admin·vault·cards·stickers·wallpaper·
-│                         translate·notify·live·misc·music
+│                         translate·notify·live·misc·music·db
 └── worker/               Python 워커 (127.0.0.1:5100)
     ├── run.py            기동
     └── sdynotes_worker/
         ├── importer.py   가져오기 (원본 그대로 보존)
         ├── music.py      음악 태깅/유튜브/인식 (원본 그대로 보존)
-        ├── music_cloud.py 클라우드 음악 변이 (cloud_routes.py 원본 보존) + 라우트 교체
+        ├── music_cloud.py 클라우드 음악 변이 (legacy 모드에서만 활성)
         ├── extra.py      /api/music/play 로컬 폴백
         └── core/common/cloud/admin/notify.py  지원 모듈
 ```
@@ -99,7 +121,8 @@ python3 worker/run.py
 ## 배포 (서버에서)
 
 ```bash
-# zip에 apply.sh · package.json · sdynotes.html · server/ · worker/ 를 모두 넣고
+# zip에 apply.sh · package.json · sdynotes.html · server/ · worker/ · scripts/ 를
+# 모두 넣고
 bash apply.sh
 ```
 
@@ -109,6 +132,9 @@ bash apply.sh
 - `.env` 보존, vault 데이터 보존, nginx(SSE 버퍼링 해제 + 512M 업로드 + 900초 타임아웃),
   swap(12GB → 4GB, swappiness=10), deno/bgutil(유튜브), fpcalc(소리인식),
   coturn(통화 릴레이, 3478 + 인증서 있으면 5349 TLS) 자동 준비.
+- **`.env` 에 옛 Supabase/Cloudinary 키가 남아 있으면 최초 1회, 서비스 정지
+  상태에서 `scripts/migrate_to_oracle.mjs` 가 자동 실행돼 모든 데이터를 이
+  서버 디스크로 이전합니다** (`ORACLE_MIGRATION.md` 참조).
 
 #### 12GB 메모리 배분 (14.11)
 
@@ -248,10 +274,13 @@ curl -s 'http://127.0.0.1:5000/api/chat/diag'
 - **단일 프로세스 전제** — worker 를 여러 개 띄우면 `music/_index.json` 이
   서로 덮어써져 곡이 사라질 수 있습니다. gunicorn 다중 worker 금지.
 - `SUPABASE_SERVICE_KEY` 등 비밀키는 zip/로그/프런트에 절대 노출 금지.
-- 키가 없으면 로컬 폴더 폴백으로 그대로 동작합니다.
-- `APP_VERSION` 은 프런트 `<meta name="application-version">`(14.8.0) 와 일치해야
+  (oracle 모드에선 이 키들이 필요 없고, 남아 있어도 무시됩니다.)
+- `APP_VERSION` 은 프런트 `<meta name="application-version">`(14.12.0) 와 일치해야
   합니다.
 - 이스터에그(쫄라맨 야구)는 프런트 전용 — `sdynotes.html` 그대로 서빙하므로 유지.
+- **디스크가 이제 영구 저장소** — 음원/이미지/보관함이 모두 VM 디스크에 쌓이므로,
+  스냅샷/백업(`tar` 한 번이면 `sync/ cards/ db/ music/ stickers/ wallpaper/
+  vault/ imported/` 전부 백업됨)을 주기적으로 챙기세요.
 
 ## 단계별 이관 상태
 
@@ -271,6 +300,11 @@ curl -s 'http://127.0.0.1:5000/api/chat/diag'
   3-way 병합(`server/src/lib/textmerge.js`, 최근 버전 히스토리)하고, 프런트가
   `prevRev`/`__base` 재기반으로 수렴. 설정 동기화 rev 충돌·커서 유실(핀 시 폴더
   이름 스왑)도 수정.
+- **6단계 (완료, 14.12)** — Oracle 자체 저장소 전환: 상태 4종 + 노트 DB
+  (notebooks/memos/images) + 모든 파일을 이 서버 디스크로. 프런트의 Supabase
+  직접 접속 제거(SDB shim), 노트 이미지 서버 저장(`/api/img`), 일괄 이전
+  스크립트(`scripts/migrate_to_oracle.mjs`). 예전 클라우드 모드는
+  `SDY_STORAGE=cloud` 로 보존.
 
 ## 검증
 
@@ -290,10 +324,16 @@ node test/pinbug_fix_sim.mjs    # 수정 후 수렴 검증
 # 14.11 — 12GB 메모리 배분 / 한 동작=한 기능 / TURN TLS+도메인 계약
 node test/tuning_one_action_contract.mjs
 
-# 클라우드 모드 (실제 키 없이 모의 서버로)
+# 14.12 — Oracle 자체 저장소 (로컬 DB·shim·이전 시뮬레이션)
+node test/oracle_db_contract.mjs   # dbstore/db 라우트 + 노트 이미지 로컬 저장
+node test/sdb_shim_contract.mjs    # 프런트 SDB shim ↔ 서버 descriptor 계약
+node test/migrate_oracle_sim.mjs   # 모의 Supabase/Cloudinary → 오라클 이전 전 과정
+
+# 클라우드(legacy) 모드 (실제 키 없이 모의 서버로)
 python3 test/cloud_smoke.py     # worker 클라우드 음악 변이 (모의 Supabase+Cloudinary)
 # ── 아래는 별도 터미널/셸 3개 ──
 python3 test/mock_cloud.py      # 모의 PostgREST(:5231, http) + Cloudinary(:5232, https)
+SDY_STORAGE=cloud \
 SUPABASE_URL=http://127.0.0.1:5231 SUPABASE_SERVICE_KEY=test \
   CLOUDINARY_CLOUD_NAME=testcloud CLOUDINARY_API_KEY=k CLOUDINARY_API_SECRET=s \
   CLOUDINARY_UPLOAD_PREFIX=https://127.0.0.1:5232 NODE_TLS_REJECT_UNAUTHORIZED=0 \
@@ -305,5 +345,6 @@ python3 test/node_cloud_smoke.py  # Node 클라우드 읽기/쓰기 (26건)
   `importer.py`(원본 보존)가 그대로 처리한다.
 - 협업 편집 병합 로직은 프런트(`mergeText3`)와 서버(`server/src/lib/textmerge.js`)
   가 동일한 훅 기반 diff3 를 공유해 양쪽이 같은 결과로 수렴한다.
-- `CLOUDINARY_UPLOAD_PREFIX`(선택)는 Cloudinary 호환 프록시로 업로드를
+- 클라우드 관련: `SDY_STORAGE=cloud` 로 배포한 경우에만 Supabase/Cloudinary 를
+  읽는다. `CLOUDINARY_UPLOAD_PREFIX`(선택)는 Cloudinary 호환 프록시로 업로드를
   돌릴 때 쓴다(https 만 허용). 미설정 시 실제 Cloudinary API 를 쓴다.

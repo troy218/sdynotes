@@ -6,15 +6,28 @@ import os
 import threading
 import time
 
-import cloudinary
-import pillow_heif
+# oracle 모드(기본)에선 cloudinary SDK 가 필요 없다. 패키지가 없어도 워커가
+# 기동하도록 가드한다(legacy cloud 롤백 시에만 실제로 쓴다).
+try:
+    import cloudinary
+    import cloudinary.uploader
+    import cloudinary.utils
+    _HAS_CLD = True
+except Exception:  # pragma: no cover - 패키지 미설치 환경
+    cloudinary = None
+    _HAS_CLD = False
 
-cloudinary.config(
-    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME", "os8j8bnv"),
-    api_key=os.environ.get("CLOUDINARY_API_KEY", ""),
-    api_secret=os.environ.get("CLOUDINARY_API_SECRET", ""),
-)
-pillow_heif.register_heif_opener()
+if _HAS_CLD:
+    cloudinary.config(
+        cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME", "os8j8bnv"),
+        api_key=os.environ.get("CLOUDINARY_API_KEY", ""),
+        api_secret=os.environ.get("CLOUDINARY_API_SECRET", ""),
+    )
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except Exception:
+    pillow_heif = None
 
 # worker/sdynotes_worker/common.py -> 프로젝트 루트(3단계 위)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -39,11 +52,15 @@ for _d in (IMG_DIR, DOCS_DIR, UPLOAD_DIR, JOBS_DIR, MUSIC_DIR, SYNC_DIR):
     except Exception:
         pass
 
-APP_VERSION = "14.8.0"
+APP_VERSION = "14.12.0"
 SETTINGS_SCHEMA = 3
 
-CLOUD_READY = bool(os.environ.get("CLOUDINARY_API_KEY")
-                   and os.environ.get("CLOUDINARY_API_SECRET"))
+_STORAGE_MODE = (os.environ.get("SDY_STORAGE") or "oracle").strip().lower()
+
+# oracle 모드에선 키가 남아 있어도 Cloudinary 로 나가는 트래픽이 없다.
+CLOUD_READY = (_STORAGE_MODE == "cloud" and _HAS_CLD
+               and bool(os.environ.get("CLOUDINARY_API_KEY")
+                        and os.environ.get("CLOUDINARY_API_SECRET")))
 
 _music_lock = threading.Lock()
 _sync_lock = threading.Lock()

@@ -1,4 +1,8 @@
-"""Worker Supabase client + _publish_live (SSE 는 Node 로 위임)."""
+"""Worker 저장소 클라이언트 + _publish_live (SSE 는 Node 로 위임).
+
+기본(oracle 모드)은 Supabase 를 전혀 호출하지 않는다. SDY_STORAGE=cloud 로
+명시적으로 롤백할 때만 이 모듈의 원격 함수들이 동작한다.
+"""
 import os
 import time
 import urllib.parse
@@ -13,6 +17,9 @@ SB_KEY = (os.environ.get("SUPABASE_SERVICE_KEY") or
           os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or
           os.environ.get("SUPABASE_KEY") or "").strip()
 
+# oracle(기본) = 이 서버 디스크에만 저장 / cloud = 예전 Supabase+Cloudinary
+STORAGE_MODE = (os.environ.get("SDY_STORAGE") or "oracle").strip().lower()
+
 SYNC_TABLE = "sdy_sync_states"
 CARDS_TABLE = "sdy_card_decks"
 MUSIC_TABLE = "sdy_music_tracks"
@@ -22,7 +29,8 @@ SB_TIMEOUT = (8, 25)
 
 
 def _sb_enabled():
-    return bool(SB_URL and SB_KEY)
+    # oracle 모드에서는 키가 남아 있어도 원격 저장소를 쓰지 않는다.
+    return STORAGE_MODE == "cloud" and bool(SB_URL and SB_KEY)
 
 
 def _sb_headers(prefer=None):

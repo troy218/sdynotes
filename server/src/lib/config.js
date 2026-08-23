@@ -1,13 +1,21 @@
 // Environment-derived configuration (mirrors sdynotes/common.py + per-module consts).
 import crypto from 'node:crypto';
 
-export const APP_VERSION = '14.8.0';
+export const APP_VERSION = '14.12.0';
 export const SETTINGS_SCHEMA = 3;
+
+// ── 저장소 모드 ────────────────────────────────────────────────────────
+// 'oracle'  (기본) : 모든 상태·파일을 이 Oracle 서버 디스크에 저장한다.
+//                    Supabase/Cloudinary 로 나가는 트래픽이 전혀 없다.
+// 'cloud'   (롤백) : 예전처럼 Supabase(상태) + Cloudinary(파일) 를 쓴다.
+//                    .env 의 SUPABASE_*/CLOUDINARY_* 키는 이 모드에서만 읽힌다.
+export const STORAGE_MODE = (process.env.SDY_STORAGE || 'oracle').trim().toLowerCase();
+export const oracleStorage = () => STORAGE_MODE !== 'cloud';
 
 export const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || 'os8j8bnv';
 export const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || '';
 export const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || '';
-export const CLOUD_READY = Boolean(CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET);
+export const CLOUD_READY = STORAGE_MODE === 'cloud' && Boolean(CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET);
 
 export const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://xillsulrehkpuzyuhgcn.supabase.co').replace(/\/+$/, '');
 export const SUPABASE_KEY = (
@@ -16,7 +24,8 @@ export const SUPABASE_KEY = (
   || process.env.SUPABASE_KEY
   || ''
 ).trim();
-export const sbEnabled = () => Boolean(SUPABASE_URL && SUPABASE_KEY);
+// oracle 모드에선 키가 남아 있어도 Supabase 를 쓰지 않는다 (쿼터 초과 방지).
+export const sbEnabled = () => STORAGE_MODE === 'cloud' && Boolean(SUPABASE_URL && SUPABASE_KEY);
 
 export const TABLES = {
   sync: 'sdy_sync_states',

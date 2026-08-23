@@ -14,9 +14,6 @@ import threading
 import time
 import uuid
 
-import cloudinary
-import cloudinary.uploader
-import cloudinary.utils
 import requests
 from flask import jsonify, redirect, request
 from PIL import Image
@@ -25,7 +22,7 @@ from .admin import _require_admin
 from .cloud import (MUSIC_TABLE, SYNC_TABLE, _publish_live, _sb_delete,
                     _sb_enabled, _sb_error_text, _sb_get, _sb_put, _sb_rows)
 from .common import (CLOUD_READY, MUSIC_DIR, _cleanup_old_temp_files,
-                     _music_lock, is_server_idle)
+                     _music_lock, is_server_idle, cloudinary)
 from .core import app
 from .music import (MUSIC_EXTS, MUSIC_MAX_MB, TAG_ALGO, _TAG_UA, _aco_key,
                     _acoustid_lookup, _fetch_cover, _fetch_lyrics, _fp_bin,
