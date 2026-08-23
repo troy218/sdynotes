@@ -399,22 +399,48 @@ EOF
         sudo nginx -t && sudo systemctl restart nginx
         ok "nginx 연결 완료 (SSE 버퍼링 해제)"
     else
+        NGINX_CONF=/etc/nginx/sites-available/memo
         NGINX_CHANGED=0
-        if ! grep -q "proxy_read_timeout" /etc/nginx/sites-available/memo; then
-            sudo sed -i '/proxy_set_header X-Forwarded-For/a\        proxy_read_timeout 900s;\n        proxy_send_timeout 900s;' /etc/nginx/sites-available/memo
+        if ! grep -q "proxy_read_timeout" "$NGINX_CONF"; then
+            sudo sed -i '/proxy_set_header X-Forwarded-For/a\        proxy_read_timeout 900s;\n        proxy_send_timeout 900s;' "$NGINX_CONF"
             NGINX_CHANGED=1
         fi
         # timeout 설정이 이미 있더라도 buffering이 남아 있으면 채팅/SSE가 묶여서
         # 늦게 도착할 수 있으므로 독립적으로 확인한다.
-        if ! grep -qE '^[[:space:]]*proxy_buffering[[:space:]]+off;' /etc/nginx/sites-available/memo; then
-            sudo sed -i '/proxy_set_header X-Forwarded-For/a\        proxy_buffering off;\n        proxy_cache off;' /etc/nginx/sites-available/memo
+        if ! grep -qE '^[[:space:]]*proxy_buffering[[:space:]]+off;' "$NGINX_CONF"; then
+            sudo sed -i '/proxy_set_header X-Forwarded-For/a\        proxy_buffering off;\n        proxy_cache off;' "$NGINX_CONF"
             NGINX_CHANGED=1
+        fi
+        # 기존 site 파일(이전 배포)에는 location / 만 있다. Connection "" 가
+        # WebSocket 핸드셰이크를 삼키므로, 파일 유무와 관계없이 Upgrade 경로를
+        # 보강한다. (예전엔 파일이 없을 때만 써서 재실행해도 경고가 남았다)
+        if ! sudo grep -q 'location /api/chat/voice-ws' "$NGINX_CONF" 2>/dev/null; then
+            VOICE_PY="$SRC/scripts/ensure_nginx_voice_ws.py"
+            [ -f "$VOICE_PY" ] || VOICE_PY="$APP_DIR/scripts/ensure_nginx_voice_ws.py"
+            if [ -f "$VOICE_PY" ]; then
+                sudo cp "$NGINX_CONF" "$NGINX_CONF.bak.voice"
+                if sudo python3 "$VOICE_PY" "$NGINX_CONF" "$PORT"; then
+                    NGINX_CHANGED=1
+                    ok "nginx 음성 WebSocket 경로 추가"
+                else
+                    sudo mv "$NGINX_CONF.bak.voice" "$NGINX_CONF"
+                    echo "  ⚠️ nginx 음성 경로 추가 실패 — 설정을 되돌렸습니다"
+                fi
+            else
+                echo "  ⚠️ scripts/ensure_nginx_voice_ws.py 없음 — 음성 nginx 경로를 수동으로 넣어 주세요"
+            fi
         fi
         if sudo nginx -t >/dev/null 2>&1; then
             sudo systemctl reload nginx
-            [ "$NGINX_CHANGED" = 1 ] && ok "nginx 대기 시간/SSE 즉시 전송 설정 적용" || ok "nginx 설정 이미 적용됨"
+            sudo rm -f "$NGINX_CONF.bak.voice"
+            [ "$NGINX_CHANGED" = 1 ] && ok "nginx 대기 시간/SSE/음성 WS 설정 적용" || ok "nginx 설정 이미 적용됨"
         else
-            echo "  nginx 설정 검사 실패 — /etc/nginx/sites-available/memo 를 확인하세요"
+            if [ -f "$NGINX_CONF.bak.voice" ]; then
+                sudo mv "$NGINX_CONF.bak.voice" "$NGINX_CONF"
+                echo "  nginx 설정 검사 실패 — 음성 경로 추가를 되돌렸습니다"
+            else
+                echo "  nginx 설정 검사 실패 — /etc/nginx/sites-available/memo 를 확인하세요"
+            fi
         fi
     fi
 else
@@ -514,7 +540,8 @@ YT=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/youtube/status" || true)
 RECOG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/recognize/status" || true)
 CLOUD=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/cloud/status" || true)
 VOICE_CFG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/chat/config?uid=deploy-check" || true)
-VOICE_WS=$(grep -c 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo 2>/dev/null || echo 0)
+VOICE_WS=$(sudo grep -c 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo 2>/dev/null || true)
+VOICE_WS=${VOICE_WS:-0}
 
 echo
 echo "  페이지        : $P"
@@ -536,7 +563,7 @@ fi
 if [ "${VOICE_WS:-0}" -ge 1 ] 2>/dev/null; then
     echo "  음성 nginx     : WebSocket Upgrade 경로 있음"
 elif command -v nginx >/dev/null; then
-    echo "  음성 nginx     : ⚠️ /api/chat/voice-ws location 없음 — apply.sh 재실행"
+    echo "  음성 nginx     : ⚠️ /api/chat/voice-ws location 없음 — 기존 memo 파일 보강 실패, /etc/nginx/sites-available/memo 확인"
 fi
 if echo "$CLOUD" | grep -q '"supabase":true' && echo "$CLOUD" | grep -q '"cloudinary":true'; then
     echo "  ✅ 영구 저장소 준비됨 (legacy cloud 모드)"

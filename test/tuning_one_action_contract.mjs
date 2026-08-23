@@ -91,6 +91,7 @@ assert.match(html, /q_title:\$\('mpTagTitle'\)\.value\.trim\(\)/,
 
 // ── 3. 음성은 서버 릴레이 (WebRTC/TURN 없음) ──
 assert.match(apply, /location \/api\/chat\/voice-ws/, 'apply.sh 가 음성 WS Upgrade 경로를 넣는다');
+assert.match(apply, /ensure_nginx_voice_ws\.py/, '기존 nginx 파일이 있어도 voice-ws 를 보강해야 한다');
 assert.match(apply, /proxy_set_header Connection "upgrade"/, 'nginx 가 WebSocket 핸드셰이크를 통과시킨다');
 assert.doesNotMatch(apply, /tls-listening-port=5349/, 'TURN TLS 를 새로 켜면 안 된다');
 assert.doesNotMatch(apply, /apt-get install -y -qq coturn/, 'coturn 을 새로 깔면 안 된다');

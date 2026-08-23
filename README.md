@@ -54,7 +54,8 @@ sdynotes-fast/
 ├── sdynotes.html         프런트 (SDB 로컬 DB shim 내장)
 ├── apply.sh              배포 스크립트 (★서버에서 실행 — 최초 1회 데이터 자동 이전)
 ├── scripts/
-│   └── migrate_to_oracle.mjs   Supabase/Cloudinary → Oracle 디스크 일괄 이전
+│   ├── migrate_to_oracle.mjs        Supabase/Cloudinary → Oracle 디스크 일괄 이전
+│   └── ensure_nginx_voice_ws.py     기존 nginx site 에 음성 WS Upgrade 경로 보강
 ├── server/               Node(Fastify) 메인 서버
 │   └── src/
 │       ├── index.js      앱 조립 + 기동 (:5000)
@@ -189,8 +190,10 @@ grep -n 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo
 #### 자주 막히는 함정
 
 1. **"연결 중"에서 멈춤** — 기존 nginx `location /` 의 `Connection ""` 가
-   WebSocket 핸드셰이크를 삼킨다. `apply.sh` 를 다시 실행해
-   `/api/chat/voice-ws` location 이 생겼는지 확인한다.
+   WebSocket 핸드셰이크를 삼킨다. `apply.sh` 가 이미 있는 site 파일에도
+   `/api/chat/voice-ws` location 을 보강한다. 배포 후
+   `grep -n 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo`
+   로 생겼는지 확인한다.
 2. **HTTP 로 접속** — 마이크가 막힌다. `https://` 주소로 연다.
 3. **프록시가 유휴 WS 를 끊음** — 클라/서버가 20초마다 ping 한다.
    nginx `proxy_read_timeout` 은 3600s 로 잡혀 있어야 한다.
@@ -251,7 +254,7 @@ node test/pinbug_fix_sim.mjs    # 수정 후 수렴 검증
 
 # 14.11 — 12GB 메모리 배분 / 한 동작=한 기능 / 서버 릴레이 음성 계약
 node test/tuning_one_action_contract.mjs
-npm run test:call                 # 채팅 + 음성 릴레이 + 프론트 스모크
+npm run test:call                 # 채팅 + 음성 릴레이 + nginx voice-ws 보강 + 프론트 스모크
 
 # 14.12 — Oracle 자체 저장소 (로컬 DB·shim·이전 시뮬레이션)
 node test/oracle_db_contract.mjs   # dbstore/db 라우트 + 노트 이미지 로컬 저장
