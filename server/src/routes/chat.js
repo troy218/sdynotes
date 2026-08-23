@@ -1,12 +1,12 @@
 // 엽스코드(Youpscord) — 앱 전체 공용 익명 채팅방.
-//   텍스트 · 사진 · 파일 · 이모지(+반응) · 실시간 음성(WebRTC 시그널링 릴레이).
+//   텍스트 · 사진 · 파일 · 이모지(+반응) · 실시간 음성(서버 WebSocket 릴레이).
 //
 // 방은 영구 저장하지 않는다(인메모리): 마지막 대화 후 CHAT_TTL(24시간)이 지나면
 // 메시지·파일이 '펑' 하고 사라진다. 닉네임은 라이브 새 이름 + 파스텔 색(라이브와 동일 팔레트).
+//
+// 음성은 WebRTC/TURN 없이 마이크 프레임을 /api/chat/voice-ws 로 서버가 중계한다.
+// 채팅(SSE)이 열리는 망이면 통화도 된다.
 import crypto from 'node:crypto';
-import net from 'node:net';
-import dgram from 'node:dgram';
-import os from 'node:os';
 import { WebSocketServer } from 'ws';
 
 const CHAT_TTL = parseInt(process.env.SDY_CHAT_TTL || '86400', 10); // 마지막 대화 후 이 시간 지나면 방 초기화(펑)
@@ -36,247 +36,13 @@ const state = {
 };
 
 // uid -> Set<SSE client>.  예전에는 이벤트를 배열에 넣은 뒤 1초 타이머가
-// 꺼내는 방식이라 채팅은 최대 1초, WebRTC offer/answer/ICE 는 단계마다 최대
-// 1초씩 늦었다. 이제 연결된 응답 스트림에 즉시 쓰고, 역압력 때만 큐를 쓴다.
+// 꺼내는 방식이라 채팅이 최대 1초 늦었다. 이제 연결된 응답 스트림에 즉시
+// 쓰고, 역압력 때만 큐를 쓴다.
 const streams = new Map();
 // LTE↔Wi-Fi 전환처럼 EventSource 가 잠깐 재접속하는 동안의 이벤트를 보관한다.
-// 특히 이 구간의 WebRTC offer/ICE 를 버리면 통화가 영원히 "연결 중"에 머문다.
 const pending = new Map(); // uid -> event[]
 
 const nowSec = () => Date.now() / 1000;
-
-// ── TURN 진단용 STUN 바인딩 요청 (UDP liveness) ──
-// coturn 은 인증 없이도 STUN Binding request 에 응답하므로, UDP 로 한 방
-// 보내서 응답이 오는지만 본다. TCP 는 net.connect 로 검사한다.
-function stunPing(host, port, timeoutMs) {
-  return new Promise((resolve) => {
-    let done = false;
-    let sock;
-    try { sock = dgram.createSocket('udp4'); } catch { return resolve({ ok: false, err: 'socket 생성 실패' }); }
-    const finish = (ok, err) => {
-      if (done) return;
-      done = true;
-      clearTimeout(tm);
-      try { sock.close(); } catch { /* noop */ }
-      resolve(ok ? { ok: true } : { ok: false, err: err || 'timeout' });
-    };
-    const tm = setTimeout(() => finish(false), timeoutMs);
-    sock.once('message', (msg) => {
-      // 내 transaction id 가 실린 응답이어야 정상. (응답 0x0101 / 오류 0x0111 둘 다 liveness 확인)
-      const t = msg.length >= 20 ? msg.readUInt16BE(0) : 0;
-      const sameTx = msg.length >= 20 && txid.equals(msg.subarray(8, 20));
-      if (sameTx && (t === 0x0101 || t === 0x0111)) return finish(true);
-    });
-    sock.once('error', (e) => finish(false, String((e && e.message) || e)));
-    const tx = Buffer.alloc(20);
-    tx.writeUInt16BE(0x0001, 0);            // STUN Binding request
-    tx.writeUInt16BE(0x0000, 2);            // message length = 0
-    tx.writeUInt32BE(0x2112a442, 4);        // magic cookie
-    const txid = crypto.randomBytes(12);
-    txid.copy(tx, 8);                       // transaction id
-    sock.send(tx, 0, tx.length, port, host, (e) => {
-      if (e) finish(false, String((e && e.message) || e));
-    });
-  });
-}
-
-function turnHostPort(urlText) {
-  // turn:host:3478?transport=tcp / turns:host:3478 → {host, port}
-  const m = String(urlText || '').replace(/^turns?:/i, '').split(/[\/?#]/)[0].split(':');
-  return { host: m[0] || '', port: parseInt(m[1], 10) || 3478 };
-}
-
-// ── TURN Allocate 실측 (RFC 5766 + long-term credential) ──
-// STUN binding 이 성공해도 "TURN 릴레이 할당"은 인증·포트 정책 때문에 별도로
-// 실패할 수 있다. 브라우저가 하는 것과 동일한 흐름(401 챌린지 → Allocate →
-// Refresh)을 직접 수행해서 "TURN 으로 실제 통화가 가능한가"를 판정한다.
-function stunAttrs(buf, start) {
-  // buf: STUN 메시지. start: 20(헤더). → Map<type, Buffer>
-  const out = new Map();
-  let off = start;
-  while (off + 4 <= buf.length) {
-    const type = buf.readUInt16BE(off);
-    const len = buf.readUInt16BE(off + 2);
-    if (off + 4 + len > buf.length) break;
-    out.set(type, buf.subarray(off + 4, off + 4 + len));
-    off += 4 + len + (len % 4 ? 4 - (len % 4) : 0);
-  }
-  return out;
-}
-function stunMsg(type, txid, attrParts) {
-  // RFC 5389: 모든 속성 값은 4바이트 정렬로 패딩해야 한다. 패딩을 빼먹으면
-  // 속성 경계가 어긋나 coturn/브라우저가 MESSAGE-INTEGRITY 를 못 찾는다.
-  const parts = attrParts.map((p) => {
-    const v = p.value;
-    const pad = (4 - (v.length % 4)) % 4;
-    const buf = Buffer.alloc(4 + v.length + pad);
-    buf.writeUInt16BE(p.type, 0);
-    buf.writeUInt16BE(v.length, 2);
-    v.copy(buf, 4);
-    return buf;
-  });
-  const body = Buffer.concat(parts);
-  const msg = Buffer.alloc(20 + body.length);
-  msg.writeUInt16BE(type, 0);
-  msg.writeUInt16BE(body.length, 2);
-  msg.writeUInt32BE(0x2112a442, 4);
-  txid.copy(msg, 8);
-  body.copy(msg, 20);
-  return msg;
-}
-function stunStrAttr(type, s) {
-  return { type, value: Buffer.from(String(s), 'utf8') };
-}
-function stunRawAttr(type, buf) {
-  return { type, value: buf };
-}
-function stunUInt32Attr(type, n) {
-  const value = Buffer.alloc(4);
-  value.writeUInt32BE(n >>> 0, 0);
-  return { type, value };
-}
-function xorRelayedAddress(value) {
-  // XOR-RELAYED-ADDRESS: reserved(1), family(1), XOR-port(2), XOR-address(4).
-  if (!value || value.length < 8 || value.readUInt8(1) !== 0x01) return '?';
-  const cookie = Buffer.from([0x21, 0x12, 0xa4, 0x42]);
-  const port = value.readUInt16BE(2) ^ 0x2112;
-  const octets = [];
-  for (let i = 0; i < 4; i++) octets.push(value.readUInt8(4 + i) ^ cookie[i]);
-  return `${octets.join('.')}:${port}`;
-}
-function stunAttrWithMi(type, txid, attrs, miKey) {
-  // RFC 5389 §15.4: 헤더의 length 는 MESSAGE-INTEGRITY 끝까지 포함해야 하지만,
-  // HMAC 입력은 MI 속성 자체(4바이트 헤더 + 20바이트 값) 직전까지만이다.
-  // 0으로 채운 MI까지 HMAC에 넣으면 coturn은 패킷을 무결성 오류로 버린다.
-  const msg = stunMsg(type, txid, [...attrs, { type: 0x0008, value: Buffer.alloc(20) }]);
-  const key = crypto.createHash('md5').update(miKey, 'utf8').digest();
-  const miOffset = msg.length - 24;
-  const mi = crypto.createHmac('sha1', key).update(msg.subarray(0, miOffset)).digest();
-  mi.copy(msg, miOffset + 4);
-  return msg;
-}
-function turnAllocate(host, port, username, password, timeoutMs) {
-  return new Promise((resolve) => {
-    let done = false;
-    let sock;
-    try { sock = dgram.createSocket('udp4'); } catch { return resolve({ ok: false, err: 'socket 생성 실패' }); }
-    const finish = (ok, err) => {
-      if (done) return;
-      done = true;
-      clearTimeout(tm);
-      try { sock.close(); } catch { /* noop */ }
-      // 성공이면 err 에 상세(relay=...)를 실어 보낸다.
-      resolve(ok ? { ok: true, err } : { ok: false, err: err || 'timeout' });
-    };
-    const tm = setTimeout(() => finish(false, 'timeout'), timeoutMs);
-    sock.once('error', (e) => finish(false, String((e && e.message) || e)));
-    const txid = crypto.randomBytes(12);
-    const reqTransport = stunRawAttr(0x0019, Buffer.from([0x11, 0x00, 0x00, 0x00])); // UDP
-    const first = stunMsg(0x0003, txid, [reqTransport]); // Allocate (no auth → 401)
-    sock.once('message', (msg) => {
-      // 1차: (a) 인증 없는 TURN 이면 곧바로 성공, (b) 401 챌린지 → REALM/NONCE 추출
-      const t0 = msg.length >= 2 ? msg.readUInt16BE(0) : 0;
-      if (t0 === 0x0103) {
-        const ra = stunAttrs(msg, 20).get(0x0016);
-        return finish(true, `relay=${xorRelayedAddress(ra)}`);
-      }
-      const attrs = stunAttrs(msg, 20);
-      const realm = attrs.get(0x0014);
-      const nonce = attrs.get(0x0015);
-      if (!realm || !nonce) return finish(false, '401 응답에 realm/nonce 없음');
-      const miKey = `${username}:${realm.toString('utf8')}:${password}`;
-      const authAttrs = [
-        reqTransport,
-        stunStrAttr(0x0006, username),          // USERNAME
-        stunRawAttr(0x0014, realm),             // REALM
-        stunRawAttr(0x0015, nonce),             // NONCE
-      ];
-      const txid2 = crypto.randomBytes(12);
-      const second = stunAttrWithMi(0x0003, txid2, authAttrs, miKey);
-      sock.once('message', (msg2) => {
-        const type2 = msg2.length >= 2 ? msg2.readUInt16BE(0) : 0;
-        const attrs2 = stunAttrs(msg2, 20);
-        if (type2 === 0x0103) {
-          // 성공 → RELAYED-ADDRESS 확인 후 Refresh 로 할당 해제
-          const relayed = attrs2.get(0x0016);
-          const txid3 = crypto.randomBytes(12);
-          const refresh = stunAttrWithMi(0x0004, txid3, [
-            stunStrAttr(0x0006, username),
-            stunRawAttr(0x0014, realm),
-            stunRawAttr(0x0015, nonce),
-            stunUInt32Attr(0x000d, 0), // LIFETIME=0: 진단이 만든 allocation 즉시 해제
-          ], miKey);
-          try { sock.send(refresh, 0, refresh.length, port, host, () => {}); } catch { /* noop */ }
-          return finish(true, `relay=${xorRelayedAddress(relayed)}`);
-        }
-        const errCode = attrs2.get(0x0009);
-        // ERROR-CODE 값: 예약 2바이트 + 클래스(백의 자리) 1바이트 + 번호 1바이트
-        const code = errCode && errCode.length >= 4 ? (errCode[2] * 100 + errCode[3]) : type2;
-        return finish(false, `Allocate 실패 type=${type2} code=${code}`);
-      });
-      try { sock.send(second, 0, second.length, port, host, (e) => { if (e) finish(false, String((e && e.message) || e)); }); } catch (e) { finish(false, String((e && e.message) || e)); }
-    });
-    try { sock.send(first, 0, first.length, port, host, (e) => { if (e) finish(false, String((e && e.message) || e)); }); } catch (e) { finish(false, String((e && e.message) || e)); }
-  });
-}
-
-function tcpCheck(host, port, timeoutMs) {
-  return new Promise((resolve) => {
-    const s = net.connect({ host, port, timeout: timeoutMs });
-    let done = false;
-    const finish = (ok, err) => {
-      if (done) return;
-      done = true;
-      try { s.destroy(); } catch { /* noop */ }
-      resolve(ok ? { ok: true } : { ok: false, err: err || 'timeout' });
-    };
-    s.once('connect', () => finish(true));
-    s.once('error', (e) => finish(false, String((e && e.message) || e)));
-    s.once('timeout', () => finish(false, 'timeout'));
-  });
-}
-
-function localTurnAddresses(configured) {
-  // Oracle VM의 coturn은 보통 listening-ip=10.x.x.x 로 떠서 127.0.0.1에는
-  // 일부러 바인딩하지 않는다. localhost만 검사하면 정상 서버도 fail로 오진한다.
-  const out = [];
-  const add = (v) => {
-    const ip = String(v || '').trim();
-    if (net.isIPv4(ip) && !out.includes(ip)) out.push(ip);
-  };
-  add(configured);
-  for (const list of Object.values(os.networkInterfaces())) {
-    for (const item of list || []) {
-      if (item && item.family === 'IPv4' && !item.internal) add(item.address);
-    }
-  }
-  add('127.0.0.1');
-  return out;
-}
-
-// 14.13 · 자체 TURN 살아있기 확인(로컬 TCP, 30초 캐시).
-//   .env 에 turns:…:5349 이 남아 있는데 coturn 이 TLS(인증서 유실·갱신 실패 등)를
-//   안 켜고 있으면, 브라우저는 반드시 실패하는 후보를 계속 시도한다. 그러면
-//   ICE candidate error 로 "TURN 서버에 닿지 못했어요" 오해가 뜨고, 되는
-//   turn:3478 과 섞여 통화 자체가 굳어 보였다(실제 보고).
-//   coturn 은 TCP 도 같은 포트로 함께 여는 것이 기본이라, 로컬 NIC 기준
-//   TCP 연결 실패 = 그 포트를 아무도 안 듣고 있다는 뜻이다. (공인 IP hairpin
-//   은 OCI 에서 막히는 일이 흔하니 사설 NIC/localhost 로만 확인한다.)
-const turnAliveCache = { at: 0, ok: new Map() };
-async function localTurnAlive(urlText) {
-  const u = String(urlText || '').trim();
-  if (!u || !/^turns?:/i.test(u)) return true;
-  const now = Date.now();
-  if (now - turnAliveCache.at > 30000) { turnAliveCache.ok.clear(); turnAliveCache.at = now; }
-  if (turnAliveCache.ok.has(u)) return turnAliveCache.ok.get(u);
-  const { port } = turnHostPort(u);
-  const addrs = localTurnAddresses(process.env.SDY_TURN_PRIVATE_IP);
-  const checks = await Promise.all(addrs.map((a) => tcpCheck(a, port, 700)));
-  const alive = checks.some((c) => c && c.ok);
-  turnAliveCache.ok.set(u, alive);
-  console.log(`[chat] 자체 TURN ${u} → ${alive ? '정상' : '응답 없음, 이번엔 광고에서 제외'}`);
-  return alive;
-}
 
 function pickPastel() {
   const used = new Set();
@@ -293,7 +59,7 @@ const publicMembers = () =>
 
 function writeSse(client, evt) {
   // 큐가 가득 찬 스트림은 '느려서 버려졌다'는 뜻이다. 이 상태에서 shift 하며
-  // offer/ICE 를 밀어내면 통화가 영원히 '연결 중'에 멈춘다 — 스트림을 죽이고
+  // 메시지를 밀어내면 재연결 시 재전송을 못 탄다 — 스트림을 죽이고
   // pending 큐(재연결 시 재전송)로 넘어가게 한다.
   if (!client || client.closed) return;
   if (client.queue.length >= 128) {
@@ -302,7 +68,7 @@ function writeSse(client, evt) {
     return;
   }
   // presence 는 최신 값 하나면 충분하다. 재접속/느린 수신자 큐가 낡은 상태로
-  // 차서 실제 메시지나 시그널을 밀어내지 않게 한다.
+  // 차서 실제 메시지를 밀어내지 않게 한다.
   if (evt.type === 'presence') {
     const i = client.queue.findIndex((x) => x.type === 'presence');
     if (i >= 0) client.queue.splice(i, 1);
@@ -326,8 +92,7 @@ function flushSse(client) {
           flushSse(client);
         };
         client.raw.once('drain', onDrain);
-        // drain 이 영영 안 오면(죽은 소켓) 스트림을 버린다 — 15초 keep-alive
-        // 까지 기다리면 그 사이 offer/ICE 가 이 쓰레기 스트림에 쌓여 유실된다.
+        // drain 이 영영 안 오면(죽은 소켓) 스트림을 버린다.
         const drainTimer = setTimeout(() => {
           client.raw.off('drain', onDrain);
           client.closed = true;
@@ -377,23 +142,28 @@ function chatPresence() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 15.0 · 서버 릴레이 음성 (WebSocket) — WebRTC 를 아예 안 쓰는 통화
+// 서버 릴레이 음성 (WebSocket) — WebRTC 를 아예 안 쓰는 통화
 //
-// WebRTC(P2P+TURN) 는 NAT·방화벽·포트 정책에 따라 계속 실패하는 곳이
-// 있다. 이 방식은 마이크 소리를 16kHz μ-law(≈16KB/초) 프레임으로 서버에
-// 올리고 서버가 음성 참가자들에게 그대로 뿌린다. NAT 통과·TURN·UDP
-// 포트가 전혀 필요 없다 — 채팅(SSE)이 열리는 모든 네트워크에서 통화가
-// 된다 (사이트가 뜨는 망이면 무조건 된다).
+// 마이크 소리를 16kHz μ-law(≈16KB/초) 프레임으로 서버에 올리고
+// 서버가 음성 참가자들에게 그대로 뿌린다. NAT 통과·TURN·UDP 포트가
+// 전혀 필요 없다 — 채팅(SSE)이 열리는 모든 네트워크에서 통화가 된다.
 //
 // 프로토콜 (/api/chat/voice-ws?uid=…)
 //   클라 → 서버  binary: [0x01][μ-law bytes]                 (내 목소리)
-//                  text:   {t:'mute', mute:bool}
+//                  text:   {t:'mute', mute:bool} {t:'ping'}
 //   서버 → 클라이언트 binary: [0x01][uidLen][uid…][μ-law bytes] (남의 목소리)
 //                  text:   {t:'welcome',peers:[…]} {t:'join',…}
-//                          {t:'leave',uid} {t:'mute',uid,mute}
+//                          {t:'leave',uid} {t:'mute',uid,mute} {t:'pong'}
 // ══════════════════════════════════════════════════════════════
 const VOICE_MAX_FRAME = 32 * 1024;   // 한 프레임 상한 (16kHz μ-law 1초 ≈ 16KB)
+const VOICE_HB_MS = 20000;           // 프록시가 유휴 WS 를 끊지 않게 핑
 const voiceSockets = new Map();      // uid -> WebSocket (릴레이 참가자)
+
+function voiceClose(uid, code, reason) {
+  const ws = voiceSockets.get(uid);
+  if (!ws) return;
+  try { ws.close(code || 1000, reason || ''); } catch { /* noop */ }
+}
 
 function voiceSendAll(evt, exceptUid) {
   const s = JSON.stringify(evt);
@@ -431,7 +201,8 @@ function registerVoiceRelay(app) {
         path = u.pathname;
         uid = String(u.searchParams.get('uid') || '').trim().slice(0, 40);
       } catch { /* noop */ }
-      if (path !== '/api/chat/voice-ws') { try { socket.destroy(); } catch { /* noop */ } return; }
+      // 다른 upgrade(없으면 그냥 무시)는 건드리지 않는다.
+      if (path !== '/api/chat/voice-ws') return;
       wss.handleUpgrade(req, socket, head, (ws) => {
         const m = state.members.get(uid);
         if (!uid || !m) {
@@ -446,6 +217,13 @@ function registerVoiceRelay(app) {
         chatPresence();
         try { ws.send(JSON.stringify({ t: 'welcome', uid, peers: voicePeers() })); } catch { /* noop */ }
         voiceSendAll({ t: 'join', uid, name: m.name, color: m.color, mute: !!m.mute }, uid);
+
+        const hb = setInterval(() => {
+          if (ws.readyState !== 1) return;
+          try { ws.ping(); } catch { /* noop */ }
+        }, VOICE_HB_MS);
+        if (hb.unref) hb.unref();
+
         ws.on('message', (data, isBinary) => {
           if (isBinary) {
             const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
@@ -466,15 +244,23 @@ function registerVoiceRelay(app) {
           }
           let d = null;
           try { d = JSON.parse(String(data)); } catch { return; }
-          if (d && d.t === 'mute') {
+          if (!d || !d.t) return;
+          if (d.t === 'ping') {
+            try { ws.send(JSON.stringify({ t: 'pong' })); } catch { /* noop */ }
+            const mm = state.members.get(uid);
+            if (mm) mm.ts = nowSec();
+            return;
+          }
+          if (d.t === 'mute') {
             const mm = state.members.get(uid);
             if (mm) { mm.mute = !!d.mute; mm.ts = nowSec(); }
             chatPresence();
             voiceSendAll({ t: 'mute', uid, mute: !!d.mute }, uid);
           }
         });
-        ws.on('close', () => voiceDetach(uid, ws));
-        ws.on('error', () => { try { ws.terminate(); } catch { /* noop */ } voiceDetach(uid, ws); });
+        const done = () => { clearInterval(hb); voiceDetach(uid, ws); };
+        ws.on('close', done);
+        ws.on('error', () => { try { ws.terminate(); } catch { /* noop */ } done(); });
       });
     });
   });
@@ -529,9 +315,7 @@ function startGC() {
       if (now - m.ts > MEMBER_TTL) {
         // bye 는 활성 스트림에 먼저 보내고 멤버/대기 큐를 정리한다.
         chatSend(uid, { type: 'bye' });
-        // 15.0 · 릴레이 음성 소켓도 함께 정리 (소켓이 닫히며 voice=false 전파)
-        const vws = voiceSockets.get(uid);
-        if (vws) { try { vws.close(4003, '입장 만료'); } catch { /* noop */ } }
+        voiceClose(uid, 4003, '입장 만료');
         state.members.delete(uid);
         pending.delete(uid);
         removed = true;
@@ -552,7 +336,7 @@ function startGC() {
 
 export function registerChat(app) {
   startGC();
-  registerVoiceRelay(app);   // 15.0 · 서버 릴레이 음성 (WebSocket)
+  registerVoiceRelay(app);
 
   // ── 입장 (닉네임 = 새 이름, 색 = 파스텔) ──
   app.post('/api/chat/join', async (req, reply) => {
@@ -578,6 +362,7 @@ export function registerChat(app) {
       lastAct: state.lastAct,
       reactions: REACTIONS,
       bgm: state.bgm || null,
+      voice: 'relay',
     });
   });
 
@@ -591,6 +376,7 @@ export function registerChat(app) {
   app.post('/api/chat/leave', async (req, reply) => {
     const d = req.body || {};
     const uid = String(d.uid || '').trim();
+    voiceClose(uid, 4004, '퇴장');
     if (state.members.delete(uid)) chatPresence();
     pending.delete(uid);
     return reply.send({ ok: true });
@@ -736,273 +522,13 @@ export function registerChat(app) {
     return reply.send({ ok: true });
   });
 
-  // ── WebRTC ICE 설정 (STUN 다중 + TURN 환경변수) ──
+  // ── 통화 설정 (릴레이 전용 — WebRTC/TURN 은 제거됨) ──
   app.get('/api/chat/config', async (req, reply) => {
-    // STUN 은 '공인 IP 확인'만 도와준다. 방화벽·대칭 NAT·통신사(CGNAT) 뒤에서는
-    // STUN 으로는 P2P 가 맺어지지 않아 '연결 중'에서 멈춘다 → TURN 이 필수.
-    const iceServers = [
-      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-      { urls: ['stun:stun.cloudflare.com:3478'] },
-    ];
-    const externalTurn = (process.env.SDY_TURN_URL || '').trim();
-    const externalTlsTurn = (process.env.SDY_TURN_TLS_URL || '').trim();
-    const localTurn = (process.env.SDY_LOCAL_TURN_URL || '').trim();
-    const localTlsTurn = (process.env.SDY_LOCAL_TURN_TLS_URL || '').trim();
-    const secret = (process.env.SDY_TURN_SECRET || '').trim();
-    const uid = String((req.query && req.query.uid) || 'guest')
-      .replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 40) || 'guest';
-    let turnReady = false;
-
-    // TURN 호스트 결정: SDY_TURN_HOST(명시) → 접속 도메인(Host 헤더) → 공인 IP.
-    // HTTPS 도메인으로 접속 중이라면 IP 대신 도메인을 쓰는 게 좋다 — 통신사가
-    // IP:3478 을 막는 정책이 있어도 DNS 이름은 뚫리는 경우가 많고, turns:(5349)
-    // TLS 인증서 SNI 도 도메인으로만 맞기 때문이다.
-    const explicitTurnHost = (process.env.SDY_TURN_HOST || '').trim()
-      .split(':')[0].toLowerCase();
-    const headerHost = String((req.headers && req.headers.host) || '')
-      .split(':')[0].trim().toLowerCase();
-    const turnHost = explicitTurnHost
-      || (/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(headerHost)
-          && headerHost.includes('.')
-          && !/^\d+(\.\d+){3}$/.test(headerHost) ? headerHost : '')
-      || (process.env.SDY_TURN_PUBLIC_IP || '').trim();
-    // apply.sh 가 만든 자체 TURN(turn/turns:공인IP:포트)만 도메인으로 바꾼다.
-    // 외부 TURN(SDY_TURN_URL)은 사용자가 준 주소를 그대로 쓴다.
-    const rewriteLocalHost = (txt) => {
-      const u = String(txt || '').trim();
-      if (!u || !turnHost) return u;
-      const m = u.match(/^(turns?:)([^:]+)([:].*)?$/i);
-      if (!m) return u;
-      const hostNow = m[2];
-      const hostIsIp = /^\d+(\.\d+){3}$/.test(hostNow);
-      const pub = (process.env.SDY_TURN_PUBLIC_IP || '').trim();
-      if (explicitTurnHost || hostIsIp || (pub && hostNow === pub)) {
-        return `${m[1]}${turnHost}${m[3] || ''}`;
-      }
-      return u;
-    };
-
-    // turn:host:3478 (쿼리 없음) 은 브라우저에서 UDP 전용이다. 통신사 CGNAT·
-    // UDP 차단 망은 TCP 3478 이 열려 있어도 브라우저가 시도하지 않아 '연결 중'에
-    // 멈춘다. 베이스 URL 만 오면 UDP 엔트리와 `?transport=tcp` 엔트리를 따로 만든다.
-    // `?transport=` 를 같은 urls[] 에 섞으면 일부 브라우저가 한쪽만 시도하고
-    // 끝나므로 iceServers 를 URL 당 한 줄로 분리한다.
-    const expandTurnUrls = (txt) => {
-      const udp = [];
-      const tcp = [];
-      const seen = new Set();
-      const add = (arr, u) => {
-        const key = String(u || '').toLowerCase();
-        if (!u || seen.has(key)) return;
-        seen.add(key);
-        arr.push(u);
-      };
-      for (const raw of String(txt).split(',')) {
-        let u = raw.trim();
-        if (!u || !/^turns?:/i.test(u)) continue;
-        let transport = '';
-        const q = u.indexOf('?');
-        if (q >= 0) {
-          const qs = u.slice(q + 1);
-          u = u.slice(0, q);
-          const t = qs.split('&').find((s) => s.startsWith('transport='));
-          transport = t ? t.slice('transport='.length).toLowerCase() : '';
-        }
-        if (transport === 'tcp') add(tcp, `${u}?transport=tcp`);
-        else add(udp, u); // udp / 미지정 → 쿼리 없는 UDP (브라우저 기본)
-      }
-      // 베이스 URL 만 온 경우 TCP 를 빠뜨리면 열어 둔 TCP 3478 이 영원히 안 쓰인다.
-      if (udp.length && !tcp.length) {
-        for (const u of udp) {
-          if (!/^turns:/i.test(u)) add(tcp, `${u}?transport=tcp`);
-        }
-      }
-      return [...udp, ...tcp];
-    };
-
-    const addTurn = (urlsText, preferStatic) => {
-      if (!urlsText) return;
-      let username = preferStatic ? (process.env.SDY_TURN_USER || '').trim() : '';
-      let credential = preferStatic ? (process.env.SDY_TURN_PASS || '').trim() : '';
-      // coturn REST 방식의 1시간짜리 임시 자격 증명. 고정 비밀번호를 브라우저에
-      // 계속 노출하지 않으며 apply.sh 가 설치한 자체 TURN 과 바로 호환된다.
-      if ((!username || !credential) && secret) {
-        username = `${Math.floor(nowSec()) + 3600}:${uid}`;
-        credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
-      }
-      const urls = expandTurnUrls(urlsText);
-      if (!urls.length) return;
-      turnReady = turnReady || Boolean(username && credential);
-      for (const url of urls) {
-        iceServers.push({
-          urls: [url], username, credential, credentialType: 'password',
-        });
-      }
-    };
-
-    // 외부 TURN(있으면) → 같은 호스트라도 별도 엔트리로 추가해 인증 방식 차이를 보존.
-    // 평문(turn:)과 TLS(turns:)는 각각 별도 iceServer 로 내려 준다.
-    addTurn(externalTurn, true);
-    addTurn(externalTlsTurn, true);
-    // apply.sh 가 만든 Oracle TURN. SDY_LOCAL_TURN_URL 이 비어있지 않으면
-    // 외부와 같은 호스트라도 항상 push 한다 — 사용자가 명시적으로 두 라인을
-    // 켠 의도(고정 인증 + HMAC 임시 인증)를 그대로 전달하는 게 안전하다.
-    // 브라우저는 같은 호스트 + 다른 credential 을 별도 iceServer 로 받아도
-    // 한쪽이 실패하면 다른쪽으로 candidate 를 다시 만든다.
-    // 14.13 · 단, 살아 있는 것만 내려준다 — 죽은 turns:5349 이 섞여 나가면
-    //   브라우저가 그 후보에서 반드시 실패해 'TURN 불통' 오해가 떴다.
-    const droppedTurn = [];
-    if (localTurn) {
-      if (await localTurnAlive(localTurn)) addTurn(rewriteLocalHost(localTurn), false);
-      else droppedTurn.push(localTurn);
-    }
-    if (localTlsTurn) {
-      if (await localTurnAlive(localTlsTurn)) addTurn(rewriteLocalHost(localTlsTurn), false);
-      else droppedTurn.push(localTlsTurn);
-    }
-
-    // 14.14 · 자체 coturn 이 하나도 안 붙었으면 공개 TURN 을 예비로 내려 준다.
-    //   Oracle VCN·통신사 정책·인증서 문제로 자체 TURN 이 죽어 있을 때
-    //   통화가 통째로 불가능해지던 것을 막는 안전망이다. 80/443 포트라
-    //   회사망·공용 와이파이의 UDP 차단도 대체로 통과한다.
-    //   끄고 싶으면 .env 에 SDY_PUBLIC_TURN=off.
-    const publicTurnMode = (process.env.SDY_PUBLIC_TURN || 'auto').trim().toLowerCase();
-    let publicTurnUsed = false;
-    if (publicTurnMode !== 'off' && (!turnReady || publicTurnMode === 'always')) {
-      const pUser = (process.env.SDY_PUBLIC_TURN_USER || 'openrelayproject').trim();
-      const pPass = (process.env.SDY_PUBLIC_TURN_PASS || 'openrelayproject').trim();
-      const pUrls = (process.env.SDY_PUBLIC_TURN_URLS
-        || 'turn:openrelay.metered.ca:80,'
-         + 'turn:openrelay.metered.ca:443,'
-         + 'turn:openrelay.metered.ca:443?transport=tcp,'
-         + 'turns:openrelay.metered.ca:443?transport=tcp')
-        .split(',').map((s) => s.trim()).filter((s) => /^turns?:/i.test(s));
-      for (const url of pUrls) {
-        iceServers.push({
-          urls: [url], username: pUser, credential: pPass, credentialType: 'password',
-        });
-      }
-      if (pUrls.length) { publicTurnUsed = true; turnReady = true; }
-    }
-
     reply.header('Cache-Control', 'no-store');
-    return reply.send({ ok: true, turn: turnReady, host: turnHost || null,
-                        droppedTurn, publicTurn: publicTurnUsed, ice: { iceServers } });
+    return reply.send({ ok: true, voice: 'relay' });
   });
 
-  // ── 통화(TURN) 진단 — curl http://127.0.0.1:5000/api/chat/diag ──
-  // 포트를 다 열었는데도 서로 다른 망 통화가 안 될 때, 서버 안에서 coturn 이
-  // 살아 있는지 / 외부 경로(공인IP)가 닿는지를 한 번에 보여 준다.
-  app.get('/api/chat/diag', async (req, reply) => {
-    const env = process.env;
-    const localTurn = (env.SDY_LOCAL_TURN_URL || '').trim();
-    const externalTurn = (env.SDY_TURN_URL || '').trim();
-    const localTlsTurn = (env.SDY_LOCAL_TURN_TLS_URL || '').trim();
-    const externalTlsTurn = (env.SDY_TURN_TLS_URL || '').trim();
-    const secret = (env.SDY_TURN_SECRET || '').trim();
-    const publicIp = (env.SDY_TURN_PUBLIC_IP || '').trim();
-    const configuredLocalIp = (env.SDY_TURN_PRIVATE_IP || '').trim();
-    const localAddresses = localTurnAddresses(configuredLocalIp);
-    const targets = [];
-    const seen = new Set();
-    for (const t of [localTurn, externalTurn, localTlsTurn, externalTlsTurn]) {
-      const u = String(t || '').trim();
-      if (!u || seen.has(u)) continue;
-      seen.add(u);
-      targets.push(u);
-    }
-    const out = {
-      ok: false,
-      ts: new Date().toISOString(),
-      note: 'local=서버의 실제 NIC/localhost(서버 안) · public=공인IP(외부 경로, hairpin 이면 서버 안에서는 실패로 보일 수 있음) · tls=5349/tcp(turns:) 는 TCP 개방 여부만 확인',
-      env: {
-        SDY_LOCAL_TURN_URL: localTurn || null,
-        SDY_TURN_URL: externalTurn || null,
-        SDY_LOCAL_TURN_TLS_URL: localTlsTurn || null,
-        SDY_TURN_TLS_URL: externalTlsTurn || null,
-        SDY_TURN_PUBLIC_IP: publicIp || null,
-        SDY_TURN_PRIVATE_IP: configuredLocalIp || null,
-        hasSecret: !!secret,
-      },
-      checks: {},
-    };
-    // HMAC 임시 인증이 가능하면 브라우저와 동일한 TURN Allocate 를 실제로 시도한다.
-    const expiry = Math.floor(nowSec()) + 3600;
-    const uname = `${expiry}:diag-${crypto.randomBytes(4).toString('hex')}`;
-    const password = secret ? crypto.createHmac('sha1', secret).update(uname).digest('base64') : '';
-    for (const u of targets) {
-      const isTls = /^turns:/i.test(u);
-      const { host, port } = turnHostPort(u);
-      const key = u;
-      const rec = { host, port, tls: !!isTls };
-      // 서버 자신 → coturn 프로세스가 실제로 3478(또는 5349 TLS)에 떠 있는지
-      // 확인한다. listening-ip가 사설 NIC로 고정된 Oracle 구성에서는
-      // 127.0.0.1 검사가 실패하는 것이 정상이므로 모든 로컬 IPv4를 동시에
-      // 검사해 응답 주소를 고른다. turns: 는 TLS/TCP 이므로 TCP 개방만 본다.
-      const localProbe = await Promise.all(localAddresses.map(async (address) => {
-        if (isTls) {
-          const tcpTls = await tcpCheck(address, port, 4000);
-          return { address, tcp: tcpTls, udp: { ok: false, err: 'tls' } };
-        }
-        const [tcp, udp] = await Promise.all([
-          tcpCheck(address, port, 4000), stunPing(address, port, 4000),
-        ]);
-        return { address, tcp, udp };
-      }));
-      const tcpHit = localProbe.find((x) => x.tcp.ok);
-      const udpHit = localProbe.find((x) => x.udp.ok);
-      const localHit = localProbe.find((x) => x.tcp.ok && x.udp.ok) || udpHit || tcpHit;
-      rec.localAddress = localHit ? localHit.address : localAddresses.join(',');
-      rec.localTcp = tcpHit ? 'ok' : `fail(${localProbe.map((x) => `${x.address}:${x.tcp.err || 'fail'}`).join(', ')})`;
-      rec.localUdp = udpHit ? 'ok' : `fail(${localProbe.map((x) => `${x.address}:${x.udp.err || 'fail'}`).join(', ')})`;
-      // 공인 경로와 로컬 Allocate를 병렬 실행한다. 공인 IP hairpin이 timeout이어도
-      // 배포 스크립트의 15초 진단 제한 안에 결과가 돌아오게 한다.
-      const allocAddress = udpHit ? udpHit.address : (localHit ? localHit.address : localAddresses[0]);
-      // turns:(TLS) 는 STUN Binding/Allocate(평문)와 다른 프로토콜이라
-      // 여기서는 TCP 개방까지만 확인한다(브라우저 TLS 핸드셰이크는 별개).
-      const localAllocP = (!isTls && secret)
-        ? turnAllocate(allocAddress, port, uname, password, 8000)
-        : Promise.resolve(null);
-      let publicP = Promise.resolve(null);
-      // 공인 IP → VCN 인그레스 규칙이 실제로 열려 있는지 (서버 밖에서만 확정 가능)
-      if (publicIp && host !== '127.0.0.1' && host !== 'localhost') {
-        publicP = isTls
-          ? Promise.all([tcpCheck(host, port, 5000)])
-          : Promise.all([
-            tcpCheck(host, port, 5000),
-            stunPing(host, port, 5000),
-            secret ? turnAllocate(host, port, uname, password, 8000) : Promise.resolve(null),
-          ]);
-      }
-      const [la, publicResult] = await Promise.all([localAllocP, publicP]);
-      if (publicResult) {
-        if (isTls) {
-          const [pt] = publicResult;
-          rec.publicTlsTcp = pt.ok ? 'ok' : `fail(${pt.err})`;
-        } else {
-          const [pt, pu, pa] = publicResult;
-          rec.publicTcp = pt.ok ? 'ok' : `fail(${pt.err})`;
-          rec.publicUdp = pu.ok ? 'ok' : `fail(${pu.err})`;
-          rec.publicAlloc = secret
-            ? (pa.ok ? `ok(${pa.err})` : `fail(${pa.err})`)
-            : 'skip(secret 없음)';
-        }
-      }
-      if (isTls) {
-        rec.localAlloc = 'skip(tls)';
-      } else {
-        rec.localAlloc = secret
-          ? (la.ok ? `ok(${la.err})` : `fail(${la.err})`)
-          : 'skip(secret 없음)';
-      }
-      out.checks[key] = rec;
-    }
-    out.ok = Object.keys(out.checks).length > 0;
-    reply.header('Cache-Control', 'no-store');
-    return reply.send(out);
-  });
-
-  // ── 음성 상태 ──
+  // ── 음성 상태 (WS 가 권위. 이 엔드포인트는 폴백/정리용) ──
   app.post('/api/chat/voice', async (req, reply) => {
     const d = req.body || {};
     const uid = String(d.uid || '').trim();
@@ -1011,19 +537,9 @@ export function registerChat(app) {
     me.voice = !!d.on;
     me.mute = !!d.mute;
     me.ts = nowSec();
+    if (!d.on) voiceClose(uid, 4005, '음성 종료');
     chatPresence();
     return reply.send({ ok: true, members: publicMembers() });
-  });
-
-  // ── WebRTC 시그널링 릴레이 (peer → peer) ──
-  app.post('/api/chat/signal', async (req, reply) => {
-    const d = req.body || {};
-    const uid = String(d.uid || '').trim();
-    const to = String(d.to || '').trim();
-    if (!state.members.has(uid)) return reply.code(400).send({ ok: false, error: '먼저 입장해 주세요' });
-    if (!state.members.has(to)) return reply.code(404).send({ ok: false, error: '상대가 없습니다' });
-    chatSend(to, { type: 'signal', from: uid, kind: String(d.kind || ''), payload: d.payload || null });
-    return reply.send({ ok: true });
   });
 
   // ── SSE 스트림 (즉시 push + 재접속 중 이벤트 보존) ──
@@ -1047,7 +563,7 @@ export function registerChat(app) {
     streams.get(uid).add(client);
     writeSse(client, { type: 'hello', ts: nowSec() });
 
-    // 네트워크 전환 중 쌓인 채팅/offer/ICE 를 hello 직후 순서대로 보낸다.
+    // 네트워크 전환 중 쌓인 채팅을 hello 직후 순서대로 보낸다.
     const held = pending.get(uid) || [];
     pending.delete(uid);
     for (const evt of held) writeSse(client, evt);
@@ -1058,8 +574,7 @@ export function registerChat(app) {
     }, 15000);
     if (keepAlive.unref) keepAlive.unref();
 
-    // close/error 어느 쪽으로 끊겨도 스트림 집합에서 바로 제거한다. 제거가
-    // 늦으면 offer/ICE 가 죽은 소켓에 쓰여 '재연결 시 재전송'을 못 타고 유실된다.
+    // close/error 어느 쪽으로 끊겨도 스트림 집합에서 바로 제거한다.
     const cleanup = () => {
       clearInterval(keepAlive);
       client.closed = true;

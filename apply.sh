@@ -27,9 +27,6 @@ set -e
 APP_DIR=/var/www/memo
 PORT=5000
 WORKER_PORT=5100
-TURN_PORT=3478
-TURN_MIN_PORT=49160
-TURN_MAX_PORT=49200
 SVC=sdynotes
 SVC_WORKER=sdynotes-worker
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -123,7 +120,7 @@ ok "legacy Supabase 스키마 SQL 생성(롤백용): $APP_DIR/SUPABASE_SCHEMA.sq
 ENV_FILE="$APP_DIR/.env"
 touch "$ENV_FILE"
 chmod 600 "$ENV_FILE"
-for EK in SUPABASE_URL SUPABASE_SERVICE_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_KEY CLOUDINARY_CLOUD_NAME CLOUDINARY_API_KEY CLOUDINARY_API_SECRET ACOUSTID_KEY SDY_TURN_URL SDY_LOCAL_TURN_URL SDY_TURN_TLS_URL SDY_LOCAL_TURN_TLS_URL SDY_TURN_HOST SDY_TURN_USER SDY_TURN_PASS SDY_TURN_SECRET SDY_TURN_PUBLIC_IP SDY_TURN_PRIVATE_IP SDY_SETUP_TURN; do
+for EK in SUPABASE_URL SUPABASE_SERVICE_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_KEY CLOUDINARY_CLOUD_NAME CLOUDINARY_API_KEY CLOUDINARY_API_SECRET ACOUSTID_KEY; do
     EV="${!EK:-}"
     if [ -n "$EV" ] && ! grep -qE "^${EK}=" "$ENV_FILE"; then
         printf '%s=%s\n' "$EK" "$EV" >> "$ENV_FILE"
@@ -245,236 +242,24 @@ else
     fi
 fi
 
-# ── 3.5. TURN 릴레이 (LTE ↔ Wi-Fi / 서로 다른 공유기 통화) ─────────
-# WebRTC 의 STUN 만으로는 통신사 CGNAT·대칭 NAT 를 통과할 수 없다. Oracle 서버에
-# coturn 을 함께 띄우고, 브라우저에는 1시간짜리 임시 자격 증명만 내려 준다.
-TURN_SETUP="${SDY_SETUP_TURN:-$(env_get SDY_SETUP_TURN)}"
-[ -n "$TURN_SETUP" ] || TURN_SETUP=1
-if [ "$TURN_SETUP" != "0" ]; then
-    say "3.5/6  통화용 TURN 릴레이"
-    if ! command -v turnserver >/dev/null 2>&1; then
-        echo "  coturn 설치 중..."
-        sudo apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive sudo apt-get install -y -qq coturn >/dev/null 2>&1 \
-            || echo "  ⚠️ coturn 설치 실패 — 아래 README의 TURN 설정을 확인하세요"
-    fi
-
-    if command -v turnserver >/dev/null 2>&1; then
-        TURN_PUBLIC_IP="${SDY_TURN_PUBLIC_IP:-$(env_get SDY_TURN_PUBLIC_IP)}"
-        [ -n "$TURN_PUBLIC_IP" ] || TURN_PUBLIC_IP=$(curl -4 -fsS --max-time 6 https://api.ipify.org 2>/dev/null || true)
-        TURN_PRIVATE_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')
-        [ -n "$TURN_PRIVATE_IP" ] || TURN_PRIVATE_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-        TURN_SECRET="${SDY_TURN_SECRET:-$(env_get SDY_TURN_SECRET)}"
-        if [ -z "$TURN_SECRET" ]; then
-            if command -v openssl >/dev/null 2>&1; then TURN_SECRET=$(openssl rand -hex 32)
-            else TURN_SECRET=$(python3 -c 'import secrets;print(secrets.token_hex(32))'); fi
-        fi
-
-        # 통신사/회사망은 UDP 3478 과 평문 TCP 3478 을 막는 경우가 많다.
-        # HTTPS(443) 도메인용 Let's Encrypt 인증서가 있으면 coturn 에 TLS 를
-        # 켜서 turns:host:5349 (TLS/TCP, 443과 동일하게 뚫리는 망이 많다)를
-        # 같은 방식으로 추가 제공한다. 인증서가 없으면 조용히 건너뛴다.
-        TURN_TLS_CONF=""
-        TURN_TLS_DISABLE="no-tls"
-        TURN_TLS_URL=""
-        for _d in /etc/letsencrypt/live/*/; do
-            if [ -f "${_d}fullchain.pem" ] && [ -f "${_d}privkey.pem" ]; then
-                # coturn 은 turnserver 유저로 돈다. Let's Encrypt 키(600 root)를
-                # 그대로 읽을 수 없으므로 ssl-cert 그룹으로 열어 준다(표준 방식).
-                sudo usermod -a -G ssl-cert turnserver 2>/dev/null || true
-                sudo chgrp -R ssl-cert /etc/letsencrypt/archive /etc/letsencrypt/live 2>/dev/null || true
-                sudo chmod -R g+rX /etc/letsencrypt/archive /etc/letsencrypt/live 2>/dev/null || true
-                TURN_TLS_CONF="tls-listening-port=5349
-cert=${_d}fullchain.pem
-pkey=${_d}privkey.pem"
-                TURN_TLS_DISABLE=""
-                TURN_TLS_URL="turns:${TURN_PUBLIC_IP:-호스트}:5349"
-                if command -v certbot >/dev/null 2>&1; then
-                    sudo mkdir -p /etc/letsencrypt/renewal-hooks/deploy
-                    sudo tee /etc/letsencrypt/renewal-hooks/deploy/sdy-turn.sh >/dev/null <<'HOOK'
-#!/bin/sh
-# SDYnotes — TURN(TLS) 용 coturn 인증서 권한 복구 + coturn 재시작
-chgrp -R ssl-cert /etc/letsencrypt/archive /etc/letsencrypt/live 2>/dev/null || true
-chmod -R g+rX /etc/letsencrypt/archive /etc/letsencrypt/live 2>/dev/null || true
-systemctl restart coturn 2>/dev/null || true
-HOOK
-                    sudo chmod 755 /etc/letsencrypt/renewal-hooks/deploy/sdy-turn.sh
-                fi
-                break
-            fi
-        done
-
-        # Oracle 이미지에 따라 공인 IP 가 (a) VCN 1:1 NAT 로 사설 IP 뒤에 숨어 있거나
-        # (b) NIC 에 직접 붙어 있을 수 있다. (b) 는 external-ip 가 오히려 릴레이를
-        # 망가뜨리고 listening-ip 를 사설로 고정하면 외부 패킷이 coturn 에 안 닿는다.
-        # NIC 에 공인 IP 가 있는지 실제로 확인해서 설정을 갈라 준다.
-        ON_NIC=$(ip -4 addr show 2>/dev/null | grep -c "inet ${TURN_PUBLIC_IP}/" || true)
-        if [ "$ON_NIC" -gt 0 ]; then
-            echo "  공인 IP $TURN_PUBLIC_IP 가 NIC 에 직접 붙어 있음 → external-ip 생략, 전체 인터페이스 수신"
-            LISTEN_LINE=""
-            TURN_EXTERNAL=""
-        else
-            LISTEN_LINE="listening-ip=$TURN_PRIVATE_IP"
-            TURN_EXTERNAL="external-ip=$TURN_PUBLIC_IP"
-            [ "$TURN_PUBLIC_IP" = "$TURN_PRIVATE_IP" ] || TURN_EXTERNAL="external-ip=$TURN_PUBLIC_IP/$TURN_PRIVATE_IP"
-        fi
-
-        if [ -n "$TURN_PUBLIC_IP" ] && [ -n "$TURN_PRIVATE_IP" ] && [ -n "$TURN_SECRET" ]; then
-            env_set SDY_TURN_SECRET "$TURN_SECRET"
-            env_set SDY_TURN_PUBLIC_IP "$TURN_PUBLIC_IP"
-            env_set SDY_TURN_PRIVATE_IP "$TURN_PRIVATE_IP"
-            # 콤마로 묶지 않는다 — 브라우저는 urls 배열에 같은 호스트가 두 번 들어가면
-            # ICE candidate 중복을 피하려고 한 쪽을 버리는 경우가 있다. UDP와 TCP를
-            # 별도 iceServers 엔트리로 다루게 chat.js 에서 분리하므로 여기선 베이스
-            # URL만 저장한다.
-            env_set SDY_LOCAL_TURN_URL "turn:$TURN_PUBLIC_IP:$TURN_PORT"
-            if [ -n "$TURN_TLS_URL" ]; then
-                env_set SDY_LOCAL_TURN_TLS_URL "$TURN_TLS_URL"
-            else
-                # TLS 를 끈 경우 이전에 남은 값이 브라우저로 나가지 않게 지운다.
-                sed -i '/^SDY_LOCAL_TURN_TLS_URL=/d' "$ENV_FILE" 2>/dev/null || true
-            fi
-
-            # 최초 한 번은 사용자가 만들었던 기존 설정을 백업한다.
-            if [ -f /etc/turnserver.conf ] && [ ! -f /etc/turnserver.conf.sdy-before ]; then
-                sudo cp /etc/turnserver.conf /etc/turnserver.conf.sdy-before
-            fi
-            # relay-ip 를 사설 IP 로 강제하면 VCN 의 source-NAT 가 외부 클라이언트로
-            # 보낼 패킷을 10.0.0.0/16 으로 라우팅하다가 hairpin 함정에 빠져 일부
-            # 클라이언트는 "srflx 는 잡히는데 relay 가 안 잡히는" 증상을 보인다.
-            # external-ip 만 두면 coturn 이 OS 의 라우팅 테이블을 따라 자동으로
-            # 릴레이 소스 IP 를 결정하므로 VCN/클라우드 환경에서 안정적이다.
-            # (공인 IP 가 NIC 에 직접 붙은 이미지에서는 위에서 외부 설정을 비웠다.)
-            sudo tee /etc/turnserver.conf >/dev/null <<EOF
-# SDYnotes managed coturn — apply.sh
-listening-port=$TURN_PORT
-$LISTEN_LINE
-$TURN_EXTERNAL
-min-port=$TURN_MIN_PORT
-max-port=$TURN_MAX_PORT
-fingerprint
-use-auth-secret
-static-auth-secret=$TURN_SECRET
-realm=sdynotes
-stale-nonce=600
-no-multicast-peers
-no-loopback-peers
-no-cli
-$TURN_TLS_DISABLE
-$TURN_TLS_CONF
-no-dtls
-# 일부 브라우저/미들박스 가 long-term credential + STUN long-term
-# 인증 메시지의 MESSAGE-INTEGRITY 검사를 엄격하게 한다. 명시적으로 켜두면
-# "401 Unauthorized" 류 통화 실패가 사라진다.
-lt-cred-mech
-EOF
-            if [ -f /etc/default/coturn ]; then
-                sudo sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn
-                grep -q '^TURNSERVER_ENABLED=' /etc/default/coturn || echo 'TURNSERVER_ENABLED=1' | sudo tee -a /etc/default/coturn >/dev/null
-            fi
-            sudo systemctl enable coturn -q 2>/dev/null || true
-            sudo systemctl restart coturn 2>/dev/null || true
-
-            # TURN 임시 인증(HMAC)은 서버 시계와 브라우저 시계 차이에 민감하다.
-            # 시계가 틀어지면 401 로 통화가 안 되므로 chrony(NTP)를 미리 맞춰 둔다.
-            if ! systemctl is-active --quiet chrony 2>/dev/null && ! systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
-                DEBIAN_FRONTEND=noninteractive sudo apt-get install -y -qq chrony >/dev/null 2>&1 \
-                    && sudo systemctl enable --now chrony -q 2>/dev/null || true
-            fi
-            sudo timedatectl set-ntp true 2>/dev/null || true
-
-            # OS 방화벽도 연다. OCI Compute 이미지는 VCN/NSG와 별개로 iptables의
-            # 마지막 REJECT 규칙을 기본 제공하는 경우가 있다. UFW가 inactive여도
-            # 이 규칙 때문에 외부 패킷이 EHOSTUNREACH로 막힐 수 있으므로 현재
-            # 방화벽 관리자를 감지해 필요한 포트만 허용한다 (전체 flush는 금지).
-            if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
-                sudo ufw allow "$TURN_PORT/udp" comment 'SDYnotes TURN' >/dev/null || true
-                sudo ufw allow "$TURN_PORT/tcp" comment 'SDYnotes TURN' >/dev/null || true
-                sudo ufw allow "$TURN_MIN_PORT:$TURN_MAX_PORT/udp" comment 'SDYnotes TURN relay' >/dev/null || true
-                if [ -n "$TURN_TLS_CONF" ]; then
-                    sudo ufw allow 5349/tcp comment 'SDYnotes TURN TLS' >/dev/null || true
-                fi
-                ok "UFW TURN 규칙 적용"
-            elif command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then
-                sudo firewall-cmd --permanent --add-port="$TURN_PORT/udp" >/dev/null || true
-                sudo firewall-cmd --permanent --add-port="$TURN_PORT/tcp" >/dev/null || true
-                sudo firewall-cmd --permanent --add-port="$TURN_MIN_PORT-$TURN_MAX_PORT/udp" >/dev/null || true
-                if [ -n "$TURN_TLS_CONF" ]; then
-                    sudo firewall-cmd --permanent --add-port=5349/tcp >/dev/null || true
-                fi
-                sudo firewall-cmd --reload >/dev/null || true
-                ok "firewalld TURN 규칙 적용"
-            elif command -v iptables >/dev/null 2>&1; then
-                ipt_allow(){
-                    local proto="$1" ports="$2"
-                    sudo iptables -w -C INPUT -p "$proto" -m "$proto" --dport "$ports" -m comment --comment 'SDYnotes TURN' -j ACCEPT 2>/dev/null \
-                        || sudo iptables -w -I INPUT 1 -p "$proto" -m "$proto" --dport "$ports" -m comment --comment 'SDYnotes TURN' -j ACCEPT
-                }
-                ipt_allow udp "$TURN_PORT"
-                ipt_allow tcp "$TURN_PORT"
-                ipt_allow udp "$TURN_MIN_PORT:$TURN_MAX_PORT"
-                if [ -n "$TURN_TLS_CONF" ]; then
-                    ipt_allow tcp 5349
-                fi
-                # Oracle Ubuntu의 /etc/iptables/rules.v4 또는 netfilter-persistent가
-                # 있으면 재부팅 뒤에도 유지한다. 둘 다 없으면 현재 부팅에는 즉시 적용.
-                if command -v netfilter-persistent >/dev/null 2>&1; then
-                    sudo netfilter-persistent save >/dev/null 2>&1 || true
-                elif [ -d /etc/iptables ] && command -v iptables-save >/dev/null 2>&1; then
-                    sudo sh -c 'iptables-save > /etc/iptables/rules.v4' || true
-                fi
-                ok "iptables TURN 규칙 적용 (기존 REJECT 규칙보다 우선)"
-            fi
-            if systemctl is-active --quiet coturn; then
-                ok "TURN 실행 중 ($TURN_PUBLIC_IP:$TURN_PORT, 임시 인증)"
-                # 실제로 3478(UDP/TCP) / 5349(TLS) 이 떠 있는지 확인 — 켜져
-                # 있는데도 안 되면 Oracle VCN 인그레스 규칙을 의심할 수 있다.
-                if command -v ss >/dev/null 2>&1; then
-                    UDP_OK=$(ss -lun 2>/dev/null | grep -c ":$TURN_PORT " || true)
-                    TCP_OK=$(ss -ltn 2>/dev/null | grep -c ":$TURN_PORT " || true)
-                    [ "$UDP_OK" -gt 0 ] && [ "$TCP_OK" -gt 0 ] \
-                        && ok "coturn 포트 확인: $TURN_PORT UDP+TCP 수신 중" \
-                        || echo "  ⚠️ coturn 이 $TURN_PORT 를 못 열고 있을 수 있음: journalctl -u coturn -n 50"
-                    if [ -n "$TURN_TLS_CONF" ]; then
-                        TLS_OK=$(ss -ltn 2>/dev/null | grep -c ":5349 " || true)
-                        [ "$TLS_OK" -gt 0 ] \
-                            && ok "coturn TLS 확인: 5349(TLS/TCP) 수신 중" \
-                            || echo "  ⚠️ coturn 가 5349(TLS) 를 못 열고 있음: journalctl -u coturn -n 50"
-                    fi
-                fi
-            else
-                echo "  ⚠️ coturn 이 시작되지 않았습니다: journalctl -u coturn -n 50"
-            fi
-            echo "  ★ Oracle Cloud 인그레스에 UDP/TCP $TURN_PORT 및 UDP $TURN_MIN_PORT-$TURN_MAX_PORT 를 열어야 외부망 통화가 됩니다."
-            if [ -n "$TURN_TLS_CONF" ]; then
-                echo "  ★ + TCP 5349 (TURN over TLS) — 평문 TCP/UDP 가 막힌 통신사·회사망에서 씁니다 (인증서 있으면 자동)."
-            fi
-            echo "  ★ 자기 공인 IP 로의 self-traffic 이 VCN 의 hairpin 차단으로 'No route to host' 가 나올 수 있으나"
-            echo "    외부 클라이언트 → 공인 IP 경로는 정상이며 통화에는 영향이 없습니다."
-            echo "  ★ 같은 호스트(SDY_TURN_URL = SDY_LOCAL_TURN_URL) 라면 외부용 정적 인증을 비워서 HMAC 임시 인증만 쓰는 것을 권장합니다."
-            echo "  ★ 도메인(HTTPS) 으로 접속 중이면 TURN 호스트도 자동으로 그 도메인을 사용합니다. 원하면 .env 에 SDY_TURN_HOST=도메인 을 지정하세요."
-        else
-            echo "  ⚠️ 공인/사설 IP를 확인하지 못해 TURN 자동 설정을 건너뜁니다."
-            echo "     .env 에 SDY_TURN_PUBLIC_IP=오라클_공인IP 를 넣고 다시 실행하세요."
-        fi
-    fi
-else
-    echo "  TURN 자동 설치 꺼짐 (SDY_SETUP_TURN=0)"
-fi
+# ── 3.5. 음성은 서버 릴레이 (WebRTC/TURN 사용 안 함) ─────────
+# 통화는 HTTPS 위의 WebSocket(/api/chat/voice-ws) 으로만 중계한다.
+# coturn 을 새로 깔지 않는다. 이미 떠 있는 coturn 은 건드리지 않는다.
+echo "  음성 통화: 서버 릴레이 (TURN/STUN 불필요)"
 
 # ── 4. 서비스 등록 (단일 프로세스 유지) ──────────────────────
 say "4/6  자동 실행 서비스"
 # 설정은 항상 APP_DIR/.env 를 단일 기준으로 사용한다.
 # 이전 버전은 기존 systemd Environment= 줄을 복사했는데, 그러면 마이그레이션
-# 뒤 .env의 TURN/AcoustID 값을 바꿔도 오래된 값이 EnvironmentFile보다 우선되어
-# 통화와 음악 인식이 계속 옛 설정으로 실행될 수 있다.
+# 뒤 .env의 AcoustID 값을 바꿔도 오래된 값이 EnvironmentFile보다 우선되어
+# 음악 인식이 계속 옛 설정으로 실행될 수 있다.
 ENV_LINES=""
 
 # 서버 메모리를 확인해 Node 힙·Python 워커 동시성·스레드풀을 한 번에 튜닝한다.
 # Node(프런트/SSE)와 Python 워커(PDF/음악)가 같은 박스에서 돌고 워커는 자식
 # 프로세스를 여러 개 띄우므로, RAM 전체를 Node에 몰아주지 않는다.
 # 12GB 박스 배분 (RAM_MB ≈ 11700~12000):
-#   OS+nginx+coturn 예약      ≈ 1.5GB
+#   OS+nginx 예약             ≈ 1.5GB
 #   Node  (힙 2GB + 채팅 파일 버퍼/업로드/SSE) ≈ 4.5GB 이하
 #   worker(본체 0.9GB + 변환 자식 전역 최대 4×1GB)   ≈ 5.0GB 이하
 #   ─ 합계 약 11GB — 페이지 캐시/스왑 여유 1GB+
@@ -584,6 +369,18 @@ server {
     listen 80 default_server;
     server_name _;
     client_max_body_size 100M;
+    location /api/chat/voice-ws {
+        proxy_pass http://127.0.0.1:$PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }
     location / {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_set_header Host \$host;
@@ -716,7 +513,8 @@ P=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || tru
 YT=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/youtube/status" || true)
 RECOG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/recognize/status" || true)
 CLOUD=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/cloud/status" || true)
-TURN_CFG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/chat/config?uid=deploy-check" || true)
+VOICE_CFG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/chat/config?uid=deploy-check" || true)
+VOICE_WS=$(grep -c 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo 2>/dev/null || echo 0)
 
 echo
 echo "  페이지        : $P"
@@ -730,17 +528,15 @@ if echo "$RECOG" | grep -q '"ready"[[:space:]]*:[[:space:]]*true'; then
 else
     echo "  ⚠️  소리 인식 미준비 — fpcalc 또는 ACOUSTID_KEY/music/_acoustid.json 확인"
 fi
-if echo "$TURN_CFG" | grep -q '"turn":true'; then
-    echo "  통화 TURN      : 준비됨 (Oracle 인그레스 규칙도 확인하세요)"
-    TURN_DIAG=$(curl -s -m 15 "http://127.0.0.1:$PORT/api/chat/diag" || true)
-    if echo "$TURN_DIAG" | grep -q '"localUdp":"ok"'; then
-        echo "  TURN 진단      : 서버 안에서 STUN/TCP 응답 정상 — 외부 경로는 'curl :5000/api/chat/diag' 로 재확인"
-    else
-        echo "  TURN 진단      : ⚠️ 서버 안에서도 TURN 에 닿지 못함 — journalctl -u coturn -n 50 확인"
-    fi
+if echo "$VOICE_CFG" | grep -q '"voice":"relay"'; then
+    echo "  음성 릴레이    : 준비됨 (/api/chat/voice-ws)"
 else
-    echo "  통화 TURN      : ⚠️ 미설정 — 서로 다른 망 통화가 실패할 수 있습니다"
-    echo "                  → $APP_DIR/.env 에 SDY_TURN_SECRET 이 있는지 확인 후 apply.sh 재실행"
+    echo "  음성 릴레이    : ⚠️ /api/chat/config 가 voice:relay 가 아님 — $VOICE_CFG"
+fi
+if [ "${VOICE_WS:-0}" -ge 1 ] 2>/dev/null; then
+    echo "  음성 nginx     : WebSocket Upgrade 경로 있음"
+elif command -v nginx >/dev/null; then
+    echo "  음성 nginx     : ⚠️ /api/chat/voice-ws location 없음 — apply.sh 재실행"
 fi
 if echo "$CLOUD" | grep -q '"supabase":true' && echo "$CLOUD" | grep -q '"cloudinary":true'; then
     echo "  ✅ 영구 저장소 준비됨 (legacy cloud 모드)"

@@ -3,7 +3,7 @@
 //      프로세스는 전역 상한(SDY_IMP_MAX_CHUNKS + 세마포)으로 잠근다.
 //   2) 사용자 동작 = 한 기능 — 재생/가사 탭 열기가 외부 검색을 연쇄하지 않고,
 //      자동 태그가 표지·가사·소리인식을 덩달아 돌리지 않는다.
-//   3) 통화 — turns:(5349 TLS) 지원 + 도메인 기반 TURN 호스트.
+//   3) 통화 — WebRTC/TURN 제거, 서버 릴레이(/api/chat/voice-ws) 만.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -89,14 +89,15 @@ assert.match(html, /\$\('mpTagTitle'\)\.value=g\.title/, 'recog 결과가 제목
 assert.match(html, /q_title:\$\('mpTagTitle'\)\.value\.trim\(\)/,
   '싱크 가사·표지 찾기 버튼이 편집창 제목을 검색 힌트로 보낸다');
 
-// ── 3. TURN — 도메인 호스트 + TLS(5349) ──
-assert.match(apply, /tls-listening-port=5349/, 'apply.sh 가 TURN TLS(5349) 를 켠다');
-assert.match(apply, /SDY_LOCAL_TURN_TLS_URL/, 'TLS TURN 주소를 .env 에 기록한다');
-assert.match(apply, /ipt_allow tcp 5349/, 'OS 방화벽에 5349/tcp 를 연다');
-assert.match(chat, /SDY_TURN_HOST/, 'Node 가 명시적 TURN 호스트를 지원한다');
-assert.match(chat, /rewriteLocalHost/, '자체 TURN 주소를 접속 도메인으로 바꾼다');
-assert.match(chat, /localTlsTurn/, 'TLS TURN 을 iceServers 에 포함한다');
-assert.match(chat, /publicTlsTcp/, '진단이 TLS TURN 외부 경로도 검사한다');
+// ── 3. 음성은 서버 릴레이 (WebRTC/TURN 없음) ──
+assert.match(apply, /location \/api\/chat\/voice-ws/, 'apply.sh 가 음성 WS Upgrade 경로를 넣는다');
+assert.match(apply, /proxy_set_header Connection "upgrade"/, 'nginx 가 WebSocket 핸드셰이크를 통과시킨다');
+assert.doesNotMatch(apply, /tls-listening-port=5349/, 'TURN TLS 를 새로 켜면 안 된다');
+assert.doesNotMatch(apply, /apt-get install -y -qq coturn/, 'coturn 을 새로 깔면 안 된다');
+assert.match(chat, /voice: 'relay'/, '채팅 설정이 릴레이 전용이다');
+assert.doesNotMatch(chat, /\/api\/chat\/signal/, 'P2P 시그널 라우트가 없어야 한다');
+assert.doesNotMatch(chat, /SDY_TURN_HOST|localTlsTurn|publicTlsTcp/, 'TURN 호스트/진단 코드가 없어야 한다');
+assert.doesNotMatch(html, /RTCPeerConnection/, '프론트에 WebRTC 가 없어야 한다');
 assert.match(chat, /SDY_CHAT_FILE_MB/, '채팅 파일 바이트 예산을 읽는다');
 assert.match(chat, /fileEvict\(\)/, '채팅 파일 예산 초과 시 오래된 파일을 지운다');
 
@@ -122,4 +123,4 @@ if (music.indexOf('with _music_lock:') < music.indexOf('_music_cache_lock')) {
 assert.match(music, /_music_cache\["data"\] = _music_shallow\(m\)/,
   '저장 직후 캐시를 갱신해 mtime/size 키 의존을 줄인다');
 
-console.log('Tuning + one-action contract: PASS (12GB 메모리 배분 / 한 동작=한 기능 / TURN TLS+도메인)');
+console.log('Tuning + one-action contract: PASS (12GB 메모리 배분 / 한 동작=한 기능 / 서버 릴레이 음성)');

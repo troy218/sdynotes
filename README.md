@@ -88,36 +88,19 @@ sdynotes-fast/
   `/api/music/cover`, `/api/music/synced-lyrics`, `/api/music/from_url`,
   `/api/music/background-work`
 - 엽스코드(Youpscord) 채팅(전부 인메모리 — 영구 저장 없음):
-  `/api/chat/join|ping|leave|msg|upload|react|voice|signal|del|bgm|knock`,
-  `/api/chat/file/:id`, `/api/chat/stream`(SSE), `/api/chat/config`(ICE 설정).
+  `/api/chat/join|ping|leave|msg|upload|react|voice|del|bgm|knock`,
+  `/api/chat/file/:id`, `/api/chat/stream`(SSE), `/api/chat/config`,
+  `/api/chat/voice-ws`(WebSocket 음성 릴레이).
   앱 전체 공용 1개 방. 닉네임은 라이브 새 이름 + 파스텔 색.
-  실시간 음성은 WebRTC mesh(시그널링만 Node가 릴레이).
-  - 채팅·offer/answer/ICE는 SSE 응답에 **즉시 push**한다. LTE↔Wi-Fi 전환으로
-    EventSource가 잠시 끊겨도 사용자별 대기 큐에 보관했다가 재연결 즉시 전달한다.
-  - STUN(Google + Cloudflare)은 기본 내장. **같은 네트워크가 아니면 대칭 NAT·
-    통신사 CGNAT·방화벽 뒤에서 STUN만으로는 연결이 안 되므로 TURN이 필수다.**
-  - `apply.sh`는 Oracle VM에 coturn을 자동 설치하고, `.env`의
-    `SDY_LOCAL_TURN_URL`/`SDY_TURN_SECRET`을 자동 생성한다. 브라우저에는 HMAC
-    기반 1시간짜리 임시 인증만 전달한다. 자동 설치를 끄려면
-    `SDY_SETUP_TURN=0`을 사용한다.
-  - 외부 TURN을 따로 쓰는 경우 기존 방식도 함께 지원한다:
-    `SDY_TURN_URL=turn:도메인:3478`, `SDY_TURN_USER=...`, `SDY_TURN_PASS=...`.
-  - **14.14 · 공개 TURN 예비(안전망).** 자체 coturn이 하나도 안 붙으면
-    (VCN 규칙·인증서·통신사 정책 등) 서버가 공개 TURN(openrelay, 80/443)을
-    자동으로 대신 내려준다 → TURN이 죽어도 통화가 통째로 막히지 않는다.
-    응답의 `publicTurn:true`로 확인할 수 있다.
-    - 끄기: `.env`에 `SDY_PUBLIC_TURN=off`
-    - 항상 함께 쓰기: `SDY_PUBLIC_TURN=always`
-    - 다른 공개 TURN으로 교체: `SDY_PUBLIC_TURN_URLS` / `_USER` / `_PASS`
-    - 공개 TURN은 무료 한도(월 20GB)가 있으므로, 상시 운영은 자체 coturn을
-      고치는 쪽이 좋다. 어디까지나 '통화가 아예 안 되는 상태'를 막는 예비다.
-  - **14.14 · 기기에서 바로 하는 통화 자가 진단.** 엽스코드 → 설정(⚙) →
-    `통화 진단 · 검사`를 누르면 그 기기에서 실제로 ICE 후보를 모아
-    `host`(내 랜카드) / `srflx`(STUN) / `relay`(TURN) 개수를 보여준다.
-    - `relay 0` → TURN 문제 (다른 망 통화 불가)
-    - `srflx 0` → 그 망이 UDP를 막고 있음
-    - `host 0` → 보안 연결(HTTPS)·권한 문제
-    서버 로그를 못 보는 상황에서도 어디가 막혔는지 바로 판별할 수 있다.
+  실시간 음성은 **서버 릴레이** — 마이크를 16kHz μ-law 프레임으로
+  `/api/chat/voice-ws` 에 올리고 Node 가 참가자에게 중계한다.
+  WebRTC mesh · TURN · STUN · P2P 폴백은 없다. 채팅(SSE)이 열리는 망이면
+  통화도 된다 (지연은 P2P보다 0.2~0.3초 크다).
+  - 채팅은 SSE 응답에 **즉시 push**한다. LTE↔Wi-Fi 전환으로 EventSource가
+    잠시 끊겨도 사용자별 대기 큐에 보관했다가 재연결 즉시 전달한다.
+  - `apply.sh`는 nginx 에 `/api/chat/voice-ws` Upgrade 경로를 넣는다
+    (`location /` 의 `Connection ""` 가 핸드셰이크를 막지 않게).
+  - `/api/chat/config` 는 `{ok:true, voice:"relay"}` 만 준다.
   마지막 대화 후 24시간(`SDY_CHAT_TTL`, 기본 86400초)이 지나면 메시지·파일이
   '펑' 하고 사라진다.
 
@@ -145,9 +128,9 @@ bash apply.sh
 - `/var/www/memo/` 에 배포, systemd 서비스 2개:
   - `sdynotes`        (Node, :5000, 단일 프로세스)
   - `sdynotes-worker` (Python, 127.0.0.1:5100, 단일 프로세스)
-- `.env` 보존, vault 데이터 보존, nginx(SSE 버퍼링 해제 + 512M 업로드 + 900초 타임아웃),
-  swap(12GB → 4GB, swappiness=10), deno/bgutil(유튜브), fpcalc(소리인식),
-  coturn(통화 릴레이, 3478 + 인증서 있으면 5349 TLS) 자동 준비.
+- `.env` 보존, vault 데이터 보존, nginx(SSE 버퍼링 해제 + 음성 WebSocket Upgrade
+  + 512M 업로드 + 900초 타임아웃), swap(12GB → 4GB, swappiness=10),
+  deno/bgutil(유튜브), fpcalc(소리인식) 자동 준비. coturn 은 쓰지 않는다.
 - **`.env` 에 옛 Supabase/Cloudinary 키가 남아 있으면 최초 1회, 서비스 정지
   상태에서 `scripts/migrate_to_oracle.mjs` 가 자동 실행돼 모든 데이터를 이
   서버 디스크로 이전합니다** (`ORACLE_MIGRATION.md` 참조).
@@ -187,113 +170,32 @@ V8 이 회수를 미뤄 RSS 가 부풀고, Python 변환 자식과 겹치면 스
 유휴 백필(백그라운드)은 곡마다 하나의 기능만 수행하며, 표지·가사·정보를
 순서대로 처리한다.
 
-### Oracle Cloud에서 서로 다른 망 통화 허용 (필수 1회)
+### 엽스코드 음성 (서버 릴레이)
 
-`apply.sh`가 VM 안의 coturn과 OS 방화벽(UFW/firewalld/iptables)은 설정하지만
-**VM 밖에 있는 Oracle VCN 방화벽은 코드로 변경할 수 없습니다.** OCI Ubuntu는
-VCN 규칙과 별도로 마지막 iptables REJECT 규칙이 있는 이미지도 있으므로, 최신
-`apply.sh`는 TURN 허용 규칙을 그보다 앞에 넣고 가능한 경우 재부팅 후에도 보존합니다.
-Oracle Console → Networking → VCN → Security Lists
-(또는 해당 NSG) → Ingress Rules에서 다음을 한 번 열어 주세요.
-
-| Source CIDR | Protocol | Destination port | 용도 |
-|---|---|---:|---|
-| `0.0.0.0/0` | UDP | `3478` | TURN 기본 경로(LTE/Wi-Fi 권장) |
-| `0.0.0.0/0` | TCP | `3478` | UDP 차단 망의 대체 경로 |
-| `0.0.0.0/0` | UDP | `49160-49200` | TURN 미디어 릴레이 |
-| `0.0.0.0/0` | TCP | `5349` | TURN over TLS(인증서 있을 때만, 평문이 막힌 망용) |
-
-그 뒤 서버에서 `bash apply.sh`를 다시 실행하고 마지막 결과의
-`통화 TURN : 준비됨`을 확인합니다. 웹 마이크는 보안 컨텍스트에서만 열리므로 실제
-접속 주소도 **HTTPS 도메인**이어야 합니다(`localhost`만 예외).
+통화는 HTTPS(또는 localhost) 위의 WebSocket `/api/chat/voice-ws` 로만 중계한다.
+Oracle VCN 에 UDP 3478 / 49160-49200 을 열 필요가 없다. 웹 마이크는 보안
+컨텍스트에서만 열리므로 실제 접속 주소는 **HTTPS 도메인**이어야 한다
+(`localhost`만 예외).
 
 확인 명령:
 
 ```bash
-systemctl status coturn --no-pager
 curl -s 'http://127.0.0.1:5000/api/chat/config?uid=test'
-# 결과에 "turn":true 및 turn:호스트:3478 (+인증서 있으면 turns:호스트:5349) 이 있어야 함
-curl -s 'http://127.0.0.1:5000/api/chat/diag'
-# TURN 진단:
-#   localUdp/localTcp  : 'ok' 면 서버 안에서 coturn(STUN) 정상 응답
-#   localAlloc         : 'ok(relay=...)' 면 브라우저와 동일한 TURN Allocate
-#                        (401 챌린지 → HMAC 인증 → 릴레이 할당) 까지 성공
-#   publicTcp/publicUdp: 외부 경로(VCN 인그레스) 확인용 — hairpin 이면 서버
-#                        안에서 fail 로 보여도 실제 외부에선 정상일 수 있음
-#   publicTlsTcp       : turns:5349(TLS) 외부 경로 — TCP 개방 확인
-#   (turns: 항목은 localAlloc 을 skip(tls) 로 표시한다 — TLS 핸드셰이크는 브라우저가 수행)
+# 기대: {"ok":true,"voice":"relay"}
+grep -n 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo
+# 기대: Upgrade / Connection "upgrade" / 긴 timeout
 ```
 
-공인 IP 자동 감지가 실패하면 `/var/www/memo/.env`에
-`SDY_TURN_PUBLIC_IP=오라클_공인_IP`를 추가한 뒤 `bash apply.sh`를 다시 실행합니다.
+#### 자주 막히는 함정
 
-#### 자주 막히는 함정 (체크리스트)
-
-0. **포트를 다 열었는데 같은 와이파이끼리도 안 됨 (14.14 이전 버그)** —
-   같은 망이면 TURN 없이도 붙어야 정상이다. 그런데 14.13 까지는 통화 시작
-   **2.5초** 뒤에도 `connected` 가 아니면 그 연결을 부수고 **릴레이 전용**
-   (`iceTransportPolicy:'relay'`) 으로 갈아탔다. ICE 는 원래 몇 초씩 걸리므로
-   ① 잘 붙던 같은 와이파이 직접 연결까지 끊기고 ② TURN 이 죽어 있으면
-   릴레이 전용이라 100% 실패 → **통화가 아예 불가능**했다.
-   14.14 에서 강제 전환을 없앴다(연결을 부수지 않고 ICE 재시작만 한다).
-   업그레이드 후에도 증상이 남아 있으면 **브라우저 캐시를 완전히 비우고**
-   새로고침할 것 — 옛 HTML 이 캐시되어 있으면 그대로 재현된다.
-
-1. **VCN 인그레스가 다 열렸는데도 통화 안 됨** — `curl /api/chat/config` 가
-   `turn:true` 를 주는지 확인. `turn:false` 면 Node 가 TURN 인증을 못 만들고
-   있다는 뜻이므로 `SDY_TURN_SECRET` (또는 `SDY_TURN_USER`+`SDY_TURN_PASS`) 이
-   `systemctl show sdynotes -p Environment` 결과에 포함되는지 확인.
-2. **"연결 중"에서 멈춤, ICE candidate 가 `relay` 가 안 잡힘** — 브라우저
-   DevTools → `chrome://webrtc-internals` 에서 `Local Address` 가 49160~49200
-   사이로 잡히면 정상. 안 잡히면 `relay-ip` 를 안 박은 현재 설정(자동 라우팅)
-   으로 해결된다. 옛 버전의 `relay-ip=$TURN_PRIVATE_IP` 는 VCN 환경에서
-   hairpin 함정에 빠져 일부 클라이언트가 relay candidate 를 버린다.
-3. **VM 안에서 `bash -c 'exec 3<>/dev/tcp/$PUBIP/3478'` 가 `No route to host`** —
-   Oracle VCN 의 source/dest check 또는 hairpin 차단. 외부 클라이언트 →
-   공인 IP 경로에는 영향이 없으니 **무시해도 된다.** 정말로 외부에서도 막힌
-   것이라면 VCN Security List 의 Source CIDR 가 `0.0.0.0/0` 가 맞는지 다시 확인.
-4. **`turn:host:3478` 만 주고 TCP 를 안 붙인 경우** — 브라우저는 쿼리 없는
-   `turn:` URL 을 UDP 전용으로 취급한다. Oracle 인그레스에 TCP 3478 을 열어
-   둬도 브라우저가 시도하지 않아 통신사 UDP 차단 망에서 '연결 중'에 멈춘다.
-   Node 는 베이스 URL 에서 UDP(쿼리 없음) + `?transport=tcp` 를 **별도
-   iceServers 엔트리**로 나눠 내려 준다. 예전 버전에서 업그레이드했다면
-   브라우저 캐시를 비우고 `curl /api/chat/config` 결과에
-   `turn:IP:3478?transport=tcp` 가 있는지 확인한다.
-5. **TURN 인증이 401 로 reject** — `lt-cred-mech` 가 켜져 있는지 확인
-   (`grep ^lt-cred-mech /etc/turnserver.conf`). 그리고 VM 시계가
-   `date` 기준 ±5 분 이내여야 HMAC 임시 인증이 통과한다
-   (`sudo apt-get install -y chrony` 로 NTP 동기화). 최신 `apply.sh` 는
-   chrony 를 자동 설치/기동하고 `timedatectl set-ntp true` 를 적용한다.
-6. **Oracle Console 에서 연 규칙이 'Stateless' 로 들어갔는지** — Security
-   List / NSG 규칙을 추가할 때 **Stateless 체크박스가 꺼져 있는지** 확인.
-   stateless 로 넣으면 요청만 열리고 돌아오는 응답(UDP 미디어)이 막혀
-   '연결 중'에 멈춘다. stateful 로 다시 추가하세요.
-7. **인스턴스가 Security List 가 아니라 NSG 를 쓰는지** — Oracle Console →
-   인스턴스 상세 → VNIC 에 NSG 가 걸려 있으면 **그 NSG 에도 같은 규칙을**
-   열어야 한다. Security List 에만 열면 소용없다.
-8. **VCN/NSG를 열었는데 외부에서 `No route to host`** — OCI는 VCN 가상
-   방화벽과 인스턴스 OS 방화벽을 둘 다 적용한다. 최신 `apply.sh`를 재실행하거나
-   `sudo iptables -S INPUT | grep -E '3478|49160|REJECT'`에서 TURN ACCEPT가
-   마지막 REJECT보다 앞에 있는지 확인한다. 방화벽 전체 flush는 SSH까지 노출하므로
-   하지 않는다.
-9. **같은 망은 되고 다른 망만 안 되는 경우** — 브라우저
-   `chrome://webrtc-internals` 에서 `Local Address` 가 49160~49200 사이
-   (relay candidate) 로 잡히는지 확인. 안 잡히면 서버에서
-   `curl -s http://127.0.0.1:5000/api/chat/diag` → `localUdp` 가 fail 이면
-   coturn 문제, `publicUdp` 만 fail 이면 VCN 인그레스 문제다.
-   브라우저 캐시(특히 ICE 설정은 45분 캐시) 때문에 서버를 고친 직후엔
-   시크릿 창으로 다시 시도하거나, 새 버전은 릴레이 재시도 시 ICE 설정을
-   자동으로 다시 받아 온다.
-10. **3478 이 전부 막힌 통신사/회사망** — HTTPS 도메인이 있고 Let's Encrypt
-    인증서가 있으면 `apply.sh`가 coturn TLS 를 켜서 `turns:도메인:5349` 를
-    함께 내려 준다(443과 같은 방식으로 뚫리는 망이 많다). VCN 인그레스에
-    **TCP 5349** 만 열면 된다. 인증서가 없으면 건너뛰므로,
-    `curl /api/chat/config` 응답에 `turns:` 항목이 있는지 확인한다.
-11. **TURN 주소에 IP 대신 도메인 쓰고 싶다면** — Node 가 접속 도메인
-    (Host 헤더)을 자동으로 쓴다. 직접 고정하려면 `.env` 에
-    `SDY_TURN_HOST=메모.example.com` 을 넣고 `bash apply.sh` 재실행.
-    (Cloudflare 프록시처럼 도메인이 서버 공인 IP가 아닌 곳에서는
-    TURN 호스트로 쓰지 말 것.)
+1. **"연결 중"에서 멈춤** — 기존 nginx `location /` 의 `Connection ""` 가
+   WebSocket 핸드셰이크를 삼킨다. `apply.sh` 를 다시 실행해
+   `/api/chat/voice-ws` location 이 생겼는지 확인한다.
+2. **HTTP 로 접속** — 마이크가 막힌다. `https://` 주소로 연다.
+3. **프록시가 유휴 WS 를 끊음** — 클라/서버가 20초마다 ping 한다.
+   nginx `proxy_read_timeout` 은 3600s 로 잡혀 있어야 한다.
+4. **옛 HTML 캐시** — WebRTC/TURN 토글이 보이면 강력 새로고침
+   (`Ctrl+Shift+R`).
 
 ## 주의 (기존 운영 규칙 그대로)
 
@@ -347,8 +249,9 @@ node test/merge3_prop.cjs       # 무작위 3000건 수렴성·무손실
 node test/pinbug_sim.mjs        # 수정 전 발산 재현
 node test/pinbug_fix_sim.mjs    # 수정 후 수렴 검증
 
-# 14.11 — 12GB 메모리 배분 / 한 동작=한 기능 / TURN TLS+도메인 계약
+# 14.11 — 12GB 메모리 배분 / 한 동작=한 기능 / 서버 릴레이 음성 계약
 node test/tuning_one_action_contract.mjs
+npm run test:call                 # 채팅 + 음성 릴레이 + 프론트 스모크
 
 # 14.12 — Oracle 자체 저장소 (로컬 DB·shim·이전 시뮬레이션)
 node test/oracle_db_contract.mjs   # dbstore/db 라우트 + 노트 이미지 로컬 저장
