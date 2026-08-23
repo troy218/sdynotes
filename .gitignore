@@ -23,3 +23,6 @@ db/
 .oracle_migrated
 .oracle_migrated.report.json
 _yt_cookies.txt.bak
+
+# 배포용 스냅샷 압축본 — 리포지토리에 넣지 않음
+*.zip
