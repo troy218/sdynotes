@@ -327,12 +327,14 @@ def _music_lyrics_cloud(mid):
     return _music_track_save(rec)
 
 
-def _cloud_music_autotag(mid, force=True, qhint=None, alt=0, replace_cover=False, lyrics_only=False):
+def _cloud_music_autotag(mid, force=True, qhint=None, alt=0, replace_cover=False,
+                         lyrics_only=False, fill_only=False):
     """로컬 음원 없이 파일명/메타데이터로 '정보(제목·가수·앨범·연도·장르)'만 채운다.
 
     14.11 — 한 번의 사용자 동작 = 한 기능. 표지는 cover_only 경로
     (_cloud_cover_pick)가, 가사는 lyrics_only/synced-lyrics 가 전담하므로
     여기서 연쇄하지 않는다. (replace_cover/lyrics_only 인자는 하위 호환 유지)
+    fill_only — 이미 있는 칸은 덮지 않고 빈 칸만 채운다.
     """
     try:
         rec = _remote_track(mid)
@@ -355,14 +357,29 @@ def _cloud_music_autotag(mid, force=True, qhint=None, alt=0, replace_cover=False
             threshold = 0.30
         if best and best[0] >= threshold:
             score, cand = best
-            rec.update({"title": str(cand.get("title") or rec.get("title"))[:120],
-                        "artist": str(cand.get("artist") or rec.get("artist"))[:80],
-                        "album": str(cand.get("album") or rec.get("album") or "")[:120],
-                        "year": str(cand.get("year") or rec.get("year") or "")[:4],
-                        "genre": str(cand.get("genre") or rec.get("genre") or "")[:40],
-                        "tag_state": "done", "tag_src": cand.get("src") or "",
-                        "tag_score": round(float(score), 4), "tag_algo": TAG_ALGO,
-                        "tag_tries": 0, "tag_next": 0})
+            if fill_only:
+                cur_title = ((qhint[0] if (qhint and qhint[0]) else "")
+                             or rec.get("title") or "")
+                cur_artist = ((qhint[1] if (qhint and qhint[1]) else "")
+                              or rec.get("artist") or "")
+                rec.update({
+                    "title": (cur_title or cand.get("title") or "")[:120],
+                    "artist": (cur_artist or cand.get("artist") or "")[:80],
+                    "album": (rec.get("album") or cand.get("album") or "")[:120],
+                    "year": rec.get("year") or cand.get("year") or "",
+                    "genre": (rec.get("genre") or cand.get("genre") or "")[:40],
+                    "tag_state": "done", "tag_src": cand.get("src") or "",
+                    "tag_score": round(float(score), 4), "tag_algo": TAG_ALGO,
+                    "tag_tries": 0, "tag_next": 0})
+            else:
+                rec.update({"title": str(cand.get("title") or rec.get("title"))[:120],
+                            "artist": str(cand.get("artist") or rec.get("artist"))[:80],
+                            "album": str(cand.get("album") or rec.get("album") or "")[:120],
+                            "year": str(cand.get("year") or rec.get("year") or "")[:4],
+                            "genre": str(cand.get("genre") or rec.get("genre") or "")[:40],
+                            "tag_state": "done", "tag_src": cand.get("src") or "",
+                            "tag_score": round(float(score), 4), "tag_algo": TAG_ALGO,
+                            "tag_tries": 0, "tag_next": 0})
         else:
             rec["tag_state"] = rec.get("tag_state") or "none"
             rec["tag_algo"] = TAG_ALGO
@@ -491,11 +508,12 @@ def music_synced_lyrics_cloud():
     return jsonify({"ok": True, "lyrics": sync, "src": src})
 
 
-def _cloud_cover_pick(mid, alt=0):
+def _cloud_cover_pick(mid, alt=0, qhint=None):
     """'표지만' 찾아 바꾼다. 정보·가사는 건드리지 않는다 (14.11 한 동작 = 한 기능).
 
     표지 후보는 같은 검색 결과를 점수순으로 돌려 alt 번째를 쓰고,
     최대 6개까지만 시도한다 (전부 실패해도 오래 걸리지 않게).
+    qhint=(title, artist) — 편집창 검색어가 있으면 저장된 값보다 우선.
     """
     rec = _remote_track(mid)
     if not rec:
@@ -503,7 +521,9 @@ def _cloud_cover_pick(mid, alt=0):
     emb = {"title": rec.get("title") or "", "artist": rec.get("artist") or "",
            "album": rec.get("album") or "", "year": rec.get("year") or "",
            "genre": rec.get("genre") or "", "dur": rec.get("duration")}
-    scored, _, _, _ = _tag_collect(rec, emb, (rec.get("title"), rec.get("artist")), deep=True)
+    if not qhint or not (qhint[0] or qhint[1]):
+        qhint = (rec.get("title") or "", rec.get("artist") or "")
+    scored, _, _, _ = _tag_collect(rec, emb, qhint, deep=True)
     arts = []; seen = set()
     for score, cand in scored:
         art = (cand.get("art") or "").strip()
@@ -545,14 +565,15 @@ def music_lookup_cloud():
     except Exception:
         alt = 0
     if d.get("cover_only"):
-        res = _cloud_cover_pick(mid, alt)
+        res = _cloud_cover_pick(mid, alt, qhint)
         if res.get("ok"):
             return jsonify({"ok": True, "track": _music_public_cloud(res["track"]),
                             "cover": True, "count": res.get("count") or 0})
         return jsonify({"ok": False, "error": res.get("error") or "표지를 찾지 못했어요",
                         "count": res.get("count") or 0}), 400
     out = _cloud_music_autotag(mid, qhint=qhint, alt=alt,
-                               replace_cover=bool(d.get("replace_cover"))) or rec
+                               replace_cover=bool(d.get("replace_cover")),
+                               fill_only=bool(d.get("fill_only"))) or rec
     return jsonify({"ok": True, "track": _music_public_cloud(out),
                     "changed": out.get("tag_state") == "done", "alt": alt})
 
