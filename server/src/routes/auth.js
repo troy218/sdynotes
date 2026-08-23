@@ -62,15 +62,13 @@ export function registerAuth(app) {
   });
 
   // ── ② 코드 확인 + 로그인(또는 회원가입) ──
+  //   nick 은 '새 이메일'일 때만 필요하다 — 등록된 회원은 빈 값으로 와도 통과.
+  //   (새 회원 닉네임 검증은 userauth.otpVerifyAndLogin 이 맡는다)
   app.post('/api/auth/verify', async (req, reply) => {
     const d = req.body || {};
     const email = sanitizeEmail(d.email);
     if (!email || !emailValid(email)) {
       return reply.code(400).send({ ok: false, error: '이메일 주소가 올바르지 않아요' });
-    }
-    if (d.nick !== undefined) {
-      const nick = sanitizeNick(d.nick);
-      if (!nick) return reply.code(400).send({ ok: false, error: '닉네임을 입력해 주세요' });
     }
     const r = await otpVerifyAndLogin(email, d.code, d.nick);
     if (!r.ok) {

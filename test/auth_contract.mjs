@@ -8,6 +8,7 @@
 process.env.SDY_BASE_DIR = process.env.SDY_BASE_DIR_TEST ||
   `${import.meta.dirname}/.tmp_auth_${Date.now().toString(36)}`;
 process.env.SDY_AUTH_DEV_CODE = '1';   // SMTP 없이 코드를 응답으로 받는 개발 모드
+process.env.SDY_AUTH_OTP_COOLDOWN = '1'; // 테스트용: 재발송 대기 1초
 
 const { registerAuth } = await import('../server/src/routes/auth.js');
 const { registerChat } = await import('../server/src/routes/chat.js');
@@ -62,6 +63,14 @@ ok('verify: 남의 고정닉은 가져갈 수 없다', dup.s === 400 && dup.d.ni
 
 const o2b = await j('/api/auth/otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'bird2@test.local' }) });
 ok('otp: 닉네임 중복 실패 뒤에도 재발송 대기 유지(429)', o2b.s === 429);
+
+// ── 3.5) 등록된 회원 재로그인 — nick 없이(빈 값)도 통과해야 한다 ──
+//  (프런트가 등록 회원에게 nick:'' 을 보내는 계약 — 16.2 수정)
+await new Promise((r) => setTimeout(r, 1300));    // 재발송 대기(테스트: 1초) 지나가기
+const o1c = await j('/api/auth/otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'bird1@test.local' }) });
+ok('otp: 대기 후 재발급 성공 + registered=true', o1c.s === 200 && o1c.d.ok && o1c.d.registered === true);
+const relogin = await j('/api/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'bird1@test.local', code: o1c.d.dev_code, nick: '' }) });
+ok('verify: 등록 회원은 빈 nick 로 재로그인 가능', relogin.s === 200 && relogin.d.ok && relogin.d.user.nick === '연보라 까치');
 
 // ── 4) me / 닉네임 변경 / 로그아웃 ──
 const tok = good.d.token;

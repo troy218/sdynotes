@@ -17,7 +17,7 @@ import { readJson, writeJsonAtomic, withLock } from './store.js';
 export const USER_SESSION_TTL = 30 * 24 * 3600;          // 30일
 const USER_SESSION_REFRESH_IF_LT = 7 * 24 * 3600;        // 7일 미만 남으면 자동 연장
 const OTP_TTL = 10 * 60;                                  // 코드 유효 10분
-const OTP_RESEND_COOLDOWN = 45;                           // 재발송 대기(초)
+const OTP_RESEND_COOLDOWN = Math.max(1, parseInt(process.env.SDY_AUTH_OTP_COOLDOWN || '45', 10) || 45); // 재발송 대기(초)
 const OTP_MAX_TRIES = 5;                                  // 코드 확인 실패 상한
 const NICK_MAX = 16;
 

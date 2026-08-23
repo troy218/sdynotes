@@ -21412,7 +21412,7 @@ refreshEgg();
         if(!d||!d.ok){ saErr((d&&d.error)||'코드를 보내지 못했어요'); coolPaint(); return; }
         SA_REGISTERED=!!d.registered;
         $('saNickRow').style.display=SA_REGISTERED?'none':'block';
-        $('saSent').textContent=email+' 로 인증 코드를 보냈어요 · 10분 안에 입력해 주세요';
+        $('saSent').textContent=email+' 로 인증 코드를 보냈어요 · 10분 안에 입력해 주세요'+(d.dev_code?' · (개발 모드: 코드를 넣어뒀어요)':'');
         saStep('code');
         SA_COOL=Date.now()/1000+45; coolPaint();
         if(d.dev_code){ $('saCode').value=d.dev_code; }
@@ -21425,14 +21425,16 @@ refreshEgg();
     saErr('');
     var code=($('saCode').value||'').replace(/\D/g,'');
     if(code.length!==6){ saErr('이메일에서 받은 6자리 코드를 입력해 주세요'); return; }
-    var nick='';
+    // 등록된 회원은 닉네임 없이 로그인한다 (새 회원만 고정 닉네임)
+    var payload={email:SA_EMAIL,code:code};
     if(!SA_REGISTERED){
-      nick=($('saNick').value||'').trim();
+      var nick=($('saNick').value||'').trim();
       if(!nick){ saErr('고정 닉네임을 정해 주세요 (최대 16자)'); return; }
+      payload.nick=nick;
     }
     var b=$('saVerifyBtn'); if(b) b.disabled=true;
     fetch('/api/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email:SA_EMAIL,code:code,nick:nick})})
+      body:JSON.stringify(payload)})
       .then(function(r){ return r.json().then(function(j){ return {s:r.status,d:j}; }); })
       .then(function(res){
         var d=res.d;
