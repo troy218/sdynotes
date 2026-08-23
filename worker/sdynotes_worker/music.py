@@ -1192,7 +1192,7 @@ def _tag_rank(scored):
 
 
 def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
-                   replace_cover=False):
+                   replace_cover=False, fill_only=False):
     """한 곡의 '정보(제목·가수·앨범·연도·장르)'만 자동으로 정리한다.
 
     리턴: 갱신된 rec (또는 None).
@@ -1200,6 +1200,9 @@ def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
     검색어로 쓴다 (수정 뒤 '자동으로 찾기'를 누른 경우).
     alt — 0 이면 가장 잘 맞는 것, 1·2·3… 이면 그 다음 후보.
           (같은 제목·가수의 다른 곡을 눌러서 넘겨 볼 수 있게)
+    fill_only — 15.0 · '자동 찾기' 새 동작: 이미 채워진 칸은 절대 덮지
+          않고 비어 있는 칸만 채운다. 검색어(qhint·기존 제목/가수)는
+          그대로 쓰므로 '기존 정보를 바탕으로' 빈칸을 채우게 된다.
 
     ＊ 14.11 — '한 번의 사용자 동작 = 한 기능' 원칙.
     표지는 전용 버튼('표지만 찾기' → cover_only)이, 가사는 전용 버튼
@@ -1258,12 +1261,26 @@ def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
         upd = {"tag_algo": algo or ""}
         if best and best[0] >= thr and best[1]["title"]:
             _, c = best
-            upd.update({"title": c["title"][:120], "artist": c["artist"][:80],
-                        "album": (c.get("album") or emb["album"] or "")[:120],
-                        "year": c.get("year") or emb["year"] or "",
-                        "genre": (c.get("genre") or emb["genre"] or "")[:40],
-                        "tag_src": c.get("src") or "", "tag_state": "done",
-                        "tag_tries": 0, "tag_next": 0})
+            if fill_only:
+                # 15.0 · 빈칸만 채우기 — 이미 있는 값(편집창 값 qhint 우선)은
+                #   그대로 두고, 비어 있는 칸에만 찾은 결과를 넣는다.
+                cur_title = (qhint[0] if (qhint and qhint[0]) else "") or rec.get("title") or ""
+                cur_artist = (qhint[1] if (qhint and qhint[1]) else "") or rec.get("artist") or ""
+                upd.update({
+                    "title": (cur_title or c["title"])[:120],
+                    "artist": (cur_artist or c["artist"])[:80],
+                    "album": (rec.get("album") or c.get("album") or emb["album"] or "")[:120],
+                    "year": rec.get("year") or c.get("year") or emb["year"] or "",
+                    "genre": (rec.get("genre") or c.get("genre") or emb["genre"] or "")[:40],
+                    "tag_src": c.get("src") or "", "tag_state": "done",
+                    "tag_tries": 0, "tag_next": 0})
+            else:
+                upd.update({"title": c["title"][:120], "artist": c["artist"][:80],
+                            "album": (c.get("album") or emb["album"] or "")[:120],
+                            "year": c.get("year") or emb["year"] or "",
+                            "genre": (c.get("genre") or emb["genre"] or "")[:40],
+                            "tag_src": c.get("src") or "", "tag_state": "done",
+                            "tag_tries": 0, "tag_next": 0})
         else:
             # 못 찾았다: 웹 결과 대신 '파일 안 태그 + 이름 분석'만 반영하고
             # 제목은 함부로 바꾸지 않는다 (수동 편집으로 넘긴다)
@@ -1277,7 +1294,8 @@ def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
             _tries = int(rec.get("tag_tries") or 0) + 1
             upd["tag_tries"] = _tries
             upd["tag_next"] = time.time() + min(24 * 3600, 1800 * (2 ** (_tries - 1)))
-            if emb["title"]:
+            if emb["title"] and not (fill_only and (rec.get("title") or (qhint and qhint[0]))):
+                # (fill_only 에서는 이미 있는 제목을 파일 태그로 덮지 않는다)
                 upd["title"] = emb["title"][:120]
         if not rec.get("orig_title"):
             upd["orig_title"] = rec.get("title") or ""
@@ -3072,8 +3090,10 @@ def music_lookup():
         alt = max(0, min(30, int(d.get("alt") or 0)))
     except Exception:
         alt = 0
+    # 15.0 · fill_only — 이미 채워진 칸은 그대로 두고 빈 칸만 채운다
     out = _music_autotag(mid, force=force, algo=TAG_ALGO, qhint=qh, alt=alt,
-                         replace_cover=bool(d.get("replace_cover")))
+                         replace_cover=bool(d.get("replace_cover")),
+                         fill_only=bool(d.get("fill_only")))
     changed = bool(out and out.get("tag_state") == "done")
     return jsonify({"ok": True, "track": out or rec, "changed": changed, "alt": alt})
 

@@ -15664,10 +15664,23 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return out;
     }
     let trBusy=false;
+    // 15.0 · 무료 번역 엔진은 요청이 몰리면 잠깐 제한(429)된다. 그럴 땐
+    //   기다렸다가 다시 시도한다 — 문서 전체 번역이 중간에 통째로 실패하지 않게.
+    async function apiTranslateRetry(src,target,gloss){
+        for(let a=0;a<3;a++){
+            try{ return await apiTranslate(src,target,gloss); }
+            catch(e){
+                const msg=String(e&&e.message||'');
+                if(a>=2||!/제한|429|닿지 않/.test(msg)) throw e;
+                await new Promise(r=>setTimeout(r,9000*(a+1)));
+            }
+        }
+    }
     async function translateEls(list,target,label){
         if(trBusy){ toast('번역이 이미 진행 중입니다',1800); return; }
         if(!list.length){ toast('번역할 텍스트 상자가 없습니다',1800); return; }
         trBusy=true;
+        let failCnt=0, lastErr='';
         try{
             showTrProg(0,label+' · 전문용어 학습 중…');
             const learned=await learnGlossary(list.map(o=>o.src),target);
@@ -15678,9 +15691,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const worker=async()=>{
                 while(q.length){
                     const o=q.shift();
-                    showTrProg((done)/list.length, label+' · 번역 '+Math.min(done+1,list.length)+'/'+list.length);
+                    showTrProg((done)/list.length, label+' · 번역 '+Math.min(done+1,list.length)+'/'+list.length+(failCnt?' · 실패 '+failCnt:''));
                     try{
-                        const out=await apiTranslate(o.src,target,doc.glossary);
+                        const out=await apiTranslateRetry(o.src,target,doc.glossary);
                         if(out&&String(out).trim()){
                             o.el.tight=0; o.el.fit=0; delete o.el.fitDown;
                             o.el.html=esc(out).replace(/\n/g,'<br>');
@@ -15701,8 +15714,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                                 o.el.trPending=1;          // 그려질 때 맞춤
                             }
                         }
-                    }catch(e){}
+                    }catch(e){ failCnt++; lastErr=String(e&&e.message||''); }
                     done++;
+                    await new Promise(r=>setTimeout(r,220));  // 번역 서버에 숨 돌려주기
                 }
             };
             await Promise.all([worker(),worker()]);
@@ -15710,7 +15724,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             try{ flushSaveDoc(); await flushImportedSave(); }catch(e){}
             showTrProg(1,label+' · 완료');
             setTimeout(hideTrProg,600);
-            toast(label+' 번역 완료 ('+list.length+'개 상자)',2400);
+            // 15.0 · 실패한 상자가 있으면 '완료'라고만 알리지 않는다 —
+            //   다 번역 안 됐는데 완료로 보이던 문제.
+            if(failCnt>=list.length){
+                toast('번역에 실패했어요 · '+(lastErr||'잠시 뒤 다시 시도해 주세요'),3600);
+            }else if(failCnt){
+                toast(label+' 번역 부분 완료 · '+failCnt+'개 상자는 실패 (잠시 뒤 다시 눌러 주세요)',3200);
+            }else{
+                toast(label+' 번역 완료 ('+list.length+'개 상자)',2400);
+            }
         }finally{ trBusy=false; }
     }
     async function translatePageAction(pi,target){
@@ -19141,6 +19163,8 @@ body.sdy-booting #musicListPop{z-index:10001;}
     <i class="ri-drag-move-2-line"></i>
     <button id="mpBRefresh" class="mpb-mini" title="목록 새로고침 · 동기화"><i class="ri-refresh-line"></i></button>
     <span class="sp"></span>
+    <!-- 15.0 · 확대 플레이어 전체 화면 (축소 버튼 옆) -->
+    <button id="mpBFull" title="전체 화면"><i class="ri-fullscreen-line"></i></button>
     <button id="mpBX" class="cards-x" title="작게 접기"><i class="ri-subtract-line"></i></button>
   </div>
   <div class="mpb-body">
@@ -19228,7 +19252,7 @@ body.sdy-booting #musicListPop{z-index:10001;}
       <div class="hint" id="mpTagHint"></div>
     </div>
     <div class="acts">
-      <button id="mpTagAuto" title="편집창 제목·가수로 검색 → 태그/표지 적용"><i class="ri-magic-line"></i> 자동 찾기</button>
+      <button id="mpTagAuto" title="빈 칸만 찾아 채우기 — 이미 채워진 칸은 그대로 (기존 제목·가수로 검색)"><i class="ri-magic-line"></i> 자동 찾기</button>
       <button id="mpTagSyncLrc" title="지금 제목·가수로 싱크 가사만 다시 찾기"><i class="ri-lyrics-line"></i> 싱크 가사</button>
       <button id="mpTagRecog" title="소리 지문으로 곡 인식 (AcoustID, 0.85 이상 확신할 때만)"><i class="ri-mic-2-line"></i> 소리 인식</button>
       <button id="mpTagOrigBtn" title="모든 태그·가사·표지를 처음 올렸을 때로">초기화</button>
@@ -20698,6 +20722,7 @@ function openBig(){
   requestAnimationFrame(clampMpb);
   syncAudioUI();
   renderBig(); renderBigList();
+  try{ mpbFullIcon(); }catch(e){}   // 전체 화면 아이콘 상태 동기화
 }
 let _mpbDrag=null;
 (function(){
@@ -20723,6 +20748,49 @@ let _mpbDrag=null;
   head.addEventListener('pointerup',end);
   head.addEventListener('pointercancel',end);
   addEventListener('resize',()=>{ if(mpbEl.classList.contains('open')) clampMpb(); });
+})();
+
+// ── 15.0 · 확대 플레이어 전체 화면 ──
+//   진짜 Fullscreen API 를 쓰고, 못 쓰는 브라우저(아이폰 사파리 등)는
+//   css 로 화면을 덮는 가짜 전체 화면으로 같은 경험을 준다.
+function mpbFsEl(){ return (document.fullscreenElement||document.webkitFullscreenElement)||null; }
+function mpbIsFs(){ return mpbFsEl()===mpbEl||mpbEl.classList.contains('mpb-fs'); }
+function mpbFullIcon(){
+  const b=$('mpBFull'); if(!b) return;
+  b.innerHTML=mpbIsFs()?'<i class="ri-fullscreen-exit-line"></i>':'<i class="ri-fullscreen-line"></i>';
+  b.title=mpbIsFs()?'전체 화면 끄기 (Esc)':'전체 화면';
+}
+function mpbFakeFs(on){
+  mpbEl.classList.toggle('mpb-fs',on);
+  if(on){ _applyBigSize(); }
+  else { requestAnimationFrame(clampMpb); }
+  mpbFullIcon();
+}
+function mpbToggleFull(){
+  if(!mpbEl.classList.contains('open')) openBig();   // 접힌 상태에서 눌러도 열며 전체화면
+  if(mpbIsFs()){
+    const fs=mpbFsEl();
+    if(fs===mpbEl){ try{ (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }catch(e){ mpbFakeFs(false); } }
+    else mpbFakeFs(false);
+    return;
+  }
+  const req=mpbEl.requestFullscreen||mpbEl.webkitRequestFullscreen;
+  if(req){
+    try{
+      const p=req.call(mpbEl);
+      if(p&&p.catch) p.catch(()=>mpbFakeFs(true));
+    }catch(e){ mpbFakeFs(true); }
+  } else mpbFakeFs(true);   // Fullscreen API 없음 → css 전체 화면
+}
+(function(){
+  const b=$('mpBFull'); if(!b) return;
+  b.addEventListener('click',e=>{ e.stopPropagation(); mpbToggleFull(); });
+  ['fullscreenchange','webkitfullscreenchange'].forEach(ev=>
+    document.addEventListener(ev,mpbFullIcon));
+  // 가짜 전체 화면에서는 Esc 로 나간다 (진짜 전체 화면은 브라우저가 처리)
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&mpbEl.classList.contains('mpb-fs')) mpbFakeFs(false);
+  });
 })();
 
 // ── 지금 재생 정보 ──
@@ -21829,19 +21897,132 @@ async function lookupTrack(id,opts){
     if(_lookupAbort===ac) _lookupAbort=null;
   }
 }
+// ── 15.0 · 자동 찾기 = '빈칸만 채우기' ──
+//   소리 인식 → 태그 검색 → 싱크 가사 → 표지 순서로, 지금 '비어 있는 칸'에
+//   해당하는 단계만 돌린다. 이미 채워진 칸(저장 전 사용자가 적어둔 값
+//   포함)은 절대 건드리지 않고, 검색어는 편집창의 기존 제목·가수를 쓴다.
+const TAG_FIELDS=[['title','mpTagTitle'],['artist','mpTagArtist'],['album','mpTagAlbum'],
+                  ['year','mpTagYear'],['genre','mpTagGenre']];
+const TAG_FIELD_NAME={title:'제목',artist:'가수',album:'앨범',year:'연도',genre:'장르'};
 $('mpTagAuto').onclick=async()=>{
   if(!TAG_EDIT||_tagBusy) return;
+  const id=TAG_EDIT;
+  // 저장 전 편집창 스냅숏 — 이 값들은 어떤 결과가 와도 덮지 않는다
+  const snap={};
+  TAG_FIELDS.forEach(([k,el])=>{ snap[k]=$(el).value.trim(); });
+  snap.lyrics=$('mpTagLyrics').value.trim();
+  let t0=P.list.find(x=>x.id===id)||{};
+  const hadCover=!!(t0.cover||_scrapedCoverUrl);
+  const anyEmpty=TAG_FIELDS.some(([k])=>!snap[k])||!snap.lyrics||!hadCover;
+  if(!anyEmpty){ toast('모든 칸이 이미 채워져 있어요 · 찾을 빈칸이 없습니다',2400); return; }
   _tagBusy=true;
   const btn=$('mpTagAuto'); const html=btn.innerHTML;
-  btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 찾는 중…';
+  const setBtn=t=>{ btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> '+t; };
+  const hintEl=$('mpTagHint');
+  const qNow=()=>({title:$('mpTagTitle').value.trim(),artist:$('mpTagArtist').value.trim()});
+  const missed=[];
+  async function reload(){
+    await loadList(); try{ renderTitle(); renderListPop(); }catch(e){}
+    return P.list.find(x=>x.id===id)||{};
+  }
+  // 서버 값을 편집창에 반영 — snap 이 비어 있는 칸만, snap 값은 원상 유지
+  function applyServer(t){
+    TAG_FIELDS.forEach(([k,el])=>{
+      if(snap[k]){ $(el).value=snap[k]; return; }
+      const sv=String((t&&t[k])!=null?t[k]:'').trim();
+      if(sv&&!$(el).value.trim()) $(el).value=sv;
+    });
+    if(!snap.lyrics){
+      const sl=String(((t&&t.lyrics)||(t&&t.lyrics_plain))||'').trim();
+      if(sl&&!$('mpTagLyrics').value.trim()) $('mpTagLyrics').value=sl;
+    }
+  }
   try{
-    // 10.8 · 편집창에 적어둔 제목/가수를 그대로 검색어로 쓴다
-    // 14.13 · silent 를 없애 실패도 눈에 보이게 — 성공 토스트는 원래 없고,
-    //   오류만 삼켜서 '눌렀는데 반응이 없는' 것처럼 보이던 문제.
-    await lookupTrack(TAG_EDIT,{title:$('mpTagTitle').value.trim(),
-                                artist:$('mpTagArtist').value.trim(),
-                                alt:_tagAlt, replaceCover:true, timeoutMs:120000});
-    _tagAlt++;                       // 다음에 누르면 그 다음 후보
+    // ① 제목·가수가 둘 다 비었으면 → 소리 인식(AcoustID)으로 곡부터 알아낸다
+    if(!snap.title&&!snap.artist){
+      const st=await recogStatus().catch(()=>null);
+      if(st&&st.ready){
+        setBtn('듣는 중…');
+        if(hintEl) hintEl.textContent='소리 지문으로 곡을 알아내는 중… (최대 1~2분)';
+        try{
+          const r=await musicApiFetch('/api/music/recognize',{method:'POST',
+            headers:{'Content-Type':'application/json'},body:JSON.stringify({id})},180000);
+          const d=await r.json().catch(()=>({}));
+          if(!r.ok||!d.ok||!(d.recog&&(d.recog.title||d.recog.artist))) missed.push('소리 인식');
+          applyServer(await reload());
+        }catch(e){ missed.push('소리 인식'); }
+      }
+    }
+    // ② 태그 찾기(빈칸만) — 검색어는 편집창의 기존 제목·가수 (기존 정보 기반)
+    if(TAG_FIELDS.some(([k,el])=>!$(el).value.trim())){
+      setBtn('정보 찾는 중…');
+      try{
+        const qq=qNow();
+        const r=await musicApiFetch('/api/music/lookup',{method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({id,force:true,fill_only:true,alt:_tagAlt,
+            q_title:qq.title,q_artist:qq.artist})},120000);
+        const d=await r.json().catch(()=>({}));
+        if(!r.ok||!d.ok) missed.push('기본 정보');
+        applyServer(await reload());
+        _tagAlt++;                       // 다음 누름 = 다음 후보
+      }catch(e){ missed.push('기본 정보'); }
+    }
+    // ③ 가사 — 여전히 비어 있으면 싱크 가사 → 일반 가사 차례로
+    if(!$('mpTagLyrics').value.trim()){
+      setBtn('가사 찾는 중…');
+      const qq=qNow();
+      let got=false;
+      try{
+        const r=await musicApiFetch('/api/music/synced-lyrics',{method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({id,q_title:qq.title,q_artist:qq.artist})},60000);
+        const d=await r.json().catch(()=>({}));
+        if(r.ok&&d.ok&&d.lyrics){ $('mpTagLyrics').value=d.lyrics; got=true; }
+      }catch(e){}
+      if(!got){
+        try{
+          const r=await musicApiFetch('/api/music/lookup',{method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({id,lyrics_only:true,force:true})},60000);
+          if(r.ok){ applyServer(await reload()); got=!!$('mpTagLyrics').value.trim(); }
+        }catch(e){}
+      }
+      if(!got) missed.push('가사');
+    }
+    // ④ 표지 — 없을 때만 (있는 표지는 절대 갈지 않는다)
+    if(!hadCover){
+      setBtn('표지 찾는 중…');
+      const qq=qNow();
+      try{
+        const r=await musicApiFetch('/api/music/lookup',{method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({id,cover_only:true,alt:_coverAlt,
+            q_title:qq.title,q_artist:qq.artist})},90000);
+        const d=await r.json().catch(()=>({}));
+        if(r.ok&&d.ok&&d.cover) P.coverV=Date.now();
+        else missed.push('표지');
+        applyServer(await reload());
+      }catch(e){ missed.push('표지'); }
+    }
+    // 마무리 — 화면 최신화
+    const t=await reload(); applyServer(t);
+    const im=$('mpTagCover');
+    im.onerror=()=>{ im.onerror=null; im.src=DEF_COVER; };
+    im.src=t.cover?('/api/music/cover/'+id+(P.coverV?('?v='+P.coverV):'')):DEF_COVER;
+    if(cur()&&cur().id===id) setCover(cur());
+    try{ if(P.bigTab==='y'&&$('mpBig').classList.contains('open')) renderLyrics(); }catch(err){}
+    // 무엇이 새로 채워졌는지 알려 준다
+    const filled=[];
+    TAG_FIELDS.forEach(([k,el])=>{ if(!snap[k]&&$(el).value.trim()) filled.push(TAG_FIELD_NAME[k]); });
+    if(!snap.lyrics&&$('mpTagLyrics').value.trim()) filled.push('가사');
+    if(!hadCover&&(P.list.find(x=>x.id===id)||{}).cover) filled.push('표지');
+    const missTxt=missed.length?(' · 못 찾은 것: '+missed.join(' · ')):'';
+    if(hintEl) hintEl.textContent=filled.length
+      ? ('빈칸을 채웠어요: '+filled.join(' · ')+missTxt+' — 확인 후 저장해 주세요')
+      : ('새 정보를 찾지 못했어요'+missTxt);
+    if(filled.length) toast('빈칸을 채웠어요 ✓ '+filled.join(' · ')+missTxt,3200);
+    else toast('빈칸에 넣을 정보를 찾지 못했어요'+missTxt,3200);
   } finally { btn.innerHTML=html; _tagBusy=false; }
 };
 // ══════════════════════════════════════════════════════════
@@ -22359,6 +22540,9 @@ function gotoTrackPage(id){
 // ── 큰 플레이어: 닫힘 애니메이션 ──
 function closeBig(){
   const b=$('mpBig');
+  // 전체 화면이면 같이 끈다 (다음에 열 때 창 모드로)
+  try{ if(mpbFsEl()===b) (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }catch(e){}
+  if(b.classList.contains('mpb-fs')) mpbFakeFs(false);
   if(b.classList.contains('open')&&!b.classList.contains('closing')){
     b.classList.add('closing');
     setTimeout(()=>{ b.classList.remove('open','closing'); refreshBarVis(); },250);
@@ -23501,6 +23685,23 @@ body.sdy-booting #clawFx,body.sdy-booting #bbEgg,body.sdy-booting #bbTap{display
   justify-content:center!important;
   flex:none!important;
 }
+/* 15.0 · 전체 화면 버튼 — 접기 버튼과 같은 모양 */
+#mpBig .mpb-head #mpBFull{
+  width:22px!important;height:19px!important;padding:0!important;
+  border-radius:6px!important;font-size:13px!important;
+  border:none!important;background:transparent!important;color:var(--text3)!important;
+  cursor:pointer!important;display:flex!important;align-items:center!important;
+  justify-content:center!important;flex:none!important;
+}
+#mpBig .mpb-head #mpBFull:hover{background:var(--bg)!important;color:var(--text1)!important;}
+/* 15.0 · 확대 플레이어 전체 화면 — 진짜 Fullscreen API 가 없는
+   아이폰 사파리 등에서는 가짜(css) 전체 화면으로 동작시킨다. */
+#mpBig.mpb-fs,#mpBig:fullscreen,#mpBig:-webkit-full-screen{
+  left:0!important;top:0!important;right:0!important;bottom:0!important;
+  width:100vw!important;height:100vh!important;max-height:100vh!important;
+  border-radius:0!important;border:none!important;
+  z-index:6000!important;
+}
 .fcard-head .cards-x:hover,#mpBig .mpb-head #mpBX:hover{background:var(--bg)!important;color:var(--text1)!important;}
 
 /* 동기화 버튼: 창 손잡이 안 네방향화살표 바로 옆 */
@@ -24020,10 +24221,12 @@ body.sdy-booting #mpReopen{display:none !important;}
     name:'', me:null, msgs:[], members:new Map(), ttl:86400, joined:false,
     es:null, ping:null, inVoice:false, joiningVoice:false, muted:false, localStream:null,
     pcs:new Map(), conn:new Map(), speaking:new Map(), actx:null, open:false,
-    seen:new Set(), ice:null, _iceP:null, _iceAt:0, bgm:null, stick:true
+    seen:new Set(), ice:null, _iceP:null, _iceAt:0, bgm:null, stick:true,
+    // 15.0 · 서버 릴레이 음성 상태
+    relayWs:null, relayNodes:null, relayRx:{}, relayOn:false, _relayStop:false, _relayRT:null
   };
   var YPS=(function(){
-    var d={nick:'',sound:true,sys:true,desk:true};
+    var d={nick:'',sound:true,sys:true,desk:true,relay:true};
     try{ var v=localStorage.getItem('sdy_yp_settings'); if(v){ var o=JSON.parse(v); for(var k in d){ if(k in o) d[k]=o[k]; } } }catch(e){}
     return d;
   })();
@@ -24511,8 +24714,231 @@ body.sdy-booting #mpReopen{display:none !important;}
       }
     }catch(e){}
   }
+  // ════════════════════════════════════════════════════════════
+  // 15.0 · 음성 방식 2 — 서버 릴레이 통화 (WebSocket, WebRTC 없음)
+  //
+  //   WebRTC(P2P+TURN) 는 NAT·방화벽·포트 정책 때문에 계속 실패하는
+  //   곳이 있다. 이 방식은 마이크 소리를 16kHz μ-law(≈16KB/초) 프레임으로
+  //   서버에 올리고 서버가 음성 참가자들에게 뿌린다. TURN·STUN·UDP 포트
+  //   불필요 — 채팅(SSE)이 열리는 모든 망에서 통화가 된다.
+  //   (지연은 P2P보다 0.2~0.3초 크지만, '안 되는 망'이 없다)
+  // ════════════════════════════════════════════════════════════
+  var RELAY_SR=16000;            // 음성 샘플레이트 (16kHz = 광대역 음질)
+  var RELAY_CHUNK=1600;          // 한 프레임 샘플 수 = 100ms
+  var RELAY_JBUF=0.18;           // 수신 지터 버퍼(초)
+  // G.711 μ-law 디코딩 테이블 (수신측)
+  var MULAW_D=(function(){
+    var t=new Float32Array(256);
+    for(var i=0;i<256;i++){
+      var u=(~i)&0xff;
+      var v=((((u&0x0f)<<3)+0x84)<<((u&0x70)>>4));
+      t[i]=((u&0x80)?(0x84-v):(v-0x84))/32768;
+    }
+    return t;
+  })();
+  // μ-law 인코딩 (송신측 폴백용 — 워클릿 안에는 같은 코드가 문자열로 들어감)
+  function ypLin2Ulaw(v){
+    var pcm=Math.round((v>1?1:(v<-1?-1:v))*32768)>>2, mask;
+    if(pcm<0){ pcm=-pcm; mask=0x7F; } else mask=0xFF;
+    if(pcm>8159) pcm=8159;
+    pcm+=0x21;
+    var seg=0, segEnd=[0xFF,0x1FF,0x3FF,0x7FF,0xFFF,0x1FFF,0x3FFF,0x7FFF];
+    while(seg<8&&pcm>segEnd[seg]) seg++;
+    if(seg>=8) return 0x7F^mask;
+    return ((seg<<4)|((pcm>>(seg+3))&0x0F))^mask;
+  }
+  var RELAY_WORKLET_SRC=
+    'class SdyVoiceCapture extends AudioWorkletProcessor{'+
+    'constructor(){super();this.r=sampleRate/'+RELAY_SR+';this.f=0;this.b=new Uint8Array('+RELAY_CHUNK+');this.n=0;}'+
+    'e(v){var p=Math.round((v>1?1:(v<-1?-1:v))*32768)>>2,m;if(p<0){p=-p;m=127}else m=255;'+
+    'if(p>8159)p=8159;p+=33;var s=0,E=[255,511,1023,2047,4095,8191,16383,32767];'+
+    'while(s<8&&p>E[s])s++;if(s>=8)return 127^m;return((s<<4)|((p>>(s+3))&15))^m;}'+
+    'process(ins){var ch=ins[0]&&ins[0][0];if(!ch)return true;'+
+    'for(var i=0;i<ch.length;i++){this.f+=1;if(this.f>=this.r){this.f-=this.r;'+
+    'this.b[this.n++]=this.e(ch[i]);if(this.n>=this.b.length){this.n=0;'+
+    'this.port.postMessage(this.b.slice(0));}}}'+
+    'return true;}}'+
+    'registerProcessor("sdy-voice-capture",SdyVoiceCapture);';
+  // 한 프레임(100ms)을 서버로 — 음소거였거나 통화 중이 아니면 보내지 않는다
+  function ypRelaySendFrame(d){
+    var ws=YP.relayWs;
+    if(!ws||ws.readyState!==1||YP.muted||!YP.inVoice) return;
+    try{
+      var f=new Uint8Array(d.length+1); f[0]=0x01; f.set(d,1);
+      ws.send(f);
+    }catch(e){}
+  }
+  // 마이크 캡처 그래프: 워클릿(없으면 스크립트 프로세서 폴백) → 서버
+  function ypRelayCapture(ctx,stream){
+    return new Promise(function(resolve,reject){
+      var src;
+      try{ src=ctx.createMediaStreamSource(stream); }catch(e){ return reject(new Error('마이크를 열 수 없어요')); }
+      var done=function(node){
+        var zero=ctx.createGain(); zero.gain.value=0;
+        src.connect(node); node.connect(zero); zero.connect(ctx.destination);
+        YP.relayNodes={src:src,node:node,zero:zero};
+        resolve();
+      };
+      var fallback=function(){
+        try{
+          var sp=ctx.createScriptProcessor(2048,1,1);
+          var ratio=ctx.sampleRate/RELAY_SR, frac=0, buf=new Uint8Array(RELAY_CHUNK), n=0;
+          sp.onaudioprocess=function(e){
+            var ch=e.inputBuffer.getChannelData(0);
+            for(var i=0;i<ch.length;i++){
+              frac+=1;
+              if(frac>=ratio){ frac-=ratio;
+                buf[n++]=ypLin2Ulaw(ch[i]);
+                if(n>=buf.length){ n=0; ypRelaySendFrame(buf); buf=new Uint8Array(RELAY_CHUNK); }
+              }
+            }
+          };
+          done(sp);
+        }catch(e){ reject(new Error('마이크 캡처를 시작할 수 없어요')); }
+      };
+      if(ctx.audioWorklet&&typeof Blob!=='undefined'&&typeof URL!=='undefined'&&URL.createObjectURL){
+        var url;
+        try{ url=URL.createObjectURL(new Blob([RELAY_WORKLET_SRC],{type:'application/javascript'})); }
+        catch(e){ return fallback(); }
+        ctx.audioWorklet.addModule(url).then(function(){
+          try{
+            var node=new AudioWorkletNode(ctx,'sdy-voice-capture',{numberOfInputs:1,numberOfOutputs:1});
+            node.port.onmessage=function(e){
+              var d=e.data;
+              ypRelaySendFrame(d instanceof Uint8Array?d:new Uint8Array(d));
+            };
+            done(node);
+          }catch(e){ fallback(); }
+        }).catch(function(){ fallback(); });
+        return;
+      }
+      fallback();
+    });
+  }
+  // 릴레이 서버 제어 메시지 (welcome·join·leave·mute)
+  function ypRelayEvent(m){
+    if(!m||!m.t) return;
+    if(m.t==='welcome'){
+      (m.peers||[]).forEach(function(p){ if(p.uid&&p.uid!==YP.uid) YP.conn.set(p.uid,'connected'); });
+      ypRenderStatus();
+    } else if(m.t==='join'){
+      if(m.uid&&m.uid!==YP.uid){ YP.conn.set(m.uid,'connected'); ypRenderStatus(); }
+    } else if(m.t==='leave'){
+      if(m.uid){ YP.conn.delete(m.uid); YP.speaking.delete(m.uid);
+        if(YP.relayRx[m.uid]) delete YP.relayRx[m.uid];
+        ypRenderStatus(); }
+    } else if(m.t==='mute'){
+      var mm=YP.members.get(m.uid);
+      if(mm){ mm.mute=!!m.mute; ypRenderStatus(); }
+    }
+  }
+  // 수신 프레임 재생: [0x01][uidLen][uid…][μ-law …] → 스케줄 재생
+  function ypRelayAudio(data){
+    var u8=new Uint8Array(data);
+    if(u8.length<3||u8[0]!==0x01) return;
+    var nl=u8[1]; if(nl<=0||2+nl>=u8.length) return;
+    var uid=''; for(var i=0;i<nl;i++) uid+=String.fromCharCode(u8[2+i]);
+    if(!uid||uid===YP.uid) return;
+    var ctx=ypGetActx(); if(!ctx) return;
+    YP.conn.set(uid,'connected');
+    var pay=u8.subarray(2+nl);
+    var f=new Float32Array(pay.length), sum=0;
+    for(var j=0;j<pay.length;j++){ var v=MULAW_D[pay[j]]; f[j]=v; sum+=v*v; }
+    var spk=Math.sqrt(sum/pay.length)>0.03;          // 말하기 표시
+    if(YP.speaking.get(uid)!==spk){ YP.speaking.set(uid,spk); ypRenderStatus(); }
+    var st=YP.relayRx[uid]||(YP.relayRx[uid]={next:0});
+    var ab=ctx.createBuffer(1,f.length,RELAY_SR);
+    try{ ab.copyToChannel(f,0); }catch(e){ ab.getChannelData(0).set(f); }
+    var now=ctx.currentTime;
+    // 끊김 뒤(버퍼 소진) 또는 너무 밀렸을 때는 스케줄을 다시 맞춘다
+    if(st.next<now+0.02||st.next>now+1.2) st.next=now+RELAY_JBUF;
+    var src=ctx.createBufferSource(); src.buffer=ab;
+    src.connect(ctx.destination);
+    try{ src.start(st.next); }catch(e){}
+    st.next+=ab.duration;
+  }
+  function ypRelayCleanup(){
+    var n=YP.relayNodes;
+    if(n){
+      try{ if(n.node&&n.node.port) n.node.port.onmessage=null; }catch(e){}
+      try{ n.node&&n.node.disconnect(); }catch(e){}
+      try{ n.zero&&n.zero.disconnect(); }catch(e){}
+      try{ n.src&&n.src.disconnect(); }catch(e){}
+    }
+    YP.relayNodes=null; YP.relayWs=null;
+    Object.keys(YP.relayRx).forEach(function(k){ delete YP.relayRx[k]; });
+    YP.speaking.forEach(function(v,k){ if(k!==YP.uid) YP.speaking.delete(k); });
+    YP.conn.clear();
+    ypRenderStatus();
+  }
+  // 통화 중 끊김(네트워크 전환 등) → 조용히 다시 붙는다
+  function ypRelayReconnect(){
+    if(!YP.inVoice||!YP.relayOn||YP._relayStop||YP._relayRT) return;
+    var tries=0;
+    var go=function(){
+      if(!YP.inVoice||!YP.relayOn||YP._relayStop){ YP._relayRT=null; return; }
+      ypRelayCleanup();
+      ypRelayStart(YP.localStream).then(function(){
+        YP._relayRT=null;
+        toast('음성 연결을 다시 이었어요',1600);
+      }).catch(function(){
+        tries++;
+        if(tries>=6){ YP._relayRT=null; ypLeaveVoice(); toast('음성 연결을 되살리지 못했어요',2600); return; }
+        setTimeout(go,700*tries);
+      });
+    };
+    YP._relayRT=1;
+    setTimeout(go,500);
+  }
+  // 마이크 스트림을 릴레이 서버에 붙인다 (연결 성공시 resolve)
+  function ypRelayStart(stream){
+    var ctx=ypGetActx();
+    if(!ctx) return Promise.reject(new Error('이 브라우저에서 오디오를 쓸 수 없어요'));
+    if(ctx.state==='suspended') ctx.resume().catch(function(){});
+    return ypRelayCapture(ctx,stream).then(function(){
+      return new Promise(function(resolve,reject){
+        var proto=(location.protocol==='https:')?'wss:':'ws:';
+        var ws;
+        try{ ws=new WebSocket(proto+'//'+location.host+'/api/chat/voice-ws?uid='+encodeURIComponent(YP.uid)); }
+        catch(e){ return reject(new Error('음성 연결을 만들 수 없어요')); }
+        ws.binaryType='arraybuffer';
+        var opened=false;
+        var tm=setTimeout(function(){
+          if(!opened){ try{ ws.onclose=null; ws.close(); }catch(e){} reject(new Error('음성 서버 응답이 없어요')); }
+        },9000);
+        ws.onmessage=function(ev){
+          if(typeof ev.data==='string'){
+            var m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+            if(m&&m.t==='welcome'&&!opened){ opened=true; clearTimeout(tm); resolve(); }
+            ypRelayEvent(m);
+            return;
+          }
+          if(opened) ypRelayAudio(ev.data);
+        };
+        ws.onclose=function(ev){
+          clearTimeout(tm);
+          var wasOpen=opened;
+          ypRelayCleanup();
+          if(!wasOpen){ reject(new Error('음성 서버에 연결하지 못했어요'+(ev&&ev.code?' ('+ev.code+')':''))); return; }
+          if(YP.inVoice&&YP.relayOn&&!YP._relayStop) ypRelayReconnect();
+        };
+        ws.onerror=function(){};
+        YP.relayWs=ws; YP._relayStop=false;
+      });
+    });
+  }
+  function ypRelayStop(){
+    YP._relayStop=true;
+    var ws=YP.relayWs;
+    if(ws){ try{ ws.onclose=null; }catch(e){} try{ ws.close(); }catch(e){} }
+    ypRelayCleanup();
+    YP.relayOn=false;
+  }
   function ypReconcileVoice(){
     if(!YP.inVoice||!YP.localStream) return;
+    // 15.0 · 서버 릴레이 통화 중에는 P2P 연결이 필요 없다 — 입장/퇴장은
+    //   릴레이 서버가 알려준다(join/leave). 여기서 PC 를 만들면 안 된다.
+    if(YP.relayOn){ ypRenderStatus(); return; }
     YP.members.forEach(function(m){
       if(m.uid===YP.uid) return;
       if(m.voice){
@@ -24525,6 +24951,19 @@ body.sdy-booting #mpReopen{display:none !important;}
     });
     ypRenderStatus();
   }
+  // 마이크 권한 오류 안내 (P2P·릴레이 공용)
+  function ypMicErr(err){
+    var n=(err&&err.name)||'';
+    var msg=(err&&err.message)||'';
+    if(n==='NotAllowedError'||n==='PermissionDeniedError'||n==='SecurityError')
+      toast('마이크 권한이 차단됐어요 · 주소창 자물쇠 → 마이크 허용',3200);
+    else if(n==='NotFoundError'||n==='DevicesNotFoundError')
+      toast('마이크를 찾을 수 없어요 · 장치를 확인해 주세요',3000);
+    else if(n==='NotReadableError'||n==='TrackStartError')
+      toast('마이크가 다른 앱에서 사용 중이에요',3000);
+    else if(msg) toast(msg,3000);
+    else toast('마이크를 켤 수 없어요 · 권한을 확인해 주세요',2800);
+  }
   function ypJoinVoice(){
     if(YP.inVoice||YP.joiningVoice) return;
     // getUserMedia는 HTTPS(또는 localhost)에서만 동작한다. Oracle IP로
@@ -24536,14 +24975,31 @@ body.sdy-booting #mpReopen{display:none !important;}
       return;
     }
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ toast('이 브라우저는 마이크를 지원하지 않아요',2400); return; }
-    // 클릭 즉시 상태를 바꾸고, ICE 설정과 마이크 권한 요청을 병렬 실행한다.
-    // 예전에는 config 왕복 뒤에 권한창을 열어 버튼이 안 먹은 것처럼 보였다.
+    // 클릭 즉시 상태를 바꾼다 (버튼이 안 먹은 것처럼 보이지 않게)
     YP.joiningVoice=true; ypRenderStatus();
     var mic=navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    // 15.0 · 기본은 서버 릴레이 통화 — TURN/NAT 문제가 생기지 않는다.
+    //   설정에서 끄면 예전처럼 WebRTC(P2P, 저지연)를 쓴다.
+    if(YPS.relay!==false){
+      mic.then(function(st){
+        return ypRelayStart(st).then(function(){ return st; });
+      }).then(function(st){
+        YP.localStream=st; YP.inVoice=true; YP.joiningVoice=false; YP.relayOn=true;
+        ypWatchStream(YP.uid,st);              // 내 말하기 표시(로컬 측정)
+        ypReconcileVoice(); ypRenderStatus();
+        if(YP.bgm && YP.bgm.action!=='stop') ypBgmApply(YP.bgm);
+        toast('서버 릴레이 통화 시작 · 어떤 망에서도 연결돼요 (에코 방지에 이어폰 권장)',3400);
+      }).catch(function(err){
+        YP.joiningVoice=false; ypRenderStatus();
+        ypRelayStop();
+        ypMicErr(err);
+      });
+      return;
+    }
     Promise.all([ypGetIce(),mic])
       .then(function(v){
         YP.ice=v[0]||YP.ice; var st=v[1];
-        YP.localStream=st; YP.inVoice=true; YP.joiningVoice=false;
+        YP.localStream=st; YP.inVoice=true; YP.joiningVoice=false; YP.relayOn=false;
         ypWatchStream(YP.uid,st);
         // 내 버튼/UI와 기존 음성 참가자 연결은 서버 왕복을 기다리지 않는다.
         ypReconcileVoice(); ypRenderStatus();
@@ -24553,24 +25009,18 @@ body.sdy-booting #mpReopen{display:none !important;}
         // TURN 이 없으면 같은 망만 되고 다른 망(LTE↔Wi-Fi) 통화는 안 된다. 미리 알려 준다.
         if(!YP.turn && !YP._turnWarned){
           YP._turnWarned=true;
-          setTimeout(function(){ toast('TURN 서버가 설정되지 않았어요 · 서로 다른 망 통화가 안 될 수 있어요 (서버에서 bash apply.sh 재실행)',4200); },600);
+          setTimeout(function(){ toast('TURN 서버가 설정되지 않았어요 · 서로 다른 망 통화가 안 될 수 있어요 (설정에서 서버 릴레이 통화를 켜 보세요)',4200); },600);
         }
       })
       .catch(function(err){
         YP.joiningVoice=false; ypRenderStatus();
-        var n=(err&&err.name)||'';
-        if(n==='NotAllowedError'||n==='PermissionDeniedError'||n==='SecurityError')
-          toast('마이크 권한이 차단됐어요 · 주소창 자물쇠 → 마이크 허용',3200);
-        else if(n==='NotFoundError'||n==='DevicesNotFoundError')
-          toast('마이크를 찾을 수 없어요 · 장치를 확인해 주세요',3000);
-        else if(n==='NotReadableError'||n==='TrackStartError')
-          toast('마이크가 다른 앱에서 사용 중이에요',3000);
-        else toast('마이크를 켤 수 없어요 · 권한을 확인해 주세요',2800);
+        ypMicErr(err);
       });
   }
   function ypLeaveVoice(){
     if(!YP.inVoice) return;
     YP.inVoice=false;
+    ypRelayStop();                          // 15.0 · 릴레이 통화 정리 (WS 종료)
     if(YP.localStream){ try{YP.localStream.getTracks().forEach(function(t){t.stop();});}catch(e){} }
     YP.localStream=null;
     YP.pcs.forEach(function(pc){ try{ if(pc.__watch) clearTimeout(pc.__watch); pc.close(); }catch(e){} }); YP.pcs.clear(); YP.conn.clear();
@@ -24584,8 +25034,15 @@ body.sdy-booting #mpReopen{display:none !important;}
   function ypToggleMute(){
     YP.muted=!YP.muted;
     if(YP.localStream){ YP.localStream.getAudioTracks().forEach(function(t){ t.enabled=!YP.muted; }); }
-    if(YP.inVoice) fetch('/api/chat/voice',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({uid:YP.uid,on:true,mute:YP.muted})}).catch(function(){});
+    if(YP.inVoice){
+      // 15.0 · 릴레이 통화 중이면 음소거 상태를 음성 소켓으로 바로 전달
+      if(YP.relayOn&&YP.relayWs&&YP.relayWs.readyState===1){
+        try{ YP.relayWs.send(JSON.stringify({t:'mute',mute:YP.muted})); }catch(e){}
+      } else {
+        fetch('/api/chat/voice',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({uid:YP.uid,on:true,mute:YP.muted})}).catch(function(){});
+      }
+    }
     ypRenderStatus();
   }
 
@@ -24812,7 +25269,10 @@ body.sdy-booting #mpReopen{display:none !important;}
       '<div class="yp-set-row"><label>알림 소리<span class="sub">새 메시지가 오면 소리</span></label><span class="yp-switch '+(YPS.sound?'on':'')+'" data-k="sound"><i></i></span></div>'+
       '<div class="yp-set-row"><label>입장·퇴장 알림<span class="sub">들어오고 나가는 안내</span></label><span class="yp-switch '+(YPS.sys?'on':'')+'" data-k="sys"><i></i></span></div>'+
       '<div class="yp-set-row"><label>데스크톱 알림<span class="sub">노크·새 메시지 창 알림</span></label><span class="yp-switch '+(YPS.desk?'on':'')+'" data-k="desk"><i></i></span></div>'+
-      '<div class="yp-set-title">통화 진단</div>'+
+      '<div class="yp-set-title">음성 통화</div>'+
+      '<div class="yp-set-row"><label>서버 릴레이 통화<span class="sub">기본 · TURN/NAT 문제 없이 항상 연결</span></label><span class="yp-switch '+(YPS.relay!==false?'on':'')+'" data-k="relay"><i></i></span></div>'+
+      '<div class="yp-set-row"><label class="sub" style="flex:1">끄면 WebRTC(P2P·저지연)를 씁니다 — 통화가 계속 실패하는 망이라면 켜 두세요</label></div>'+
+      '<div class="yp-set-title">통화 진단 <span class="sub" style="font-weight:400">(P2P 모드)</span></div>'+
       '<div class="yp-set-row"><label>연결 자가 진단<span class="sub">이 기기에서 실제로 후보를 모아 봅니다</span></label>'+
       '  <button class="yp-set-btn" id="ypDiagBtn" style="border:1px solid #343a48;background:#1d222c;color:#c6cdd9;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">검사</button></div>'+
       '<div class="yp-set-row" id="ypDiagOut" style="display:none"><label id="ypDiagTxt" style="font-size:11px;line-height:1.6;white-space:pre-wrap;"></label></div>';

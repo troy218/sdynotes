@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import net from 'node:net';
 import dgram from 'node:dgram';
 import os from 'node:os';
+import { WebSocketServer } from 'ws';
 
 const CHAT_TTL = parseInt(process.env.SDY_CHAT_TTL || '86400', 10); // 마지막 대화 후 이 시간 지나면 방 초기화(펑)
 const MEMBER_TTL = 70;        // 핑 없이 이 시간 지나면 접속 종료로 간주
@@ -375,6 +376,110 @@ function chatPresence() {
   chatBroadcast({ type: 'presence', members: publicMembers(), ts: nowSec() });
 }
 
+// ══════════════════════════════════════════════════════════════
+// 15.0 · 서버 릴레이 음성 (WebSocket) — WebRTC 를 아예 안 쓰는 통화
+//
+// WebRTC(P2P+TURN) 는 NAT·방화벽·포트 정책에 따라 계속 실패하는 곳이
+// 있다. 이 방식은 마이크 소리를 16kHz μ-law(≈16KB/초) 프레임으로 서버에
+// 올리고 서버가 음성 참가자들에게 그대로 뿌린다. NAT 통과·TURN·UDP
+// 포트가 전혀 필요 없다 — 채팅(SSE)이 열리는 모든 네트워크에서 통화가
+// 된다 (사이트가 뜨는 망이면 무조건 된다).
+//
+// 프로토콜 (/api/chat/voice-ws?uid=…)
+//   클라 → 서버  binary: [0x01][μ-law bytes]                 (내 목소리)
+//                  text:   {t:'mute', mute:bool}
+//   서버 → 클라이언트 binary: [0x01][uidLen][uid…][μ-law bytes] (남의 목소리)
+//                  text:   {t:'welcome',peers:[…]} {t:'join',…}
+//                          {t:'leave',uid} {t:'mute',uid,mute}
+// ══════════════════════════════════════════════════════════════
+const VOICE_MAX_FRAME = 32 * 1024;   // 한 프레임 상한 (16kHz μ-law 1초 ≈ 16KB)
+const voiceSockets = new Map();      // uid -> WebSocket (릴레이 참가자)
+
+function voiceSendAll(evt, exceptUid) {
+  const s = JSON.stringify(evt);
+  for (const [uid, ws] of voiceSockets) {
+    if (uid === exceptUid) continue;
+    if (ws.readyState === 1) { try { ws.send(s); } catch { /* noop */ } }
+  }
+}
+function voicePeers() {
+  const out = [];
+  for (const [uid, ws] of voiceSockets) {
+    const m = state.members.get(uid);
+    if (m && ws.readyState === 1) out.push({ uid, name: m.name, color: m.color, mute: !!m.mute });
+  }
+  return out;
+}
+function voiceDetach(uid, ws) {
+  if (voiceSockets.get(uid) !== ws) return;   // 이미 새 소켓으로 교체됨
+  voiceSockets.delete(uid);
+  const m = state.members.get(uid);
+  if (m) { m.voice = false; m.ts = nowSec(); }
+  chatPresence();
+  voiceSendAll({ t: 'leave', uid }, uid);
+}
+function registerVoiceRelay(app) {
+  app.addHook('onReady', () => {
+    const srv = app.server;
+    if (!srv) return;
+    const wss = new WebSocketServer({ noServer: true, maxPayload: VOICE_MAX_FRAME });
+    srv.on('upgrade', (req, socket, head) => {
+      let path = '';
+      let uid = '';
+      try {
+        const u = new URL(req.url, 'http://localhost');
+        path = u.pathname;
+        uid = String(u.searchParams.get('uid') || '').trim().slice(0, 40);
+      } catch { /* noop */ }
+      if (path !== '/api/chat/voice-ws') { try { socket.destroy(); } catch { /* noop */ } return; }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        const m = state.members.get(uid);
+        if (!uid || !m) {
+          try { ws.close(4001, '먼저 채팅에 입장해 주세요'); } catch { /* noop */ }
+          return;
+        }
+        const old = voiceSockets.get(uid);
+        if (old && old !== ws) { try { old.close(4002, '새 연결로 교체'); } catch { /* noop */ } }
+        voiceSockets.set(uid, ws);
+        m.voice = true;
+        m.ts = nowSec();
+        chatPresence();
+        try { ws.send(JSON.stringify({ t: 'welcome', uid, peers: voicePeers() })); } catch { /* noop */ }
+        voiceSendAll({ t: 'join', uid, name: m.name, color: m.color, mute: !!m.mute }, uid);
+        ws.on('message', (data, isBinary) => {
+          if (isBinary) {
+            const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+            if (!buf.length || buf[0] !== 0x01) return;
+            // 내 프레임에 보낸 사람 uid 를 붙여 다른 참가자에게 릴레이
+            const uidBytes = Buffer.from(uid, 'utf8');
+            if (uidBytes.length > 40) return;
+            const frame = Buffer.allocUnsafe(2 + uidBytes.length + buf.length - 1);
+            frame[0] = 0x01;
+            frame[1] = uidBytes.length;
+            uidBytes.copy(frame, 2);
+            buf.copy(frame, 2 + uidBytes.length, 1);
+            for (const [peer, pws] of voiceSockets) {
+              if (peer === uid) continue;
+              if (pws.readyState === 1) { try { pws.send(frame); } catch { /* noop */ } }
+            }
+            return;
+          }
+          let d = null;
+          try { d = JSON.parse(String(data)); } catch { return; }
+          if (d && d.t === 'mute') {
+            const mm = state.members.get(uid);
+            if (mm) { mm.mute = !!d.mute; mm.ts = nowSec(); }
+            chatPresence();
+            voiceSendAll({ t: 'mute', uid, mute: !!d.mute }, uid);
+          }
+        });
+        ws.on('close', () => voiceDetach(uid, ws));
+        ws.on('error', () => { try { ws.terminate(); } catch { /* noop */ } voiceDetach(uid, ws); });
+      });
+    });
+  });
+}
+
 function pushMsg(m) {
   state.seq += 1;
   m.id = state.seq;
@@ -424,6 +529,9 @@ function startGC() {
       if (now - m.ts > MEMBER_TTL) {
         // bye 는 활성 스트림에 먼저 보내고 멤버/대기 큐를 정리한다.
         chatSend(uid, { type: 'bye' });
+        // 15.0 · 릴레이 음성 소켓도 함께 정리 (소켓이 닫히며 voice=false 전파)
+        const vws = voiceSockets.get(uid);
+        if (vws) { try { vws.close(4003, '입장 만료'); } catch { /* noop */ } }
         state.members.delete(uid);
         pending.delete(uid);
         removed = true;
@@ -444,6 +552,7 @@ function startGC() {
 
 export function registerChat(app) {
   startGC();
+  registerVoiceRelay(app);   // 15.0 · 서버 릴레이 음성 (WebSocket)
 
   // ── 입장 (닉네임 = 새 이름, 색 = 파스텔) ──
   app.post('/api/chat/join', async (req, reply) => {

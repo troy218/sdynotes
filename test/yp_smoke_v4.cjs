@@ -93,6 +93,10 @@ function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
     virtualConsole: vc,
     beforeParse(w) {
       w.sessionStorage.setItem('sdy_yp_uid', 'yp_a');
+      // 15.0 · 이 스모크 테스트는 WebRTC(P2P) 경로를 흉내 낸다 — 여기선
+      // 서버 릴레이 통화(WebSocket+AudioWorklet)를 끈 상태로 검증한다.
+      // (릴레이 서버 동작은 test/voice_relay_contract.mjs 가 담당)
+      w.localStorage.setItem('sdy_yp_settings', JSON.stringify({ relay: false }));
       w.fetch = makeFetch();
       w.EventSource = FakeEventSource;
       w.Audio = FakeAudio;
