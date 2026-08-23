@@ -49,7 +49,11 @@ export function registerAuth(app) {
       try { await sendMail({ to: email, subject, text }); delivered = true; }
       catch (e) {
         console.error(`[auth] 메일 발송 실패 (${email}): ${e?.message || e}`);
-        return reply.code(502).send({ ok: false, error: '메일을 보내지 못했어요. 잠시 후 다시 시도해 주세요' });
+        // 개발 모드면 코드를 응답으로 돌려 진행하게 한다(미리보기/점검용)
+        if (!DEV_CODE) {
+          return reply.code(502).send({ ok: false, error: '메일을 보내지 못했어요. 잠시 후 다시 시도해 주세요' });
+        }
+        console.log(`[auth] 개발 모드 · ${email} 인증 코드: ${r.code}`);
       }
     } else {
       // SMTP 미설정 — 운영자가 서버 콘솔로 확인할 수 있게 찍는다.

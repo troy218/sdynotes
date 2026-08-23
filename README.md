@@ -261,13 +261,21 @@ POST /internal/whoami   {token}              → loopback 전용 (worker 용 신
 **SMTP 설정** (설정하지 않으면 코드를 서버 콘솔에만 찍는다):
 
 ```
-SDY_SMTP_HOST=smtp.example.com
+SDY_SMTP_HOST=smtp.gmail.com
 SDY_SMTP_PORT=587          # 465면 암시적 SSL, 587는 STARTTLS
-SDY_SMTP_USER=no-reply@example.com
-SDY_SMTP_PASS=앱비밀번호
-SDY_SMTP_FROM=no-reply@example.com   # 생략하면 USER 사용
-SDY_AUTH_DEV_CODE=1        # (개발/점검 전용) SMTP 없이 응답에 코드를 실어 준다
+SDY_SMTP_USER=sdynotes@gmail.com
+SDY_SMTP_PASS=앱비밀번호     # Gmail: 2단계 인증 후 발급 (빈칸 없이 16자)
+SDY_SMTP_FROM=sdynotes@gmail.com   # 생략하면 USER 사용
+SDY_AUTH_DEV_CODE=1        # (개발/점검 전용) SMTP 실패·미설정 시 응답에 코드를 실어 준다
+SDY_AUTH_OTP_COOLDOWN=45   # 코드 재발송 대기(초, 기본 45)
 ```
+
+값은 **`APP_DIR/.env`** 하나에 둔다(`apply.sh` 의 systemd EnvironmentFile 가 같은 파일을 읽고,
+로컬 실행은 `server/src/lib/env.js` 가 직접 읽는다 — 이미 시스템에 있는 값은 덮어쓰지 않는다).
+
+> 참고 · Oracle Cloud(OCI) 서버: 기본적으로 아웃바운드 SMTP(25/465/587)가 막혀 있다.
+> `SMTP 응답 대기 시간 초과` 가 계속되면 OCI 콘솔에서 메일 릴레이 제한 해제를 요청하거나,
+> 587 회선이 열린 상태인지 확인한다. 코드·설정이 맞아도 회선이 막히면 메일이 못 나간다.
 
 상태 파일: `.sdy_users.json`(회원) · `.sdy_user_sessions.json`(세션) — 서버 디스크에만 있다.
 
@@ -293,6 +301,7 @@ npm run test:call                 # 채팅 + 음성 릴레이 + nginx voice-ws �
 # 16.2 — 로그인(이메일 OTP) + 엽스코드 입장 게이트 + 올린 곡 표시
 node test/auth_contract.mjs        # OTP 발급/검증·회원가입·고정닉 보호·whoami·목록 통과  (npm run test:auth)
 node test/yp_gate_contract.cjs     # 입장 게이트 두 문·비회원/로그인 흐름·마크 소스 계약  (npm run test:gate)
+node test/smtp_contract.mjs        # 최소 SMTP 클라이언트: STARTTLS·AUTH LOGIN·MIME (가짜 서버) (npm run test:smtp)
 
 # 14.12 — Oracle 자체 저장소 (로컬 DB·shim·이전 시뮬레이션)
 node test/oracle_db_contract.mjs   # dbstore/db 라우트 + 노트 이미지 로컬 저장

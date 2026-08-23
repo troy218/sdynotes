@@ -1,6 +1,7 @@
 // SDYnotes backend — Fastify main server (14.8.0 renewed).
 // Lightweight endpoints run here; heavy jobs (PDF import, music tagging,
 // AcoustID, YouTube) run in the Python worker and are proxied.
+import './lib/env.js';   // 16.2 · .env 로더 — config 가 env 를 읽기 전에(가장 먼저)
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';

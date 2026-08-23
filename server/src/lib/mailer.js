@@ -12,15 +12,22 @@
 import net from 'node:net';
 import tls from 'node:tls';
 
-const HOST = (process.env.SDY_SMTP_HOST || '').trim();
-const PORT = parseInt(process.env.SDY_SMTP_PORT || '587', 10);
-const USER = (process.env.SDY_SMTP_USER || '').trim();
-const PASS = process.env.SDY_SMTP_PASS || '';
-const FROM = (process.env.SDY_SMTP_FROM || USER).trim();
-const SECURE = (process.env.SDY_SMTP_SECURE || 'auto').trim().toLowerCase();
+// 호출 시점에 읽는다 — 테스트에서 시나리오마다 다른 서버를 물 수 있게.
+function cfg() {
+  const user = (process.env.SDY_SMTP_USER || '').trim();
+  return {
+    host: (process.env.SDY_SMTP_HOST || '').trim(),
+    port: parseInt(process.env.SDY_SMTP_PORT || '587', 10),
+    user,
+    pass: process.env.SDY_SMTP_PASS || '',
+    from: (process.env.SDY_SMTP_FROM || user).trim(),
+    secure: (process.env.SDY_SMTP_SECURE || 'auto').trim().toLowerCase(),
+  };
+}
 
 export function smtpConfigured() {
-  return Boolean(HOST && USER && PASS && FROM);
+  const c = cfg();
+  return Boolean(c.host && c.user && c.pass && c.from);
 }
 
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
@@ -29,7 +36,9 @@ const hdrB64 = (s) => `=?UTF-8?B?${b64(s)}?=`;
 
 class SmtpDialog {
   constructor(socket) { this.socket = socket; }
-  // 한 줄 응답(연속 줄 `NNN-` 묶음)을 기다려 {code, text} 반환
+  // 한 줄 응답(연속 줄 `NNN-` 묶음)을 기다려 {code, text} 반환.
+  //   · 버퍼가 \r\n 으로 끝나야 마지막 줄까지 온 것이다 (그 전엔 파편)
+  //   · 모든 줄이 `NNN-`(계속) 또는 `NNN `(끝) 꼴이고, 마지막 줄이 `NNN `이면 완결
   reply(timeoutMs = 15000) {
     return new Promise((resolve, reject) => {
       let buf = '';
@@ -39,14 +48,17 @@ class SmtpDialog {
       }, timeoutMs);
       const onData = (chunk) => {
         buf += chunk.toString('utf8');
-        // 마지막 완결된 줄이 `NNN ` 꼴이면 응답이 끝난 것이다
-        const lines = buf.split('\r\n');
-        const allDone = lines.slice(0, -1).every((l) => /^\d{3} /.test(l));
-        if (allDone && /^\d{3} /.test(lines[lines.length - 1] || '')) {
+        if (!buf.endsWith('\r\n')) return;                 // 아직 진행 중인 줄
+        const lines = buf.split('\r\n').filter((l) => l.length);
+        if (!lines.length) return;
+        const shaped = lines.every((l) => /^\d{3}[ -]/.test(l));
+        const last = lines[lines.length - 1];
+        if (shaped && /^\d{3} /.test(last)) {
           cleanup();
-          const code = parseInt(buf.slice(0, 3), 10);
-          resolve({ code, text: buf });
+          const code = parseInt(last.slice(0, 3), 10);
+          resolve({ code, text: lines.join('\r\n') });
         }
+        // `NNN-` 로 끝나는 묶음(아직 마지막 줄 안 옴)은 계속 쌓는다
       };
       const onError = (e) => { cleanup(); reject(e); };
       const cleanup = () => {
@@ -68,9 +80,9 @@ class SmtpDialog {
   }
 }
 
-function buildMime({ to, subject, text }) {
+function buildMime(c, { to, subject, text }) {
   return [
-    `From: ${hdrB64('SDYnotes')} <${FROM}>`,
+    `From: ${hdrB64('SDYnotes')} <${c.from}>`,
     `To: <${to}>`,
     `Subject: ${hdrB64(subject)}`,
     'MIME-Version: 1.0',
@@ -84,41 +96,43 @@ function buildMime({ to, subject, text }) {
 
 // SMTP 서버와 한 번의 세션으로 메일 한 통을 보낸다.
 export async function sendMail({ to, subject, text }) {
+  const c = cfg();
   if (!smtpConfigured()) throw new Error('SMTP 미설정');
-  const useSsl = SECURE === 'ssl' || (SECURE === 'auto' && PORT === 465);
+  const useSsl = c.secure === 'ssl' || (c.secure === 'auto' && c.port === 465);
   let socket = useSsl
-    ? tls.connect({ host: HOST, port: PORT, rejectUnauthorized: false })
-    : net.connect({ host: HOST, port: PORT });
+    ? tls.connect({ host: c.host, port: c.port, rejectUnauthorized: false })
+    : net.connect({ host: c.host, port: c.port });
   socket.setTimeout(20000);
   const fail = (e) => { try { socket.destroy(); } catch { /* */ } throw e; };
+  const say = (d) => buildMime(c, { to, subject, text }).replace(/(^|\n)\./g, '$1..') + '\r\n.\r\n';
   try {
     const d = new SmtpDialog(socket);
     await d.reply();                                  // 220 banner
-    const ehlo = await d.cmd(`EHLO ${HOST}`, 250);    // 기대 코드 그룹(2xx)
+    const ehlo = await d.cmd(`EHLO ${c.host}`, 250);  // 기대 코드 그룹(2xx)
     // 587 등 평문 포트면 STARTTLS 로 올린다 (서버가 지원할 때만)
     if (!useSsl && /STARTTLS/i.test(ehlo.text)) {
       await d.cmd('STARTTLS', 220);
       socket = tls.connect({ socket, rejectUnauthorized: false });
       socket.setTimeout(20000);
       const d2 = new SmtpDialog(socket);
-      await d2.cmd(`EHLO ${HOST}`, 250);
+      await d2.cmd(`EHLO ${c.host}`, 250);
       await d2.cmd('AUTH LOGIN', 334);
-      await d2.cmd(b64(USER), 334);
-      await d2.cmd(b64(PASS), 235);
-      await d2.cmd(`MAIL FROM:<${FROM}>`, 250);
+      await d2.cmd(b64(c.user), 334);
+      await d2.cmd(b64(c.pass), 235);
+      await d2.cmd(`MAIL FROM:<${c.from}>`, 250);
       await d2.cmd(`RCPT TO:<${to}>`, 250);
       await d2.cmd('DATA', 354);
-      socket.write(buildMime({ to, subject, text }).replace(/(^|\n)\./g, '$1..') + '\r\n.\r\n');
+      socket.write(say(d2));
       await d2.reply();
       await d2.cmd('QUIT', 221);
     } else {
       await d.cmd('AUTH LOGIN', 334);
-      await d.cmd(b64(USER), 334);
-      await d.cmd(b64(PASS), 235);
-      await d.cmd(`MAIL FROM:<${FROM}>`, 250);
+      await d.cmd(b64(c.user), 334);
+      await d.cmd(b64(c.pass), 235);
+      await d.cmd(`MAIL FROM:<${c.from}>`, 250);
       await d.cmd(`RCPT TO:<${to}>`, 250);
       await d.cmd('DATA', 354);
-      socket.write(buildMime({ to, subject, text }).replace(/(^|\n)\./g, '$1..') + '\r\n.\r\n');
+      socket.write(say(d));
       await d.reply();
       await d.cmd('QUIT', 221);
     }
