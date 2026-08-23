@@ -19164,8 +19164,16 @@ body.sdy-booting #musicListPop{z-index:10001;}
 <input type="file" id="musicFile" accept=".mp3,.flac,.m4a,.aac,.ogg,.opus,.wav,.webm,audio/*" multiple style="display:none">
 <!-- 10.1 · 큰 플로팅 뮤직플레이어 (컨트롤바의 ⌃ / 표지 눌러 열기 · 머리말 잡고 이동) -->
 <div id="mpBig" class="mpb">
+  <!-- 16.0 · 전체 화면 배경: 표지를 크게 흐린 앰비언트 + 표지에서 뽑은 색으로 물드는 전용 레이어 -->
+  <div class="mpb-ambient" aria-hidden="true">
+    <img id="mpAmbImg" alt="">
+    <div class="mpb-blob a"></div>
+    <div class="mpb-blob b"></div>
+    <div class="mpb-ambient-veil"></div>
+  </div>
   <div class="mpb-head" id="mpBigHead">
     <i class="ri-drag-move-2-line"></i>
+    <span class="mpb-head-title"><span class="mpb-head-eq" id="mpHeadEq"><i></i><i></i><i></i></span>지금 재생 중</span>
     <button id="mpBRefresh" class="mpb-mini" title="목록 새로고침 · 동기화"><i class="ri-refresh-line"></i></button>
     <span class="sp"></span>
     <!-- 15.0 · 확대 플레이어 전체 화면 (축소 버튼 옆) -->
@@ -19173,55 +19181,69 @@ body.sdy-booting #musicListPop{z-index:10001;}
     <button id="mpBX" class="cards-x" title="작게 접기"><i class="ri-subtract-line"></i></button>
   </div>
   <div class="mpb-body">
-    <div class="mpb-now">
-      <div class="mpb-cwrap" id="mpBCwrap" title="우클릭(길게 누르기)으로 곡 메뉴">
-        <div class="mpb-vinyl"></div>
-        <img id="mpBCover" class="mpb-cover" alt="" draggable="false">
-      </div>
-      <div class="mpb-meta">
-        <div id="mpBTitle" class="mpb-title">재생 중인 곡 없음</div>
-        <div id="mpBArtist" class="mpb-artist" title="이 가수의 곡 보기">—</div>
-        <div id="mpBAlbum" class="mpb-album">—</div>
-        <div class="mpb-chips" id="mpBChips"></div>
-        <div class="mpb-prog" id="mpBProg"><div id="mpBFill"></div><div id="mpBKnob"></div></div>
-        <div class="mpb-time"><span id="mpBCur">0:00</span><span class="sp"></span><span id="mpBDur">0:00</span></div>
-        <div class="mpb-ctl">
-          <button id="mpBShuf" title="섞기"><i class="ri-shuffle-line"></i></button>
-          <button id="mpBPrev" title="이전 곡"><i class="ri-skip-back-fill"></i></button>
-          <button id="mpBPP" class="pp" title="재생/일시정지"><i class="ri-play-fill"></i></button>
-          <button id="mpBNext" title="다음 곡"><i class="ri-skip-forward-fill"></i></button>
-          <button id="mpBRep" title="반복 모드"><i class="ri-repeat-line"></i></button>
+    <div class="mpb-stage" id="mpBStage">
+      <div class="mpb-now">
+        <div class="mpb-cwrap" id="mpBCwrap" title="우클릭(길게 누르기)으로 곡 메뉴">
+          <div class="mpb-vinyl"></div>
+          <img id="mpBCover" class="mpb-cover" alt="" draggable="false">
         </div>
-        <div class="mpb-row2">
-          <button id="mpBRate" title="재생 속도">1×</button>
-          <span class="mpb-vol"><i class="ri-volume-up-line" id="mpBVolIco"></i><input id="mpBVol" type="range" min="0" max="100" value="100"></span>
+        <div class="mpb-meta">
+          <div id="mpBTitle" class="mpb-title">재생 중인 곡 없음</div>
+          <div id="mpBArtist" class="mpb-artist" title="이 가수의 곡 보기">—</div>
+          <div id="mpBAlbum" class="mpb-album">—</div>
+          <div class="mpb-chips" id="mpBChips"></div>
+          <div class="mpb-prog" id="mpBProg"><div id="mpBFill"></div><div id="mpBKnob"></div></div>
+          <div class="mpb-time"><span id="mpBCur">0:00</span><span class="sp"></span><span id="mpBDur">0:00</span></div>
+          <div class="mpb-ctl">
+            <button id="mpBShuf" title="섞기"><i class="ri-shuffle-line"></i></button>
+            <button id="mpBPrev" title="이전 곡"><i class="ri-skip-back-fill"></i></button>
+            <button id="mpBPP" class="pp" title="재생/일시정지"><i class="ri-play-fill"></i></button>
+            <button id="mpBNext" title="다음 곡"><i class="ri-skip-forward-fill"></i></button>
+            <button id="mpBRep" title="반복 모드"><i class="ri-repeat-line"></i></button>
+          </div>
+          <div class="mpb-row2">
+            <button id="mpBRate" title="재생 속도">1×</button>
+            <!-- 16.0 · 이퀄라이저·수면 타이머는 조용한 아이콘으로 숨겨 둔다 -->
+            <button id="mpBEq" class="mpb-ric" title="이퀄라이저"><i class="ri-equalizer-line"></i></button>
+            <button id="mpBSleep" class="mpb-ric" title="수면 타이머"><i class="ri-timer-line"></i><em id="mpBSleepLeft"></em></button>
+            <span class="mpb-vol"><i class="ri-volume-up-line" id="mpBVolIco"></i><input id="mpBVol" type="range" min="0" max="100" value="100"></span>
+            <button id="mpBLyrBtn" class="mpb-ric mpb-fsonly" title="가사"><i class="ri-lyrics-line"></i></button>
+            <button id="mpBList" class="mpb-ric mpb-fsonly" title="재생 목록"><i class="ri-list-music"></i></button>
+          </div>
         </div>
       </div>
     </div>
-    <div class="mpb-tabs">
-      <button id="mpBTabD" class="on"><i class="ri-sparkling-2-line"></i> 추천</button>
-      <button id="mpBTabQ">대기열</button>
-      <button id="mpBTabA">가수별</button>
-      <button id="mpBTabL">전체 곡</button>
-      <button id="mpBTabY">가사</button>
-      <span style="flex:1"></span>
-      <!-- 10.9 · 확장 플레이어 안에서 바로 곡 찾기 (아이콘만) -->
-      <button id="mpBSort" class="mpb-icon mp-sortbtn" title="정렬"><i class="ri-time-line"></i></button>
-      <button id="mpBFind" class="mpb-icon" title="노래 검색"><i class="ri-search-line"></i></button>
-      <button id="mpBUp" title="곡 올리기 (50MB 이하)" style="border:1px solid var(--border);background:var(--bg2);color:var(--text2);border-radius:8px;cursor:pointer;padding:5px 10px;font-size:11.5px;font-weight:700;">＋ 올리기</button>
+    <div class="mpb-drawer" id="mpBDrawer">
+      <div class="mpb-drawer-in">
+        <div class="mpb-tabs">
+          <button id="mpBTabD" class="on"><i class="ri-sparkling-2-line"></i> 추천</button>
+          <button id="mpBTabQ">대기열</button>
+          <button id="mpBTabA">가수별</button>
+          <button id="mpBTabL">전체 곡</button>
+          <button id="mpBTabY">가사</button>
+          <span style="flex:1"></span>
+          <!-- 10.9 · 확장 플레이어 안에서 바로 곡 찾기 (아이콘만) -->
+          <button id="mpBSort" class="mpb-icon mp-sortbtn" title="정렬"><i class="ri-time-line"></i></button>
+          <button id="mpBFind" class="mpb-icon" title="노래 검색"><i class="ri-search-line"></i></button>
+          <button id="mpBUp" title="곡 올리기 (50MB 이하)" style="border:1px solid var(--border);background:var(--bg2);color:var(--text2);border-radius:8px;cursor:pointer;padding:5px 10px;font-size:11.5px;font-weight:700;">＋ 올리기</button>
+        </div>
+        <div class="mpb-searchbar" id="mpBSearchBar">
+          <i class="ri-search-line"></i>
+          <input id="mpBSearch" placeholder="제목 · 가수 · 앨범 검색…" spellcheck="false">
+          <span class="mpb-searchcnt" id="mpBSearchCnt"></span>
+          <button id="mpBSearchX" title="검색 닫기"><i class="ri-close-line"></i></button>
+        </div>
+        <div id="mpBBody" class="mpb-list"></div>
+        <div class="mpb-pager" id="mpBPager">
+          <button id="mpBPgPrev">‹ 이전</button>
+          <span id="mpBPgInfo"></span>
+          <label class="mpb-goto">페이지 <input id="mpBPgJump" type="number" min="1" inputmode="numeric"></label>
+          <button id="mpBPgNext">다음 ›</button>
+        </div>
+      </div>
     </div>
-    <div class="mpb-searchbar" id="mpBSearchBar">
-      <i class="ri-search-line"></i>
-      <input id="mpBSearch" placeholder="제목 · 가수 · 앨범 검색…" spellcheck="false">
-      <button id="mpBSearchX" title="검색 닫기"><i class="ri-close-line"></i></button>
-    </div>
-    <div id="mpBBody" class="mpb-list"></div>
-    <div class="mpb-pager" id="mpBPager">
-      <button id="mpBPgPrev">‹ 이전</button>
-      <span id="mpBPgInfo"></span>
-      <label class="mpb-goto">페이지 <input id="mpBPgJump" type="number" min="1" inputmode="numeric"></label>
-      <button id="mpBPgNext">다음 ›</button>
-    </div>
+    <!-- 16.0 · 이퀄라이저 팝오버 (JS 가 채움) -->
+    <div id="mpEqPop" class="mp-eqpop" hidden></div>
   </div>
 </div>
 <!-- 10.3 · 곡 우클릭 메뉴 -->
@@ -20777,49 +20799,568 @@ let _mpbDrag=null;
   addEventListener('resize',()=>{ if(mpbEl.classList.contains('open')) clampMpb(); });
 })();
 
-// ── 15.0 · 확대 플레이어 전체 화면 ──
-//   진짜 Fullscreen API 를 쓰고, 못 쓰는 브라우저(아이폰 사파리 등)는
-//   css 로 화면을 덮는 가짜 전체 화면으로 같은 경험을 준다.
+// ── 15.0 → 16.0 · 확대 플레이어 전체 화면 ──
+//   · 창→전체화면은 css transition 모핑(.mpb-anim)으로 부드럽게 커지고,
+//     데스크톱은 같은 자리에서 진짜 Fullscreen API 까지 붙인다.
+//   · 아이폰 사파리 등 Fullscreen API 가 없으면 css 전체 화면 하나로 같은 모양.
+//   · 달라붙는 동안 스테이지·표지·앰비언트 배경이 시차를 두고 떠오른다.
 function mpbFsEl(){ return (document.fullscreenElement||document.webkitFullscreenElement)||null; }
 function mpbIsFs(){ return mpbFsEl()===mpbEl||mpbEl.classList.contains('mpb-fs'); }
 function mpbFullIcon(){
   const b=$('mpBFull'); if(!b) return;
   b.innerHTML=mpbIsFs()?'<i class="ri-fullscreen-exit-line"></i>':'<i class="ri-fullscreen-line"></i>';
-  b.title=mpbIsFs()?'전체 화면 끄기 (Esc)':'전체 화면';
+  b.title=mpbIsFs()?'전체 화면 끄기 (Esc)':'전체 화면 (F)';
+}
+let _mpbFsT=null,_mpbRealFs=false;
+function _mpbAnimKick(){           // 모핑 transition 은 켜질/꺼질 때만 잠깐 붙인다 (드래그 간섭 방지)
+  mpbEl.classList.add('mpb-anim');
+  clearTimeout(_mpbFsT);
+  _mpbFsT=setTimeout(()=>mpbEl.classList.remove('mpb-anim'),620);
 }
 function mpbFakeFs(on){
-  mpbEl.classList.toggle('mpb-fs',on);
-  if(on){ _applyBigSize(); }
-  else { requestAnimationFrame(clampMpb); }
+  if(on){
+    _mpbAnimKick();
+    // 클래스 css(100vw/100vh)가 !important 로 인라인 크기를 덮으므로
+    // 한 박자 늦게 붙여 현재 창 위치에서 화면 가득으로 자라나는 모핑이 보이게 한다
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      mpbEl.classList.add('mpb-fs');
+    }));
+  }else{
+    _mpbAnimKick();
+    mpbEl.classList.remove('mpb-fs','show-drawer');
+    requestAnimationFrame(clampMpb);
+  }
   mpbFullIcon();
 }
 function mpbToggleFull(){
-  if(!mpbEl.classList.contains('open')) openBig();   // 접힌 상태에서 눌러도 열며 전체화면
+  if(!mpbEl.classList.contains('open')) openBig();   // 접힌 상태에서 눌러도 열리며 전체화면
   if(mpbIsFs()){
     const fs=mpbFsEl();
-    if(fs===mpbEl){ try{ (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }catch(e){ mpbFakeFs(false); } }
-    else mpbFakeFs(false);
+    if(fs===mpbEl){ try{ (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }catch(e){} }
+    mpbFakeFs(false);
     return;
   }
+  mpbFakeFs(true);
+  // 데스크톱: css 모핑이 그려진 뒤 같은 자리에서 진짜 전체 화면으로 올라간다 (브라우저 크롬까지 사라짐)
   const req=mpbEl.requestFullscreen||mpbEl.webkitRequestFullscreen;
   if(req){
     try{
       const p=req.call(mpbEl);
-      if(p&&p.catch) p.catch(()=>mpbFakeFs(true));
-    }catch(e){ mpbFakeFs(true); }
-  } else mpbFakeFs(true);   // Fullscreen API 없음 → css 전체 화면
+      _mpbRealFs=true;
+      if(p&&p.catch) p.catch(()=>{ _mpbRealFs=false; });
+    }catch(e){ _mpbRealFs=false; }
+  }
 }
 (function(){
   const b=$('mpBFull'); if(!b) return;
   b.addEventListener('click',e=>{ e.stopPropagation(); mpbToggleFull(); });
   ['fullscreenchange','webkitfullscreenchange'].forEach(ev=>
-    document.addEventListener(ev,mpbFullIcon));
+    document.addEventListener(ev,()=>{
+      mpbFullIcon();
+      // 브라우저가 전체 화면을 풀었다(Esc·제스처) → css 전체 화면도 함께 거둔다
+      if(mpbFsEl()!==mpbEl){
+        if(_mpbRealFs&&mpbEl.classList.contains('mpb-fs')) mpbFakeFs(false);
+        _mpbRealFs=false;
+      }
+    }));
   // 가짜 전체 화면에서는 Esc 로 나간다 (진짜 전체 화면은 브라우저가 처리)
   document.addEventListener('keydown',e=>{
-    if(e.key==='Escape'&&mpbEl.classList.contains('mpb-fs')) mpbFakeFs(false);
+    if(e.key==='Escape'&&mpbEl.classList.contains('mpb-fs')&&!_mpbRealFs) mpbFakeFs(false);
+  });
+  // 스테이지 빈 곳 더블클릭 = 전체 화면 해제 (버튼·슬라이더·서랍·헤더 위는 무시)
+  mpbEl.addEventListener('dblclick',e=>{
+    if(!mpIsFsNow()) return;
+    if(e.target.closest('button,input,a,canvas,select,textarea,.mpb-drawer,.mp-eqpop,.mpb-head,#mpBSearch,.mpb-seek,.mp-seek')) return;
+    mpbToggleFull();
   });
 })();
 
+// ═══════════════════════════════════════════════════════════
+// 16.0 · 전체 화면 꾸미기 — 앰비언트 표지·패럴 럭스·서랍·타이머·이퀄라이저
+// ═══════════════════════════════════════════════════════════
+// 재생 상태를 body 클래스로 — 목록/머리의 막대 애니메이션이 멈출 때 같이 멈춘다
+A.addEventListener('play',()=>{ try{ document.body.classList.add('mpb-playing'); }catch(e){} });
+A.addEventListener('pause',()=>{ try{ document.body.classList.remove('mpb-playing'); }catch(e){} });
+if(!A.paused){ try{ document.body.classList.add('mpb-playing'); }catch(e){} }
+
+function mpIsFsNow(){ try{ return mpbIsFs(); }catch(e){ return false; } }
+function _bumpEl(el,cls){ if(!el||!cls) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+
+// ── 곡이 바뀌면 배경·표지·제목에 작은 반응(전환 범프)을 준다 ──
+//   (renderBig 은 함수 선언이라 이 파일 안에서는 같은 바인딩 — 덮어써도 이후 모든 호출은 최신 함수를 본다)
+(function(){
+  const _renderBigOrig=renderBig;
+  renderBig=function(){
+    const r=_renderBigOrig.apply(this,arguments);
+    try{
+      mpbAmbience();
+      if(mpIsFsNow()){
+        _bumpEl($('mpBTitle'),'bump');
+        _bumpEl($('mpBCwrap'),'bump');
+      }
+    }catch(e){}
+    return r;
+  };
+})();
+
+// ── 앰비언트 배경: 표지를 크게 흐려 깔고 표지 색 두 개로 오로라를 만든다 ──
+const _ambCache=new Map();   // 표지 URL → [평균색, 채도 높은 포인트 색]
+function mpbAmbience(){
+  const holder=$('mpAmbImg'); if(!holder) return;
+  const t=cur();
+  const url=t?coverURL(t):DEF_COVER;
+  if(holder.dataset.cur===url) return;
+  holder.dataset.cur=url;
+  holder.classList.remove('on');
+  holder.onload=()=>{ holder.classList.add('on'); };
+  holder.onerror=()=>{ holder.onerror=null; holder.src=DEF_COVER; holder.classList.add('on'); };
+  holder.src=url;
+  _ambApplyColor(url);
+}
+function _ambApplyColor(url){
+  if(_ambCache.has(url)){ _ambPaint(_ambCache.get(url)); return; }
+  let done=false;
+  const finish=(cols)=>{ if(done) return; done=true;
+    _ambCache.set(url,cols);
+    const holder=$('mpAmbImg');
+    if(holder&&holder.dataset.cur===url) _ambPaint(cols); };
+  setTimeout(()=>finish(null),2600);            // 느리면 강조색 평백으로
+  try{
+    const im=new Image(); im.crossOrigin='anonymous'; im.decoding='async';
+    im.onload=()=>{
+      try{
+        const cv=document.createElement('canvas'); cv.width=cv.height=24;
+        const cx=cv.getContext('2d',{willReadFrequently:true});
+        if(!cx){ finish(null); return; }
+        cx.drawImage(im,0,0,24,24);
+        const d=cx.getImageData(0,0,24,24).data;
+        let r=0,g=0,b=0,n=0,bs=-1,best=null;
+        for(let i=0;i<d.length;i+=4){
+          const R=d[i],G=d[i+1],B=d[i+2]; r+=R;g+=G;b+=B;n++;
+          const mx=Math.max(R,G,B),mn=Math.min(R,G,B);
+          const score=(mx-mn)*(mx>52&&mx<232?1:.35);   // 채도 있는 중간 밝기를 포인트로
+          if(score>bs){ bs=score; best=[R,G,B]; }
+        }
+        const jy=v=>Math.max(34,Math.min(222,v));
+        finish(['rgb('+jy(r/n|0)+','+jy(g/n|0)+','+jy(b/n|0)+')',
+                'rgb('+(best?best[0]:142)+','+(best?best[1]:92)+','+(best?best[2]:247)+')']);
+      }catch(e){ finish(null); }     // 캔버스 오염(외부 표지) → 평백
+    };
+    im.onerror=()=>finish(null);
+    im.src=url;
+  }catch(e){ finish(null); }
+}
+function _ambPaint(cols){
+  const c1=cols?cols[0]:readAccent();
+  const c2=cols?cols[1]:'#8e5cf7';
+  try{
+    mpbEl.style.setProperty('--amb1',c1);
+    mpbEl.style.setProperty('--amb2',c2);
+  }catch(e){}
+}
+
+// ── 표지 마우스 패럴 럭스 (전체 화면 + 정밀 포인터) ──
+(function(){
+  const stage=$('mpBStage'); if(!stage) return;
+  const mm=window.matchMedia?window.matchMedia.bind(window):null;
+  const fine=mm?mm('(pointer:fine)'):{matches:true};
+  const reduced=mm?mm('(prefers-reduced-motion: reduce)'):{matches:false};
+  stage.addEventListener('pointermove',e=>{
+    if(!mpIsFsNow()||!fine.matches||reduced.matches) return;
+    const r=stage.getBoundingClientRect();
+    const dx=(e.clientX-r.left)/r.width-.5, dy=(e.clientY-r.top)/r.height-.5;
+    const cw=$('mpBCwrap'); if(!cw) return;
+    cw.style.setProperty('--tiltx',(dx*4.2).toFixed(2)+'deg');
+    cw.style.setProperty('--tilty',(-dy*3.6).toFixed(2)+'deg');
+  });
+  stage.addEventListener('pointerleave',()=>{
+    const cw=$('mpBCwrap'); if(!cw) return;
+    cw.style.setProperty('--tiltx','0deg'); cw.style.setProperty('--tilty','0deg');
+  });
+})();
+
+// ── 전체 화면 목록 서랍 · 가사 바로가기 (스트리밍 앱처럼 옆에서 슬라이드) ──
+function mpbDrawer(open){
+  const on=open===undefined?!mpbEl.classList.contains('show-drawer'):!!open;
+  mpbEl.classList.toggle('show-drawer',on);
+  const b=$('mpBList'); if(b) b.classList.toggle('on',on);
+  const yb=$('mpBLyrBtn'); if(yb) yb.classList.toggle('on',on&&P.bigTab==='y');
+}
+(function(){
+  const lb=$('mpBList');
+  if(lb) lb.onclick=e=>{ e.stopPropagation(); mpbDrawer(); };
+  const yb=$('mpBLyrBtn');
+  if(yb) yb.onclick=e=>{ e.stopPropagation();
+    P.bigTab='y'; mpbDrawer(true); renderBigList(); };
+  // 전체 화면에서 검색을 열 땐 서랍도 같이 연다 (결과가 목록에 보이므로)
+  const fb=$('mpBFind');
+  if(fb){
+    const _orig=fb.onclick;
+    fb.onclick=e=>{
+      const willOpen=!$('mpBSearchBar').classList.contains('show');
+      if(_orig) _orig.call(fb,e);
+      if(willOpen&&mpIsFsNow()) mpbDrawer(true);
+    };
+  }
+  // 폰에서는 서랍에서 곡을 고륨 서랍이 낮게 접혀 물대가 보이게
+  $('mpBBody').addEventListener('click',e=>{
+    if(!mpIsFsNow()||innerWidth>760) return;
+    if(e.target.closest('[data-bl],[data-bq],.mpb-reco-card,.mpb-album-card')){
+      setTimeout(()=>mpbDrawer(false),180);
+    }
+  });
+})();
+
+// ── 검색창 예쁘게: 결과 배지(몇 곡 찾았는지) ──
+(function(){
+  const inp=$('mpBSearch'); if(!inp) return;
+  const upd=()=>{ const c=$('mpBSearchCnt'); if(!c) return;
+    const q=(inp.value||'').trim();
+    if(!q){ c.textContent=''; return; }
+    try{ c.textContent=searchTracks(P.list,q).length+'곡'; }catch(e){ c.textContent=''; } };
+  inp.addEventListener('input',upd);
+  const _cbs=closeBigSearch;
+  closeBigSearch=function(){
+    const r=_cbs.apply(this,arguments);
+    const c=$('mpBSearchCnt'); if(c) c.textContent='';
+    return r;
+  };
+})();
+
+// ── 수면 타이머: 끄기 → 15 → 30 → 45 → 60분 → 이번 곡까지만 ──
+const SLEEP_STEPS=[0,15,30,45,60,'곡'];
+P._sleep={step:0,at:0};
+function mpbSleepPaint(){
+  const b=$('mpBSleep'); if(!b) return;
+  const s=P._sleep, on=s.step>0;
+  b.classList.toggle('live',on);
+  const em=b.querySelector('em');
+  if(!on){
+    b.title='수면 타이머 — 누를 때마다 15·30·45·60분·이번 곡';
+    if(em) em.textContent='';
+    return;
+  }
+  if(SLEEP_STEPS[s.step]==='곡'){
+    b.title='이번 곡이 끝나면 재생을 멈춥니다';
+    if(em) em.textContent='곡';
+  }else{
+    const left=Math.max(0,Math.ceil((s.at-Date.now())/60000));
+    b.title='수면 타이머 · 약 '+left+'분 뒤 정지 (다시 누르시면 변경)';
+    if(em) em.textContent=left+'′';
+  }
+}
+function mpbSleepStop(quiet){
+  P._sleep={step:0,at:0}; mpbSleepPaint();
+  if(!quiet) toast('수면 타이머가 꺼졌어요',1300);
+}
+$('mpBSleep').onclick=e=>{
+  e.stopPropagation();
+  const s=P._sleep;
+  s.step=(s.step+1)%SLEEP_STEPS.length;
+  if(s.step===0){ mpbSleepStop(); return; }
+  const v=SLEEP_STEPS[s.step];
+  if(v==='곡'){ s.at=0; toast('이번 곡이 끝나면 멈춥니다',1700); }
+  else{ s.at=Date.now()+v*60000; toast('수면 타이머 · '+v+'분 뒤 재생을 멈춥니다',1900); }
+  mpbSleepPaint();
+};
+setInterval(()=>{
+  const s=P._sleep; if(!s.step) return;
+  mpbSleepPaint();
+  if(s.at&&Date.now()>=s.at){
+    mpbSleepStop(true);
+    if(!A.paused) smoothPause();
+    toast('수면 타이머로 재생을 멈췄어요 · 좋은 밤 되세요',2600);
+  }
+},10000);
+A.addEventListener('ended',()=>{
+  if(P._sleep.step===SLEEP_STEPS.length-1){          // '이번 곡까지'
+    mpbSleepStop(true);
+    setTimeout(()=>{ if(!A.paused) A.pause(); },60);  // 다음 곡이 트는 즉시 대기 상태로
+    toast('이번 곡까지 듣고 멈췄어요',2300);
+  }
+});
+
+// ── 전체 화면 단축키: F = 전체 화면, / = 노래 검색 ──
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  const el=document.activeElement;
+  if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.isContentEditable)) return;
+  const open=mpbEl.classList.contains('open');
+  if(!open&&pl.style.display==='none') return;
+  if(e.key==='f'||e.key==='F'){ e.preventDefault(); mpbToggleFull(); }
+  else if(e.key==='/'&&open&&mpIsFsNow()){
+    e.preventDefault();
+    try{ $('mpBFind').click(); }catch(err){}
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 16.0 · 이퀄라이저 (Web Audio 10밴드 — 작은 아이콘 뒤에 조용히)
+//   · MediaElementSource 로 한 번 물리면 그 오디오는 끝까지 그래프를
+//     타므로, CORS 없는 외부 스트림(cloudinary 구형 라이브러리 등)에는
+//     무음이 되지 않도록 '만들기 전에' 검사하고, 안 되면 이유를 보여 준다.
+//   · 설정은 mp_eq1 에 저장 — 다음 방문 때도 그대로.
+// ═══════════════════════════════════════════════════════════
+const EQ_FREQS=[32,64,125,250,500,1000,2000,4000,8000,16000];
+const EQ_PRESETS=[
+  ['원음',        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+  ['베이스 부스트',[ 8, 6, 4, 2, 0, 0, 0, 0, 1, 1]],
+  ['보컬 강조',   [-2,-3,-2, 1, 4, 5, 4, 2, 0,-1]],
+  ['팝',          [-1, 2, 4, 4, 2, 0,-1,-1, 0, 1]],
+  ['록',          [ 4, 3, 1,-1,-2,-1, 2, 4, 5, 5]],
+  ['힙합',        [ 7, 6, 3, 1,-1,-1, 1, 1, 2, 3]],
+  ['R&B',         [ 4, 6, 5, 2,-1,-2, 1, 2, 3, 3]],
+  ['클래식',      [ 4, 3, 0, 0, 0, 0,-3,-3,-2, 2]],
+  ['재즈',        [ 3, 2, 1, 2,-2,-2, 0, 1, 2, 3]],
+  ['일렉트로닉',  [ 6, 5, 2, 0,-2, 1, 1, 2, 5, 6]],
+];
+const EQ={on:false,preset:0,gains:EQ_FREQS.map(()=>0)};
+try{
+  const saved=JSON.parse(localStorage.getItem('mp_eq1')||'null');
+  if(saved){ EQ.on=!!saved.on; EQ.preset=+saved.preset||0;
+    if(Array.isArray(saved.gains)) saved.gains.slice(0,10).forEach((v,i)=>{ EQ.gains[i]=+v||0; }); }
+}catch(e){}
+let _eqCtx=null,_eqChain=[],_eqAnalyser=null,_eqBuilt=false,_eqBusy=false;
+const _eqCorsMiss=new Set();   // 이번 세션에서 실패한 origin (성공만 디스크에 남긴다)
+
+// 라이브러리·현재 곡의 외부 스트림 origin 별로 CORS 통과 여부 검사
+async function _eqStreamsPass(){
+  const byOrigin=new Map();
+  const add=u=>{ try{ const o=new URL(u,location.href).origin;
+    if(o&&o!=='null'&&o!==location.origin&&!byOrigin.has(o)) byOrigin.set(o,u); }catch(e){} };
+  (P.list||[]).forEach(t=>{ if(t&&t.stream_url) add(t.stream_url); });
+  add(A.currentSrc||A.src||'');
+  for(const [o,u] of byOrigin){
+    if(_eqCorsMiss.has(o)) return false;
+    const ck='mp_eqcors_'+o;
+    try{ if(localStorage.getItem(ck)==='1') continue; }catch(e){}
+    let okc=false;
+    try{
+      const ctl=new AbortController();
+      const tm=setTimeout(()=>ctl.abort(),4500);
+      const r=await fetch(u,{mode:'cors',headers:{Range:'bytes=0-0'},signal:ctl.signal});
+      clearTimeout(tm);
+      okc=!!(r&&(r.ok||r.status===206));
+      try{ r.body&&r.body.cancel&&r.body.cancel(); }catch(e){}
+    }catch(e){ okc=false; }
+    if(okc){ try{ localStorage.setItem(ck,'1'); }catch(e){} }
+    else { _eqCorsMiss.add(o); return false; }
+  }
+  return true;
+}
+async function eqBuild(){
+  if(_eqCtx) return true;
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) return false;
+  if(!(await _eqStreamsPass())) return false;      // 외부 스트림은 무음 위험 → 만들지 않는다
+  try{ A.crossOrigin='anonymous'; }catch(e){}
+  _eqCtx=new AC();
+  const src=_eqCtx.createMediaElementSource(A);
+  let node=src;
+  _eqChain=EQ_FREQS.map((f,i)=>{
+    const q=_eqCtx.createBiquadFilter();
+    q.type=i===0?'lowshelf':i===EQ_FREQS.length-1?'highshelf':'peaking';
+    q.frequency.value=f; q.Q.value=1.05; q.gain.value=0;
+    node.connect(q); node=q; return q;
+  });
+  _eqAnalyser=_eqCtx.createAnalyser();
+  _eqAnalyser.fftSize=256; _eqAnalyser.smoothingTimeConstant=.82;
+  node.connect(_eqAnalyser); _eqAnalyser.connect(_eqCtx.destination);
+  _eqBuilt=true;
+  eqApplyGains(true);
+  _eqReloadKeep();
+  return true;
+}
+function _eqReloadKeep(){
+  // crossOrigin 을 켠 뒤에는 자원을 다시 받아야 그래프가 소리를 받는다 — 자리를 지키며 재장전
+  if(!A.src) return;
+  const t0=A.currentTime||0, wasPlaying=!A.paused;
+  const onMeta=()=>{
+    A.removeEventListener('loadedmetadata',onMeta);
+    try{ if(t0>1) A.currentTime=t0; }catch(e){}
+    if(wasPlaying) A.play().catch(()=>{});
+  };
+  A.addEventListener('loadedmetadata',onMeta);
+  try{ A.load(); }catch(e){ A.removeEventListener('loadedmetadata',onMeta); }
+}
+function eqApplyGains(instant){
+  if(!_eqCtx||!_eqChain.length) return;
+  const tc=_eqCtx.currentTime;
+  _eqChain.forEach((q,i)=>{
+    const v=EQ.on?EQ.gains[i]:0;          // 꺼짐 = 플랫 우회 (무음 방지로 연결은 언제나 유지)
+    try{
+      q.gain.cancelScheduledValues(tc);
+      if(instant) q.gain.value=v; else q.gain.setTargetAtTime(v,tc,.03);
+    }catch(e){}
+  });
+}
+
+// ── 팝오버 구축 (열 때 딱 한 번) ──
+function _eqBuildPop(){
+  const pop=$('mpEqPop'); if(!pop) return null;
+  if(pop.dataset.built) return pop;
+  pop.dataset.built='1';
+  pop.innerHTML=
+    '<div class="eq-top"><i class="ri-equalizer-line"></i><b>이퀄라이저</b>' +
+    '<span class="eq-preset-name" id="mpEqPName"></span><span class="sp"></span>' +
+    '<button type="button" class="eq-mini" id="mpEqReset">초기화</button>' +
+    '<button type="button" class="eq-sw" id="mpEqSw" role="switch" aria-label="이퀄라이저 켜기"><span></span></button></div>' +
+    '<canvas id="mpEqCv" width="760" height="108"></canvas>' +
+    '<div class="eq-presets" id="mpEqPresets"></div>' +
+    '<div class="eq-bands" id="mpEqBands"></div>' +
+    '<div class="eq-note" id="mpEqNote"></div>';
+  pop.querySelector('#mpEqPresets').innerHTML=
+    EQ_PRESETS.map((p,i)=>'<button type="button" data-eqp="'+i+'">'+p[0]+'</button>').join('');
+  pop.querySelector('#mpEqBands').innerHTML=EQ_FREQS.map((f,i)=>{
+    const lab=f>=1000?(f/1000)+'K':String(f);
+    return '<div class="eq-band"><b id="mpEqV'+i+'">0</b>' +
+      '<input type="range" min="-12" max="12" step="0.5" value="0" data-eqb="'+i+'" orient="vertical" aria-label="'+lab+'Hz">' +
+      '<em>'+lab+'</em></div>';
+  }).join('');
+  pop.querySelector('#mpEqBands').addEventListener('input',e=>{
+    const i=+(e.target.dataset&&e.target.dataset.eqb);
+    if(isNaN(i)) return;
+    EQ.gains[i]=+e.target.value;
+    EQ.preset=-1;                                   // 손대면 '사용자 설정'
+    _eqSave(); eqApplyGains(); _eqPaintPop();
+  });
+  pop.querySelector('#mpEqBands').addEventListener('dblclick',e=>{      // 밴드 더블클릭 = 0으로
+    const i=+(e.target.dataset&&e.target.dataset.eqb);
+    if(isNaN(i)) return;
+    e.target.value=0; EQ.gains[i]=0; _eqSave(); eqApplyGains(); _eqPaintPop();
+  });
+  pop.querySelector('#mpEqPresets').addEventListener('click',e=>{
+    const b=e.target.closest('[data-eqp]'); if(!b) return;
+    const i=+b.dataset.eqp;
+    EQ.preset=i;
+    EQ_PRESETS[i][1].forEach((g,k)=>{ EQ.gains[k]=g; });
+    _eqSave(); eqApplyGains(); _eqPaintPop();
+  });
+  pop.querySelector('#mpEqSw').onclick=e=>{ e.stopPropagation(); _eqToggleOn(); };
+  pop.querySelector('#mpEqReset').onclick=e=>{ e.stopPropagation();
+    EQ.gains=EQ_FREQS.map(()=>0); EQ.preset=0; _eqSave(); eqApplyGains(); _eqPaintPop(); };
+  return pop;
+}
+function _eqSave(){ try{ localStorage.setItem('mp_eq1',JSON.stringify(EQ)); }catch(e){} }
+function _eqPaintPop(){
+  const pop=$('mpEqPop'), btn=$('mpBEq');
+  if(btn) btn.classList.toggle('on',EQ.on&&_eqBuilt);
+  if(!pop||!pop.dataset.built) return;
+  pop.classList.toggle('off',!EQ.on||!_eqBuilt);
+  const sw=pop.querySelector('#mpEqSw'); if(sw) sw.classList.toggle('on',EQ.on&&_eqBuilt);
+  pop.querySelectorAll('[data-eqp]').forEach(b=>b.classList.toggle('on',+b.dataset.eqp===EQ.preset));
+  EQ_FREQS.forEach((f,i)=>{
+    const inp=pop.querySelector('[data-eqb="'+i+'"]');
+    if(inp&&+inp.value!==EQ.gains[i]) inp.value=EQ.gains[i];
+    const v=pop.querySelector('#mpEqV'+i);
+    if(v){ const g=EQ.gains[i]; v.textContent=(g>0?'+':'')+(+g).toFixed(1).replace(/\.0$/,''); }
+  });
+  const nm=pop.querySelector('#mpEqPName');
+  if(nm) nm.textContent=!_eqBuilt?'연결 안 됨':EQ.on?(EQ.preset<0?'사용자 설정':EQ_PRESETS[EQ.preset][0]):'꺼짐';
+}
+async function _eqToggleOn(){
+  if(EQ.on){
+    EQ.on=false; eqApplyGains(); _eqSave(); _eqPaintPop();
+    toast('이퀄라이저 꺼짐 · 원음으로 들려드려요',1300);
+    return;
+  }
+  const okk=await eqBuild();
+  if(!okk){
+    _eqPaintPop();
+    const note=$('mpEqNote');
+    if(note){ note.textContent='외부 스트리밍 음원이나 이 브라우저에서는 이퀄라이저를 켤 수 없어요.'; note.classList.add('show'); }
+    return;
+  }
+  const note=$('mpEqNote'); if(note) note.classList.remove('show');
+  if(_eqCtx&&_eqCtx.state==='suspended'){ try{ await _eqCtx.resume(); }catch(e){} }
+  EQ.on=true; eqApplyGains(); _eqSave(); _eqPaintPop();
+  toast('이퀄라이저 켜짐 · '+(EQ.preset>=0&&EQ_PRESETS[EQ.preset]?EQ_PRESETS[EQ.preset][0]:'사용자 설정'),1500);
+}
+// 팝오버 열고 닫기 — 이퀄라이저는 눌러야만 살짝 보인다
+(function(){
+  const b=$('mpBEq'); if(!b) return;
+  b.addEventListener('click',async e=>{
+    e.stopPropagation();
+    const pop=_eqBuildPop(); if(!pop) return;
+    const willOpen=pop.hidden||!pop.classList.contains('show');
+    if(willOpen){
+      pop.hidden=false;
+      requestAnimationFrame(()=>pop.classList.add('show'));
+      _eqPaintPop();
+      if(EQ.on&&!_eqBuilt&&!_eqBusy){                 // 저장된 켜짐 상태면 조용히 준비
+        _eqBusy=true;
+        try{ await eqBuild(); }catch(err){}
+        if(!_eqBuilt) EQ.on=false;
+        _eqBusy=false; _eqPaintPop();
+      }
+      eqViz();
+    }else{
+      pop.classList.remove('show');
+      setTimeout(()=>{ pop.hidden=true; },220);
+    }
+  });
+  document.addEventListener('pointerdown',e=>{
+    const pop=$('mpEqPop');
+    if(!pop||pop.hidden) return;
+    if(e.target.closest('#mpEqPop,#mpBEq')) return;
+    pop.classList.remove('show');
+    setTimeout(()=>{ pop.hidden=true; },220);
+  });
+})();
+// 자동재생 정책: 제스처 안에서만 그래프를 만든다 — 켜둔 상태라면 첫 재생 때 부활
+A.addEventListener('play',async()=>{
+  if(!EQ.on||_eqCtx||_eqBusy) return;
+  _eqBusy=true;
+  try{
+    if(await eqBuild()){ eqApplyGains(true); _eqPaintPop(); }
+    else { EQ.on=false; _eqSave(); _eqPaintPop(); }
+  }finally{ _eqBusy=false; }
+});
+// AudioContext 가 잠들면 다음 터치 때 깨운다
+document.addEventListener('pointerdown',()=>{
+  try{ if(_eqCtx&&_eqCtx.state==='suspended') _eqCtx.resume(); }catch(e){}
+},true);
+
+// ── 실시간 스펙트럼 (팝오버가 열린 동안만 그린다) ──
+let _eqVizRaf=0;
+function eqViz(){
+  const cv=$('mpEqCv'); if(!cv) return;
+  let ctx2=null;
+  try{ ctx2=cv.getContext('2d'); }catch(e){}
+  if(!ctx2) return;
+  cancelAnimationFrame(_eqVizRaf);
+  const buf=new Uint8Array(128);
+  let grad=ctx2.createLinearGradient(0,cv.height,0,0);
+  try{ grad.addColorStop(0,readAccent()); grad.addColorStop(1,'#8e5cf7'); }catch(e){}
+  const tick=()=>{
+    const pop=$('mpEqPop');
+    if(!pop||pop.hidden||document.hidden){ _eqVizRaf=0; return; }
+    _eqVizRaf=requestAnimationFrame(tick);
+    ctx2.clearRect(0,0,cv.width,cv.height);
+    if(!_eqAnalyser){                                 // 그래프 전: 잔잔한 기준 파형
+      const n=48, w=cv.width/n;
+      ctx2.fillStyle=grad; ctx2.globalAlpha=.3;
+      for(let i=0;i<n;i++){ const h=3+Math.abs(Math.sin(i*.7))*4;
+        ctx2.fillRect(i*w+2,cv.height/2-h,w-4,h*2); }
+      ctx2.globalAlpha=1; return;
+    }
+    _eqAnalyser.getByteFrequencyData(buf);
+    const n=56, w=cv.width/n, step=Math.max(1,Math.floor(buf.length/n));
+    ctx2.fillStyle=grad;
+    for(let i=0;i<n;i++){
+      const v=buf[i*step]/255;
+      const h=Math.max(3,v*(cv.height-8));
+      const y=cv.height-h-3;
+      ctx2.globalAlpha=.32+v*.68;
+      if(ctx2.roundRect){ ctx2.beginPath(); ctx2.roundRect(i*w+2,y,w-4,h,3); ctx2.fill(); }
+      else ctx2.fillRect(i*w+2,y,w-4,h);
+    }
+    ctx2.globalAlpha=1;
+  };
+  if(!_eqVizRaf) _eqVizRaf=requestAnimationFrame(tick);
+}
+// 첫 화면: 현재 곡 색으로 앰비언트 준비
+try{ mpbAmbience(); mpbSleepPaint(); }catch(e){}
 // ── 지금 재생 정보 ──
 const LOSSLESS={flac:1,alac:1,wav:1,aiff:1};
 function renderBig(){
@@ -21198,7 +21739,7 @@ function renderBigList(){
   //   → 곡을 골라도 목록 HTML이 그대로라 다시 그리지 않고, 스크롤 위치가
   //     1px도 움직이지 않는다. 표시는 markNowPlaying() 이 클래스만 바꾼다.
   const row=(t,attr)=>`<div class="mpb-li" data-tid="${t.id}" ${attr}>`+
-    `<span><i class="nowic ri-volume-up-fill" style="display:none;margin-right:5px"></i>${esc2(t.title)}</span>`+
+    `<span><span class="nowic mp-eqbars" style="display:none;margin-right:6px"><i></i><i></i><i></i></span>${esc2(t.title)}</span>`+
     (t.artist?`<em>${esc2(t.artist)}</em>`:'')+
     (t.album?`<em style="max-width:150px">${esc2(t.album)}</em>`:'')+`</div>`;
   // 10.9 · 확장 플레이어 안 검색 — 검색어가 있으면 어떤 탭이든 결과를 보여 준다
@@ -23725,14 +24266,8 @@ body.lyrmode #mpBig .mpb-tabs button.mp-sortbtn{display:none;}
   justify-content:center!important;flex:none!important;
 }
 #mpBig .mpb-head #mpBFull:hover{background:var(--bg)!important;color:var(--text1)!important;}
-/* 15.0 · 확대 플레이어 전체 화면 — 진짜 Fullscreen API 가 없는
-   아이폰 사파리 등에서는 가짜(css) 전체 화면으로 동작시킨다. */
-#mpBig.mpb-fs,#mpBig:fullscreen,#mpBig:-webkit-full-screen{
-  left:0!important;top:0!important;right:0!important;bottom:0!important;
-  width:100vw!important;height:100vh!important;max-height:100vh!important;
-  border-radius:0!important;border:none!important;
-  z-index:6000!important;
-}
+/* 15.0 → 16.0 · 전체 화면 규칙은 아래 <style id="music-fs16"> 블록으로 이전·확장됨
+   (애플뮤직 풍 몰입 화면 + 진입/퇴장 모핑 애니메이션 + 이퀄라이저) */
 .fcard-head .cards-x:hover,#mpBig .mpb-head #mpBX:hover{background:var(--bg)!important;color:var(--text1)!important;}
 
 /* 동기화 버튼: 창 손잡이 안 네방향화살표 바로 옆 */
@@ -23843,6 +24378,379 @@ body.lyrmode #mpBig .mpb-tabs button.mp-sortbtn{display:none;}
   .mpb-reco-top h2{font-size:20px;}
   .mpb-reco-row{grid-auto-columns:96px;}
   .mpb-reco-art,.mpb-album-art{width:96px;height:96px;}
+}
+</style>
+<style id="music-fs16">
+/* ═══════════════════════════════════════════════════════════
+   16.0 · 애플뮤직 풍 전체 화면 플레이어 + 이퀄라이저
+   · 전체 화면이 되면 창이 부드럽게 모핑되며 커지고(.mpb-anim),
+     표지를 크게 흐린 몰입 배경 + 표지 색으로 물드는 오로라 위에
+     큰 표지·컨트롤이 떠오른다.
+   · 목록/추천/가사는 오른쪽(폰은 아래)에서 슬라이드되는 서랍.
+   · 이퀄라이저는 작은 아이콘 뒤 팝오버 — Web Audio 10밴드.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── 열리는 동안 창→전체화면 모핑 (크기·위치·곡률 전환) ── */
+#mpBig.mpb-anim{
+  transition:left .52s cubic-bezier(.32,.72,0,1),
+             top .52s cubic-bezier(.32,.72,0,1),
+             width .52s cubic-bezier(.32,.72,0,1),
+             height .52s cubic-bezier(.32,.72,0,1),
+             border-radius .52s cubic-bezier(.32,.72,0,1),
+             box-shadow .52s ease !important;
+}
+
+/* ── 전체 화면 기본 틀 (진짜 Fullscreen API + css 가짜 전체화면 공통) ── */
+#mpBig.mpb-fs,#mpBig:fullscreen,#mpBig:-webkit-full-screen{
+  left:0!important;top:0!important;right:0!important;bottom:0!important;
+  width:100vw!important;height:100vh!important;height:100dvh!important;max-height:100vh!important;max-height:100dvh!important;
+  border-radius:0!important;border:none!important;
+  z-index:6000!important;
+  background:#0a0c13!important;
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+  box-shadow:none!important;
+  cursor:default;
+}
+#mpBig.mpb-fs ::selection{background:rgba(255,255,255,.25);color:#fff;}
+
+/* ── 앰비언트 배경: 표지를 크게 흐려 깔고, 표지에서 뽑은 두 색의 오로라가 천천히 흐른다 ── */
+.mpb-ambient{position:absolute;inset:0;z-index:0;display:none;overflow:hidden;background:#0a0c13;}
+#mpBig.mpb-fs .mpb-ambient,#mpBig:fullscreen .mpb-ambient{
+  display:block;animation:mpfsAmb .85s ease both;}
+@keyframes mpfsAmb{from{opacity:0;transform:scale(1.07);}to{opacity:1;transform:none;}}
+.mpb-ambient img{position:absolute;inset:-9%;width:118%;height:118%;object-fit:cover;
+  filter:blur(64px) saturate(1.6) brightness(.78);
+  opacity:0;transform:scale(1.1);transition:opacity 1s ease;}
+.mpb-ambient img.on{opacity:.56;}
+.mpb-blob{position:absolute;width:47vmax;height:47vmax;border-radius:50%;
+  filter:blur(56px);mix-blend-mode:screen;opacity:.34;pointer-events:none;}
+.mpb-blob.a{background:radial-gradient(circle at 50% 50%,var(--amb2,#8e5cf7) 0%,transparent 62%);
+  top:-17vmax;right:-13vmax;animation:mpbloA 17s ease-in-out infinite alternate;}
+.mpb-blob.b{background:radial-gradient(circle at 50% 50%,var(--amb1,#4f6ef7) 0%,transparent 62%);
+  bottom:-19vmax;left:-13vmax;animation:mpbloB 21s ease-in-out infinite alternate;}
+@keyframes mpbloA{to{transform:translate(-10vmax,7vmax) scale(1.22);}}
+@keyframes mpbloB{to{transform:translate(9vmax,-7vmax) scale(1.14);}}
+.mpb-ambient-veil{position:absolute;inset:0;
+  background:
+    radial-gradient(130% 95% at 50% 112%,rgba(4,6,10,.86) 0%,rgba(4,6,10,.26) 46%,rgba(6,8,12,0) 100%),
+    linear-gradient(180deg,rgba(5,7,11,.5) 0%,rgba(5,7,11,.14) 26%,rgba(5,7,11,.2) 62%,rgba(4,6,10,.6) 100%);}
+
+/* ── 머리말: 창 모드에서는 그대로, 전체 화면에선 투명 오버레이 + 가울 대문자 라벨 ── */
+.mpb-head-title{display:none;}
+#mpBig.mpb-fs .mpb-head,#mpBig:fullscreen .mpb-head{
+  position:absolute!important;top:0;left:0;right:0;z-index:30;
+  height:52px!important;min-height:52px!important;
+  padding:10px 16px!important;box-sizing:border-box!important;
+  background:linear-gradient(180deg,rgba(6,8,13,.5),rgba(6,8,13,0))!important;
+  border-bottom:none!important;cursor:default!important;
+}
+#mpBig.mpb-fs .mpb-head>i{display:none!important;}
+#mpBig.mpb-fs .mpb-head-title{
+  display:inline-flex;align-items:center;gap:8px;
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-size:10px;font-weight:800;letter-spacing:.26em;text-indent:.26em;
+  color:rgba(255,255,255,.55);pointer-events:none;white-space:nowrap;}
+#mpBig.mpb-fs .mpb-head button,#mpBig:fullscreen .mpb-head button{
+  width:32px!important;height:30px!important;border-radius:10px!important;
+  font-size:16px!important;color:rgba(255,255,255,.8)!important;
+  background:rgba(255,255,255,.09)!important;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
+#mpBig.mpb-fs .mpb-head button:hover,#mpBig:fullscreen .mpb-head button:hover{
+  background:rgba(255,255,255,.18)!important;color:#fff!important;}
+/* 머리 위 작은 재생 막대표 (재생 중일 때만 너울너울) */
+.mpb-head-eq{display:inline-flex;align-items:flex-end;gap:1.5px;height:10px;}
+.mpb-head-eq i{width:2.5px;height:3.5px;border-radius:1px;background:rgba(255,255,255,.75);
+  animation:mpbarX 1s ease-in-out infinite;}
+.mpb-head-eq i:nth-child(2){animation-delay:.22s;}
+.mpb-head-eq i:nth-child(3){animation-delay:.4s;}
+@keyframes mpbarX{0%,100%{height:3.5px}50%{height:10px}}
+body:not(.mpb-playing) .mpb-head-eq i{animation-play-state:paused;height:3.5px;}
+
+/* ── 본문 레이아웃: 물대포(스테이지) + 목록 서랍 ── */
+.mpb-stage{position:relative;flex:none;min-height:0;}
+.mpb-drawer{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;}
+.mpb-drawer-in{display:flex;flex-direction:column;flex:1;min-height:0;gap:12px;}
+
+#mpBig.mpb-fs .mpb-body,#mpBig:fullscreen .mpb-body{
+  position:relative;z-index:2;flex-direction:row;gap:0;padding:0;overflow:hidden;}
+#mpBig.mpb-fs .mpb-stage,#mpBig:fullscreen .mpb-stage{
+  flex:1;min-width:0;min-height:0;display:flex;align-items:center;justify-content:center;
+  padding:66px clamp(18px,5vw,64px) clamp(22px,5vh,44px);
+  overflow:hidden;
+  animation:mpfsStage .58s cubic-bezier(.22,.9,.3,1) both;}
+@keyframes mpfsStage{from{opacity:0;transform:translateY(36px) scale(.94);}to{opacity:1;transform:none;}}
+
+/* 전체 화면 '지금 재생 중' 카드 → 세로 정렬 큰 물대 */
+#mpBig.mpb-fs .mpb-now,#mpBig:fullscreen .mpb-now{
+  flex-direction:column;align-items:stretch;justify-content:center;
+  gap:clamp(14px,2.6vh,26px);
+  width:min(560px,94%);max-height:100%;margin:0;
+  padding:0;background:none;border:none;box-shadow:none;border-radius:0;}
+#mpBig.mpb-fs .mpb-cwrap,#mpBig:fullscreen .mpb-cwrap{
+  width:clamp(180px,min(37vh,74vw),400px);height:clamp(180px,min(37vh,74vw),400px);
+  margin:0 auto;filter:drop-shadow(0 30px 54px rgba(0,0,0,.5));
+  animation:mpfsCover .64s .06s cubic-bezier(.22,.9,.28,1.08) both;}
+@keyframes mpfsCover{from{opacity:0;transform:translateY(30px) scale(.72);}to{opacity:1;transform:none;}}
+#mpBig.mpb-fs .mpb-cwrap .mpb-cover,#mpBig:fullscreen .mpb-cwrap .mpb-cover{
+  width:100%;height:100%;border-radius:clamp(14px,2.6vh,24px);
+  box-shadow:0 0 0 1px rgba(255,255,255,.12),0 26px 60px rgba(0,0,0,.5);}
+#mpBig.mpb-fs .mpb-vinyl,#mpBig:fullscreen .mpb-vinyl{display:none;}
+/* 재생 중이면 표지가 아주 살짝 숨쉰다 */
+body.mpb-playing #mpBig.mpb-fs .mpb-cwrap .mpb-cover,
+body.mpb-playing #mpBig:fullscreen .mpb-cwrap .mpb-cover{
+  animation:mpfsBreath 5.6s ease-in-out infinite;}
+@keyframes mpfsBreath{0%,100%{transform:scale(1)}50%{transform:scale(1.016)}}
+/* 마우스 패럴 럭스 (JS 가 --tiltx/y 를 씀) */
+#mpBig.mpb-fs .mpb-cwrap{transform:perspective(1100px) rotateX(var(--tilty,0deg)) rotateY(var(--tiltx,0deg));
+  transition:transform .18s ease-out;}
+#mpBig.mpb-fs .mpb-cwrap.bump,#mpBig:fullscreen .mpb-cwrap.bump{animation:mpfsCoverSwap .5s cubic-bezier(.22,.9,.3,1) both;}
+@keyframes mpfsCoverSwap{from{opacity:.35;transform:scale(.93) translateY(8px);}to{opacity:1;transform:none;}}
+
+/* 텍스트는 전부 하얀 계열 — 어두운 몰입 배경 위 */
+#mpBig.mpb-fs .mpb-meta,#mpBig:fullscreen .mpb-meta{gap:7px;align-items:center;}
+#mpBig.mpb-fs .mpb-title,#mpBig:fullscreen .mpb-title{
+  font-size:clamp(20px,3.5vh,30px);text-align:center;color:#fff;line-height:1.22;
+  text-shadow:0 2px 18px rgba(0,0,0,.35);max-width:100%;}
+#mpBig.mpb-fs .mpb-artist,#mpBig:fullscreen .mpb-artist{
+  font-size:clamp(14px,2vh,17px);text-align:center;color:rgba(255,255,255,.82);}
+#mpBig.mpb-fs .mpb-album,#mpBig:fullscreen .mpb-album{
+  font-size:12px;text-align:center;color:rgba(255,255,255,.5);}
+#mpBig.mpb-fs .mpb-title.bump,#mpBig:fullscreen .mpb-title.bump{animation:mpbump .48s cubic-bezier(.22,.9,.3,1) both;}
+@keyframes mpbump{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+#mpBig.mpb-fs .mpb-chips,#mpBig:fullscreen .mpb-chips{justify-content:center;}
+#mpBig.mpb-fs .mpb-chips span,#mpBig:fullscreen .mpb-chips span{
+  background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.16);color:rgba(255,255,255,.82);}
+#mpBig.mpb-fs .mpb-chips span.src,#mpBig:fullscreen .mpb-chips span.src{color:#9fd1ff;border-color:rgba(159,209,255,.4);}
+#mpBig.mpb-fs .mpb-prog,#mpBig:fullscreen .mpb-prog{
+  height:6px;background:rgba(255,255,255,.24);margin:8px 2px 2px;width:100%;}
+#mpBig.mpb-fs #mpBFill,#mpBig:fullscreen #mpBFill{background:linear-gradient(90deg,#fff,#fff);}
+#mpBig.mpb-fs #mpBKnob,#mpBig:fullscreen #mpBKnob{
+  background:#fff;border-color:rgba(0,0,0,.16);box-shadow:0 2px 8px rgba(0,0,0,.5);
+  opacity:0;transition:opacity .15s;}
+#mpBig.mpb-fs .mpb-prog:hover #mpBKnob,#mpBig:fullscreen .mpb-prog:hover #mpBKnob{opacity:1;}
+#mpBig.mpb-fs .mpb-time,#mpBig:fullscreen .mpb-time{color:rgba(255,255,255,.62);font-size:11px;}
+#mpBig.mpb-fs .mpb-ctl,#mpBig:fullscreen .mpb-ctl{gap:clamp(10px,2vw,20px);margin-top:clamp(4px,1.4vh,12px);}
+#mpBig.mpb-fs .mpb-ctl button,#mpBig:fullscreen .mpb-ctl button{
+  width:52px;height:52px;font-size:25px;color:rgba(255,255,255,.86);}
+#mpBig.mpb-fs .mpb-ctl button:hover,#mpBig:fullscreen .mpb-ctl button:hover{
+  background:rgba(255,255,255,.13);color:#fff;}
+#mpBig.mpb-fs .mpb-ctl button.on,#mpBig:fullscreen .mpb-ctl button.on{
+  color:var(--accent);background:rgba(255,255,255,.13);}
+#mpBig.mpb-fs .mpb-ctl .pp,#mpBig:fullscreen .mpb-ctl .pp{
+  width:74px;height:74px;font-size:33px;background:#fff;color:#111;
+  box-shadow:0 16px 38px rgba(0,0,0,.5);}
+#mpBig.mpb-fs .mpb-ctl .pp:hover,#mpBig:fullscreen .mpb-ctl .pp:hover{
+  background:#fff;color:#000;filter:brightness(.94);transform:scale(1.04);}
+#mpBig.mpb-fs .mpb-ctl .pp:active{transform:scale(.95);}
+
+/* ── 보조 버튼 줄: 속도 · 이퀄라이저 · 타이머 · 볼륨 · (전체 화면)가사 · 목록 ── */
+.mpb-ric{position:relative;width:28px;height:28px;padding:0;border:1px solid var(--border);
+  background:var(--bg2);color:var(--text2);border-radius:8px;cursor:pointer;font-size:14px;
+  display:inline-flex;align-items:center;justify-content:center;flex:none;gap:0;}
+.mpb-ric:hover{color:var(--text1);border-color:var(--text3);}
+.mpb-ric.on{color:var(--accent);border-color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);}
+.mpb-ric em{position:absolute;top:-7px;right:-8px;font-style:normal;font-size:8.5px;font-weight:800;
+  background:var(--accent);color:#fff;border-radius:99px;padding:1px 4.5px;line-height:1.35;display:none;}
+.mpb-ric.live em{display:block;animation:mpbump .3s both;}
+.mpb-fsonly{display:none!important;}
+#mpBig.mpb-fs .mpb-fsonly,#mpBig:fullscreen .mpb-fsonly{display:inline-flex!important;}
+#mpBig.mpb-fs .mpb-row2,#mpBig:fullscreen .mpb-row2{justify-content:center;gap:12px;margin-top:clamp(2px,.8vh,8px);}
+#mpBig.mpb-fs .mpb-row2 #mpBRate,#mpBig:fullscreen .mpb-row2 #mpBRate{
+  height:38px;padding:0 13px;border-radius:99px;font-size:12px;
+  background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:rgba(255,255,255,.85);}
+#mpBig.mpb-fs .mpb-row2 #mpBRate:hover{color:#fff;border-color:rgba(255,255,255,.4);}
+#mpBig.mpb-fs .mpb-row2 #mpBRate.on{color:#000;background:#fff;border-color:#fff;}
+#mpBig.mpb-fs .mpb-ric,#mpBig:fullscreen .mpb-ric{
+  width:38px;height:38px;border-radius:50%;font-size:16px;
+  background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:rgba(255,255,255,.85);}
+#mpBig.mpb-fs .mpb-ric:hover,#mpBig:fullscreen .mpb-ric:hover{
+  color:#fff;background:rgba(255,255,255,.17);}
+#mpBig.mpb-fs .mpb-ric.on,#mpBig:fullscreen .mpb-ric.on{
+  color:#fff;background:var(--accent);border-color:var(--accent);}
+#mpBig.mpb-fs .mpb-vol,#mpBig:fullscreen .mpb-vol{
+  flex:none;width:min(180px,22vw);color:rgba(255,255,255,.72);}
+#mpBig.mpb-fs .mpb-vol input{accent-color:#fff;}
+@media(max-width:560px){#mpBig.mpb-fs .mpb-vol,#mpBig:fullscreen .mpb-vol{width:104px;}}
+
+/* ── 목록 서랍: 데스크톱은 오른쪽에서, 폰은 아래 시트로 ── */
+#mpBig.mpb-fs .mpb-drawer,#mpBig:fullscreen .mpb-drawer{
+  flex:none;width:0;overflow:hidden;
+  transition:width .46s cubic-bezier(.32,.72,0,1);}
+#mpBig.mpb-fs.show-drawer .mpb-drawer,#mpBig:fullscreen.show-drawer .mpb-drawer{
+  width:min(404px,38vw);}
+#mpBig.mpb-fs .mpb-drawer-in,#mpBig:fullscreen .mpb-drawer-in{
+  width:min(404px,38vw);height:100%;padding:64px 18px 16px;box-sizing:border-box;gap:11px;
+  background:rgba(10,13,20,.5);
+  border-left:1px solid rgba(255,255,255,.09);
+  backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%);}
+#mpBig.mpb-fs .mpb-tabs button,#mpBig:fullscreen .mpb-tabs button{
+  background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.1);color:rgba(255,255,255,.78);}
+#mpBig.mpb-fs .mpb-tabs button:hover,#mpBig:fullscreen .mpb-tabs button:hover{color:#fff;border-color:rgba(255,255,255,.3);}
+#mpBig.mpb-fs .mpb-tabs button.on,#mpBig:fullscreen .mpb-tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+#mpBig.mpb-fs .mpb-tabs button.mpb-icon.on,#mpBig:fullscreen .mpb-tabs button.mpb-icon.on{background:var(--accent);color:#fff;}
+#mpBig.mpb-fs #mpBUp,#mpBig:fullscreen #mpBUp{
+  background:rgba(255,255,255,.1)!important;color:rgba(255,255,255,.88)!important;border-color:rgba(255,255,255,.16)!important;}
+#mpBig.mpb-fs #mpBUp:hover,#mpBig:fullscreen #mpBUp:hover{background:rgba(255,255,255,.2)!important;}
+#mpBig.mpb-fs .mpb-list,#mpBig:fullscreen .mpb-list{border-top-color:rgba(255,255,255,.1);}
+#mpBig.mpb-fs .mpb-li,#mpBig:fullscreen .mpb-li{color:rgba(255,255,255,.88);}
+#mpBig.mpb-fs .mpb-li:hover,#mpBig:fullscreen .mpb-li:hover{background:rgba(255,255,255,.09);}
+#mpBig.mpb-fs .mpb-li.on,#mpBig:fullscreen .mpb-li.on{
+  background:color-mix(in srgb,var(--accent) 30%,transparent);color:#fff;box-shadow:inset 3px 0 0 var(--accent);}
+#mpBig.mpb-fs .mpb-li em,#mpBig:fullscreen .mpb-li em{color:rgba(255,255,255,.45);}
+#mpBig.mpb-fs .mpb-artgrp,#mpBig:fullscreen .mpb-artgrp{color:rgba(255,255,255,.72);}
+#mpBig.mpb-fs .mpb-artgrp em,#mpBig:fullscreen .mpb-artgrp em{color:rgba(255,255,255,.4);}
+#mpBig.mpb-fs .mpb-empty,#mpBig:fullscreen .mpb-empty{color:rgba(255,255,255,.55);}
+#mpBig.mpb-fs .mpb-pager,#mpBig:fullscreen .mpb-pager{color:rgba(255,255,255,.5);}
+#mpBig.mpb-fs .mpb-pager button,#mpBig:fullscreen .mpb-pager button{
+  background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:rgba(255,255,255,.85);}
+#mpBig.mpb-fs .mpb-pager .mpb-goto input,#mpBig:fullscreen .mpb-pager .mpb-goto input{
+  background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:#fff;}
+#mpBig.mpb-fs .mpb-lyr .ll,#mpBig:fullscreen .mpb-lyr .ll{color:#fff;}
+#mpBig.mpb-fs .mpb-lyr .ll.now,#mpBig:fullscreen .mpb-lyr .ll.now{color:var(--accent);}
+/* 추천(발견) 화면 글씨도 어두운 서랍에 맞춰 밝게 */
+#mpBig.mpb-fs .mpb-reco-top h2,#mpBig:fullscreen .mpb-reco-top h2{color:#fff;}
+#mpBig.mpb-fs .mpb-reco-top p,#mpBig:fullscreen .mpb-reco-top p{color:rgba(255,255,255,.55);}
+#mpBig.mpb-fs .mpb-reco-head b,#mpBig:fullscreen .mpb-reco-head b{color:#fff;}
+#mpBig.mpb-fs .mpb-reco-head span,#mpBig:fullscreen .mpb-reco-head span{color:rgba(255,255,255,.5);}
+#mpBig.mpb-fs .mpb-reco-card>b,#mpBig:fullscreen .mpb-reco-card>b{color:rgba(255,255,255,.92);}
+#mpBig.mpb-fs .mpb-group-chip,#mpBig:fullscreen .mpb-group-chip{
+  background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.12);color:rgba(255,255,255,.8);}
+#mpBig.mpb-fs .mpb-reco-current,#mpBig:fullscreen .mpb-reco-current{
+  background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.12);}
+#mpBig.mpb-fs .mpb-reco-current b,#mpBig:fullscreen .mpb-reco-current b{color:#fff;}
+#mpBig.mpb-fs .mpb-reco-current span,#mpBig:fullscreen .mpb-reco-current span{color:rgba(255,255,255,.5);}
+#mpBig.mpb-fs .mpb-reco-empty b,#mpBig:fullscreen .mpb-reco-empty b{color:#fff;}
+#mpBig.mpb-fs .mp-emptybox,#mpBig:fullscreen .mp-emptybox{color:rgba(255,255,255,.75);}
+
+/* ── 검색창 예쁘게: 둥근 필 + 포커스 글로우 + 결과 배지 ── */
+.mpb-searchbar{border-radius:999px;padding:6px 11px;
+  background:color-mix(in srgb,var(--bg2) 80%,transparent);
+  border:1px solid color-mix(in srgb,var(--border) 85%,transparent);
+  transition:border-color .18s,box-shadow .18s;}
+.mpb-searchbar:focus-within{
+  border-color:color-mix(in srgb,var(--accent) 55%,transparent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent);}
+.mpb-searchbar.show{animation:mpfind .3s cubic-bezier(.22,.9,.3,1.18);}
+@keyframes mpfind{from{opacity:0;transform:translateY(-7px) scale(.97);}to{opacity:1;transform:none;}}
+.mpb-searchcnt{font-size:10px;font-weight:800;color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 13%,transparent);
+  padding:2px 8px;border-radius:99px;flex:none;white-space:nowrap;}
+.mpb-searchcnt:empty{display:none;}
+#mpBig.mpb-fs .mpb-searchbar,#mpBig:fullscreen .mpb-searchbar{
+  background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);}
+#mpBig.mpb-fs .mpb-searchbar:focus-within,#mpBig:fullscreen .mpb-searchbar:focus-within{
+  border-color:rgba(255,255,255,.5);box-shadow:0 0 0 3px rgba(255,255,255,.12);}
+#mpBig.mpb-fs .mpb-searchbar input,#mpBig:fullscreen .mpb-searchbar input{color:#fff;}
+#mpBig.mpb-fs .mpb-searchbar input::placeholder,#mpBig:fullscreen .mpb-searchbar input::placeholder{color:rgba(255,255,255,.4);}
+#mpBig.mpb-fs .mpb-searchbar>i,#mpBig:fullscreen .mpb-searchbar>i{color:rgba(255,255,255,.5);}
+#mpBig.mpb-fs .mpb-searchbar button,#mpBig:fullscreen .mpb-searchbar button{color:rgba(255,255,255,.6);}
+#mpBig.mpb-fs .mpb-searchbar button:hover,#mpBig:fullscreen .mpb-searchbar button:hover{color:#fff;background:rgba(255,255,255,.1);}
+
+/* 목록에서 지금 재생 중: 스피커 아이콘 대신 너울거리는 막대 */
+.mp-eqbars{display:inline-flex;align-items:flex-end;gap:1.5px;height:11px;vertical-align:-2px;margin-right:6px;}
+.mp-eqbars i{width:2.5px;height:4px;border-radius:1px;background:currentColor;flex:none;
+  animation:mpbarX 1s ease-in-out infinite;}
+.mp-eqbars i:nth-child(2){animation-delay:.2s;}
+.mp-eqbars i:nth-child(3){animation-delay:.36s;}
+body:not(.mpb-playing) .mp-eqbars i{animation-play-state:paused;height:4px;}
+.mpb-li.on .mp-eqbars i{background:var(--accent);}
+#mpBig.mpb-fs .mpb-li.on .mp-eqbars i,#mpBig:fullscreen .mpb-li.on .mp-eqbars i{background:#fff;}
+
+/* ── 이퀄라이저 팝오버 ── */
+.mp-eqpop{position:absolute;left:50%;bottom:12px;z-index:70;
+  width:min(430px,calc(100% - 22px));
+  transform:translateX(-50%) translateY(14px) scale(.95);opacity:0;pointer-events:none;
+  background:color-mix(in srgb,var(--card) 88%,transparent);
+  backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);
+  border:1px solid color-mix(in srgb,var(--border) 78%,transparent);border-radius:17px;
+  box-shadow:0 26px 70px rgba(0,0,0,.38);
+  padding:12px 14px 13px;
+  transition:opacity .26s ease,transform .26s cubic-bezier(.22,.9,.3,1.18);}
+.mp-eqpop.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0) scale(1);}
+.mp-eqpop .eq-top{display:flex;align-items:center;gap:7px;margin-bottom:8px;}
+.mp-eqpop .eq-top>i{font-size:15px;color:var(--accent);}
+.mp-eqpop .eq-top b{font-size:13px;color:var(--text1);letter-spacing:-.01em;}
+.mp-eqpop .eq-top .eq-preset-name{font-size:10.5px;font-weight:700;color:var(--accent);}
+.mp-eqpop .eq-top .sp{flex:1;}
+.mp-eqpop .eq-mini{border:1px solid var(--border);background:var(--bg2);color:var(--text2);
+  border-radius:7px;cursor:pointer;padding:3px 9px;font-size:10.5px;font-weight:700;}
+.mp-eqpop .eq-mini:hover{color:var(--text1);border-color:var(--text3);}
+.eq-sw{position:relative;width:38px;height:22px;border:none;border-radius:99px;cursor:pointer;
+  background:var(--bg2);border:1px solid var(--border);transition:background .2s,border-color .2s;flex:none;padding:0;}
+.eq-sw span{position:absolute;top:50%;left:3px;width:15px;height:15px;border-radius:50%;
+  background:var(--text3);transform:translateY(-50%);transition:left .2s cubic-bezier(.22,.9,.3,1.3),background .2s;}
+.eq-sw.on{background:var(--accent);border-color:var(--accent);}
+.eq-sw.on span{left:19px;background:#fff;}
+.mp-eqpop canvas{display:block;width:100%;height:54px;border-radius:10px;
+  background:color-mix(in srgb,var(--bg2) 72%,transparent);
+  border:1px solid color-mix(in srgb,var(--border) 70%,transparent);margin-bottom:8px;}
+.eq-presets{display:flex;gap:5px;overflow-x:auto;padding-bottom:4px;margin-bottom:9px;scrollbar-width:none;}
+.eq-presets::-webkit-scrollbar{display:none;}
+.eq-presets button{flex:none;border:1px solid var(--border);background:var(--bg2);color:var(--text2);
+  border-radius:99px;padding:4px 10px;font-size:10.5px;font-weight:700;cursor:pointer;white-space:nowrap;}
+.eq-presets button:hover{color:var(--text1);border-color:var(--text3);}
+.eq-presets button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+.eq-bands{display:flex;justify-content:space-between;gap:4px;}
+.eq-band{display:flex;flex-direction:column;align-items:center;gap:3px;width:34px;flex:none;}
+.eq-band b{font-size:9px;font-weight:800;color:var(--text2);height:11px;font-variant-numeric:tabular-nums;}
+.eq-band input[type=range]{
+  writing-mode:vertical-lr;direction:rtl;
+  width:20px;height:96px;margin:0;cursor:pointer;accent-color:var(--accent);}
+.eq-band em{font-style:normal;font-size:8.5px;color:var(--text3);font-variant-numeric:tabular-nums;}
+.mp-eqpop .eq-note{display:none;margin-top:8px;font-size:10.5px;line-height:1.5;color:#d98b00;}
+.mp-eqpop .eq-note.show{display:block;}
+.mp-eqpop.off .eq-bands,.mp-eqpop.off canvas{opacity:.38;filter:saturate(.4);pointer-events:none;}
+/* 전체 화면에서의 팝오버: 어두운 유리 + 컨트롤 위쪽에 띄움 */
+#mpBig.mpb-fs .mp-eqpop,#mpBig:fullscreen .mp-eqpop{
+  bottom:clamp(86px,13vh,150px);
+  background:rgba(13,16,24,.82);border-color:rgba(255,255,255,.13);
+  box-shadow:0 30px 80px rgba(0,0,0,.6);}
+#mpBig.mpb-fs .mp-eqpop .eq-top b,#mpBig:fullscreen .mp-eqpop .eq-top b{color:#fff;}
+#mpBig.mpb-fs .mp-eqpop .eq-band b,#mpBig:fullscreen .mp-eqpop .eq-band b{color:rgba(255,255,255,.75);}
+#mpBig.mpb-fs .mp-eqpop .eq-band em,#mpBig:fullscreen .mp-eqpop .eq-band em{color:rgba(255,255,255,.45);}
+#mpBig.mpb-fs .mp-eqpop .eq-mini,#mpBig:fullscreen .mp-eqpop .eq-mini{
+  background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:rgba(255,255,255,.8);}
+#mpBig.mpb-fs .mp-eqpop .eq-sw:not(.on),#mpBig:fullscreen .mp-eqpop .eq-sw:not(.on){
+  background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.22);}
+#mpBig.mpb-fs .mp-eqpop .eq-presets button,#mpBig:fullscreen .mp-eqpop .eq-presets button{
+  background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.13);color:rgba(255,255,255,.78);}
+#mpBig.mpb-fs .mp-eqpop .eq-presets button.on,#mpBig:fullscreen .mp-eqpop .eq-presets button.on{
+  background:var(--accent);border-color:var(--accent);color:#fff;}
+#mpBig.mpb-fs .mp-eqpop canvas,#mpBig:fullscreen .mp-eqpop canvas{
+  background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);}
+
+/* 폰: 서랍은 아래에서 올라오는 시트 */
+@media(max-width:760px){
+  #mpBig.mpb-fs .mpb-stage,#mpBig:fullscreen .mpb-stage{padding:60px 18px 20px;}
+  #mpBig.mpb-fs .mpb-cwrap,#mpBig:fullscreen .mpb-cwrap{
+    width:min(62vw,30vh);height:min(62vw,30vh);}
+  #mpBig.mpb-fs .mpb-ctl button{width:46px;height:46px;font-size:22px;}
+  #mpBig.mpb-fs .mpb-ctl .pp{width:62px;height:62px;font-size:27px;}
+  #mpBig.mpb-fs .mpb-drawer,#mpBig:fullscreen .mpb-drawer{
+    position:absolute;left:0;right:0;bottom:0;top:auto;z-index:25;
+    width:auto;height:66vh;max-height:none;
+    transform:translateY(103%);transition:transform .42s cubic-bezier(.32,.72,0,1);
+    border-radius:20px 20px 0 0;overflow:hidden;}
+  #mpBig.mpb-fs.show-drawer .mpb-drawer,#mpBig:fullscreen.show-drawer .mpb-drawer{transform:none;}
+  #mpBig.mpb-fs .mpb-drawer-in,#mpBig:fullscreen .mpb-drawer-in{
+    width:100%;padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));
+    border-left:none;border-top:1px solid rgba(255,255,255,.1);
+    background:rgba(10,13,20,.88);}
+  /* 시트 열리면 손잡이 표시 */
+  #mpBig.mpb-fs .mpb-drawer::before,#mpBig:fullscreen .mpb-drawer::before{
+    content:'';position:absolute;top:7px;left:50%;transform:translateX(-50%);
+    width:38px;height:4px;border-radius:99px;background:rgba(255,255,255,.28);z-index:2;}
+  #mpBig.mpb-fs .mpb-tabs{margin-top:8px;}
+  .mp-eqpop{bottom:10px;}
+  #mpBig.mpb-fs .mp-eqpop,#mpBig:fullscreen .mp-eqpop{bottom:10px;}
+}
+
+@media (prefers-reduced-motion:reduce){
+  #mpBig.mpb-anim{transition-duration:.01ms!important;}
+  #mpBig.mpb-fs .mpb-stage,#mpBig.mpb-fs .mpb-cwrap,#mpBig .mpb-ambient,
+  .mpb-searchbar.show{animation-duration:.01ms!important;animation-delay:0ms!important;}
+  .mpb-blob.a,.mpb-blob.b,body.mpb-playing #mpBig.mpb-fs .mpb-cwrap .mpb-cover{animation:none!important;}
 }
 </style>
 
