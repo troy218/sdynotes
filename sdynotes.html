@@ -4826,54 +4826,69 @@
                 const c=getCfg(nb.id);
                 return [nb.id, nb.title||'', c.pinned?1:0, c.folder||'', c.trashed_at||'', c.emoji||''].join(':');
             }).join('|');
-            return (curFolder||'')+'/'+(searchQuery||'')+'/'+(selectMode?1:0)+'/'+folders+'/'+notes;
+            const recent=(!searchQuery&&!curFolder&&!selectMode)?_getRecentIds().join(','):'';
+            return (curFolder||'')+'/'+(searchQuery||'')+'/'+(selectMode?1:0)+'/'+folders+'/'+notes+'/'+recent;
         }catch(e){ return String(Date.now()); }
     }
     let _lastGridSig='';
-    // ── 16.x · 최근 본 노트 추적 (기기별 로컬) ──
-    function _getRecentIds(){
-        try{ return JSON.parse(localStorage.getItem('sdy_recent_notes')||'[]'); }catch(e){ return []; }
-    }
+    // ── 16.1 · 홈에서만 쓰는 '이번 접속' 기록 ─────────────────────
+    // 서버 설정·localStorage에는 쓰지 않는다. 노트를 열었다가 돌아오면
+    // 아래 줄로 잠시 내려놓고, 새로 접속하면 다시 원래 스택으로 돌아온다.
+    let _sessionRecentIds=[];
+    function _getRecentIds(){ return _sessionRecentIds.slice(); }
     function _trackRecent(nbId){
-        if(!nbId) return;
-        try{
-            let r=_getRecentIds().filter(id=>id!==nbId);
-            r.unshift(nbId);
-            if(r.length>12) r=r.slice(0,12);
-            localStorage.setItem('sdy_recent_notes',JSON.stringify(r));
-        }catch(e){}
+        if(nbId==null||nbId==='') return;
+        const id=String(nbId);
+        _sessionRecentIds=_sessionRecentIds.filter(x=>String(x)!==id);
+        _sessionRecentIds.unshift(id);
     }
-    // ── 스택 뷰: 카드 transforms 계산 ──
+
+    // ── 홈 스택: 아래(폴더)에서 위(문서)로 한 장씩 오른쪽·위로 이동 ──
     function _stackTransforms(cards,fanned){
         const n=cards.length; if(!n) return;
         const mid=(n-1)/2;
-        const maxW=Math.min(620,innerWidth-80);
+        const viewport=window.innerWidth||1024;
+        const cardW=Math.max(...cards.map(c=>c.offsetWidth||200));
+        const available=Math.max(0,viewport-cardW-48);
+        const spread=n>1?Math.min(230,available/(n-1)):0;
         cards.forEach((c,i)=>{
             const off=i-mid;
             if(fanned){
-                const spread=n>1?maxW/(n-1):0;
                 const x=off*spread;
-                const rot=off*4.5;
-                c.style.transform=`translateX(${x}px) rotate(${rot}deg) scale(1)`;
+                const y=off*2.2;
+                const rot=Math.max(-22,Math.min(22,off*4.2));
+                c.style.transform=`translate(-50%,-50%) translate3d(${x}px,${y}px,0) rotate(${rot}deg) scale(1)`;
                 c.style.zIndex=i+1;
                 c.style.opacity='1';
             }else{
-                const rot=off*3.2;
-                const y=Math.abs(off)*7;
-                const x=off*14;
-                const sc=1-Math.abs(off)*0.018;
-                c.style.transform=`translateX(${x}px) rotate(${rot}deg) translateY(${y}px) scale(${sc})`;
-                c.style.zIndex=n-Math.abs(Math.round(off));
-                c.style.opacity=String(Math.max(0.55,1-Math.abs(off)*0.08));
+                // item 순서 자체가 깊이 순서다: 폴더 → 문서.
+                // 따라서 첫 카드(가장 아래)는 왼쪽 아래, 마지막 카드는 오른쪽 위다.
+                const x=off*13;
+                const y=off*-6;
+                const rot=off*1.25;
+                c.style.transform=`translate(-50%,-50%) translate3d(${x}px,${y}px,0) rotate(${rot}deg)`;
+                c.style.zIndex=i+1;
+                c.style.opacity='1';
             }
+        });
+    }
+    function _layoutHomeStacks(){
+        document.querySelectorAll('.note-stack').forEach(stack=>{
+            const cards=Array.from(stack.children).filter(c=>
+                c.classList.contains('note-card')||c.classList.contains('folder-card'));
+            if(!cards.length) return;
+            const cardH=Math.max(...cards.map(c=>c.offsetHeight||300));
+            const depth=Math.min(180,Math.max(0,(cards.length-1)*6));
+            stack.style.height=Math.max(300,cardH+depth+30)+'px';
+            _stackTransforms(cards,stack.classList.contains('fanned'));
         });
     }
     function renderGrid(force){
         const g=document.getElementById('noteGrid');
         if(!g) return;
         const sig=_gridSig();
-        if(!force && sig===_lastGridSig && g.querySelector('.note-card,.folder-card,.add-card')){
-            try{ requestAnimationFrame(rescalePreviews); }catch(e){}
+        if(!force && sig===_lastGridSig && g.querySelector('.home-stack-area,.note-card,.folder-card,.add-card')){
+            try{ requestAnimationFrame(()=>{ rescalePreviews(); _layoutHomeStacks(); }); }catch(e){}
             return;
         }
         _lastGridSig=sig;
@@ -4881,62 +4896,79 @@
         g.innerHTML='';
         renderBreadcrumb();
 
-        // 현재 위치의 하위 폴더를 보여 준다 (검색 중엔 숨김)
-        if(!searchQuery){
-            childFolders(curFolder).forEach(f=>{
-                const fc=document.createElement('div');
-                fc.className='folder-card';
-                fc.dataset.folderId=f.id;
-                const fcol=f.color||'#4f6ef7';
-                const fico=f.icon||'ri-folder-3-fill';
-                const flock=isFolderLocked(f.id);
-                const fopen=isFolderOpen(f.id);
-                if(flock) fc.classList.add('locked-folder');
-                fc.innerHTML=`
-                    <div class="folder-thumb" style="background:${hexA(fcol,.09)};">
-                        <i class="${flock&&!fopen?'ri-folder-lock-fill':fico}" style="color:${fcol};filter:drop-shadow(0 4px 10px ${hexA(fcol,.32)});"></i>
-                        ${flock&&fopen?`<span class="folder-lock" title="이번 접속에서 열림"><i class="ri-lock-unlock-line"></i></span>`:''}
-                        ${flock&&!fopen?'':`<span class="folder-count" style="background:${fcol};">${folderCount(f.id)}</span>`}
-                    </div>
-                    <div class="note-card-name">
-                        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>
-                        <i class="ri-more-2-fill folder-menu-btn" style="color:var(--text3);flex-shrink:0;margin-left:8px;padding:2px;border-radius:3px;"></i>
-                    </div>`;
-                fc.onclick=(e)=>{
-                    if(lpFired){ lpFired=false; return; }
-                    if(e.target.closest('.folder-menu-btn')){ e.stopPropagation(); openFolderMenu(e,f.id); return; }
-                    if(!selectMode) openFolder(f.id);
-                };
-                fc.oncontextmenu=(e)=>{ e.preventDefault(); openFolderMenu(e,f.id); };
-                // 노트를 끌어다 놓기
-                fc.addEventListener('dragover',ev=>{ ev.preventDefault(); fc.classList.add('drop'); });
-                fc.addEventListener('dragleave',()=>fc.classList.remove('drop'));
-                fc.addEventListener('drop',ev=>{
-                    ev.preventDefault(); fc.classList.remove('drop');
-                    if(!isFolderOpen(f.id)){ toast('🔒 잠긴 폴더에는 넣을 수 없습니다',2000); return; }
-                    const ids=(ev.dataTransfer.getData('text/plain')||'').split(',').filter(Boolean);
-                    if(!ids.length) return;
-                    animateMoveLocal(ids, f.id, ()=>{
-                        ids.forEach(id=>setNoteFolder(id,f.id));
-                        cancelSelect(); renderGrid();
-                        toast(`${ids.length}개 노트를 '${f.name}' 로 이동`);
-                    });
-                });
-                g.appendChild(fc);
-            });
-        }
-        // ── 16.x · 홈 화면: 스택 뷰 / 폴더·검색: 기존 그리드 ──
         const isHomeStack=!searchQuery&&!curFolder&&!selectMode;
         const filtered=getFiltered();
         const recentIds=isHomeStack?_getRecentIds():[];
-        const recentSet=new Set(recentIds);
-        const stackNotes=isHomeStack?filtered.filter(nb=>!recentSet.has(nb.id)):filtered;
-        const recentNotes=isHomeStack?filtered.filter(nb=>recentSet.has(nb.id)):[];
-        if(recentNotes.length>1){
-            const rIdx=new Map(recentIds.map((id,i)=>[id,i]));
-            recentNotes.sort((a,b)=>(rIdx.get(a.id)||0)-(rIdx.get(b.id)||0));
+        const recentSet=new Set(recentIds.map(id=>String(id)));
+        // 최상위 문서 중 이번 접속에 연 적이 없는 문서는 스택에 남긴다.
+        const stackNotes=isHomeStack
+            ?filtered.filter(nb=>!recentSet.has(String(nb.id)))
+            :filtered;
+        // 최근 문서는 폴더 안에서 열었더라도 홈의 두 번째 줄에 보여 준다.
+        // 잠긴 폴더의 경로가 현재 접속에서 열려 있지 않으면 노출하지 않는다.
+        const recentNotes=[];
+        if(isHomeStack){
+            const byId=new Map(notebooks.map(nb=>[String(nb.id),nb]));
+            recentIds.forEach(id=>{
+                const nb=byId.get(String(id));
+                if(!nb||isTrashed(nb.id)) return;
+                const fid=noteFolder(nb.id);
+                if(fid){
+                    const path=folderPath(fid);
+                    if(!path.length||!path.every(f=>isFolderOpen(f.id))) return;
+                }
+                recentNotes.push(nb);
+            });
         }
 
+        // 폴더는 폴더 화면에서도, 홈 스택에서도 같은 카드 동작을 사용한다.
+        function _makeFolderCard(f){
+            const fc=document.createElement('div');
+            fc.className='folder-card';
+            fc.dataset.folderId=f.id;
+            const fcol=f.color||'#4f6ef7';
+            const fico=f.icon||'ri-folder-3-fill';
+            const flock=isFolderLocked(f.id);
+            const fopen=isFolderOpen(f.id);
+            if(flock) fc.classList.add('locked-folder');
+            fc.innerHTML=`
+                <div class="folder-thumb" style="background:${hexA(fcol,.09)};">
+                    <i class="${flock&&!fopen?'ri-folder-lock-fill':fico}" style="color:${fcol};filter:drop-shadow(0 4px 10px ${hexA(fcol,.32)});"></i>
+                    ${flock&&fopen?`<span class="folder-lock" title="이번 접속에서 열림"><i class="ri-lock-unlock-line"></i></span>`:''}
+                    ${flock&&!fopen?'':`<span class="folder-count" style="background:${fcol};">${folderCount(f.id)}</span>`}
+                </div>
+                <div class="note-card-name">
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>
+                    <i class="ri-more-2-fill folder-menu-btn" style="color:var(--text3);flex-shrink:0;margin-left:8px;padding:2px;border-radius:3px;"></i>
+                </div>`;
+            fc.onclick=(e)=>{
+                if(lpFired){ lpFired=false; return; }
+                if(e.target.closest('.folder-menu-btn')){ e.stopPropagation(); openFolderMenu(e,f.id); return; }
+                if(!selectMode) openFolder(f.id);
+            };
+            fc.oncontextmenu=(e)=>{ e.preventDefault(); openFolderMenu(e,f.id); };
+            // 노트를 끌어다 놓기
+            fc.addEventListener('dragover',ev=>{ ev.preventDefault(); fc.classList.add('drop'); });
+            fc.addEventListener('dragleave',()=>fc.classList.remove('drop'));
+            fc.addEventListener('drop',ev=>{
+                ev.preventDefault(); fc.classList.remove('drop');
+                if(!isFolderOpen(f.id)){ toast('🔒 잠긴 폴더에는 넣을 수 없습니다',2000); return; }
+                const ids=(ev.dataTransfer.getData('text/plain')||'').split(',').filter(Boolean);
+                if(!ids.length) return;
+                animateMoveLocal(ids, f.id, ()=>{
+                    ids.forEach(id=>setNoteFolder(id,f.id));
+                    cancelSelect(); renderGrid();
+                    toast(`${ids.length}개 노트를 '${f.name}' 로 이동`);
+                });
+            });
+            return fc;
+        }
+
+        // 홈에서는 폴더를 따로 앞에 놓지 않고, 아래쪽부터 시작하는 한 스택에 넣는다.
+        // 폴더 → 문서 순서가 곧 카드의 깊이 순서이므로 문서가 항상 위에 놓인다.
+        if(!searchQuery&&!isHomeStack){
+            childFolders(curFolder).forEach(f=>g.appendChild(_makeFolderCard(f)));
+        }
         function _makeCard(nb){
             const d=loadDoc(nb.id);
             const size=paperSize(d);
@@ -5044,50 +5076,92 @@
             return card;
         }
 
-        if(isHomeStack && (stackNotes.length||recentNotes.length)){
+        if(isHomeStack){
+            const area=document.createElement('div');
+            area.className='home-stack-area';
+
+            // 새 노트 버튼은 스택 위에 고정된 가장 첫 번째 동작이다.
+            const upper=document.createElement('div');
+            upper.className='home-stack-upper';
+            const add=document.createElement('button');
+            add.type='button';
+            add.className='home-add-note';
+            add.setAttribute('aria-label','새 노트 만들기');
+            add.innerHTML='<span class="home-add-icon"><i class="ri-add-line"></i></span><span>새 노트 만들기</span>';
+            add.onclick=openCreateModal;
+            upper.appendChild(add);
+
             const scene=document.createElement('div');
             scene.className='stack-scene';
             const stackWrap=document.createElement('div');
             stackWrap.className='note-stack';
             const stackCards=[];
-            stackNotes.forEach(nb=>{
-                const card=_makeCard(nb);
+            const stackItems=childFolders(null).map(f=>({kind:'folder',value:f}))
+                .concat(stackNotes.map(nb=>({kind:'note',value:nb})));
+            stackWrap.dataset.count=String(stackItems.length);
+            stackItems.forEach(item=>{
+                const card=item.kind==='folder'?_makeFolderCard(item.value):_makeCard(item.value);
                 stackWrap.appendChild(card);
                 stackCards.push(card);
             });
-            requestAnimationFrame(()=>_stackTransforms(stackCards,false));
-            let _fanT=null;
-            const fanIn=()=>{ clearTimeout(_fanT); stackWrap.classList.add('fanned'); _stackTransforms(stackCards,true); };
-            const fanOut=()=>{ _fanT=setTimeout(()=>{ stackWrap.classList.remove('fanned'); _stackTransforms(stackCards,false); },280); };
-            stackWrap.addEventListener('mouseenter',fanIn);
-            stackWrap.addEventListener('mouseleave',fanOut);
+            if(!stackCards.length){
+                const empty=document.createElement('div');
+                empty.className='stack-empty';
+                empty.innerHTML='<i class="ri-stack-line"></i><span>노트를 만들면 이곳에 쌓여요</span>';
+                stackWrap.appendChild(empty);
+            }
+
+            const layoutStack=()=>{
+                if(!stackCards.length){
+                    stackWrap.style.height='220px';
+                    return;
+                }
+                _layoutHomeStacks();
+            };
+            requestAnimationFrame(layoutStack);
+            setTimeout(layoutStack,120);
+
+            let fanTimer=null;
+            const fanIn=()=>{
+                clearTimeout(fanTimer);
+                upper.classList.add('fanned');
+                stackWrap.classList.add('fanned');
+                _stackTransforms(stackCards,true);
+            };
+            const fanOut=()=>{
+                clearTimeout(fanTimer);
+                fanTimer=setTimeout(()=>{
+                    upper.classList.remove('fanned');
+                    stackWrap.classList.remove('fanned');
+                    _stackTransforms(stackCards,false);
+                },180);
+            };
+            // 버튼 위에 올라가도 같은 덩어리가 펼쳐지도록 상단 전체를 감싼다.
+            upper.addEventListener('mouseenter',fanIn);
+            upper.addEventListener('mouseleave',fanOut);
             stackWrap.addEventListener('touchstart',fanIn,{passive:true});
-            scene.addEventListener('touchend',e=>{ if(!e.target.closest('.note-card')) fanOut(); },{passive:true});
+            scene.addEventListener('touchend',e=>{
+                if(!e.target.closest('.note-card,.folder-card')) fanOut();
+            },{passive:true});
             scene.appendChild(stackWrap);
+            upper.appendChild(scene);
+            area.appendChild(upper);
+
+            // 아래 줄은 이번 기기·이번 접속에서 열어 본 문서만 낱장으로 둔다.
             if(recentNotes.length){
                 const sec=document.createElement('div');
                 sec.className='recent-section';
-                sec.innerHTML='<div class="recent-label">최근 본 노트</div>';
+                sec.innerHTML='<div class="recent-label">이 기기에서 연 노트</div>';
                 const row=document.createElement('div');
                 row.className='recent-row';
-                recentNotes.forEach(nb=>{ row.appendChild(_makeCard(nb)); });
+                recentNotes.forEach(nb=>row.appendChild(_makeCard(nb)));
                 sec.appendChild(row);
-                scene.appendChild(sec);
+                area.appendChild(sec);
             }
-            if(!selectMode){
-                const addWrap=document.createElement('div');
-                addWrap.style.cssText='margin-top:18px;display:flex;justify-content:center;';
-                const add=document.createElement('div');
-                add.className='add-card';
-                add.style.cssText='flex:none;width:120px;min-height:160px;';
-                add.innerHTML='<i class="ri-add-line" style="font-size:32px;opacity:.8"></i>';
-                add.onclick=openCreateModal;
-                addWrap.appendChild(add);
-                scene.appendChild(addWrap);
-            }
-            g.appendChild(scene);
+
+            g.appendChild(area);
             setTimeout(()=>{
-                scene.querySelectorAll('.note-card').forEach(c=>{
+                area.querySelectorAll('.note-card').forEach(c=>{
                     const r=c.getBoundingClientRect();
                     if(r.bottom>-300&&r.top<innerHeight+500&&c._render) c._render();
                 });
@@ -5139,7 +5213,7 @@
             f.style.top=Math.round((ch-bh*s)/2)+'px';
         });
     }
-    window.addEventListener('resize',()=>{ rescalePreviews(); layoutPages(); });
+    window.addEventListener('resize',()=>{ rescalePreviews(); _layoutHomeStacks(); layoutPages(); });
 
 
     // ===== 꾹 눌러 집어서 폴더로 끌어놓기 (마우스/터치 공용) =====
@@ -18979,8 +19053,10 @@ body.sdy-booting #musicListPop{z-index:10001;}
 #mpBKnob{position:absolute;top:50%;left:0;width:13px;height:13px;border-radius:50%;
     background:var(--accent);border:2px solid var(--card);box-shadow:0 1px 5px rgba(0,0,0,.3);
     transform:translate(-50%,-50%);pointer-events:none;}
-.mpb-time{display:flex;font-size:10.5px;color:var(--text3);gap:6px;}
-.mpb-time .sp{flex:1;min-width:8px;}
+.mpb-time{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;font-size:10.5px;color:var(--text3);gap:6px;}
+.mpb-time .start{text-align:left;}
+.mpb-time .current{text-align:center;color:var(--text1);font-weight:700;font-variant-numeric:tabular-nums;}
+.mpb-time .end{text-align:right;}
 .mpb-ctl{display:flex;align-items:center;justify-content:center;gap:8px;}
 .mpb-ctl button{width:36px;height:36px;border:none;background:transparent;color:var(--text2);
     border-radius:10px;cursor:pointer;font-size:19px;display:flex;align-items:center;justify-content:center;}
@@ -19190,9 +19266,9 @@ body.sdy-booting #musicListPop{z-index:10001;}
 .mp-tagm .cbtns button:hover{color:var(--text1);border-color:var(--text3);}
 .mp-tagm label{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:700;
     color:var(--text3);}
-.mp-tagm .two{display:flex;gap:8px;width:100%;}
-.mp-tagm .two label{flex:1;}
-.mp-tagm input[type=text]{height:34px;padding:0 10px;border:1px solid var(--border);border-radius:8px;
+.mp-tagm .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;width:100%;align-items:stretch;}
+.mp-tagm .two label{min-width:0;width:auto;}
+.mp-tagm input[type=text]{height:34px;width:100%;min-width:0;max-width:100%;display:block;box-sizing:border-box;padding:0 10px;border:1px solid var(--border);border-radius:8px;
     background:var(--bg2);color:var(--text1);font-size:13px;outline:none;}
 .mp-tagm input[type=text]:focus{border-color:var(--accent);}
 .mp-tagm textarea{box-sizing:border-box;width:100%;min-height:110px;max-height:220px;resize:vertical;
@@ -19316,7 +19392,7 @@ body.sdy-booting #musicListPop{z-index:10001;}
           <div id="mpBAlbum" class="mpb-album">—</div>
           <div class="mpb-chips" id="mpBChips"></div>
           <div class="mpb-prog" id="mpBProg"><div id="mpBFill"></div><div id="mpBKnob"></div></div>
-          <div class="mpb-time"><span id="mpBCur">0:00</span><span class="sp"></span><span id="mpBDur">0:00</span></div>
+          <div class="mpb-time"><span class="start">0:00</span><span id="mpBCur" class="current">0:00</span><span id="mpBDur" class="end">0:00</span></div>
           <div class="mpb-ctl">
             <button id="mpBShuf" title="섞기"><i class="ri-shuffle-line"></i></button>
             <button id="mpBPrev" title="이전 곡"><i class="ri-skip-back-fill"></i></button>
@@ -20035,7 +20111,8 @@ function paintProg(cur){
   try{
     const bf=$('mpBFill'), bk=$('mpBKnob'), bc=$('mpBCur'), bd=$('mpBDur');
     if(bf){ bf.style.width=pct+'%'; bk.style.left=pct+'%'; bc.textContent=fmt(t);
-      bd.textContent=(_showLeft&&d)?('-'+fmt(Math.max(0,d-t))):fmt(d); }
+      // 큰 플레이어는 왼쪽 0:00 · 가운데 현재 시각 · 오른쪽 전체 길이를 고정한다.
+      bd.textContent=fmt(d); }
   }catch(e){}
   if(P.mode==='float')
     pl.style.background='conic-gradient(var(--accent) '+pct+'%, var(--bg2) 0)';
@@ -26640,66 +26717,7 @@ body.sdy-booting #mpReopen{display:none !important;}
      · #cardsModal 의 backdrop-filter:none !important (성능 예외 유지)
    ═══════════════════════════════════════════════════════════════════ */
 
-/* ── 16.x · 카드 스택 뷰 (홈 화면 전용) ──────────────────────── */
-.stack-scene{
-    position:relative;
-    display:flex;flex-direction:column;align-items:center;
-    min-height:min(70vh,580px);
-    padding:40px 20px 30px;
-    perspective:1200px;
-}
-.note-stack{
-    position:relative;
-    display:flex;align-items:center;justify-content:center;
-    width:100%;min-height:340px;
-    cursor:pointer;
-}
-.note-stack .note-card{
-    position:absolute;
-    transition:transform .55s cubic-bezier(.22,.9,.3,1.08),
-               box-shadow .4s ease,opacity .4s ease;
-    transform-origin:50% 110%;
-    will-change:transform;
-}
-.note-stack .note-card:hover{
-    z-index:60!important;
-    box-shadow:0 22px 50px rgba(0,0,0,.22)!important;
-}
-.note-stack.fanned .note-card{ cursor:pointer; }
-/* 접힌 상태에서 맨 위 카드만 살짝 크게 */
-.note-stack:not(.fanned) .note-card:last-child{
-    box-shadow:0 8px 28px rgba(0,0,0,.14);
-}
-/* 최근 본 노트 구간 */
-.recent-section{
-    width:100%;max-width:900px;
-    margin-top:28px;padding-top:22px;
-    border-top:1px solid var(--border);
-}
-.recent-label{
-    font-size:11.5px;font-weight:800;color:var(--text3);
-    text-align:center;margin-bottom:14px;
-    letter-spacing:.06em;text-transform:uppercase;
-}
-.recent-row{
-    display:flex;flex-wrap:wrap;gap:14px;
-    justify-content:center;
-}
-.recent-row .note-card{
-    flex:0 0 160px;width:160px;
-    animation:recentIn .4s cubic-bezier(.22,.9,.3,1.08) both;
-}
-@keyframes recentIn{
-    from{opacity:0;transform:translateY(18px) scale(.92);}
-    to{opacity:1;transform:none;}
-}
-.recent-row .note-preview{ height:200px; }
-@media(max-width:640px){
-    .stack-scene{min-height:min(60vh,440px);padding:24px 10px 20px;}
-    .note-stack{min-height:260px;}
-    .recent-row .note-card{flex:0 0 140px;width:140px;}
-    .recent-row .note-preview{height:170px;}
-}
+/* 홈 스택 레이아웃은 문서 마지막의 #home-stack-layout 블록에서 관리한다. */
 
 /* ── ① 유리 토큰 ─────────────────────────────────────────────── */
 :root{
@@ -26994,6 +27012,133 @@ body.has-wall #sdyAmbient{opacity:0;}
 *::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--text3) 66%,transparent);
     border:2px solid transparent;background-clip:padding-box;}
 *{scrollbar-color:color-mix(in srgb,var(--text3) 42%,transparent) transparent;}
+</style>
+
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     16.1 · 홈 두 줄 레이아웃
+     위: 폴더와 문서를 하나의 깊이 스택으로 묶는다.
+     아래: 이번 접속에서 연 문서만 낱장으로 보여 준다.
+     ═══════════════════════════════════════════════════════════════════ -->
+<style id="home-stack-layout">
+.home-stack-area{
+    width:100%;flex:1 1 100%;
+    display:flex;flex-direction:column;align-items:center;
+    min-width:0;padding:0 0 18px;
+}
+.home-stack-upper{
+    width:100%;
+    display:flex;flex-direction:column;align-items:center;
+    position:relative;isolation:isolate;
+}
+.home-add-note{
+    appearance:none;-webkit-appearance:none;
+    display:inline-flex;align-items:center;gap:9px;
+    min-height:42px;padding:5px 15px 5px 7px;
+    border:1px solid color-mix(in srgb,var(--accent) 28%,var(--border));
+    border-radius:999px;
+    background:color-mix(in srgb,var(--card) 54%,transparent);
+    color:var(--text2);font-size:12.5px;font-weight:800;
+    cursor:pointer;box-shadow:0 7px 20px rgba(25,35,75,.10),inset 0 1px 0 rgba(255,255,255,.35);
+    backdrop-filter:blur(12px) saturate(140%);
+    -webkit-backdrop-filter:blur(12px) saturate(140%);
+    transition:transform .25s cubic-bezier(.22,.9,.3,1),color .2s,border-color .2s,box-shadow .2s,background .2s;
+    z-index:100;
+}
+.home-add-icon{
+    width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    color:#fff;background:var(--grad);font-size:21px;line-height:1;
+    box-shadow:0 5px 13px color-mix(in srgb,var(--accent) 35%,transparent);
+}
+.home-add-note:hover,.home-stack-upper.fanned .home-add-note{
+    color:var(--accent);border-color:color-mix(in srgb,var(--accent) 65%,var(--border));
+    background:color-mix(in srgb,var(--accent) 10%,var(--card));
+    box-shadow:0 10px 26px color-mix(in srgb,var(--accent) 18%,transparent),inset 0 1px 0 rgba(255,255,255,.4);
+    transform:translateY(-2px);
+}
+.home-add-note:active{transform:scale(.97);}
+.stack-scene{
+    width:100%;min-height:0!important;
+    display:flex;align-items:center;justify-content:center;
+    padding:8px 18px 14px;
+    perspective:1300px;overflow:visible;
+}
+.note-stack{
+    position:relative;width:100%;min-height:300px;
+    display:block;flex:none;overflow:visible;
+    cursor:pointer;
+}
+.note-stack .note-card,.note-stack .folder-card{
+    position:absolute;left:50%;top:50%;margin:0;
+    width:200px;flex:0 0 200px;
+    transform-origin:50% 108%;
+    transition:transform .52s cubic-bezier(.22,.9,.3,1.08),box-shadow .35s ease,opacity .35s ease,border-color .2s;
+    will-change:transform;
+}
+.note-stack .note-card:hover,.note-stack .folder-card:hover{
+    z-index:100!important;
+    box-shadow:0 24px 52px rgba(15,23,42,.25),0 0 0 1px color-mix(in srgb,var(--accent) 25%,transparent)!important;
+}
+.note-stack.fanned .note-card,.note-stack.fanned .folder-card{cursor:pointer;}
+.note-stack .folder-card .folder-thumb{height:260px;}
+.stack-empty{
+    position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:8px;color:var(--text3);font-size:12.5px;pointer-events:none;
+}
+.stack-empty i{font-size:30px;opacity:.45;}
+.recent-section{
+    width:100%;max-width:none;margin-top:4px;padding:22px 0 2px;
+    border-top:1px solid color-mix(in srgb,var(--border) 80%,transparent);
+}
+.recent-label{
+    margin:0 auto 12px;text-align:center;color:var(--text3);
+    font-size:11px;font-weight:800;letter-spacing:.08em;
+}
+.recent-row{
+    display:flex;flex-wrap:nowrap;gap:14px;align-items:flex-start;
+    width:max-content;max-width:calc(100vw - 36px);margin:0 auto;
+    padding:4px 8px 12px;overflow-x:auto;overflow-y:visible;
+    justify-content:flex-start;scrollbar-width:thin;
+}
+.recent-row .note-card{
+    position:relative;left:auto;top:auto;flex:0 0 180px;width:180px;max-width:none;
+    transform:none;opacity:1;
+}
+.recent-row .note-card:hover{transform:translateY(-5px);z-index:5;}
+.recent-row .note-preview{height:220px;}
+body.card-s .note-stack .note-card,body.card-s .note-stack .folder-card{width:160px;flex-basis:160px;}
+body.card-s .recent-row .note-card{width:160px;flex-basis:160px;}
+body.card-l .note-stack .note-card,body.card-l .note-stack .folder-card{width:244px;flex-basis:244px;}
+body.card-l .recent-row .note-card{width:200px;flex-basis:200px;}
+
+@media(max-width:640px){
+    .home-stack-area{padding-bottom:10px;}
+    .home-stack-upper{width:100%;}
+    .home-add-note{min-height:38px;padding-right:12px;font-size:11.5px;gap:7px;}
+    .home-add-icon{width:28px;height:28px;font-size:19px;}
+    .stack-scene{padding:5px 8px 10px;}
+    .note-stack{min-height:230px;}
+    body .note-stack .note-card,body .note-stack .folder-card,
+    body.card-s .note-stack .note-card,body.card-s .note-stack .folder-card,
+    body.card-l .note-stack .note-card,body.card-l .note-stack .folder-card{
+        width:min(196px,calc(100vw - 56px))!important;
+        flex:0 0 min(196px,calc(100vw - 56px))!important;
+        max-width:none!important;
+    }
+    .note-stack .folder-card .folder-thumb{height:auto;aspect-ratio:4/5;}
+    .recent-section{margin-top:2px;padding-top:18px;}
+    .recent-row{gap:10px;max-width:calc(100vw - 20px);padding-left:4px;padding-right:4px;}
+    .recent-row .note-card,
+    body.card-s .recent-row .note-card,
+    body.card-l .recent-row .note-card{
+        width:148px!important;flex:0 0 148px!important;max-width:none!important;
+    }
+    .recent-row .note-preview{height:auto;aspect-ratio:4/5;}
+}
+@media(prefers-reduced-motion:reduce){
+    .home-add-note,.note-stack .note-card,.note-stack .folder-card{transition:none;}
+}
 </style>
 
 </body>
