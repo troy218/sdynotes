@@ -726,8 +726,16 @@ def _acoustid_lookup(path):
     return best
 
 
-def _music_recognize(mid, apply_tags=True):
-    """한 곡을 '소리'로 인식하고 제목·가수만 반영한다 (가사·표지는 연쇄하지 않음)."""
+def _music_recognize(mid, apply_tags=True, force=False):
+    """한 곡을 '소리'로 인식하고 제목·가수만 반영한다 (가사·표지는 연쇄하지 않음).
+
+    force=True — 사용자가 편집창에서 '소리 인식' 버튼을 직접 누른 경우.
+      이미 제목이 붙어 있거나(tag_state=done) 수동 저장됐어도(manual)
+      인식 결과(0.85 이상만 통과)를 제목·가수에 반영한다. 버튼을 누른
+      것이 곧 '이 결과로 바꿔 달라'는 뜻이기 때문이다.
+    force=False — 배경 백필. 보수적으로, 제목이 비었거나 아직 정리되지
+      않은 곡에만 붙인다.
+    """
     with _music_lock:
         rec = dict((_music_load().get(mid) or {}))
     if not rec:
@@ -774,17 +782,23 @@ def _music_recognize(mid, apply_tags=True):
         # 인식 결과(제목·가수)만 반영한다. 가사·표지·연도·장르는 각자의 동작에서.
         # 14.11 — '소리 인식' 클릭 한 번에 다른 기능(가사 검색 등)이 연쇄로
         # 돌지 않도록 한다. (제목·가수는 인식 자체의 결과물이다)
+        # 14.13 — 버튼으로 직접 인식했는데 반영이 안 되는 문제:
+        #   예전 조건('제목 있음 + tag_state=done'이면 건너뛰기) 때문에,
+        #   자동 태깅이 이미 (잘못된) 제목을 붙여 둔 곡에서는 인식에
+        #   성공해도 결과가 목록·편집창에 전혀 반영되지 않았다.
+        if force:
+            _tag_generation_bump(mid)   # 돌고 있던 자동 태깅이 이 결과를 덮지 않게
         with _music_lock:
             m = _music_load()
             r2 = m.get(mid)
             if r2:
-                if not (r2.get("title") or "").strip() or r2.get("tag_state") != "done":
+                if force or not (r2.get("title") or "").strip() or r2.get("tag_state") != "done":
                     r2["title"] = res["title"]
                     r2["artist"] = res["artist"] or r2.get("artist", "")
                     r2["album"] = r2.get("album") or res["album"]
                     r2["year"] = r2.get("year") or res["year"]
                     r2["tag_state"] = "done"
-                r2["tag_src"] = ("소리 인식 · " + (r2.get("tag_src") or "AcoustID"))[:60]
+                    r2["tag_src"] = "소리 인식(AcoustID)"
                 m[mid] = r2
                 _music_save(m)
     with _music_lock:
@@ -1288,11 +1302,12 @@ def _music_autotag(mid, force=False, algo=None, qhint=None, alt=0,
         return None
 
 
-def _music_cover_search(mid, alt=0):
+def _music_cover_search(mid, alt=0, qh=None):
     """11.2 · 노래 정보는 그대로 두고 '표지만' 다시 찾아 바꾼다.
 
     가사·제목·가수는 맞는데 표지만 다른 경우가 잦아서, 표지 후보를
     점수순으로 모아 alt 번째(누를 때마다 다음) 것을 내려받아 적용한다.
+    qh=(title, artist) — 편집창에서 버튼을 누른 경우 지금 화면의 검색어.
     반환: {"ok":bool, "cover":bool, "count":int}
     """
     try:
@@ -1307,7 +1322,9 @@ def _music_cover_search(mid, alt=0):
         emb = _read_embedded(os.path.join(MUSIC_DIR, hits[0])) if hits else {
             "title": "", "artist": "", "album": "", "year": "", "genre": "", "dur": None}
         # 편집창에 이미 정리된 제목·가수를 그대로 검색어로 (표지만 갈아끼우기)
-        qh = (rec.get("title") or "", rec.get("artist") or "")
+        # 14.13 · 버튼에서 넘어온 편집창 값(qh)이 있으면 저장된 값보다 우선.
+        if not qh:
+            qh = (rec.get("title") or "", rec.get("artist") or "")
         scored, _qt, _qa, _dur = _tag_collect(rec, emb, qh, deep=True)
         arts, seen = [], set()
         for sc, c in scored:            # 이미 점수 내림차순
@@ -2420,7 +2437,9 @@ def music_recognize_api():
     mid = re.sub(r"[^0-9a-zA-Z_\-]", "", d.get("id") or "")
     if not mid:
         return jsonify({"ok": False, "error": "id 없음"}), 400
-    r = _music_recognize(mid, apply_tags=True)
+    # 14.13 · 편집창 '소리 인식' 버튼 = 직접 누른 요청. 이미 제목이 있어도
+    #   (자동 태깅이 잘못 붙인 제목이라도) 인식 결과를 반영한다.
+    r = _music_recognize(mid, apply_tags=True, force=True)
     if r.get("ok"):
         with _music_lock:
             t = _music_load().get(mid) or {}
@@ -2530,7 +2549,13 @@ def music_synced_lyrics():
         rec = dict((_music_load().get(mid) or {}))
     if not rec:
         return jsonify({"ok": False, "error": "없는 곡입니다"}), 404
-    if not (rec.get("title") or "").strip():
+    # 14.13 · 편집창에 적어둔 제목/가수로 찾는다. 저장 전 상태(인식 결과를
+    #   확인하는 중 등)에서 눌러도 방금 고른 이름으로 검색해야 반영이 된다.
+    q_t = str(d.get("q_title") or "").strip()[:120]
+    q_a = str(d.get("q_artist") or "").strip()[:80]
+    title = q_t or (rec.get("title") or "").strip()
+    artist = q_a if q_a else (rec.get("artist") or "").strip()
+    if not title:
         return jsonify({"ok": False, "error": "제목이 없어 가사를 찾을 수 없어요"})
     hits = [fn for fn in os.listdir(MUSIC_DIR)
             if fn.startswith(mid + ".")
@@ -2540,7 +2565,7 @@ def music_synced_lyrics():
     if hits:
         dur = _read_embedded(os.path.join(MUSIC_DIR, hits[0])).get("dur")
     # 싱크 가사만 강제로 다시 찾는다 (LRCLIB 만 사용)
-    sync, plain, src = _fetch_lyrics(rec.get("title"), rec.get("artist"), dur)
+    sync, plain, src = _fetch_lyrics(title, artist, dur)
     if not sync:
         return jsonify({"ok": False, "error": "싱크 가사를 찾지 못했어요"})
     with _music_lock:
@@ -3031,7 +3056,12 @@ def music_lookup():
         return jsonify({"ok": True, "track": out, "changed": changed})
     # 11.2 · 표지만 다시 찾기 (노래 정보는 건드리지 않는다)
     if d.get("cover_only"):
-        r = _music_cover_search(mid, d.get("alt") or 0)
+        # 14.13 · 편집창에 적어둔 제목/가수 힌트 → 저장된 값보다 우선한다.
+        qh = None
+        if str(d.get("q_title") or "").strip() or str(d.get("q_artist") or "").strip():
+            qh = (str(d.get("q_title") or "").strip()[:120],
+                  str(d.get("q_artist") or "").strip()[:80])
+        r = _music_cover_search(mid, d.get("alt") or 0, qh)
         with _music_lock:
             out = _music_load().get(mid) or rec
         return jsonify({"ok": bool(r.get("ok")), "track": out,

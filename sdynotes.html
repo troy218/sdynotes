@@ -21429,7 +21429,11 @@ $('mpTagSyncLrc').onclick=async()=>{
   try{
     const r=await musicApiFetch('/api/music/synced-lyrics',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id})});
+      // 14.13 · 편집창에 적어둔 제목/가수로 검색 — 저장 전 이름(인식 결과
+      //   확인 중 등)으로 눌러도 그 이름의 가사를 찾아 반영한다.
+      body:JSON.stringify({id,
+        q_title:$('mpTagTitle').value.trim(),
+        q_artist:$('mpTagArtist').value.trim()})});
     const d=await r.json().catch(()=>({}));
     if(r.ok&&d.ok){
       await loadList(); renderTitle();
@@ -21557,7 +21561,10 @@ async function lookupTrack(id,opts){
   if(_lookupAbort) try{ _lookupAbort.abort(); }catch(e){}
   const ac=new AbortController();
   _lookupAbort=ac;
-  const tm=setTimeout(()=>ac.abort(),30000);
+  // 14.13 · 버튼에서 누른 찾기는 넉넉한 시간을 준다. 세 출처(Apple·Deezer·
+  //   MusicBrainz)를 도는 검색은 30초를 넘기기도 해서, 예전엔 버튼이
+  //   '눌렀는데 아무 반응 없음'처럼 보였다. (배경 호출은 기존 30초 유지)
+  const tm=setTimeout(()=>ac.abort(),opts.timeoutMs||30000);
   try{
     const r=await fetch('/api/music/lookup',{method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -21584,9 +21591,11 @@ $('mpTagAuto').onclick=async()=>{
   btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> 찾는 중…';
   try{
     // 10.8 · 편집창에 적어둔 제목/가수를 그대로 검색어로 쓴다
+    // 14.13 · silent 를 없애 실패도 눈에 보이게 — 성공 토스트는 원래 없고,
+    //   오류만 삼켜서 '눌렀는데 반응이 없는' 것처럼 보이던 문제.
     await lookupTrack(TAG_EDIT,{title:$('mpTagTitle').value.trim(),
                                 artist:$('mpTagArtist').value.trim(),
-                                alt:_tagAlt, replaceCover:true, silent:true});
+                                alt:_tagAlt, replaceCover:true, timeoutMs:120000});
     _tagAlt++;                       // 다음에 누르면 그 다음 후보
   } finally { btn.innerHTML=html; _tagBusy=false; }
 };
@@ -21639,6 +21648,21 @@ $('mpTagRecog').onclick=async()=>{
     _syncTagEditor(P.list.find(x=>x.id===id));
     if(cur()&&cur().id===id) setCover(cur());
     const g=d.recog||{};
+    // 14.13 · 인식 결과를 화면에 확실히 반영한다. 서버가 이미 적용한 값이지만,
+    //   목록 새로고침이 늦거나 실패해도(오프라인 등) 편집창·목록에 남게
+    //   응답의 recog 값을 다시 한번 심어 준다. (예전엔 토스트에 결과가 떴는데
+    //   편집창은 그대로라 '반영이 안 된다'고 보였던 문제)
+    if(TAG_EDIT===id&&(g.title||g.artist)){
+      if(g.title){ $('mpTagTitle').value=g.title; }
+      if(g.artist){ $('mpTagArtist').value=g.artist; }
+      if(g.album&&!$('mpTagAlbum').value){ $('mpTagAlbum').value=g.album; }
+      if(g.year&&!$('mpTagYear').value){ $('mpTagYear').value=g.year; }
+      const t=P.list.find(x=>x.id===id);
+      if(t){ if(g.title)t.title=g.title; if(g.artist)t.artist=g.artist;
+             t.tag_src=t.tag_src||'소리 인식(AcoustID)';
+             try{ renderTitle(); renderListPop(); }catch(e){} }
+      $('mpTagHint').textContent='소리 인식(AcoustID) 으로 찾은 곡 정보';
+    }
     // 12.2 · 0.85 미만은 서버가 적용을 안 한다. 안내만.
     if(g.score&&g.score<0.85) toast('다른 곡으로 인식돼 적용하지 않았어요 (점수 '+(g.score*100|0)+'점)',2800);
     else toast('🎧 '+(g.artist?g.artist+' · ':'')+(g.title||'인식 완료'),2400);
@@ -21655,7 +21679,10 @@ $('mpTagCoverFind').onclick=async()=>{
   try{
     const r=await fetch('/api/music/lookup',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id,cover_only:true,alt:_coverAlt})});
+      // 14.13 · 편집창에 적어둔 제목/가수로 표지 검색 (저장 전 값 우선)
+      body:JSON.stringify({id,cover_only:true,alt:_coverAlt,
+        q_title:$('mpTagTitle').value.trim(),
+        q_artist:$('mpTagArtist').value.trim()})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok){ toast(d.error||'표지를 찾지 못했어요',2000); return; }
     _coverAlt++;
