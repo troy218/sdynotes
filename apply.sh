@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-#  SDYnotes 14.8.0 적용 스크립트 (Fastify + Python worker 개편판)
+#  SDYnotes 14.12.0 적용 스크립트 (Fastify + Python worker 개편판)
 #  ★서버 안에서 실행★
 #
 #  구조:
 #    Node(Fastify) 메인 서버  :5000  — 프런트 서빙 + 가벼운 API + SSE
 #    Python worker           :5100  — 가져오기(PDF/Word) + 음악 태깅/유튜브/인식
+#    저장소(기본=oracle)             — 모든 상태·파일을 이 Oracle VM 디스크에 저장
+#                                      (Supabase/Cloudinary 사용 안 함)
+#                                      예전 클라우드 모드: SDY_STORAGE=cloud
 #
-#  zip 안에  apply.sh · package.json · sdynotes.html · server/ · worker/ 를
-#  폴더 없이 넣어 보내고, 서버에서 이것만 실행하면 됩니다.
+#  zip 안에  apply.sh · package.json · sdynotes.html · server/ · worker/ ·
+#  scripts/ 를 폴더 없이 넣어 보내고, 서버에서 이것만 실행하면 됩니다.
 #      bash apply.sh
 #
 #  처음 실행 → Node/파이썬/서비스/nginx 까지 자동 설치
 #  두번째부터 → 파일만 교체하고 재시작 (설치 과정 건너뜀)
-#  구조·클라우드 저장소·운영/롤백 방법은 README.md 참조
+#  구조·저장소·운영/롤백 방법은 README.md / ORACLE_MIGRATION.md 참조
 #  보관함(vault) 파일은 절대 지우지 않습니다.
+#
+#  기존 Supabase/Cloudinary 데이터가 있으면(키가 .env 에 있으면) 최초 1회,
+#  서비스 정지 상태에서 scripts/migrate_to_oracle.mjs 로 자동 이전합니다.
 # ─────────────────────────────────────────────────────────────
 set -e
 
@@ -59,9 +65,10 @@ fi
 
 sudo cp "$SRC/sdynotes.html" "$APP_DIR/sdynotes.html"
 sudo cp "$SRC/package.json"  "$APP_DIR/package.json"
-rm -rf "$APP_DIR/server" "$APP_DIR/worker"
+rm -rf "$APP_DIR/server" "$APP_DIR/worker" "$APP_DIR/scripts"
 cp -r "$SRC/server" "$APP_DIR/server"
 cp -r "$SRC/worker" "$APP_DIR/worker"
+[ -d "$SRC/scripts" ] && cp -r "$SRC/scripts" "$APP_DIR/scripts"
 sudo chown -R "$USER:$USER" "$APP_DIR"
 
 ok "sdynotes.html ($(du -h "$APP_DIR/sdynotes.html" | cut -f1))"
@@ -77,9 +84,10 @@ else
     ok "npm 의존성 이미 설치됨"
 fi
 
-# Supabase 영구 저장소 SQL (기존과 동일)
+# Supabase 영구 저장소 SQL — 14.12 부터 기본 저장소는 이 서버 디스크(oracle)라
+# 이 파일은 legacy(cloud) 모드로 롤백할 때만 필요합니다.
 cat > "$APP_DIR/SUPABASE_SCHEMA.sql" <<'SQL'
--- SDYnotes 14.4 durable cloud state
+-- SDYnotes 14.4 durable cloud state (legacy — SDY_STORAGE=cloud 롤백용)
 create table if not exists public.sdy_sync_states (
   id text primary key,
   data jsonb not null default '{}'::jsonb,
@@ -110,7 +118,7 @@ alter table public.sdy_music_tracks enable row level security;
 alter table public.sdy_stickers enable row level security;
 SQL
 sudo chown "$USER:$USER" "$APP_DIR/SUPABASE_SCHEMA.sql"
-ok "Supabase 테이블 SQL 생성: $APP_DIR/SUPABASE_SCHEMA.sql"
+ok "legacy Supabase 스키마 SQL 생성(롤백용): $APP_DIR/SUPABASE_SCHEMA.sql"
 
 ENV_FILE="$APP_DIR/.env"
 touch "$ENV_FILE"
@@ -130,6 +138,18 @@ env_set(){
     awk -F= -v k="$k" -v v="$v" 'BEGIN{done=0} $1==k{if(!done){print k"="v;done=1}next} {print} END{if(!done)print k"="v}' "$ENV_FILE" > "$tmp"
     cat "$tmp" > "$ENV_FILE"; rm -f "$tmp"; chmod 600 "$ENV_FILE"
 }
+
+# ── 저장소 모드: 기본 oracle (이 서버 디스크에 모두 저장) ──────────────
+# 예전 동작(Supabase+Cloudinary)으로 돌아가려면 SDY_STORAGE=cloud 로 배포.
+STORAGE_MODE="${SDY_STORAGE:-$(env_get SDY_STORAGE)}"
+if [ "$STORAGE_MODE" != "cloud" ]; then
+    STORAGE_MODE=oracle
+    env_set SDY_STORAGE oracle
+    ok "저장소 모드: oracle — 모든 데이터를 이 Oracle 서버에 저장 (Supabase/Cloudinary 미사용)"
+else
+    env_set SDY_STORAGE cloud
+    echo "  ⚠️ legacy cloud 모드(Supabase+Cloudinary) — 쿼터 초과 주의"
+fi
 
 if [ -d "$APP_DIR/vault" ]; then
     VN=$(find "$APP_DIR/vault" -type f ! -name '_index.json' 2>/dev/null | wc -l)
@@ -645,6 +665,25 @@ sleep 1
 sudo fuser -k "$PORT/tcp" 2>/dev/null || true
 sleep 1
 
+# ── 6.5 클라우드 → oracle 데이터 이전 (최초 1회, 서비스 정지 상태에서) ──
+# Supabase/Cloudinary 키가 .env 에 남아 있고 아직 이전 마커가 없으면
+# scripts/migrate_to_oracle.mjs 가 모든 행·파일·URL 을 이 서버로 옮긴다.
+if [ "$STORAGE_MODE" != "cloud" ] && [ -f "$APP_DIR/scripts/migrate_to_oracle.mjs" ]; then
+    MIG_KEY=$(env_get SUPABASE_SERVICE_KEY)
+    [ -z "$MIG_KEY" ] && MIG_KEY=$(env_get SUPABASE_SERVICE_ROLE_KEY)
+    [ -z "$MIG_KEY" ] && MIG_KEY=$(env_get SUPABASE_KEY)
+    if [ -n "$MIG_KEY" ] && [ ! -f "$APP_DIR/.oracle_migrated" ]; then
+        say "6.5/6  Supabase/Cloudinary → Oracle 서버 데이터 이전"
+        ( cd "$APP_DIR" && node scripts/migrate_to_oracle.mjs --base "$APP_DIR" ) \
+            && ok "데이터 이전 완료 (.oracle_migrated.report.json 참조)" \
+            || echo "  ⚠️ 이전 중 일부 실패 — .oracle_migrated.report.json 확인 후 재실행하세요. 서비스는 계속 시작합니다."
+    elif [ -f "$APP_DIR/.oracle_migrated" ]; then
+        ok "데이터 이전 이미 완료(.oracle_migrated) — 건너뜀"
+    else
+        echo "  이전할 Supabase 키가 없어 클라우드 이전을 건너뜁니다 (로컬 데이터만 사용)"
+    fi
+fi
+
 sudo systemctl start "$SVC_WORKER"
 sudo systemctl start "$SVC"
 
@@ -704,12 +743,11 @@ else
     echo "                  → $APP_DIR/.env 에 SDY_TURN_SECRET 이 있는지 확인 후 apply.sh 재실행"
 fi
 if echo "$CLOUD" | grep -q '"supabase":true' && echo "$CLOUD" | grep -q '"cloudinary":true'; then
-    echo "  ✅ 영구 저장소 준비됨"
+    echo "  ✅ 영구 저장소 준비됨 (legacy cloud 모드)"
+elif echo "$CLOUD" | grep -q '"storage":"oracle"'; then
+    echo "  ✅ 영구 저장소 준비됨 (oracle — 이 서버 디스크, Supabase/Cloudinary 미사용)"
 else
-    echo "  ⚠️  아직 로컬 폴백입니다."
-    echo "      1) Supabase SQL Editor에서 $APP_DIR/SUPABASE_SCHEMA.sql 실행"
-    echo "      2) $APP_DIR/.env 에 SUPABASE_SERVICE_KEY 입력"
-    echo "      3) .env 에 CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET 입력 후 apply.sh 재실행"
+    echo "  ⚠️  저장소 상태를 확인하지 못했습니다: $CLOUD"
 fi
 if echo "$YT" | grep -qE '"ok"[[:space:]]*:[[:space:]]*true'; then
     echo "  ✅ yt-dlp 준비 완료 — 유튜브 링크를 붙여넣으면 원본 음원 그대로 추가됩니다"

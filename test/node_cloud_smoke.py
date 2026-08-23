@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Node 클라우드 모드 통합 스모크.
+"""Node 클라우드(legacy) 모드 통합 스모크.
 
 전제: mock_cloud.py(:5231) 가 떠 있고, Node(:5000) 가 다음 env 로 기동돼 있어야 한다.
-  SUPABASE_URL=http://127.0.0.1:5231  SUPABASE_SERVICE_KEY=test-service-key
+  SDY_STORAGE=cloud \
+  SUPABASE_URL=http://127.0.0.1:5231  SUPABASE_SERVICE_KEY=test-service-key \
   CLOUDINARY_CLOUD_NAME=testcloud CLOUDINARY_API_KEY=k CLOUDINARY_API_SECRET=s
+(14.12+ 는 기본 저장소가 oracle 이므로 클라우드 모드를 명시적으로 켜야 한다.)
 """
 import io
 import json

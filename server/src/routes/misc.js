@@ -1,10 +1,11 @@
-// 버전/헬스/보관함 사용량/클라우드 상태.
+// 버전/헬스/보관함 사용량/저장소 상태.
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import { APP_VERSION, SETTINGS_SCHEMA, QUOTA_BYTES, CLOUD_READY, TABLES, SUPABASE_URL, sbEnabled } from '../lib/config.js';
+import path from 'node:path';
+import { APP_VERSION, SETTINGS_SCHEMA, QUOTA_BYTES, CLOUD_READY, STORAGE_MODE, TABLES, SUPABASE_URL, sbEnabled } from '../lib/config.js';
 import { requireAdmin } from '../lib/admin.js';
-import { readJson, withLock } from '../lib/store.js';
-import { FILES, BASE_DIR } from '../lib/paths.js';
+import { readJson } from '../lib/store.js';
+import { FILES, DIRS, BASE_DIR } from '../lib/paths.js';
 import { pageEtag } from '../lib/page.js';
 
 export function registerMisc(app) {
@@ -39,11 +40,48 @@ export function registerMisc(app) {
       ok: true, used, stickers: stk, files, total,
       free: Math.max(0, total - used - stk),
       disk_free: freeDisk,
-      storage: CLOUD_READY ? 'cloudinary' : 'local',
+      storage: CLOUD_READY ? 'cloudinary' : 'oracle',
     });
   });
 
   app.get('/api/cloud/status', async (req, reply) => {
+    // oracle 모드(기본): 이 서버 디스크가 영구 저장소다. 외부 클라우드는
+    // 아예 조회하지 않는다(쿼터/과금 이슈 원천 차단).
+    if (STORAGE_MODE !== 'cloud') {
+      let rows = 0;
+      let bytes = 0;
+      const addDir = async (dir, recursive) => {
+        try {
+          for (const n of await fsp.readdir(dir)) {
+            const p = path.join(dir, n);
+            let st = null;
+            try { st = await fsp.stat(p); } catch { /* */ }
+            if (!st) continue;
+            if (st.isDirectory()) {
+              if (recursive) await addDir(p, false);
+              continue;
+            }
+            rows += 1;
+            bytes += st.size;
+          }
+        } catch { /* no dir yet */ }
+      };
+      for (const dir of [DIRS.sync, DIRS.cards, DIRS.stickers, DIRS.wallpaper, DIRS.vault, DIRS.music]) {
+        await addDir(dir, false);
+      }
+      await addDir(DIRS.db, true);   // db/<table>/<row>.json
+      return reply.send({
+        ok: true,
+        storage: 'oracle',
+        supabase: false,
+        cloudinary: false,
+        schema: true,
+        durable: true,
+        mode: 'oracle',
+        local: { files: rows, bytes },
+        tables: { settings: TABLES.sync, cards: TABLES.cards, music: TABLES.music, stickers: TABLES.stickers },
+      });
+    }
     const enabled = sbEnabled();
     let probes = {};
     if (enabled) {
@@ -61,11 +99,13 @@ export function registerMisc(app) {
     const schemaOk = enabled && Object.values(probes).every(Boolean);
     return reply.send({
       ok: true,
+      storage: 'cloud',
       supabase: enabled,
       cloudinary: CLOUD_READY,
       schema: schemaOk,
-      tables: { settings: TABLES.sync, cards: TABLES.cards, music: TABLES.music, stickers: TABLES.stickers },
       durable: enabled && CLOUD_READY && schemaOk,
+      mode: 'cloud',
+      tables: { settings: TABLES.sync, cards: TABLES.cards, music: TABLES.music, stickers: TABLES.stickers },
     });
   });
 }

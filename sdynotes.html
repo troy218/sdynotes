@@ -5,13 +5,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
-    <meta name="application-version" content="14.8.0">
+    <meta name="application-version" content="14.12.0">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -3474,16 +3473,64 @@
             try{ Object.defineProperty(window,'localStorage',{configurable:true,get:()=>box}); }catch(e){}
         })();
     }
-    // ============ Supabase ============
+    // ============ 로컬 DB (오라클 서버 /api/db) ============
+    // 14.12 · 노트 목록/본문(notebooks·memos·images)을 예전엔 Supabase 에
+    // 브라우저에서 직접 저장했지만, 이제 이 서버의 /api/db/query 가 담당한다.
+    // 기존 코드가 그대로 동작하도록 supabase-js 와 같은 체인(select/eq/in/
+    // order/limit/insert/update/delete/single)을 쿼리 descriptor 로 직렬화한다.
     let SB=null;
-    try{
-        if(window.supabase && !SANDBOX){    // 시험 모드에서는 실제 노트 DB에 연결하지 않는다
-            SB=window.supabase.createClient(
-                'https://xillsulrehkpuzyuhgcn.supabase.co',
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhpbGxzdWxyZWhrcHV6eXVoZ2NuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyNjI1OTcsImV4cCI6MjEwMTgzODU5N30.sWnVz5mZRYueK3j6vCFuLKOkqJ4tMybtq_6hNL-YbSA'
-            );
+    const SDB={
+        createClient(){
+            const from=(table)=>{
+                const q={table,op:'select',columns:null,filters:[],order:null,
+                         limit:0,values:null,single:false,returning:false};
+                let _p=null;
+                const run=()=>{
+                    if(_p) return _p;
+                    _p=(async()=>{
+                        try{
+                            const r=await fetch('/api/db/query',{
+                                method:'POST',
+                                headers:{'Content-Type':'application/json','x-sdy-db':'1'},
+                                body:JSON.stringify(q)
+                            });
+                            let j=null;
+                            try{ j=await r.json(); }catch(e){}
+                            if(!r.ok||!j) return {data:null,error:{message:(j&&j.error&&j.error.message)||('HTTP '+r.status)}};
+                            return {data:(j.data===undefined?null:j.data),error:j.error||null};
+                        }catch(e){ return {data:null,error:{message:String(e&&e.message||e)}}; }
+                    })();
+                    return _p;
+                };
+                const c={
+                    select(cols){
+                        if(q.op==='insert'||q.op==='update'){ q.returning=true; return c; }
+                        q.op='select';
+                        q.columns=(typeof cols==='string')?cols.split(',').map(s=>s.trim()).filter(Boolean):null;
+                        return c;
+                    },
+                    single(){ q.single=true; return c; },
+                    eq(f,v){ q.filters.push({op:'eq',field:f,value:v}); return c; },
+                    in(f,arr){ q.filters.push({op:'in',field:f,value:arr}); return c; },
+                    order(f,opts){ q.order={field:f,asc:!(opts&&opts.ascending===false)}; return c; },
+                    limit(n){ q.limit=parseInt(n,10)||0; return c; },
+                    insert(rows){ q.op='insert'; q.values=rows; return c; },
+                    update(vals){ q.op='update'; q.values=vals; return c; },
+                    delete(){ q.op='delete'; return c; },
+                    then(onF,onR){ return run().then(onF,onR); },
+                    catch(onR){ return run().catch(onR); },
+                    finally(fn){ return run().finally(fn); }
+                };
+                return c;
+            };
+            return {from};
         }
-    }catch(err){ console.warn('Supabase 초기화 실패:',err); }
+    };
+    try{
+        if(!SANDBOX){    // 시험 모드에서는 실제 노트 DB에 연결하지 않는다
+            SB=SDB.createClient();
+        }
+    }catch(err){ console.warn('로컬 DB 초기화 실패:',err); }
 
     const SIZE_PRESETS={
         a4_portrait:{label:'A4 세로',w:800,h:1100},
@@ -8976,6 +9023,10 @@
     // 이미지가 지워지면 Cloudinary 원본과 images 테이블 행도 함께 제거한다.
     function publicIdFromURL(url){
         try{
+            // 14.12 · 오라클 서버 저장 이미지(/api/img/파일명) — 파일명 그대로
+            const lm=String(url).match(/\/api\/img\/([0-9a-zA-Z._-]+)$/);
+            if(lm) return lm[1];
+            // 예전 Cloudinary URL (이관 전 노트 정리용)
             const m=String(url).match(/\/upload\/(?:[^/]+\/)*?(?:v\d+\/)?(.+)\.[a-z0-9]+$/i);
             return m? m[1] : null;
         }catch(e){ return null; }
@@ -14926,6 +14977,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
 
     async function uploadOne(file){
+        // 14.12 · 이미지는 항상 이 서버(/api/upload → 오라클 디스크)에 올린다.
+        // 예전의 Cloudinary 직접 업로드 폴백은 삭제됐다 (쿼터 초과 방지).
         try{
             const fd=new FormData();
             fd.append('file',file); fd.append('quality','78'); fd.append('max_width','1920');
@@ -14935,10 +14988,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         try{
             const c=await compressImg(file);
             const fd=new FormData();
-            fd.append('file',c); fd.append('upload_preset','SDYnotes');
-            const r=await fetch('https://api.cloudinary.com/v1_1/os8j8bnv/image/upload',{method:'POST',body:fd});
-            const j=await r.json();
-            if(j.secure_url) return {url:j.secure_url,public_id:j.public_id};
+            fd.append('file',c); fd.append('quality','78'); fd.append('max_width','1920');
+            const r=await fetch('/api/upload',{method:'POST',body:fd});
+            if(r.ok){ const j=await r.json(); if(j.url) return {url:j.url,public_id:j.public_id}; }
         }catch(e){}
         return null;
     }

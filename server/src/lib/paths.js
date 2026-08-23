@@ -20,6 +20,7 @@ export const DIRS = {
   music:      path.join(BASE_DIR, 'music'),
   sync:       path.join(BASE_DIR, 'sync'),
   vault:      path.join(BASE_DIR, 'vault'),
+  db:         path.join(BASE_DIR, 'db'),
 };
 
 export const FILES = {

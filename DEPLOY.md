@@ -57,6 +57,14 @@ cd /tmp/newsite && sudo bash ./apply.sh
 ## `apply.sh` 가 자동으로 하는 일
 
 - `npm install --omit=dev --no-audit --no-fund` (의존성)
+- **저장소 모드 고정: `SDY_STORAGE=oracle`(기본)** — 모든 데이터를 이 Oracle
+  서버 디스크에 저장. `.env` 에 옛 Supabase/Cloudinary 키가 남아 있어도
+  무시된다. (롤백: 배포 시 `SDY_STORAGE=cloud` 환경변수)
+- **최초 1회 자동 데이터 이전** — 옛 키가 있고 `.oracle_migrated` 마커가 없으면
+  서비스 정지 상태에서 `node scripts/migrate_to_oracle.mjs` 가 Supabase 테이블
+  7종 + Cloudinary 자산(음원·표지·스티커·보관함·노트 이미지·배경) + 콘텐츠 안
+  cloudinary URL 전부를 이 서버로 옮긴다. 원본은 읽기만 하므로 안전하다.
+  (`ORACLE_MIGRATION.md` 참조)
 - Node/Fastify `:5000` + Python worker `:5100` systemd 서비스 재기동
 - `/var/www/memo/.env` 보존 + `SDY_TURN_*` 자동 갱신
 - `coturn` 설정 재작성 → `systemctl restart coturn` (이번 PR #2 의

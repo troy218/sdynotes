@@ -5,7 +5,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import { ensureDirs } from './lib/paths.js';
-import { APP_VERSION, sbEnabled, CLOUD_READY } from './lib/config.js';
+import { APP_VERSION, oracleStorage } from './lib/config.js';
 import { sessionsLoad } from './lib/admin.js';
 import { createWorkerProxy } from './lib/workerProxy.js';
 
@@ -22,6 +22,7 @@ import { registerLive } from './routes/live.js';
 import { registerMisc } from './routes/misc.js';
 import { registerMusic } from './routes/music.js';
 import { registerChat } from './routes/chat.js';
+import { registerDb } from './routes/db.js';
 
 ensureDirs();
 
@@ -51,6 +52,7 @@ registerLive(app);
 registerMisc(app);
 registerMusic(app, { worker });
 registerChat(app);
+registerDb(app);
 
 // worker proxy for the import pipeline (kept verbatim in Python)
 for (const [method, url] of [
@@ -77,6 +79,8 @@ app.listen({ port, host: '0.0.0.0' }, (err) => {
   console.log('='.repeat(52));
   console.log(`  SDYnotes ${APP_VERSION} 서버 실행 중 (Fastify)`);
   console.log(`  브라우저에서 http://localhost:${port} 로 접속하세요`);
-  console.log(`  cloud sync: ${sbEnabled() && CLOUD_READY ? 'ready' : 'local fallback'}`);
+  console.log(`  저장소: ${oracleStorage()
+    ? `oracle (이 서버 디스크 — Supabase/Cloudinary 미사용)`
+    : `legacy cloud (Supabase+Cloudinary)`}`);
   console.log('='.repeat(52));
 });

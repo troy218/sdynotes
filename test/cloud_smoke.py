@@ -19,6 +19,7 @@ os.environ.setdefault("SUPABASE_SERVICE_KEY", "test-service-key")
 os.environ.setdefault("CLOUDINARY_CLOUD_NAME", "testcloud")
 os.environ.setdefault("CLOUDINARY_API_KEY", "test-api-key")
 os.environ.setdefault("CLOUDINARY_API_SECRET", "test-api-secret")
+os.environ.setdefault("SDY_STORAGE", "cloud")  # 14.12+ — 클라우드 모드 명시 옵트인
 
 from werkzeug.serving import make_server  # noqa: E402
 

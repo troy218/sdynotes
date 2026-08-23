@@ -1,13 +1,16 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.8.0",
+  "version": "14.12.0",
   "type": "module",
-  "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs",
+  "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
   "scripts": {
     "start": "node server/src/index.js",
+    "migrate:oracle": "node scripts/migrate_to_oracle.mjs",
+    "migrate:oracle:dry": "node scripts/migrate_to_oracle.mjs --dry",
     "test:music": "node test/music_controls.mjs",
     "test:save": "node test/save_outbox_contract.mjs",
+    "test:oracle": "node test/oracle_db_contract.mjs && node test/sdb_shim_contract.mjs && node test/migrate_oracle_sim.mjs",
     "test:call": "node test/call_relay_contract.mjs && node test/chat_endpoint.mjs && node test/yp_smoke_v4.cjs"
   },
   "dependencies": {

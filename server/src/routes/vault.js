@@ -11,6 +11,23 @@ import { uploadStream, destroy, cldDlUrl } from '../lib/cloudinary.js';
 
 const VAULT_FOLDER = 'sdy_vault';
 
+// 로컬 저장 파일의 Content-Type — 클라우드에서 내려온 파일도 브라우저가
+// 바로 보여줄 수 있게 확장자로 판단한다.
+const VAULT_MIME = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+  webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', heic: 'image/heic',
+  heif: 'image/heif', avif: 'image/avif', tiff: 'image/tiff', ico: 'image/x-icon',
+  mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska',
+  m4v: 'video/x-m4v', avi: 'video/x-msvideo', mp3: 'audio/mpeg', wav: 'audio/wav',
+  ogg: 'audio/ogg', flac: 'audio/flac', aac: 'audio/aac', m4a: 'audio/mp4',
+  pdf: 'application/pdf', txt: 'text/plain; charset=utf-8', zip: 'application/zip',
+};
+
+function vaultMime(name) {
+  const ext = String(name || '').split('.').pop().toLowerCase();
+  return VAULT_MIME[ext] || 'application/octet-stream';
+}
+
 const vaultKind = (filename) => {
   const ext = (String(filename).split('.').pop() || '').toLowerCase();
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico', 'heic', 'heif', 'avif', 'tiff'].includes(ext)) return 'image';
@@ -136,7 +153,7 @@ export function registerVault(app) {
     const filePath = path.join(DIRS.vault, rec.stored);
     try {
       const buf = await fsp.readFile(filePath);
-      reply.header('Content-Type', 'application/octet-stream');
+      reply.header('Content-Type', vaultMime(rec.stored || rec.name));
       reply.header('Content-Disposition', disposition(rec.name || 'download'));
       return reply.send(buf);
     } catch {
