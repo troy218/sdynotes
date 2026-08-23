@@ -183,31 +183,13 @@
             display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;
             box-shadow:0 3px 10px rgba(79,110,247,.35);
         }
+        /* 14.14 · 폰 헤더/본문 여백은 문서 끝 v1414-phone 블록 한 곳에서
+           정한다. 예전엔 여기서 헤더를 flex-wrap:wrap 으로 두 줄로 만들고
+           아래쪽 v88-mobile 이 다시 한 줄로 되돌리는 식으로 서로 싸워서,
+           아이콘 개수에 따라 헤더 높이가 들쭉날쭉했다. */
         @media(max-width:640px){
-            .header{padding:10px 6px !important;}
-            .app-brand{margin-left:2px !important;gap:7px !important;}
-            .app-brand h1{font-size:19px;}
-            .app-brand .logo-dot{width:28px;height:28px;border-radius:4px;font-size:15px;}
-            #searchInput{width:100% !important;}
-            /* 메인 여백을 좁혀 화면을 더 넓게 사용 */
-            main{padding:16px 8px 24px !important;}
-            .breadcrumb{padding:0 12px 6px;flex-wrap:wrap;}
+            .breadcrumb{padding:0 10px 6px;flex-wrap:wrap;}
             #noteGrid{margin-top:8px !important;}
-            /* 노치(세이프에어리어) 대응 */
-            .header,.editor-toolbar{padding-left:max(6px,env(safe-area-inset-left)) !important;
-                padding-right:max(6px,env(safe-area-inset-right)) !important;}
-        }
-        /* 모바일: 검색창을 아랫줄 전체 폭으로 내려 제목이 잘리지 않게 */
-        @media(max-width:640px){
-            .header .w-full{flex-wrap:wrap;gap:8px;}
-            .header .app-brand{flex:1 1 auto;}
-            .hdr-right{flex:0 0 auto;margin-right:2px !important;gap:6px !important;}
-            .search-wrap{flex:1 1 100%;order:3;min-width:0;}
-            .search-wrap>div{width:100%;}
-            /* 아이콘이 늘어도 헤더가 화면 밖으로 밀리지 않게 */
-            .hdr-right{flex-wrap:wrap;justify-content:flex-end;gap:4px !important;min-width:0;}
-            .hdr-right>button{flex:none;}
-            #searchInput{width:100% !important;min-width:0;}
         }
 
         /* ===== Note Cards ===== */
@@ -524,11 +506,11 @@
             box-shadow:0 1px 3px rgba(0,0,0,.05);
         }
         @media(max-width:640px){
-            .note-card{width:auto;flex:1 1 calc(50% - 5px);max-width:calc(50% - 5px);border-radius:4px;}
+            /* 14.14 · 폭·높이는 문서 끝 v1414-phone 에서 정한다 (카드 크기
+               설정 body.card-l 이 특이도로 이기던 문제를 거기서 함께 막는다). */
             .note-card:hover{transform:none;box-shadow:0 1px 3px rgba(0,0,0,.05);}
             .note-card:active{transform:scale(.97);}
         }
-        @media(max-width:380px){ .note-card{flex:1 1 100%;max-width:100%;} }
         .note-card:hover{transform:translateY(-6px);box-shadow:0 14px 32px rgba(0,0,0,.13);border-color:rgba(79,110,247,.4);}
         .note-card.selected{border:2px solid var(--accent);}
         .note-card .select-check{
@@ -543,7 +525,7 @@
         .note-preview{
             overflow:hidden;position:relative;background:var(--bg2);height:260px;
         }
-        @media(max-width:640px){.note-preview{height:190px;}}
+        /* 14.14 · .note-preview 폰 높이는 문서 끝 v1414-phone (카드 폭 비례) */
         .note-preview-frame{
             position:absolute;top:0;left:0;transform-origin:top left;
             user-select:none;pointer-events:none;box-shadow:0 0 0 1px var(--border);
@@ -596,19 +578,17 @@
             position:relative;transition:transform .22s cubic-bezier(.2,.8,.3,1),box-shadow .22s,border-color .22s;
         }
         @media(max-width:640px){
-            .folder-card{width:auto;flex:1 1 calc(50% - 5px);max-width:calc(50% - 5px);border-radius:4px;}
+            /* 14.14 · 폭·높이는 문서 끝 v1414-phone 에서 정한다 */
             .folder-card:hover{transform:none;box-shadow:0 1px 3px rgba(0,0,0,.05);}
             .folder-card:active{transform:scale(.97);}
         }
-        @media(max-width:380px){ .folder-card{flex:1 1 100%;max-width:100%;} }
         .folder-card:hover{transform:translateY(-6px);box-shadow:0 14px 32px rgba(0,0,0,.13);border-color:rgba(79,110,247,.4);}
         .folder-card.drop{border-color:var(--accent);background:rgba(79,110,247,.08);transform:scale(1.04);}
         .folder-thumb{
             height:260px;display:flex;align-items:center;justify-content:center;
             background:var(--bg2);position:relative;
         }
-        @media(max-width:640px){.folder-thumb{height:190px;}
-            .folder-thumb>i{font-size:54px;}}
+        @media(max-width:640px){ .folder-thumb>i{font-size:52px;} }
         .folder-thumb>i{font-size:64px;opacity:.95;transition:transform .22s cubic-bezier(.2,.8,.3,1);}
         .folder-card:hover .folder-thumb>i{transform:scale(1.07) rotate(-3deg);}
         .folder-count{
@@ -654,10 +634,7 @@
             display:flex;flex-direction:column;align-items:center;justify-content:center;
             min-height:300px;cursor:pointer;transition:all .3s;color:var(--text3);
         }
-        @media(max-width:640px){
-            .add-card{width:auto;flex:1 1 calc(50% - 5px);max-width:calc(50% - 5px);min-height:238px;border-radius:4px;}
-        }
-        @media(max-width:380px){ .add-card{flex:1 1 100%;max-width:100%;min-height:150px;} }
+        /* 14.14 · .add-card 폰 크기는 문서 끝 v1414-phone 에서 정한다 */
         .add-card{border-radius:5px;transition:all .22s cubic-bezier(.2,.8,.3,1);}
         .add-card:hover{border-color:var(--accent);color:var(--accent);
             background:rgba(79,110,247,.05);transform:translateY(-4px);}
@@ -18678,25 +18655,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 .mp-btns{position:relative;}
 .mp-float .mp-xtra,.mp-float .mp-xtra-btn{display:none !important;}
 @media(max-width:640px){
-  .mp{width:calc(100vw - 12px);gap:6px;padding:7px 8px;bottom:8px;
-      bottom:max(8px,env(safe-area-inset-bottom));border-radius:14px;}
-  .mp-cover{width:36px;height:36px;}
+  /* 14.14 · 크기·위치(.mp / .mp-cover / .mp-btns / #mpX / .mp-title)는
+     문서 끝 v1414-phone 블록 한 곳에서만 정한다. 여기는 그 외의
+     레이아웃 규칙만 남긴다. */
   /* 진행바가 손가락으로 잡을 만큼 넓어야 한다 → 중앙에 우선권 */
   .mp-mid{flex:1 1 auto;min-width:0;}
-  .mp-btns{gap:1px;flex:0 0 auto;}
-  .mp-btns button,#mpX{width:34px;height:34px;font-size:17px;}  /* 터치 타깃 */
-  .mp-btns .mp-pp{width:38px;height:38px;font-size:20px;}
-  #mpX{width:26px;height:26px;font-size:14px;}
-  .mp-prog{height:5px;}
+  .mp-btns{flex:0 0 auto;}
   /* 아주 좁은 폰: 이전/다음은 더보기 안으로 내려 진행바를 넓게 쓴다
      (곡 넘기기는 더보기 · 목록 · Shift+←/→ 로 그대로 가능) */
   @media(max-width:430px){
     .mp-bar .mp-btns>#mpPrev,.mp-bar .mp-btns>#mpNext{display:none;}
     .mp-xtra.show .mp-narrow{display:flex !important;}
   }
-  .mp-title{font-size:12.5px;}
   .mp-time{font-size:10px;}
-  .mp-prog{height:6px;}
   /* 버튼이 늘어도 넘치지 않게 3열로 접는다 (위치는 위 공통 규칙을 따름) */
   .mp-xtra.show{display:grid;grid-template-columns:repeat(3,1fr);padding:7px;gap:5px;}
   .mp-xtra.show button{width:38px;height:38px;font-size:17px;}
@@ -18787,9 +18758,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 .pl-mini button.d{color:#ef4444;}
 /* 모바일: 목록을 아래에서 올라오는 시트로 */
 @media(max-width:640px){
-  .mp-list{left:0;right:0;bottom:0;transform:none;width:100%;
-      max-height:72vh;border-radius:16px 16px 0 0;padding:10px;
-      padding-bottom:max(10px,env(safe-area-inset-bottom));}
+  /* 14.14 · .mp-list 위치·크기는 문서 끝 v1414-phone 에서만 정한다 */
   .mp-li,.mp-pl{padding:11px 10px;font-size:13.5px;}
   .mp-plsub{padding:10px 10px 10px 34px;font-size:13px;}
   .mp-li i,.mp-pl i{font-size:17px;padding:5px;}
@@ -18807,14 +18776,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 body.sdy-booting #mpReopen,
 body.sdy-booting #musicPlayer,
 body.sdy-booting #musicListPop{z-index:10001;}
+/* 14.14 · 이 자리에 있던 폰 규칙(.mp / .mp-cover / .mp-btns button / .mp-float /
+   .mp-list)은 문서 끝 v1414-phone 블록 로 옮겼다.
+   위쪽 18680행대 블록과 값이 서로 달라(예: .mp-btns button 이 34px vs 25px)
+   파일 순서로 승자가 정해지고 있었다. 중복을 없애고 한 곳에서만 정한다. */
 @media (max-width:640px){
-    .mp{width:96vw;gap:6px;padding:6px 8px;}
-    .mp-cover{width:36px;height:36px;}
-    .mp-btns button{width:25px;height:25px;font-size:13px;}
-    .mp.mp-float{width:56px;height:56px;top:58px;right:8px;}
-    .mp-float .mp-cover{left:4px;top:4px;width:48px;height:48px;}
     .mp-float .mp-btns #mpPP{width:23px;height:23px;font-size:12px;}
-    .mp-list{width:94vw;bottom:72px;}
 }
 
 /* ═════════ 10.1 · 큰 플로팅 뮤직플레이어 (스포티파이/Apple Music 풍) ═════════ */
@@ -22877,7 +22844,11 @@ body.sdy-booting #clawFx,body.sdy-booting #bbEgg,body.sdy-booting #bbTap{display
   .cards-box{width:min(600px,96vw);max-height:88dvh}.cards-head{padding:12px 14px}
   #cardsHome,#cardsStudy,#cardsPaste,#cardsStats,#cardsAnalytics,#cardsBrowse{padding:12px;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .cd-inner{height:min(42dvh,290px)}
-  .mp{max-width:calc(100vw - 12px)!important}.mp-list{max-width:calc(100vw - 12px)!important}
+  /* 14.14 · 태블릿 폭에서만. 폰(≤640px)은 문서 끝 v1414-phone 이 좌우를
+     직접 잡으므로 여기서 max-width 를 또 걸면 규칙이 둘로 갈린다. */
+  @media (min-width:641px){
+    .mp{max-width:calc(100vw - 12px)!important}.mp-list{max-width:calc(100vw - 12px)!important}
+  }
   .ctx-menu.show{max-width:calc(100vw - 16px)!important;max-height:calc(100dvh - 16px)!important;
       overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain}
   /* 야구는 JS가 모바일 배율을 이미 계산한다. CSS 재축소를 하지 않아 터치 좌표와 그림을 일치시킨다. */
@@ -22897,16 +22868,14 @@ body.sdy-booting #clawFx,body.sdy-booting #bbEgg,body.sdy-booting #bbTap{display
   .vault-desk,#cardsHome,#cardsStudy,#cardsPaste,#cardsStats,#cardsAnalytics,#cardsBrowse{touch-action:pan-y;-webkit-overflow-scrolling:touch}
   /* 카드 위에서 시작한 Android Chrome 스와이프도 반드시 폴더 목록 스크롤로 보낸다. */
   #noteGrid,.note-card,.folder-card,.note-preview,.note-card-name{touch-action:pan-y!important}
-  .header{padding:5px 6px!important}.app-brand{margin-left:0!important}.app-brand h1{font-size:18px!important;max-width:45vw}
-  .hdr-right{gap:1px!important;margin-right:0!important}.hdr-right>#vaultBtn,.hdr-right>#adminToggleBtn{display:none!important}
-  .search-wrap{display:none!important}.header .tool-btn{width:30px;height:30px;font-size:16px}
-  main{padding:12px 7px 90px!important}.note-grid{padding:0 3px!important;gap:8px!important}
-  .editor-toolbar{min-height:48px;align-items:center;overflow-x:auto!important;touch-action:pan-x!important}
-  .editor-toolbar .tool-btn{width:36px!important;height:36px!important;font-size:18px!important}
-  .editor-toolbar .tb-mid .tool-btn.sm{width:32px!important;height:32px!important;font-size:16px!important}
-  .editor-toolbar .tool-cat{height:36px;padding:0 8px;font-size:12px}.editor-toolbar .tool-cat .caret{font-size:11px}
-  #edTitle{font-size:13px!important;min-width:70px!important;flex:1 1 auto!important}.page-badge{height:30px;padding:0 6px;font-size:11px}
-  .tool-sep{margin:0 3px}
+  /* 14.14 · 헤더/본문/툴바 크기와 음악바·목록 위치는 문서 끝
+     v1414-phone 블록 한 곳에서만 정한다. (여기 값들과 위쪽 블록들이
+     서로 달라 파일 순서로 승자가 갈리고 있었다.) 여기는 '무엇을 숨길지' 등
+     겹치지 않는 규칙만 남긴다. */
+  .hdr-right>#vaultBtn,.hdr-right>#adminToggleBtn{display:none!important}
+  .search-wrap{display:none!important}
+  .editor-toolbar .tool-cat{height:34px;padding:0 8px;font-size:12px}.editor-toolbar .tool-cat .caret{font-size:11px}
+  .page-badge{height:30px;padding:0 6px;font-size:11px}
   .pg-nav{padding:2px 5px!important}.pg-nav input{width:32px;height:22px;font-size:12px}
   .pg-nav .tot{font-size:11px}
   /* 서식 막대는 화면 폭을 넘지 않게 (넘치면 안에서 가로 스크롤) */
@@ -22929,8 +22898,9 @@ body.sdy-booting #clawFx,body.sdy-booting #bbEgg,body.sdy-booting #bbTap{display
   #vaultList .v-file{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
   .cards-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}.cards-actions .cd-btn{width:100%;padding:10px 7px}
   .cd-statrow{grid-template-columns:repeat(3,1fr)}.cd-stat{padding:9px 2px}.cd-memory{padding:10px}.cd-opts{gap:6px}.cd-opt{padding:12px 10px;font-size:13px}
-  .mp{bottom:max(6px,env(safe-area-inset-bottom))!important;width:calc(100vw - 12px)!important}.mp-title{font-size:11px}.mp-cover{width:30px;height:30px}.mp-btns>#mpPrev,.mp-btns>#mpNext{display:none!important}.mp-btns button,#mpX{width:29px!important;height:29px!important}.mp-btns .mp-pp{width:34px!important;height:34px!important}
-  .mp-list{left:6px!important;right:6px!important;bottom:64px!important;width:auto!important;transform:none!important;max-height:65dvh!important}
+  /* 14.14 · 음악바/목록의 크기·위치는 문서 끝 v1414-phone 에서만 정한다.
+     (여기서 .mp-btns button 을 29px 로 줄이던 규칙이 위쪽 34px 규칙을
+     덮어써서 단추가 손가락보다 작아져 있었다.) */
   #bbEgg,#bbTap{transform:none!important}
 }
 </style>
@@ -23985,10 +23955,8 @@ body.sdy-booting #mpReopen{display:none !important;}
 .yp-set-btn:hover{background:#343a48;}
 .yp-set-btn.spin svg{animation:ypSpin .55s cubic-bezier(.4,.1,.3,1);}
 @keyframes ypSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
-@media(max-width:640px){
-    #ypApp{width:94vw;height:min(72vh,600px);right:3vw;bottom:66px;}
-    #ypReopen{right:10px;bottom:max(58px,calc(env(safe-area-inset-bottom) + 46px));}
-}
+/* 14.14 · #ypApp / #ypReopen 의 폰 위치는 문서 끝 v1414-phone 에서만 정한다
+   (음악바 유무에 따라 칩이 겹치지 않게 쌓아야 하므로 한 곳에서 계산한다). */
 
 /* ── 음악바(크로스바) 열고 닫힘 애니메이션 (엽스코드와 통일) ── */
 #musicPlayer.mp-bar.yp-mp-open{animation:ypMpIn .28s cubic-bezier(.22,.9,.3,1.12);}
@@ -25111,6 +25079,201 @@ body.sdy-booting #mpReopen{display:none !important;}
 
   ypDrag();
   ypJoin();
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     14.14 · 폰 화면 정리 (single source of truth)
+
+     왜 필요했나 — 폰 규칙이 네 군데에 흩어져 서로를 덮어쓰고 있었다:
+       ① <style> 첫머리(190행대)  ② 음악 플레이어 스타일(18680·18810)
+       ③ v88-mobile(22886)        ④ ypStyle(23988)
+     같은 요소에 서로 다른 값이 2~4번씩 지정돼(.mp 는 width 가 4번,
+     .mp-btns button 은 크기가 3번) 어느 쪽이 이길지는 '파일에서 누가 더
+     아래냐'로 정해졌다. 그래서 크기가 제각각이고 위치가 제멋대로였다.
+
+     이 블록이 문서의 맨 마지막이므로, 폰에서는 여기 값이 항상 최종이다.
+     캄(데스크톱) 화면은 건드리지 않는다 — 전부 max-width:640px 안에만 있다.
+     ═══════════════════════════════════════════════════════════════════ -->
+<style id="v1414-phone">
+@media (max-width:640px){
+
+  /* ── 0. 아래쪽 떠 있는 것들의 공통 기준 ──
+     음악바·엽스코드칩·음악칩이 서로 겹치지 않게 한 줄로 쌓는다.
+     --ph-stack 은 '엽스코드 칩이 얼마나 위로 올라가야 하는가'.
+       · 음악바가 떠 있으면  → 바 높이만큼
+       · 음악칩만 있으면     → 칩 높이만큼                      */
+  body{--ph-safe:env(safe-area-inset-bottom,0px);--ph-gap:10px;
+       --ph-bar:58px;--ph-stack:52px;}
+  body.has-mpbar{--ph-stack:64px;}
+
+  /* ── 1. 카드 크기 ──
+     [버그] body.card-l .note-card{width:244px} 는 특이도가 (0,2,1),
+     폰 규칙 .note-card 는 (0,1,0). 미디어쿼리는 특이도를 올려주지 않으므로
+     설정에서 '큰 카드'를 고르면 폰에서도 244px 가 이겨 2열=488px 가 되어
+     390px 화면 밖으로 터졌다. cardSize 는 기기간 동기화되는 값이라
+     PC 에서 한 번 바꾸면 폰이 깨진 채로 남았다.
+     → 폰에서는 카드 크기 설정을 무시하고 항상 화면에 맞춘 2열로 고정한다. */
+  body .note-card,body .folder-card,body .add-card,
+  body.card-s .note-card,body.card-s .folder-card,body.card-s .add-card,
+  body.card-l .note-card,body.card-l .folder-card,body.card-l .add-card{
+      width:auto;flex:1 1 calc(50% - 4px);max-width:calc(50% - 4px);
+      min-width:0;border-radius:12px;}
+  /* 미리보기는 고정 높이(190px) 대신 카드 폭을 따라간다.
+     종이가 800x1100 이므로 카드가 좁아져도 비율이 유지된다. */
+  body .note-preview,body .folder-thumb,
+  body.card-s .note-preview,body.card-s .folder-thumb,
+  body.card-l .note-preview,body.card-l .folder-thumb{
+      height:auto;aspect-ratio:4/5;min-height:0;}
+  body .add-card,body.card-s .add-card,body.card-l .add-card{min-height:0;aspect-ratio:4/5.35;}
+  .note-grid{gap:8px;padding:0 8px;justify-content:flex-start;}
+  /* 아주 좁은 폰(≤380px)에서도 1열로 떨어뜨리지 않는다 — 1열은 카드가
+     과하게 커져서 한 화면에 한 장밖에 안 보인다. */
+  @media(max-width:380px){
+    body .note-card,body .folder-card,body .add-card,
+    body.card-s .note-card,body.card-s .folder-card,body.card-s .add-card,
+    body.card-l .note-card,body.card-l .folder-card,body.card-l .add-card{
+        flex:1 1 calc(50% - 3px);max-width:calc(50% - 3px);}
+    .note-grid{gap:6px;padding:0 6px;}
+  }
+
+  /* ── 2. 헤더 ── 한 줄 고정. 줄바꿈되면 높이가 들쭉날쭉해진다. */
+  .header{padding:6px 8px !important;
+      padding-left:max(8px,env(safe-area-inset-left)) !important;
+      padding-right:max(8px,env(safe-area-inset-right)) !important;}
+  .header .w-full{flex-wrap:nowrap !important;gap:6px;}
+  .app-brand{margin-left:0 !important;gap:7px !important;flex:1 1 auto;min-width:0;flex-wrap:nowrap;}
+  .app-brand h1{font-size:18px !important;max-width:none;flex:1 1 auto;min-width:0;
+      overflow:hidden !important;text-overflow:ellipsis !important;white-space:nowrap;}
+  .app-brand .logo-dot{width:26px;height:26px;font-size:14px;}
+  .hdr-right{flex:0 0 auto;flex-wrap:nowrap !important;gap:0 !important;margin-right:0 !important;}
+  .header .tool-btn{width:32px;height:32px;font-size:17px;}
+  .srv-gauge{width:30px;height:22px;}
+
+  /* ── 3. 본문 ── 아래 떠 있는 것들에 가리지 않도록 여백을 준다. */
+  main{padding:12px 4px !important;
+      padding-bottom:calc(var(--ph-safe) + 108px) !important;}
+
+  /* ── 4. 에디터 툴바 ── 크기 지정이 세 곳에서 싸우던 것을 하나로. */
+  .editor-toolbar{display:flex !important;align-items:center;gap:3px;
+      padding:6px !important;padding-top:max(6px,env(safe-area-inset-top)) !important;
+      min-height:46px;overflow-x:auto !important;overflow-y:hidden !important;
+      touch-action:pan-x !important;overscroll-behavior-x:contain;
+      -webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .editor-toolbar::-webkit-scrollbar{display:none;}
+  .editor-toolbar .tb-left,.editor-toolbar .tb-mid,.editor-toolbar .tb-right{
+      flex:0 0 auto;justify-self:auto;gap:2px;}
+  .editor-toolbar .tool-btn{width:34px !important;height:34px !important;font-size:17px !important;}
+  .editor-toolbar .tool-btn.sm{width:30px !important;height:30px !important;font-size:15px !important;}
+  .editor-toolbar #edTitle{flex:0 0 auto !important;width:132px;min-width:132px !important;font-size:13px !important;}
+  .tool-sep{margin:0 2px;}
+
+  /* ── 5. 음악바 ── width 가 네 번 지정돼 있던 것을 하나로. */
+  .mp{left:6px !important;right:6px !important;width:auto !important;
+      max-width:none !important;transform:none !important;
+      bottom:calc(var(--ph-safe) + 6px) !important;
+      gap:7px;padding:7px 9px;border-radius:14px;}
+  .mp-cover{width:36px;height:36px;}
+  .mp-title{font-size:12.5px;}
+  .mp-btns{gap:2px;}
+  .mp-btns button,#mpX{width:32px !important;height:32px !important;font-size:16px !important;}
+  .mp-btns .mp-pp{width:36px !important;height:36px !important;font-size:19px !important;}
+  #mpX{width:26px !important;height:26px !important;font-size:14px !important;}
+  .mp-prog{height:6px;}
+  /* 떠 있는 LP 원반은 화면 밖으로 나가지 않게 오른쪽 벽에 고정 */
+  .mp.mp-float{left:auto !important;right:8px !important;width:58px !important;height:58px !important;
+      max-width:58px !important;bottom:auto !important;}
+  .mp-float .mp-cover{left:4px;top:4px;width:50px;height:50px;}
+  /* 목록은 아래에서 올라오는 시트로 (가운데 뜨면 손이 안 닿는다) */
+  .mp-list{left:0 !important;right:0 !important;bottom:0 !important;
+      width:100% !important;max-width:none !important;transform:none !important;
+      max-height:min(70dvh,560px) !important;border-radius:16px 16px 0 0;
+      padding:10px;padding-bottom:calc(var(--ph-safe) + 10px);}
+  .mpb{left:6px !important;right:6px !important;width:auto !important;
+      max-width:none !important;max-height:86dvh !important;}
+
+  /* ── 6. 아래 떠 있는 단추들 ── 서로 겹치지 않게 한 줄로 쌓는다. */
+  #mpReopen{right:12px;bottom:calc(var(--ph-safe) + var(--ph-gap));
+      width:44px;height:44px;font-size:19px;}
+  #ypReopen{right:12px;bottom:calc(var(--ph-safe) + var(--ph-gap) + var(--ph-stack));
+      width:44px;height:44px;}
+
+  /* ── 7. 엽스코드 패널 ── 폰에서는 드래그로 옮긴 좌표를 무시하고
+     항상 화면에 꽉 맞춘다. (옮긴 뒤 화면을 돌리면 밖으로 나가 있었다) */
+  #ypApp{left:6px !important;right:6px !important;top:auto !important;
+      width:auto !important;max-width:none !important;
+      bottom:calc(var(--ph-safe) + var(--ph-gap)) !important;
+      height:min(74dvh,620px) !important;}
+  .yp-head{cursor:default;}
+
+  /* ── 8. 모달 ── */
+  .modal-box{max-width:none !important;width:calc(100vw - 20px) !important;
+      max-height:88dvh;overflow-y:auto;padding:18px !important;}
+}
+</style>
+<script>
+/* 14.14 · 폰 화면 위치 바로잡기 (CSS 로 안 되는 부분만)
+   ① 음악바가 떠 있는지에 따라 엽스코드 칩을 위로 올린다 (body.has-mpbar)
+   ② 드래그로 옮긴 인라인 좌표가 화면 밖에 남는 것을 막는다.
+      폰은 화면을 돌리면 폭·높이가 통째로 바뀌는데, 예전엔 옮긴 좌표가
+      px 로 그대로 남아 패널이 화면 밖으로 사라졌다. */
+(function(){
+  /* matchMedia 가 없는 환경(구형 WebView·테스트용 DOM)에서도 죽지 않게 */
+  var PHONE=function(){
+    try{
+      if(window.matchMedia) return window.matchMedia('(max-width:640px)').matches;
+    }catch(e){}
+    return (window.innerWidth||1024)<=640;
+  };
+
+  /* ① 음악바 표시 여부 → body.has-mpbar */
+  function syncBar(){
+    var pl=document.getElementById('musicPlayer');
+    var on=!!(pl && pl.style.display!=='none' && pl.classList.contains('mp-bar'));
+    document.body.classList.toggle('has-mpbar',on);
+  }
+  /* ② 떠 있는 창이 화면 밖에 있으면 도로 끌어들인다 */
+  function clampFloats(){
+    var app=document.getElementById('ypApp');
+    if(app){
+      if(PHONE()){
+        /* 폰에서는 CSS 가 위치를 잡으므로 드래그가 남긴 좌표를 지운다 */
+        app.style.left='';app.style.top='';app.style.right='';app.style.bottom='';
+      }else if(app.classList.contains('open')){
+        var l=parseFloat(app.style.left),t=parseFloat(app.style.top);
+        if(isFinite(l)||isFinite(t)){
+          var w=app.offsetWidth,h=app.offsetHeight;
+          if(isFinite(l)) app.style.left=Math.max(8,Math.min(innerWidth-w-8,l))+'px';
+          if(isFinite(t)) app.style.top =Math.max(8,Math.min(innerHeight-h-8,t))+'px';
+        }
+      }
+    }
+    var pl=document.getElementById('musicPlayer');
+    if(pl && pl.classList.contains('mp-float')){
+      if(PHONE()){ pl.style.right='';pl.style.left=''; }
+      var t2=parseFloat(pl.style.top);
+      if(isFinite(t2)) pl.style.top=Math.max(56,Math.min(innerHeight-pl.offsetHeight-12,t2))+'px';
+    }
+    var big=document.getElementById('mpBig');
+    if(big && big.classList.contains('open')){
+      var bl=parseFloat(big.style.left),bt=parseFloat(big.style.top);
+      if(isFinite(bl)) big.style.left=Math.max(6,Math.min(innerWidth-big.offsetWidth-6,bl))+'px';
+      if(isFinite(bt)) big.style.top =Math.max(6,Math.min(innerHeight-big.offsetHeight-6,bt))+'px';
+    }
+  }
+  function tick(){ syncBar(); clampFloats(); }
+
+  function boot(){
+    var pl=document.getElementById('musicPlayer');
+    if(pl) new MutationObserver(syncBar).observe(pl,{attributes:true,attributeFilter:['style','class']});
+    var app=document.getElementById('ypApp');
+    if(app) new MutationObserver(clampFloats).observe(app,{attributes:true,attributeFilter:['class']});
+    addEventListener('resize',tick,{passive:true});
+    addEventListener('orientationchange',function(){ setTimeout(tick,220); },{passive:true});
+    tick();
+  }
+  if(document.readyState==='loading') addEventListener('DOMContentLoaded',boot);
+  else boot();
 })();
 </script>
 
