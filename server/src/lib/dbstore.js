@@ -75,17 +75,33 @@ function matchRow(row, filters) {
   return true;
 }
 
+// 14.14 · parseFloat 는 '2026-01-02T00:00:00.000Z' 를 2026 으로 읽는다.
+//   그래서 created_at(ISO 시각) 정렬이 전부 동점 처리돼 순서가 무작위로 흔들렸다
+//   (oracle_db_contract 의 'created_at 오름차순' 이 절반쯤 실패하던 원인).
+//   문자열 전체가 숫자일 때만 숫자로 비교하고, 그 외에는 문자열로 비교한다.
+const NUMERIC_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+function asNumber(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const s = String(v ?? '').trim();
+  if (!s || !NUMERIC_RE.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
 function cmpRows(field, asc) {
   return (a, b) => {
     const av = a[field];
     const bv = b[field];
-    const an = parseFloat(av);
-    const bn = parseFloat(bv);
+    const an = asNumber(av);
+    const bn = asNumber(bv);
     let r;
-    if (Number.isFinite(an) && Number.isFinite(bn) && String(av).trim() !== '' && String(bv).trim() !== '') {
+    if (an !== null && bn !== null) {
       r = an < bn ? -1 : an > bn ? 1 : 0;
     } else {
-      r = String(av ?? '').localeCompare(String(bv ?? ''));
+      // ISO 시각 문자열은 사전순 = 시간순이라 이대로 정확하다.
+      const as = String(av ?? '');
+      const bs = String(bv ?? '');
+      r = as < bs ? -1 : as > bs ? 1 : 0;
     }
     return asc ? r : -r;
   };

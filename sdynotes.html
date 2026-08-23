@@ -24294,6 +24294,7 @@ body.sdy-booting #mpReopen{display:none !important;}
     YP._iceP=once(8000).catch(function(){ return once(8000); })
       .then(function(d){
         YP.ice=(d&&d.ice)||null; YP._iceAt=YP.ice?Date.now():0; YP.turn=!!(d&&d.turn);
+        YP.publicTurn=!!(d&&d.publicTurn); YP.droppedTurn=(d&&d.droppedTurn)||[];
         return YP.ice;
       })
       .catch(function(){ YP.ice=null; YP._iceAt=0; YP.turn=false; return null; })
@@ -24420,10 +24421,12 @@ body.sdy-booting #mpReopen{display:none !important;}
         if(pc.__watch){ clearTimeout(pc.__watch); pc.__watch=null; }
         var m=YP.members.get(uid);
         if(!relay){
-          toast((m&&m.name||'상대')+' 와(과) 직접 연결이 안 돼요 · TURN 릴레이로 다시 붙일게요',2800);
+          // 14.14 · 여기서 relay '전용'(iceTransportPolicy:'relay')으로 갈아타면
+          //   TURN 이 죽어 있을 때 남은 길까지 스스로 막아 버린다. 대신 후보를
+          //   전부(host+srflx+relay) 다시 모으는 ICE 재시작을 한 번 더 준다.
+          toast((m&&m.name||'상대')+' 와(과) 연결이 끊겼어요 · 다시 붙이는 중…',2400);
           if(YP.uid<uid) setTimeout(function(){
-            // 새 TURN 설정을 받은 뒤에야 relay 전용 PC를 만들어야 한다.
-            ypRefreshIce().then(function(){ ypOffer(uid,{fresh:true,relay:true}); });
+            ypRefreshIce().then(function(){ ypOffer(uid,{fresh:true}); });
           },400);
         } else {
           toast((m&&m.name||'상대')+' 와(과) 음성 연결에 실패했어요 · 네트워크(NAT) 환경이 달라서일 수 있어요',3200);
@@ -24433,18 +24436,28 @@ body.sdy-booting #mpReopen{display:none !important;}
     // connectionState 만으론 실패를 놓칠 수 있어 ICE 상태 변화도 같은
     // 복구(위 핸들러)로 연결한다(중복 실패는 __restarted 가 막는다).
     pc.oniceconnectionstatechange=pc.onconnectionstatechange;
-    // 유선랜/와이파이, LTE/집밖 등 서로 다른 망에서는 host/srflx 후보가
-    // 잡혀도 실제로는 안 뚫리는 경우가 많다. 예전 6.5초는 통화 버튼을 누른
-    // 뒤 한참을 '연결 중'으로 기다리게 만들었다. 2.5초면 첫 ICE 체크가
-    // 충분히 시작되고, 바로 relay 전용으로 갈아탄다.
-    if(!relay && ypIceHasTurn()){
+    // ⚠ 14.14 · 예전엔 2.5초 만에 '아직 연결 안 됐으면' 무조건 이 연결을 부수고
+    //   relay 전용으로 갈아탔다. 그런데 ICE 는 원래 몇 초씩 걸리고(후보 수집 +
+    //   체크), iceTransportPolicy:'all' 이면 브라우저가 이미 host·srflx·relay 를
+    //   '동시에' 시도한다. 즉 2.5초 강제 전환은
+    //     · 잘 붙고 있던 같은 와이파이 직접 연결까지 부수고
+    //     · TURN 이 죽어 있으면 relay 전용이라 100% 실패 → 통화 자체가 불가
+    //   가 됐다. (같은 와이파이끼리도 안 되던 진짜 원인)
+    //   이제 강제로 부수지 않는다. ICE 가 스스로 실패를 알릴 때만 아래
+    //   onconnectionstatechange 의 복구 경로가 동작한다.
+    if(!relay){
       pc.__watch=setTimeout(function(){
         if(!YP.inVoice || pc.__restarted) return;
         if(pc.connectionState==='connected' || pc.connectionState==='closed') return;
+        if(pc.iceConnectionState==='connected' || pc.iceConnectionState==='completed') return;
+        // 아직도 못 붙었으면 '연결을 부수지 않고' ICE 재시작만 건다.
+        // (재시작은 host·srflx·relay 후보를 전부 다시 모으므로 TURN 이
+        //  늦게 살아난 경우에도 스스로 회복된다)
+        pc.__restarted=true;
         if(YP.uid<uid){
-          ypRefreshIce().then(function(){ ypOffer(uid,{fresh:true,relay:true}); });
+          ypRefreshIce().then(function(){ ypOffer(uid); });
         } else ypRefreshIce();
-      },2500);
+      },9000);
     }
     // relay 전용 PC 는 TURN 이 죽어 있으면 '연결 중'에 오래 갇힐 수 있어
     // 일정 시간 안에 안 붙으면 원인을 알려준다 (STUN/TURN 장애 vs NAT 문제 구분).
@@ -24830,9 +24843,66 @@ body.sdy-booting #mpReopen{display:none !important;}
       '<div class="yp-set-title">알림</div>'+
       '<div class="yp-set-row"><label>알림 소리<span class="sub">새 메시지가 오면 소리</span></label><span class="yp-switch '+(YPS.sound?'on':'')+'" data-k="sound"><i></i></span></div>'+
       '<div class="yp-set-row"><label>입장·퇴장 알림<span class="sub">들어오고 나가는 안내</span></label><span class="yp-switch '+(YPS.sys?'on':'')+'" data-k="sys"><i></i></span></div>'+
-      '<div class="yp-set-row"><label>데스크톱 알림<span class="sub">노크·새 메시지 창 알림</span></label><span class="yp-switch '+(YPS.desk?'on':'')+'" data-k="desk"><i></i></span></div>';
+      '<div class="yp-set-row"><label>데스크톱 알림<span class="sub">노크·새 메시지 창 알림</span></label><span class="yp-switch '+(YPS.desk?'on':'')+'" data-k="desk"><i></i></span></div>'+
+      '<div class="yp-set-title">통화 진단</div>'+
+      '<div class="yp-set-row"><label>연결 자가 진단<span class="sub">이 기기에서 실제로 후보를 모아 봅니다</span></label>'+
+      '  <button class="yp-set-btn" id="ypDiagBtn" style="border:1px solid #343a48;background:#1d222c;color:#c6cdd9;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">검사</button></div>'+
+      '<div class="yp-set-row" id="ypDiagOut" style="display:none"><label id="ypDiagTxt" style="font-size:11px;line-height:1.6;white-space:pre-wrap;"></label></div>';
+  }
+  // 14.14 · 통화가 안 될 때 '어디서' 막히는지 이 기기에서 직접 확인한다.
+  //   host 후보 = 내 랜카드, srflx = STUN(공인 IP 확인), relay = TURN 릴레이.
+  //   relay 가 0 이면 TURN 이 문제, srflx 가 0 이면 UDP 자체가 막힌 망이다.
+  function ypRunDiag(){
+    var out=$('ypDiagOut'), txt=$('ypDiagTxt'), btn=$('ypDiagBtn');
+    if(!out||!txt) return;
+    out.style.display=''; txt.textContent='검사 중…';
+    if(btn){ btn.disabled=true; btn.textContent='검사 중'; }
+    ypRefreshIce().then(function(){
+      var servers=ypIceServers();
+      var turnUrls=[];
+      servers.forEach(function(s){
+        var u=Array.isArray(s.urls)?s.urls:[s.urls];
+        u.forEach(function(x){ if(/^turns?:/i.test(String(x))) turnUrls.push(String(x)); });
+      });
+      var got={host:0,srflx:0,relay:0}, errs=[];
+      var pc;
+      try{ pc=new RTCPeerConnection({iceServers:servers,iceCandidatePoolSize:0}); }
+      catch(e){ txt.textContent='RTCPeerConnection 생성 실패: '+e; if(btn){btn.disabled=false;btn.textContent='검사';} return; }
+      pc.onicecandidate=function(e){
+        if(!e.candidate){ finish(); return; }
+        var t=e.candidate.type||'';
+        if(got[t]!==undefined) got[t]++;
+      };
+      pc.onicecandidateerror=function(ev){
+        var u=String((ev&&ev.url)||''), code=(ev&&ev.errorCode)||'';
+        if(/^turns?:/i.test(u)) errs.push(u+' → '+code+' '+((ev&&ev.errorText)||''));
+      };
+      try{ pc.createDataChannel('diag'); }catch(e){}
+      pc.createOffer().then(function(o){ return pc.setLocalDescription(o); }).catch(function(){});
+      var done=false;
+      function finish(){
+        if(done) return; done=true;
+        try{ pc.close(); }catch(e){}
+        var secure=(window.isSecureContext!==false);
+        var lines=[];
+        lines.push((secure?'✅':'❌')+' HTTPS(보안 연결) '+(secure?'정상':'아님 — 통화 불가'));
+        lines.push((got.host?'✅':'❌')+' 내 랜카드 후보(host) '+got.host+'개');
+        lines.push((got.srflx?'✅':'⚠️')+' 공인IP 후보(STUN/srflx) '+got.srflx+'개'+(got.srflx?'':' — UDP 차단망일 수 있어요'));
+        lines.push((got.relay?'✅':'❌')+' 릴레이 후보(TURN/relay) '+got.relay+'개'+(got.relay?'':' — TURN 이 안 붙습니다'));
+        lines.push('TURN 주소 '+turnUrls.length+'개'+(YP.publicTurn?' (공개 TURN 예비 사용 중)':''));
+        if((YP.droppedTurn||[]).length) lines.push('서버가 제외한 TURN: '+YP.droppedTurn.join(', '));
+        if(errs.length) lines.push('TURN 오류: '+errs.slice(0,3).join(' / '));
+        if(got.host&&got.relay) lines.push('→ 같은 망·다른 망 모두 연결 가능한 상태입니다.');
+        else if(got.host&&!got.relay) lines.push('→ 같은 와이파이는 되지만 다른 망(LTE)은 실패할 수 있어요.');
+        else if(!got.host) lines.push('→ 브라우저가 후보를 못 만듭니다. 권한/보안 연결을 확인하세요.');
+        txt.textContent=lines.join('\n');
+        if(btn){ btn.disabled=false; btn.textContent='다시 검사'; }
+      }
+      setTimeout(finish,6000);
+    });
   }
   function ypSettingsClick(e){
+    if(e.target.closest&&e.target.closest('#ypDiagBtn')){ ypRunDiag(); return; }
     var sw=e.target.closest&&e.target.closest('.yp-switch');
     if(sw){ var k=sw.getAttribute('data-k'); YPS[k]=!YPS[k]; ypsSave(); if(k==='desk'&&YPS[k]) ypAskNotify(); ypBuildSettings(); return; }
     if(e.target.closest&&e.target.closest('.yp-set-refresh')){
