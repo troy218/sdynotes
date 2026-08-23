@@ -22481,6 +22481,15 @@ $('mpTagCoverReset').onclick=async()=>{
 //        편집창을 닫았다 다시 열면 처음 결과부터 다시.
 let _tagAlt=0, _coverAlt=0, _tagBusy=false;
 const _lyrAutoTried=new Set();
+// 일부 이전/외부 저장소 레코드는 boolean 대신 문자열 "false"를 돌려준다.
+// JavaScript에서 그 문자열은 truthy라서, 실제 표지가 없어도 자동 찾기가
+// "표지가 있다"고 판단하던 것을 막는다.
+function hasTrackCover(t){
+  if(!t) return false;
+  if(String(t.cover_url||'').trim()) return true;
+  const cover=t.cover;
+  return cover===true||cover===1||cover==='1'||String(cover).toLowerCase()==='true';
+}
 function _syncTagEditor(t){
   if(!t||TAG_EDIT!==t.id) return;
   $('mpTagTitle').value=t.title||''; $('mpTagArtist').value=t.artist||'';
@@ -22492,7 +22501,7 @@ function _syncTagEditor(t){
       $('mpTagLyrics').value=t.lyrics||t.lyrics_plain||''; });
   const im=$('mpTagCover');
   im.onerror=()=>{ im.onerror=null; im.src=DEF_COVER; };
-  im.src=t.cover?('/api/music/cover/'+t.id+'?r='+Date.now()):DEF_COVER;
+  im.src=hasTrackCover(t)?('/api/music/cover/'+t.id+'?r='+Date.now()):DEF_COVER;
 }
 let _lookupAbort=null;
 async function lookupTrack(id,opts){
@@ -22546,7 +22555,9 @@ $('mpTagAuto').onclick=async()=>{
   TAG_FIELDS.forEach(([k,el])=>{ snap[k]=$(el).value.trim(); });
   snap.lyrics=$('mpTagLyrics').value.trim();
   let t0=P.list.find(x=>x.id===id)||{};
-  const hadCover=!!(t0.cover_url||(t0.cover&&t0.cover!==false)||_scrapedCoverUrl);
+  // hasTrackCover가 문자열 "false"를 실제 표지로 오인하지 않으므로,
+  // 표지가 없는 이전 레코드도 아래 ④ 표지 찾기 단계까지 진행한다.
+  const hadCover=hasTrackCover(t0)||!!_scrapedCoverUrl;
   const anyEmpty=TAG_FIELDS.some(([k])=>!snap[k])||!snap.lyrics||!hadCover;
   if(!anyEmpty){ toast('모든 칸이 이미 채워져 있어요 · 찾을 빈칸이 없습니다',2400); return; }
   _tagBusy=true;
@@ -22643,7 +22654,7 @@ $('mpTagAuto').onclick=async()=>{
     const t=await reload(); applyServer(t);
     const im=$('mpTagCover');
     im.onerror=()=>{ im.onerror=null; im.src=DEF_COVER; };
-    im.src=t.cover?('/api/music/cover/'+id+(P.coverV?('?v='+P.coverV):'')):DEF_COVER;
+    im.src=hasTrackCover(t)?('/api/music/cover/'+id+(P.coverV?('?v='+P.coverV):'')):DEF_COVER;
     if(cur()&&cur().id===id) setCover(cur());
     try{ if(P.bigTab==='y'&&$('mpBig').classList.contains('open')) renderLyrics(); }catch(err){}
     // 무엇이 새로 채워졌는지 알려 준다
