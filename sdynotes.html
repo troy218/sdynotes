@@ -5148,10 +5148,10 @@
             area.appendChild(upper);
 
             // 아래 줄은 이번 기기·이번 접속에서 열어 본 문서만 낱장으로 둔다.
+            // (제목표·구분선 없이 스택 아래에 곧바로 이어 붙인다)
             if(recentNotes.length){
                 const sec=document.createElement('div');
                 sec.className='recent-section';
-                sec.innerHTML='<div class="recent-label">이 기기에서 연 노트</div>';
                 const row=document.createElement('div');
                 row.className='recent-row';
                 recentNotes.forEach(nb=>row.appendChild(_makeCard(nb)));
@@ -19053,10 +19053,14 @@ body.sdy-booting #musicListPop{z-index:10001;}
 #mpBKnob{position:absolute;top:50%;left:0;width:13px;height:13px;border-radius:50%;
     background:var(--accent);border:2px solid var(--card);box-shadow:0 1px 5px rgba(0,0,0,.3);
     transform:translate(-50%,-50%);pointer-events:none;}
-.mpb-time{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;font-size:10.5px;color:var(--text3);gap:6px;}
-.mpb-time .start{text-align:left;}
-.mpb-time .current{text-align:center;color:var(--text1);font-weight:700;font-variant-numeric:tabular-nums;}
-.mpb-time .end{text-align:right;}
+/* 시간 표시는 평소엔 숨기고, 재생 위치를 잡을 때만 잠깐 뜬다 (현재 | 전체) */
+.mpb-time{display:flex;align-items:center;justify-content:center;font-size:10.5px;color:var(--text3);gap:7px;
+  opacity:0;visibility:hidden;transform:translateY(-2px);pointer-events:none;
+  transition:opacity .18s ease,transform .18s ease,visibility .18s;}
+.mpb-time.show{opacity:1;visibility:visible;transform:none;}
+.mpb-time .sep{opacity:.5;}
+.mpb-time .current{color:var(--text1);font-weight:700;font-variant-numeric:tabular-nums;}
+.mpb-time .end{font-variant-numeric:tabular-nums;}
 .mpb-ctl{display:flex;align-items:center;justify-content:center;gap:8px;}
 .mpb-ctl button{width:36px;height:36px;border:none;background:transparent;color:var(--text2);
     border-radius:10px;cursor:pointer;font-size:19px;display:flex;align-items:center;justify-content:center;}
@@ -19392,7 +19396,7 @@ body.sdy-booting #musicListPop{z-index:10001;}
           <div id="mpBAlbum" class="mpb-album">—</div>
           <div class="mpb-chips" id="mpBChips"></div>
           <div class="mpb-prog" id="mpBProg"><div id="mpBFill"></div><div id="mpBKnob"></div></div>
-          <div class="mpb-time"><span class="start">0:00</span><span id="mpBCur" class="current">0:00</span><span id="mpBDur" class="end">0:00</span></div>
+          <div class="mpb-time" id="mpBTime"><span id="mpBCur" class="current">0:00</span><span class="sep">|</span><span id="mpBDur" class="end">0:00</span></div>
           <div class="mpb-ctl">
             <button id="mpBShuf" title="섞기"><i class="ri-shuffle-line"></i></button>
             <button id="mpBPrev" title="이전 곡"><i class="ri-skip-back-fill"></i></button>
@@ -20111,7 +20115,7 @@ function paintProg(cur){
   try{
     const bf=$('mpBFill'), bk=$('mpBKnob'), bc=$('mpBCur'), bd=$('mpBDur');
     if(bf){ bf.style.width=pct+'%'; bk.style.left=pct+'%'; bc.textContent=fmt(t);
-      // 큰 플레이어는 왼쪽 0:00 · 가운데 현재 시각 · 오른쪽 전체 길이를 고정한다.
+      // 큰 플레이어의 시간은 평소 숨어 있고, 재생 위치를 잡을 때만 '현재 | 전체'로 뜬다.
       bd.textContent=fmt(d); }
   }catch(e){}
   if(P.mode==='float')
@@ -20932,12 +20936,18 @@ const mpbEl=$('mpBig');
 
 // ── 열기/닫기/이동 ──
 function clampMpb(){
+  // 전체 화면(진짜/가짜) 중에는 위치를 건드리지 않는다.
+  // (모핑 중 폭이 100vw 라 계산하면 왼쪽 벽에 붙어 버린다)
+  if(mpbEl.classList.contains('mpb-fs')||mpbFsEl()===mpbEl) return;
   const r=mpbEl.getBoundingClientRect();
+  // 창→창 복귀 모핑 중에는 실측 대신 목표 크기(인라인 width/height)를 쓴다
+  const w=parseFloat(mpbEl.style.width)||r.width;
+  const h=parseFloat(mpbEl.style.height)||r.height;
   let x=parseFloat(mpbEl.style.left); let y=parseFloat(mpbEl.style.top);
-  if(!isFinite(x)) x=(innerWidth-r.width)/2;
+  if(!isFinite(x)) x=(innerWidth-w)/2;
   if(!isFinite(y)) y=72;
-  x=Math.max(6,Math.min(innerWidth-r.width-6,x));
-  y=Math.max(6,Math.min(innerHeight-r.height-6,y));
+  x=Math.max(6,Math.min(Math.max(6,innerWidth-w-6),x));
+  y=Math.max(6,Math.min(Math.max(6,innerHeight-h-6),y));
   mpbEl.style.left=Math.round(x)+'px'; mpbEl.style.top=Math.round(y)+'px';
 }
 function _barShouldShow(){
@@ -21016,14 +21026,23 @@ function mpbFullIcon(){
   b.innerHTML=mpbIsFs()?'<i class="ri-fullscreen-exit-line"></i>':'<i class="ri-fullscreen-line"></i>';
   b.title=mpbIsFs()?'전체 화면 끄기 (Esc)':'전체 화면 (F)';
 }
-let _mpbFsT=null,_mpbRealFs=false;
+let _mpbFsT=null,_mpbRealFs=false,_mpbPrePos=null;
 function _mpbAnimKick(){           // 모핑 transition 은 켜질/꺼질 때만 잠깐 붙인다 (드래그 간섭 방지)
   mpbEl.classList.add('mpb-anim');
   clearTimeout(_mpbFsT);
   _mpbFsT=setTimeout(()=>mpbEl.classList.remove('mpb-anim'),620);
 }
+function _mpbSavedPos(){
+  try{ const p=JSON.parse(localStorage.getItem('mp_big_pos')||'null');
+    if(p&&isFinite(p.x)&&isFinite(p.y)) return {x:p.x,y:p.y};
+  }catch(e){}
+  return null;
+}
 function mpbFakeFs(on){
   if(on){
+    // 전체 화면으로 가기 전 '창 위치'를 기억해 둔다 (돌아올 자리)
+    const x=parseFloat(mpbEl.style.left), y=parseFloat(mpbEl.style.top);
+    if(isFinite(x)&&isFinite(y)) _mpbPrePos={x,y};
     _mpbAnimKick();
     // 클래스 css(100vw/100vh)가 !important 로 인라인 크기를 덮으므로
     // 한 박자 늦게 붙여 현재 창 위치에서 화면 가득으로 자라나는 모핑이 보이게 한다
@@ -21034,7 +21053,17 @@ function mpbFakeFs(on){
   }else{
     _mpbAnimKick();
     mpbEl.classList.remove('mpb-fs','show-drawer');
-    requestAnimationFrame(clampMpb);
+    // 창 크기를 되돌린 뒤 원래 자리로 — 이 순서를 지키지 않으면
+    // 폭이 아직 100vw 라 왼쪽 벽에 달라붙는다.
+    _applyBigSize();
+    const p=_mpbPrePos||_mpbSavedPos();
+    if(p){ mpbEl.style.left=Math.round(p.x)+'px'; mpbEl.style.top=Math.round(p.y)+'px'; }
+    clampMpb();
+    // 진짜 전체 화면에서 빠져나오는 경우 레이아웃이 한 박자 늦게 정리된다
+    requestAnimationFrame(()=>{
+      if(p){ mpbEl.style.left=Math.round(p.x)+'px'; mpbEl.style.top=Math.round(p.y)+'px'; }
+      clampMpb();
+    });
   }
   mpbFullIcon();
 }
@@ -22111,15 +22140,24 @@ function _bigVisibleTracks(id){
 // ── 큰 플레이어 진행바 ──
 (function(){
   const bar=$('mpBProg'); if(!bar) return;
+  // 시간(현재 | 전체)은 재생 위치를 잡는 동안에만 보여 준다.
+  let hideT=null;
+  const showTime=()=>{ const el=$('mpBTime'); if(!el) return;
+    clearTimeout(hideT); el.classList.add('show'); };
+  const hideTime=(delay)=>{ const el=$('mpBTime'); if(!el) return;
+    clearTimeout(hideT); hideT=setTimeout(()=>el.classList.remove('show'),delay==null?900:delay); };
   const at=cx=>{ const r=bar.getBoundingClientRect();
     return Math.max(0,Math.min(1,(cx-r.left)/r.width))*(A.duration||0); };
   bar.addEventListener('pointerdown',e=>{ if(!A.duration)return; e.preventDefault();
-    _seek=at(e.clientX); paintProg(_seek);
+    _seek=at(e.clientX); showTime(); paintProg(_seek);
     try{ bar.setPointerCapture(e.pointerId); }catch(err){} });
   bar.addEventListener('pointermove',e=>{ if(_seek==null)return; e.preventDefault();
-    _seek=at(e.clientX); paintProg(_seek); });
-  const up=()=>{ if(_seek==null)return; A.currentTime=_seek; _seek=null; paintProg(); };
+    _seek=at(e.clientX); showTime(); paintProg(_seek); });
+  const up=()=>{ if(_seek==null)return; A.currentTime=_seek; _seek=null; paintProg(); hideTime(); };
   bar.addEventListener('pointerup',up); bar.addEventListener('pointercancel',up);
+  // 마우스를 올려 어디를 잡을지 가늠할 때도 잠깐 보여 준다
+  bar.addEventListener('pointerenter',()=>{ if(A.duration) showTime(); });
+  bar.addEventListener('pointerleave',()=>{ if(_seek==null) hideTime(260); });
 })();
 
 // ── 버튼 연결 ──
@@ -27036,7 +27074,7 @@ body.has-wall #sdyAmbient{opacity:0;}
     appearance:none;-webkit-appearance:none;
     display:inline-flex;align-items:center;gap:9px;
     min-height:42px;padding:5px 15px 5px 7px;
-    border:1px solid color-mix(in srgb,var(--accent) 28%,var(--border));
+    border:1px solid color-mix(in srgb,var(--border) 88%,transparent);
     border-radius:999px;
     background:color-mix(in srgb,var(--card) 54%,transparent);
     color:var(--text2);font-size:12.5px;font-weight:800;
@@ -27048,14 +27086,24 @@ body.has-wall #sdyAmbient{opacity:0;}
 }
 .home-add-icon{
     width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-    color:#fff;background:var(--grad);font-size:21px;line-height:1;
-    box-shadow:0 5px 13px color-mix(in srgb,var(--accent) 35%,transparent);
+    /* 무지개 그라데이션 대신 카드와 같은 결의 차분한 색 */
+    color:var(--text2);
+    background:color-mix(in srgb,var(--text2) 9%,var(--card));
+    border:1px solid color-mix(in srgb,var(--border) 85%,transparent);
+    font-size:21px;line-height:1;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.35);
+    transition:color .2s,background .2s,border-color .2s;
 }
 .home-add-note:hover,.home-stack-upper.fanned .home-add-note{
     color:var(--accent);border-color:color-mix(in srgb,var(--accent) 65%,var(--border));
     background:color-mix(in srgb,var(--accent) 10%,var(--card));
     box-shadow:0 10px 26px color-mix(in srgb,var(--accent) 18%,transparent),inset 0 1px 0 rgba(255,255,255,.4);
     transform:translateY(-2px);
+}
+.home-add-note:hover .home-add-icon,.home-stack-upper.fanned .home-add-icon{
+    color:var(--accent);
+    background:color-mix(in srgb,var(--accent) 14%,var(--card));
+    border-color:color-mix(in srgb,var(--accent) 38%,var(--border));
 }
 .home-add-note:active{transform:scale(.97);}
 .stack-scene{
@@ -27088,29 +27136,25 @@ body.has-wall #sdyAmbient{opacity:0;}
 }
 .stack-empty i{font-size:30px;opacity:.45;}
 .recent-section{
-    width:100%;max-width:none;margin-top:4px;padding:22px 0 2px;
-    border-top:1px solid color-mix(in srgb,var(--border) 80%,transparent);
-}
-.recent-label{
-    margin:0 auto 12px;text-align:center;color:var(--text3);
-    font-size:11px;font-weight:800;letter-spacing:.08em;
+    width:100%;max-width:none;margin-top:0;padding:6px 0 0;
 }
 .recent-row{
     display:flex;flex-wrap:nowrap;gap:14px;align-items:flex-start;
-    width:max-content;max-width:calc(100vw - 36px);margin:0 auto;
-    padding:4px 8px 12px;overflow-x:auto;overflow-y:visible;
+    width:max-content;max-width:calc(100vw - 36px);margin:0 auto -32px;
+    /* 아래·옆 여백을 넉넉히 둔다 — 가로 스크롤(overflow-x)이 걸린 상자는
+       세로 방향도 함께 잘리므로(overflow-y:visible 이 auto 로 계산됨),
+       올라간 카드의 그림자가 전부 이 안에 들어와야 잘리지 않는다. */
+    padding:18px 16px 46px;overflow-x:auto;overflow-y:visible;
     justify-content:flex-start;scrollbar-width:thin;
 }
+/* 크기는 위 스택 카드와 완전히 같게 — 폭·미리보기 높이 모두 기본값을 쓴다. */
 .recent-row .note-card{
-    position:relative;left:auto;top:auto;flex:0 0 180px;width:180px;max-width:none;
+    position:relative;left:auto;top:auto;max-width:none;flex-shrink:0;
     transform:none;opacity:1;
 }
 .recent-row .note-card:hover{transform:translateY(-5px);z-index:5;}
-.recent-row .note-preview{height:220px;}
 body.card-s .note-stack .note-card,body.card-s .note-stack .folder-card{width:160px;flex-basis:160px;}
-body.card-s .recent-row .note-card{width:160px;flex-basis:160px;}
 body.card-l .note-stack .note-card,body.card-l .note-stack .folder-card{width:244px;flex-basis:244px;}
-body.card-l .recent-row .note-card{width:200px;flex-basis:200px;}
 
 @media(max-width:640px){
     .home-stack-area{padding-bottom:10px;}
@@ -27121,20 +27165,21 @@ body.card-l .recent-row .note-card{width:200px;flex-basis:200px;}
     .note-stack{min-height:230px;}
     body .note-stack .note-card,body .note-stack .folder-card,
     body.card-s .note-stack .note-card,body.card-s .note-stack .folder-card,
-    body.card-l .note-stack .note-card,body.card-l .note-stack .folder-card{
+    body.card-l .note-stack .note-card,body.card-l .note-stack .folder-card,
+    body .recent-row .note-card,
+    body.card-s .recent-row .note-card,
+    body.card-l .recent-row .note-card{
         width:min(196px,calc(100vw - 56px))!important;
         flex:0 0 min(196px,calc(100vw - 56px))!important;
         max-width:none!important;
     }
     .note-stack .folder-card .folder-thumb{height:auto;aspect-ratio:4/5;}
-    .recent-section{margin-top:2px;padding-top:18px;}
-    .recent-row{gap:10px;max-width:calc(100vw - 20px);padding-left:4px;padding-right:4px;}
-    .recent-row .note-card,
-    body.card-s .recent-row .note-card,
-    body.card-l .recent-row .note-card{
-        width:148px!important;flex:0 0 148px!important;max-width:none!important;
-    }
-    .recent-row .note-preview{height:auto;aspect-ratio:4/5;}
+    .recent-section{margin-top:0;padding-top:2px;}
+    .recent-row{gap:10px;max-width:calc(100vw - 20px);
+        padding:12px 12px 34px;margin-bottom:-24px;}
+    body .recent-row .note-preview,
+    body.card-s .recent-row .note-preview,
+    body.card-l .recent-row .note-preview{height:auto;aspect-ratio:4/5;}
 }
 @media(prefers-reduced-motion:reduce){
     .home-add-note,.note-stack .note-card,.note-stack .folder-card{transition:none;}
