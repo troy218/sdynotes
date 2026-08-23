@@ -19053,8 +19053,10 @@ body.sdy-booting #musicListPop{z-index:10001;}
 #mpBKnob{position:absolute;top:50%;left:0;width:13px;height:13px;border-radius:50%;
     background:var(--accent);border:2px solid var(--card);box-shadow:0 1px 5px rgba(0,0,0,.3);
     transform:translate(-50%,-50%);pointer-events:none;}
-.mpb-time{display:flex;font-size:10.5px;color:var(--text3);gap:6px;}
-.mpb-time .sp{flex:1;min-width:8px;}
+.mpb-time{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;font-size:10.5px;color:var(--text3);gap:6px;}
+.mpb-time .start{text-align:left;}
+.mpb-time .current{text-align:center;color:var(--text1);font-weight:700;font-variant-numeric:tabular-nums;}
+.mpb-time .end{text-align:right;}
 .mpb-ctl{display:flex;align-items:center;justify-content:center;gap:8px;}
 .mpb-ctl button{width:36px;height:36px;border:none;background:transparent;color:var(--text2);
     border-radius:10px;cursor:pointer;font-size:19px;display:flex;align-items:center;justify-content:center;}
@@ -19264,9 +19266,9 @@ body.sdy-booting #musicListPop{z-index:10001;}
 .mp-tagm .cbtns button:hover{color:var(--text1);border-color:var(--text3);}
 .mp-tagm label{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:700;
     color:var(--text3);}
-.mp-tagm .two{display:flex;gap:8px;width:100%;}
-.mp-tagm .two label{flex:1;}
-.mp-tagm input[type=text]{height:34px;padding:0 10px;border:1px solid var(--border);border-radius:8px;
+.mp-tagm .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;width:100%;align-items:stretch;}
+.mp-tagm .two label{min-width:0;width:auto;}
+.mp-tagm input[type=text]{height:34px;width:100%;min-width:0;max-width:100%;display:block;box-sizing:border-box;padding:0 10px;border:1px solid var(--border);border-radius:8px;
     background:var(--bg2);color:var(--text1);font-size:13px;outline:none;}
 .mp-tagm input[type=text]:focus{border-color:var(--accent);}
 .mp-tagm textarea{box-sizing:border-box;width:100%;min-height:110px;max-height:220px;resize:vertical;
@@ -19390,7 +19392,7 @@ body.sdy-booting #musicListPop{z-index:10001;}
           <div id="mpBAlbum" class="mpb-album">—</div>
           <div class="mpb-chips" id="mpBChips"></div>
           <div class="mpb-prog" id="mpBProg"><div id="mpBFill"></div><div id="mpBKnob"></div></div>
-          <div class="mpb-time"><span id="mpBCur">0:00</span><span class="sp"></span><span id="mpBDur">0:00</span></div>
+          <div class="mpb-time"><span class="start">0:00</span><span id="mpBCur" class="current">0:00</span><span id="mpBDur" class="end">0:00</span></div>
           <div class="mpb-ctl">
             <button id="mpBShuf" title="섞기"><i class="ri-shuffle-line"></i></button>
             <button id="mpBPrev" title="이전 곡"><i class="ri-skip-back-fill"></i></button>
@@ -20109,7 +20111,8 @@ function paintProg(cur){
   try{
     const bf=$('mpBFill'), bk=$('mpBKnob'), bc=$('mpBCur'), bd=$('mpBDur');
     if(bf){ bf.style.width=pct+'%'; bk.style.left=pct+'%'; bc.textContent=fmt(t);
-      bd.textContent=(_showLeft&&d)?('-'+fmt(Math.max(0,d-t))):fmt(d); }
+      // 큰 플레이어는 왼쪽 0:00 · 가운데 현재 시각 · 오른쪽 전체 길이를 고정한다.
+      bd.textContent=fmt(d); }
   }catch(e){}
   if(P.mode==='float')
     pl.style.background='conic-gradient(var(--accent) '+pct+'%, var(--bg2) 0)';
