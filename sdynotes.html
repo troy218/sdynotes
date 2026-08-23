@@ -18877,9 +18877,11 @@ body.sdy-booting #musicListPop{z-index:10001;}
 .mpb-row2 button.on{color:var(--accent);border-color:var(--accent);}
 .mpb-vol{flex:1;display:flex;align-items:center;gap:7px;min-width:60px;color:var(--text3);}
 .mpb-vol input{flex:1;accent-color:var(--accent);min-width:40px;}
-.mpb-tabs{display:flex;gap:4px;flex:none;align-items:center;}
+.mpb-tabs{display:flex;gap:4px;flex:none;align-items:center;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+.mpb-tabs::-webkit-scrollbar{display:none;}
 .mpb-tabs button{border:1px solid var(--border);background:var(--bg2);color:var(--text2);
-    border-radius:8px;cursor:pointer;padding:5px 11px;font-size:11.5px;font-weight:700;}
+    border-radius:8px;cursor:pointer;padding:5px 11px;font-size:11.5px;font-weight:700;
+    white-space:nowrap;flex:none;}
 .mpb-tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent);}
 /* 10.9 · 아이콘만 있는 검색 버튼 */
 .mpb-tabs button.mpb-icon{padding:0;width:29px;height:26px;display:flex;align-items:center;
@@ -18897,15 +18899,15 @@ body.sdy-booting #musicListPop{z-index:10001;}
 .mpb-searchbar button:hover{color:var(--text1);background:var(--bg);}
 .mpb-list{flex:1;min-height:70px;overflow:auto;border-top:1px solid var(--border);padding-top:6px;}
 .mpb-li{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;
-    font-size:12.5px;color:var(--text1);cursor:pointer;}
+    font-size:12.5px;color:var(--text1);cursor:pointer;flex-wrap:nowrap;min-width:0;}
 .mpb-li:hover{background:var(--bg2);}
 .mpb-li.on{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent);font-weight:700;}
 .mpb-li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.mpb-li em{color:var(--text3);font-style:normal;font-size:10.5px;flex:none;max-width:96px;
+.mpb-li em{color:var(--text3);font-style:normal;font-size:10.5px;flex:0 1 auto;max-width:42%;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .mpb-artgrp{font-size:11px;font-weight:800;color:var(--text2);padding:7px 8px 3px;
-    display:flex;align-items:center;gap:6px;}
-.mpb-artgrp em{color:var(--text3);font-style:normal;font-weight:600;}
+    display:flex;align-items:center;gap:6px;white-space:nowrap;min-width:0;overflow:hidden;}
+.mpb-artgrp em{color:var(--text3);font-style:normal;font-weight:600;flex:none;}
 .mpb-empty{padding:18px 10px;text-align:center;color:var(--text3);font-size:12px;}
 @media(max-width:640px){
     .mpb{width:calc(100vw - 14px);max-height:88vh;}
@@ -19030,9 +19032,9 @@ body.sdy-booting #musicListPop{z-index:10001;}
 .mpctx .csep{height:1px;background:var(--border);margin:4px 6px;}
 /* 큰 플레이어 목록 페이저 */
 .mpb-pager{display:flex;align-items:center;justify-content:center;gap:12px;
-    padding:6px 0 2px;font-size:11px;color:var(--text3);flex:none;}
+    padding:6px 0 2px;font-size:11px;color:var(--text3);flex:none;flex-wrap:nowrap;white-space:nowrap;}
 .mpb-pager button{border:1px solid var(--border);background:var(--bg2);color:var(--text1);
-    border-radius:7px;cursor:pointer;padding:4px 10px;font-size:11px;font-weight:700;}
+    border-radius:7px;cursor:pointer;padding:4px 10px;font-size:11px;font-weight:700;white-space:nowrap;flex:none;}
 .mpb-pager button:disabled{opacity:.35;cursor:default;}
 @media(max-width:640px){
     .mpb-cwrap{width:96px;height:96px;}
@@ -19208,7 +19210,7 @@ body.sdy-booting #musicListPop{z-index:10001;}
             <button id="mpBSleep" class="mpb-ric" title="수면 타이머"><i class="ri-timer-line"></i><em id="mpBSleepLeft"></em></button>
             <span class="mpb-vol"><i class="ri-volume-up-line" id="mpBVolIco"></i><input id="mpBVol" type="range" min="0" max="100" value="100"></span>
             <button id="mpBLyrBtn" class="mpb-ric mpb-fsonly" title="가사"><i class="ri-music-2-line"></i></button>
-            <button id="mpBList" class="mpb-ric mpb-fsonly" title="재생 목록"><i class="ri-list-music"></i></button>
+            <button id="mpBList" class="mpb-ric mpb-fsonly" title="재생 목록"><i class="ri-play-list-line"></i></button>
           </div>
         </div>
       </div>
@@ -19216,16 +19218,16 @@ body.sdy-booting #musicListPop{z-index:10001;}
     <div class="mpb-drawer" id="mpBDrawer">
       <div class="mpb-drawer-in">
         <div class="mpb-tabs">
-          <button id="mpBTabD" class="on"><i class="ri-sparkling-2-line"></i> 추천</button>
+          <button id="mpBTabD" class="on mpb-winonly"><i class="ri-sparkling-2-line"></i> 추천</button>
           <button id="mpBTabQ">대기열</button>
           <button id="mpBTabA">가수별</button>
           <button id="mpBTabL">전체 곡</button>
           <button id="mpBTabY">가사</button>
           <span style="flex:1"></span>
           <!-- 10.9 · 확장 플레이어 안에서 바로 곡 찾기 (아이콘만) -->
-          <button id="mpBSort" class="mpb-icon mp-sortbtn" title="정렬"><i class="ri-time-line"></i></button>
+          <button id="mpBSort" class="mpb-icon mp-sortbtn mpb-winonly" title="정렬"><i class="ri-time-line"></i></button>
           <button id="mpBFind" class="mpb-icon" title="노래 검색"><i class="ri-search-line"></i></button>
-          <button id="mpBUp" title="곡 올리기 (50MB 이하)" style="border:1px solid var(--border);background:var(--bg2);color:var(--text2);border-radius:8px;cursor:pointer;padding:5px 10px;font-size:11.5px;font-weight:700;">＋ 올리기</button>
+          <button id="mpBUp" class="mpb-winonly" title="곡 올리기 (50MB 이하)" style="border:1px solid var(--border);background:var(--bg2);color:var(--text2);border-radius:8px;cursor:pointer;padding:5px 10px;font-size:11.5px;font-weight:700;">＋ 올리기</button>
         </div>
         <div class="mpb-searchbar" id="mpBSearchBar">
           <i class="ri-search-line"></i>
@@ -20824,6 +20826,7 @@ function mpbFakeFs(on){
     // 한 박자 늦게 붙여 현재 창 위치에서 화면 가득으로 자라나는 모핑이 보이게 한다
     requestAnimationFrame(()=>requestAnimationFrame(()=>{
       mpbEl.classList.add('mpb-fs');
+      try{ mpbFsListTab(); }catch(e){}
     }));
   }else{
     _mpbAnimKick();
@@ -20980,18 +20983,43 @@ function _ambPaint(cols){
 })();
 
 // ── 전체 화면 목록 서랍 · 가사 바로가기 (스트리밍 앱처럼 옆에서 슬라이드) ──
+function mpbLastPlayTab(){
+  const t=P._listTab;
+  return (t && t!=='y' && t!=='d') ? t : 'q';
+}
+function mpbFsListTab(){
+  if(!mpIsFsNow() && !mpbEl.classList.contains('mpb-fs')) return;
+  if(P.bigTab==='d'){ P.bigTab=mpbLastPlayTab(); renderBigList(); }
+}
+function mpbDrawerBtns(){
+  const on=mpbEl.classList.contains('show-drawer');
+  const b=$('mpBList'); if(b) b.classList.toggle('on',on&&P.bigTab!=='y');
+  const yb=$('mpBLyrBtn'); if(yb) yb.classList.toggle('on',on&&P.bigTab==='y');
+}
 function mpbDrawer(open){
   const on=open===undefined?!mpbEl.classList.contains('show-drawer'):!!open;
   mpbEl.classList.toggle('show-drawer',on);
-  const b=$('mpBList'); if(b) b.classList.toggle('on',on);
-  const yb=$('mpBLyrBtn'); if(yb) yb.classList.toggle('on',on&&P.bigTab==='y');
+  mpbDrawerBtns();
 }
 (function(){
   const lb=$('mpBList');
-  if(lb) lb.onclick=e=>{ e.stopPropagation(); mpbDrawer(); };
+  if(lb) lb.onclick=e=>{
+    e.stopPropagation();
+    const open=mpbEl.classList.contains('show-drawer');
+    if(open && P.bigTab!=='y'){ mpbDrawer(false); return; }
+    if(P.bigTab==='y' || (mpIsFsNow() && P.bigTab==='d')){
+      P.bigTab=mpbLastPlayTab(); renderBigList();
+    }
+    mpbDrawer(true);
+  };
   const yb=$('mpBLyrBtn');
-  if(yb) yb.onclick=e=>{ e.stopPropagation();
-    P.bigTab='y'; mpbDrawer(true); renderBigList(); };
+  if(yb) yb.onclick=e=>{
+    e.stopPropagation();
+    const open=mpbEl.classList.contains('show-drawer');
+    if(open && P.bigTab==='y'){ mpbDrawer(false); return; }
+    if(P.bigTab!=='y') P._listTab=P.bigTab;
+    P.bigTab='y'; mpbDrawer(true); renderBigList();
+  };
   // 전체 화면에서 검색을 열 땐 서랍도 같이 연다 (결과가 목록에 보이므로)
   const fb=$('mpBFind');
   if(fb){
@@ -21716,6 +21744,8 @@ function renderBigList(){
   $('mpBTabA').classList.toggle('on',P.bigTab==='a');
   $('mpBTabL').classList.toggle('on',P.bigTab==='l');
   const yTab=$('mpBTabY'); if(yTab) yTab.classList.toggle('on',P.bigTab==='y');
+  if(P.bigTab && P.bigTab!=='y') P._listTab=P.bigTab;
+  try{ mpbDrawerBtns(); }catch(e){}
   body.classList.toggle('lyrmode',P.bigTab==='y');   // 10.6 · 가사 모드: 세로 플렉스
   body.classList.toggle('discover-mode',P.bigTab==='d');
   const pagerEl=$('mpBPager');
@@ -24555,8 +24585,10 @@ body.mpb-playing #mpBig:fullscreen .mpb-cwrap .mpb-cover{
 .mpb-ric.live em{display:block;animation:mpbump .3s both;}
 .mpb-fsonly{display:none!important;}
 #mpBig.mpb-fs .mpb-fsonly,#mpBig:fullscreen .mpb-fsonly{display:inline-flex!important;}
-/* 전체 모드에서는 가사 탭을 서랍에서 숨긴다 (row2 전용 버튼으로 대체) */
-#mpBig.mpb-fs .mpb-tabs button#mpBTabY,#mpBig:fullscreen .mpb-tabs button#mpBTabY{display:none!important;}
+/* 전체 모드: 듣기용만 남긴다 (가사 탭은 row2 버튼, 올리기·정렬·추천은 창 모드용) */
+#mpBig.mpb-fs .mpb-tabs button#mpBTabY,#mpBig:fullscreen .mpb-tabs button#mpBTabY,
+#mpBig.mpb-fs .mpb-winonly,#mpBig:fullscreen .mpb-winonly{display:none!important;}
+#mpBig.mpb-fs .mpb-pager .mpb-goto,#mpBig:fullscreen .mpb-pager .mpb-goto{display:none;}
 #mpBig.mpb-fs .mpb-row2,#mpBig:fullscreen .mpb-row2{justify-content:center;gap:12px;margin-top:clamp(2px,.8vh,8px);}
 #mpBig.mpb-fs .mpb-row2 #mpBRate,#mpBig:fullscreen .mpb-row2 #mpBRate{
   height:38px;padding:0 13px;border-radius:99px;font-size:12px;
@@ -24586,13 +24618,21 @@ body.mpb-playing #mpBig:fullscreen .mpb-cwrap .mpb-cover{
   background:rgba(10,13,20,.5);
   border-left:1px solid rgba(255,255,255,.09);
   backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%);}
+#mpBig.mpb-fs .mpb-tabs,#mpBig:fullscreen .mpb-tabs{flex-wrap:nowrap;overflow-x:auto;}
 #mpBig.mpb-fs .mpb-tabs button,#mpBig:fullscreen .mpb-tabs button{
-  background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.1);color:rgba(255,255,255,.78);}
+  background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.1);color:rgba(255,255,255,.78);
+  white-space:nowrap;flex:none;padding:6px 8px;font-size:11px;}
+#mpBig.mpb-fs .mpb-tabs button i,#mpBig:fullscreen .mpb-tabs button i{margin-right:3px;}
+#mpBig.mpb-fs .mpb-li,#mpBig:fullscreen .mpb-li{flex-wrap:nowrap;}
+#mpBig.mpb-fs .mpb-li span,#mpBig:fullscreen .mpb-li span,
+#mpBig.mpb-fs .mpb-li em,#mpBig:fullscreen .mpb-li em{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #mpBig.mpb-fs .mpb-tabs button:hover,#mpBig:fullscreen .mpb-tabs button:hover{color:#fff;border-color:rgba(255,255,255,.3);}
 #mpBig.mpb-fs .mpb-tabs button.on,#mpBig:fullscreen .mpb-tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent);}
 #mpBig.mpb-fs .mpb-tabs button.mpb-icon.on,#mpBig:fullscreen .mpb-tabs button.mpb-icon.on{background:var(--accent);color:#fff;}
 #mpBig.mpb-fs #mpBUp,#mpBig:fullscreen #mpBUp{
-  background:rgba(255,255,255,.1)!important;color:rgba(255,255,255,.88)!important;border-color:rgba(255,255,255,.16)!important;}
+  background:rgba(255,255,255,.1)!important;color:rgba(255,255,255,.88)!important;border-color:rgba(255,255,255,.16)!important;
+  width:30px;height:26px;padding:0!important;font-size:0!important;overflow:hidden;flex:none;}
+#mpBig.mpb-fs #mpBUp::before,#mpBig:fullscreen #mpBUp::before{content:'＋';font-size:15px;font-weight:800;line-height:26px;}
 #mpBig.mpb-fs #mpBUp:hover,#mpBig:fullscreen #mpBUp:hover{background:rgba(255,255,255,.2)!important;}
 #mpBig.mpb-fs .mpb-list,#mpBig:fullscreen .mpb-list{border-top-color:rgba(255,255,255,.1);}
 #mpBig.mpb-fs .mpb-li,#mpBig:fullscreen .mpb-li{color:rgba(255,255,255,.88);}
