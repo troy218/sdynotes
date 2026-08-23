@@ -751,9 +751,34 @@ export function registerChat(app) {
       if (await localTurnAlive(localTlsTurn)) addTurn(rewriteLocalHost(localTlsTurn), false);
       else droppedTurn.push(localTlsTurn);
     }
+
+    // 14.14 · 자체 coturn 이 하나도 안 붙었으면 공개 TURN 을 예비로 내려 준다.
+    //   Oracle VCN·통신사 정책·인증서 문제로 자체 TURN 이 죽어 있을 때
+    //   통화가 통째로 불가능해지던 것을 막는 안전망이다. 80/443 포트라
+    //   회사망·공용 와이파이의 UDP 차단도 대체로 통과한다.
+    //   끄고 싶으면 .env 에 SDY_PUBLIC_TURN=off.
+    const publicTurnMode = (process.env.SDY_PUBLIC_TURN || 'auto').trim().toLowerCase();
+    let publicTurnUsed = false;
+    if (publicTurnMode !== 'off' && (!turnReady || publicTurnMode === 'always')) {
+      const pUser = (process.env.SDY_PUBLIC_TURN_USER || 'openrelayproject').trim();
+      const pPass = (process.env.SDY_PUBLIC_TURN_PASS || 'openrelayproject').trim();
+      const pUrls = (process.env.SDY_PUBLIC_TURN_URLS
+        || 'turn:openrelay.metered.ca:80,'
+         + 'turn:openrelay.metered.ca:443,'
+         + 'turn:openrelay.metered.ca:443?transport=tcp,'
+         + 'turns:openrelay.metered.ca:443?transport=tcp')
+        .split(',').map((s) => s.trim()).filter((s) => /^turns?:/i.test(s));
+      for (const url of pUrls) {
+        iceServers.push({
+          urls: [url], username: pUser, credential: pPass, credentialType: 'password',
+        });
+      }
+      if (pUrls.length) { publicTurnUsed = true; turnReady = true; }
+    }
+
     reply.header('Cache-Control', 'no-store');
     return reply.send({ ok: true, turn: turnReady, host: turnHost || null,
-                        droppedTurn, ice: { iceServers } });
+                        droppedTurn, publicTurn: publicTurnUsed, ice: { iceServers } });
   });
 
   // ── 통화(TURN) 진단 — curl http://127.0.0.1:5000/api/chat/diag ──
