@@ -9,7 +9,6 @@ const found = candidates.find((p) => fs.existsSync(p));
 if (found) {
   block = fs.readFileSync(found, 'utf8');
 } else {
-  // 블록 파일이 없으면 주입된 sdynotes.html 에서 추출
   const full = fs.readFileSync(path.join(__dirname, '..', 'sdynotes.html'), 'utf8');
   const s = full.indexOf('<!-- ═══════════════ 엽스코드');
   const e = full.indexOf('</body>', s);
@@ -44,10 +43,64 @@ class FakeAudio {
   set src(v) { this._src = v; }
   get src() { return this._src; }
 }
-class FakePC {
-  constructor(cfg) { this.cfg = cfg; this.connectionState = 'new'; this.__pendingIce = []; }
-  addTrack() {} close() {} setLocalDescription() { return Promise.resolve(); } setRemoteDescription() { return Promise.resolve(); } addIceCandidate() { return Promise.resolve(); } createOffer() { return Promise.resolve({ sdp: '', type: 'offer' }); } createAnswer() { return Promise.resolve({ sdp: '', type: 'answer' }); }
+class FakeNode {
+  constructor() { this.port = { onmessage: null }; this.gain = { value: 0 }; }
+  connect() { return this; }
+  disconnect() {}
 }
+class FakeAudioContext {
+  constructor() {
+    this.state = 'running';
+    this.sampleRate = 48000;
+    this.currentTime = 0;
+    this.destination = {};
+    this.audioWorklet = { addModule: () => Promise.reject(new Error('no worklet in smoke')) };
+  }
+  resume() { return Promise.resolve(); }
+  createMediaStreamSource() { return new FakeNode(); }
+  createAnalyser() {
+    const n = new FakeNode();
+    n.fftSize = 512;
+    n.smoothingTimeConstant = 0.4;
+    n.frequencyBinCount = 256;
+    n.getByteTimeDomainData = (buf) => { buf.fill(128); };
+    return n;
+  }
+  createGain() { return new FakeNode(); }
+  createScriptProcessor() { return new FakeNode(); }
+  createMediaStreamDestination() { return { stream: { getTracks: () => [] }, connect() {} }; }
+  createBuffer() {
+    return { duration: 0.1, copyToChannel() {}, getChannelData() { return new Float32Array(1); } };
+  }
+  createBufferSource() { return { buffer: null, connect() {}, start() {} }; }
+}
+class FakeWebSocket {
+  constructor(url) {
+    this.url = url;
+    this.readyState = 0;
+    this.binaryType = 'arraybuffer';
+    this._listeners = {};
+    FakeWebSocket.instances.push(this);
+    setTimeout(() => {
+      this.readyState = 1;
+      if (typeof this.onopen === 'function') this.onopen();
+      (this._listeners.open || []).forEach((fn) => fn({}));
+      const welcome = { data: JSON.stringify({ t: 'welcome', uid: 'yp_a', peers: [] }) };
+      if (typeof this.onmessage === 'function') this.onmessage(welcome);
+      (this._listeners.message || []).forEach((fn) => fn(welcome));
+    }, 0);
+  }
+  addEventListener(t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); }
+  send() {}
+  close() {
+    this.readyState = 3;
+    const ev = { code: 1000 };
+    if (typeof this.onclose === 'function') this.onclose(ev);
+    (this._listeners.close || []).forEach((fn) => fn(ev));
+  }
+}
+FakeWebSocket.instances = [];
+FakeWebSocket.OPEN = 1;
 const fakeStream = {
   getTracks: () => [{ stop() {}, enabled: true }],
   getAudioTracks: () => [{ enabled: true }],
@@ -62,7 +115,7 @@ function makeFetch() {
     if (url.startsWith('/api/chat/join')) {
       sent.join.push(body);
       return Promise.resolve(json({
-        ok: true, ttl: 86400, bgm: null,
+        ok: true, ttl: 86400, bgm: null, voice: 'relay',
         me: { uid: 'yp_a', name: '연보라 까치', color: '#a5b4fc' },
         members: [{ uid: 'yp_a', name: '연보라 까치', color: '#a5b4fc', voice: false, mute: false }],
         msgs: [],
@@ -75,7 +128,7 @@ function makeFetch() {
     if (url.startsWith('/api/chat/bgm')) { sent.bgm.push(body); return Promise.resolve(json({ ok: true })); }
     if (url.startsWith('/api/chat/del')) return Promise.resolve(json({ ok: true }));
     if (url.startsWith('/api/chat/leave')) return Promise.resolve(json({ ok: true }));
-    if (url.startsWith('/api/chat/config')) return Promise.resolve(json({ ok: true, ice: { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }, { urls: ['stun:stun.cloudflare.com:3478'] }] } }));
+    if (url.startsWith('/api/chat/config')) return Promise.resolve(json({ ok: true, voice: 'relay' }));
     if (url.startsWith('/api/music/list')) return Promise.resolve(json({ ok: true, tracks: [T_윤하, T_기타] }));
     return Promise.resolve(json({ ok: true }));
   };
@@ -84,7 +137,6 @@ function makeFetch() {
 function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 (async () => {
-  // 호스트 페이지가 제공하는 음악바 요소를 블록 앞에 주입 (블록 스크립트가 이를 참조)
   const html = '<div id="musicPlayer" class="mp-bar" style="display:none"></div><button id="mpReopen" style="display:none"></button>' + block;
   const dom = new JSDOM(html, {
     url: 'http://localhost:5000/',
@@ -93,17 +145,16 @@ function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
     virtualConsole: vc,
     beforeParse(w) {
       w.sessionStorage.setItem('sdy_yp_uid', 'yp_a');
-      // 15.0 · 이 스모크 테스트는 WebRTC(P2P) 경로를 흉내 낸다 — 여기선
-      // 서버 릴레이 통화(WebSocket+AudioWorklet)를 끈 상태로 검증한다.
-      // (릴레이 서버 동작은 test/voice_relay_contract.mjs 가 담당)
-      w.localStorage.setItem('sdy_yp_settings', JSON.stringify({ relay: false }));
       w.fetch = makeFetch();
       w.EventSource = FakeEventSource;
       w.Audio = FakeAudio;
-      w.RTCPeerConnection = FakePC;
+      w.AudioContext = FakeAudioContext;
+      w.webkitAudioContext = FakeAudioContext;
+      w.WebSocket = FakeWebSocket;
       w.toast = function () {};
       w.Element.prototype.scrollTo = function () {};
       w.navigator.mediaDevices = { getUserMedia: () => Promise.resolve(fakeStream) };
+      if (!w.requestAnimationFrame) w.requestAnimationFrame = (fn) => setTimeout(fn, 16);
     },
   });
   const w = dom.window; const d = w.document;
@@ -153,21 +204,24 @@ function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
     ok('버튼 틴트(.ypv-join 등 배경) 제거됨', !/\.yp-voice\.invoice\s+\.ypv-(join|icon|mute|gear)\s*\{[^}]*linear-gradient/.test(styleText.replace(/\s+/g, ' ')));
   }
 
-  // 7) 설정: 배경 선택/타임스탬프 없음 + 새 닉네임(⟳) 있음
+  // 7) 설정: 배경 선택/타임스탬프 없음 + 새 닉네임(⟳) 있음, P2P 토글 없음
   {
     $('#ypSetBtn').click();
     const st = $('#ypSettings').innerHTML;
     ok('설정에 배경 선택 없음', !/배경/.test(st));
     ok('설정에 타임스탬프 없음', !/타임스탬프/.test(st));
     ok('새 닉네임 ⟳ 버튼 있음', st.includes('yp-set-refresh'));
+    ok('설정에 P2P/진단 없음', !/ypDiagBtn/.test(st) && !/WebRTC/.test(st));
+    ok('설정에 서버 릴레이 안내', /서버 릴레이/.test(st));
   }
 
-  // 8) 음성참가 시 BGM 바 표시 + invoice 클래스
+  // 8) 음성참가 시 BGM 바 표시 + invoice 클래스 (릴레이 WS welcome 후)
   {
-    $('#ypVJoin').click(); // join voice
-    await wait(30);
+    $('#ypVJoin').click();
+    await wait(80);
     ok('음성참가 시 invoice 클래스', $('#ypVoice').classList.contains('invoice'));
     ok('음성참가 시 뮤트 버튼 노출', $('#ypVMute').style.display !== 'none');
+    ok('음성참가 시 릴레이 소켓 연결', FakeWebSocket.instances.some((ws) => /voice-ws\?uid=/.test(String(ws.url))));
     $('#ypBgmBtn').click();
     await wait(30);
     ok('음성 중 BGM 바 표시', $('#ypBgm').style.display !== 'none');
@@ -194,10 +248,10 @@ function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
   // 11) 열기 → 닫기 애니메이션 (closing → 사라짐 → 접힘 아이콘 복귀)
   {
-    $('#ypReopen').click(); // 열기
+    $('#ypReopen').click();
     await wait(20);
     const opened = $('#ypApp').classList.contains('open');
-    $('#ypFold').click();   // 닫기
+    $('#ypFold').click();
     const hasClosing = $('#ypApp').classList.contains('closing');
     await wait(300);
     const closed = !$('#ypApp').classList.contains('open') && !$('#ypApp').classList.contains('closing');

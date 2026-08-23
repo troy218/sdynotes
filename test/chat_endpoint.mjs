@@ -1,10 +1,8 @@
 // 엽스코드(Youpscord) 채팅 백엔드 통합 테스트 — Fastify 인스턴스를 직접 띄운다.
-//   join → msg → upload → file get → react → signal(타깃 전달) → history → '펑'(TTL 초기화)
+//   join → msg → upload → file get → react → knock → pending 큐 → history → '펑'(TTL 초기화)
 process.env.SDY_CHAT_TTL = '2';
 process.env.SDY_CHAT_GC_MS = '400';
 
-import crypto from 'node:crypto';
-import net from 'node:net';
 const { registerChat } = await import('../server/src/routes/chat.js');
 const { default: Fastify } = await import('fastify');
 const { default: multipart } = await import('@fastify/multipart');
@@ -14,12 +12,6 @@ const app = Fastify({ logger: false });
 await app.register(multipart, { limits: { fileSize: 512 * 1024 * 1024, files: 1 } });
 registerChat(app);
 await app.listen({ port: PORT, host: '127.0.0.1' });
-
-// 14.13 · /api/chat/config 는 자체 TURN 이 '그 포트를 로컬에서 실제로 듣고
-// 있는지' 확인 뒤에만 내려준다. 테스트용 가짜 TURN(127.0.0.1:3478)을 띄워
-// alive 경로를 만들고, 5349 는 그대로 두고 dead 경로도 함께 검증한다.
-const dummyTurn = net.createServer(() => {});
-await new Promise((res) => dummyTurn.listen(3478, '127.0.0.1', res));
 
 const post = (p, body) => fetch(`http://127.0.0.1:${PORT}${p}`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -57,6 +49,7 @@ async function openSse(uid) {
 // 1) 입장 + 파스텔 색
 const j1 = await post('/api/chat/join', { uid: 'A', name: '연보라 까치' });
 ok('join: 이름/색 반영', j1.ok && j1.me.name === '연보라 까치' && /^#[0-9a-f]{6}$/.test(j1.me.color));
+ok('join: 음성은 서버 릴레이', j1.voice === 'relay');
 
 // 2) 메시지
 const m1 = await post('/api/chat/msg', { uid: 'A', text: '안녕 엽스코드' });
@@ -80,36 +73,25 @@ const jR = await post('/api/chat/join', { uid: 'B', name: '민트 제비' });
 const reacted = jR.msgs.find((x) => x.id === 1);
 ok('react: 반응 저장', r1.ok && reacted && (reacted.reactions['🔥'] || []).length === 1);
 
-// 6) 시그널링 타깃 전달 (A→B 만 받는다)
+// 6) 노크 브로드캐스트 (접속자 전원에게)
 const sA = await openSse('A');
 const sB = await openSse('B');
 await sA.next('hello'); await sB.next('hello');
-const signalStarted = performance.now();
-await post('/api/chat/signal', { uid: 'A', to: 'B', kind: 'ice', payload: { candidate: 'cand:1' } });
-const evB = await sB.next('signal');
-const signalMs = performance.now() - signalStarted;
-const evA = await sA.next('signal', 600);
-ok('signal: 상대에게만 전달', evB && evB.from === 'A' && evB.kind === 'ice' && !evA);
-ok(`signal: 즉시 push (${Math.round(signalMs)}ms)`, signalMs < 400);
-
-// 6-2) 노크 브로드캐스트 (접속자 전원에게)
 const knockP = post('/api/chat/knock', { uid: 'B' });
 const kA2 = await sA.next('knock');
 ok('knock: 전원에게 알림 전달', kA2 && kA2.from && kA2.from.uid === 'B' && kA2.from.name === '민트 제비');
 await knockP;
 
-// 6-3) 수신자의 SSE가 아직 열리기 전 offer도 보관했다가 연결 즉시 전달
+// 6-2) 수신자의 SSE가 아직 열리기 전 메시지도 보관했다가 연결 즉시 전달
 await post('/api/chat/join', { uid: 'D', name: '새 네트워크' });
-await post('/api/chat/signal', { uid: 'A', to: 'D', kind: 'offer', payload: { sdp: { type: 'offer', sdp: 'queued' } } });
+await post('/api/chat/msg', { uid: 'A', text: '대기 큐에 남을 말' });
 const sD = await openSse('D');
 await sD.next('hello');
-const queuedOffer = await sD.next('signal');
-ok('signal: SSE 재접속 전 offer 보존', queuedOffer && queuedOffer.from === 'A'
-  && queuedOffer.kind === 'offer' && queuedOffer.payload.sdp.sdp === 'queued');
+const queuedMsg = await sD.next('msg');
+ok('msg: SSE 재접속 전 메시지 보존', queuedMsg && queuedMsg.msg && queuedMsg.msg.text === '대기 큐에 남을 말');
 sD.close();
-sA.close(); sB.close();
 
-// 6-3b) 끊긴 스트림이 streams 맵에 남아 있으면 offer 가 죽은 소켓으로 쓰여
+// 6-3) 끊긴 스트림이 streams 맵에 남아 있으면 이벤트가 죽은 소켓으로 쓰여
 // 유실되고, 재연결한 상대에게는 아무것도 안 온다. close 감지 → 제거 → pending
 // 보존 순서를 확인한다.
 await post('/api/chat/join', { uid: 'E', name: '끊김 테스트' });
@@ -117,90 +99,26 @@ const sE = await openSse('E');
 await sE.next('hello');
 sE.close();
 await new Promise((r) => setTimeout(r, 600)); // 서버가 close 를 감지할 시간
-await post('/api/chat/signal', { uid: 'A', to: 'E', kind: 'offer', payload: { sdp: { type: 'offer', sdp: 'after-close' } } });
+await post('/api/chat/msg', { uid: 'A', text: '끊긴 뒤에 온 말' });
 const sE2 = await openSse('E');
 await sE2.next('hello');
-const afterClose = await sE2.next('signal');
-ok('signal: close 후 offer 도 pending 보존', afterClose && afterClose.from === 'A'
-  && afterClose.kind === 'offer' && afterClose.payload.sdp.sdp === 'after-close');
+const afterClose = await sE2.next('msg');
+ok('msg: close 후 메시지도 pending 보존', afterClose && afterClose.msg && afterClose.msg.text === '끊긴 뒤에 온 말');
 sE2.close();
+sA.close(); sB.close();
 
-// 6-4) ICE 설정 (STUN 기본)
+// 6-4) 통화 설정은 릴레이 전용 (ICE/TURN 없음)
 const cfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config`).then((r) => r.json());
-ok('config: ICE(STUN) 제공', cfg.ok && cfg.ice && cfg.ice.iceServers.length >= 1);
+ok('config: voice=relay, ICE 없음', cfg.ok && cfg.voice === 'relay' && !cfg.ice && !cfg.turn);
 
-// 6-5) apply.sh coturn용 임시 인증(HMAC-SHA1)
-process.env.SDY_LOCAL_TURN_URL = 'turn:203.0.113.10:3478?transport=udp,turn:203.0.113.10:3478?transport=tcp';
-process.env.SDY_TURN_SECRET = 'chat-test-secret';
-const turnCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=device-A`).then((r) => r.json());
-const turn = turnCfg.ice.iceServers.find((x) => (Array.isArray(x.urls) ? x.urls : [x.urls]).some((u) => String(u).startsWith('turn:')));
-const expectedCredential = turn && crypto.createHmac('sha1', process.env.SDY_TURN_SECRET)
-  .update(turn.username).digest('base64');
-ok('config: TURN 임시 인증 제공', turnCfg.turn === true && turn && /^\d+:device-A$/.test(turn.username)
-  && turn.credential === expectedCredential);
-delete process.env.SDY_LOCAL_TURN_URL;
-delete process.env.SDY_TURN_SECRET;
+const sig = await fetch(`http://127.0.0.1:${PORT}/api/chat/signal`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ uid: 'A', to: 'B', kind: 'offer' }),
+});
+ok('signal: P2P 시그널 라우트 제거', sig.status === 404);
 
-// 6-6) transport= 쿼리가 한 줄 안에 콤마와 섞여 와도 UDP(쿼리 없음) + TCP 를
-//      별도 iceServers 엔트리로 나눠야 한다 (브라우저가 한쪽만 시도하는 함정 방지).
-const turnUrlsOf = (s) => (Array.isArray(s.urls) ? s.urls : [s.urls]).map(String);
-process.env.SDY_LOCAL_TURN_URL = 'turn:198.51.100.7:3478?transport=udp,turn:198.51.100.7:3478?transport=tcp';
-process.env.SDY_TURN_SECRET = 'split-secret';
-const splitCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=split-test`).then((r) => r.json());
-const splitTurns = splitCfg.ice.iceServers.filter((x) => turnUrlsOf(x).some((u) => u.includes('198.51.100.7')));
-const splitUrlList = splitTurns.flatMap(turnUrlsOf);
-ok('config: UDP/TCP TURN 별도 엔트리', splitTurns.length >= 2
-  && splitUrlList.includes('turn:198.51.100.7:3478')
-  && splitUrlList.includes('turn:198.51.100.7:3478?transport=tcp')
-  && !splitUrlList.some((u) => u.includes('?transport=udp')));
-const expected = (username) => crypto.createHmac('sha1', 'split-secret').update(username).digest('base64');
-ok('config: TURN HMAC 인증 일관', splitTurns.length >= 2
-  && splitTurns.every((x) => x.credential === expected(x.username) && /^\d+:split-test$/.test(x.username)));
-delete process.env.SDY_LOCAL_TURN_URL;
-delete process.env.SDY_TURN_SECRET;
-
-// 6-6b) apply.sh 가 넣는 베이스 URL(쿼리 없음) 만으로도 TCP 엔트리가 생겨야 한다.
-process.env.SDY_LOCAL_TURN_URL = 'turn:203.0.113.88:3478';
-process.env.SDY_TURN_SECRET = 'bare-secret';
-const bareCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=bare-test`).then((r) => r.json());
-const bareTurns = bareCfg.ice.iceServers.filter((x) => turnUrlsOf(x).some((u) => u.includes('203.0.113.88')));
-const bareUrls = bareTurns.flatMap(turnUrlsOf);
-ok('config: 베이스 URL 에서 TCP TURN 자동 추가', bareCfg.turn === true && bareTurns.length === 2
-  && bareUrls.includes('turn:203.0.113.88:3478')
-  && bareUrls.includes('turn:203.0.113.88:3478?transport=tcp'));
-delete process.env.SDY_LOCAL_TURN_URL;
-delete process.env.SDY_TURN_SECRET;
-
-// 6-7) 외부 TURN(정적 인증)과 로컬 TURN(HMAC)이 같은 호스트면 두 줄 다 push
-process.env.SDY_TURN_URL = 'turn:192.0.2.55:3478';
-process.env.SDY_TURN_USER = 'extuser';
-process.env.SDY_TURN_PASS = 'extpass';
-process.env.SDY_LOCAL_TURN_URL = 'turn:192.0.2.55:3478';
-process.env.SDY_TURN_SECRET = 'dup-secret';
-const dupCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=dup-test`).then((r) => r.json());
-const dupTurns = dupCfg.ice.iceServers.filter((x) => (Array.isArray(x.urls) ? x.urls : [x.urls])
-  .some((u) => String(u).startsWith('turn:192.0.2.55')));
-ok('config: 같은 호스트라도 외부/로컬 두 줄', dupTurns.length >= 2
-  && dupTurns.some((x) => x.username === 'extuser' && x.credential === 'extpass')
-  && dupTurns.some((x) => /^\d+:dup-test$/.test(x.username)));
-delete process.env.SDY_TURN_URL;
-delete process.env.SDY_TURN_USER;
-delete process.env.SDY_TURN_PASS;
-delete process.env.SDY_LOCAL_TURN_URL;
-delete process.env.SDY_TURN_SECRET;
-
-// 6-8) 14.13 · 죽은 자체 TURN(turns:, 수신 없음)은 iceServers 에 넣지 않고
-//      droppedTurn 으로 알린다 — 실제 사고: coturn 이 TLS 를 안 켰는데 .env 의
-//      turns:5349 이 그대로 나가 candidate error 로 통화가 굳어 보였다.
-process.env.SDY_LOCAL_TURN_TLS_URL = 'turns:203.0.113.77:5349';
-process.env.SDY_TURN_SECRET = 'dead-secret';
-const deadCfg = await fetch(`http://127.0.0.1:${PORT}/api/chat/config?uid=dead-test`).then((r) => r.json());
-const deadUrls = deadCfg.ice.iceServers.flatMap((x) => (Array.isArray(x.urls) ? x.urls : [x.urls])).map(String);
-ok('config: 죽은 자체 TURN 은 광고에서 제외', Array.isArray(deadCfg.droppedTurn)
-  && deadCfg.droppedTurn.includes('turns:203.0.113.77:5349')
-  && !deadUrls.some((u) => u.includes('203.0.113.77')));
-delete process.env.SDY_LOCAL_TURN_TLS_URL;
-delete process.env.SDY_TURN_SECRET;
+const diag = await fetch(`http://127.0.0.1:${PORT}/api/chat/diag`);
+ok('diag: TURN 진단 라우트 제거', diag.status === 404);
 
 // 7) 히스토리 보존
 ok('history: 재입장 시 최근 메시지', jR.msgs.length >= 2);

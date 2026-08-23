@@ -66,52 +66,35 @@ cd /tmp/newsite && sudo bash ./apply.sh
   cloudinary URL 전부를 이 서버로 옮긴다. 원본은 읽기만 하므로 안전하다.
   (`ORACLE_MIGRATION.md` 참조)
 - Node/Fastify `:5000` + Python worker `:5100` systemd 서비스 재기동
-- `/var/www/memo/.env` 보존 + `SDY_TURN_*` 자동 갱신
-- `coturn` 설정 재작성 → `systemctl restart coturn` (이번 PR #2 의
-  `relay-ip` 제거 + `lt-cred-mech` 추가 반영)
-- nginx, swap, deno, bgutil, fpcalc 자동 준비
-- 마지막에 `통화 TURN : 준비됨` 출력
+- `/var/www/memo/.env` 보존 (TURN 변수는 더 이상 쓰지 않음)
+- nginx 에 `/api/chat/voice-ws` WebSocket Upgrade 경로 추가
+- swap, deno, bgutil, fpcalc 자동 준비
+- 마지막에 `음성 릴레이 : 준비됨` 출력
 
-## 배포 직후 검증 (4단계)
+## 배포 직후 검증
 
 ```bash
-# 1) 새 coturn 설정 적용 확인
-grep -E '^(relay-ip|lt-cred-mech|fingerprint|use-auth-secret|external-ip)' /etc/turnserver.conf
-# 기대: fingerprint / use-auth-secret / external-ip=161.33.181.176 / lt-cred-mech
-#       relay-ip 줄이 사라졌어야 함
+# 1) 통화 설정이 릴레이 전용인지
+curl -s 'http://127.0.0.1:5000/api/chat/config?uid=deploy-check'
+# 기대: {"ok":true,"voice":"relay"}
 
-# 2) 새 ICE config 가 TURN 을 잘 주는지
-curl -s 'http://127.0.0.1:5000/api/chat/config?uid=deploy-check' | head -c 800
-# 기대: "turn":true, turn:161.33.181.176:3478 과 ?transport=tcp 가 각각 있어야 함
+# 2) nginx 가 음성 WS 핸드셰이크를 통과시키는지
+grep -A12 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo
+# 기대: Upgrade / Connection "upgrade" / proxy_read_timeout 3600s
 
-# 3) 외부 도달 (이미 확인됨 — 깨지지 않았으면 그대로)
-timeout 4 bash -c 'exec 3<>/dev/tcp/161.33.181.176/3478 && echo TCP-3478-OK'
-
-# 3-1) TURN 진단 (포트 열었는데도 안 될 때)
-curl -s 'http://127.0.0.1:5000/api/chat/diag'
-#   localUdp          : 'ok' 면 서버 안에서 coturn(STUN) 정상 응답
-#   localAlloc        : 'ok(relay=...)' 면 브라우저와 동일한 TURN Allocate
-#                       (401 챌린지 → HMAC 인증 → 릴레이 할당) 까지 성공
-#   publicTcp/publicUdp : 'fail' 이면 VCN 인그레스(3478) 또는 NSG 문제
-#   localUdp 까지 fail 이면 coturn 미기동/설정 문제 (journalctl -u coturn -n 50)
-
-# 4) 브라우저에서 — 두 명이 서로 다른 망(LTE ↔ Wi-Fi)으로 동시에 마이크 켜고
-#    DevTools → chrome://webrtc-internals 에서
-#    Local Address 가 49160~49200 사이 + Connection: relay 로 잡히면 성공
+# 3) 브라우저에서 — 두 명이 HTTPS 로 접속해 마이크를 켜면
+#    DevTools → Network 에 /api/chat/voice-ws 가 101 Switching Protocols
 ```
 
 ## 자주 터지는 에러
 
 - **`Permission denied (publickey)`** — Deploy key 안 걸고 `git@` 로 clone 시도.
   → 위 Deploy Key 방식 1) 키 등록 + 3) `GIT_SSH_COMMAND='ssh -o IdentitiesOnly=yes'`
-- **`Could not resolve host: api.ipify.org`** — apply.sh 가 공인 IP 자동 감지 실패.
-  → `export SDY_TURN_PUBLIC_IP=161.33.181.176` 후 `bash apply.sh` 다시.
-- **`systemctl restart coturn` 가 hang** — 옛 PID 가 살아있을 때. `sudo systemctl kill -s SIGKILL coturn` 한 번.
 - **`fatal: Authentication failed for 'https://troy218@github.com/...'`** — 옛
   `troy218:PAT@` URL 은 2025-08 부터 차단됨. 반드시 `x-access-token:$GH_TOKEN@` 형태로.
-- **여전히 '연결 중' 에서 멈춤** — DevTools → Network → WebSocket 차단 여부.
-  `chrome://webrtc-internals` 의 `STUN ping` rtt 가 비어있으면 STUN 자체가 막힌
-  것이니 VCN 의 UDP 인그레스를 다시 확인.
+- **여전히 '연결 중' 에서 멈춤** — DevTools → Network 에서 `/api/chat/voice-ws`
+  가 101 인지 확인. 400/404 이면 nginx Upgrade location 이 빠진 것 → `apply.sh`
+  재실행. HTTP 로 접속 중이면 마이크가 막힌다 (`https://`).
 
 ## 더 빠르게 (main 머지 시 자동)
 
