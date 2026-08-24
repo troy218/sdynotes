@@ -4525,7 +4525,9 @@ body.has-wall #sdyAmbient{opacity:0;}
     min-width:0;padding:0 0 18px;
 }
 .home-stack-upper{
-    width:100%;
+    /* 17.2 · 넓은 PC에서도 스택이 화면 한가운데 알맞은 크기로 모이도록
+       최대 폭을 제한한다. 폰(.note-grid 8px 패딩)에서는 100%를 쓴다. */
+    width:100%;max-width:920px;margin:0 auto;
     display:flex;flex-direction:column;align-items:center;
     position:relative;isolation:isolate;
 }
@@ -4572,7 +4574,7 @@ body.has-wall #sdyAmbient{opacity:0;}
     perspective:1300px;overflow:visible;
 }
 .note-stack{
-    position:relative;width:100%;min-height:300px;
+    position:relative;width:100%;max-width:760px;min-height:300px;
     display:block;flex:none;overflow:visible;
     cursor:pointer;
 }
@@ -4690,8 +4692,16 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .sa-sub{font-size:12px;color:var(--text3);line-height:1.45;margin-top:-6px;}
 .sa-step{display:flex;flex-direction:column;gap:9px;}
 .sa-step input{height:42px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);
-  color:var(--text1);font-size:14px;padding:0 13px;outline:none;width:100%;}
+  color:var(--text1);font-size:14px;padding:0 13px;outline:none;width:100%;min-width:0;}
 .sa-step input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,110,247,.15);}
+/* 이메일 입력 + 작은 '인증코드 받기' 버튼을 한 줄에 */
+.sa-emailrow{display:flex;gap:8px;align-items:stretch;}
+.sa-sendbtn{flex:0 0 auto;height:42px;padding:0 15px;border:none;border-radius:10px;
+  background:var(--accent);color:#fff;font-size:13px;font-weight:700;cursor:pointer;
+  white-space:nowrap;transition:filter .15s,transform .12s;}
+.sa-sendbtn:hover{filter:brightness(1.08);}
+.sa-sendbtn:active{transform:scale(.97);}
+.sa-sendbtn:disabled{opacity:.55;cursor:not-allowed;}
 .sa-btn{height:42px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;
   font-weight:700;cursor:pointer;transition:filter .15s;}
 .sa-btn:hover{filter:brightness(1.08);}
@@ -5138,6 +5148,7 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   }
   .sa-x{width:44px;height:44px;top:7px;right:7px;}
   .sa-step input,.sa-btn{min-height:46px;}
+  .sa-sendbtn{height:46px;padding:0 13px;font-size:12.5px;}
   .sa-row{flex-wrap:wrap;}
   .sa-row>label{width:100%;}
   .sa-nickedit{width:100%;flex-basis:100%;}

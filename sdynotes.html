@@ -1341,8 +1341,10 @@
 
     <!-- 1단계 · 이메일 -->
     <div class="sa-step" id="saStepEmail">
-      <input type="email" id="saEmail" placeholder="이메일 주소" autocomplete="email" spellcheck="false">
-      <button class="sa-btn" id="saSendBtn" onclick="sdyAuthSend()">인증 코드 받기</button>
+      <div class="sa-emailrow">
+        <input type="email" id="saEmail" placeholder="이메일 주소" autocomplete="email" spellcheck="false">
+        <button class="sa-sendbtn" id="saSendBtn" onclick="sdyAuthSend()">인증코드 받기</button>
+      </div>
     </div>
 
     <!-- 2단계 · 코드 입력 (+ 새 회원은 고정 닉네임) -->

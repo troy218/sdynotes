@@ -185,8 +185,8 @@ ok(`모바일 최종 블록이 기능 표면 ${surfaceTokens.length}종을 모�
 
 /* ── 8. 회전/리사이즈/데스크톱 보존 ───────────────────────── */
 console.log('\n[8] 회전과 데스크톱 홈 복원');
-ok('PC 홈은 카드 더미를 끄고 폴더·노트·추가 카드를 원래 격자로 렌더한다',
-  has(js, /17\.1 · 홈 복원[\s\S]{0,500}const isHomeStack=false;/) &&
+ok('PC/폰 홈은 노트 스택으로 렌더하고, 폴더 안/검색/선택 모드에서만 평범한 격자를 쓴다',
+  has(js, /17\.2 · 홈 스택[\s\S]{0,400}const isHomeStack=!curFolder && !searchQuery && !selectMode;/) &&
   has(js, /if\(!searchQuery&&!isHomeStack\)\{[\s\S]{0,100}childFolders\(curFolder\)/) &&
   has(js, /filtered\.forEach\(nb=>\{ g\.appendChild\(_makeCard\(nb\)\); \}\)/));
 ok('기본 PC note-grid의 중앙 정렬·줄바꿈 규칙을 유지한다',
