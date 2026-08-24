@@ -12722,12 +12722,37 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 
     // ============ 자동 번역 (영어 <-> 한국어) ============
     async function apiTranslate(text,target,gloss){
-        const r=await fetch('/api/translate',{method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({text,target,gloss:gloss||undefined})});
-        const d=await r.json().catch(()=>({}));
-        if(!r.ok||!d.ok) throw new Error(d.error||'번역 실패');
-        return d.text;
+        // 프록시/서버가 잠깐 끊긴 경우 한 번만 재시도한다. 무한 재시도는
+        // 사용자가 취소할 수 없고 무료 번역 엔진의 429를 더 악화시킨다.
+        let last;
+        for(let attempt=0;attempt<2;attempt++){
+            const ctl=new AbortController();
+            const timer=setTimeout(()=>ctl.abort(),30000);
+            try{
+                const r=await fetch('/api/translate',{method:'POST',signal:ctl.signal,
+                    headers:{'Content-Type':'application/json','Accept':'application/json'},
+                    body:JSON.stringify({text,target,gloss:gloss||undefined})});
+                const d=await r.json().catch(()=>({}));
+                if(r.ok&&d.ok&&typeof d.text==='string') return d.text;
+                // 4xx와 제한 응답은 재시도해도 성공하지 않는다.
+                const msg=d.error||('번역 요청 실패 ('+r.status+')');
+                if(r.status<500||/제한|429/.test(msg)) throw new Error(msg);
+                last=new Error(msg);
+            }catch(e){
+                last=e&&e.name==='AbortError'?new Error('번역 서버 응답 시간이 초과됐어요. 잠시 후 다시 시도해 주세요.'):e;
+                if(/제한|429|문자열이어야|내용이 없습니다|5000자/.test(String(last&&last.message||''))) throw last;
+            }finally{ clearTimeout(timer); }
+            if(attempt===0) await new Promise(resolve=>setTimeout(resolve,700));
+        }
+        throw last||new Error('번역 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.');
+    }
+
+    async function persistTranslatedChange(){
+        // 로컬 저장은 즉시 예약하고, 가져온 문서는 원격 슬라이스 저장까지 완료한 뒤
+        // 성공 안내를 낸다. 따라서 다시 열었을 때 원문으로 돌아가지 않는다.
+        saveDoc(); queueOps();
+        try{ flushSaveDoc(); await flushImportedSave(); }
+        catch(e){ throw new Error('번역 결과를 저장하지 못했어요. 네트워크를 확인해 주세요.'); }
     }
 
     // 텍스트 상자 전체 번역 (서식은 유지하기 어려우므로 글자만 바꾼다)
@@ -12834,8 +12859,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 doc.__localRev.set(el.id,rev);
                 doc.__lastHash.set(el.id,JSON.stringify(el));
             }catch(e){}
-            syncTextEl(node); saveDoc(); queueOps();
-            toast(target==='ko'?'한국어로 번역했습니다':'영어로 번역했습니다',2000);
+            syncTextEl(node);
+            await persistTranslatedChange();
+            toast((TR_NAME[target]||target)+'로 번역하고 저장했습니다',2000);
         }catch(e){ toast('번역 실패: '+e.message,2600); }
     }
 
@@ -12882,9 +12908,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const r2=document.createRange();
             r2.setStartAfter(tn); r2.collapse(true);
             s2.removeAllRanges(); s2.addRange(r2);
-            if(w){ syncTextEl(w); saveDoc(); }
+            if(w){
+                syncTextEl(w);
+                await persistTranslatedChange();
+            }
             saveSel();
-            toast(`${TR_NAME[target]||target}로 바꿨습니다 (Ctrl+Z 로 되돌리기)`,2400);
+            toast(`${TR_NAME[target]||target}로 바꾸고 저장했습니다 (Ctrl+Z 로 되돌리기)`,2400);
         }catch(e){ toast('번역 실패: '+e.message,2600); }
     }
 
@@ -13094,9 +13123,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }
             };
             await Promise.all([worker(),worker()]);
-            saveDoc(); queueOps();
-            try{ flushSaveDoc(); await flushImportedSave(); }catch(e){}
-            showTrProg(1,label+' · 완료');
+            await persistTranslatedChange();
+            showTrProg(1,label+' · 저장 완료');
             setTimeout(hideTrProg,600);
             // 15.0 · 실패한 상자가 있으면 '완료'라고만 알리지 않는다 —
             //   다 번역 안 됐는데 완료로 보이던 문제.
@@ -13105,8 +13133,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }else if(failCnt){
                 toast(label+' 번역 부분 완료 · '+failCnt+'개 상자는 실패 (잠시 뒤 다시 눌러 주세요)',3200);
             }else{
-                toast(label+' 번역 완료 ('+list.length+'개 상자)',2400);
+                toast(label+' 번역 완료 · 저장됨 ('+list.length+'개 상자)',2400);
             }
+        }catch(e){
+            toast('번역 결과 저장 실패: '+String(e&&e.message||'다시 시도해 주세요'),3600);
         }finally{ trBusy=false; }
     }
     async function translatePageAction(pi,target){
