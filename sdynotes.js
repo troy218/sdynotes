@@ -5013,12 +5013,19 @@
     async function openNB(nb){
         if(window._closeEdT){ clearTimeout(window._closeEdT); window._closeEdT=null; }
         try{ _trackRecent(nb.id); }catch(_){}
+        // 14.14 · 이미 같은 노트를 연 상태면 저장·동기화 왕복을 건너뛴다.
+        //   (연속 클릭·스택 재진입 시 빈 저장 레이스가 돌지 않게)
+        if(curNB&&doc&&curNB.id===nb.id&&
+           document.getElementById('editorView').classList.contains('open')){
+            try{ ensureVisiblePagesRendered(); }catch(e){}
+            return;
+        }
         if(curNB && doc){
             try{
                 commitEditingText();
                 flushSaveDoc();
-                try{ clearTimeout(opsTimer); pushOps(); }catch(e){}
-                flushSync();
+                try{ clearTimeout(opsTimer); await pushOps(); }catch(e){}
+                try{ await flushSync(); }catch(e){}
                 stopLive();
                 stopLiveDocSync();
             }catch(e){}
@@ -5085,9 +5092,12 @@
         document.getElementById('editorView').classList.add('open');
         setTimeout(()=>{ try{ startLive(); }catch(e){} },600);   // 실시간 커서 공유
         try{ startLiveDocSync(); }catch(e){}                     // 기기 간 실시간 반영
-        requestAnimationFrame(layoutPages);
-        setTimeout(layoutPages,420);
-        setTimeout(()=>{ try{ restoreLastPos(); }catch(e){} },460);   // 마지막 보던 쪽으로 복구
+        // 14.14 · 슬라이드인 직후·레이아웃 확정 뒤 다시 한 번 강제 페인트
+        //   (IO 가 첫 프레임을 놓쳐도 빈 종이로 남지 않게)
+        const _paint=()=>{ try{ layoutPages(); ensureVisiblePagesRendered(); }catch(e){} };
+        requestAnimationFrame(_paint);
+        setTimeout(_paint,420);
+        setTimeout(()=>{ try{ restoreLastPos(); ensureVisiblePagesRendered(); }catch(e){} },460);
         scheduleHiBg();                                                // 보는 쪽 배경을 점점 고화질로
         openNav(closeEditor);                                          // 뒤로가기 → 에디터 닫기
     }
@@ -5147,6 +5157,21 @@
         clearTimeout(_saveTimer); _saveTimer=null;
         if(!curNB||!doc) return;
         if(doc.__loadFailed) return;
+        // 14.14 · 본문이 비어 보이는데 디스크/서버에는 내용이 있는 상태면
+        //   빈 문서로 덮어쓰지 않는다. (IO 미렌더·pages op 미스매치로 doc.pages 가
+        //   비워진 직후 노트 전환/닫기가 일어나면 영구 유실되던 경로)
+        try{
+            const elN=(doc.pages||[]).reduce((n,pg)=>n+((pg&&pg.els)||[]).length,0);
+            const tblN=(doc.pages||[]).reduce((n,pg)=>n+((pg&&pg.tables)||[]).length,0);
+            if(elN===0&&tblN===0&&!doc.__ref){
+                const cfg=getCfg(curNB.id);
+                const locN=(cfg.pages||[]).reduce((n,pg)=>n+((pg&&pg.els)||[]).length,0);
+                if(locN>0){
+                    setSaveState('본문 복구 중 · 빈 저장 건너뜀',2500);
+                    return;
+                }
+            }
+        }catch(e){}
         persistDoc(curNB.id,doc);
         try{ queueImportedSave(); }catch(e){}
         if(sidePanel){ clearTimeout(window._spT); window._spT=setTimeout(()=>{try{renderPanel()}catch(e){}},400); }
@@ -5373,7 +5398,12 @@
         renderedPages.clear();
         // 14.12 · 노트 전환 시 기존 DOM과 비동기 콜백이 새 노트에 영향을 주지 못하게
         // renderVersion 은 콜백에서 확인하여旧的 콜백이 새 페이지를 건드리는 것을 방지한다.
-        const rv=++window._renderVersion;
+        // 14.14 · 반드시 숫자로 초기화한다. 예전엔 window._renderVersion 이 undefined 인
+        //   첫 오픈에서 ++undefined → NaN 이 되고, NaN !== NaN 이라 renderPageEls /
+        //   IntersectionObserver / ensureVisible 가 전부 즉시 return 해 **빈 종이만**
+        //   보였다. (홈 미리보기는 이 가드를 안 써서 정상 — 제목·텍스트상자 껍데기만
+        //   있고 내용물이 없는 증상의 직접 원인)
+        const rv=(window._renderVersion|0)+1;
         window._renderVersion=rv;
         // doc 에도 버전을 기록하여 renderPageEls 에서 doc===_d 외에 추가로 검증
         if(doc) doc.__rv=rv;
@@ -5446,6 +5476,40 @@
         stage.querySelectorAll('.paper').forEach(p=>{
             pageObserver.observe(p);
             pageUnloader.observe(p);
+        });
+        // 14.14 · 첫 페이지·현재 쪽은 Observer 콜백을 기다리지 않고 바로 그린다.
+        //   에디터가 translateX 슬라이드인 중이거나, IO root(#editorBody) 레이아웃이
+        //   아직 0 이거나, 일부 브라우저가 transform 조상 아래 intersection 을
+        //   놓치면 isIntersecting 이 영영 안 와 **빈 종이 + 제목/텍스트상자 껍데기만**
+        //   보이는 회귀가 난다. 홈 미리보기(renderPageStatic)는 IO 를 안 써서 정상.
+        try{ ensureVisiblePagesRendered(); }catch(e){}
+    }
+
+    // 화면에 바로 보여야 하는 쪽을 IO 와 무관하게 강제 렌더
+    function ensureVisiblePagesRendered(){
+        if(!doc||!doc.pages||!doc.pages.length) return;
+        const n=doc.pages.length;
+        const want=new Set([0, curPageIdx|0]);
+        // 인접 한 쪽도 미리 (스크롤 없이 바로 보이게)
+        if((curPageIdx|0)+1<n) want.add((curPageIdx|0)+1);
+        if((curPageIdx|0)-1>=0) want.add((curPageIdx|0)-1);
+        want.forEach(i=>{
+            if(i<0||i>=n) return;
+            // 이미 그려진 쪽도 요소가 비어 있으면 다시 그린다 (IO 실패·조기 return 복구)
+            const need=!renderedPages.has(i);
+            let emptyDom=false;
+            try{
+                if(!need){
+                    const paper=paperAt(i);
+                    const txt=paper&&paper.querySelector('.layer-text');
+                    const els=((doc.pages[i]||{}).els)||[];
+                    if(els.length && txt && !txt.childElementCount) emptyDom=true;
+                }
+            }catch(e){}
+            if(need||emptyDom){
+                if(emptyDom) renderedPages.delete(i);
+                try{ renderPageEls(i); }catch(e){}
+            }
         });
     }
 
@@ -5550,12 +5614,14 @@
             ensureLazyPage(idx).then(()=>{ if(doc===_d && window._renderVersion===_d.__rv) renderPageEls(idx); });
             return;
         }
-        renderedPages.add(idx);
         const paper=paperAt(idx);
         // 14.12 · DOM에 없거나 다른 노트의 요소라면 무시
+        // 14.14 · paper 가 아직 없으면 renderedPages 에 넣지 않는다.
+        //   (예전에 먼저 add 해 버려, 이후 ensureVisible 재시도가 영영 스킵됐다)
         if(!paper || !paper.parentNode) return;
         // renderVersion 이 다르면 (노트가 전환됐으면) 건드리지 않는다
         if(window._renderVersion !== (doc&&doc.__rv)) return;
+        renderedPages.add(idx);
         const tok=_pageRenderTok[idx]=(_pageRenderTok[idx]||0)+1;
         const size=paperSize();
         const imgL=paper.querySelector('.layer-img');
@@ -6642,11 +6708,14 @@
                 }).catch(()=>{});
             }
         }
-        if(!c.innerText.trim()){ c.setAttribute('data-empty','true'); w.classList.add('empty'); }
+        // 14.14 · innerText 는 일부 환경(구형 WebView·테스트 DOM)에서 undefined.
+        //   .trim() 이 그대로 터지면 텍스트 상자 전체가 안 그려져 빈 종이가 된다.
+        const _tbPlain=()=>String((c.innerText!=null?c.innerText:c.textContent)||'');
+        if(!_tbPlain().trim()){ c.setAttribute('data-empty','true'); w.classList.add('empty'); }
         if(el.locked) w.classList.add('el-lock');
         c.addEventListener('dblclick',e=>{ e.stopPropagation(); if(!w.classList.contains('edit')) enterEdit(w,true); });
         c.addEventListener('input',()=>{
-            const em=!c.innerText.trim();
+            const em=!_tbPlain().trim();
             if(em) c.setAttribute('data-empty','true'); else c.removeAttribute('data-empty');
             w.classList.toggle('empty',em);
             clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
@@ -6696,7 +6765,7 @@
         el.html=stripWF(c.innerHTML); el.fontSize=parseInt(c.style.fontSize)||16;
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
         el.w=w.offsetWidth; el.h=w.offsetHeight;
-        w.classList.toggle('empty',!c.innerText.trim());
+        w.classList.toggle('empty',!String((c.innerText!=null?c.innerText:c.textContent)||'').trim());
         saveDoc();
     }
 
@@ -6828,7 +6897,8 @@
             //  나가기 직전 커밋된 글자가 슬라이스 저장에서 빠져 유실되지 않는다.
             try{ if(doc&&doc.pages[+w.dataset.pageIdx]) doc.pages[+w.dataset.pageIdx].__dirty=true; }catch(e){}
             // 빈 상자도 남겨둔다 (연한 점선 + 안내 문구로 위치 표시)
-            const isEmpty=!c.innerText.trim()&&!c.querySelector('img');
+            const plain=String((c.innerText!=null?c.innerText:c.textContent)||'');
+            const isEmpty=!plain.trim()&&!c.querySelector('img');
             w.classList.toggle('empty',isEmpty);
             if(isEmpty) c.setAttribute('data-empty','true');
         });
@@ -12933,11 +13003,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     async function initSync(){
         if(!doc||!curNB) return;
+        // 14.14 · 노트 전환 중 이전 노트의 initSync 가 이어지면 새 노트 맵을
+        //   비우거나 엉뚱한 ops 를 푸시할 수 있다. 시작 시점 신원을 고정.
+        const _d0=doc, _nb0=curNB.id;
         syncState();
         doc.__localRev.clear(); doc.__lastHash.clear();
         doc.__base.clear(); doc.__baseRev.clear();
         doc.__pagesRev=0; doc.__since=0;
         const pulled=await pullSync(false);
+        if(doc!==_d0||!curNB||curNB.id!==_nb0) return;
         // 원격에서 받은 요소는 해시 등록(재푸시 방지),
         // 서버에 없던 로컬 요소는 초기 상태로 푸시(양방향 기반 공유)
         const remoteIds=new Set((pulled||[]).map(o=>o.id));
@@ -12955,7 +13029,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
         });});
         doc.__lastPages=(doc.pages||[]).map(p=>p.id).join(',');
+        if(doc!==_d0||!curNB||curNB.id!==_nb0) return;
         if(ops.length) await pushOps(ops);
+        // pull 로 본문이 채워졌을 수 있으니 다시 한 번 강제 페인트
+        if(doc===_d0) try{ ensureVisiblePagesRendered(); }catch(e){}
     }
     async function startSlicePrefill(){
         const d=doc;                    // 14.9 · 노트 전환 후 이어지는 프리필을 차단
@@ -13079,16 +13156,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(doc!==_d0) return [];   // 14.13 · 마지막 await 뒤에도 노트가 같은지 확인
             doc.__since=d.version||0;
             if(changed){
-                if(chPages.has(-1)) renderPages();
-                else chPages.forEach(pi=>{
-                    if(renderedPages.has(pi)){
-                        if(activeEditEl&&activeEditPage===pi){
-                            _selectiveRenderPage(pi,activeEditId);
-                        }else{
-                            renderPageEls(pi);
+                if(chPages.has(-1)){
+                    renderPages();
+                }else{
+                    chPages.forEach(pi=>{
+                        if(renderedPages.has(pi)){
+                            if(activeEditEl&&activeEditPage===pi){
+                                _selectiveRenderPage(pi,activeEditId);
+                            }else{
+                                renderPageEls(pi);
+                            }
                         }
-                    }
-                });
+                    });
+                    // 14.14 · pull 로 새 요소가 들어왔는데 해당 쪽이 아직 IO 로
+                    //   안 그려져 있으면 강제 페인트 (빈 종이 유지 방지)
+                    try{ ensureVisiblePagesRendered(); }catch(e){}
+                }
             }
             // 요소 ops 가 비어도 가져온 문서 슬라이스(번역)가 갱신됐을 수 있다.
             if(doc.__ref && !trBusy){
@@ -13186,8 +13269,28 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function applyPagesOp(op){
         doc.__pagesRev=op.rev||0;
         const ids=op.ids||[];
-        const byId={}; (doc.pages||[]).forEach(p=>byId[p.id]=p);
-        doc.pages=ids.map(id=>byId[id]||{id,els:[],tables:[]});
+        const oldPages=(doc.pages||[]).slice();
+        const byId={}; oldPages.forEach(p=>{ if(p&&p.id) byId[p.id]=p; });
+        // 14.14 · 페이지 id 가 기기마다 다르게 찍힌 경우(옛 버그·복제·충돌),
+        //   id 로 못 찾으면 같은 자리(index)에 있던 본문을 살려 빈 페이지로
+        //   교체하지 않는다. 예전엔 byId 미스 → {id,els:[]} 로 바꿔
+        //   메모 채널에 있던 글·그림이 실시간 pull 한 번에 통째로 사라졌다.
+        doc.pages=ids.map((id,i)=>{
+            if(byId[id]) return byId[id];
+            const old=oldPages[i];
+            const hasBody=old&&(
+                ((old.els||[]).length)>0||
+                ((old.tables||[]).length)>0||
+                ((old.notes||[]).length)>0||
+                old.__lazy!=null
+            );
+            if(hasBody){
+                // 서버 순서의 id 로만 맞추고 본문·lazy 마커는 유지
+                if(old.id!==id) old.id=id;
+                return old;
+            }
+            return {id,els:[],tables:[]};
+        });
     }
     function genOps(){
         syncState();
