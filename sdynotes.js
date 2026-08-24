@@ -23,14 +23,49 @@
 /* === script block 2 === */
 
 /* 모든 플로팅 창이 공유하는 화면 경계 규칙.
-   좌우/상하 모두 같은 8px 안전 여백을 쓰며 어떤 창도 화면 밖으로 나가지 않는다. */
+   좌우/상하 모두 같은 8px 안전 여백을 쓰며 어떤 창도 화면 밖으로 나가지 않는다.
+   데스크톱은 html{zoom:.9} 를 쓰므로 화면 좌표(clientX/getBoundingClientRect)와
+   fixed 요소의 style.left/top·offsetWidth 가 서로 다른 단위를 쓴다.
+   플로팅 창은 'UI CSS px'로만 재고, 화면 좌표가 들어오면 먼저 그 단위로 바꾼다. */
+window.sdyUiCssZoom=(function(){
+    var probe=null;
+    return function(){
+        try{
+            if(!probe||!probe.isConnected){
+                probe=document.getElementById('uiZoomProbeGlobal');
+                if(!probe){
+                    probe=document.createElement('div');
+                    probe.id='uiZoomProbeGlobal';
+                    probe.setAttribute('aria-hidden','true');
+                    probe.style.cssText='position:fixed;left:0;top:0;width:100px;height:0;overflow:hidden;visibility:hidden;pointer-events:none;';
+                    (document.body||document.documentElement).appendChild(probe);
+                }
+            }
+            var w=probe.getBoundingClientRect().width;
+            var k=w?w/100:1;
+            return (k>0.05&&k<20)?k:1;
+        }catch(e){ return 1; }
+    };
+})();
+window.sdyUiCss=function(v){ return (Number(v)||0)/window.sdyUiCssZoom(); };
 window.sdyClampFloatingRect=function(el,x,y,gap){
     gap=Number.isFinite(gap)?gap:8;
-    var vv=window.visualViewport;
-    var vw=Math.round((vv&&vv.width)||window.innerWidth||document.documentElement.clientWidth||0);
-    var vh=Math.round((vv&&vv.height)||window.innerHeight||document.documentElement.clientHeight||0);
-    var w=el?el.getBoundingClientRect().width:0;
-    var h=el?el.getBoundingClientRect().height:0;
+    var vv=window.visualViewport, de=document.documentElement;
+    /* innerWidth / clientWidth / offsetWidth 는 fixed UI가 쓰는 CSS px,
+       visualViewport 값은 화면 px일 수 있어 보조값만 UI CSS px로 바꿔 합친다. */
+    var vw=Math.max(
+        Math.round(window.innerWidth||0),
+        Math.round((de&&de.clientWidth)||0),
+        Math.round(window.sdyUiCss((vv&&vv.width)||0))
+    );
+    var vh=Math.max(
+        Math.round(window.innerHeight||0),
+        Math.round((de&&de.clientHeight)||0),
+        Math.round(window.sdyUiCss((vv&&vv.height)||0))
+    );
+    var r=el?el.getBoundingClientRect():null;
+    var w=el?(el.offsetWidth||Math.round(window.sdyUiCss(r&&r.width||0))):0;
+    var h=el?(el.offsetHeight||Math.round(window.sdyUiCss(r&&r.height||0))):0;
     var minX=w+gap*2<=vw?gap:0, minY=h+gap*2<=vh?gap:0;
     var maxX=Math.max(minX,vw-w-minX), maxY=Math.max(minY,vh-h-minY);
     return {x:Math.max(minX,Math.min(maxX,Number(x)||0)),
@@ -8956,16 +8991,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         head.addEventListener('pointerdown',e=>{
             if(e.target.closest('button')) return;
             const r=win.getBoundingClientRect();
+            const lx=window.sdyUiCss(r.left), ly=window.sdyUiCss(r.top);
             win.classList.add('moved');
             win.style.position='fixed'; win.style.margin='0';
-            win.style.left=r.left+'px'; win.style.top=r.top+'px';
-            _fcardDrag={sx:e.clientX,sy:e.clientY,ox:r.left,oy:r.top};
+            win.style.left=lx+'px'; win.style.top=ly+'px';
+            _fcardDrag={sx:e.clientX,sy:e.clientY,ox:lx,oy:ly};
             try{ head.setPointerCapture(e.pointerId); }catch(err){}
         });
         head.addEventListener('pointermove',e=>{
             if(!_fcardDrag) return;
-            const c=sdyClampFloatingRect(win,_fcardDrag.ox+e.clientX-_fcardDrag.sx,
-                _fcardDrag.oy+e.clientY-_fcardDrag.sy);
+            const dx=window.sdyUiCss(e.clientX-_fcardDrag.sx), dy=window.sdyUiCss(e.clientY-_fcardDrag.sy);
+            const c=sdyClampFloatingRect(win,_fcardDrag.ox+dx,_fcardDrag.oy+dy);
             win.style.left=c.x+'px'; win.style.top=c.y+'px';
         });
         const endD=()=>{ if(!_fcardDrag) return; _fcardDrag=null;
@@ -17395,8 +17431,8 @@ let _mpbDrag=null;
   });
   head.addEventListener('pointermove',e=>{
     if(!_mpbDrag) return;
-    const c=sdyClampFloatingRect(mpbEl,_mpbDrag.ox+e.clientX-_mpbDrag.sx,
-      _mpbDrag.oy+e.clientY-_mpbDrag.sy);
+    const dx=window.sdyUiCss(e.clientX-_mpbDrag.sx), dy=window.sdyUiCss(e.clientY-_mpbDrag.sy);
+    const c=sdyClampFloatingRect(mpbEl,_mpbDrag.ox+dx,_mpbDrag.oy+dy);
     mpbEl.style.left=Math.round(c.x)+'px'; mpbEl.style.top=Math.round(c.y)+'px';
   });
   const end=()=>{ if(!_mpbDrag) return; _mpbDrag=null;
@@ -17404,7 +17440,14 @@ let _mpbDrag=null;
       x:parseFloat(mpbEl.style.left),y:parseFloat(mpbEl.style.top)})); }catch(e){} try{if(window.pushSettings)window.pushSettings();}catch(e){} };
   head.addEventListener('pointerup',end);
   head.addEventListener('pointercancel',end);
-  addEventListener('resize',()=>{ if(mpbEl.classList.contains('open')) clampMpb(); });
+  addEventListener('resize',()=>{
+    if(!mpbEl.classList.contains('open')) return;
+    const r=mpbEl.getBoundingClientRect();
+    const c=sdyClampFloatingRect(mpbEl,
+      isFinite(parseFloat(mpbEl.style.left))?parseFloat(mpbEl.style.left):window.sdyUiCss(r.left),
+      isFinite(parseFloat(mpbEl.style.top))?parseFloat(mpbEl.style.top):window.sdyUiCss(r.top));
+    mpbEl.style.left=Math.round(c.x)+'px'; mpbEl.style.top=Math.round(c.y)+'px';
+  });
 })();
 
 // ── 15.0 → 16.0 · 확대 플레이어 전체 화면 ──
@@ -21308,12 +21351,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       if(e.target.closest&&e.target.closest('button')) return;
       drag=true; head.style.cursor='grabbing';
       sx=e.clientX; sy=e.clientY;
-      var r=app.getBoundingClientRect(); ox=r.left; oy=r.top;
+      var r=app.getBoundingClientRect(); ox=window.sdyUiCss(r.left); oy=window.sdyUiCss(r.top);
       e.preventDefault();
     });
     window.addEventListener('pointermove',function(e){
       if(!drag) return;
-      var nx=ox+(e.clientX-sx), ny=oy+(e.clientY-sy);
+      var nx=ox+window.sdyUiCss(e.clientX-sx), ny=oy+window.sdyUiCss(e.clientY-sy);
       var c=sdyClampFloatingRect(app,nx,ny);
       app.style.left=c.x+'px'; app.style.top=c.y+'px'; app.style.right='auto'; app.style.bottom='auto';
     });
@@ -22068,7 +22111,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
           var w=app.offsetWidth,h=app.offsetHeight;
           if(isFinite(l)) l=Math.max(8,Math.min(innerWidth-w-8,l));
           if(isFinite(t)) t=Math.max(8,Math.min(innerHeight-h-8,t));
-          var c=sdyClampFloatingRect(app,isFinite(l)?l:app.getBoundingClientRect().left,isFinite(t)?t:app.getBoundingClientRect().top);
+          var ar=app.getBoundingClientRect();
+          var c=sdyClampFloatingRect(app,isFinite(l)?l:window.sdyUiCss(ar.left),isFinite(t)?t:window.sdyUiCss(ar.top));
           app.style.left=c.x+'px'; app.style.top=c.y+'px';
         }
       }
@@ -22077,12 +22121,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(pl && pl.classList.contains('mp-float')){
       if(PHONE()){ pl.style.right='';pl.style.left=''; }
       var t2=parseFloat(pl.style.top);
-      if(isFinite(t2)){ var pc=sdyClampFloatingRect(pl,pl.getBoundingClientRect().left,t2); pl.style.top=pc.y+'px'; }
+      if(isFinite(t2)){
+        var pr=pl.getBoundingClientRect();
+        var pc=sdyClampFloatingRect(pl,window.sdyUiCss(pr.left),t2);
+        pl.style.top=pc.y+'px';
+      }
     }
     var big=document.getElementById('mpBig');
     if(big && big.classList.contains('open')){
       var bl=parseFloat(big.style.left),bt=parseFloat(big.style.top);
-      if(isFinite(bl)||isFinite(bt)){ var bc=sdyClampFloatingRect(big,isFinite(bl)?bl:big.getBoundingClientRect().left,isFinite(bt)?bt:big.getBoundingClientRect().top); big.style.left=bc.x+'px'; big.style.top=bc.y+'px'; }
+      if(isFinite(bl)||isFinite(bt)){
+        var br=big.getBoundingClientRect();
+        var bc=sdyClampFloatingRect(big,isFinite(bl)?bl:window.sdyUiCss(br.left),isFinite(bt)?bt:window.sdyUiCss(br.top));
+        big.style.left=bc.x+'px'; big.style.top=bc.y+'px';
+      }
     }
   }
   function tick(){ syncViewport(); syncBar(); clampFloats(); }
