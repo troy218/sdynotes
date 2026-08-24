@@ -95,6 +95,14 @@
            전체 화면 에디터가 덮이면 합성 부답이 커져 에디터 본문이 하얗게
            비어 보이는 렌더링 문제의 원인이 된다. 배경 사진 숨김과 같은 맥락. */
         body:has(#editorView.open) #sdyAmbient{opacity:0;}
+
+        /* 노트를 편집할 때 바깥 html/body 스크롤바를 숨겨 이중 스크롤바 방지 */
+        html:has(#editorView.open),
+        body:has(#editorView.open),
+        html.in-editor,
+        body.in-editor {
+            overflow: hidden !important;
+        }
         .wall-prev{width:74px;height:46px;border-radius:5px;border:1px solid var(--border);
             background-size:cover;background-position:center;flex:none;background-color:var(--bg2);}
 
@@ -2483,7 +2491,9 @@
     font-size:10.5px;font-weight:700;white-space:nowrap;opacity:0;pointer-events:none;
     transition:opacity .12s;}
 .mp-prog.seeking .mp-seektip{opacity:1;}
-.mp-time{display:flex;align-items:center;font-size:10px;color:var(--text3);}
+.mp-time{display:flex;align-items:center;font-size:11px;font-weight:600;color:var(--text2);}
+.mp-time #mpCur{color:var(--text1);font-weight:700;}
+.mp-time #mpDur{color:var(--text2);font-weight:600;}
 .mp-time .mp-sp{flex:1;}
 .mp-dur{cursor:pointer;}
 .mp-float .mp-line1,.mp-float .mp-badge{display:none;}
@@ -2718,13 +2728,13 @@ body.sdy-booting #musicListPop{z-index:10001;}
     background:var(--accent);border:2px solid var(--card);box-shadow:0 1px 5px rgba(0,0,0,.3);
     transform:translate(-50%,-50%);pointer-events:none;}
 /* 시간 표시는 평소엔 숨기고, 재생 위치를 잡을 때만 잠깐 뜬다 (현재 | 전체) */
-.mpb-time{display:none;align-items:center;justify-content:center;font-size:11.5px;color:var(--text2);gap:7px;letter-spacing:.01em;margin-bottom:2px;
+.mpb-time{display:none;align-items:center;justify-content:center;font-size:11.5px;color:var(--text1);gap:7px;letter-spacing:.01em;margin-bottom:2px;
   opacity:0;visibility:hidden;transform:translateY(4px);pointer-events:none;
   transition:opacity .22s ease,transform .22s ease,visibility .22s;}
 .mpb-time.show{display:flex !important;opacity:1;visibility:visible;transform:translateY(0);}
-.mpb-time .sep{opacity:.35;}
+.mpb-time .sep{opacity:.6;color:var(--text2);}
 .mpb-time .current{color:var(--text1);font-weight:700;font-variant-numeric:tabular-nums;}
-.mpb-time .end{font-variant-numeric:tabular-nums;color:var(--text3);}
+.mpb-time .end{font-variant-numeric:tabular-nums;color:var(--text2);font-weight:600;}
 .mpb-ctl{display:flex;align-items:center;justify-content:center;gap:8px;}
 .mpb-ctl button{width:36px;height:36px;border:none;background:transparent;color:var(--text2);
     border-radius:10px;cursor:pointer;font-size:19px;display:flex;align-items:center;justify-content:center;}
@@ -3638,7 +3648,19 @@ body.mpb-playing #mpBig:fullscreen .mpb-cwrap .mpb-cover{
   background:#fff;border-color:rgba(0,0,0,.16);box-shadow:0 2px 8px rgba(0,0,0,.5);
   opacity:0;transition:opacity .15s;}
 #mpBig.mpb-fs .mpb-prog:hover #mpBKnob,#mpBig:fullscreen .mpb-prog:hover #mpBKnob{opacity:1;}
-#mpBig.mpb-fs .mpb-time,#mpBig:fullscreen .mpb-time{color:rgba(255,255,255,.62);font-size:12px;gap:10px;letter-spacing:.02em;}
+#mpBig.mpb-fs .mpb-time,#mpBig:fullscreen .mpb-time{
+  color:#ffffff !important;font-size:13px;font-weight:600;gap:10px;letter-spacing:.02em;
+  text-shadow:0 1px 4px rgba(0,0,0,0.6);
+}
+#mpBig.mpb-fs .mpb-time .current,#mpBig:fullscreen .mpb-time .current{
+  color:#ffffff !important;font-weight:800;
+}
+#mpBig.mpb-fs .mpb-time .end,#mpBig:fullscreen .mpb-time .end{
+  color:rgba(255,255,255,0.92) !important;font-weight:700;
+}
+#mpBig.mpb-fs .mpb-time .sep,#mpBig:fullscreen .mpb-time .sep{
+  color:rgba(255,255,255,0.7) !important;opacity:1 !important;
+}
 #mpBig.mpb-fs .mpb-ctl,#mpBig:fullscreen .mpb-ctl{gap:clamp(10px,2vw,20px);margin-top:clamp(4px,1.4vh,12px);}
 #mpBig.mpb-fs .mpb-ctl button,#mpBig:fullscreen .mpb-ctl button{
   width:52px;height:52px;font-size:25px;color:rgba(255,255,255,.86);}
@@ -4770,8 +4792,36 @@ body.card-l .note-stack .note-card,body.card-l .note-stack .folder-card{width:24
 .recent-section{padding-top:0 !important;margin-top:-4px !important;border-top:none !important;}
 .recent-section > *:not(.recent-row){display:none !important;}
 .recent-row{padding-bottom:72px !important;margin-bottom:-40px !important;}
-.recent-row .note-card{position:relative;left:auto;top:auto;max-width:none;flex-shrink:0;transform:none;opacity:1;width:200px;flex:0 0 200px;}
-.recent-row .note-card:hover{transform:translateY(-5px);z-index:100 !important;}
+.recent-row .note-card{
+    position:relative;left:auto;top:auto;max-width:none;flex-shrink:0;transform:none;opacity:1;width:200px;flex:0 0 200px;
+    box-shadow:var(--g-hi),
+               0 2px 5px -1px rgba(15,23,42,.08),
+               0 10px 24px -6px rgba(15,23,42,.16),
+               0 22px 42px -12px rgba(15,23,42,.22) !important;
+    transition:transform .28s cubic-bezier(.22,.9,.3,1),box-shadow .28s ease,border-color .2s ease;
+}
+.dark .recent-row .note-card{
+    box-shadow:var(--g-hi),
+               0 2px 6px -1px rgba(0,0,0,.40),
+               0 12px 28px -6px rgba(0,0,0,.55),
+               0 26px 48px -12px rgba(0,0,0,.68) !important;
+}
+.recent-row .note-card:hover{
+    transform:translateY(-6px) scale(1.015) !important;
+    z-index:100 !important;
+    box-shadow:var(--g-hi),
+               0 4px 10px -2px rgba(15,23,42,.12),
+               0 18px 36px -6px rgba(15,23,42,.24),
+               0 34px 60px -14px rgba(15,23,42,.32),
+               0 0 0 1px color-mix(in srgb,var(--accent) 26%,transparent) !important;
+}
+.dark .recent-row .note-card:hover{
+    box-shadow:var(--g-hi),
+               0 4px 12px -2px rgba(0,0,0,.50),
+               0 20px 42px -6px rgba(0,0,0,.65),
+               0 40px 70px -14px rgba(0,0,0,.78),
+               0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent) !important;
+}
 body.card-s .recent-row .note-card{width:160px;flex-basis:160px !important;}
 body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .home-add-note{box-shadow:0 7px 20px rgba(25,35,75,.06),inset 0 1px 0 rgba(255,255,255,.35) !important;}

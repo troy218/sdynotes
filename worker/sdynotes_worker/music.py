@@ -1591,11 +1591,13 @@ def _music_backfill():
 
             with _music_lock:
                 m = _music_load()
+                # 빈칸이 있는 곡 검사 (태그 빈칸, 미정리, 가사 없음, 표지 없음)
                 retag = [mid for mid, r in m.items()
                          if r.get("tag_state") != "manual"
                          and (r.get("tag_algo") != TAG_ALGO
                               or not r.get("tag_state")
-                              or r.get("tag_state") == "pending")]
+                              or r.get("tag_state") == "pending"
+                              or not (r.get("artist") and r.get("album")))]
                 retry = [mid for mid, r in m.items()
                          if mid not in retag and r.get("tag_state") == "none"
                          and float(r.get("tag_next") or 0) <= now
@@ -1626,7 +1628,7 @@ def _music_backfill():
             batch_size = 12 if idle else 3
             sleep_gap = 0.9 if idle else 2.5
 
-            print(f"[music] 로컬 백필 (idle={idle}): 재태깅 {len(retag)} · 재시도 {len(retry)} · 가사 {len(nolyr)}")
+            print(f"[music] 로컬 백필 (idle={idle}): 재태깅 {len(retag)} · 재시도 {len(retry)} · 가사 {len(nolyr)} · 표지 {len(nocov)}")
             if _fp_bin() and _aco_key():
                 try:
                     with _music_lock:
@@ -1639,16 +1641,14 @@ def _music_backfill():
                         time.sleep(sleep_gap)
                 except Exception:
                     pass
-            # 표지가 없는 곡도 todo에만 넣고 실제 처리하지 않으면 백필이
-            # 계속 활성 상태로 남는다. 태그·가사와 같은 배치에서 표지 검색도
-            # 실행해 다음 순회에는 완료 상태가 되게 한다.
+            # 기존 주어진 정보는 냅두고 빈칸만 딱 골라서 채운다 (fill_only=True)
             work_items = ([("tag", x) for x in retag + retry]
                           + [("lyr", x) for x in nolyr]
                           + [("cover", x) for x in nocov])[:batch_size]
             for kind, mid in work_items:
                 try:
                     if kind == "tag":
-                        _music_autotag(mid, force=True, algo=TAG_ALGO)
+                        _music_autotag(mid, force=False, algo=TAG_ALGO, fill_only=True)
                     elif kind == "cover":
                         _music_cover_search(mid)
                     else:
@@ -1718,19 +1718,31 @@ def _sdy_auth_fields():
 
 
 def _music_upload_pipeline(mid):
-    """14.9 · 업로드 직후 정리 흐름 (로컬 폴백 모드):
-    1) 소리 인식(AcoustID)으로 제목·가수·앨범을 먼저 채우고
-    2) 실패하면 자동검색으로 폴백한다. (클라우드 _cloud_music_pipeline 과 동일 순서)"""
+    """업로드 직후 정리 흐름 (로컬 모드):
+    1) 소리(음성) 인식(AcoustID)을 먼저 수행
+    2) 인식 성공 시 그 결과를 기반으로 태그 검색, 실패 시 처음 올린 주어진 제목을 바탕으로 태그 검색
+    3) 태그 검색 후 라이브 가사 -> 앨범 표지를 순차적으로 검색"""
+    recog_ok = False
     try:
         res = _music_recognize(mid, apply_tags=True)
-        if not (res or {}).get("ok"):
-            _music_autotag(mid, force=False, algo=TAG_ALGO)
+        recog_ok = bool((res or {}).get("ok"))
     except Exception as e:
-        print("[music] 업로드 인식/자동태그 오류:", e)
-        try:
-            _music_autotag(mid, force=False, algo=TAG_ALGO)
-        except Exception:
-            pass
+        print("[music] 업로드 소리 인식 오류:", e)
+
+    try:
+        _music_autotag(mid, force=recog_ok, algo=TAG_ALGO)
+    except Exception as e:
+        print("[music] 업로드 태그 검색 오류:", e)
+
+    try:
+        _music_lyrics(mid)
+    except Exception as e:
+        print("[music] 업로드 가사 검색 오류:", e)
+
+    try:
+        _music_cover_search(mid)
+    except Exception as e:
+        print("[music] 업로드 표지 검색 오류:", e)
 
 
 @app.route("/api/music/upload", methods=["POST"])

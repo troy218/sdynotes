@@ -809,17 +809,32 @@ def _recog_try(mid, local_path=None):
 
 
 def _cloud_music_pipeline(mid, tmp=None):
-    """14.9 · 업로드 직후 정리 흐름:
-    1) 소리 인식(음성인식·AcoustID)으로 제목·가수·앨범을 먼저 채우고
-    2) 인식이 안 되면 자동검색으로 정보만 채운다.
-    (14.11 — 표지·가사는 연쇄하지 않는다. 각자 전용 버튼/백필 담당)"""
+    """업로드 직후 정리 흐름 (클라우드):
+    1) 소리(음성) 인식(AcoustID)을 먼저 수행
+    2) 인식 성공 시 그 결과를 기반으로 태그 검색, 실패 시 처음 올린 주어진 제목을 바탕으로 태그 검색
+    3) 태그 검색 후 라이브 가사 -> 앨범 표지를 순차적으로 검색"""
+    recog_ok = False
     try:
-        _recog_try(mid, tmp)
+        res = _recog_try(mid, tmp)
+        recog_ok = bool((res or {}).get("ok"))
+    except Exception as e:
+        print("[music_cloud] 업로드 음성 인식 오류:", e)
     finally:
         if tmp:
             try: os.remove(tmp)
             except Exception: pass
-    _cloud_music_autotag(mid)
+    try:
+        _cloud_music_autotag(mid, force=recog_ok)
+    except Exception as e:
+        print("[music_cloud] 업로드 태그 검색 오류:", e)
+    try:
+        _music_lyrics_cloud(mid)
+    except Exception as e:
+        print("[music_cloud] 업로드 가사 검색 오류:", e)
+    try:
+        _cloud_cover_pick(mid)
+    except Exception as e:
+        print("[music_cloud] 업로드 표지 검색 오류:", e)
 
 
 def music_recognize_cloud():
@@ -940,7 +955,7 @@ def _cloud_music_backfill():
             for mid in todo[:batch_size]:
                 try:
                     if mid in retag:
-                        _cloud_music_autotag(mid, force=True)
+                        _cloud_music_autotag(mid, force=False, fill_only=True)
                     elif mid in nolyr:
                         _music_lyrics_cloud(mid)
                     elif mid in nocov:
@@ -959,6 +974,7 @@ def music_background_work():
 
     14.11 — 곡마다 '한 가지 기능'만 수행한다 (태그 → 가사 → 표지 순서로
     필요 항목을 고르고, 자동 태그가 가사까지 끌어가지 않는다).
+    기존 주어진 정보는 유지하고 빈칸만 채운다(fill_only=True).
     """
     def _run():
         try:
@@ -966,7 +982,8 @@ def music_background_work():
                 if r.get("tag_state") == "manual":
                     return None
                 if (r.get("tag_algo") != TAG_ALGO or not r.get("tag_state")
-                        or r.get("tag_state") in ("pending", "none")) \
+                        or r.get("tag_state") in ("pending", "none")
+                        or not (r.get("artist") and r.get("album"))) \
                         and float(r.get("tag_next") or 0) <= time.time():
                     return "tag"
                 if not ((r.get("lyrics") or "") or (r.get("lyrics_plain") or "")) \
@@ -984,7 +1001,7 @@ def music_background_work():
                         todo.append((k, r.get("id")))
                 for kind, mid in todo[:6]:
                     if kind == "tag":
-                        _cloud_music_autotag(mid, force=True)
+                        _cloud_music_autotag(mid, force=False, fill_only=True)
                     elif kind == "lyr":
                         _music_lyrics_cloud(mid)
                     else:
@@ -999,7 +1016,7 @@ def music_background_work():
                             todo.append((k, mid))
                 for kind, mid in todo[:6]:
                     if kind == "tag":
-                        _music_autotag(mid, force=True, algo=TAG_ALGO)
+                        _music_autotag(mid, force=False, algo=TAG_ALGO, fill_only=True)
                     elif kind == "lyr":
                         _music_lyrics(mid)
                     else:
