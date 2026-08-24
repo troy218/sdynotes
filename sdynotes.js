@@ -5886,17 +5886,6 @@
             pageIdx:+selected.el.dataset.pageIdx,node:selected.el}];
         return [];
     }
-    function elBBox(el){
-        if(el.type==='stroke'){
-            const pts=el.pts||[]; if(!pts.length) return null;
-            const dx=el.dx||0, dy=el.dy||0;
-            let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
-            pts.forEach(p=>{ x0=Math.min(x0,p[0]); y0=Math.min(y0,p[1]);
-                             x1=Math.max(x1,p[0]); y1=Math.max(y1,p[1]); });
-            return {x:x0+dx,y:y0+dy,w:Math.max(1,x1-x0),h:Math.max(1,y1-y0)};
-        }
-        return {x:el.x||0,y:el.y||0,w:el.w||1,h:el.h||1};
-    }
     function unionBBox(items,pi){
         let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,any=false;
         items.forEach(it=>{
@@ -6020,10 +6009,11 @@
     }
     function elBBox(el,pageIdx){
         if(el.type==='stroke'){
+            const pts=el.pts||[]; if(!pts.length) return null;
             const bb=strokeBBox(el);
             return {x:bb.x+(el.dx||0), y:bb.y+(el.dy||0), w:bb.w, h:bb.h};
         }
-        return {x:el.x, y:el.y, w:el.w, h:el.h};
+        return {x:el.x||0, y:el.y||0, w:el.w||1, h:el.h||1};
     }
     function startMarquee(e,pageIdx){
         const p=pageLocal(e,pageIdx);
