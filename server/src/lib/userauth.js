@@ -90,6 +90,16 @@ export async function userByUid(uid) {
   const u = await usersLoad();
   return u[uid] || null;
 }
+// 16.3 · 닉네임으로 회원 찾기 (친구 요청 등록용 — normNick 비교와 같은 규칙)
+export async function userByNick(nick) {
+  const u = await usersLoad();
+  const n = normNick(nick);
+  if (!n) return null;
+  for (const rec of Object.values(u)) {
+    if (normNick(rec.nick) === n) return rec;
+  }
+  return null;
+}
 
 // ── OTP (메모리) ───────────────────────────────────────
 const otps = new Map();     // email -> {hash,exp,tries,lastSent}

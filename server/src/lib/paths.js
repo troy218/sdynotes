@@ -21,6 +21,7 @@ export const DIRS = {
   sync:       path.join(BASE_DIR, 'sync'),
   vault:      path.join(BASE_DIR, 'vault'),
   db:         path.join(BASE_DIR, 'db'),
+  dm:         path.join(BASE_DIR, 'dm'),        // 16.3 · 1:1 대화 사진/파일
 };
 
 export const FILES = {
@@ -33,6 +34,9 @@ export const FILES = {
   // 16.2 · 회원(이메일 OTP 로그인)
   authUsers:    path.join(BASE_DIR, '.sdy_users.json'),
   authSessions: path.join(BASE_DIR, '.sdy_user_sessions.json'),
+  // 16.3 · 친구 + 1:1 대화
+  friends:      path.join(BASE_DIR, '.sdy_friends.json'),
+  dm:           path.join(BASE_DIR, '.sdy_dm.json'),
   notifications: path.join(BASE_DIR, 'notifications.json'),
   acoustid:    path.join(DIRS.music, '_acoustid.json'),
   ytCookies:   path.join(DIRS.music, '_yt_cookies.txt'),

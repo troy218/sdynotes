@@ -1,4 +1,4 @@
-# SDYnotes 14.12.0 — Fastify + Python worker + Oracle 자체 저장소
+# SDYnotes 14.13.0 — Fastify + Python worker + Oracle 자체 저장소
 
 기존 단일 `app.py`(약 11,000줄)를 **"빠른 부분은 Node, 무거운 부분만 Python"** 으로
 재설계한 백엔드입니다. **14.12 부터 모든 데이터(상태·파일)는 이 Oracle VM 디스크에
@@ -61,7 +61,7 @@ sdynotes-fast/
 │       ├── index.js      앱 조립 + 기동 (:5000)
 │       ├── lib/          경로/설정/락/SSE/관리자/저장소(dbstore)/워커프록시
 │       └── routes/       pages·sync·admin·vault·cards·stickers·wallpaper·
-│                         translate·notify·live·misc·music·db
+│                         translate·notify·live·misc·music·db·friends·dm
 └── worker/               Python 워커 (127.0.0.1:5100)
     ├── run.py            기동
     └── sdynotes_worker/
@@ -206,12 +206,13 @@ grep -n 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo
   서로 덮어써져 곡이 사라질 수 있습니다. gunicorn 다중 worker 금지.
 - `SUPABASE_SERVICE_KEY` 등 비밀키는 zip/로그/프런트에 절대 노출 금지.
   (oracle 모드에선 이 키들이 필요 없고, 남아 있어도 무시됩니다.)
-- `APP_VERSION` 은 프런트 `<meta name="application-version">`(14.12.0) 와 일치해야
+- `APP_VERSION` 은 프런트 `<meta name="application-version">`(14.13.0) 와 일치해야
   합니다.
 - 이스터에그(쫄라맨 야구)는 프런트 전용 — `sdynotes.html` 그대로 서빙하므로 유지.
 - **디스크가 이제 영구 저장소** — 음원/이미지/보관함이 모두 VM 디스크에 쌓이므로,
   스냅샷/백업(`tar` 한 번이면 `sync/ cards/ db/ music/ stickers/ wallpaper/
-  vault/ imported/` 전부 백업됨)을 주기적으로 챙기세요.
+  vault/ imported/ dm/` + `.sdy_users.json .sdy_user_sessions.json .sdy_friends.json
+  .sdy_dm.json` 전부 백업됨)을 주기적으로 챙기세요.
 
 ## 단계별 이관 상태
 
@@ -279,6 +280,50 @@ SDY_AUTH_OTP_COOLDOWN=45   # 코드 재발송 대기(초, 기본 45)
 
 상태 파일: `.sdy_users.json`(회원) · `.sdy_user_sessions.json`(세션) — 서버 디스크에만 있다.
 
+## 16.3 · 친구 + 1:1 대화 (DM)
+
+로그인한 회원끼리 **친구를 맺고** 둘만의 1:1 대화를 나눈다. 앱 전체 공용인 엽스코드
+방과 달리, 친구 관계·대화 내용은 **서버 디스크에 남는다** — 상대가 지금 접속해
+있지 않아도 본낸 메시지는 그대로 전달된다(다다음에 접속하면 안 읽은 수로 뜬다).
+
+- **친구 추가**: 엽스코드 헤더의 친구 버튼(👥) → 친구의 고정 닉네임으로 요청.
+  상대가 친구 화면에서 **수락**하면 친구가 된다. 서로 동시에 요청하면 바로 친구.
+  요청은 7일(`SDY_FRIEND_REQ_TTL`) 지나면 자동 만료.
+- **1:1 대화**: 친구를 누률 때 열린다. 텍스트·사진(8MB)·파일(20MB) 전송,
+  읽음 표시(내 메시지 옆 '1'), 상대 온라인 표시(🟢), 이전 대화 더 보기,
+  내 메시지 삭제. 친구끼리만 가능(서버가 강제, 403 `not_friends`).
+- **실시간 전파**: 회원 SSE(`/api/dm/stream`) 하나로 새 메시지·읽음·친구 변화·
+  접속 상태가 모두 온다. 엽스코드를 열지 않아도 로그인만 돼 있으면 수신되고,
+  스트림이 열린 회원은 친구들에게 '온라인'으로 표시된다.
+- **알림**: 엽스코드 칩과 친구 버튼에 안 읽은 합계 뱃지. 새 DM 이 오면 소리·
+  데스크톱 알림(설정 존중) + 칩 흔들기.
+- **정리 규칙**: 스레드당 최근 500개(`SDY_DM_MAX_MSGS`), 30일 지난 메시지는
+  자동 삭제(`SDY_DM_TTL`). 사진/파일은 `dm/` 폴터에 저장하고 총 256MB
+  (`SDY_DM_FILE_MB`)를 넘으면 오래된 파일부터 지우고 메시지에는 "오래돼 사라진
+  사진이에요"로 표시된다.
+
+```
+GET  /api/friends/list      내 친구 목록 + 받은/본낸 요청 (online 포함)
+GET  /api/friends/summary   뱃지용 요약 {requests_in, unread_dm}
+POST /api/friends/request   {nick}   닉네임으로 요청 (서로 요청하면 자동 수락)
+POST /api/friends/accept    {uid}    수락        POST /api/friends/decline {uid} 거절
+POST /api/friends/cancel    {uid}    본낸 요청 취소
+POST /api/friends/remove    {uid}    친구 삭제 (양쪽 모두에게 즉시 반영·DM 차단)
+
+GET  /api/dm/stream?token=  회원 SSE — 이벤트: hello / dm_msg / dm_read / dm_del / friend / presence
+GET  /api/dm/threads        내 대화 목록 (상대·마지막 메시지·unread·online)
+GET  /api/dm/history/:peer  히스토리 (?before=<id>&limit= — more 로 이전 페이지)
+POST /api/dm/msg            {to,text}
+POST /api/dm/upload         사진/파일 (multipart, 필드 to)
+GET  /api/dm/file/:id       첨부 낭미 받기 — 대화 참여자만 (그 외 403)
+POST /api/dm/read           {to,id}  읽음 처리 → 상대에게 dm_read
+POST /api/dm/del            {to,id}  내 메시지 삭제
+```
+
+전부 인증 필요(`x-sdy-auth` 또는 `Bearer`). 상태 파일: `.sdy_friends.json`
+(`pairs` + `requests`) · `.sdy_dm.json` (`threads` + 파일 인덱스) — 서버 디스크에
+만 있다. 메시지 저장은 250ms 디바운스로 묶어 쓴다(채팅 버스트 대비).
+
 ## 검증
 
 ```bash
@@ -307,6 +352,10 @@ node test/smtp_contract.mjs        # 최소 SMTP 클라이언트: STARTTLS·AUTH
 node test/oracle_db_contract.mjs   # dbstore/db 라우트 + 노트 이미지 로컬 저장
 node test/sdb_shim_contract.mjs    # 프런트 SDB shim ↔ 서버 descriptor 계약
 node test/migrate_oracle_sim.mjs   # 모의 Supabase/Cloudinary → 오라클 이전 전 과정
+
+# 16.3 — 친구 + 1:1 대화 (서버 계약 48건 + 프런트 jsdom 29건)
+node test/friends_dm_contract.mjs  # 친구 요청/수락/삭제·DM 전송/읽음/파일 권한·SSE (npm run test:friends)
+node test/yf_dm_frontend_contract.cjs # 친구 패널·DM 뷰·전송 계약·뱃지·비로그인 안내 (jsdom)
 
 # 클라우드(legacy) 모드 (실제 키 없이 모의 서버로)
 python3 test/cloud_smoke.py     # worker 클라우드 음악 변이 (모의 Supabase+Cloudinary)

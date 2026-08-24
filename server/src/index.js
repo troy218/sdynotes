@@ -25,7 +25,11 @@ import { registerMusic } from './routes/music.js';
 import { registerChat } from './routes/chat.js';
 import { registerDb } from './routes/db.js';
 import { registerAuth } from './routes/auth.js';
+import { registerFriends } from './routes/friends.js';
+import { registerDm } from './routes/dm.js';
 import { userAuthBoot } from './lib/userauth.js';
+import { friendsBoot } from './lib/friends.js';
+import { dmBoot } from './lib/dmstore.js';
 
 ensureDirs();
 
@@ -57,6 +61,8 @@ registerMusic(app, { worker });
 registerChat(app);
 registerDb(app);
 registerAuth(app);
+registerFriends(app);   // 16.3 · 친구 (회원끼리)
+registerDm(app);        // 16.3 · 친구와의 1:1 대화 + 회원 SSE
 
 // worker proxy for the import pipeline (kept verbatim in Python)
 for (const [method, url] of [
@@ -73,6 +79,8 @@ for (const [method, url] of [
 
 await sessionsLoad();
 await userAuthBoot();   // 16.2 · 회원(이메일 OTP) 사용자·세션 읽어 두기
+await friendsBoot();    // 16.3 · 친구 관계 읽어 두기
+await dmBoot();         // 16.3 · 1:1 대화 저장소 읽어 두기
 
 const port = parseInt(process.env.PORT || '5000', 10);
 
