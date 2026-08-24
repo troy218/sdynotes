@@ -7,6 +7,28 @@
            (@import 는 CSS 파싱을 막아, 예전엔 이것 때문에 시작이 느렸다) */
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
         *{font-family:'Noto Sans KR',sans-serif;margin:0;padding:0;box-sizing:border-box;}
+
+        /* 16.24 · 유틸리티 클래스 복구 — HTML이 쓰는 레이아웃 유틸(flex·w-full·py-4 등)이
+           어디에도 정의돼 있지 않아 데스크톱 헤더가 세로로 쌓이는 등 화면이 깨졌다.
+           (폰 전용 미디어쿼리는 각자 !important 로 덮어쓰므로 영향 없음) */
+        .flex{display:flex;}
+        .hidden{display:none !important;}
+        .w-full{width:100%;}
+        .items-center{align-items:center;}
+        .justify-between{justify-content:space-between;}
+        .gap-3{gap:12px;}
+        .py-4{padding-top:16px;padding-bottom:16px;}
+        .px-6{padding-left:24px;padding-right:24px;}
+        .pt-8{padding-top:32px;}
+        .pb-10{padding-bottom:40px;}
+        .mb-1{margin-bottom:4px;}
+        .mb-2{margin-bottom:8px;}
+        .mb-3{margin-bottom:12px;}
+        .mb-4{margin-bottom:16px;}
+        .mb-5{margin-bottom:20px;}
+        .font-bold{font-weight:700;}
+        .text-lg{font-size:18px;line-height:28px;}
+        .text-sm{font-size:14px;line-height:20px;}
         html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:hidden;}
         /* 9.3 · 데스크톱 휠 스크롤 복구
            body{overflow-x:hidden}는 body를 "세로로도 스크롤 가능한 컨테이너"로 만든다.
