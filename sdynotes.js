@@ -1486,7 +1486,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   chrome(헤더·패딩·버튼·그리드 여백) + 두 줄 = 화면 높이 가 정확히
     //   성립해 첫 화면에 꼭 들어오고, 카드도 아래 줄(제목+패딩+그림자)에
     //   들어맞는 크기로만 잡는다. 줄 높이의 자세한 값(--home-row-h)은
-    //   CSS 의 -60px 음수 마진과 함께 세로 클리핑 경계를 아래로 내린다.
+    //   CSS 의 음수 마진(17.7 기준 위 -14px · 아래 -60px)과 함께 클리핑
+    //   경계를 카드 위로 넓혀 그림자 잘림을 없앤다. 그 마진·패딩은
+    //   여기서 상수로 다시 쓰지 않고 계산값을 그대로 읽는다.
     function _fitHomeRows(area){
         if(!area||!area.classList.contains('has-recent')) return;
         const px=v=>{ const n=parseFloat(v); return isFinite(n)?n:0; };
@@ -1513,7 +1515,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         let scenePad=0;
         if(scene){ const scs=getComputedStyle(scene); scenePad=px(scs.paddingTop)+px(scs.paddingBottom); }
         const sec=area.querySelector('.recent-section');
-        let secPT=0, titleH=0, rowPT=0, rowPB=56, nameH=52;
+        let secPT=0, titleH=0, rowPT=0, rowMT=0, rowMB=-60, nameH=52;
         if(sec){
             secPT=px(getComputedStyle(sec).paddingTop);
             const title=sec.querySelector('.recent-title');
@@ -1521,7 +1523,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const row=sec.querySelector('.recent-row');
             if(row){
                 const rcs=getComputedStyle(row);
-                rowPT=px(rcs.paddingTop); rowPB=px(rcs.paddingBottom);
+                // 17.7 · 그림자 여유(패딩)와 그것을 상쇄하는 음수 마진은 CSS 가
+                //   정한다. 여기서는 상수로 다시 쓰지 않고 실제 계산값을 읽어서
+                //   패딩을 바꾸기만 해도 줄 높이가 따라오게 한다.
+                rowPT=px(rcs.paddingTop);
+                rowMT=px(rcs.marginTop); rowMB=px(rcs.marginBottom);
                 const nameEl=row.querySelector('.note-card-name');
                 if(nameEl) nameH=nameEl.offsetHeight||52;
             }
@@ -1534,13 +1540,19 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 카드(미리보기 1.3:1 + 이름 영역 + 테두리 2px)가 위 스택 줄과
         // 아래 최근 줄(제목·패딩·그림자 여유 포함) 모두에 들어가야 한다.
         const availScene=rowH-scenePad;
-        const availRecent=rowH-secPT-titleH-4;
+        // 제목 아래부터 카드 위까지의 실제 여백(음수 마진 + 위 패딩). 17.7 이전엔
+        // 패딩 4px · 마진 0 이라 상수 4 였다.
+        const rowTopGap=rowMT+rowPT;
+        const availRecent=rowH-secPT-titleH-rowTopGap;
         const avail=Math.max(60,Math.min(availScene,availRecent));
         const cardW=Math.max(96,Math.min(settingMax,screenMax,Math.floor((avail-nameH-2)/1.30)));
         area.style.setProperty('--home-rows-h',rowsH+'px');
         area.style.setProperty('--home-card-w',cardW+'px');
-        // CSS: 줄 = (섹션 콘텐츠 높이 - 제목) + 60px, 마진 -60px.
-        area.style.setProperty('--home-row-h',(Math.round(rowH-secPT-titleH+60))+'px');
+        // CSS: 줄(border-box) = 남은 높이 - 위 마진 - 아래 마진.
+        //   음수 마진(위 -14px · 아래 -60px)이 늘린 패딩을 그대로 도로 빼므로
+        //   흐름 높이(= 두 줄 레이아웃)와 아래 오버플로는 그대로고, 클리핑
+        //   경계만 위 14px · 좌우 18px 더 넓어져 카드 옆·위 그림자가 산다.
+        area.style.setProperty('--home-row-h',Math.round(rowH-secPT-titleH-rowMT-rowMB)+'px');
     }
 
     // ── 홈 스택: 아래(폴더)에서 위(문서)로 한 장씩 오른쪽·위로 이동 ──
@@ -7321,6 +7333,39 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const s=paperSize();
         return {x:r&&s.w?r.width/s.w:pageScale,y:r&&s.h?r.height/s.h:pageScale};
     }
+    // ── 화면 px ↔ 화면 UI 가 쓰는 CSS px ──────────────────────────────
+    // 데스크톱은 html{zoom:.9} 로 그려진다. 이 배율 때문에 같은 'px' 가 두 가지다.
+    //   · clientX·getBoundingClientRect → 배율이 적용된 화면 px
+    //   · style.left·offsetWidth·innerWidth → 배율 전 CSS px  (Element.currentCSSZoom)
+    // 그래서 화면 px 를 그대로 style.left 에 넣으면 고스트·도구막대가 커서에서
+    // (1-배율)×거리 만큼 어긋나고, 눌러서 만든 상자·표는 커서 자리에 생긴다.
+    // '미리보기는 여기, 결과는 저기' 가 되는 직접 원인이다. 배율은 고정 상수로
+    // 두지 않고 100px 프로브로 그때그때 직접 잰다 (기본 90%·브라우저 배율·
+    // currentCSSZoom 미지원 브라우저까지 같은 코드로 맞는다).
+    let _uiZoomProbe=null;
+    function uiCssZoom(){
+        if(!_uiZoomProbe||!_uiZoomProbe.isConnected){
+            _uiZoomProbe=document.getElementById('uiZoomProbe');
+            if(!_uiZoomProbe){
+                _uiZoomProbe=document.createElement('div');
+                _uiZoomProbe.id='uiZoomProbe';
+                _uiZoomProbe.setAttribute('aria-hidden','true');
+                _uiZoomProbe.style.cssText='position:fixed;left:0;top:0;width:100px;height:0;'+
+                                           'overflow:hidden;visibility:hidden;pointer-events:none;';
+                (document.body||document.documentElement).appendChild(_uiZoomProbe);
+            }
+        }
+        const w=_uiZoomProbe.getBoundingClientRect().width;   // 100 CSS px = 몇 화면 px
+        const k=w?w/100:1;
+        return (k>0.05&&k<20)?k:1;
+    }
+    // 화면 px → 화면 UI CSS px (position:fixed 요소의 style.left/top 에 넣을 값)
+    function uiCss(v){ return v/uiCssZoom(); }
+    // 문서 px → 화면 UI CSS px (종이 배율과 사이트 배율을 함께 반영)
+    function uiPageScale(pageIdx){
+        const sc=pageScreenScale(pageIdx),k=uiCssZoom();
+        return {x:sc.x/k,y:sc.y/k};
+    }
     // 종이 밖으로 나가는 것도 허용한다 (내보낼 때 잘린다).
     // 완전히 사라져 되찾지 못하는 것만 막는다.
     function clampEl(x,y,w,h){
@@ -7677,11 +7722,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     document.addEventListener('mousemove',e=>{
         const ghost=document.getElementById('textGhost');
-        if(textToolActive&&ghost){
-            const gw=TB_W*pageScale,gh=TB_H*pageScale;
-            ghost.style.left=Math.max(8,Math.min(e.clientX-gw/2,innerWidth-gw-8))+'px';
-            ghost.style.top=Math.max(42,Math.min(e.clientY-gh/2,innerHeight-gh-8))+'px';
-        }
+        if(textToolActive&&ghost) moveTextGhost(e.clientX,e.clientY);
         if(tablePlace) moveTableGhost(e.clientX,e.clientY);
 
         if(tblCellPick){
@@ -8339,12 +8380,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const t=findTbl(activeTbl.pageIdx,activeTbl.tid);
         const paper=paperAt(activeTbl.pageIdx);
         if(!t||!paper){ clearActiveTbl(); return; }
-        const r=paper.getBoundingClientRect(),sc=pageScreenScale(activeTbl.pageIdx);
-        let left=r.left+t.x*sc.x+30;      // 이동 손잡이를 가리지 않도록
-        let top=r.top+t.y*sc.y-48;
-        if(top<64) top=r.top+(t.y+tblSize(t).h)*sc.y+14;
-        left=Math.max(8,Math.min(left,innerWidth-bar.offsetWidth-8));
-        top=Math.max(60,Math.min(top,innerHeight-52));
+        const r=paper.getBoundingClientRect(),sc=pageScreenScale(activeTbl.pageIdx),k=uiCssZoom();
+        // 종이 기준 화면 px 로 자리를 구한 뒤, 막대가 쓰는 CSS px 로 한 번에 바꾼다.
+        let left=uiCss(r.left+t.x*sc.x+30);      // 이동 손잡이를 가리지 않도록
+        let top=uiCss(r.top+t.y*sc.y-48);
+        if(top<uiCss(64)) top=uiCss(r.top+(t.y+tblSize(t).h)*sc.y+14);
+        left=Math.max(uiCss(8),Math.min(left,uiCss(innerWidth-8)-(bar.offsetWidth||0)));
+        top=Math.max(uiCss(60),Math.min(top,uiCss(innerHeight)-52));
         bar.style.left=left+'px'; bar.style.top=top+'px';
     }
     // 표 안을 누르면 표 도구를 띄우고, 밖을 누르면 감춘다
@@ -11076,11 +11118,39 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const pi=+paper.dataset.pageIdx;
         const p=pageLocal({clientX,clientY},pi);
         const origin=clampTableOrigin(tablePlace,p.x-tablePlace.w/2,p.y-tablePlace.h/2);
-        const r=paper.getBoundingClientRect(),sc=pageScreenScale(pi);
+        const r=paper.getBoundingClientRect(),sc=uiPageScale(pi),k=uiCssZoom();
         g.style.width=Math.round(tablePlace.w*sc.x)+'px';
         g.style.height=Math.round(tablePlace.h*sc.y)+'px';
-        g.style.left=Math.round(r.left+origin.x*sc.x)+'px';
-        g.style.top=Math.round(r.top+origin.y*sc.y)+'px';
+        // 종이 원점(화면 px)도 고스트가 쓰는 CSS px 로 바꾼 뒤 문서 좌표를 더한다.
+        g.style.left=Math.round(r.left/k+origin.x*sc.x)+'px';
+        g.style.top=Math.round(r.top/k+origin.y*sc.y)+'px';
+        g.dataset.pageIdx=String(pi);
+    }
+    // 텍스트 상자 고스트 — '눌렀을 때 실제로 생길 자리'를 그대로 미리 보인다.
+    // 삽입 경로(pageLocal → clampEl → addTextBox)와 같은 계산을 쓰기 때문에
+    // 배율이 몇 %이든, 커서가 종이 어디에 있든 고스트 = 만들어질 상자 다.
+    // 예전엔 커서 clientX 를 곧장 style.left 에 넣고 화면 가장자리로 clamp 해서
+    //  · 사이트 기본 배율(90%) 만큼 커서에서 어긋나고
+    //  · 확대가 클수록 화면 끝에서 고스트만 안으로 밀려
+    // 만들어진 상자와 고스트가 서로 다른 자리에 있었다.
+    function moveTextGhost(clientX,clientY){
+        const g=document.getElementById('textGhost'); if(!g||!textToolActive) return;
+        const hit=typeof document.elementFromPoint==='function'
+            ?document.elementFromPoint(clientX,clientY):null;
+        const over=hit&&hit.closest&&hit.closest('.paper');
+        const paper=over||paperAt(curPageIdx);
+        if(!paper) return;
+        const pi=+paper.dataset.pageIdx, s=paperSize();
+        // 종이 밖(도구막대 위 등)에서는 지금 쪽 위쪽 중앙에 '준비' 미리보기를 둔다.
+        const p=over?pageLocal({clientX,clientY},pi):{x:s.w/2,y:Math.min(s.h*.22,180)};
+        const o=clampEl(p.x-TB_W/2,p.y-TB_H/2,TB_W,TB_H);
+        const r=paper.getBoundingClientRect(),sc=uiPageScale(pi),k=uiCssZoom();
+        g.style.width=Math.round(TB_W*sc.x)+'px';
+        g.style.height=Math.round(TB_H*sc.y)+'px';
+        const c=g.querySelector('.tg-caret');
+        if(c) c.style.height=Math.round((curFontSize*1.4)*sc.y)+'px';
+        g.style.left=Math.round(r.left/k+o.x*sc.x)+'px';
+        g.style.top=Math.round(r.top/k+o.y*sc.y)+'px';
         g.dataset.pageIdx=String(pi);
     }
     function cancelTablePlacement(){
@@ -11099,26 +11169,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.body.classList.toggle('placing-text',!!on);
         document.getElementById('textToolBtn').classList.toggle('active',on);
         if(on){
-            sizeTextGhost();
-            // 마우스를 아직 움직이지 않아도 현재 종이 중앙에 예쁜 배치 미리보기를 보인다.
+            // 마우스를 아직 움직이지 않아도 현재 종이 위쪽 중앙에 미리보기를 보인다.
+            // (좌표는 화면 px → 아래 moveTextGhost 가 문서 좌표로 바꿔 똑같이 놓는다)
             const p=paperAt(curPageIdx), r=p&&p.getBoundingClientRect();
-            const gw=TB_W*pageScale, gh=TB_H*pageScale;
-            g.style.left=Math.max(8,Math.min((r?r.left+r.width/2:innerWidth/2)-gw/2,innerWidth-gw-8))+'px';
-            g.style.top=Math.max(42,Math.min((r?r.top+Math.min(r.height*.22,180):innerHeight/2)-gh/2,innerHeight-gh-8))+'px';
+            moveTextGhost(r?r.left+r.width/2:(lastMouse.clientX||innerWidth/2),
+                          r?r.top+Math.min(r.height*.22,180):(lastMouse.clientY||innerHeight/2));
         }
     }
-    // 고스트를 '실제 생성될 크기'로 맞춘다
+    // 배율이 바뀌면 고스트를 '지금 커서 자리'에 크기와 위치 모두 다시 맞춘다.
+    // 예전엔 pageScale 로 크기만 다시 쟀다 — 위치는 clientX 를 그대로 style.left 에
+    // 넣어 둔 값이라 배율 전환 뒤에도 어긋난 채로 남아 있었다.
     function sizeTextGhost(){
-        const g=document.getElementById('textGhost');
-        if(!g) return;
-        g.style.width=Math.round(TB_W*pageScale)+'px';
-        g.style.height=Math.round(TB_H*pageScale)+'px';
-        const c=g.querySelector('.tg-caret');
-        if(c) c.style.height=Math.round((curFontSize*1.4)*pageScale)+'px';
-        if(tablePlace){
-            const tg=document.getElementById('tableGhost');
-            if(tg){ tg.style.width=Math.round(tablePlace.w*pageScale)+'px'; tg.style.height=Math.round(tablePlace.h*pageScale)+'px'; }
-        }
+        if(textToolActive) moveTextGhost(lastMouse.clientX||0,lastMouse.clientY||0);
+        if(tablePlace) moveTableGhost(lastMouse.clientX||0,lastMouse.clientY||0);
     }
     const TB_W=200, TB_H=48;
 
@@ -14377,13 +14440,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const z=touch?1.06:1;
         m.style.setProperty('--ctxz', z.toFixed(3));
         m.style.maxHeight='';
-        const vw=window.innerWidth, vh=window.innerHeight;
+        // lastMouse(화면 px)와 offsetWidth(메뉴가 쓰는 CSS px)는 사이트 기본
+        // 배율(90%) 때문에 단위가 다르다. 전부 CSS px 로 맞춰 재야 메뉴가
+        // 눌린 바로 그 자리에 뜨고 화면 밖으로 나가지 않는다.
+        const vw=uiCss(window.innerWidth), vh=uiCss(window.innerHeight);
         const maxH=vh-pad*2;
         if(m.offsetHeight>maxH) m.style.maxHeight=maxH+'px';
         const w=m.offsetWidth||210, h=m.offsetHeight||300;
-        let x=(keepAnchor&&_ctxAnchor)?_ctxAnchor.x:lastMouse.clientX;
-        let y=(keepAnchor&&_ctxAnchor)?_ctxAnchor.y:lastMouse.clientY;
-        _ctxAnchor={x,y};
+        const ax=(keepAnchor&&_ctxAnchor)?_ctxAnchor.x:lastMouse.clientX;
+        const ay=(keepAnchor&&_ctxAnchor)?_ctxAnchor.y:lastMouse.clientY;
+        _ctxAnchor={x:ax,y:ay};
+        let x=uiCss(ax), y=uiCss(ay);
         // 가로: 오른쪽에 자리가 없으면 왼쪽으로 펼친다
         let L=(x+w+pad>vw)? x-w : x;
         L=Math.max(pad, Math.min(L, vw-w-pad));
@@ -20885,29 +20952,51 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ypRenderStatus();
   }
 
-  // ── 배경음악 (음성참가 · 검색 기반 · 같이 듣기 · 랜덤 다음곡) ──
-  var BGM={list:[],on:false,audio:null,loaded:false,owner:null};
+  // ── 배경음악 (음성참가 · 검색 기반 · 같이 듣기 · 고른 곡 반복) ──
+  // 같이 듣기의 규칙은 두 가지다.
+  //   ① 고른 곡 하나만 끝없이 반복 — 다음 곡으로 넘어가지 않는다.
+  //   ② 멈추면 모두 같은 '시점'에서 멈춘다 — 멈춘 위치를 그대로 실어 보내고
+  //      받는 쪽은 그 위치로 이동해 멈춘다. 다시 켤 때도 같은 시점에서 이어진다.
+  var BGM={list:[],on:false,audio:null,loaded:false,owner:null,track:null};
   var BGM_PAUSED=false;
   function ypBgmAudio(){
     if(!BGM.audio){
       BGM.audio=new Audio(); BGM.audio.volume=0.15;
-      BGM.audio.onended=function(){ if(BGM.on && BGM.owner===YP.uid && !BGM_PAUSED) ypBgmRandomNext(); };
+      // loop 이면 onended 가 오지 않는다 → 각 기기에서 같은 곡만 계속 돈다.
+      BGM.audio.loop=true;
     }
     return BGM.audio;
   }
+  // 일시정지 모양(버튼)을 맞춘다 — 내가 눌러도, 상대가 눌러도 같은 상태가 된다
+  function ypBgmSetPaused(on){
+    BGM_PAUSED=!!on;
+    var btn=$('ypBgmPause');
+    if(btn){
+      btn.innerHTML=BGM_PAUSED?'<i class="ri-play-fill"></i>':'<i class="ri-pause-fill"></i>';
+      btn.title=BGM_PAUSED?'재생':'일시정지';
+    }
+  }
+  // 새 곡으로 바꾼 직후에는 메타가 뜰 때 한 번만 시점을 맞춘다.
+  // (불러오기 전 seek 은 브라우저가 무시해 '같은 시점' 약속이 깨진다)
+  function ypBgmSeekWhenReady(a,pos){
+    if(!(pos>0)) return;
+    if(typeof a.addEventListener!=='function'){ try{ a.currentTime=pos; }catch(e){} return; }
+    var once=function(){ try{ a.currentTime=pos; }catch(e){} a.removeEventListener('loadedmetadata',once); };
+    a.addEventListener('loadedmetadata',once);
+  }
   function ypBgmPause(){
     if(!BGM.audio||!BGM.on) return;
-    var btn=$('ypBgmPause');
+    var pos=BGM.audio.currentTime||0;
     if(BGM_PAUSED){
-      BGM_PAUSED=false;
       BGM.audio.play().catch(function(){});
-      if(btn){ btn.innerHTML='<i class="ri-pause-fill"></i>'; btn.title='일시정지'; }
-      ypBgmCast('play', {id:BGM.audio.getAttribute('src')}, BGM.audio.currentTime||0);
+      ypBgmSetPaused(false);
+      // 이어 들을 시점과 지금 곡을 그대로 — 상대도 같은 지점에서 다시 돈다
+      ypBgmCast('play', BGM.track, pos);
     } else {
-      BGM_PAUSED=true;
       BGM.audio.pause();
-      if(btn){ btn.innerHTML='<i class="ri-play-fill"></i>'; btn.title='재생'; }
-      ypBgmCast('pause', null, 0);
+      ypBgmSetPaused(true);
+      // 멈춘 '그 시점'을 함께 보낸다 — 상대도 같은 시점에서 멈춘다
+      ypBgmCast('pause', BGM.track, pos);
     }
   }
   function ypBgmLoadList(cb){
@@ -20927,12 +21016,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ypRenderStatus();
   }
   function ypBgmCast(action, track, pos){
+    // 곡 정보가 비면 서버가 'pause' 를 거절한다(= 상대가 안 멈춘다). 그럴 때는
+    // 지금 돌고 있는 src 에서 곡 id 를 되찾아 함께 보낸다.
+    if(action!=='stop' && !(track&&track.id) && BGM.audio){
+      var mid=/\/api\/music\/file\/([^/?#]+)/.exec(BGM.audio.getAttribute('src')||'');
+      if(mid) track={id:mid[1],title:(BGM.track&&BGM.track.title)||'',artist:(BGM.track&&BGM.track.artist)||''};
+    }
     fetch('/api/chat/bgm',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({uid:YP.uid, action:action, pos:pos||0,
         track:action==='stop'?null:(track?{id:track.id,title:track.title||'',artist:track.artist||''}:null)})}).catch(function(){});
   }
   function ypBgmPlayLocal(t){
     var a=ypBgmAudio(); a.src='/api/music/file/'+t.id; a.play().catch(function(){});
+    BGM.track={id:t.id,title:t.title||'',artist:t.artist||''};
+    ypBgmSetPaused(false);
     $('ypBgmTitle').textContent=t.title||'알 수 없는 곡';
     $('ypBgmArtist').textContent=t.artist||'';
   }
@@ -20942,13 +21039,6 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ypBgmPlayLocal(t);
     hideRes(); var s=$('ypBgmSearch'); if(s) s.value='';
     ypBgmCast('play', t, 0); ypRenderStatus();
-  }
-  function ypBgmRandomNext(){
-    if(!BGM.on||!BGM.list.length) return;
-    var t=BGM.list[(Math.random()*BGM.list.length)|0];
-    BGM.owner=YP.uid;
-    ypBgmPlayLocal(t);
-    ypBgmCast('play', t, 0);
   }
   function ypBgmSearch(){
     var q=($('ypBgmSearch').value||'').trim().toLowerCase();
@@ -20966,20 +21056,27 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   function ypBgmApply(m){
     try{
       if(!m || m.action==='stop'){
-        BGM.on=false; $('ypBgm').style.display='none';
+        BGM.on=false; BGM.track=null; $('ypBgm').style.display='none';
         try{BGM.audio&&BGM.audio.pause();}catch(e){}
         ypRenderStatus(); return;
       }
       if(!m.track || !m.track.id) return;
       BGM.on=true; BGM.owner=(m.from&&m.from.uid)||YP.uid;
+      BGM.track={id:m.track.id,title:m.track.title||'',artist:m.track.artist||''};
       var a=ypBgmAudio();
-      var pos=(m.pos||0) + Math.max(0,(Date.now()/1000-(m.ts||Date.now()/1000)));
+      // 멈춤은 '보낸 사람이 멈춘 바로 그 시점'이 약속이다. 흐른 시간을 더하지
+      // 않고 그 값으로 맞춘다(재생일 때만 전송 지연만큼 앞당겨 계산한다).
+      var paused=(m.action==='pause');
+      var pos=(m.pos||0) + (paused?0:Math.max(0,(Date.now()/1000-(m.ts||Date.now()/1000))));
       var src='/api/music/file/'+m.track.id;
-      if(a.getAttribute('src')!==src) a.src=src;
-      if(Math.abs((a.currentTime||0)-pos)>2){ try{ a.currentTime=pos; }catch(e){} }
+      if(a.getAttribute('src')!==src){ a.src=src; ypBgmSeekWhenReady(a,pos); }
+      // 멈춤은 시점이 곧 약속이므로 어긋남 허용을 2초 → 0.25초로 좁혀 맞춘다.
+      else if(Math.abs((a.currentTime||0)-pos)>(paused?0.25:2)){ try{ a.currentTime=pos; }catch(e){} }
       $('ypBgmTitle').textContent=m.track.title||'알 수 없는 곡';
       $('ypBgmArtist').textContent=m.track.artist||'';
-      a.play().catch(function(){});
+      if(paused){ try{ a.pause(); }catch(e){} }
+      else { a.play().catch(function(){}); }
+      ypBgmSetPaused(paused);
       $('ypBgm').style.display='flex';
       ypRenderStatus();
     }catch(e){}

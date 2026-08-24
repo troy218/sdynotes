@@ -34,6 +34,32 @@ check('최근 노트 줄의 그림자 클리핑 경계를 아래로 확장한다
 check('최근 노트 줄과 카드는 헤더 아래의 높은 격리 레이어에 렌더된다',
   /\.home-stack-area\.has-recent \.recent-section\s*\{[^}]*z-index:40[^}]*isolation:isolate/.test(css)
   && /\.recent-row \.note-card\s*\{[^}]*z-index:1[^}]*isolation:isolate/.test(css));
+/* 17.7 · 호버 그림자(위 8px · 좌우 18px · 아래 42px)가 잘리지 않는 여유 */
+check('최근 노트 줄은 카드 위·옆·아래 그림자가 모두 들어올 만큼 패딩을 둔다',
+  /\.home-stack-area\.has-recent \.recent-row\s*\{[^}]*padding:18px 34px 56px!important;[^}]*margin:-14px auto -60px!important/.test(css)
+  && !css.includes('padding:4px 16px 56px!important')
+  && !css.includes('padding:4px 10px 56px!important'));
+check('위 패딩을 키운 만큼 음수 마진으로 카드 자리를 그대로 지킨다',
+  /\.home-stack-area\.has-recent \.recent-row\s*\{[^}]*padding:18px [^}]*margin:-14px auto/.test(css)
+  && /@media\(max-width:640px\)\{\s*\.home-stack-area\.has-recent \.recent-row\{padding:18px 22px 56px!important;\}/.test(css));
+check('모바일 최근 줄도 좌우 22px 여백으로 옆 그림자를 지킨다',
+  /\.recent-row\{[^}]*padding-left:22px!important;padding-right:22px!important/.test(css));
+check('줄 높이는 CSS 의 패딩·음수 마진을 그대로 재서 정한다 (상수 4/60 제거)',
+  fn('_fitHomeRows').includes('px(rcs.marginTop)') && fn('_fitHomeRows').includes('px(rcs.marginBottom)')
+  && fn('_fitHomeRows').includes('rowH-secPT-titleH-rowMT-rowMB')
+  && !fn('_fitHomeRows').includes('rowH-secPT-titleH+60'));
+
+check('텍스트 상자·표 고스트는 사이트 배율(html{zoom})을 직접 재서 환산한다',
+  fn('uiCssZoom').includes('uiZoomProbe') && fn('uiCssZoom').includes('/100')
+  && fn('moveTextGhost').includes('uiCssZoom()') && fn('moveTableGhost').includes('uiCssZoom()')
+  && fn('positionTblBar').includes('uiCssZoom()'));
+check('텍스트 고스트는 삽입 경로와 같은 계산으로 실제 생성 자리를 미리 본다',
+  fn('moveTextGhost').includes('clampEl(p.x-TB_W/2,p.y-TB_H/2,TB_W,TB_H)')
+  && /if\(textToolActive\)\{[\s\S]{0,220}c=clampEl\(p\.x-TB_W\/2,p\.y-TB_H\/2,TB_W,TB_H\)/.test(js)
+  && /if\(textToolActive&&ghost\) moveTextGhost\(e\.clientX,e\.clientY\)/.test(js));
+check('배율을 바꾸면 고스트를 크기·위치 모두 다시 맞춘다',
+  fn('sizeTextGhost').includes('moveTextGhost(lastMouse.clientX')
+  && fn('sizeTextGhost').includes('moveTableGhost(lastMouse.clientX'));
 
 check('표 삽입은 크기 입력 뒤 자유 배치 모드로 전환한다',
   fn('openTableModal').includes('beginTablePlacement') && html.includes('id="tableGhost"'));
