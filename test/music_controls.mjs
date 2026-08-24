@@ -3,6 +3,10 @@ import fs from 'node:fs';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
+const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const fullHtml = html.includes('<script src="sdynotes.js"')
+  ? html.replace(/<script src="sdynotes\.js"[^>]*><\/script>/, '<script>' + js + '</script>')
+  : html;
 const errors = [];
 const vc = new VirtualConsole();
 vc.on('jsdomError', error => {
@@ -10,7 +14,7 @@ vc.on('jsdomError', error => {
   if (!/Could not load (script|link|style)/.test(error.message)) errors.push(error);
 });
 
-const dom = new JSDOM(html, {
+const dom = new JSDOM(fullHtml, {
   url: 'http://sdynotes.test/',
   runScripts: 'dangerously',
   resources: 'usable',

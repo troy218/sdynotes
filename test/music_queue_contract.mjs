@@ -10,6 +10,11 @@ import fs from 'node:fs';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
+const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const css = fs.readFileSync(new URL('../sdynotes.css', import.meta.url), 'utf8');
+const fullHtml = html.includes('<script src="sdynotes.js"')
+  ? html.replace(/<script src="sdynotes\.js"[^>]*><\/script>/, '<script>' + js + '</script>')
+  : html;
 const pass = [];
 const ok = (name, cond) => {
   assert.ok(cond, `FAIL: ${name}`);
@@ -19,7 +24,7 @@ const ok = (name, cond) => {
 // ─────────────────────────────────────────────────────────
 // 1부 · 소스 계약 (구조가 되돌아가는 것을 막는 잠금장치)
 // ─────────────────────────────────────────────────────────
-const flat = html.replace(/\s+/g, ' ');
+const flat = (html + ' ' + js + ' ' + css).replace(/\s+/g, ' ');
 
 ok('설정 동기화 payload 가 sdy_music_state 를 실어 보내지 않는다',
   !/music:_readJsonLS\('sdy_music_state'/.test(flat));
@@ -50,7 +55,7 @@ ok('삭제·목록갱신 뒤 대기열/기록을 정리하는 pruneQueue 가 있
 ok('정렬은 select 가 아니라 아이콘 버튼이다',
   !/<select id="mpSort"/.test(flat)
   && /<button id="mpSort" class="mp-sortbtn"/.test(flat)
-  && /<button id="mpBSort" class="mpb-icon mp-sortbtn"/.test(flat));
+  && /<button id="mpBSort" class="mpb-icon mp-sortbtn/.test(flat));
 ok('북마크 바가 유리(backdrop blur)다',
   /\.link-bar\{[^}]*backdrop-filter:blur\(12px\)/.test(flat));
 ok('엽스코드 음성바가 유리이고 채팅이 그 밑으로 흐른다',
@@ -75,7 +80,7 @@ const TRACKS = [
   { id: 't4', title: 'Durian', artist: 'Whiskey', created_at: '20260104000000Z' },
 ];
 
-const dom = new JSDOM(html, {
+const dom = new JSDOM(fullHtml, {
   url: 'http://sdynotes.test/',
   runScripts: 'dangerously',
   resources: 'usable',
@@ -222,7 +227,7 @@ const lastSession = JSON.stringify({
   queue: ['t1', 't2', 't3', 't4'], idx: 1, current: 't2', plName: '',
   position: 41, played: ['t2'], repeat: 0, shuffle: false, rate: 1, vol: 100,
 });
-const boot = new JSDOM(html, {
+const boot = new JSDOM(fullHtml, {
   url: 'http://sdynotes.test/',
   runScripts: 'dangerously',
   resources: 'usable',

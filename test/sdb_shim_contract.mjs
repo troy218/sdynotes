@@ -1,4 +1,4 @@
-// 프런트 SDB shim(sdynotes.html 안) ↔ 서버 dbQuery 계약 테스트.
+// 프런트 SDB shim(sdynotes.js 안) ↔ 서버 dbQuery 계약 테스트.
 // HTML 에서 shim 블록을 뽑아내 실제로 실행하고, 프런트가 쓰는 호출 패턴
 // 그대로가 서버 descriptor 로 직렬화되는지 검증한다.
 import assert from 'node:assert/strict';
@@ -11,9 +11,9 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-sdb-shim-'));
 process.env.SDY_BASE_DIR = TMP;
 process.env.SDY_STORAGE = 'oracle';
 
-const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
 const m = html.match(/const SDB=\{[\s\S]*?\n    \};/);
-assert.ok(m, 'SDB shim 블록이 sdynotes.html 에 있어야 함');
+assert.ok(m, 'SDB shim 블록이 sdynotes.js 에 있어야 함');
 
 const { dbQuery } = await import('../server/src/lib/dbstore.js');
 

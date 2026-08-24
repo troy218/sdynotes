@@ -136,7 +136,7 @@ assert.notEqual(res.statusCode, 200);
 ok('/api/img 경로 조작 방어');
 
 // ── 4. 프런트 shim 계약 ─────────────────────────────────────────────────
-const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
 assert.ok(html.includes('SDB.createClient'), '로컬 DB shim 존재');
 assert.ok(!html.includes('cdn.jsdelivr.net/npm/@supabase/supabase-js'), 'Supabase CDN 제거됨');
 assert.ok(!html.includes('api.cloudinary.com'), 'Cloudinary 직접 업로드 제거됨');

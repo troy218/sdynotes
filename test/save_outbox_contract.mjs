@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
 
 // These ordering guarantees prevent the two data-loss cases that matter for a
 // contenteditable text box: saving before its input debounce fires, and losing
