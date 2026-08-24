@@ -5217,19 +5217,19 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
    호버 그림자는 0 34px 60px -14px + scale(1.015) + translateY(-6px) 라
    카드 기준으로 위 8px · 좌우 18px · 아래 42px 까지 번진다. 예전 여유는
    위 4px · 좌우 16px · 아래 56px(=카드 아래 여백 4 + 52) 이라 호버 카드의
-   위쪽과 양옆이 잘렸다. 좌우 여유를 이전의 두 배로 넉넉히 잡아 스크롤 상자의
-   양끝에서도 카드 그림자가 잘리지 않게 한다. 위 패딩·음수 마진은 그대로 두어
+   위쪽과 양옆이 잘렸다. 좌우 여유는 이전의 1.5 배(34→51, 22→33)로 잡아
+   스크롤 상자의 양끝에서도 카드 그림자가 잘리지 않게 한다. 위 패딩·음수 마진은 그대로 두어
    카드 자리·두 줄 레이아웃·아래 오버플로(60px)는 바꾸지 않는다.
    줄 높이(--home-row-h)는 이 패딩·마진을 JS 가 직접 읽어서 계산한다. */
 .home-stack-area.has-recent .recent-row{
     height:var(--home-row-h,auto);
     box-sizing:border-box;
-    padding:18px 68px 56px!important;
+    padding:18px 51px 56px!important;
     margin:-14px auto -60px!important;
     overflow-x:auto;overflow-y:hidden;
 }
 @media(max-width:640px){
-    .home-stack-area.has-recent .recent-row{padding:18px 44px 56px!important;}
+    .home-stack-area.has-recent .recent-row{padding:18px 33px 56px!important;}
 }
 /* 두 줄이 화면 높이에 정확히 들어맞는 홈은 min-height 가 몇 px 을 더
    붙여 세로 스크롤·아래 잘림을 만들지 않게 한다. */
