@@ -159,5 +159,25 @@ assert.ok(covCall, '표지 찾기 API 를 호출해야 한다');
 assert.match(String(covCall.body || ''), /"q_title":"인식된 제목"/,
   '편집창 제목을 표지 검색 힌트로 보내야 한다');
 
+// 전체 곡 화면 우클릭의 '자동으로 태그 찾기'도 편집창 자동 찾기와 같은
+// 소리 인식 → 빈칸 채우기 파이프라인을 타야 한다 (예전에는 lookup 한 번뿐).
+document.getElementById('mpTagX').click();
+apiCalls.length = 0;
+window.sdyMusic.menu(20, 20, 'rec1');
+const menuAuto = document.querySelector('#mpCtx .ci[data-a="find"]');
+assert.ok(menuAuto, '곡 우클릭 메뉴에 자동 찾기가 있다');
+menuAuto.click();
+await new Promise((resolve) => setTimeout(resolve, 250));
+const menuRecog = apiCalls.find((c) => c.url.includes('/api/music/recognize')
+  && c.method === 'POST' && !c.url.includes('/status') && !c.url.includes('/key'));
+assert.ok(menuRecog, '우클릭 자동 찾기도 먼저 음원 소리 인식을 호출해야 한다');
+assert.match(String(menuRecog.body || ''), /"force":true/,
+  '우클릭 자동 찾기의 음원 인식은 편집창과 같은 강제 인식 옵션을 쓴다');
+assert.ok(apiCalls.some((c) => c.url.includes('/api/music/lookup')
+  && String(c.body || '').includes('"fill_only":true')),
+  '우클릭 자동 찾기도 기존 값을 보존하는 빈칸 채우기를 쓴다');
+assert.ok(!document.getElementById('mpTagModal').classList.contains('show'),
+  '우클릭 자동 찾기는 편집창을 억지로 띄우지 않는다');
+
 dom.window.close();
-console.log(`Music controls: ${actionIds.length} fixed actions wired; artist filter + manual tag buttons verified.`);
+console.log(`Music controls: ${actionIds.length} fixed actions wired; artist filter + identical editor/context auto-find verified.`);

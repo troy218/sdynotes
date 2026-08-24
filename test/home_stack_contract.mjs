@@ -91,18 +91,25 @@ try {
   check('새 노트 만들기 버튼이 있다', !!document.querySelector('.home-add-note'));
   check('최근 줄은 아직 비어 있다(연 노트 없음)', !document.querySelector('.recent-row .note-card'));
 
-  // 첫 카드로 fan (마우스 진입)
+  // 접힌 더미는 카드 자체에서만 fan, 펼친 뒤에는 더미 전체가 선택 통로
   const stack = document.querySelector('.note-stack');
   const upper = document.querySelector('.home-stack-upper');
-  upper.dispatchEvent(new window.MouseEvent('mouseenter', { bubbles: true }));
+  const firstCard = document.querySelector('.note-stack .note-card');
+  const secondCard = document.querySelectorAll('.note-stack .note-card')[1];
+  upper.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }));
+  await wait(80);
+  check('노트 바깥 상단 영역에서는 스택이 펼쳐지지 않는다', !stack.classList.contains('fanned'));
+  firstCard.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }));
   await wait(120);
-  check('마우스 진입 시 스택이 fanned 된다', stack.classList.contains('fanned'));
-  upper.dispatchEvent(new window.MouseEvent('mouseleave', { bubbles: true }));
+  check('노트 자체에 진입하면 스택이 fanned 된다', stack.classList.contains('fanned'));
+  secondCard.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: firstCard }));
+  await wait(240);
+  check('펼친 노트 사이를 좌우로 이동해도 스택이 유지된다', stack.classList.contains('fanned'));
+  stack.dispatchEvent(new window.MouseEvent('mouseleave', { bubbles: false }));
   await wait(300);
-  check('마우스가 나가면 스택이 접힌다', !stack.classList.contains('fanned'));
+  check('노트 선택 통로를 나가면 스택이 접힌다', !stack.classList.contains('fanned'));
 
   // 첫 노트 열기
-  const firstCard = document.querySelector('.note-stack .note-card');
   firstCard.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await wait(1200);
   check('노트 카드 클릭 시 에디터가 열린다', document.getElementById('editorView').classList.contains('open'));

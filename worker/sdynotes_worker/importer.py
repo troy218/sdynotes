@@ -31,9 +31,63 @@ from .notify import _notify_add
 # PDF 와 Word 를 읽어서 프런트의 문서 형식(pages[].els[])으로 변환한다.
 #  · 글자 → type:'text'   (띄어쓰기 단위 단어별 상자, 정확한 위치)
 #  · 그림 → type:'image'  (배경: 원본 그대로)
-# 프런트 A4 세로 = 800 x 1100 기준으로 좌표를 환산한다.
+# 프런트 A4 용지 방향에 맞춰 세로 800 x 1100 또는 가로 1100 x 800
+# 좌표계로 환산한다. 한 문서 안에 방향이 섞이면 더 많은 쪽의 방향을 따른다.
 
 PAGE_W, PAGE_H = 800, 1100
+PAGE_PRESETS = {
+    "a4_portrait": (800, 1100),
+    "a4_landscape": (1100, 800),
+}
+
+
+def _preset_dims(size_preset):
+    return PAGE_PRESETS.get(size_preset, PAGE_PRESETS["a4_portrait"])
+
+
+def _pdf_size_preset(src):
+    """PDF 쪽 비율의 다수결로 노트의 세로/가로 용지를 고른다."""
+    doc = None
+    try:
+        doc = pymupdf.open(src)
+        portrait = landscape = 0
+        for pno in range(min(doc.page_count, IMPORT_MAX_PAGES)):
+            rect = doc[pno].rect
+            if rect.width > rect.height:
+                landscape += 1
+            else:
+                portrait += 1
+        return "a4_landscape" if landscape > portrait else "a4_portrait"
+    except Exception as e:
+        print(f"[import] PDF 방향 판별 실패, 세로로 처리: {e}")
+        return "a4_portrait"
+    finally:
+        if doc is not None:
+            try:
+                doc.close()
+            except Exception:
+                pass
+
+
+def _docx_size_preset(data):
+    """Word 구역(section) 용지 비율의 다수결로 세로/가로를 고른다."""
+    try:
+        from docx import Document
+        from docx.enum.section import WD_ORIENT
+        word_doc = Document(io.BytesIO(data))
+        portrait = landscape = 0
+        for section in word_doc.sections:
+            is_landscape = section.orientation == WD_ORIENT.LANDSCAPE
+            if is_landscape or int(section.page_width or 0) > int(section.page_height or 0):
+                landscape += 1
+            else:
+                portrait += 1
+        return "a4_landscape" if landscape > portrait else "a4_portrait"
+    except Exception as e:
+        print(f"[import] Word 방향 판별 실패, 세로로 처리: {e}")
+        return "a4_portrait"
+
+
 IMPORT_MAX_MB = 120
 IMPORT_MAX_PAGES = 1200    # 500쪽+ 원서 대응
 IMPORT_BG_DPI = 300       # 배경 래스터 해상도 (SVG 실패/사진 쪽 예비값)
@@ -3121,15 +3175,16 @@ def detect_page_figures_and_tables(page, pw, ph):
     return figure_boxes, table_boxes, avoid
 
 
-def _pdf_one_page(doc, pno, on_page_done, cache=None):
+def _pdf_one_page(doc, pno, on_page_done, cache=None,
+                  target_w=PAGE_W, target_h=PAGE_H):
     """1쪽 변환: 추출 → 글자 제거 → 배경 저장 → 단어 상자. (13.4 고정밀 피규어/표/수식 분리)"""
     try:
         page = doc[pno]
         pw, ph = page.rect.width, page.rect.height
         if pw <= 0 or ph <= 0:
             return {"id": _imp_uid("p"), "els": [], "tables": []}
-        sc = min(PAGE_W / pw, PAGE_H / ph)
-        offx = (PAGE_W - pw * sc) / 2
+        sc = min(target_w / pw, target_h / ph)
+        offx = (target_w - pw * sc) / 2
 
         def X(v):
             return _px(v * sc + offx)
@@ -3526,7 +3581,7 @@ def _pdf_one_page(doc, pno, on_page_done, cache=None):
                 pass
 
 
-def _pdf_to_pages(data, on_page=None):
+def _pdf_to_pages(data, on_page=None, target_w=PAGE_W, target_h=PAGE_H):
     """PDF → 페이지 목록 (청크 스트리밍 방식).
 
     · 문서를 4쪽 단위 청크로 나눠 열고→변환→닫는다.
@@ -3557,16 +3612,18 @@ def _pdf_to_pages(data, on_page=None):
         doc = pymupdf.open(stream=data, filetype="pdf")
         try:
             for pno in range(start, min(start + CHUNK, total)):
-                pages.append(_pdf_one_page(doc, pno, _bump))
+                pages.append(_pdf_one_page(doc, pno, _bump,
+                                           target_w=target_w, target_h=target_h))
         finally:
             doc.close()          # 청크 끝나면 즉시 메모리 반납
     return pages
 
 
-def _pdf_to_pages_safe(data, on_page=None):
+def _pdf_to_pages_safe(data, on_page=None, target_w=PAGE_W, target_h=PAGE_H):
     """한 페이지가 깨져도 문서 전체가 실패하지 않도록 감싼다."""
     try:
-        return _pdf_to_pages(data, on_page=on_page)
+        return _pdf_to_pages(data, on_page=on_page,
+                             target_w=target_w, target_h=target_h)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -3581,8 +3638,8 @@ def _pdf_to_pages_safe(data, on_page=None):
             pw, ph = page.rect.width, page.rect.height
             if pw <= 0 or ph <= 0:
                 continue
-            sc = min(PAGE_W / pw, PAGE_H / ph)
-            offx = (PAGE_W - pw * sc) / 2
+            sc = min(target_w / pw, target_h / ph)
+            offx = (target_w - pw * sc) / 2
             els = []
             try:
                 blocks = page.get_text("blocks")
@@ -3610,15 +3667,15 @@ def _pdf_to_pages_safe(data, on_page=None):
     return pages
 
 
-def _pdf_one_page_safe(doc, pno):
+def _pdf_one_page_safe(doc, pno, target_w=PAGE_W, target_h=PAGE_H):
     """최소 변환: 배경 없이 단어 상자만. 자식 프로세스가 죽었을 때 쓰는 안전 모드."""
     try:
         page = doc[pno]
         pw, ph = page.rect.width, page.rect.height
         if pw <= 0 or ph <= 0:
             return {"id": _imp_uid("p"), "els": [], "tables": []}
-        sc = min(PAGE_W / pw, PAGE_H / ph)
-        offx = (PAGE_W - pw * sc) / 2
+        sc = min(target_w / pw, target_h / ph)
+        offx = (target_w - pw * sc) / 2
         lines, math_regions = _pdf_page_lines(page)
         _line_aligns(lines, pw)
         _mark_justify(lines, pw)
@@ -3775,7 +3832,8 @@ IMP_CHUNK = 4
 IMP_CHUNK_TIMEOUT = 240       # 청크 하나 당 허용 시간(초)
 
 
-def _chunk_pages(src, pnos, out_path, safe, total=1):
+def _chunk_pages(src, pnos, out_path, safe, total=1,
+                 target_w=PAGE_W, target_h=PAGE_H):
     """자식 프로세스 본문. 결과(쪽 목록)를 파일로 남기고 끝난다."""
     try:
         try:
@@ -3796,8 +3854,10 @@ def _chunk_pages(src, pnos, out_path, safe, total=1):
             # 자식 프로세스가 슬라이스(8쪽)마다 새로 뜨므로 메모리는 이미
             # 그 단위에서 반납된다 → 한 번만 열고 재사용해도 안전하다.
             for pno in pnos:
-                pages.append(_pdf_one_page_safe(doc, pno) if safe
-                             else _pdf_one_page(doc, pno, None, cache))
+                pages.append(
+                    _pdf_one_page_safe(doc, pno, target_w, target_h) if safe
+                    else _pdf_one_page(doc, pno, None, cache, target_w, target_h)
+                )
         finally:
             doc.close()
         with open(out_path, "w", encoding="utf-8") as fp:
@@ -3812,14 +3872,16 @@ def _chunk_pages(src, pnos, out_path, safe, total=1):
         os._exit(3)
 
 
-def _run_chunk_start(src, pnos, safe, total=1):
+def _run_chunk_start(src, pnos, safe, total=1,
+                     target_w=PAGE_W, target_h=PAGE_H):
     """자식 프로세스 시작만 (병렬 실행용). 전역 청크 세마포로 자식 총합을 잠근다."""
     import multiprocessing
     out = os.path.join(IMG_DIR, f"chunk_{uuid.uuid4().hex}.json")
     ctx = multiprocessing.get_context("fork")
     _imp_chunk_sem.acquire()
     try:
-        proc = ctx.Process(target=_chunk_pages, args=(src, pnos, out, safe, total))
+        proc = ctx.Process(target=_chunk_pages,
+                           args=(src, pnos, out, safe, total, target_w, target_h))
         proc.start()
     except BaseException:
         _imp_chunk_sem.release()
@@ -3852,11 +3914,14 @@ def _run_chunk_collect(proc, out):
         _imp_chunk_sem.release()
 
 
-def _run_chunk(src, pnos, safe, total=1):
-    return _run_chunk_collect(*_run_chunk_start(src, pnos, safe, total))
+def _run_chunk(src, pnos, safe, total=1,
+               target_w=PAGE_W, target_h=PAGE_H):
+    return _run_chunk_collect(*_run_chunk_start(
+        src, pnos, safe, total, target_w, target_h
+    ))
 
 
-def _imp_convert_pdf(src, jid):
+def _imp_convert_pdf(src, jid, target_w=PAGE_W, target_h=PAGE_H):
     """PDF 전체를 청크 격리 변환으로. 서버는 절대 죽지 않는다."""
     import pymupdf
     d0 = pymupdf.open(src)
@@ -3890,7 +3955,8 @@ def _imp_convert_pdf(src, jid):
 
     def start_one(s0):
         pnos = list(range(s0, min(s0 + IMP_SLICE, total)))
-        proc, out = _run_chunk_start(src, pnos, False, total)
+        proc, out = _run_chunk_start(src, pnos, False, total,
+                                     target_w, target_h)
         running.append([s0, pnos, proc, out])
 
     for k in range(min(CONC, len(pending))):
@@ -3907,7 +3973,8 @@ def _imp_convert_pdf(src, jid):
             s0, pnos, proc, out = r
             got = _run_chunk_collect(proc, out)
             if got is None or len(got) != len(pnos):
-                got = _run_chunk(src, pnos, True, total)
+                got = _run_chunk(src, pnos, True, total,
+                                 target_w, target_h)
             if got is None or len(got) != len(pnos):
                 got = [{"id": _imp_uid("p"), "els": [], "tables": []} for _ in pnos]
             by_start[s0] = got
@@ -3932,15 +3999,15 @@ def _emu_px(v):
         return 0
 
 
-def _docx_to_pages(data):
+def _docx_to_pages(data, target_w=PAGE_W, target_h=PAGE_H):
     """Word(.docx) → 페이지 목록. 문단을 위에서 아래로 흘려 배치한다."""
     import docx
     from docx.shared import RGBColor
 
     f = docx.Document(io.BytesIO(data))
     margin_x, margin_y = 64, 60
-    max_y = PAGE_H - margin_y
-    width = PAGE_W - margin_x * 2
+    max_y = target_h - margin_y
+    width = target_w - margin_x * 2
 
     pages, els = [], []
     y = margin_y
@@ -4162,11 +4229,16 @@ def _imp_worker(jid, src, name, kind):
         _imp_active += 1
     try:
         if kind == "pdf":
-            pages = _imp_convert_pdf(src, jid)
+            size_preset = _pdf_size_preset(src)
+            target_w, target_h = _preset_dims(size_preset)
+            pages = _imp_convert_pdf(src, jid, target_w, target_h)
         else:
             _imp_job(jid, page=0, total=1)
             with open(src, "rb") as fp:
-                pages = _docx_to_pages(fp.read())
+                word_data = fp.read()
+            size_preset = _docx_size_preset(word_data)
+            target_w, target_h = _preset_dims(size_preset)
+            pages = _docx_to_pages(word_data, target_w, target_h)
             _imp_job(jid, page=1, total=1)
 
         if not pages:
@@ -4195,7 +4267,7 @@ def _imp_worker(jid, src, name, kind):
                 os.replace(sp, os.path.join(DOCS_DIR, f"{jid}.s{s0}.gz"))
             mp = os.path.join(DOCS_DIR, f"{jid}.meta.json.tmp")
             with open(mp, "w", encoding="utf-8") as fp:
-                json.dump({"total": total_n, "sizePreset": "a4_portrait",
+                json.dump({"total": total_n, "sizePreset": size_preset,
                            "version": time.time()}, fp)
             os.replace(mp, os.path.join(DOCS_DIR, f"{jid}.meta.json"))
             doc_ref = jid
@@ -4206,11 +4278,11 @@ def _imp_worker(jid, src, name, kind):
         if doc_ref is None or len(pages) <= 60:
             # 작거나 디스크 보관 실패 시엔 잡에 본문도 태움(옛 프런트 호환)
             _imp_job(jid, status="done", kind=kind, title=title, pages=pages,
-                     count=total_els, sizePreset="a4_portrait",
+                     count=total_els, sizePreset=size_preset,
                      docRef=doc_ref, total=len(pages))
         else:
             _imp_job(jid, status="done", kind=kind, title=title,
-                     count=total_els, sizePreset="a4_portrait",
+                     count=total_els, sizePreset=size_preset,
                      docRef=doc_ref, total=len(pages))
         _notify_add("convert_done", "문서 변환이 끝났어요 ✓",
                     f"{title} · {len(pages)}쪽을 노트로 준비했습니다.",
@@ -4384,8 +4456,16 @@ def import_reconv():
     srcp = os.path.join(DOCS_DIR, f"{ref}.src")
     if not ref or not os.path.exists(srcp):
         return jsonify({"ok": False, "error": "원본 없음"}), 404
+    size_preset = "a4_portrait"
+    try:
+        with open(os.path.join(DOCS_DIR, f"{ref}.meta.json"), encoding="utf-8") as fp:
+            size_preset = json.load(fp).get("sizePreset", size_preset)
+    except Exception:
+        pass
+    target_w, target_h = _preset_dims(size_preset)
     pnos = list(range(s0, min(s0 + IMP_SLICE, total or s0 + IMP_SLICE)))
-    proc, out = _run_chunk_start(srcp, pnos, True, total or s0 + IMP_SLICE)
+    proc, out = _run_chunk_start(srcp, pnos, True,
+                                 total or s0 + IMP_SLICE, target_w, target_h)
     got = _run_chunk_collect(proc, out)
     if got is None:
         return jsonify({"ok": False, "error": "재변환 실패"}), 500

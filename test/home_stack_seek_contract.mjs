@@ -1,10 +1,11 @@
-// 17.4 변경사항 검증 — 홈 스택(새 노트 위 구역) + 큰 플레이어 진행바 드래그
+// 홈 두 줄/클래식 새 노트 버튼 + 큰 플레이어 진행바 검증
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
 const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const css = fs.readFileSync(new URL('../sdynotes.css', import.meta.url), 'utf8');
 const fullHtml = html.includes('<script src="sdynotes.js"')
   ? html.replace(/<script src="sdynotes\.js"[^>]*><\/script>/, '<script>' + js + '</script>')
   : html;
@@ -63,8 +64,10 @@ let grid = document.getElementById('noteGrid');
 let area = grid.querySelector('.home-stack-area');
 assert.ok(area, 'home-stack-area 있어야 한다');
 assert.ok(!area.classList.contains('has-recent'), '처음에는 has-recent 아니어야 한다');
-assert.ok(area.querySelector('.home-add-zone .home-add-note'), '새 노트 버튼은 home-add-zone 안에');
+assert.ok(area.querySelector('.home-add-zone .home-add-note'), '클래식 새 노트 버튼이 있다');
 assert.equal(area.querySelectorAll('.note-stack .note-card').length, 2, '스택(덩어리)에 노트 2장');
+assert.ok(!css.includes('새 노트는 여기서 만들어요'), '불필요한 새 노트 안내 문구가 없다');
+assert.ok(!js.includes('home-scroll-hint'), '위로 올리라는 팝업 힌트가 없다');
 
 // ── ② 노트를 열고 닫아 '최근'을 만든 뒤 홈 재진입 → has-recent 화면 ──
 const card = area.querySelector('.note-stack .note-card');
@@ -76,9 +79,13 @@ await new Promise(resolve => setTimeout(resolve, 800));   // closeEditor → 400
 area = document.getElementById('noteGrid').querySelector('.home-stack-area');
 assert.ok(area, '재진입 후에도 home-stack-area');
 assert.ok(area.classList.contains('has-recent'), '최근 줄이 있으면 has-recent');
-assert.ok(area.querySelector('.home-add-zone .home-add-note'), '새 노트 버튼은 위 구역(home-add-zone)에');
+assert.ok(area.querySelector('.home-add-zone .home-add-note'), '휠 한 칸 위에 놓일 클래식 새 노트 버튼이 있다');
 assert.equal(area.querySelectorAll('.recent-row .note-card').length, 1, '이미 본 노트는 아래 최근 줄에');
-assert.equal(area.querySelectorAll('.note-stack .note-card').length, 1, '안 본 노트는 덩어리에 남는다');
+assert.equal(area.querySelectorAll('.note-stack .note-card').length, 1, '안 본 노트는 위 더미 한 줄에 남는다');
+assert.match(area.style.getPropertyValue('--home-rows-h'), /^\d+px$/, '두 줄 높이를 화면에 맞춰 계산한다');
+assert.match(area.style.getPropertyValue('--home-card-w'), /^\d+px$/, '두 줄 카드 폭을 자동 계산한다');
+assert.match(css, /\.home-stack-area\.has-recent \.stack-scene,\s*\.home-stack-area\.has-recent \.recent-section\s*\{[^}]*height:calc\(var\(--home-rows-h,680px\) \/ 2\)/s,
+  '안 본 더미와 이미 본 줄은 정확히 같은 두 줄 높이를 쓴다');
 
 // ── ③ 큰 플레이어 진행바: window 추적 드래그 ──
 const big = document.getElementById('mpBig');
@@ -126,7 +133,7 @@ const egg = document.querySelector('#ypEmpty .yp-egg');
 assert.ok(egg && egg.tagName.toLowerCase() === 'svg', '환영 그림은 svg.yp-egg');
 assert.ok(!/🌶️/.test(document.getElementById('ypEmpty').textContent), '고추 이모지는 없다');
 
-console.log('17.4 계약: PASS (홈 스택 구조 · 큰 플레이어 시크 · 로그인 버튼 · 떡볶이 SVG)');
+console.log('홈 두 줄 계약: PASS (클래식 새 노트 버튼 · 자동 크기 · 큰 플레이어 시크 · 로그인 버튼 · 떡볶이 SVG)');
 dom.window.close();
 // jsdom 의 남은 rAF/타이머가 close() 뒤에 깨어나며 터지는 것을 막는다
 process.exit(0);

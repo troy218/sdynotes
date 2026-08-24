@@ -6,6 +6,10 @@
            나머지 장식 글꼴 12종은 첫 화면을 그린 뒤에 뒤에서 받는다
            (@import 는 CSS 파싱을 막아, 예전엔 이것 때문에 시작이 느렸다) */
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
+        /* 데스크톱은 사용자가 늘 브라우저 90% 배율에서 보던 정보 밀도로 시작한다.
+           루트 zoom은 고정 레이어까지 한 번에 축소해 개별 화면마다 크기가 달라지지
+           않게 하며, 폰은 가독성과 기존 터치 배치를 위해 100%를 유지한다. */
+        @media (min-width:641px) and (pointer:fine){ html{zoom:.9;} }
         *{font-family:'Noto Sans KR',sans-serif;margin:0;padding:0;box-sizing:border-box;}
 
         /* 16.24 · 유틸리티 클래스 복구 — HTML이 쓰는 레이아웃 유틸(flex·w-full·py-4 등)이
@@ -133,7 +137,7 @@
         #splash .sp-msg{font-size:12px;color:var(--text3);min-height:16px;transition:opacity .2s;}
 
         /* 노트(에디터) 진입 시 짧은 로딩 표시
-           9.1 · z-index 를 비밀번호 창(.modal-bg = 300)보다 낮게 내렸다.
+           9.1 · z-index 를 비밀번호 창(.modal-bg)보다 낮게 내렸다.
            예전엔 9999 라서 '잠금 해제 중…' 가림막이 비밀번호 창을 통째로 덮었고,
            사용자는 입력할 수도 취소할 수도 없이 화면이 멈춘 것처럼 보였다. */
         #edLoading{
@@ -195,13 +199,15 @@
                 transform:translateX(-8px);pointer-events:none;
                 transition:max-width .5s cubic-bezier(.22,.9,.3,1),opacity .28s ease,transform .5s cubic-bezier(.22,.9,.3,1);
             }
-            .app-brand:hover h1, .app-brand:focus-within h1{
+            .app-brand .logo-dot:hover + h1,
+            .app-brand .logo-dot:focus-visible + h1{
                 max-width:300px;opacity:1;transform:translateX(0);
             }
             .app-brand .logo-dot{
                 transition:transform .35s cubic-bezier(.22,.9,.3,1.2),box-shadow .3s,border-radius .3s;
             }
-            .app-brand:hover .logo-dot{
+            .app-brand .logo-dot:hover,
+            .app-brand .logo-dot:focus-visible{
                 transform:rotate(-8deg) scale(1.07);border-radius:10px;
                 box-shadow:0 5px 16px rgba(79,110,247,.5);
             }
@@ -1349,8 +1355,12 @@
         }
         .tbl-bar button:hover{background:var(--bg2);color:var(--text1);}
         .tbl-bar button.danger:hover{background:rgba(231,76,60,.12);color:#e74c3c;}
-        .tbl-bar .sep{width:1px;height:18px;background:var(--border);margin:0 3px;}
-        .tbl-bar{padding:3px;gap:1px;}
+        .tbl-bar .sep{width:1px;height:18px;background:var(--border);margin:0 3px;flex:none;}
+        .tbl-bar{padding:3px;gap:1px;max-width:calc(100vw - 16px);overflow-x:auto;}
+        .tbl-color{position:relative;width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+            color:var(--text2);border-radius:3px;cursor:pointer;flex:none;font-size:16px;overflow:hidden;}
+        .tbl-color:hover{background:var(--bg2);color:var(--text1);}
+        .tbl-color input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;}
 
         /* ===== 문서 안에서 찾기 (Ctrl+F) ===== */
         .find-bar{
@@ -1572,11 +1582,22 @@
             display:flex;flex-direction:column;justify-content:center;
             padding:6px 8px;box-sizing:border-box;
         }
-        .tb.in-tbl.edit .tb-content{display:block;}
-        .tb.in-tbl.edit .tb-content{overflow:auto;}
+        .tb.in-tbl.edit .tb-content{display:block;overflow:auto;}
+        /* Word처럼 드래그한 직사각형 셀 범위. 셀 데이터와는 별도의 선택 표시라
+           정렬·색을 적용한 뒤에도 표 선과 내용의 원래 배치는 바뀌지 않는다. */
+        .tb.in-tbl.tbl-cell-sel{z-index:61!important;}
+        .tb.in-tbl.tbl-cell-sel .tb-content{
+            border-color:color-mix(in srgb,var(--accent) 72%,transparent)!important;
+            background:color-mix(in srgb,var(--accent) 17%,transparent)!important;
+            box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 26%,transparent);
+        }
+        .tb.in-tbl.tbl-cell-anchor .tb-content{
+            border-color:var(--accent)!important;
+            box-shadow:inset 0 0 0 1.5px var(--accent);
+        }
         /* 표 칸은 비어 있어도 안내문·점선을 띄우지 않는다 */
         .tb.in-tbl:not(.edit) .tb-content[data-empty="true"]::before{content:"";}
-        .tb.in-tbl:not(.edit):not(.sel) .tb-content{border-color:transparent!important;}
+        .tb.in-tbl:not(.edit):not(.sel):not(.tbl-cell-sel) .tb-content{border-color:transparent!important;}
         /* PDF 줄 단위 텍스트 — 내부 절대좌표 스팬이 단어 위치를 보존 */
         .tb.tight .tb-content{
             padding:0;min-width:0;min-height:0;line-height:1;
@@ -1643,7 +1664,25 @@
         .text-ghost .tg-corner.c1{left:-4px;top:-4px}.text-ghost .tg-corner.c2{right:-4px;top:-4px}
         .text-ghost .tg-corner.c3{left:-4px;bottom:-4px}.text-ghost .tg-corner.c4{right:-4px;bottom:-4px}
         @keyframes caretBlink{50%{opacity:0}}
-        body.placing-text #pagesStage .paper{cursor:crosshair;}
+        body.placing-text #pagesStage .paper,body.placing-table #pagesStage .paper{cursor:crosshair;}
+        .table-ghost{
+            position:fixed;left:0;top:0;pointer-events:none;display:none;z-index:1002;
+            border:2px solid color-mix(in srgb,var(--accent) 82%,white 18%);border-radius:3px;
+            background-color:color-mix(in srgb,var(--accent) 7%,var(--card));
+            background-image:linear-gradient(to right,color-mix(in srgb,var(--accent) 55%,transparent) 1px,transparent 1px),
+                             linear-gradient(to bottom,color-mix(in srgb,var(--accent) 55%,transparent) 1px,transparent 1px);
+            background-size:calc(100% / var(--tbl-cols,3)) 100%,100% calc(100% / var(--tbl-rows,3));
+            box-shadow:0 14px 34px rgba(40,55,120,.18);opacity:.9;
+        }
+        .table-ghost .tg-label{
+            position:absolute;left:0;top:-34px;white-space:nowrap;
+            background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff;font-size:10.5px;
+            padding:6px 8px;border-radius:9px;display:flex;align-items:center;gap:6px;
+            box-shadow:0 5px 16px color-mix(in srgb,var(--accent) 35%,transparent);
+        }
+        .table-ghost .tg-label b{font-size:11px}.table-ghost .tg-label em{font-style:normal;opacity:.82;}
+        .table-ghost .tg-label kbd{margin-left:2px;padding:1px 5px;border-radius:5px;background:rgba(255,255,255,.2);
+            font:700 9px/1.5 ui-monospace,monospace;}
 
         .draw-toolbar{
             position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
@@ -1663,7 +1702,7 @@
         }
         .toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
 
-        .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);z-index:300;display:none;align-items:center;justify-content:center;padding:16px;}
+        .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);z-index:1900;display:none;align-items:center;justify-content:center;padding:16px;}
         .modal-box{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:24px;max-width:420px;width:100%;}
         .tgl{position:relative;width:44px;height:24px;background:var(--border);border-radius:4px;cursor:pointer;}
         .tgl.on{background:var(--accent);}
@@ -1715,7 +1754,7 @@
             position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
             background:var(--card);border:1px solid var(--border);border-radius:5px;
             padding:10px 20px;display:flex;align-items:center;gap:12px;
-            box-shadow:0 8px 32px rgba(0,0,0,0.12);z-index:60;
+            box-shadow:0 8px 32px rgba(0,0,0,0.12);z-index:1900;
             transition:transform .35s cubic-bezier(.4,0,.2,1),opacity .35s;opacity:0;
         }
         .select-bar.show{transform:translateX(-50%) translateY(0);opacity:1;}
@@ -4657,56 +4696,18 @@ body.has-wall #sdyAmbient{opacity:0;}
     border-color:color-mix(in srgb,var(--accent) 38%,var(--border));
 }
 .home-add-note:active{transform:scale(.97);}
-/* ── 17.4 · 최근 줄이 있는 홈: 새 노트 구역을 위로 접어 올린다 ──
-   화면은 '덩어리 + 최근'만 보이는 아래쪽에서 시작하고, 위로 올리면
-   이 구역이 나타나 새 노트를 만든다. */
+/* ── 최근 줄이 있는 홈: 클래식 새 노트 버튼 + 화면 맞춤 두 줄 ──
+   긴 안내 구역/문구는 없앴다. 안 본 노트 더미와 이미 본 노트가 화면에
+   정확히 두 줄로 들어오며, 그 바로 위의 버튼은 휠 한 칸에 나타난다. */
 .home-add-zone{width:100%;display:flex;justify-content:center;}
 .home-stack-area.has-recent .home-add-zone{
-    position:relative;
-    min-height:min(72dvh,640px);
-    align-items:flex-end;
-    padding:18px 0 26px;
+    height:60px;min-height:60px;box-sizing:border-box;
+    align-items:center;padding:7px 0 11px;
 }
-.home-stack-area.has-recent .home-add-zone::before{
-    content:'새 노트는 여기서 만들어요';
-    position:absolute;left:50%;top:clamp(56px,22%,150px);
-    transform:translateX(-50%);
-    display:flex;align-items:center;gap:7px;
-    font-size:12px;font-weight:700;letter-spacing:.02em;
-    color:var(--text3);opacity:.66;white-space:nowrap;
-    pointer-events:none;
-}
-.home-stack-area.has-recent .home-add-zone::after{
-    content:'';position:absolute;left:50%;top:calc(clamp(56px,22%,150px) + 30px);
-    width:17px;height:17px;transform:translateX(-50%);
-    background-color:var(--text3);opacity:.4;
-    -webkit-mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 19V5'/><path d='M5 12l7-7 7 7'/></svg>") center/contain no-repeat;
-    mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 19V5'/><path d='M5 12l7-7 7 7'/></svg>") center/contain no-repeat;
-    animation:homeZoneBob 2.2s ease-in-out infinite;
-    pointer-events:none;
-}
-@keyframes homeZoneBob{0%,100%{transform:translate(-50%,0);}50%{transform:translate(-50%,-5px);}}
 .home-stack-area.has-recent .home-add-note{
-    box-shadow:0 14px 34px color-mix(in srgb,var(--accent) 16%,transparent),
-               0 7px 20px rgba(25,35,75,.10),inset 0 1px 0 rgba(255,255,255,.35);
+    box-shadow:0 10px 26px color-mix(in srgb,var(--accent) 12%,transparent),
+               0 5px 14px rgba(25,35,75,.08),inset 0 1px 0 rgba(255,255,255,.35);
 }
-/* 진입 힌트 알림 — 잠깐 떴다 스르르 사라진다 */
-.home-scroll-hint{
-    position:fixed;left:50%;top:74px;z-index:2200;
-    transform:translate(-50%,-14px);
-    display:flex;align-items:center;gap:7px;
-    padding:8px 16px;border-radius:999px;
-    border:1px solid color-mix(in srgb,var(--accent) 30%,var(--border));
-    background:color-mix(in srgb,var(--card) 82%,transparent);
-    backdrop-filter:blur(12px) saturate(150%);
-    -webkit-backdrop-filter:blur(12px) saturate(150%);
-    color:var(--text2);font-size:12px;font-weight:800;
-    box-shadow:0 12px 32px rgba(15,23,42,.16);
-    opacity:0;pointer-events:none;
-    transition:opacity .4s ease,transform .4s cubic-bezier(.22,.9,.3,1);
-}
-.home-scroll-hint.show{opacity:1;transform:translate(-50%,0);}
-.home-scroll-hint i{color:var(--accent);font-size:15px;}
 .stack-scene{
     width:100%;min-height:0!important;
     display:flex;align-items:center;justify-content:center;
@@ -4716,7 +4717,7 @@ body.has-wall #sdyAmbient{opacity:0;}
 .note-stack{
     position:relative;width:100%;max-width:760px;min-height:300px;
     display:block;flex:none;overflow:visible;
-    cursor:pointer;
+    cursor:default;
 }
 .note-stack .note-card,.note-stack .folder-card{
     position:absolute;left:50%;top:50%;margin:0;
@@ -4757,6 +4758,46 @@ body.has-wall #sdyAmbient{opacity:0;}
 body.card-s .note-stack .note-card,body.card-s .note-stack .folder-card{width:160px;flex-basis:160px;}
 body.card-l .note-stack .note-card,body.card-l .note-stack .folder-card{width:244px;flex-basis:244px;}
 
+/* JS가 실제 스크롤 화면 높이·고정 헤더·아래 안전 여백을 재서 두 줄 높이와
+   카드 폭을 넣는다. 설정한 카드 크기는 최대치가 되고 낮은 창에서는 자동 축소. */
+.home-stack-area.has-recent .stack-scene,
+.home-stack-area.has-recent .recent-section{
+    height:calc(var(--home-rows-h,680px) / 2);min-height:0;flex:0 0 auto;
+    box-sizing:border-box;
+}
+.home-stack-area.has-recent .stack-scene{
+    padding:7px 18px!important;
+}
+.home-stack-area.has-recent .note-stack{
+    height:100%!important;min-height:0!important;
+}
+.home-stack-area.has-recent .recent-section{
+    display:flex;align-items:stretch;padding:0!important;margin:0!important;
+    /* 홈 콘텐츠 중에는 가장 위, sticky 헤더(z=50)보다는 아래 */
+    position:relative;z-index:40;overflow:visible;isolation:isolate;
+}
+.home-stack-area.has-recent .recent-row{
+    width:max-content;height:calc(100% + 112px);box-sizing:border-box;
+    /* 가로 스크롤 상자는 세로 overflow도 함께 잘라 버린다. 그래서 둘째 줄의
+       실제 클리핑 경계를 112px 아래로 내리고 음수 여백으로 두 줄 높이는 그대로
+       유지한다. 어두운 테마의 큰 70px blur도 내부 안전 영역에서 끝까지 보인다. */
+    align-items:center;padding:14px 18px 126px!important;margin:0 auto -112px!important;
+    overflow-x:auto;overflow-y:hidden;position:relative;z-index:1;
+    isolation:isolate;
+}
+.home-stack-area.has-recent .note-stack .note-card,
+.home-stack-area.has-recent .note-stack .folder-card,
+.home-stack-area.has-recent .recent-row .note-card{
+    width:var(--home-card-w,200px)!important;
+    flex:0 0 var(--home-card-w,200px)!important;
+    max-width:none!important;
+}
+.home-stack-area.has-recent .note-preview,
+.home-stack-area.has-recent .folder-thumb{
+    height:calc(var(--home-card-w,200px) * 1.3)!important;
+    min-height:0!important;aspect-ratio:auto!important;
+}
+
 @media(max-width:640px){
     .home-stack-area{padding-bottom:10px;}
     .home-stack-upper{width:100%;}
@@ -4794,6 +4835,7 @@ body.card-l .note-stack .note-card,body.card-l .note-stack .folder-card{width:24
 .recent-row{padding-bottom:72px !important;margin-bottom:-40px !important;}
 .recent-row .note-card{
     position:relative;left:auto;top:auto;max-width:none;flex-shrink:0;transform:none;opacity:1;width:200px;flex:0 0 200px;
+    z-index:1;isolation:isolate;
     box-shadow:var(--g-hi),
                0 2px 5px -1px rgba(15,23,42,.08),
                0 10px 24px -6px rgba(15,23,42,.16),
@@ -5031,6 +5073,53 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   font-size:10.5px;padding:5px 12px;cursor:pointer;font-family:inherit;}
 .yp-dm-more:hover{border-color:#5865f2;color:#fff;}
 
+/* 17.5 · 하단 음악 목록: 바깥 시트뿐 아니라 검색 도구와 곡 목록도
+   각각 부드러운 유리 곡면으로 감싸 흰색 사각 모서리가 삐져나오지 않게 한다. */
+#musicListPop.mp-list{
+    border-radius:22px;
+    padding:10px;
+    overflow:hidden;
+    isolation:isolate;
+    background-clip:padding-box;
+}
+#musicListPop .mp-library-tools{
+    margin:0 0 8px;
+    padding:9px;
+    border:1px solid color-mix(in srgb,var(--border) 64%,transparent);
+    border-radius:15px;
+    background:color-mix(in srgb,var(--g-in) 78%,transparent);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28);
+    overflow:hidden;
+}
+#musicListPop .mp-search{
+    border-radius:12px;
+    background:color-mix(in srgb,var(--card) 42%,transparent);
+    background-clip:padding-box;
+}
+#musicListPop .mp-lbody{
+    padding:4px;
+    border:1px solid color-mix(in srgb,var(--border) 58%,transparent);
+    border-radius:15px;
+    background:color-mix(in srgb,var(--card) 32%,transparent);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.2);
+    background-clip:padding-box;
+}
+#musicListPop .mp-li,#musicListPop .mp-pl,#musicListPop .mp-plsub{
+    border-radius:11px;
+}
+#musicListPop .mp-discover{
+    border-radius:12px;
+    overflow:hidden;
+}
+@media (max-width:640px), (max-height:560px) and (pointer:coarse){
+    #musicListPop.mp-list{
+        border-radius:22px 22px 0 0;
+        padding:10px max(10px,var(--ph-right)) calc(var(--ph-safe) + 10px) max(10px,var(--ph-left));
+    }
+    #musicListPop .mp-library-tools{padding:8px;margin-bottom:8px;border-radius:14px;}
+    #musicListPop .mp-lbody{border-radius:14px;}
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 
@@ -5142,7 +5231,7 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   .select-bar{
     left:max(8px,var(--ph-left));right:max(8px,var(--ph-right));bottom:calc(var(--ph-safe) + 8px);
     width:auto;display:grid;grid-template-columns:1fr 1fr;gap:7px;
-    padding:10px;border-radius:18px;transform:translateY(calc(100% + 28px));z-index:1600;
+    padding:10px;border-radius:18px;transform:translateY(calc(100% + 28px));z-index:1900;
   }
   .select-bar.show{transform:translateY(0);}
   .select-bar>span{grid-column:1/-1;text-align:center;}
