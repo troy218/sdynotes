@@ -23,7 +23,7 @@
     "test:save": "node test/save_outbox_contract.mjs",
     "test:oracle": "node test/oracle_db_contract.mjs && node test/sdb_shim_contract.mjs && node test/migrate_oracle_sim.mjs",
     "test:call": "node test/call_relay_contract.mjs && node test/chat_endpoint.mjs && node test/voice_relay_contract.mjs && node test/yp_smoke_v4.cjs && python3 test/nginx_voice_ws_patch_test.py",
-    "test:translate": "node test/translate_contract.mjs"
+    "test:translate": "node test/translate_contract.mjs && node test/translate_flow_runtime.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",

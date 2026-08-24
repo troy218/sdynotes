@@ -2437,6 +2437,14 @@
             border-radius:4px;transition:width .25s;}
         #trProg .tr-label{font-size:11px;font-weight:700;color:var(--text2);
             white-space:nowrap;max-width:46vw;overflow:hidden;text-overflow:ellipsis;}
+#trProg .tr-cancel{flex:none;border:none;border-radius:99px;cursor:pointer;
+    background:var(--bg2);color:var(--text2);font-size:11px;font-weight:800;
+    padding:5px 11px;line-height:1;transition:background .15s,color .15s;}
+#trProg .tr-cancel:hover{background:#e5484d;color:#fff;}
+#trProg .tr-cancel:active{transform:scale(.96);}
+#trProg .tr-fill.indet{width:38%;transition:none;
+    animation:trIndet 1.15s ease-in-out infinite;}
+@keyframes trIndet{0%{margin-left:0}50%{margin-left:62%}100%{margin-left:0}}
         /* 11.3 · '예전 버전 화면' 안내 바 */
         #staleBar{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:3000;
             display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
