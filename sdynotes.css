@@ -5105,11 +5105,63 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
     #musicListPop .mp-lbody{border-radius:14px;}
 }
 
-/* quick clean styling for library tabs and tools */
-.mp-library-tools{display:flex;gap:12px;padding:8px 10px;background:#1a1a24;border-radius:8px;align-items:center;}
-.mpb-tabs{display:flex;gap:10px;padding:6px 10px;background:rgba(255,255,255,0.05);border-radius:6px;}
-.mpb-tabs button{border:none;background:transparent;color:#ddd;padding:4px 8px;border-radius:4px;font-size:0.85rem;cursor:pointer;}
-.mpb-tabs button.active,.mpb-tabs button:hover{background:#333;color:#fff;}
+/* 17.6 · 음악 목록/확장 플레이어 가독성 정리
+   탭 묶음을 감싸던 불투명 배경은 없애고 버튼 자체만 또렷하게 남긴다. */
+#mpBig .mpb-tabs{
+    display:flex;align-items:center;gap:5px;padding:2px 2px 0;
+    background:transparent;border:0;border-radius:0;box-shadow:none;
+}
+#mpBig .mpb-tabs button{
+    color:var(--text2);font-size:11.5px;font-weight:800;line-height:1.2;
+    text-shadow:none;opacity:1;
+}
+#mpBig .mpb-tabs button:hover{color:var(--text1);background:color-mix(in srgb,var(--text1) 7%,transparent);}
+#mpBig .mpb-tabs button.on{
+    color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--card));
+}
+/* 전체 화면의 어두운 앰비언트 배경에서도 탭 글자가 묻히지 않게 복원한다. */
+#mpBig.mpb-fs .mpb-tabs,#mpBig:fullscreen .mpb-tabs{
+    padding:0;gap:5px;background:transparent!important;border:0!important;box-shadow:none!important;
+}
+#mpBig.mpb-fs .mpb-tabs button,#mpBig:fullscreen .mpb-tabs button{
+    color:rgba(255,255,255,.88);background:transparent;border:0;
+    font-size:11.5px;font-weight:800;text-shadow:0 1px 5px rgba(0,0,0,.38);
+}
+#mpBig.mpb-fs .mpb-tabs button:hover,#mpBig:fullscreen .mpb-tabs button:hover{
+    color:#fff;background:rgba(255,255,255,.10);
+}
+#mpBig.mpb-fs .mpb-tabs button.on,#mpBig:fullscreen .mpb-tabs button.on{
+    color:#fff;background:var(--accent);text-shadow:none;
+}
+
+/* 하단 컨트롤 바의 목록 검색은 작은 글자의 단일 유리 필로 통일한다. */
+#musicListPop .mp-library-tools{
+    position:relative;display:flex;align-items:center;gap:7px;
+    margin:0 0 8px;padding:2px 2px 2px 12px;
+    min-height:38px;border:1px solid color-mix(in srgb,var(--border) 78%,transparent);
+    border-radius:999px;background:color-mix(in srgb,var(--card) 52%,transparent);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 5px 16px rgba(15,23,42,.06);
+    overflow:hidden;transition:border-color .18s,box-shadow .18s,background .18s;
+}
+#musicListPop .mp-library-tools:focus-within{
+    border-color:color-mix(in srgb,var(--accent) 58%,var(--border));
+    background:color-mix(in srgb,var(--card) 74%,transparent);
+    box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 13%,transparent),inset 0 1px 0 rgba(255,255,255,.3);
+}
+#musicListPop .mp-search-icon{flex:none;color:var(--text3);font-size:14px;line-height:1;}
+#musicListPop .mp-search{
+    flex:1;min-width:0;height:34px;margin:0;padding:0 2px;
+    border:0!important;border-radius:0;background:transparent!important;box-shadow:none!important;
+    color:var(--text1);font-size:12px!important;font-weight:600;letter-spacing:-.01em;outline:none;
+}
+#musicListPop .mp-search::placeholder{color:var(--text3);font-weight:500;}
+#musicListPop .mp-library-tools .mp-sortbtn{
+    flex:none;width:34px;height:34px;border:0;border-radius:50%;
+    background:transparent;color:var(--text3);
+}
+#musicListPop .mp-library-tools .mp-sortbtn:hover{
+    color:var(--accent);background:color-mix(in srgb,var(--accent) 11%,transparent);
+}
 
 
 /* 17.5 · 홈 정보 구조: 동작 버튼은 sticky 헤더 아래에 항상 보이고,
@@ -5490,7 +5542,7 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
     border-radius:20px 20px 0 0;
   }
   .mp-library-tools{padding:8px 4px 4px;}
-  .mp-list .mp-search{min-height:44px;font-size:16px!important;}
+  #musicListPop .mp-search{min-height:44px;font-size:16px!important;}
   .mp-sortbtn,.mp-addpl,.mp-lfoot button{min-width:42px;min-height:42px;}
   .mp-tabs{overflow-x:auto;flex-wrap:nowrap;}
   .mp-tabs button{min-height:42px;}
