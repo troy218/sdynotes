@@ -168,7 +168,7 @@
     const ADD_ZONE_H=120;   // 새 페이지 추가 영역 높이
 
     let notebooks=[],curNB=null,curMemo=null;
-    let S=JSON.parse(localStorage.getItem('sdy3')||'null')||{dark:false,defPaper:'blank',defFS:16,defFont:'noto',accent:'#4f6ef7',appTitle:'',cardSize:'m'};
+    let S=JSON.parse(localStorage.getItem('sdy3')||'null')||{dark:false,defPaper:'blank',defFS:16,defFont:'noto',accent:'#4f6ef7',appTitle:'',cardSize:'l'};
     function saveS(){localStorage.setItem('sdy3',JSON.stringify(S));}
 
     // ===== 문서 모델 =====
@@ -312,7 +312,8 @@
         toast('기본 배경으로 되돌렸습니다',1600);
     }
     function chWallVeil(v){
-        S.wallVeil=Math.max(0,Math.min(85,parseInt(v)||0));
+        const map=[0,22,43,64,85];
+        S.wallVeil=map[Math.max(0,Math.min(4,parseInt(v)||0))];
         saveS(); applyWallpaper();
         try{ pushSettings(); }catch(e){}
     }
@@ -335,7 +336,7 @@
         const vr=document.getElementById('wallVeilRow');
         if(vr) vr.style.display=S.wall?'':'none';
         const vs=document.getElementById('wallVeil');
-        if(vs) vs.value=(S.wallVeil===undefined?34:S.wallVeil);
+        if(vs){ const map=[0,22,43,64,85]; const idx=map.indexOf(S.wallVeil===undefined?43:S.wallVeil); vs.value=(idx>=0?idx:2); }
     }
     function tglDark(){S.dark=!S.dark;saveS();applyTheme();document.getElementById('darkTgl').classList.toggle('on',S.dark);renderGrid();
         try{ pushSettings(); }catch(e){}}
@@ -4476,8 +4477,7 @@
         const ap=document.getElementById('accentPicks');
         ap.innerHTML=ACCENT_COLORS.map(c=>
             `<div class="accent-swatch ${c===(S.accent||'#4f6ef7')?'on':''}" data-ac="${c}" style="background:${c}" title="${c}" onclick="pickAccent('${c}')"></div>`).join('');
-        // 카드 크기
-        document.getElementById('cardSizeSel').value=S.cardSize||'m';
+        // 카드 크기 항목 제거됨
         // 배경화면 미리보기
         refreshWallUI();
         // 휴지통 개수
@@ -8844,8 +8844,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const p=JSON.parse(localStorage.getItem('fcard_pos')||'null');
             if(p&&isFinite(p.x)){
                 win.classList.add('moved');
-                win.style.left=Math.max(6,Math.min(innerWidth-win.offsetWidth-6,p.x))+'px';
-                win.style.top=Math.max(6,Math.min(innerHeight-60,p.y))+'px';
+                win.style.left=Math.max(-300,Math.min(innerWidth+300-win.offsetWidth-6,p.x))+'px';
+                win.style.top=Math.max(-300,Math.min(innerHeight+300-60,p.y))+'px';
             }
         }catch(e){}
     }
@@ -8864,8 +8864,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         head.addEventListener('pointermove',e=>{
             if(!_fcardDrag) return;
             const w=win.offsetWidth,h=win.offsetHeight;
-            win.style.left=Math.max(6,Math.min(innerWidth-w-6,_fcardDrag.ox+e.clientX-_fcardDrag.sx))+'px';
-            win.style.top=Math.max(6,Math.min(innerHeight-h-6,_fcardDrag.oy+e.clientY-_fcardDrag.sy))+'px';
+            win.style.left=Math.max(-300,Math.min(innerWidth+300-w-6,_fcardDrag.ox+e.clientX-_fcardDrag.sx))+'px';
+            win.style.top=Math.max(-300,Math.min(innerHeight+300-h-6,_fcardDrag.oy+e.clientY-_fcardDrag.sy))+'px';
         });
         const endD=()=>{ if(!_fcardDrag) return; _fcardDrag=null;
             try{ localStorage.setItem('fcard_pos',JSON.stringify(
@@ -16110,6 +16110,8 @@ async function loadList(opts){
       return t;
     });
     P.listDirty=false; P.listErr=0;
+    // 새 노래 추가 시 최신 곡이 재생되도록 기본값 설정
+    if(P.list&&P.list.length&&!P.currentId){ P.currentId=P.list[P.list.length-1].id; P.idx=P.list.length-1; }
     P.tagging=!!d.tagging;                       // 서버 백필(재태깅) 진행 중?
     P.lastLoad=Date.now();
     if(opts&&opts.rescan) P.restored=d.added||0;
@@ -19910,7 +19912,7 @@ function loop(ts){
       // 6.5: 화면(뷰포트) 밖으로 완전히 나갈 때까지 날린다
       if(R.bx>W/GS+24||R.bx<-24||R.by<-40||(!R.roll&&R.by>GY+16)){
         st.ball=null;
-        if(R.k==='hr'){ startCelebrate(); return; }   // 6.13: 홈런 → 폭죽 세러머니
+        if(R.k==='hr' && document.getElementById('setModal') && document.getElementById('setModal').style.display==='flex'){ startCelebrate(); return; }   // 6.13: 홈런 → 폭죽 세러머니
         settle();
       }
     }
@@ -19975,18 +19977,15 @@ function startCelebrate(){
   st.phase='celebrate';
   cv.style.display='none';                             // 필드는 fx 가 그린다
   fxSize();
-  const GRD=innerHeight-10;                            // 땅 = 게임과 같은 바닥선(고정)
+  const GRD=Math.max(180,innerHeight-120);                            // 땅 = 게임과 같은 바닥선(고정)
   // 펼쳐진 음악바를 '지형(플랫폼)'으로 감지
   let bar=null;
   try{
-    const mp=document.getElementById('musicPlayer');
-    if(mp && mp.style.display!=='none' && mp.classList.contains('mp-bar')){
-      const mr=mp.getBoundingClientRect();
-      bar={top:mr.top, left:mr.left, right:mr.right};
-    }
+    // 설정 모드에서는 음악바 지형 점프를 사용하지 않음 (bar는 null)
+    // const mp=document.getElementById('musicPlayer'); if(mp && mp.style.display!=='none' && mp.classList.contains('mp-bar')){ const mr=mp.getBoundingClientRect(); bar={top:mr.top, left:mr.left, right:mr.right}; }
   }catch(e){}
   cel={t:0, lt:0, dur:6800, nextBurst:0, parts:[], ground:GRD, bar,
-       runner:{x:24, y:GRD, vy:0, phase:'out', dir:1, speed:Math.max(8,FW/120),
+       runner:{x:24, y:GRD, vy:0, phase:'out', dir:1, speed:Math.max(8,Math.min(FW/120,FW/90)),
                pastBar:false, pastBarBack:false},
        label:{a:1}};
   fx.style.display='block';
@@ -22321,8 +22320,8 @@ refreshEgg();
         var l=parseFloat(app.style.left),t=parseFloat(app.style.top);
         if(isFinite(l)||isFinite(t)){
           var w=app.offsetWidth,h=app.offsetHeight;
-          if(isFinite(l)) app.style.left=Math.max(8,Math.min(innerWidth-w-8,l))+'px';
-          if(isFinite(t)) app.style.top =Math.max(8,Math.min(innerHeight-h-8,t))+'px';
+          if(isFinite(l)) app.style.left=Math.max(-300,Math.min(innerWidth+300-w-8,l))+'px';
+          if(isFinite(t)) app.style.top =Math.max(-300,Math.min(innerHeight+300-h-8,t))+'px';
         }
       }
     }
@@ -22330,13 +22329,13 @@ refreshEgg();
     if(pl && pl.classList.contains('mp-float')){
       if(PHONE()){ pl.style.right='';pl.style.left=''; }
       var t2=parseFloat(pl.style.top);
-      if(isFinite(t2)) pl.style.top=Math.max(56,Math.min(innerHeight-pl.offsetHeight-12,t2))+'px';
+      if(isFinite(t2)) pl.style.top=Math.max(-200,Math.min(innerHeight+200-pl.offsetHeight-12,t2))+'px';
     }
     var big=document.getElementById('mpBig');
     if(big && big.classList.contains('open')){
       var bl=parseFloat(big.style.left),bt=parseFloat(big.style.top);
-      if(isFinite(bl)) big.style.left=Math.max(6,Math.min(innerWidth-big.offsetWidth-6,bl))+'px';
-      if(isFinite(bt)) big.style.top =Math.max(6,Math.min(innerHeight-big.offsetHeight-6,bt))+'px';
+      if(isFinite(bl)) big.style.left=Math.max(-300,Math.min(innerWidth+300-big.offsetWidth-6,bl))+'px';
+      if(isFinite(bt)) big.style.top =Math.max(-300,Math.min(innerHeight+300-big.offsetHeight-6,bt))+'px';
     }
   }
   function tick(){ syncViewport(); syncBar(); clampFloats(); }

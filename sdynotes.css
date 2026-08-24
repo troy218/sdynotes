@@ -73,7 +73,7 @@
             position:fixed;inset:0;z-index:-1;pointer-events:none;
             background-position:center center;background-size:cover;background-repeat:no-repeat;
             background-attachment:fixed;opacity:0;transition:opacity .5s ease;
-            overflow:hidden;
+            overflow:visible;
         }
         /* 14.9 · 배경 동영상(mp4) — 꽉 채우고, 얇은 막(#wallLayer::after)이 위를 덮는다 */
         #wallLayer video{
@@ -1703,7 +1703,8 @@
         .toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
 
         .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);z-index:1900;display:none;align-items:center;justify-content:center;padding:16px;}
-        .modal-box{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:24px;max-width:420px;width:100%;}
+        @keyframes fadeInUp{from{opacity:0;transform:translateY(10px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
+        .modal-box{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:24px;max-width:420px;width:100%;animation:fadeInUp .28s ease-out;}
         .tgl{position:relative;width:44px;height:24px;background:var(--border);border-radius:4px;cursor:pointer;}
         .tgl.on{background:var(--accent);}
         .tgl .dot{position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .3s;}
@@ -2612,7 +2613,7 @@
     flex-direction:column;
     background:var(--card);border:1px solid var(--border);border-radius:12px;
     box-shadow:var(--shadow);padding:8px;}
-.mp-list .mp-search{width:100%;box-sizing:border-box;padding:7px 10px;margin-bottom:6px;
+.mp-list .mp-search{width:100%;box-sizing:border-box;padding:7px 10px;margin-bottom:6px;font-size:1.35rem;
     border:1px solid var(--border);border-radius:8px;background:var(--bg2);
     color:var(--text1);font-size:12px;outline:none;}
 .mp-tabs{display:flex;align-items:center;gap:4px;margin-bottom:6px;}
@@ -2873,8 +2874,8 @@ body.sdy-booting #musicListPop{z-index:10001;}
     display:block;padding:0 clamp(12px,3.5%,30px);text-align:left;
     /* 12.1 · 랩·빠른 곡에서도 가사 줄이 바로바로 따라오도록 즉시 이동 (smooth 는 밀린다) */
     scroll-behavior:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
-    -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 13%,#000 85%,transparent 100%);
-    mask-image:linear-gradient(180deg,transparent 0,#000 13%,#000 85%,transparent 100%);}
+    -webkit-mask-image:linear-gradient(180deg,transparent 0%,#000 8%,#000 85%,transparent 100%);
+    mask-image:linear-gradient(180deg,transparent 0%,#000 8%,#000 85%,transparent 100%);}
 /* 첫 줄·끝 줄도 한가운데까지 올라오게 하는 위·아래 빈 자리 */
 .mpb-lyr .lyrpad{display:block;height:44%;min-height:60px;pointer-events:none;}
 .mpb-lyr .ll{display:block;margin:0;padding:9px 2px;
@@ -3322,22 +3323,19 @@ body.sdy-booting #clawFx,body.sdy-booting #bbEgg,body.sdy-booting #bbTap{display
 /* === style block 6 === */
 
 /* 12.6 · Apple Music 영감의 탐색형 라이브러리 */
-.mp-library-tools{display:flex;gap:7px;padding:10px 10px 2px;background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,var(--card)),var(--card));}.mp-library-tools .mp-search{flex:1;min-width:0}.mp-goto input{border:1px solid var(--border);background:var(--bg2);color:var(--text1);border-radius:8px;padding:6px;font-size:11px;font-weight:700}.mp-goto{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text3)}.mp-goto input{width:42px;padding:4px;text-align:center}.mp-discover{padding:4px 10px 12px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,var(--card)),var(--card) 62%);border-bottom:1px solid var(--border)}.mp-dis-head{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0}.mp-dis-head b{font-size:16px;letter-spacing:-.04em}.mp-dis-head span{font-size:9px;color:var(--text3)}.mp-rec-title{font-size:11px;font-weight:800;margin:7px 0 5px;color:var(--text2)}.mp-rec-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:3px;scrollbar-width:none}.mp-rec-row::-webkit-scrollbar{display:none}.mp-rec-card{border:0;background:transparent;color:var(--text1);width:78px;min-width:78px;text-align:left;cursor:pointer;padding:0}.mp-rec-card img{width:78px;height:78px;object-fit:cover;border-radius:10px;box-shadow:0 5px 14px rgba(0,0,0,.16)}.mp-rec-card span,.mp-rec-card em{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mp-rec-card span{font-size:10px;font-weight:800;margin-top:4px}.mp-rec-card em{font-size:9px;color:var(--text3);font-style:normal;margin-top:1px}.mp-rec-empty{font-size:10px;color:var(--text3);padding:10px 0}.mp-lfoot{gap:7px}.mp-lfoot button{white-space:nowrap}/* 14.14 · 정렬은 큰 select 대신 작은 아이콘 버튼 하나 (크로스바·확장 공통) */
-.mp-sortbtn{flex:none;width:30px;height:30px;padding:0;display:inline-flex;align-items:center;justify-content:center;
-  border:1px solid var(--border);background:var(--bg2);color:var(--text3);border-radius:9px;cursor:pointer;
-  font-size:15px;line-height:1;transition:color .15s,border-color .15s,background .15s;}
+.mp-library-tools{display:flex;gap:7px;padding:10px 10px 2px;background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,var(--card)),var(--card));}.mp-library-tools .mp-search{flex:1;min-width:0;font-size:1.35rem;}.mp-goto input{border:1px solid var(--border);background:var(--bg2);color:var(--text1);border-radius:8px;padding:6px;font-size:11px;font-weight:700}.mp-goto{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text3)}.mp-goto input{width:42px;padding:4px;text-align:center}.mp-discover{padding:4px 10px 12px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,var(--card)),var(--card) 62%);border-bottom:1px solid var(--border)}.mp-dis-head{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0}.mp-dis-head b{font-size:16px;letter-spacing:-.04em}.mp-dis-head span{font-size:9px;color:var(--text3)}.mp-rec-title{font-size:11px;font-weight:800;margin:7px 0 5px;color:var(--text2)}.mp-rec-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:3px;scrollbar-width:none}.mp-rec-row::-webkit-scrollbar{display:none}.mp-rec-card{border:0;background:transparent;color:var(--text1);width:78px;min-width:78px;text-align:left;cursor:pointer;padding:0}.mp-rec-card img{width:78px;height:78px;object-fit:cover;border-radius:10px;box-shadow:0 5px 14px rgba(0,0,0,.16)}.mp-rec-card span,.mp-rec-card em{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mp-rec-card span{font-size:10px;font-weight:800;margin-top:4px}.mp-rec-card em{font-size:9px;color:var(--text3);font-style:normal;margin-top:1px}.mp-rec-empty{font-size:10px;color:var(--text3);padding:10px 0}.mp-lfoot{gap:7px}.mp-lfoot button{white-space:nowrap}/* 14.14 · 정렬은 큰 select 대신 작은 아이콘 버튼 하나 (크로스바·확장 공통) */
+.mp-sortbtn{flex:none;width:30px;height:30px;padding:0;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--bg2);color:var(--text3);border-radius:9px;cursor:pointer;font-size:15px;line-height:1;transition:color .15s,border-color .15s,background .15s;margin-left:auto;}
 .mp-sortbtn:hover{color:var(--text1);border-color:var(--text3);}
 .mp-sortbtn.on{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 55%,var(--border));
   background:color-mix(in srgb,var(--accent) 12%,var(--bg2));}
 .mp-sortbtn i{font-style:normal;display:inline-flex;align-items:center;justify-content:center;line-height:1;}
-#mpBig .mpb-tabs button.mp-sortbtn{width:29px;height:26px;border:1px solid var(--border);border-radius:9px;
-  display:inline-flex;align-items:center;justify-content:center;padding:0;line-height:1;font-size:15px;}
+#mpBig .mpb-tabs button.mp-sortbtn{width:29px;height:26px;border:1px solid var(--border);border-radius:9px;background:var(--bg2);color:var(--text3);display:inline-flex;align-items:center;justify-content:center;padding:0;line-height:1;font-size:15px;}
 #mpBig .mpb-tabs button.mp-sortbtn i{margin:0;font-size:15px;line-height:1;display:inline-flex;align-items:center;justify-content:center;}
 #mpBig .mpb-tabs button.mp-sortbtn.on{background:color-mix(in srgb,var(--accent) 13%,var(--card));color:var(--accent);
   border-color:color-mix(in srgb,var(--accent) 45%,var(--border));}
 /* 16.x · 가사 탭에서는 정렬 버튼이 필요 없다 (가사는 한 곡만 보여 준다) */
 body.lyrmode #mpBig .mpb-tabs button.mp-sortbtn{display:none;}
-@media(max-width:640px){.mp-dis-head span{display:none}.mp-rec-card{width:68px;min-width:68px}.mp-rec-card img{width:68px;height:68px}.mp-goto{display:none}.mp-sortbtn{width:28px;height:28px;font-size:14px}}
+@media(max-width:640px){.mp-dis-head span{display:none}.mp-rec-card{width:68px;min-width:68px}.mp-rec-card img{width:68px;height:68px}.mp-goto{display:none}.mp-sortbtn{width:28px;height:28px;font-size:14px;}}
 
 
 /* === style block 7 === */
@@ -4699,7 +4697,7 @@ body.has-wall #sdyAmbient{opacity:0;}
 /* ── 최근 줄이 있는 홈: 클래식 새 노트 버튼 + 화면 맞춤 두 줄 ──
    긴 안내 구역/문구는 없앴다. 안 본 노트 더미와 이미 본 노트가 화면에
    정확히 두 줄로 들어오며, 그 바로 위의 버튼은 휠 한 칸에 나타난다. */
-.home-add-zone{width:100%;display:flex;justify-content:center;}
+.home-add-zone{width:100%;display:flex;justify-content:center;padding-bottom:14px;box-sizing:border-box;}
 .home-stack-area.has-recent .home-add-zone{
     height:60px;min-height:60px;box-sizing:border-box;
     align-items:center;padding:7px 0 11px;
@@ -4716,12 +4714,13 @@ body.has-wall #sdyAmbient{opacity:0;}
 }
 .note-stack{
     position:relative;width:100%;max-width:760px;min-height:300px;
-    display:block;flex:none;overflow:visible;
+    display:flex;align-items:center;justify-content:center;overflow:visible;
     cursor:default;
 }
 .note-stack .note-card,.note-stack .folder-card{
     position:absolute;left:50%;top:50%;margin:0;
     width:200px;flex:0 0 200px;
+    transform:translate(-50%,-50%);
     transform-origin:50% 108%;
     transition:transform .52s cubic-bezier(.22,.9,.3,1.08),box-shadow .35s ease,opacity .35s ease,border-color .2s;
     will-change:transform;
@@ -4732,10 +4731,7 @@ body.has-wall #sdyAmbient{opacity:0;}
 }
 .note-stack.fanned .note-card,.note-stack.fanned .folder-card{cursor:pointer;}
 .note-stack .folder-card .folder-thumb{height:260px;}
-.stack-empty{
-    position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:8px;color:var(--text3);font-size:12.5px;pointer-events:none;
-}
+.stack-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text3);font-size:12.5px;pointer-events:none;}
 .stack-empty i{font-size:30px;opacity:.45;}
 .recent-section{
     width:100%;max-width:none;margin-top:0;padding:6px 0 0;
@@ -4991,9 +4987,9 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .yp-set-login i{font-size:13px;}
 
 /* ── 음악 목록 · '올린 사람' 마크 (작게) ── */
-.mp-li .mp-upmark{flex:none;display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--text3);
-  background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:1.5px 7px;
-  max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3;}
+.mp-li .mp-upmark{flex:none;display:inline-flex;align-items:center;gap:3px;font-size:11px;color:#d0a020;font-weight:700;
+  background:rgba(208,160,32,0.08);border:1px solid rgba(208,160,32,0.25);border-radius:999px;padding:2px 8px;
+  max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3;box-shadow:0 1px 4px rgba(208,160,32,0.08);}
 .mp-li .mp-upmark i{font-size:9px;flex:none;opacity:.85;}
 .mp-li .mp-upmark:hover{color:var(--accent);border-color:var(--accent);}
 .mp-li.on .mp-upmark{color:var(--accent);background:rgba(79,110,247,.12);border-color:rgba(79,110,247,.35);}
@@ -5481,7 +5477,8 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   .mpb-ctl .pp{width:50px;height:50px;}
   .mpb-row2 button,.mpb-ric{min-width:40px;height:40px;}
   .mpb-tabs{flex-wrap:nowrap!important;overflow-x:auto;}
-  .mpb-tabs button,.mpb-tabs button.mpb-icon,#mpBig .mpb-tabs button.mp-sortbtn{min-height:40px;height:40px;}
+  .mpb-tabs button,.mpb-tabs button.mpb-icon{min-height:40px;height:40px;}
+  #mpBig .mpb-tabs button.mp-sortbtn{min-height:40px;height:40px;width:29px;padding:0;}
   .mpb-searchbar{min-height:44px;}
   .mpb-searchbar input{font-size:16px!important;}
   .mpb-li{min-height:46px;}
@@ -5644,3 +5641,9 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   #focusClock .fc-ring{width:min(48vh,250px);height:min(48vh,250px);}
   .fc-chrome.bottom{max-height:72px;}
 }
+
+/* quick clean styling for library tabs and tools */
+.mp-library-tools{display:flex;gap:12px;padding:8px 10px;background:#1a1a24;border-radius:8px;align-items:center;}
+.mpb-tabs{display:flex;gap:10px;padding:6px 10px;background:rgba(255,255,255,0.05);border-radius:6px;}
+.mpb-tabs button{border:none;background:transparent;color:#ddd;padding:4px 8px;border-radius:4px;font-size:0.85rem;cursor:pointer;}
+.mpb-tabs button.active,.mpb-tabs button:hover{background:#333;color:#fff;}

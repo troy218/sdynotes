@@ -404,7 +404,7 @@
             </div>
             <div class="set-row" id="wallVeilRow" style="display:none;">
                 <span class="set-label text-sm">배경 밝기<span class="dim">글씨가 잘 보이도록 덮는 정도</span></span>
-                <input id="wallVeil" type="range" min="0" max="85" step="1" value="34"
+                <input id="wallVeil" type="range" min="0" max="4" step="1" value="2"
                        oninput="chWallVeil(this.value)" style="width:150px;">
             </div>
             <div class="set-row">
@@ -414,14 +414,7 @@
                     <option value="grid">격자</option><option value="dotted">도트</option>
                 </select>
             </div>
-            <div class="set-row">
-                <span class="set-label text-sm">카드 크기<span class="dim">홈 화면 미리보기 크기</span></span>
-                <select id="cardSizeSel" onchange="S.cardSize=this.value;saveS();applyTheme();renderGrid();pushSettings()">
-                    <option value="s">작게</option>
-                    <option value="m">보통</option>
-                    <option value="l">크게</option>
-                </select>
-            </div>
+            
             <div class="set-row">
                 <span class="set-label text-sm">휴지통<span class="dim">삭제한 노트 · 30일 후 자동 삭제</span></span>
                 <div style="display:flex;align-items:center;gap:8px;">
