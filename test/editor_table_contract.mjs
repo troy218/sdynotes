@@ -35,14 +35,14 @@ check('최근 노트 줄과 카드는 헤더 아래의 높은 격리 레이어�
   /\.home-stack-area\.has-recent \.recent-section\s*\{[^}]*z-index:40[^}]*isolation:isolate/.test(css)
   && /\.recent-row \.note-card\s*\{[^}]*z-index:1[^}]*isolation:isolate/.test(css));
 /* 17.7 · 호버 그림자(위 8px · 좌우 18px · 아래 42px)가 잘리지 않는 여유
-   좌우 여유는 1.5 배(데스크톱 34→51 · 모바일 22→33)로 잡는다. */
+   좌우 여유는 2배(데스크톱 34→68 · 모바일 22→44)로 잡는다. */
 check('최근 노트 줄은 카드 위·옆·아래 그림자가 모두 들어올 만큼 패딩을 둔다',
-  /\.home-stack-area\.has-recent \.recent-row\s*\{[^}]*padding:18px 51px 56px!important;[^}]*margin:-14px auto -60px!important/.test(css)
+  /\.home-stack-area\.has-recent \.recent-row\s*\{[^}]*padding:18px 68px 56px!important;[^}]*margin:-14px auto -60px!important/.test(css)
   && !css.includes('padding:4px 16px 56px!important')
   && !css.includes('padding:4px 10px 56px!important'));
 check('위 패딩을 키운 만큼 음수 마진으로 카드 자리를 그대로 지킨다',
   /\.home-stack-area\.has-recent \.recent-row\s*\{[^}]*padding:18px [^}]*margin:-14px auto/.test(css)
-  && /@media\(max-width:640px\)\{\s*\.home-stack-area\.has-recent \.recent-row\{padding:18px 33px 56px!important;\}/.test(css));
+  && /@media\(max-width:640px\)\{\s*\.home-stack-area\.has-recent \.recent-row\{padding:18px 44px 56px!important;\}/.test(css));
 check('모바일 최근 줄도 좌우 22px 여백으로 옆 그림자를 지킨다',
   /\.recent-row\{[^}]*padding-left:22px!important;padding-right:22px!important/.test(css));
 check('줄 높이는 CSS 의 패딩·음수 마진을 그대로 재서 정한다 (상수 4/60 제거)',
