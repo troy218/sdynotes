@@ -1502,8 +1502,10 @@
         const container=cards[0].closest('.note-stack')||cards[0].parentElement;
         const cw=container?container.clientWidth:0;
         const cardW=Math.max(...cards.map(c=>c.offsetWidth||200));
-        const avail=Math.max(cw, (window.innerWidth||1024))-cardW-48;
-        const available=Math.max(0, avail);
+        // 펼친 카드와 카드 사이의 빈 공간도 stack 컨테이너 안에 남겨야
+        // 포인터가 좌우로 이동하는 동안 mouseleave가 나지 않는다.
+        const corridorW=cw||Math.min(760,Math.max(cardW+48,(window.innerWidth||1024)-32));
+        const available=Math.max(0,corridorW-cardW-48);
         // 모바일은 좌우로 덜 흩어지게, PC는 넉넉하게 (최대 230px)
         const isTouch=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
         const maxSpread=isTouch?150:230;
@@ -1820,10 +1822,15 @@
                     _stackTransforms(stackCards,false);
                 },180);
             };
-            // 버튼 위에 올라가도 같은 덩어리가 펼쳐지도록 상단 전체를 감싼다.
-            upper.addEventListener('mouseenter',fanIn);
-            upper.addEventListener('mouseleave',fanOut);
-            stackWrap.addEventListener('touchstart',fanIn,{passive:true});
+            // 접힌 스택은 노트 자체를 정확히 가리킬 때만 펼친다. 펼친 뒤에는
+            // stackWrap 전체가 선택 통로가 되어 카드 사이를 좌우로 건너도 접히지 않는다.
+            const stackCardAt=e=>{
+                const card=e.target.closest?.('.note-card,.folder-card');
+                return card&&stackWrap.contains(card);
+            };
+            stackWrap.addEventListener('mouseover',e=>{ if(stackCardAt(e)) fanIn(); });
+            stackWrap.addEventListener('mouseleave',fanOut);
+            stackWrap.addEventListener('touchstart',e=>{ if(stackCardAt(e)) fanIn(); },{passive:true});
             scene.addEventListener('touchend',e=>{
                 if(!e.target.closest('.note-card,.folder-card')) fanOut();
             },{passive:true});

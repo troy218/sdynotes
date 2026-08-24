@@ -137,7 +137,7 @@
         #splash .sp-msg{font-size:12px;color:var(--text3);min-height:16px;transition:opacity .2s;}
 
         /* 노트(에디터) 진입 시 짧은 로딩 표시
-           9.1 · z-index 를 비밀번호 창(.modal-bg = 300)보다 낮게 내렸다.
+           9.1 · z-index 를 비밀번호 창(.modal-bg)보다 낮게 내렸다.
            예전엔 9999 라서 '잠금 해제 중…' 가림막이 비밀번호 창을 통째로 덮었고,
            사용자는 입력할 수도 취소할 수도 없이 화면이 멈춘 것처럼 보였다. */
         #edLoading{
@@ -199,13 +199,15 @@
                 transform:translateX(-8px);pointer-events:none;
                 transition:max-width .5s cubic-bezier(.22,.9,.3,1),opacity .28s ease,transform .5s cubic-bezier(.22,.9,.3,1);
             }
-            .app-brand:hover h1, .app-brand:focus-within h1{
+            .app-brand .logo-dot:hover + h1,
+            .app-brand .logo-dot:focus-visible + h1{
                 max-width:300px;opacity:1;transform:translateX(0);
             }
             .app-brand .logo-dot{
                 transition:transform .35s cubic-bezier(.22,.9,.3,1.2),box-shadow .3s,border-radius .3s;
             }
-            .app-brand:hover .logo-dot{
+            .app-brand .logo-dot:hover,
+            .app-brand .logo-dot:focus-visible{
                 transform:rotate(-8deg) scale(1.07);border-radius:10px;
                 box-shadow:0 5px 16px rgba(79,110,247,.5);
             }
@@ -1700,7 +1702,7 @@
         }
         .toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
 
-        .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);z-index:300;display:none;align-items:center;justify-content:center;padding:16px;}
+        .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);z-index:1900;display:none;align-items:center;justify-content:center;padding:16px;}
         .modal-box{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:24px;max-width:420px;width:100%;}
         .tgl{position:relative;width:44px;height:24px;background:var(--border);border-radius:4px;cursor:pointer;}
         .tgl.on{background:var(--accent);}
@@ -1752,7 +1754,7 @@
             position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
             background:var(--card);border:1px solid var(--border);border-radius:5px;
             padding:10px 20px;display:flex;align-items:center;gap:12px;
-            box-shadow:0 8px 32px rgba(0,0,0,0.12);z-index:60;
+            box-shadow:0 8px 32px rgba(0,0,0,0.12);z-index:1900;
             transition:transform .35s cubic-bezier(.4,0,.2,1),opacity .35s;opacity:0;
         }
         .select-bar.show{transform:translateX(-50%) translateY(0);opacity:1;}
@@ -4715,7 +4717,7 @@ body.has-wall #sdyAmbient{opacity:0;}
 .note-stack{
     position:relative;width:100%;max-width:760px;min-height:300px;
     display:block;flex:none;overflow:visible;
-    cursor:pointer;
+    cursor:default;
 }
 .note-stack .note-card,.note-stack .folder-card{
     position:absolute;left:50%;top:50%;margin:0;
@@ -5071,6 +5073,53 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   font-size:10.5px;padding:5px 12px;cursor:pointer;font-family:inherit;}
 .yp-dm-more:hover{border-color:#5865f2;color:#fff;}
 
+/* 17.5 · 하단 음악 목록: 바깥 시트뿐 아니라 검색 도구와 곡 목록도
+   각각 부드러운 유리 곡면으로 감싸 흰색 사각 모서리가 삐져나오지 않게 한다. */
+#musicListPop.mp-list{
+    border-radius:22px;
+    padding:10px;
+    overflow:hidden;
+    isolation:isolate;
+    background-clip:padding-box;
+}
+#musicListPop .mp-library-tools{
+    margin:0 0 8px;
+    padding:9px;
+    border:1px solid color-mix(in srgb,var(--border) 64%,transparent);
+    border-radius:15px;
+    background:color-mix(in srgb,var(--g-in) 78%,transparent);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28);
+    overflow:hidden;
+}
+#musicListPop .mp-search{
+    border-radius:12px;
+    background:color-mix(in srgb,var(--card) 42%,transparent);
+    background-clip:padding-box;
+}
+#musicListPop .mp-lbody{
+    padding:4px;
+    border:1px solid color-mix(in srgb,var(--border) 58%,transparent);
+    border-radius:15px;
+    background:color-mix(in srgb,var(--card) 32%,transparent);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.2);
+    background-clip:padding-box;
+}
+#musicListPop .mp-li,#musicListPop .mp-pl,#musicListPop .mp-plsub{
+    border-radius:11px;
+}
+#musicListPop .mp-discover{
+    border-radius:12px;
+    overflow:hidden;
+}
+@media (max-width:640px), (max-height:560px) and (pointer:coarse){
+    #musicListPop.mp-list{
+        border-radius:22px 22px 0 0;
+        padding:10px max(10px,var(--ph-right)) calc(var(--ph-safe) + 10px) max(10px,var(--ph-left));
+    }
+    #musicListPop .mp-library-tools{padding:8px;margin-bottom:8px;border-radius:14px;}
+    #musicListPop .mp-lbody{border-radius:14px;}
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 
@@ -5182,7 +5231,7 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   .select-bar{
     left:max(8px,var(--ph-left));right:max(8px,var(--ph-right));bottom:calc(var(--ph-safe) + 8px);
     width:auto;display:grid;grid-template-columns:1fr 1fr;gap:7px;
-    padding:10px;border-radius:18px;transform:translateY(calc(100% + 28px));z-index:1600;
+    padding:10px;border-radius:18px;transform:translateY(calc(100% + 28px));z-index:1900;
   }
   .select-bar.show{transform:translateY(0);}
   .select-bar>span{grid-column:1/-1;text-align:center;}
