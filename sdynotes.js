@@ -1480,25 +1480,67 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 최근 노트가 생긴 홈은 두 줄이 현재 화면 높이에 꼭 맞도록 카드 폭을
     // 자동 계산한다. 위·아래 줄은 같은 높이를 쓰며, 사용자 카드 크기 설정은
     // 최대 크기로만 존중해 낮은 화면에서 줄이 잘리지 않게 한다.
+    // 17.6 · 고정 상수(92) 대신 헤더~두 줄까지의 실제 높이를 전부 재서 뺀다.
+    //   최근 제목이 복원된 뒤 버튼·제목·패딩이 옛 추정보다 높아져 두 줄이
+    //   화면을 넘어 세로 스크롤바가 생기고 카드 아래가 잘렸었다. 이제
+    //   chrome(헤더·패딩·버튼·그리드 여백) + 두 줄 = 화면 높이 가 정확히
+    //   성립해 첫 화면에 꼭 들어오고, 카드도 아래 줄(제목+패딩+그림자)에
+    //   들어맞는 크기로만 잡는다. 줄 높이의 자세한 값(--home-row-h)은
+    //   CSS 의 -60px 음수 마진과 함께 세로 클리핑 경계를 아래로 내린다.
     function _fitHomeRows(area){
         if(!area||!area.classList.contains('has-recent')) return;
+        const px=v=>{ const n=parseFloat(v); return isFinite(n)?n:0; };
+        const de=document.scrollingElement||document.documentElement;
         const scrollEl=_homeScrollEl();
-        const vh=(scrollEl&&scrollEl.clientHeight)||(window.innerHeight||800);
+        // 레이아웃 px(엘리먼트 박스 단위)로만 재서 zoom/.9 등 배율과 무관하게 맞춘다.
+        const vh=scrollEl?scrollEl.clientHeight:((de&&de.clientHeight)||(window.innerHeight||800));
         const header=document.querySelector('#mainView > .header');
-        const headerH=header?(header.getBoundingClientRect().height||header.offsetHeight||0):0;
+        const headerH=header?(header.offsetHeight||header.getBoundingClientRect().height||0):0;
         const main=document.querySelector('#mainView > main');
-        let bottomPad=0;
-        try{ bottomPad=main?parseFloat(getComputedStyle(main).paddingBottom)||0:0; }catch(e){}
+        let bottomPad=0, topPad=0;
+        try{ if(main){ const mcs=getComputedStyle(main); topPad=px(mcs.paddingTop); bottomPad=px(mcs.paddingBottom); } }catch(e){}
         // 떠 있는 음악바 여백까지 포함한 아래 패딩은 화면의 30%까지만 예약한다.
         bottomPad=Math.min(bottomPad,vh*.30);
-        const rowsH=Math.max(280,Math.round(vh-headerH-bottomPad-92));
+        // 헤더~두 줄 사이·아래의 실제 높이를 전부 더해 chrome 으로 쓴다.
+        let chrome=headerH+topPad+bottomPad;
+        const grid=document.getElementById('noteGrid');
+        if(grid) chrome+=px(getComputedStyle(grid).marginTop);
+        chrome+=px(getComputedStyle(area).paddingBottom);
+        const addZone=area.querySelector('.home-add-zone');
+        if(addZone) chrome+=addZone.offsetHeight||0;
+        // 두 줄 내부 여백은 줄 높이(border-box) 안에서 카드만 작아지게 한다.
+        const scene=area.querySelector('.stack-scene');
+        let scenePad=0;
+        if(scene){ const scs=getComputedStyle(scene); scenePad=px(scs.paddingTop)+px(scs.paddingBottom); }
+        const sec=area.querySelector('.recent-section');
+        let secPT=0, titleH=0, rowPT=0, rowPB=56, nameH=52;
+        if(sec){
+            secPT=px(getComputedStyle(sec).paddingTop);
+            const title=sec.querySelector('.recent-title');
+            if(title&&getComputedStyle(title).display!=='none') titleH=title.offsetHeight||0;
+            const row=sec.querySelector('.recent-row');
+            if(row){
+                const rcs=getComputedStyle(row);
+                rowPT=px(rcs.paddingTop); rowPB=px(rcs.paddingBottom);
+                const nameEl=row.querySelector('.note-card-name');
+                if(nameEl) nameH=nameEl.offsetHeight||52;
+            }
+        }
+        const rowsH=Math.max(280,Math.round(vh-chrome));
         const rowH=rowsH/2;
         const settingMax=document.body.classList.contains('card-s')?160:
-                         (document.body.classList.contains('card-l')?244:200);
+                     (document.body.classList.contains('card-l')?244:200);
         const screenMax=Math.max(96,(window.innerWidth||1024)-56);
-        const cardW=Math.max(96,Math.min(settingMax,screenMax,Math.floor((rowH-52)/1.30)));
+        // 카드(미리보기 1.3:1 + 이름 영역 + 테두리 2px)가 위 스택 줄과
+        // 아래 최근 줄(제목·패딩·그림자 여유 포함) 모두에 들어가야 한다.
+        const availScene=rowH-scenePad;
+        const availRecent=rowH-secPT-titleH-4;
+        const avail=Math.max(60,Math.min(availScene,availRecent));
+        const cardW=Math.max(96,Math.min(settingMax,screenMax,Math.floor((avail-nameH-2)/1.30)));
         area.style.setProperty('--home-rows-h',rowsH+'px');
         area.style.setProperty('--home-card-w',cardW+'px');
+        // CSS: 줄 = (섹션 콘텐츠 높이 - 제목) + 60px, 마진 -60px.
+        area.style.setProperty('--home-row-h',(Math.round(rowH-secPT-titleH+60))+'px');
     }
 
     // ── 홈 스택: 아래(폴더)에서 위(문서)로 한 장씩 오른쪽·위로 이동 ──

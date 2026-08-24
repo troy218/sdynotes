@@ -5206,6 +5206,27 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
     .home-stack-area.has-recent .recent-row{max-width:calc(100vw - 8px);padding:4px 10px 30px!important;}
 }
 
+/* 17.6 · 최근 줄의 세로 잘림·스크롤바 제거
+   가로 스크롤 상자(overflow-x:auto)에서는 overflow-y:visible 이 auto 로
+   계산되므로, 카드+아래 그림자(52px 가량)가 줄 높이만 넘어도 세로 스크롤바가
+   생기고 카드 아래가 딱 잘린다. 그래서 줄 높이를 60px 아래로 내리고 -60px
+   음수 마진으로 흐름 높이는 그대로 둔다(화면 맞춤 레이아웃에 영향 없음).
+   아래 패딩 56px = 카드 여백(4) + 그림자(52) 가량이 들어오는 클리핑 경계.
+   줄 높이의 정확한 값(--home-row-h)은 JS 가 제목·패딩을 재서 넣는다. */
+.home-stack-area.has-recent .recent-row{
+    height:var(--home-row-h,auto);
+    box-sizing:border-box;
+    padding:4px 16px 56px!important;
+    margin:0 auto -60px!important;
+    overflow-x:auto;overflow-y:hidden;
+}
+@media(max-width:640px){
+    .home-stack-area.has-recent .recent-row{padding:4px 10px 56px!important;}
+}
+/* 두 줄이 화면 높이에 정확히 들어맞는 홈은 min-height 가 몇 px 을 더
+   붙여 세로 스크롤·아래 잘림을 만들지 않게 한다. */
+#mainView:has(.home-stack-area.has-recent) main{min-height:0!important;}
+
 
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
