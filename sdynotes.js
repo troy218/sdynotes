@@ -12721,13 +12721,64 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
 
     // ============ 자동 번역 (영어 <-> 한국어) ============
+    // ---- 번역 작업 중단(취소) ----
+    // 진행 중인 번역은 진행바의 [중단] 버튼이나 Esc 로 언제든 멈출 수 있다.
+    // 취소는 '실패'가 아니므로 별도 신호(TR_CANCEL)를 던져 '번역 실패' 토스트나
+    // 긴 재시도 로직과 섞이지 않게 한다. 이 신호 덕분에 "무한 로딩" 도 없다.
+    const TR_CANCEL='번역 중단됨';   // 낮은 수준 신호 — 실패 문구/재시도 정규식과 절대 겹치지 않게
+    let trCtl=null;                  // 실행 중인 번역 작업의 AbortController (한 번에 하나)
+    let trCancel=false;              // 사용자가 중단을 눌렀는가
+    function cancelTranslation(){
+        if(!trCtl||trCancel) return;
+        trCancel=true;
+        try{ trCtl.abort(); }catch(e){}
+        const p=document.getElementById('trProg');
+        const l=p&&p.querySelector('.tr-label');
+        if(p&&p.style.display!=='none'&&l) l.textContent='번역을 중단하는 중…';
+    }
+    function beginTrTask(){
+        if(trCtl) endTrTask();       // 방어: 이전 작업 꼬리 정리
+        trCtl=new AbortController(); trCancel=false;
+        document.addEventListener('keydown',trEscKey,true);
+    }
+    function endTrTask(){
+        if(trCtl) document.removeEventListener('keydown',trEscKey,true);
+        trCtl=null;
+        hideTrProg();
+    }
+    function trEscKey(e){
+        if(e.key==='Escape'&&trCtl){
+            e.preventDefault(); e.stopPropagation();
+            cancelTranslation();
+        }
+    }
+    // 중단하면 재시도 대기·간격 유지 잠도 바로 깬다 (취소가 대기 시간만큼 늦어지지 않게)
+    function trSleep(ms){
+        return new Promise(res=>{
+            const ctl=trCtl;
+            const t=setTimeout(fin,ms);
+            function fin(){ clearTimeout(t); if(ctl) ctl.signal.removeEventListener('abort',fin); res(); }
+            if(ctl){
+                if(ctl.signal.aborted||trCancel) fin();
+                else ctl.signal.addEventListener('abort',fin);
+            }
+        });
+    }
     async function apiTranslate(text,target,gloss){
         // 프록시/서버가 잠깐 끊긴 경우 한 번만 재시도한다. 무한 재시도는
         // 사용자가 취소할 수 없고 무료 번역 엔진의 429를 더 악화시킨다.
         let last;
         for(let attempt=0;attempt<2;attempt++){
+            if(trCancel) throw new Error(TR_CANCEL);
             const ctl=new AbortController();
+            const task=trCtl;                       // 이 요청을 거는 작업 핸들
             const timer=setTimeout(()=>ctl.abort(),30000);
+            // 사용자 중단 → 이 요청도 즉시 끊는다 (30초 타임아웃을 기다리지 않는다)
+            const kick=()=>{ try{ctl.abort();}catch(e){} };
+            if(task){
+                if(task.signal.aborted){ clearTimeout(timer); throw new Error(TR_CANCEL); }
+                task.signal.addEventListener('abort',kick);
+            }
             try{
                 const r=await fetch('/api/translate',{method:'POST',signal:ctl.signal,
                     headers:{'Content-Type':'application/json','Accept':'application/json'},
@@ -12739,10 +12790,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(r.status<500||/제한|429/.test(msg)) throw new Error(msg);
                 last=new Error(msg);
             }catch(e){
+                if(trCancel) throw new Error(TR_CANCEL);
                 last=e&&e.name==='AbortError'?new Error('번역 서버 응답 시간이 초과됐어요. 잠시 후 다시 시도해 주세요.'):e;
                 if(/제한|429|문자열이어야|내용이 없습니다|5000자/.test(String(last&&last.message||''))) throw last;
-            }finally{ clearTimeout(timer); }
-            if(attempt===0) await new Promise(resolve=>setTimeout(resolve,700));
+            }finally{
+                clearTimeout(timer);
+                if(task) task.signal.removeEventListener('abort',kick);
+            }
+            if(attempt===0) await trSleep(700);
+            if(trCancel) throw new Error(TR_CANCEL);
         }
         throw last||new Error('번역 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.');
     }
@@ -12839,9 +12895,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const src=isTight? tightCleanText(c).replace(/\n+/g,' ')
                          : (c?c.innerText:'').trim();
         if(!src){ toast('번역할 내용이 없습니다',1600); return; }
-        toast('번역 중…',1200);
+        if(trCtl||trBusy){ toast('번역이 이미 진행 중입니다 — 진행바의 [중단] 을 누르거나 잠시 기다려 주세요',2400); return; }
+        beginTrTask();
+        showTrProg(null,(TR_NAME[target]||target)+'로 번역 중… · 중단하려면 [중단] 또는 Esc');
         try{
             await learnGlossary([src],target);            // 6.1: 전문용어 먼저 학습
+            if(trCancel) throw new Error(TR_CANCEL);
             const out=await apiTranslate(src,target,doc.glossary);
             pushHistory();
             if(isTight){
@@ -12862,8 +12921,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             syncTextEl(node);
             await persistTranslatedChange();
             toast((TR_NAME[target]||target)+'로 번역하고 저장했습니다',2000);
-        }catch(e){ toast('번역 실패: '+e.message,2600); }
-    }
+        }catch(e){
+            if(e&&e.message===TR_CANCEL) toast('번역을 중단했습니다 — 원문은 그대로입니다',2200);
+            else toast('번역 실패: '+e.message,2600);
+        }finally{ endTrTask(); }
+}
 
     // 긁어놓은 글자만 번역해서 그 자리에 넣는다
     // 고른 글자를 그 자리에서 번역문으로 바꿔 넣는다 (서식·위치 유지)
@@ -12886,9 +12948,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(host&&host.closest('.tight'))
             txt=txt.replace(/\n+/g,' ').replace(/\s{2,}/g,' ').trim();
         if(!host||!txt.trim()){ toast('번역할 글자를 선택해 주세요',1800); return; }
+        if(trCtl||trBusy){ toast('번역이 이미 진행 중입니다 — 진행바의 [중단] 을 누르거나 잠시 기다려 주세요',2400); return; }
         const w=host.closest('.tb');
         const rng=sel.getRangeAt(0).cloneRange();
-        toast(`${TR_NAME[target]||target}로 번역 중…`,1500);
+        beginTrTask();
+        showTrProg(null,`${TR_NAME[target]||target}로 번역 중… · 중단하려면 [중단] 또는 Esc`);
         try{
             const out=await apiTranslate(txt,target);
             if(!out||!String(out).trim()){ toast('번역 결과가 비어 있습니다',2000); return; }
@@ -12914,8 +12978,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
             saveSel();
             toast(`${TR_NAME[target]||target}로 바꾸고 저장했습니다 (Ctrl+Z 로 되돌리기)`,2400);
-        }catch(e){ toast('번역 실패: '+e.message,2600); }
-    }
+        }catch(e){
+            if(e&&e.message===TR_CANCEL) toast('번역을 중단했습니다 — 원문은 그대로입니다',2200);
+            else toast('번역 실패: '+e.message,2600);
+        }finally{ endTrTask(); }
+}
 
     // ============ 6.1: 페이지/문서 전체 번역 + 용어 기억 + 자동 맞춤 ============
     // tight 상자의 단어 스팬은 인라인 top 을 갖고 있으므로 레이아웃 없이 파싱 가능
@@ -12972,14 +13039,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }));
         if(!terms.length) return 0;
         for(let i=0;i<terms.length;i+=60){
+            if(trCancel) return 0;                    // 사용자 중단 → 학습도 멈춤
             const chunk=terms.slice(i,i+60);
             try{
                 const r=await fetch('/api/translate/gloss',{method:'POST',
+                    signal:trCtl?trCtl.signal:undefined,
                     headers:{'Content-Type':'application/json'},
                     body:JSON.stringify({terms:chunk,target})});
                 const d=await r.json().catch(()=>({}));
                 if(d&&d.ok&&d.gloss) Object.assign(g,d.gloss);
-            }catch(e){}
+            }catch(e){ if(trCancel) return 0; }
         }
         return terms.length;
     }
@@ -13019,11 +13088,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         let p=document.getElementById('trProg');
         if(!p){
             p=document.createElement('div'); p.id='trProg';
-            p.innerHTML='<span class="tr-label"></span><span class="tr-track"><i class="tr-fill"></i></span>';
+            p.innerHTML='<span class="tr-label"></span><span class="tr-track"><i class="tr-fill"></i></span>'+
+                '<button type="button" class="tr-cancel" title="번역 중단 (Esc)">중단</button>';
+            p.querySelector('.tr-cancel').addEventListener('click',cancelTranslation);
             document.body.appendChild(p);
         }
         p.style.display='flex';
-        p.querySelector('.tr-fill').style.width=Math.round(Math.min(1,Math.max(0,f))*100)+'%';
+        const fill=p.querySelector('.tr-fill');
+        if(f==null){ fill.classList.add('indet'); fill.style.width=''; }
+        else{ fill.classList.remove('indet'); fill.style.width=Math.round(Math.min(1,Math.max(0,f))*100)+'%'; }
         p.querySelector('.tr-label').textContent=label||'';
     }
     function hideTrProg(){
@@ -13071,30 +13144,36 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     //   기다렸다가 다시 시도한다 — 문서 전체 번역이 중간에 통째로 실패하지 않게.
     async function apiTranslateRetry(src,target,gloss){
         for(let a=0;a<3;a++){
+            if(trCancel) throw new Error(TR_CANCEL);
             try{ return await apiTranslate(src,target,gloss); }
             catch(e){
                 const msg=String(e&&e.message||'');
+                if(msg===TR_CANCEL) throw e;                 // 사용자 중단은 재시도하지 않는다
                 if(a>=2||!/제한|429|닿지 않/.test(msg)) throw e;
-                await new Promise(r=>setTimeout(r,9000*(a+1)));
+                await trSleep(9000*(a+1));                   // 대기 중에도 중단 즉시 반영
             }
         }
     }
     async function translateEls(list,target,label){
-        if(trBusy){ toast('번역이 이미 진행 중입니다',1800); return; }
+        if(trBusy||trCtl){ toast('번역이 이미 진행 중입니다 — 진행바의 [중단] 을 누르거나 잠시 기다려 주세요',2400); return; }
         if(!list.length){ toast('번역할 텍스트 상자가 없습니다',1800); return; }
         trBusy=true;
-        let failCnt=0, lastErr='';
+        beginTrTask();
+        let failCnt=0, lastErr='', okCnt=0;
+        const remaining=()=>q.length;
+        let q=[];
         try{
-            showTrProg(0,label+' · 전문용어 학습 중…');
+            showTrProg(0,label+' · 전문용어 학습 중… · 중단하려면 [중단]/Esc');
             const learned=await learnGlossary(list.map(o=>o.src),target);
             if(learned){ saveDoc(); queueOps(); }          // 사전도 함께 저장/공유
             pushHistory();                                 // 되돌리기 한 번으로 전체 복구
-            let done=0;
-            const q=list.slice();
+            q=list.slice();
             const worker=async()=>{
-                while(q.length){
+                while(q.length&&!trCancel){
                     const o=q.shift();
-                    showTrProg((done)/list.length, label+' · 번역 '+Math.min(done+1,list.length)+'/'+list.length+(failCnt?' · 실패 '+failCnt:''));
+                    showTrProg((okCnt+failCnt)/list.length,
+                        label+' · 번역 '+Math.min(okCnt+failCnt+1,list.length)+'/'+list.length
+                        +(failCnt?' · 실패 '+failCnt:'')+' · 중단: [중단]/Esc');
                     try{
                         const out=await apiTranslateRetry(o.src,target,doc.glossary);
                         if(out&&String(out).trim()){
@@ -13116,19 +13195,26 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                             }else{
                                 o.el.trPending=1;          // 그려질 때 맞춤
                             }
+                            okCnt++;
                         }
-                    }catch(e){ failCnt++; lastErr=String(e&&e.message||''); }
-                    done++;
-                    await new Promise(r=>setTimeout(r,220));  // 번역 서버에 숨 돌려주기
+                    }catch(e){
+                        if(e&&e.message===TR_CANCEL){ q.unshift(o); }   // 도중에 멈춘 상자는 '남은 것'으로 되돌림
+                        else { failCnt++; lastErr=String(e&&e.message||''); }
+                    }
+                    await trSleep(220);                        // 번역 서버에 숨 돌려주기 (중단 시 즉시 깸)
                 }
             };
             await Promise.all([worker(),worker()]);
+            // 중단했어도 이미 완료된 상자는 유실하지 않고 저장한다
             await persistTranslatedChange();
-            showTrProg(1,label+' · 저장 완료');
-            setTimeout(hideTrProg,600);
+            const left=remaining();
+            if(trCancel){
+                toast(label+' 번역을 중단했어요 · 완료한 '+okCnt+'개 상자는 저장했습니다'
+                    +(left?' · 남은 '+left+'개 상자는 원문 유지':''),3200);
+            }
             // 15.0 · 실패한 상자가 있으면 '완료'라고만 알리지 않는다 —
             //   다 번역 안 됐는데 완료로 보이던 문제.
-            if(failCnt>=list.length){
+            else if(failCnt>=list.length){
                 toast('번역에 실패했어요 · '+(lastErr||'잠시 뒤 다시 시도해 주세요'),3600);
             }else if(failCnt){
                 toast(label+' 번역 부분 완료 · '+failCnt+'개 상자는 실패 (잠시 뒤 다시 눌러 주세요)',3200);
@@ -13137,15 +13223,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
         }catch(e){
             toast('번역 결과 저장 실패: '+String(e&&e.message||'다시 시도해 주세요'),3600);
-        }finally{ trBusy=false; }
+        }finally{ trBusy=false; endTrTask(); }
     }
     async function translatePageAction(pi,target){
+        if(trBusy||trCtl){ toast('번역이 이미 진행 중입니다 — 진행바의 [중단] 을 누르거나 잠시 기다려 주세요',2400); return; }
         closeCtxMenu();
         try{ await ensureLazyPage(pi); }catch(e){}
         const list=collectPageEls(pi);
         await translateEls(list,target,(pi+1)+'페이지');
     }
     async function translateDocAction(target){
+        if(trBusy||trCtl){ toast('번역이 이미 진행 중입니다 — 진행바의 [중단] 을 누르거나 잠시 기다려 주세요',2400); return; }
         closeCtxMenu();
         const total=(doc.pages||[]).length;
         // 대용량(서버 보관) 문서는 먼저 전부 불러온다 → 번역이 중간에 끊기지 않게

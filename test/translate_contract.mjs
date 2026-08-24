@@ -74,6 +74,16 @@ await new Promise((r2) => setTimeout(r2, 200));   // 앞 단계 쿨다운 만료
 extFetch = () => new Response('rl', { status: 429 });
 r = await post('/api/translate', { text: 'rate limited text now', target: 'ko' });
 ok('429 일 때 전용 안내 문구', /제한/.test(r.error || ''));
+
+// ── 7) 429 쿨다운 중 재요청 → '제한' 안내 유지 (회귀: 예전엔 '닿지 않아요'로 떴다) ──
+// 직전 단계에서 3개 호스트가 모두 429 쿨다운(150ms)이다. 곧바로 다시 요청한다.
+extFetch = () => json200([[['SHOULD-NOT-CALL', 'q', null, null]], null, 'en']);
+calls = [];
+r = await post('/api/translate', { text: 'retry during full cooldown', target: 'ko' });
+ok('쿨다운 중에는 외부 엔진을 다시 부르지 않음', calls.length === 0);
+ok('쿨다운 중 재요청도 제한 안내를 유지', r.status === 502 && /제한/.test(r.error || ''));
+ok('제한 안내에 재시도 시각(retry_after) 힌트가 실린다', Number.isFinite(r.retry_after) && r.retry_after >= 1);
+await new Promise((r2) => setTimeout(r2, 200));   // 쿨다운 만료 대기
 await new Promise((r2) => setTimeout(r2, 200));   // 429 쿨다운 만료 대기
 
 // ── 4) 긴 문장 청크: 조각을 이어붙이면 원본과 동일 (구분 보존) ──
@@ -116,7 +126,58 @@ extFetch = (u, opts) => {
 r = await post('/api/translate', { text: '\n  preserve me  \n', target: 'ko' });
 ok('번역 전후 공백 보존', r.ok === true && r.text === '\n  번역:preserve me  \n');
 
-// ── 7) ja 대상 정규화 ( ALLOWED 목록 ) ──
+
+// ── 7.5) 타임아웃한 호스트는 쿨다운으로 건너뛴다 (TimeoutError 회귀) ──
+// Node fetch 는 AbortSignal.timeout 을 AbortError 가 아니라 TimeoutError 로 던진다.
+// 예전엔 이걸 몰라 죽은 호스트를 매 요청 다시 기다렸다 (15~30초 스톨).
+{
+  const timeoutErr = () => { const e = new Error('The operation was aborted due to timeout'); e.name = 'TimeoutError'; return e; };
+  extFetch = (u) => {
+    if (u.startsWith('https://translate.googleapis.com')) throw timeoutErr();
+    if (u.startsWith('https://clients5.google.com')) return json200([[['VIA-B', 'q', null, null]], null, 'en']);
+    throw timeoutErr();
+  };
+  calls = [];
+  r = await post('/api/translate', { text: 'timeout walks to next host', target: 'ko' });
+  ok('한 호스트 타임아웃이면 다음 호스트로 넘어가 성공', r.ok === true && r.text === 'VIA-B');
+  calls = [];
+  r = await post('/api/translate', { text: 'second request skips dead host', target: 'ko' });
+  ok('타임아웃 호스트는 쿨다운 → 다음 요청에서 건드리지 않음', calls.length === 1 && /clients5/.test(calls[0].url));
+  ok('걸러진 요청도 정상 응답', r.ok === true && r.text === 'VIA-B');
+  await new Promise((r2) => setTimeout(r2, 200));
+}
+
+// ── 7.6) 연결 자체가 실패하는 호스트(fetch failed)도 쿨다운 ──
+{
+  const failErr = () => new TypeError('fetch failed');
+  extFetch = (u) => {
+    if (u.startsWith('https://translate.googleapis.com')) throw failErr();
+    if (u.startsWith('https://clients5.google.com')) return json200([[['VIA-B2', 'q', null, null]], null, 'en']);
+    throw failErr();
+  };
+  calls = [];
+  r = await post('/api/translate', { text: 'fetch failed cools the host', target: 'ko' });
+  ok('연결 실패 호스트를 걷고 다음 호스트에서 성공', r.ok === true && r.text === 'VIA-B2');
+  calls = [];
+  r = await post('/api/translate', { text: 'next request skips unreachable host', target: 'ko' });
+  ok('연결 실패 호스트도 쿨다운으로 건드리지 않음', calls.length === 1 && /clients5/.test(calls[0].url));
+  await new Promise((r2) => setTimeout(r2, 200));
+}
+
+// ── 8) 용어 사전: 엔진이 죽으면 용어별 재시도를 바로 멈춘다 (429 폭주 방지) ──
+{
+  extFetch = () => { throw new TypeError('fetch failed'); };   // 엔진 전면 다운
+  calls = [];
+  r = await post('/api/translate/gloss', { terms: ['AlphaOne', 'BetaTwo', 'GammaThree', 'DeltaFour'], target: 'ko' });
+  const extCalls = calls.length;
+  ok('용어 번역은 실패해도 원문을 그대로 돌려준다', r.ok === true && r.gloss && r.gloss.AlphaOne === 'AlphaOne' && r.gloss.DeltaFour === 'DeltaFour');
+  // 옛 구현이라면 묶음 3호스트 + 용어별 4×3호스트 = 15호출. 새 구현은 묶음 3호출 뒤
+  // 첫 용어 재시도에서 (모든 호스트 쿨다운) 즉시 원문 반환 = 추가 호출 0회.
+  ok('엔진 다운 시 용어별 재시도는 첫 실패에서 중단 (폭주 없음)', extCalls === 3);
+  await new Promise((r2) => setTimeout(r2, 200));
+}
+
+// ── 9) ja 대상 정규화 ( ALLOWED 목록 ) ──
 calls = [];
 extFetch = () => json200([[['こんにちは', 'hello', null, null]], null, 'en']);
 r = await post('/api/translate', { text: 'hello there friend', target: 'ja' });
