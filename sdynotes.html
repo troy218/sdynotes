@@ -129,62 +129,81 @@
 
             <div class="tb-left">
                 <button onclick="navBack()" class="tool-btn" title="뒤로 (Esc)"><i class="ri-arrow-left-line"></i></button>
-                <input id="edTitle" type="text" style="color:var(--text1)" placeholder="노트 제목">
-                <span id="saveState" class="text-xs tb-hide-sm" style="color:var(--text3);min-width:40px;text-align:center;"></span>
-                <span id="liveBadge" title="함께 보는 사람" style="display:none;align-items:center;gap:5px;
-                      padding:4px 9px;border-radius:99px;background:rgba(16,185,129,.13);
-                      color:#059669;font-size:11.5px;font-weight:700;white-space:nowrap;">
-                    <i class="ri-group-line"></i><span id="liveNum">1</span></span>
+                <div class="tb-title-wrap">
+                    <input id="edTitle" type="text" style="color:var(--text1)" placeholder="노트 제목">
+                    <span id="saveState" class="text-xs tb-hide-sm" style="color:var(--text3);"></span>
+                </div>
             </div>
 
             <div class="tb-mid">
-                <!-- 만드는 것들 (쓰는 순서대로) -->
-                <button onclick="toggleTextTool()" id="textToolBtn" class="tool-btn" title="텍스트 상자"><i class="ri-text"></i></button>
-                <button onclick="togglePen()" id="penBtn" class="tool-btn" title="펜 / 도형"><i class="ri-pen-nib-line"></i></button>
-                <button onclick="triggerImgUpload()" class="tool-btn" title="사진 추가"><i class="ri-image-add-line"></i></button>
-                <button onclick="openStickers()" class="tool-btn" title="스티커"><i class="ri-emotion-happy-line"></i></button>
-                <button onclick="togglePinMode()" id="pinBtn" class="tool-btn js-pin" title="메모 붙이기"><i class="ri-chat-1-line"></i></button>
+                <!-- ═══ Word-like Formatting Group ═══ -->
+                <div class="tb-group fmt-group">
+                    <div class="font-wrap tb-hide-sm">
+                        <button id="fontBtn" class="font-btn" onmousedown="saveSel();event.preventDefault()" onclick="toggleFontMenu()">
+                            <span id="fontLabel">노토 산스</span><i class="ri-arrow-down-s-fill"></i>
+                        </button>
+                    </div>
+                    
+                    <span class="tool-sep tb-hide-sm"></span>
+
+                    <button onclick="execFmt('bold')" onmousedown="saveSel();event.preventDefault()" class="tool-btn sm" title="굵게"><i class="ri-bold"></i></button>
+                    <button onclick="execFmt('italic')" onmousedown="saveSel();event.preventDefault()" class="tool-btn sm" title="기울임"><i class="ri-italic"></i></button>
+                    <button onclick="execFmt('underline')" onmousedown="saveSel();event.preventDefault()" class="tool-btn sm" title="밑줄"><i class="ri-underline"></i></button>
+
+                    <div class="split-btn" id="textColorWrap">
+                        <button class="main" onmousedown="saveSel();event.preventDefault()" onclick="applyTextColor(currentTextColor)">
+                            <span class="glyph" id="tcGlyph">A</span><span class="bar" id="tcBar"></span>
+                        </button>
+                        <button class="caret" onmousedown="saveSel();event.preventDefault()" onclick="togglePop('textColorPop')"><i class="ri-arrow-down-s-fill"></i></button>
+                    </div>
+
+                    <span class="tool-sep"></span>
+
+                    <button onclick="setAlign('left')" class="tool-btn sm tb-hide-sm" title="왼쪽 정렬"><i class="ri-align-left"></i></button>
+                    <button onclick="setAlign('center')" class="tool-btn sm" title="가운데 정렬"><i class="ri-align-center"></i></button>
+                    <button onclick="setAlign('right')" class="tool-btn sm tb-hide-sm" title="오른쪽 정렬"><i class="ri-align-right"></i></button>
+                </div>
 
                 <span class="tool-sep"></span>
 
-                <!-- 찾는 것들 -->
-                <button onclick="openPanel('words')" id="wfBtn" class="tool-btn panel-trigger js-wf" data-panel="words" title="주요어 분석"><i class="ri-contrast-2-line"></i></button>
-                <button onclick="toggleFind()" id="findBtn" class="tool-btn" title="검색 (Ctrl+F)"><i class="ri-search-line"></i></button>
+                <!-- ═══ Insert Group ═══ -->
+                <div class="tb-group">
+                    <button onclick="toggleTextTool()" id="textToolBtn" class="tool-btn" title="텍스트 상자"><i class="ri-text"></i></button>
+                    <button onclick="triggerImgUpload()" class="tool-btn" title="사진 추가"><i class="ri-image-add-line"></i></button>
+                    <button onclick="document.getElementById('importInput').click()" class="tool-btn core-tool" title="문서 가져오기 (PDF/Word)"><i class="ri-file-upload-line"></i></button>
+                    <button onclick="openTableModal()" class="tool-btn tb-hide-sm" title="표 삽입"><i class="ri-table-line"></i></button>
+                    <button onclick="openLatexModal()" class="tool-btn tb-hide-sm" title="수식 삽입"><i class="ri-function-line"></i></button>
+                    <button onclick="togglePen()" id="penBtn" class="tool-btn" title="펜 쓰기"><i class="ri-pen-nib-line"></i></button>
+                </div>
 
                 <span class="tool-sep"></span>
 
-                <!-- 되돌리기 -->
-                <button onclick="undo()" class="tool-btn sm" title="되돌리기 (Ctrl+Z)"><i class="ri-arrow-go-back-line"></i></button>
-                <button onclick="redo()" class="tool-btn sm" title="다시 실행 (Ctrl+Shift+Z)"><i class="ri-arrow-go-forward-line"></i></button>
+                <!-- ═══ Core Tools Group ═══ -->
+                <div class="tb-group">
+                    <button onclick="openPanel('words')" id="wfBtn" class="tool-btn js-wf" title="주요어 분석"><i class="ri-contrast-2-line"></i></button>
+                    <button onclick="toggleFind()" id="findBtn" class="tool-btn" title="검색"><i class="ri-search-line"></i></button>
+                </div>
             </div>
 
             <div class="tb-right">
-                <!-- 페이지 이동: 숫자 입력 후 Enter → 바로 이동 -->
-                <div class="pg-nav" title="쪽 번호를 넣고 Enter">
-                    <button onclick="goToPage((+document.getElementById('pgNow').value||1)-1)" title="이전 쪽"><i class="ri-arrow-up-s-line"></i></button>
-                    <input id="pgNow" type="number" min="1" value="1" inputmode="numeric"
-                           onkeydown="event.stopPropagation();if(event.key==='Enter'){event.preventDefault();goToPage(this.value);this.blur();}"
-                           onfocus="this.select()" onchange="goToPage(this.value)">
+                <div class="tb-group">
+                    <button onclick="undo()" class="tool-btn sm" title="되돌리기"><i class="ri-arrow-go-back-line"></i></button>
+                    <button onclick="redo()" class="tool-btn sm" title="다시 실행"><i class="ri-arrow-go-forward-line"></i></button>
+                </div>
+
+                <span class="tool-sep"></span>
+
+                <div class="pg-nav">
+                    <button onclick="goToPage((+document.getElementById('pgNow').value||1)-1)"><i class="ri-arrow-up-s-line"></i></button>
+                    <input id="pgNow" type="number" min="1" value="1">
                     <span class="tot" id="pgTot">/ 1</span>
-                    <button onclick="goToPage((+document.getElementById('pgNow').value||1)+1)" title="다음 쪽"><i class="ri-arrow-down-s-line"></i></button>
+                    <button onclick="goToPage((+document.getElementById('pgNow').value||1)+1)"><i class="ri-arrow-down-s-line"></i></button>
                 </div>
 
-                <span id="zoomLabel" class="text-xs tb-hide-sm" title="Ctrl + 휠 · 두 손가락으로 확대/축소 · 눌러서 100%"
-                      onclick="resetZoom()"
-                      style="min-width:42px;text-align:center;color:var(--text3);cursor:pointer;user-select:none;">100%</span>
-
-                <span class="tool-sep tb-hide-sm"></span>
-
-                <!-- 나머지 기능은 네 서랍에 워드처럼 정리 -->
-                <div class="tb-group toolbar-cats">
-                    <button onclick="openMore('insert')" class="tool-cat" data-cat="insert" title="넣기 도구"><i class="ri-add-circle-line"></i><span class="tb-hide-sm">넣기</span><i class="ri-arrow-down-s-line caret"></i></button>
-                    <button onclick="openMore('pages')" class="tool-cat" data-cat="pages" title="페이지 도구"><i class="ri-file-list-3-line"></i><span class="tb-hide-sm">페이지</span><i class="ri-arrow-down-s-line caret"></i></button>
-                    <button onclick="openMore('view')" class="tool-cat" data-cat="view" title="보기 도구"><i class="ri-eye-line"></i><span class="tb-hide-sm">보기</span><i class="ri-arrow-down-s-line caret"></i></button>
-                    <button onclick="openMore('note')" class="tool-cat" data-cat="note" title="노트 도구"><i class="ri-sticky-note-line"></i><span class="tb-hide-sm">노트</span><i class="ri-arrow-down-s-line caret"></i></button>
-                </div>
-
-                <button onclick="openExportModal()" class="tool-btn" title="노트 내보내기 (Ctrl+E)"><i class="ri-download-2-line"></i></button>
+                <button onclick="openMore('note')" class="tool-btn" title="노트 설정"><i class="ri-settings-3-line"></i></button>
+                <button onclick="openExportModal()" class="tool-btn accent" title="내보내기"><i class="ri-download-2-line"></i></button>
             </div>
+
 
             <input type="file" id="imgInput" multiple accept="image/*" class="hidden" onchange="uploadImgs(this.files)">
         </div>
@@ -251,48 +270,25 @@
                     <div class="more-sec" data-ms="insert">
                         <div class="more-grid">
                             <button onclick="mi(()=>openTableModal())"><i class="ri-table-line"></i><span>표</span></button>
-                            <button onclick="mi(()=>openStickers())"><i class="ri-sticky-note-line"></i><span>스티커</span></button>
-                            <button onclick="mi(()=>insertCheckbox())"><i class="ri-checkbox-line"></i><span>체크상자</span></button>
-                            <button onclick="mi(()=>togglePinMode())" class="js-pin"><i class="ri-chat-1-line"></i><span>메모</span></button>
                             <button onclick="mi(()=>openLatexModal())"><i class="ri-function-line"></i><span>수식</span></button>
-                        </div>
-                        <div class="more-lbl">정렬</div>
-                        <div class="more-grid">
-                            <button onclick="setAlign('left')"><i class="ri-align-left"></i><span>왼쪽</span></button>
-                            <button onclick="setAlign('center')"><i class="ri-align-center"></i><span>가운데</span></button>
-                            <button onclick="setAlign('right')"><i class="ri-align-right"></i><span>오른쪽</span></button>
-                            <button onclick="clearFmt()"><i class="ri-format-clear"></i><span>서식 지움</span></button>
+                            <button onclick="mi(()=>insertCheckbox())"><i class="ri-checkbox-line"></i><span>체크상자</span></button>
+                            <button onclick="mi(()=>triggerImgUpload())"><i class="ri-image-add-line"></i><span>사진</span></button>
                         </div>
                     </div>
 
                     <div class="more-sec" data-ms="pages" hidden>
-                        <div class="more-row">
-                            <span>페이지 이동</span>
-                            <input id="pageJump" class="page-jump" value="1" inputmode="numeric"
-                                   onkeydown="event.stopPropagation();if(event.key==='Enter'){event.preventDefault();goToPage(this.value);this.blur();closeMore();}"
-                                   onchange="goToPage(this.value)" onfocus="this.select()">
-                            <span id="pageInfo" style="color:var(--text3)">/ 1</span>
-                        </div>
                         <div class="more-grid">
                             <button onclick="mi(()=>addPage())"><i class="ri-file-add-line"></i><span>페이지 추가</span></button>
                             <button onclick="mi(()=>duplicatePage())"><i class="ri-file-copy-line"></i><span>페이지 복제</span></button>
-                            <button onclick="toggleFavPage()" id="favBtn"><i class="ri-star-line"></i><span>즐겨찾기</span></button>
-                            <button onclick="toggleFavPop(event)" id="favListBtn"><i class="ri-bookmark-line"></i><span>즐겨찾는 쪽</span></button>
-                        </div>
-                        <div class="more-lbl">종이</div>
-                        <div class="more-grid">
                             <button onclick="setPaper('blank')" class="ptool" data-p="blank"><i class="ri-file-line"></i><span>빈 종이</span></button>
-                            <button onclick="setPaper('lined')" class="ptool" data-p="lined"><i class="ri-file-list-line"></i><span>줄</span></button>
+                            <button onclick="setPaper('lined')" class="ptool" data-p="lined"><i class="ri-file-list-line"></i><span>줄 노트</span></button>
                             <button onclick="setPaper('grid')"  class="ptool" data-p="grid"><i class="ri-grid-line"></i><span>격자</span></button>
-                            <button onclick="setPaper('dotted')" class="ptool" data-p="dotted"><i class="ri-more-line"></i><span>도트</span></button>
                         </div>
                         <div class="more-row">
                             <span>크기</span>
                             <select id="sizePresetSelect" onchange="changeSizePreset(this.value)">
                                 <option value="a4_portrait">A4 세로</option>
                                 <option value="a4_landscape">A4 가로</option>
-                                <option value="mobile_portrait">모바일 세로</option>
-                                <option value="mobile_landscape">모바일 가로</option>
                                 <option value="square">정사각</option>
                                 <option value="wide">와이드</option>
                             </select>
@@ -301,33 +297,20 @@
 
                     <div class="more-sec" data-ms="view" hidden>
                         <div class="more-grid">
-                            <button onclick="mi(()=>openPanel('outline'))"><i class="ri-list-unordered"></i><span>개요</span></button>
                             <button onclick="mi(()=>openPanel('pages'))"><i class="ri-pages-line"></i><span>쪽 목록</span></button>
-                            <button onclick="mi(()=>openPanel('elements'))"><i class="ri-stack-line"></i><span>요소</span></button>
-                            <button onclick="mi(()=>openPanel('clip'))"><i class="ri-inbox-archive-line"></i><span>모아두기</span></button>
-                            <button onclick="mi(()=>openPanel('stats'))"><i class="ri-bar-chart-2-line"></i><span>통계</span></button>
                             <button onclick="mi(()=>openPanel('words'))" class="js-wf"><i class="ri-contrast-2-line"></i><span>중요어</span></button>
-                        </div>
-                        <div class="more-lbl">화면</div>
-                        <div class="more-grid">
-                            <button onclick="zoomFit();closeMore()"><i class="ri-expand-width-line"></i><span>폭 맞춤</span></button>
-                            <button onclick="resetZoom();closeMore()"><i class="ri-refresh-line"></i><span>100%</span></button>
                             <button onclick="toggleFocus()" id="focusBtn"><i class="ri-focus-mode"></i><span>집중</span></button>
                             <button onclick="toggleGuides()" id="guideBtn"><i class="ri-layout-grid-line"></i><span>격자</span></button>
-                            <button onclick="toggleSepia()" id="sepiaBtn"><i class="ri-eye-line"></i><span>눈 편한 색</span></button>
-                            <button onclick="openTint(event)" id="tintBtn"><i class="ri-palette-line"></i><span>배경색</span></button>
-                            <button onclick="toggleSnap()" id="snapBtn" class="active"><i class="ri-focus-3-line"></i><span>안내선</span></button>
-                            <button onclick="mi(()=>startPresent())"><i class="ri-slideshow-line"></i><span>발표</span></button>
+                            <button onclick="zoomFit()"><i class="ri-expand-width-line"></i><span>폭 맞춤</span></button>
+                            <button onclick="resetZoom()"><i class="ri-refresh-line"></i><span>100%</span></button>
                         </div>
                     </div>
 
                     <div class="more-sec" data-ms="note" hidden>
                         <div class="more-grid">
                             <button onclick="mi(()=>openExportModal())"><i class="ri-download-2-line"></i><span>내보내기</span></button>
-                            <button onclick="toggleLockEl()"><i class="ri-lock-2-line"></i><span>요소 잠금</span></button>
                             <button onclick="mi(()=>lockCurrentNote())" id="lockBtn"><i class="ri-lock-unlock-line"></i><span>노트 잠금</span></button>
                             <button onclick="makeCheckpoint()"><i class="ri-save-3-line"></i><span>지점 저장</span></button>
-                            <button onclick="mi(()=>openCheckpoints())"><i class="ri-history-line"></i><span>되돌리기 지점</span></button>
                             <button onclick="mi(()=>showDelModal())" class="danger"><i class="ri-delete-bin-6-line"></i><span>노트 삭제</span></button>
                         </div>
                     </div>
