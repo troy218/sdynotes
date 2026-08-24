@@ -22,6 +22,22 @@
 
 /* === script block 2 === */
 
+/* 모든 플로팅 창이 공유하는 화면 경계 규칙.
+   좌우/상하 모두 같은 8px 안전 여백을 쓰며 어떤 창도 화면 밖으로 나가지 않는다. */
+window.sdyClampFloatingRect=function(el,x,y,gap){
+    gap=Number.isFinite(gap)?gap:8;
+    var vv=window.visualViewport;
+    var vw=Math.round((vv&&vv.width)||window.innerWidth||document.documentElement.clientWidth||0);
+    var vh=Math.round((vv&&vv.height)||window.innerHeight||document.documentElement.clientHeight||0);
+    var w=el?el.getBoundingClientRect().width:0;
+    var h=el?el.getBoundingClientRect().height:0;
+    var minX=w+gap*2<=vw?gap:0, minY=h+gap*2<=vh?gap:0;
+    var maxX=Math.max(minX,vw-w-minX), maxY=Math.max(minY,vh-h-minY);
+    return {x:Math.max(minX,Math.min(maxX,Number(x)||0)),
+            y:Math.max(minY,Math.min(maxY,Number(y)||0))};
+};
+
+
 /* 12.0 · 음악 플로팅 칩을 페이지 첫 페인트 때 바로 띄운다 (로딩·곡 목록과 무관).
    본문 맨 뒤의 뮤직플레이어 스크립트가 돌기 전에 칩이 먼저 보여야 한다. */
 (function(){
@@ -1437,10 +1453,8 @@
         }catch(e){ return String(Date.now()); }
     }
     let _lastGridSig='';
-    // ── 홈 재진입 스크롤 ─────────────────────────────────────────
-    // 문서를 보고 돌아온 홈은 '안 본 노트 더미 + 이미 본 노트' 두 줄에서
-    // 시작한다. 그 두 줄 바로 위에 예전 방식의 새 노트 버튼을 두어, 휠을
-    // 위로 한 칸만 굴리면 버튼이 나타난다.
+    // ── 홈 재진입 레이아웃 ────────────────────────────────────────
+    // 편집 후 돌아와도 새 노트 버튼과 두 노트 구역을 첫 화면에서 함께 보여 준다.
     let _homeEnterScroll=false;
     function _homeScrollEl(){
         const mv=document.getElementById('mainView');
@@ -1450,12 +1464,6 @@
         }
         const de=document.scrollingElement||document.documentElement;
         return (de&&de.scrollHeight>de.clientHeight+2)?de:null;
-    }
-    function _homeScrollBottom(smooth){
-        const el=_homeScrollEl(); if(!el) return;
-        const top=el.scrollHeight-el.clientHeight;
-        try{ el.scrollTo({top,behavior:smooth?'smooth':'auto'}); }
-        catch(e){ el.scrollTop=top; }
     }
     // ── 16.1 · 홈에서만 쓰는 '이번 접속' 기록 ─────────────────────
     // 서버 설정·localStorage에는 쓰지 않는다. 노트를 열었다가 돌아오면
@@ -1483,7 +1491,7 @@
         try{ bottomPad=main?parseFloat(getComputedStyle(main).paddingBottom)||0:0; }catch(e){}
         // 떠 있는 음악바 여백까지 포함한 아래 패딩은 화면의 30%까지만 예약한다.
         bottomPad=Math.min(bottomPad,vh*.30);
-        const rowsH=Math.max(300,Math.round(vh-headerH-bottomPad+8));
+        const rowsH=Math.max(280,Math.round(vh-headerH-bottomPad-92));
         const rowH=rowsH/2;
         const settingMax=document.body.classList.contains('card-s')?160:
                          (document.body.classList.contains('card-l')?244:200);
@@ -1560,10 +1568,7 @@
         const sig=_gridSig();
         if(!force && sig===_lastGridSig && g.querySelector('.home-stack-area,.note-card,.folder-card,.add-card')){
             // 17.4 · 홈에 재진입(변경 없이 돌아온 경우)도 아래쪽부터 보여 준다
-            if(_homeEnterScroll&&!curFolder&&!searchQuery&&!selectMode&&g.querySelector('.home-stack-area.has-recent')){
-                _homeEnterScroll=false;
-                requestAnimationFrame(()=>_homeScrollBottom(false));
-            }
+            if(_homeEnterScroll) _homeEnterScroll=false;
             try{ requestAnimationFrame(()=>{ rescalePreviews(); _layoutHomeStacks(); }); }catch(e){}
             return;
         }
@@ -1763,12 +1768,15 @@
             const area=document.createElement('div');
             area.className='home-stack-area';
 
-            // 예전처럼 새 노트는 이 버튼으로만 만든다. 최근 줄이 생기면
-            // 두 노트 줄 바로 위에 두고, 홈 진입 시에는 살짝 숨겨 둔다.
+            // 새 노트 동작과 현재 노트 구역 제목을 한 줄에 정돈한다.
             const upper=document.createElement('div');
             upper.className='home-stack-upper';
             const zone=document.createElement('div');
             zone.className='home-add-zone';
+            const homeTitle=document.createElement('h2');
+            homeTitle.className='home-section-title';
+            homeTitle.innerHTML='<i class="ri-stack-line"></i><span>내 노트</span>';
+            zone.appendChild(homeTitle);
             const add=document.createElement('button');
             add.type='button';
             add.className='home-add-note';
@@ -1839,11 +1847,14 @@
             upper.appendChild(scene);
             area.appendChild(upper);
 
-            // 아래 줄은 이번 기기·이번 접속에서 열어 본 문서만 낱장으로 둔다.
-            // (제목표·구분선 없이 스택 아래에 곧바로 이어 붙인다)
+            // 아래 구역은 이번 접속에서 편집한 문서를 별도 제목과 함께 보여 준다.
             if(recentNotes.length){
                 const sec=document.createElement('div');
                 sec.className='recent-section';
+                const recentTitle=document.createElement('h2');
+                recentTitle.className='home-section-title recent-title';
+                recentTitle.textContent='최근 편집';
+                sec.appendChild(recentTitle);
                 const row=document.createElement('div');
                 row.className='recent-row';
                 recentNotes.forEach(nb=>row.appendChild(_makeCard(nb)));
@@ -1853,17 +1864,10 @@
 
             g.appendChild(area);
             if(recentNotes.length){
-                // 이번 접속에서 문서를 열어 본 홈 — 같은 높이의 두 줄만 먼저
-                // 보이고, 한 칸 위의 클래식 새 노트 버튼은 휠로 꺼낸다.
+                // 두 구역 높이를 맞추되 상단 동작 버튼은 처음부터 보이게 둔다.
                 area.classList.add('has-recent');
                 _fitHomeRows(area);
-                if(_homeEnterScroll){
-                    _homeEnterScroll=false;
-                    const go=()=>_homeScrollBottom(false);
-                    requestAnimationFrame(go);
-                    setTimeout(go,60);
-                    setTimeout(go,180);
-                }
+                _homeEnterScroll=false;
             }else{
                 _homeEnterScroll=false;
             }
@@ -7291,11 +7295,11 @@
         if(penActive) return;   // 그리기 모드는 draw-surface가 처리
         curPageIdx=pageIdx; updatePageInfo();
         const t=e.target;
-        // 표 배치 모드: 고스트의 중심이 눌린 지점에 오도록 자유 배치한다.
+        // 표 배치 모드: 미리보기와 실제 표가 똑같은 문서 좌표를 사용한다.
         if(tablePlace){
             e.preventDefault(); e.stopPropagation();
             const cfg=tablePlace, p=pageLocal(e,pageIdx);
-            const c=clampEl(p.x-cfg.w/2,p.y-cfg.h/2,cfg.w,cfg.h);
+            const c=clampTableOrigin(cfg,p.x-cfg.w/2,p.y-cfg.h/2);
             cancelTablePlacement();
             insertTable(cfg.rows,cfg.cols,pageIdx,Math.round(c.x),Math.round(c.y));
             return;
@@ -8392,14 +8396,18 @@
         if(!tid) return;
         if(pi == null) pi = curPageIdx;
         if(!noAsk && !confirm('표를 통째로 삭제할까요?')) return;
+        const table=findTbl(pi,tid);
+        const group=(table&&table.group)||('g_'+tid);
+        const selectedWasInTable=!!(selected&&selected.el&&(()=>{
+            const el=findEl(+selected.el.dataset.pageIdx,selected.el.dataset.id);
+            return el&&(tblOf(el)===tid||el.group===group);
+        })());
         pushHistory();
-        doc.pages[pi].els = (doc.pages[pi].els || []).filter(e => tblOf(e) !== tid && (e.group !== 'g_' + tid));
+        // 셀, 실제 테두리 stroke, 선택용 거터/손잡이까지 같은 표에 속한 것은 전부 제거한다.
+        doc.pages[pi].els = (doc.pages[pi].els || []).filter(e => tblOf(e) !== tid && e.group !== group);
         doc.pages[pi].tables = (pageTables(pi) || []).filter(x => x.id !== tid);
-        if(selected && selected.el){
-            const lid = selected.el.dataset.id, lpi = +selected.el.dataset.pageIdx;
-            const el = findEl(lpi, lid);
-            if(el && (tblOf(el) === tid || el.group === 'g_' + tid)) clearSel();
-        }
+        document.querySelectorAll('.layer-tbl .tbl-box').forEach(n=>{ if(n.dataset.tid===String(tid)) n.remove(); });
+        if(selectedWasInTable) clearSel();
         clearActiveTbl();
         renderPageEls(pi); renderTblDivs(pi); saveDoc();
         toast('표를 삭제했습니다 (Ctrl+Z 로 되돌리기)', 1800);
@@ -8719,15 +8727,23 @@
         const ch=40;
         return {rows,cols,cw,ch,w:cw*cols,h:ch*rows};
     }
+    // 미리보기와 실제 삽입이 반드시 같은 종이 안쪽 경계를 사용한다.
+    function clampTableOrigin(dim,x,y){
+        const size=paperSize();
+        return {
+            x:Math.max(8,Math.min(Math.round(x),Math.max(8,size.w-dim.w-8))),
+            y:Math.max(8,Math.min(Math.round(y),Math.max(8,size.h-dim.h-8)))
+        };
+    }
     function insertTable(rows,cols,pageIdx,x,y){
         const dim=tableInsertSize(rows,cols);
         rows=dim.rows; cols=dim.cols;
         const pi=(pageIdx==null?curPageIdx:pageIdx);
         const size=paperSize(),cw=dim.cw,ch=dim.ch;
-        let ox=(x==null? Math.round((size.w-cw*cols)/2) : Math.round(x));
-        let oy=(y==null? 120 : Math.round(y));
-        ox=Math.max(8,Math.min(ox,Math.max(8,size.w-cw*cols-8)));
-        oy=Math.max(8,Math.min(oy,Math.max(8,size.h-ch*rows-8)));
+        const origin=clampTableOrigin(dim,
+            x==null?(size.w-dim.w)/2:x,
+            y==null?120:y);
+        const ox=origin.x, oy=origin.y;
 
         pushHistory();
         const tid='tb_'+Math.random().toString(36).slice(2,9);
@@ -8844,8 +8860,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const p=JSON.parse(localStorage.getItem('fcard_pos')||'null');
             if(p&&isFinite(p.x)){
                 win.classList.add('moved');
-                win.style.left=Math.max(-300,Math.min(innerWidth+300-win.offsetWidth-6,p.x))+'px';
-                win.style.top=Math.max(-300,Math.min(innerHeight+300-60,p.y))+'px';
+                const c=sdyClampFloatingRect(win,p.x,p.y);
+                win.style.left=c.x+'px'; win.style.top=c.y+'px';
             }
         }catch(e){}
     }
@@ -8855,23 +8871,29 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!head||!win) return;
         head.addEventListener('pointerdown',e=>{
             if(e.target.closest('button')) return;
-            _fcardDrag={sx:e.clientX,sy:e.clientY,
-                        ox:parseFloat(win.style.left)||win.getBoundingClientRect().left,
-                        oy:parseFloat(win.style.top)||win.getBoundingClientRect().top};
+            const r=win.getBoundingClientRect();
+            win.classList.add('moved');
             win.style.position='fixed'; win.style.margin='0';
+            win.style.left=r.left+'px'; win.style.top=r.top+'px';
+            _fcardDrag={sx:e.clientX,sy:e.clientY,ox:r.left,oy:r.top};
             try{ head.setPointerCapture(e.pointerId); }catch(err){}
         });
         head.addEventListener('pointermove',e=>{
             if(!_fcardDrag) return;
-            const w=win.offsetWidth,h=win.offsetHeight;
-            win.style.left=Math.max(-300,Math.min(innerWidth+300-w-6,_fcardDrag.ox+e.clientX-_fcardDrag.sx))+'px';
-            win.style.top=Math.max(-300,Math.min(innerHeight+300-h-6,_fcardDrag.oy+e.clientY-_fcardDrag.sy))+'px';
+            const c=sdyClampFloatingRect(win,_fcardDrag.ox+e.clientX-_fcardDrag.sx,
+                _fcardDrag.oy+e.clientY-_fcardDrag.sy);
+            win.style.left=c.x+'px'; win.style.top=c.y+'px';
         });
         const endD=()=>{ if(!_fcardDrag) return; _fcardDrag=null;
             try{ localStorage.setItem('fcard_pos',JSON.stringify(
                 {x:parseFloat(win.style.left),y:parseFloat(win.style.top)})); }catch(e){}
             try{ if(window.pushSettings) window.pushSettings(); }catch(e){} };
         head.addEventListener('pointerup',endD); head.addEventListener('pointercancel',endD);
+        addEventListener('resize',()=>{
+            if(document.getElementById('cardsModal').style.display!=='flex') return;
+            const r=win.getBoundingClientRect(),c=sdyClampFloatingRect(win,r.left,r.top);
+            win.classList.add('moved'); win.style.left=c.x+'px'; win.style.top=c.y+'px';
+        },{passive:true});
     })();
     function _fcardTitle(t){ const el=document.getElementById('fcardTitle'); if(el) el.textContent=t; }
     function closeCards(){
@@ -10992,8 +11014,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!g) return;
         g.style.setProperty('--tbl-rows',dim.rows);
         g.style.setProperty('--tbl-cols',dim.cols);
-        g.style.width=Math.round(dim.w*pageScale)+'px';
-        g.style.height=Math.round(dim.h*pageScale)+'px';
         g.style.display='block';
         const lb=document.getElementById('tableGhostLabel');
         if(lb) lb.textContent=dim.rows+' × '+dim.cols+' 표';
@@ -11005,9 +11025,21 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     function moveTableGhost(clientX,clientY){
         const g=document.getElementById('tableGhost'); if(!g||!tablePlace) return;
-        const gw=tablePlace.w*pageScale,gh=tablePlace.h*pageScale;
-        g.style.left=Math.max(8,Math.min(clientX-gw/2,innerWidth-gw-8))+'px';
-        g.style.top=Math.max(42,Math.min(clientY-gh/2,innerHeight-gh-8))+'px';
+        // 포인터 아래 종이의 실제 화면 배율을 사용한다. 브라우저 90% zoom이나
+        // 사용자 확대 상태에서도 클릭 후 만들어지는 표와 픽셀 단위로 일치한다.
+        const hit=typeof document.elementFromPoint==='function'
+            ?document.elementFromPoint(clientX,clientY):null;
+        const paper=(hit&&hit.closest&&hit.closest('.paper'))||paperAt(curPageIdx);
+        if(!paper) return;
+        const pi=+paper.dataset.pageIdx;
+        const p=pageLocal({clientX,clientY},pi);
+        const origin=clampTableOrigin(tablePlace,p.x-tablePlace.w/2,p.y-tablePlace.h/2);
+        const r=paper.getBoundingClientRect(),sc=pageScreenScale(pi);
+        g.style.width=Math.round(tablePlace.w*sc.x)+'px';
+        g.style.height=Math.round(tablePlace.h*sc.y)+'px';
+        g.style.left=Math.round(r.left+origin.x*sc.x)+'px';
+        g.style.top=Math.round(r.top+origin.y*sc.y)+'px';
+        g.dataset.pageIdx=String(pi);
     }
     function cancelTablePlacement(){
         tablePlace=null;
@@ -11153,8 +11185,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(e.key==='Escape'){
             if(closeTopOverlay()) return;
         }
-        // 표 셀 범위: 방향키로 이동, Shift+방향키로 직사각형 확장,
-        // Enter/F2로 마지막 셀 편집, Delete는 표가 아니라 칸 내용만 비운다.
+        // 표 셀 범위: 방향키로 이동, Shift+방향키로 직사각형 확장.
+        // Delete는 표 전체를 제거하고 Backspace는 선택한 칸의 내용만 비운다.
         if(tblCellSelection&&!document.querySelector('.tb.edit')&&doc
            &&document.getElementById('editorView').classList.contains('open')
            &&!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||'')){
@@ -11174,7 +11206,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 return;
             }
             if(e.key==='Enter'||e.key==='F2'){ e.preventDefault(); editTblSelectionCell(); return; }
-            if(e.key==='Delete'||e.key==='Backspace'){ e.preventDefault(); clearTblCellContents(); return; }
+            if(e.key==='Delete'){
+                e.preventDefault();
+                const s=tblCellSelection;
+                tblDelAll(true,s.tid,s.pageIdx);
+                return;
+            }
+            if(e.key==='Backspace'){ e.preventDefault(); clearTblCellContents(); return; }
         }
         // 단축키 도움말
         // 사용법은 설정에서만 연다 (노트 안에서는 뜨지 않음)
@@ -17195,9 +17233,8 @@ function clampMpb(){
   let x=parseFloat(mpbEl.style.left); let y=parseFloat(mpbEl.style.top);
   if(!isFinite(x)) x=(innerWidth-w)/2;
   if(!isFinite(y)) y=72;
-  x=Math.max(6,Math.min(Math.max(6,innerWidth-w-6),x));
-  y=Math.max(6,Math.min(Math.max(6,innerHeight-h-6),y));
-  mpbEl.style.left=Math.round(x)+'px'; mpbEl.style.top=Math.round(y)+'px';
+  const c=sdyClampFloatingRect(mpbEl,x,y);
+  mpbEl.style.left=Math.round(c.x)+'px'; mpbEl.style.top=Math.round(c.y)+'px';
 }
 function _barShouldShow(){
   // 현재 모드에서 아래 바(LP 디스크)가 보여야 하는가
@@ -17249,11 +17286,9 @@ let _mpbDrag=null;
   });
   head.addEventListener('pointermove',e=>{
     if(!_mpbDrag) return;
-    const r=mpbEl.getBoundingClientRect();
-    mpbEl.style.left=Math.round(Math.max(6,Math.min(innerWidth-r.width-6,
-      _mpbDrag.ox+e.clientX-_mpbDrag.sx)))+'px';
-    mpbEl.style.top=Math.round(Math.max(6,Math.min(innerHeight-r.height-6,
-      _mpbDrag.oy+e.clientY-_mpbDrag.sy)))+'px';
+    const c=sdyClampFloatingRect(mpbEl,_mpbDrag.ox+e.clientX-_mpbDrag.sx,
+      _mpbDrag.oy+e.clientY-_mpbDrag.sy);
+    mpbEl.style.left=Math.round(c.x)+'px'; mpbEl.style.top=Math.round(c.y)+'px';
   });
   const end=()=>{ if(!_mpbDrag) return; _mpbDrag=null;
     try{ localStorage.setItem('mp_big_pos',JSON.stringify({
@@ -19737,436 +19772,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 
 /* === script block 6 === */
 
-/* ============ 이스터에그: 쫄라맨 야구 (메인화면 왼쪽 아래) ============
-   투수 쪽을 터치 → 매번 다른 구질로 던짐 → 타자가 친다.
-   6.5: 공은 캔버스(작은 상자) 안이 아니라 '화면 밖'으로 나갈 때까지 날아간다. */
-(function(){
-const ev=document.getElementById('editorView');
-if(!ev) return;
-const cv=document.createElement('canvas');
-cv.id='bbEgg';
-document.body.appendChild(cv);
-const tap=document.createElement('button');
-tap.id='bbTap'; tap.title='투수를 터치해 보세요 ⚾';
-document.body.appendChild(tap);
-const ctx=cv.getContext('2d');
-let W=0,H=0,GY=0,DPR=1,GS=1;
-// GS = 그림 확대 배율. 선수·배트·공 좌표가 전부 픽셀 상수라 폰에서
-// 깨알같이 작았다 → 화면이 좁을수록 크게 그린다 (좌표는 그대로 두고
-// 캔버스 자체를 확대해서 그리므로 물리·궤적은 손대지 않는다).
-function gscale(){
-  const w=innerWidth;
-  if(w<420) return 1.15;
-  if(w<560) return 1.1;
-  if(w<760) return 1.05;
-  return 1;
-}
-function sizeCv(){
-  W=innerWidth;
-  GS=gscale();
-  H=Math.min(Math.round(innerHeight*0.72),Math.round(560*GS));
-  GY=Math.round(H/GS)-10;          // 논리 좌표계 기준 바닥선
-  DPR=Math.min(2,window.devicePixelRatio||1);
-  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
-  cv.style.width=W+'px'; cv.style.height=H+'px';
-}
-sizeCv();
 
-let ink='#8a93a3', acc='#4f6ef7';
-function readCols(){
-  try{
-    const cs=getComputedStyle(document.documentElement);
-    const t=(cs.getPropertyValue('--text3')||'').trim(); if(t) ink=t;
-    const a=(cs.getPropertyValue('--accent')||'').trim(); if(a) acc=a;
-  }catch(e){}
-}
-readCols();
-const lx=()=>Math.min(W/GS/2,220);   // 판정 글자 위치(장면 위, 논리 좌표)
-
-const PITCH=[
-  {k:'fast', lbl:'직구!',   lo:240, hi:340},
-  {k:'curve',lbl:'커브!',   lo:430, hi:560},
-  {k:'knuk', lbl:'너클볼!', lo:560, hi:720},
-  {k:'lob',  lbl:'슬로볼!', lo:700, hi:860}
-];
-const OUT=[
-  {k:'hr',  w:18, lbl:'홈런!!',   c:'#f59e0b', vx:3.4, vy:-3.7, g:.055},
-  {k:'3b',  w:10, lbl:'3루타!',   c:'#10b981', vx:3.0, vy:-1.9, g:.06},
-  {k:'2b',  w:12, lbl:'2루타!',   c:'#10b981', vx:2.6, vy:-1.4, g:.06},
-  {k:'1b',  w:18, lbl:'안타!',    c:'#4f6ef7', vx:2.1, vy:-.7,  g:.05},
-  {k:'bunt',w:10, lbl:'번트',     c:'#8a93a3', vx:.85, vy:-.15, g:.02, roll:1},
-  {k:'foul',w:12, lbl:'파울!',    c:'#ef4444', vx:-2.3,vy:-2.7, g:.07},
-  {k:'so',  w:10, lbl:'삼진…',    c:'#ef4444'},
-  {k:'pop', w:10, lbl:'뜬공 아웃',c:'#ef4444', vx:.5,  vy:-3.5, g:.095}
-];
-function pickOut(){
-  let s=0; OUT.forEach(o=>s+=o.w);
-  let r=Math.random()*s;
-  for(const o of OUT){ r-=o.w; if(r<=0) return o; }
-  return OUT[3];
-}
-
-let st={phase:'idle'};   // idle|windup|pitch|fly|settle
-let raf=0, visible=false;
-
-function handPose(p){          // 투수 손 위치 (windup 진행 0..1)
-  const A=[143,GY-27],B=[148,GY-20],C=[129,GY-18];
-  const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
-  return p<.5? mix(A,B,p*2) : mix(B,C,(p-.5)*2);
-}
-function pitchPos(u){          // 공 궤적 (u: 0..1)
-  const P=st.pitch, x0=135,y0=GY-18, x1=32,y1=GY-16;
-  const lxv=x0+(x1-x0)*u, lyv=y0+(y1-y0)*u;
-  if(P.k==='curve'||P.k==='lob'){
-    const cy=P.cy, mx=(x0+x1)/2, a=1-u;
-    return [a*a*x0+2*a*u*mx+u*u*x1, a*a*y0+2*a*u*cy+u*u*y1];
-  }
-  if(P.k==='knuk') return [lxv, lyv+Math.sin(u*Math.PI*5)*3.6+Math.sin(u*37)*1.1];
-  return [lxv, lyv+Math.sin(u*Math.PI)*1.5];        // 직구(약간 가라앉음)
-}
-function drawMan(x,role){
-  ctx.strokeStyle=ink; ctx.fillStyle=ink;
-  ctx.lineWidth=1.6; ctx.lineCap='round'; ctx.lineJoin='round';
-  ctx.beginPath(); ctx.arc(x,GY-23,3.4,0,7); ctx.stroke();            // 머리
-  ctx.beginPath(); ctx.moveTo(x,GY-19); ctx.lineTo(x,GY-9); ctx.stroke();// 몸통
-  ctx.beginPath(); ctx.moveTo(x,GY-9); ctx.lineTo(x-5,GY);            // 다리
-  ctx.moveTo(x,GY-9); ctx.lineTo(x+5,GY); ctx.stroke();
-  if(role==='bat'){
-    ctx.beginPath(); ctx.moveTo(x,GY-17); ctx.lineTo(x+5,GY-16); ctx.stroke(); // 팔
-    const ang=(st.batAng!=null?st.batAng:-2.15);                      // 배트
-    ctx.lineWidth=2.2;
-    ctx.beginPath();
-    ctx.moveTo(x+5,GY-16);
-    ctx.lineTo(x+5+Math.cos(ang)*13, GY-16+Math.sin(ang)*13);
-    ctx.stroke(); ctx.lineWidth=1.6;
-  }else{
-    const hp=(st.phase==='windup')? handPose(st.wp)
-             : (st.phase==='idle'? [135,GY-18]:[129,GY-18]);
-    ctx.beginPath(); ctx.moveTo(x,GY-18); ctx.lineTo(hp[0],hp[1]); ctx.stroke();  // 던지는 팔
-    ctx.beginPath(); ctx.moveTo(x,GY-18); ctx.lineTo(x-5,GY-12); ctx.stroke();    // 반대 팔
-    if(st.phase==='windup'){                                          // 다리 킥
-      const k=Math.sin(Math.min(1,st.wp*1.4)*Math.PI)*6;
-      ctx.beginPath(); ctx.moveTo(x,GY-9); ctx.lineTo(x-6,GY-k); ctx.stroke();
-    }
-    if(st.phase==='idle') drawBall(135,GY-18);
-  }
-}
-function drawBall(x,y,alpha){
-  ctx.save(); ctx.globalAlpha=alpha==null?1:alpha;
-  ctx.fillStyle='#f97316';
-  ctx.beginPath(); ctx.arc(x,y,2,0,7); ctx.fill();
-  ctx.restore();
-}
-function frame(){
-  // 논리 좌표계(GS 배로 확대) — 폰에서도 선수가 또렷하게 보인다
-  ctx.setTransform(DPR*GS,0,0,DPR*GS,0,0);
-  ctx.clearRect(0,0,W/GS,H/GS);
-  ctx.strokeStyle=ink; ctx.globalAlpha=.5; ctx.lineWidth=1;          // 땅(전체 폭)
-  ctx.beginPath(); ctx.moveTo(0,GY+.5); ctx.lineTo(W/GS,GY+.5); ctx.stroke();
-  ctx.globalAlpha=1;
-  drawMan(24,'bat');
-  drawMan(140,'pit');
-  if(st.trail) for(let i=0;i<st.trail.length;i++){
-    const t=st.trail[i]; drawBall(t[0],t[1], (i+1)/st.trail.length*.35);
-  }
-  if(st.ball) drawBall(st.ball[0],st.ball[1], st.fade==null?1:st.fade);
-  if(st.label){                                                      // 판정·구질 글자
-    const L=st.label;
-    ctx.save();
-    ctx.globalAlpha=L.a==null?1:L.a;
-    ctx.fillStyle=L.c||ink;
-    ctx.font=(L.big?'800 13px':'700 10.5px')+' -apple-system,system-ui,sans-serif';
-    ctx.textAlign='center';
-    ctx.fillText(L.s, L.x==null?lx():L.x, L.y==null?14:L.y);
-    ctx.restore();
-  }
-}
-function loop(ts){
-  raf=0;
-  const dt=Math.min(40, ts-(st.ts||ts)); st.ts=ts;
-  const sc=dt/16.667;
-  if(st.phase==='windup'){
-    st.wp+=dt/st.wdur;
-    if(st.wp>=1){ st.phase='pitch'; st.pt=0; st.trail=[];
-      st.label={s:st.pitch.lbl,c:ink,y:GY-46,a:.85}; }
-  }else if(st.phase==='pitch'){
-    st.pt+=dt/st.pitch.dur;
-    const u=Math.min(1,st.pt);
-    st.ball=pitchPos(u);
-    st.trail.push(st.ball.slice()); if(st.trail.length>6) st.trail.shift();
-    if(u>=1) contact();
-  }else if(st.phase==='fly'){
-    const R=st.res;
-    if(R.k==='so'){                                  // 삼진: 공이 빠져나감
-      st.ball=[st.ball[0]-2.6*sc, st.ball[1]+.15*sc];
-      st.fade=(st.fade||1)-.05*sc;
-      if(st.ball[0]<8||st.fade<=0){ st.ball=null; settle(); }
-    }else{
-      R.vy+=R.g*sc; R.bx+=R.vx*sc; R.by+=R.vy*sc;
-      if(R.roll){ R.vx*=Math.pow(.985,sc);
-        if(R.by>GY-2){ R.by=GY-2; R.vy=0; R.g=0; }
-        if(Math.abs(R.vx)<.12){ st.ball=[R.bx,R.by]; settle(); }
-      }
-      st.ball=[R.bx,R.by];
-      st.trail.push(st.ball.slice()); if(st.trail.length>6) st.trail.shift();
-      // 6.5: 화면(뷰포트) 밖으로 완전히 나갈 때까지 날린다
-      if(R.bx>W/GS+24||R.bx<-24||R.by<-40||(!R.roll&&R.by>GY+16)){
-        st.ball=null;
-        if(R.k==='hr' && document.getElementById('setModal') && document.getElementById('setModal').style.display==='flex'){ startCelebrate(); return; }   // 6.13: 홈런 → 폭죽 세러머니
-        settle();
-      }
-    }
-  }else if(st.phase==='settle'){
-    st.sk-=dt;
-    if(st.label) st.label.a=Math.max(0,st.sk/st.sdur);
-    if(st.sk<=0){ resetIdle(); return; }
-  }
-  // 배트 스윙 (접촉 순간)
-  if(st.swing!=null){
-    st.swing+=dt/130;
-    const s2=Math.min(1,st.swing);
-    st.batAng=-2.15+s2*s2*2.75;
-    if(s2>=1){ st.swing=null;
-      setTimeout(()=>{ st.batAng=null; if(visible&&!raf) raf=requestAnimationFrame(loop); frame(); },120);
-    }
-  }
-  frame();
-  raf=requestAnimationFrame(loop);
-}
-function settle(){
-  st.phase='settle'; st.sdur=750; st.sk=st.sdur;
-  if(st.label){ st.label.a=1; st.label.y=GY-44; }
-  st.trail=[];
-}
-function resetIdle(){
-  st={phase:'idle'}; frame();
-}
-function contact(){
-  // ★ 중요: pickOut()이 전역 OUT 배열의 객체를 그대로 주면, fly 단계에서
-  //   R.vy += g 같은 식으로 원본 수치를 오염시킨다. → 다음 타석에서 같은
-  //   결과가 나와도 vy/vx 가 이미 변해 있어 공이 위로 안 뜨고 바닥으로만 갔다.
-  //   그래서 반드시 복사본으로 받아야 한다.
-  const R=Object.assign({}, pickOut()); st.res=R; st.swing=0;
-  // 판정 글자는 홈런 포함 그대로 표시 (폭죽 세러머니 쪽 글자만 뺐다)
-  st.label={s:R.lbl, c:R.c||acc, big:R.k==='hr', y:GY-44, a:1};
-  st.phase='fly';
-  if(R.k==='so') return;                             // 헛스윙 — 공 통과
-  R.bx=33; R.by=GY-17;
-  if(R.roll){ R.by=GY-2; }
-}
-
-// ── 6.13 홈런 세러머니: 폭죽 + 타자 전력질주 + 좌절한 투수 ──
-const fx=document.createElement('canvas');
-fx.style.cssText='position:fixed;left:0;top:0;z-index:1043;pointer-events:none;display:none;';
-document.body.appendChild(fx);
-const fctx=fx.getContext('2d');
-let FW=0, FH=0;
-function fxSize(){
-  FW=innerWidth; FH=innerHeight;
-  fx.width=Math.round(FW*DPR); fx.height=Math.round(FH*DPR);
-  // ★ CSS 크기를 안 정해 주면 폰(DPR 2)에서 캔버스가 화면의 2배로 늘어나
-  //   폭죽·타자가 대부분 화면 밖에 그려졌다 (모바일에서 홈런이 안 보이던 원인)
-  fx.style.width=FW+'px'; fx.style.height=FH+'px';
-}
-fxSize();
-let cel=null, celRaf=0;
-const FIREC=['#f59e0b','#ef4444','#8b5cf6','#10b981','#f97316','#e0619b','#0ea5e9','#fde047'];
-function startCelebrate(){
-  if(celRaf){ cancelAnimationFrame(celRaf); celRaf=0; }
-  if(raf){ cancelAnimationFrame(raf); raf=0; }        // 메인 루프 멈춤
-  st.phase='celebrate';
-  cv.style.display='none';                             // 필드는 fx 가 그린다
-  fxSize();
-  const GRD=Math.max(180,innerHeight-120);                            // 땅 = 게임과 같은 바닥선(고정)
-  // 펼쳐진 음악바를 '지형(플랫폼)'으로 감지
-  let bar=null;
-  try{
-    // 설정 모드에서는 음악바 지형 점프를 사용하지 않음 (bar는 null)
-    // const mp=document.getElementById('musicPlayer'); if(mp && mp.style.display!=='none' && mp.classList.contains('mp-bar')){ const mr=mp.getBoundingClientRect(); bar={top:mr.top, left:mr.left, right:mr.right}; }
-  }catch(e){}
-  cel={t:0, lt:0, dur:6800, nextBurst:0, parts:[], ground:GRD, bar,
-       runner:{x:24, y:GRD, vy:0, phase:'out', dir:1, speed:Math.max(8,Math.min(FW/120,FW/90)),
-               pastBar:false, pastBarBack:false},
-       label:{a:1}};
-  fx.style.display='block';
-  celRaf=requestAnimationFrame(celStep);
-}
-function endCelebrate(){
-  fx.style.display='none'; cel=null;
-  if(celRaf){ cancelAnimationFrame(celRaf); celRaf=0; }
-  cv.style.display=visible?'block':'none';
-  resetIdle();
-}
-function drawRunner(x,y,ph){
-  fctx.strokeStyle=ink; fctx.fillStyle=ink; fctx.lineWidth=2;
-  fctx.lineCap='round'; fctx.lineJoin='round';
-  fctx.beginPath(); fctx.arc(x,y-19,3.6,0,7); fctx.stroke();          // 머리
-  fctx.beginPath(); fctx.moveTo(x,y-15); fctx.lineTo(x,y-5); fctx.stroke(); // 몸통
-  const sw=Math.sin(ph)*6;                                            // 달리는 다리
-  fctx.beginPath(); fctx.moveTo(x,y-5); fctx.lineTo(x-4,y+sw); fctx.stroke();
-  fctx.beginPath(); fctx.moveTo(x,y-5); fctx.lineTo(x+4,y-sw); fctx.stroke();
-  fctx.beginPath(); fctx.moveTo(x,y-13); fctx.lineTo(x-5,y-7+sw); fctx.stroke();  // 팔
-  fctx.beginPath(); fctx.moveTo(x,y-13); fctx.lineTo(x+5,y-7-sw); fctx.stroke();
-}
-function drawSitPitcher(x,gy){
-  fctx.strokeStyle=ink; fctx.fillStyle=ink; fctx.lineWidth=2;
-  fctx.lineCap='round'; fctx.lineJoin='round';
-  fctx.beginPath(); fctx.arc(x,gy-13,3.6,0,7); fctx.stroke();         // 숙인 머리
-  fctx.beginPath(); fctx.moveTo(x,gy-10); fctx.lineTo(x,gy-3); fctx.stroke(); // 웅크린 몸통
-  fctx.beginPath(); fctx.moveTo(x,gy-3); fctx.lineTo(x+8,gy-1); fctx.stroke(); // 다리(앉음)
-  fctx.beginPath(); fctx.moveTo(x,gy-3); fctx.lineTo(x-8,gy-1); fctx.stroke();
-  fctx.beginPath(); fctx.moveTo(x,gy-9); fctx.lineTo(x+4,gy-13); fctx.stroke(); // 머리 감싼 팔
-}
-// (bx,by) 를 제자리에 둔 채 그 주변만 GS 배로 그린다
-function atScale(bx,by,fn){
-  fctx.save();
-  fctx.translate(bx,by); fctx.scale(GS,GS); fctx.translate(-bx,-by);
-  fn();
-  fctx.restore();
-}
-function drawCel(){
-  fctx.setTransform(DPR,0,0,DPR,0,0);
-  fctx.clearRect(0,0,FW,FH);
-  for(const p of cel.parts){                                          // 폭죽
-    fctx.globalAlpha=Math.max(0,p.life);
-    fctx.fillStyle=p.col;
-    fctx.beginPath(); fctx.arc(p.x,p.y,2.2,0,7); fctx.fill();
-  }
-  fctx.globalAlpha=1;
-  const gY=cel.ground;                                                // 땅(게임과 동일 바닥선, 전체 폭)
-  fctx.strokeStyle=ink; fctx.globalAlpha=.55; fctx.lineWidth=1;
-  fctx.beginPath(); fctx.moveTo(0,gY+.5); fctx.lineTo(FW,gY+.5); fctx.stroke();
-  fctx.globalAlpha=1;
-  // (음악바는 지형으로만 동작 — 회색 상자 등 시각 표시 없음)
-  // 사람은 각자 서 있는 자리를 기준으로 GS 배 키운다 (위치는 그대로)
-  atScale(140,gY,()=>drawSitPitcher(140,gY));                         // 좌절한 투수
-  atScale(cel.runner.x,cel.runner.y,
-          ()=>drawRunner(cel.runner.x, cel.runner.y, cel.t*0.02));    // 질주하는 타자
-  // (홈런 글자 없음 — 폭죽만)
-}
-function celStep(ts){
-  celRaf=0;
-  const dt=Math.min(40, ts-(cel.lt||ts)); cel.lt=ts; cel.t+=dt;
-  const sc=dt/16.667;
-  // 폭죽 터뜨리기 (화면 위쪽에서)
-  if(cel.t>=cel.nextBurst && cel.t<cel.dur*0.72){
-    const n=26+(Math.random()*22|0);
-    // 화면 맨 위가 아니라, 야구 장면 근처의 화면 중앙 아래에서만 터진다.
-    const bx=FW*0.22+Math.random()*FW*0.56;
-    const by=FH*0.52+Math.random()*FH*0.13;
-    const col=FIREC[(Math.random()*FIREC.length)|0];
-    for(let i=0;i<n;i++){
-      const a=Math.random()*Math.PI*2, sp=1.1+Math.random()*3.0;
-      cel.parts.push({x:bx, y:by,
-        vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-Math.random()*2,
-        g:0.06+Math.random()*0.03, col, life:1});
-    }
-    cel.nextBurst=cel.t+260+Math.random()*320;
-  }
-  for(let i=cel.parts.length-1;i>=0;i--){                              // 폭죽 물리
-    const p=cel.parts[i];
-    p.vy+=p.g*sc; p.x+=p.vx*sc; p.y+=p.vy*sc; p.life-=0.013*sc;
-    if(p.life<=0||p.y>FH) cel.parts.splice(i,1);
-  }
-  const r=cel.runner, bar=cel.bar, GRD=cel.ground;                   // 타자: 지형(음악바) 점프 상태머신
-  const sp=r.speed*sc;
-  // 달리기·점프 모두 가로 이동 (벽/완주 상태 제외)
-  if(r.phase!=='done' && r.phase!=='wall') r.x+=r.dir*sp;
-  switch(r.phase){
-    case 'out':                                                     // 땅에서 오른쪽으로
-      // 바를 아직 안 넘었을 때만 바 위로 점프 (넘은 뒤엔 다시 안 오름)
-      if(bar && !r.pastBar && r.x>=bar.left-30){ r.vy=-11; r.phase='jumpOn'; }
-      else if(r.x>=FW-8){ r.x=FW-8; r.dir=-1; r.phase='back'; }
-      break;
-    case 'jumpOn':                                                  // 바 위로 점프(바깥 방향)
-      r.vy+=0.55*sc; r.y+=r.vy*sc;
-      if(r.vy>0 && r.y>=bar.top && r.x>=bar.left && r.x<=bar.right){ r.y=bar.top; r.vy=0; r.phase='onBar'; }
-      else if(r.y>=GRD){ r.y=GRD; r.vy=0; r.phase='out'; r.pastBar=true; } // 못 올랐으면 땅으로(바 넘은 것으로 처리)
-      break;
-    case 'onBar':                                                   // 바 위 걷기(오른쪽)
-      if(r.x>=bar.right){ r.vy=0; r.phase='jumpOff'; }
-      break;
-    case 'jumpOff':                                                 // 바에서 땅으로 내려오기
-      r.vy+=0.55*sc; r.y+=r.vy*sc;
-      if(r.y>=GRD){ r.y=GRD; r.vy=0; r.phase='out'; r.pastBar=true; } // 바를 넘었다고 표시
-      break;
-    case 'back':                                                    // 땅에서 왼쪽으로(복귀)
-      if(bar && !r.pastBarBack && r.x<=bar.right+30){ r.vy=-11; r.phase='jumpOnB'; }
-      else if(r.x<=24){ r.x=24; r.phase='done'; }
-      break;
-    case 'jumpOnB':                                                 // 바 위로 점프(복귀 방향)
-      r.vy+=0.55*sc; r.y+=r.vy*sc;
-      if(r.vy>0 && r.y>=bar.top && r.x<=bar.right && r.x>=bar.left){ r.y=bar.top; r.vy=0; r.phase='onBarB'; }
-      else if(r.y>=GRD){ r.y=GRD; r.vy=0; r.phase='back'; r.pastBarBack=true; } // 못 올랐으면 땅으로
-      break;
-    case 'onBarB':                                                  // 바 위 걷기(왼쪽)
-      if(r.x<=bar.left){ r.vy=0; r.phase='jumpOffB'; }
-      break;
-    case 'jumpOffB':                                                // 바에서 땅으로(복귀)
-      r.vy+=0.55*sc; r.y+=r.vy*sc;
-      if(r.y>=GRD){ r.y=GRD; r.vy=0; r.phase='back'; r.pastBarBack=true; }
-      break;
-    case 'done': break;
-  }
-  if(cel.label) cel.label.a=Math.max(0, 1-(cel.t-3600)/500);
-  drawCel();
-  if(cel.t>=cel.dur || (r.phase==='done' && cel.t>1500 && cel.parts.length<4)){
-    endCelebrate(); return;
-  }
-  celRaf=requestAnimationFrame(celStep);
-}
-function startPitch(){
-  const P=PITCH[(Math.random()*PITCH.length)|0];
-  const cy = P.k==='curve' ? GY-38+(Math.random()*8-4)
-           : P.k==='lob'   ? GY-52+(Math.random()*8-4) : 0;
-  st.pitch={k:P.k, lbl:P.lbl, dur:P.lo+Math.random()*(P.hi-P.lo), cy};
-  st.phase='windup'; st.wp=0; st.wdur=230+Math.random()*150;
-  st.ball=null; st.trail=[]; st.batAng=null;
-  st.label=null; st.fade=null;
-  if(!raf) raf=requestAnimationFrame(loop);
-}
-tap.addEventListener('pointerdown',e=>{
-  if(st.phase!=='idle'||!visible) return;
-  e.preventDefault();
-  startPitch();
-});
-// 투수 터치 영역도 그림 배율을 따라가야 손가락으로 누를 수 있다
-function placeTap(){
-  const cx=140*GS, cyTop=(GY-30)*GS;      // 투수 머리~발 범위(논리→화면)
-  const w=Math.round(52*GS), h=Math.round(46*GS);
-  tap.style.left=Math.round(cx-w/2)+'px';
-  tap.style.width=w+'px';
-  tap.style.height=h+'px';
-  tap.style.bottom=Math.max(4,Math.round(H-(GY+6)*GS))+'px';
-}
-function setVisible(v){
-  if(v===visible) return;
-  visible=v;
-  cv.style.display=v?'block':'none';
-  tap.style.display=v?'block':'none';
-  if(v) placeTap();
-  if(v){ resetIdle(); }
-  else{ if(raf){cancelAnimationFrame(raf); raf=0;} st={phase:'idle'}; }
-}
-function anyModalVisible(){
-  const ms=document.getElementsByClassName('modal-bg');
-  for(const m of ms){ if(m.style.display && m.style.display!=='none') return true; }
-  return false;
-}
-function refreshEgg(){ setVisible(!ev.classList.contains('open') && !anyModalVisible()); }  // 메인화면(바깥)에 표시
-new MutationObserver(refreshEgg).observe(ev,{attributes:true,attributeFilter:['class']});
-// 모달이 열리고 닫힐 때도 갱신 (스타일 변경 감시, rAF 스로틀)
-let _eggQ=0;
-new MutationObserver(()=>{
-  if(_eggQ) return;
-  _eggQ=requestAnimationFrame(()=>{ _eggQ=0; refreshEgg(); });
-}).observe(document.body,{attributes:true,subtree:true,attributeFilter:['style']});
-new MutationObserver(()=>{ readCols(); if(visible&&st.phase==='idle') frame(); })
-  .observe(document.documentElement,{attributes:true,attributeFilter:['class']});
-addEventListener('resize',()=>{ sizeCv(); if(visible) placeTap(); if(cel) fxSize(); if(visible&&st.phase==='idle') frame(); },{passive:true});
-refreshEgg();
-})();
-/* ============ /5.35 야구 ============ */
 
 
 /* === script block 7 === */
@@ -21569,9 +21175,8 @@ refreshEgg();
     window.addEventListener('pointermove',function(e){
       if(!drag) return;
       var nx=ox+(e.clientX-sx), ny=oy+(e.clientY-sy);
-      nx=Math.max(8,Math.min(window.innerWidth-app.offsetWidth-8,nx));
-      ny=Math.max(8,Math.min(window.innerHeight-app.offsetHeight-8,ny));
-      app.style.left=nx+'px'; app.style.top=ny+'px'; app.style.right='auto'; app.style.bottom='auto';
+      var c=sdyClampFloatingRect(app,nx,ny);
+      app.style.left=c.x+'px'; app.style.top=c.y+'px'; app.style.right='auto'; app.style.bottom='auto';
     });
     window.addEventListener('pointerup',function(){ drag=false; head.style.cursor=''; });
   }
@@ -22319,9 +21924,13 @@ refreshEgg();
       }else if(app.classList.contains('open')){
         var l=parseFloat(app.style.left),t=parseFloat(app.style.top);
         if(isFinite(l)||isFinite(t)){
+          /* 이전 좌표를 먼저 보존해 회전 뒤에도 같은 쪽에 머물게 하고,
+             마지막 판정은 모든 창과 동일한 공용 경계 함수에 맡긴다. */
           var w=app.offsetWidth,h=app.offsetHeight;
-          if(isFinite(l)) app.style.left=Math.max(-300,Math.min(innerWidth+300-w-8,l))+'px';
-          if(isFinite(t)) app.style.top =Math.max(-300,Math.min(innerHeight+300-h-8,t))+'px';
+          if(isFinite(l)) l=Math.max(8,Math.min(innerWidth-w-8,l));
+          if(isFinite(t)) t=Math.max(8,Math.min(innerHeight-h-8,t));
+          var c=sdyClampFloatingRect(app,isFinite(l)?l:app.getBoundingClientRect().left,isFinite(t)?t:app.getBoundingClientRect().top);
+          app.style.left=c.x+'px'; app.style.top=c.y+'px';
         }
       }
     }
@@ -22329,13 +21938,12 @@ refreshEgg();
     if(pl && pl.classList.contains('mp-float')){
       if(PHONE()){ pl.style.right='';pl.style.left=''; }
       var t2=parseFloat(pl.style.top);
-      if(isFinite(t2)) pl.style.top=Math.max(-200,Math.min(innerHeight+200-pl.offsetHeight-12,t2))+'px';
+      if(isFinite(t2)){ var pc=sdyClampFloatingRect(pl,pl.getBoundingClientRect().left,t2); pl.style.top=pc.y+'px'; }
     }
     var big=document.getElementById('mpBig');
     if(big && big.classList.contains('open')){
       var bl=parseFloat(big.style.left),bt=parseFloat(big.style.top);
-      if(isFinite(bl)) big.style.left=Math.max(-300,Math.min(innerWidth+300-big.offsetWidth-6,bl))+'px';
-      if(isFinite(bt)) big.style.top =Math.max(-300,Math.min(innerHeight+300-big.offsetHeight-6,bt))+'px';
+      if(isFinite(bl)||isFinite(bt)){ var bc=sdyClampFloatingRect(big,isFinite(bl)?bl:big.getBoundingClientRect().left,isFinite(bt)?bt:big.getBoundingClientRect().top); big.style.left=bc.x+'px'; big.style.top=bc.y+'px'; }
     }
   }
   function tick(){ syncViewport(); syncBar(); clampFloats(); }
