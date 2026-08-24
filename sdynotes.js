@@ -1448,10 +1448,18 @@
     function _stackTransforms(cards,fanned){
         const n=cards.length; if(!n) return;
         const mid=(n-1)/2;
-        const viewport=window.innerWidth||1024;
+        // 17.2 · 펼침 폭은 뷰포트가 아니라 스택 컨테이너(.note-stack) 너비를
+        //   기준으로 정한다. 예전엔 창 전체 폭을 써서, 넓은 PC에서는 카드가
+        //   화면 좌우 끝까지 흩어지고 좁은 폰에서는 넘쳤다.
+        const container=cards[0].closest('.note-stack')||cards[0].parentElement;
+        const cw=container?container.clientWidth:0;
         const cardW=Math.max(...cards.map(c=>c.offsetWidth||200));
-        const available=Math.max(0,viewport-cardW-48);
-        const spread=n>1?Math.min(230,available/(n-1)):0;
+        const avail=Math.max(cw, (window.innerWidth||1024))-cardW-48;
+        const available=Math.max(0, avail);
+        // 모바일은 좌우로 덜 흩어지게, PC는 넉넉하게 (최대 230px)
+        const isTouch=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
+        const maxSpread=isTouch?150:230;
+        const spread=n>1?Math.min(maxSpread,available/(n-1)):0;
         cards.forEach((c,i)=>{
             const off=i-mid;
             if(fanned){
@@ -1497,13 +1505,14 @@
         g.innerHTML='';
         renderBreadcrumb();
 
-        /* 17.1 · 홈 복원
-           16.0~16.1에서 넣었던 카드 더미/최근 문서 2단 레이아웃은 넓은 PC에서도
-           카드를 한곳에 겹쳐 놓아 홈 그리드가 무너져 보였다. 원래 홈처럼
-           폴더 → 노트 → 새 노트를 한 격자에 나란히 둔다. 모바일에서는 같은 DOM을
-           CSS가 2열로 맞추므로 별도 렌더러가 필요 없다. 스택 코드는 기존 데이터와
-           동작을 건드리지 않도록 잠시 보존하되 렌더 경로에서는 사용하지 않는다. */
-        const isHomeStack=false;
+        /* 17.2 · 홈 스택 (복원)
+           한 덩어리의 노트/폴더 카드를 화면 중앙에 살짝 겹쳐 쌓아 두고,
+           마우스를 올리면(폰에서는 누르면) 부챗살처럼 펼쳐진다. 편집하고
+           돌아오면(_trackRecent) 그 노트는 아래 '최근' 줄에 따로 놓인다.
+           넓은 PC에서는 스택 영역에 최대 폭을 두어 카드가 한가운데
+           알맞게 모이도록 CSS 로 잡았다. 폴더 안/검색 중/선택 모드에서는
+           예전의 평범한 격자를 쓴다. */
+        const isHomeStack=!curFolder && !searchQuery && !selectMode;
         const filtered=getFiltered();
         const recentIds=isHomeStack?_getRecentIds():[];
         const recentSet=new Set(recentIds.map(id=>String(id)));
@@ -5645,7 +5654,11 @@
             zone.style.width=(size.w*pageScale)+'px';
             zone.style.height=(ADD_ZONE_H*pageScale*0.8)+'px';
         }
-        document.getElementById('zoomLabel').textContent=Math.round(pageScale*100)+'%';
+        // 9.2 단일 툴바 개편으로 확대율 라벨이 '더보기' 서랍 안으로 들어갔다.
+        // 서랍이 아직 그려지지 않았거나(저사양 기기) 요소가 없어도 layoutPages 가
+        // 통째로 던져지면 openNB 의 에디터 열기 자체가 실패하므로 방어한다.
+        const _zl=document.getElementById('zoomLabel');
+        if(_zl) _zl.textContent=Math.round(pageScale*100)+'%';
         try{ positionTblBar(); }catch(e){}
         try{ if(findOpen) paintFindHits(); }catch(e){}
     }

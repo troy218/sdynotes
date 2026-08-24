@@ -150,8 +150,9 @@ try {
   check('390px 터치 화면에 sdy-mobile-ui가 붙는다', document.body.classList.contains('sdy-mobile-ui'));
   check('초기 visualViewport 높이 844px이 CSS 변수에 반영된다',
     document.documentElement.style.getPropertyValue('--sdy-mobile-vh') === '844px');
-  check('홈이 겹친 카드 스택 없이 원래 격자로 렌더된다',
-    !document.querySelector('#noteGrid .home-stack-area') && !!document.querySelector('#noteGrid .add-card'));
+  check('홈에 노트 스택(한 덩어리 + 새 노트 버튼)이 렌더된다',
+    !!document.querySelector('#noteGrid .home-stack-area .note-stack')
+    && !!document.querySelector('#noteGrid .home-add-note'));
 
   window.openSettings();
   check('설정 창 열기', document.getElementById('setModal').style.display === 'flex');
