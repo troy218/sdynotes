@@ -14,7 +14,7 @@
     "test:gate": "node test/yp_gate_contract.cjs",
     "test:smtp": "node test/smtp_contract.mjs",
     "test:musicfs": "node test/music_fs_smoke.mjs",
-    "test:phone": "node test/phone_layout_contract.mjs",
+    "test:phone": "node test/phone_layout_contract.mjs && node test/mobile_runtime_smoke.mjs",
     "test:sync": "node test/note_sync_clock_contract.mjs && node test/collab_protocol.cjs && node test/merge3_unit.cjs",
     "test:save": "node test/save_outbox_contract.mjs",
     "test:oracle": "node test/oracle_db_contract.mjs && node test/sdb_shim_contract.mjs && node test/migrate_oracle_sim.mjs",
@@ -31,6 +31,7 @@
     "ws": "^8.21.3"
   },
   "devDependencies": {
+    "css-tree": "^3.2.1",
     "jsdom": "^29.1.1"
   }
 }

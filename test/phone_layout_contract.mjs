@@ -1,177 +1,205 @@
-/* 14.14 · 폰 화면 레이아웃 계약
+/* 17.0 · 모바일 레이아웃/기능 표면 계약
  *
- * 왜 이 테스트가 있나 —
- *   폰 규칙이 네 군데(<style> 첫머리 / 음악 플레이어 / v88-mobile / ypStyle)에
- *   흩어져 같은 요소에 서로 다른 값을 2~4번씩 지정하고 있었다. 어느 쪽이
- *   이길지는 '파일에서 누가 더 아래냐'로 정해져서, 규칙 하나를 옮기거나
- *   추가하면 폰 화면이 조용히 깨졌다.
- *
- *   이 테스트는 폰(≤640px)에서 "위치·크기를 정하는 선언"이 요소별로
- *   딱 한 군데에서만 나오는지 검사한다. 새 규칙을 아무 데나 추가하면
- *   여기서 잡힌다.
+ * 실제 CSS는 sdynotes.css로 분리되어 있다. 이 테스트는 브라우저가 CSS 전체를
+ * 오류 없이 파싱하는지, 마지막 모바일 블록이 데스크톱으로 새지 않는지, 그리고
+ * 홈·에디터·모달·암기카드·음악·시계·채팅의 주요 조작면이 휴대폰 규칙 안에
+ * 모두 포함되는지를 검사한다.
  *
  * 실행: node test/phone_layout_contract.mjs
  */
 import fs from 'node:fs';
+import * as csstree from 'css-tree';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
+const css = fs.readFileSync(new URL('../sdynotes.css', import.meta.url), 'utf8');
+const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
 
 let pass = 0, fail = 0;
-const ok = (name, cond, extra) => {
+const ok = (name, cond, extra = '') => {
   if (cond) { pass++; console.log('  ✓ ' + name); }
-  else { fail++; console.log('  ✗ ' + name + (extra ? '\n      ' + extra : '')); }
-};
-
-/* ── CSS 수집 + 폰 폭에서 실제로 적용되는 규칙만 평탄화 ── */
-let css = '';
-for (const m of html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)) css += '\n' + m[1];
-css = css.replace(/\/\*[\s\S]*?\*\//g, '');
-
-const PHONE_W = 390;
-function mqApplies(q) {
-  if (/hover:\s*none/.test(q)) return true;
-  const mx = [...q.matchAll(/max-width:\s*(\d+)px/g)].map(m => +m[1]);
-  const mn = [...q.matchAll(/min-width:\s*(\d+)px/g)].map(m => +m[1]);
-  if (mx.some(v => PHONE_W > v)) return false;
-  if (mn.some(v => PHONE_W < v)) return false;
-  return true;
-}
-function flatten(src, active = true, inMq = false) {
-  const out = [];
-  let i = 0;
-  while (i < src.length) {
-    const at = src.indexOf('@media', i);
-    const brace = src.indexOf('{', i);
-    if (at >= 0 && (brace < 0 || at < brace)) {
-      const ob = src.indexOf('{', at);
-      const q = src.slice(at + 6, ob);
-      let d = 1, j = ob + 1;
-      while (j < src.length && d > 0) { if (src[j] === '{') d++; else if (src[j] === '}') d--; j++; }
-      out.push(...flatten(src.slice(ob + 1, j - 1), active && mqApplies(q), true));
-      i = j; continue;
-    }
-    if (brace < 0) break;
-    let d = 1, j = brace + 1;
-    while (j < src.length && d > 0) { if (src[j] === '{') d++; else if (src[j] === '}') d--; j++; }
-    const sel = src.slice(i, brace).trim();
-    const body = src.slice(brace + 1, j - 1);
-    if (sel && !sel.startsWith('@')) out.push({ sel, body, active, inMq });
-    i = j;
+  else {
+    fail++;
+    console.log('  ✗ ' + name + (extra ? '\n      ' + String(extra).replace(/\n/g, '\n      ') : ''));
   }
-  return out;
-}
-const rules = flatten(css).filter(r => r.active);
+};
+const has = (src, re) => re.test(src);
 
-/* 어떤 선택자에 대해, 폰 미디어쿼리 안에서 특정 속성을 정하는 규칙 수 */
-const GEOM = ['width', 'height', 'left', 'right', 'top', 'bottom', 'transform', 'max-width'];
-function declsOf(body) {
-  return body.split(';').map(s => s.trim()).filter(Boolean)
-    .map(s => s.split(':')[0].trim().toLowerCase());
-}
-function mqRulesFor(selector, props) {
-  return rules.filter(r => {
-    if (!r.inMq) return false;
-    if (!r.sel.split(',').map(s => s.trim()).some(p => p === selector)) return false;
-    return declsOf(r.body).some(d => props.includes(d));
-  });
-}
+console.log('\n모바일 레이아웃/기능 표면 계약');
 
-console.log('\n폰(≤640px) 레이아웃 계약');
+/* ── 1. CSS 자체가 유효한가 ─────────────────────────────────── */
+console.log('\n[1] CSS 파싱과 모바일 전용 격리');
+const parseErrors = [];
+let ast = null;
+try {
+  ast = csstree.parse(css, { positions: true, onParseError: e => parseErrors.push(e) });
+} catch (e) { parseErrors.push(e); }
+ok('sdynotes.css 전체를 파싱 오류 없이 읽는다', parseErrors.length === 0,
+  parseErrors.map(e => e.formattedMessage || e.message).join('\n'));
+const noComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+ok('분리 전 <style> 태그가 CSS에 남아 있지 않다', !/<\/?style\b/i.test(noComments));
+ok('모바일 최종 블록이 파일 마지막에 존재한다', css.includes('17.0 · 모바일 전용 최종 레이아웃'));
 
-/* ── 1. 위치·크기가 한 곳에서만 정해지는가 ── */
-console.log('\n[1] 겹치는 위치·크기 지정이 없어야 한다');
-for (const sel of ['.mp', '.mp-list', '#ypApp', '#ypReopen', '#mpReopen', '.mp-btns button', '.header']) {
-  const hits = mqRulesFor(sel, GEOM);
-  ok(`${sel} — 폰 규칙 1개 이하 (현재 ${hits.length})`, hits.length <= 1,
-    hits.length > 1 ? hits.map(h => h.body.trim().replace(/\s+/g, ' ').slice(0, 90)).join('\n      ') : '');
-}
+const mobileMarkerAt = css.indexOf('17.0 · 모바일 전용 최종 레이아웃');
+const mobileAt = mobileMarkerAt >= 0 ? css.lastIndexOf('/*', mobileMarkerAt) : -1;
+const mobileSource = mobileAt >= 0 ? css.slice(mobileAt) : '';
+const mobileErrors = [];
+let mobileAst = null;
+try {
+  mobileAst = csstree.parse(mobileSource, { positions: true, onParseError: e => mobileErrors.push(e) });
+} catch (e) { mobileErrors.push(e); }
+ok('모바일 최종 블록도 독립적으로 파싱된다', mobileErrors.length === 0);
+const topLevel = mobileAst ? [...mobileAst.children] : [];
+ok('최종 블록의 선언은 전부 @media 안에만 있다',
+  topLevel.length >= 3 && topLevel.every(n => n.type === 'Atrule' && n.name === 'media'),
+  topLevel.map(n => `${n.type}:${n.name || ''}`).join(', '));
+const queries = topLevel.map(n => n.prelude ? csstree.generate(n.prelude) : '');
+ok('모든 최종 쿼리가 좁은 폭 또는 coarse-pointer 휴대폰만 대상으로 한다',
+  queries.length >= 3 && queries.every(q =>
+    /max-width:(?:380|640)px/.test(q) ||
+    (/max-height:560px/.test(q) && /pointer:coarse/.test(q))), queries.join('\n'));
+ok('휴대폰 가로 방향도 별도 대응한다',
+  queries.some(q => /max-height:560px/.test(q) && /pointer:coarse/.test(q) && /orientation:landscape/.test(q)));
 
-/* ── 2. 카드 크기 설정(card-s/card-l)이 폰에서 새어나오지 않는가 ──
-   body.card-l .note-card{width:244px} 는 특이도 (0,2,1) 이라
-   폰 규칙 .note-card (0,1,0) 를 이겨서 화면 밖으로 터졌다. */
-console.log('\n[2] 카드 크기 설정이 폰 레이아웃을 이기지 못해야 한다');
-const phoneCard = rules.filter(r => r.inMq &&
-  r.sel.split(',').map(s => s.trim()).some(p => p === 'body.card-l .note-card'));
-ok('body.card-l .note-card 를 폰에서 되돌리는 규칙이 있다', phoneCard.length >= 1);
-ok('body.card-s .note-card 도 함께 되돌린다',
-  rules.some(r => r.inMq && r.sel.includes('body.card-s .note-card')));
-ok('폴더·추가 카드도 같이 되돌린다',
-  rules.some(r => r.inMq && r.sel.includes('body.card-l .folder-card')) &&
-  rules.some(r => r.inMq && r.sel.includes('body.card-l .add-card')));
-ok('되돌리는 규칙이 2열(50%)로 맞춘다',
-  phoneCard.some(r => /flex:\s*1\s+1\s+calc\(50%/.test(r.body)));
-/* 미리보기는 고정 높이가 아니라 카드 폭에 비례해야 한다 */
-ok('미리보기 높이가 카드 폭에 비례한다(aspect-ratio)',
-  rules.some(r => r.inMq && /\.note-preview/.test(r.sel) && /aspect-ratio/.test(r.body)));
+/* ── 2. viewport / safe area / 키보드 ───────────────────────── */
+console.log('\n[2] 실제 모바일 viewport와 safe area');
+ok('viewport-fit=cover와 사용자 확대 허용을 유지한다',
+  has(html, /name="viewport"[^>]*user-scalable=yes[^>]*viewport-fit=cover/));
+ok('상·하·좌·우 safe-area 변수를 모두 정의한다',
+  ['--ph-safe:', '--ph-top:', '--ph-left:', '--ph-right:'].every(v => mobileSource.includes(v)));
+ok('동적 visual viewport 높이를 홈·에디터·오버레이에서 쓴다',
+  (mobileSource.match(/--sdy-mobile-vh/g) || []).length >= 8);
+ok('JS가 visualViewport resize/scroll을 모두 감시한다',
+  has(js, /visualViewport\.addEventListener\('resize',tick/) &&
+  has(js, /visualViewport\.addEventListener\('scroll',syncViewport/));
+ok('주소창/키보드 변화 높이를 CSS 변수로 전달한다',
+  has(js, /setProperty\('--sdy-mobile-vh'/));
+ok('iOS 자동 확대 방지를 email/url까지 포함한다',
+  has(mobileSource, /input\[type=email\][\s\S]{0,100}input\[type=url\][\s\S]{0,180}font-size:16px!important/));
 
-/* ── 3. 아래 떠 있는 것들이 서로 겹치지 않게 쌓이는가 ── */
-console.log('\n[3] 아래 떠 있는 단추가 겹치지 않아야 한다');
-const stackVars = rules.filter(r => r.inMq && /--ph-stack|--ph-safe/.test(r.body));
-ok('쌓기 기준 변수(--ph-safe/--ph-stack)를 정의한다', stackVars.length >= 1);
-ok('음악바가 뜨면 칩을 위로 올린다(body.has-mpbar)',
-  rules.some(r => r.inMq && /body\.has-mpbar/.test(r.sel) && /--ph-stack/.test(r.body)));
-ok('엽스코드 칩이 쌓기 변수를 쓴다',
-  rules.some(r => r.inMq && r.sel.includes('#ypReopen') && /--ph-stack/.test(r.body)));
-ok('음악 칩이 세이프에어리어를 쓴다',
-  rules.some(r => r.inMq && r.sel.includes('#mpReopen') && /--ph-safe/.test(r.body)));
-ok('JS 가 has-mpbar 를 토글한다', /classList\.toggle\('has-mpbar'/.test(html));
+/* ── 3. 홈과 노트 크기 ─────────────────────────────────────── */
+console.log('\n[3] 홈·폴더·노트');
+ok('헤더를 예측 가능한 두 줄 모바일 레이아웃으로 만든다',
+  has(mobileSource, /\.header \.w-full\{[\s\S]{0,180}flex-direction:column/));
+ok('헤더 주요 버튼이 42px 터치 타깃이다',
+  has(mobileSource, /\.header \.tool-btn[^\{]*\{[\s\S]{0,120}width:42px!important[\s\S]{0,80}height:42px!important/));
+ok('PC에서 고른 카드 크기와 무관하게 폰은 2열이다',
+  has(mobileSource, /body\.card-l \.note-card[\s\S]{0,280}flex:1 1 calc\(50% - 4px\)/));
+ok('노트/폴더 미리보기 비율이 카드 폭을 따른다',
+  has(mobileSource, /body \.note-preview,body \.folder-thumb[\s\S]{0,260}aspect-ratio:4\/5/));
+ok('노트 메뉴는 터치에서 항상 보이고 40px이다',
+  has(mobileSource, /\.card-menu\{display:flex;width:40px;height:40px/));
+ok('선택 작업은 2열 하단 작업판이며 버튼은 44px 이상이다',
+  has(mobileSource, /\.select-bar\{[\s\S]{0,260}grid-template-columns:1fr 1fr/) &&
+  has(mobileSource, /\.select-bar button\{min-height:44px/));
+ok('가로 폰은 노트를 4열로 줄여 과대 카드가 되지 않는다',
+  has(mobileSource, /orientation:landscape[\s\S]*flex:1 1 calc\(25% - 6px\)/));
 
-/* ── 4. 드래그로 옮긴 좌표가 화면 밖에 남지 않는가 ── */
-console.log('\n[4] 화면을 돌려도 창이 밖으로 나가지 않아야 한다');
-ok('폰에서 엽스코드 인라인 좌표를 지운다', /app\.style\.left='';app\.style\.top=''/.test(html));
-ok('회전(orientationchange)에 반응한다', /orientationchange/.test(html));
-ok('리사이즈에 반응한다', /addEventListener\('resize',tick/.test(html));
-ok('데스크톱에서는 드래그 좌표를 보존한다(폰에서만 초기화)',
-  /PHONE\(\)\)\{[\s\S]{0,120}app\.style\.left=''/.test(html));
+/* ── 4. 에디터의 모든 조작면 ───────────────────────────────── */
+console.log('\n[4] 에디터');
+ok('종이는 화면 폭에 맞고 본문은 양방향 스크롤 가능하다',
+  has(js, /availW\/size\.w/) && has(mobileSource, /\.editor-body\{[\s\S]{0,300}touch-action:pan-x pan-y/));
+ok('툴바는 손가락 가로 스크롤이며 버튼이 40px이다',
+  has(mobileSource, /\.editor-toolbar\{[\s\S]{0,320}overflow-x:auto!important/) &&
+  has(mobileSource, /\.editor-toolbar \.tool-btn[^\{]*\{[\s\S]{0,100}width:40px!important/));
+ok('에디터 제목 입력은 16px이며 150px 폭을 확보한다',
+  has(mobileSource, /\.editor-toolbar #edTitle\{[\s\S]{0,180}150px[\s\S]{0,100}font-size:16px!important/));
+ok('더보기 서랍이 toolbar 아래의 전체 폭 시트다',
+  has(mobileSource, /\.more-panel\{[\s\S]{0,180}left:0;right:0[\s\S]{0,100}width:100%/));
+ok('서식·글꼴·색·즐겨찾기·메모 팝업이 화면 안 하단 시트다',
+  has(mobileSource, /\.font-menu\.show,\.color-popover\.show,\.fav-pop\.show,\.tint-pop\.show,\.pin-pop\.show/));
+ok('찾기·표·펜 도구가 화면 폭 안에서 스크롤된다',
+  ['.find-bar{', '.tbl-bar{', '.draw-toolbar{'].every(s => mobileSource.includes(s)) &&
+  has(mobileSource, /\.tbl-bar\{[\s\S]{0,180}overflow-x:auto/));
+ok('텍스트/이미지 조절 손잡이를 모바일에서 확대한다',
+  has(mobileSource, /\.tb-move\{width:34px;height:34px/) &&
+  has(mobileSource, /\.el-del\{width:34px;height:34px/));
 
-/* ── 5. 데스크톱(캄) 화면은 건드리지 않았는가 ── */
-console.log('\n[5] 데스크톱 화면은 그대로여야 한다');
-/* 마지막 일치를 쓴다 — 주석이 이 블록을 이름으로 언급할 수 있으므로
-   (앞쪽 주석이 먼저 잡히면 엉뚱한 내용을 검사하게 된다) */
-const phoneBlockRaw = [...html.matchAll(/<style id="v1414-phone">([\s\S]*?)<\/style>/g)]
-  .map(m => m[1]).pop() || '';
-ok('폰 전용 블록이 존재한다', phoneBlockRaw.length > 0);
-/* 블록 안의 모든 선언이 max-width:640px 미디어쿼리 안에 있어야 한다.
-   (주석은 선언이 아니므로 먼저 걷어낸다) */
-const phoneBlock = phoneBlockRaw.replace(/\/\*[\s\S]*?\*\//g, '');
-const outside = phoneBlock.replace(/@media[^{]*\{[\s\S]*\}/, '').trim();
-ok('폰 블록 밖에 새는 규칙이 없다', outside === '', outside.slice(0, 120));
-ok('폰 블록은 max-width:640px 로 감싸져 있다', /@media\s*\(max-width:640px\)/.test(phoneBlock));
-/* 데스크톱 폭에서는 폰 규칙이 하나도 적용되지 않아야 한다 */
-const deskRules = flatten(css.slice(css.indexOf('v1414') >= 0 ? 0 : 0)).length;
-ok('데스크톱 폭(1280px)에서 폰 블록이 적용되지 않는다',
-  !mqApplies('(max-width:640px)') === false && (() => {
-    const W = 1280;
-    const applies = (q) => {
-      const mx = [...q.matchAll(/max-width:\s*(\d+)px/g)].map(m => +m[1]);
-      return !mx.some(v => W > v);
-    };
-    return !applies('(max-width:640px)');
-  })());
+/* ── 5. 창/모달/부가 기능 ──────────────────────────────────── */
+console.log('\n[5] 모달·보관함·암기카드·발표');
+ok('일반 모달은 safe-area를 지키는 하단 시트다',
+  has(mobileSource, /\.modal-bg\{[\s\S]{0,160}align-items:flex-end/) &&
+  has(mobileSource, /\.modal-box:not\(\.cards-box\)\{[\s\S]{0,220}--sdy-mobile-vh/));
+ok('모달 입력/선택은 44px 이상이다',
+  has(mobileSource, /\.modal-box select,\.modal-box textarea\{min-height:44px/));
+ok('새 노트 프리셋은 폰에서 2열이다',
+  has(mobileSource, /#sizePresetGrid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)!important/));
+ok('보관함은 내부 목록만 스크롤하고 툴바는 44px이다',
+  has(mobileSource, /\.vault-up,\.vault-tool\{min-width:44px;height:44px/) &&
+  has(mobileSource, /\.vault-desk\{flex:1;min-height:180px;max-height:none/));
+ok('암기카드 창은 저장된 드래그 좌표를 무시하고 화면 안에 고정된다',
+  has(mobileSource, /\.fcard-win,\.fcard-win\.moved\{[\s\S]{0,180}top:auto!important[\s\S]{0,120}transform:none!important/));
+ok('발표 화면과 이미지 뷰어도 동적 viewport 안에 맞춘다',
+  has(mobileSource, /\.present\{height:var\(--sdy-mobile-vh/) &&
+  has(mobileSource, /#viewer img\{max-width:100%!important;max-height:100%!important/));
+ok('컨텍스트/곡 메뉴는 길어져도 하단 시트 안에서 스크롤된다',
+  has(mobileSource, /\.ctx-menu\.show,\.mpctx\.show,\.pl-mini\{/) &&
+  has(mobileSource, /max-height:min\(68dvh,560px\)!important;[\s\S]{0,100}overflow-y:auto/));
 
-/* ── 6. 손가락으로 누를 수 있는 크기인가 ── */
-console.log('\n[6] 터치 타깃이 너무 작지 않아야 한다');
-function sizeOf(sel) {
-  const r = mqRulesFor(sel, ['width', 'height']).pop();
-  if (!r) return null;
-  const m = r.body.match(/height:\s*(\d+)px/);
-  return m ? +m[1] : null;
-}
-const mpBtn = sizeOf('.mp-btns button');
-ok(`음악바 단추 ≥32px (현재 ${mpBtn})`, mpBtn !== null && mpBtn >= 32);
-const ypChip = sizeOf('#ypReopen');
-ok(`엽스코드 칩 ≥40px (현재 ${ypChip})`, ypChip !== null && ypChip >= 40);
-const mpChip = sizeOf('#mpReopen');
-ok(`음악 칩 ≥40px (현재 ${mpChip})`, mpChip !== null && mpChip >= 40);
+/* ── 6. 음악·채팅·집중시계 ─────────────────────────────────── */
+console.log('\n[6] 음악·엽스코드·집중시계');
+ok('음악바 버튼이 40px, 재생 버튼이 42px이다',
+  has(mobileSource, /\.mp-btns button,#mpX\{[\s\S]{0,100}width:40px!important/) &&
+  has(mobileSource, /\.mp-btns \.mp-pp\{width:42px!important;height:42px!important/));
+ok('음악 목록과 큰 플레이어는 safe-area 하단 시트다',
+  has(mobileSource, /\.mp-list\{[\s\S]{0,200}bottom:0!important[\s\S]{0,180}var\(--ph-safe\)/) &&
+  has(mobileSource, /\.mpb\{[\s\S]{0,220}--sdy-mobile-vh/));
+ok('음악 편집/추가 창과 컨트롤도 모바일 크기를 가진다',
+  has(mobileSource, /\.mp-tagm \.[a-z]*box|\.mp-tagm \.box/) &&
+  has(mobileSource, /\.mp-addpop\{[\s\S]{0,200}--sdy-mobile-vh/));
+ok('음악/채팅 접기 칩은 46px이고 서로 동적으로 쌓인다',
+  has(mobileSource, /#mpReopen,#ypReopen\{[^}]*width:46px;height:46px/) &&
+  has(mobileSource, /body\.has-mpbar\{--ph-stack:72px/) &&
+  has(js, /classList\.toggle\('has-mpbar'/));
+ok('엽스코드 창은 viewport 안에 있고 헤더/음성/입력이 40px 이상이다',
+  has(mobileSource, /#ypApp\{[\s\S]{0,420}--sdy-mobile-vh/) &&
+  has(mobileSource, /#ypApp #ypHead button[^\{]*\{width:40px;height:40px/) &&
+  has(mobileSource, /\.ypv-join,\.ypv-mute,\.ypv-icon,\.ypv-gear\{width:40px;height:40px/));
+ok('채팅 입력은 iOS 확대 없는 16px이고 이모지는 6열이다',
+  has(mobileSource, /\.yp-input textarea\{min-height:42px;font-size:16px!important/) &&
+  has(mobileSource, /\.yp-emoji\{[^}]*grid-template-columns:repeat\(6,1fr\)/));
+ok('집중시계 모드/버튼/링이 작은 화면 안에 맞는다',
+  has(mobileSource, /#focusClock\{[\s\S]{0,120}--sdy-mobile-vh/) &&
+  has(mobileSource, /#focusClock \.fc-modes button\{min-height:42px/) &&
+  has(mobileSource, /\.fc-ring\{width:min\(42dvh,82vw,330px\)/));
 
-/* ── 7. 지운 중복이 되살아나지 않았는가 ── */
-console.log('\n[7] 예전 중복 규칙이 되살아나지 않아야 한다');
-ok('.mp-btns button 을 25px 로 줄이던 규칙이 없다', !/\.mp-btns button\{width:25px/.test(css));
-ok('.mp-btns button 을 29px 로 줄이던 규칙이 없다', !/\.mp-btns button,#mpX\{width:29px/.test(css));
-ok('.mp 를 96vw 로 잡던 규칙이 없다', !/\.mp\{width:96vw/.test(css));
-ok('헤더를 두 줄로 접던 규칙이 없다', !/\.header \.w-full\{flex-wrap:wrap/.test(css));
-ok('380px 에서 카드를 1열로 떨구던 규칙이 없다',
-  !/@media\(max-width:380px\)\{\s*\.note-card\{flex:1 1 100%/.test(css));
+/* ── 7. 모든 주요 기능 root가 HTML과 모바일 계약에 남아 있는가 ── */
+console.log('\n[7] 주요 기능 표면 누락 방지');
+const roots = [
+  'mainView','noteGrid','editorView','moreSheet','fmtBar','selectBar',
+  'setModal','trashModal','createModal','vaultModal','adminModal','folderStyleModal',
+  'keyModal','delModal','pwModal','exportModal','importProg','infoModal','stickerModal',
+  'latexModal','cardsModal','srvPop','notifPop','findBar','tblBar','pinPop','presentView',
+  'cpModal','musicPlayer','musicListPop','mpBig','mpTagModal','mpAddPop','focusClock',
+  'sdyAuthWrap','ypGate','ypApp'
+];
+const missingRoots = roots.filter(id => !new RegExp(`id=["']${id}["']`).test(html));
+ok(`주요 기능 root ${roots.length}개가 모두 HTML에 있다`, missingRoots.length === 0, missingRoots.join(', '));
+const surfaceTokens = [
+  '#mainView', '.note-grid', '.editor-toolbar', '.more-panel', '#fmtBar', '.select-bar',
+  '.modal-bg', '.modal-box', '#vaultModal', '.fcard-win', '.notif-pop', '.srv-pop',
+  '.find-bar', '.tbl-bar', '.pin-pop', '.present', '.mp-list', '.mpb', '.mp-tagm',
+  '.mp-addpop', '#focusClock', '.sa-card', '.ypg-card', '#ypApp'
+];
+const missingTokens = surfaceTokens.filter(s => !mobileSource.includes(s));
+ok(`모바일 최종 블록이 기능 표면 ${surfaceTokens.length}종을 모두 다룬다`, missingTokens.length === 0, missingTokens.join(', '));
 
-console.log(`\n폰 레이아웃 계약: PASS ${pass} / FAIL ${fail}`);
+/* ── 8. 회전/리사이즈/데스크톱 보존 ───────────────────────── */
+console.log('\n[8] 회전과 데스크톱 홈 복원');
+ok('PC 홈은 카드 더미를 끄고 폴더·노트·추가 카드를 원래 격자로 렌더한다',
+  has(js, /17\.1 · 홈 복원[\s\S]{0,500}const isHomeStack=false;/) &&
+  has(js, /if\(!searchQuery&&!isHomeStack\)\{[\s\S]{0,100}childFolders\(curFolder\)/) &&
+  has(js, /filtered\.forEach\(nb=>\{ g\.appendChild\(_makeCard\(nb\)\); \}\)/));
+ok('기본 PC note-grid의 중앙 정렬·줄바꿈 규칙을 유지한다',
+  has(css, /\.note-grid\{\s*display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;/));
+ok('JS 모바일 판별은 세로 폭 + 가로 coarse pointer를 함께 쓴다',
+  has(js, /PHONE_QUERY='\(max-width:640px\), \(max-height:560px\) and \(pointer:coarse\)'/));
+ok('폰에서 엽스코드의 드래그 인라인 좌표를 지운다',
+  has(js, /if\(PHONE\(\)\)\{[\s\S]{0,160}app\.style\.left='';app\.style\.top=''/));
+ok('resize와 orientationchange 모두 재배치한다',
+  has(js, /addEventListener\('resize',tick/) && has(js, /addEventListener\('orientationchange'/));
+ok('PC에서는 드래그 좌표를 보존하고 화면 안으로만 clamp한다',
+  has(js, /else if\(app\.classList\.contains\('open'\)\)[\s\S]{0,320}Math\.min\(innerWidth-w-8,l\)/));
+ok('모바일 최종 소스에 데스크톱 min-width 규칙이 없다', !/min-width:\s*641px/.test(mobileSource));
+
+console.log(`\n모바일 레이아웃 계약: PASS ${pass} / FAIL ${fail}`);
 process.exit(fail ? 1 : 0);
