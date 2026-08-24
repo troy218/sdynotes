@@ -20952,29 +20952,51 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ypRenderStatus();
   }
 
-  // ── 배경음악 (음성참가 · 검색 기반 · 같이 듣기 · 랜덤 다음곡) ──
-  var BGM={list:[],on:false,audio:null,loaded:false,owner:null};
+  // ── 배경음악 (음성참가 · 검색 기반 · 같이 듣기 · 고른 곡 반복) ──
+  // 같이 듣기의 규칙은 두 가지다.
+  //   ① 고른 곡 하나만 끝없이 반복 — 다음 곡으로 넘어가지 않는다.
+  //   ② 멈추면 모두 같은 '시점'에서 멈춘다 — 멈춘 위치를 그대로 실어 보내고
+  //      받는 쪽은 그 위치로 이동해 멈춘다. 다시 켤 때도 같은 시점에서 이어진다.
+  var BGM={list:[],on:false,audio:null,loaded:false,owner:null,track:null};
   var BGM_PAUSED=false;
   function ypBgmAudio(){
     if(!BGM.audio){
       BGM.audio=new Audio(); BGM.audio.volume=0.15;
-      BGM.audio.onended=function(){ if(BGM.on && BGM.owner===YP.uid && !BGM_PAUSED) ypBgmRandomNext(); };
+      // loop 이면 onended 가 오지 않는다 → 각 기기에서 같은 곡만 계속 돈다.
+      BGM.audio.loop=true;
     }
     return BGM.audio;
   }
+  // 일시정지 모양(버튼)을 맞춘다 — 내가 눌러도, 상대가 눌러도 같은 상태가 된다
+  function ypBgmSetPaused(on){
+    BGM_PAUSED=!!on;
+    var btn=$('ypBgmPause');
+    if(btn){
+      btn.innerHTML=BGM_PAUSED?'<i class="ri-play-fill"></i>':'<i class="ri-pause-fill"></i>';
+      btn.title=BGM_PAUSED?'재생':'일시정지';
+    }
+  }
+  // 새 곡으로 바꾼 직후에는 메타가 뜰 때 한 번만 시점을 맞춘다.
+  // (불러오기 전 seek 은 브라우저가 무시해 '같은 시점' 약속이 깨진다)
+  function ypBgmSeekWhenReady(a,pos){
+    if(!(pos>0)) return;
+    if(typeof a.addEventListener!=='function'){ try{ a.currentTime=pos; }catch(e){} return; }
+    var once=function(){ try{ a.currentTime=pos; }catch(e){} a.removeEventListener('loadedmetadata',once); };
+    a.addEventListener('loadedmetadata',once);
+  }
   function ypBgmPause(){
     if(!BGM.audio||!BGM.on) return;
-    var btn=$('ypBgmPause');
+    var pos=BGM.audio.currentTime||0;
     if(BGM_PAUSED){
-      BGM_PAUSED=false;
       BGM.audio.play().catch(function(){});
-      if(btn){ btn.innerHTML='<i class="ri-pause-fill"></i>'; btn.title='일시정지'; }
-      ypBgmCast('play', {id:BGM.audio.getAttribute('src')}, BGM.audio.currentTime||0);
+      ypBgmSetPaused(false);
+      // 이어 들을 시점과 지금 곡을 그대로 — 상대도 같은 지점에서 다시 돈다
+      ypBgmCast('play', BGM.track, pos);
     } else {
-      BGM_PAUSED=true;
       BGM.audio.pause();
-      if(btn){ btn.innerHTML='<i class="ri-play-fill"></i>'; btn.title='재생'; }
-      ypBgmCast('pause', null, 0);
+      ypBgmSetPaused(true);
+      // 멈춘 '그 시점'을 함께 보낸다 — 상대도 같은 시점에서 멈춘다
+      ypBgmCast('pause', BGM.track, pos);
     }
   }
   function ypBgmLoadList(cb){
@@ -20994,12 +21016,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ypRenderStatus();
   }
   function ypBgmCast(action, track, pos){
+    // 곡 정보가 비면 서버가 'pause' 를 거절한다(= 상대가 안 멈춘다). 그럴 때는
+    // 지금 돌고 있는 src 에서 곡 id 를 되찾아 함께 보낸다.
+    if(action!=='stop' && !(track&&track.id) && BGM.audio){
+      var mid=/\/api\/music\/file\/([^/?#]+)/.exec(BGM.audio.getAttribute('src')||'');
+      if(mid) track={id:mid[1],title:(BGM.track&&BGM.track.title)||'',artist:(BGM.track&&BGM.track.artist)||''};
+    }
     fetch('/api/chat/bgm',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({uid:YP.uid, action:action, pos:pos||0,
         track:action==='stop'?null:(track?{id:track.id,title:track.title||'',artist:track.artist||''}:null)})}).catch(function(){});
   }
   function ypBgmPlayLocal(t){
     var a=ypBgmAudio(); a.src='/api/music/file/'+t.id; a.play().catch(function(){});
+    BGM.track={id:t.id,title:t.title||'',artist:t.artist||''};
+    ypBgmSetPaused(false);
     $('ypBgmTitle').textContent=t.title||'알 수 없는 곡';
     $('ypBgmArtist').textContent=t.artist||'';
   }
@@ -21009,13 +21039,6 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ypBgmPlayLocal(t);
     hideRes(); var s=$('ypBgmSearch'); if(s) s.value='';
     ypBgmCast('play', t, 0); ypRenderStatus();
-  }
-  function ypBgmRandomNext(){
-    if(!BGM.on||!BGM.list.length) return;
-    var t=BGM.list[(Math.random()*BGM.list.length)|0];
-    BGM.owner=YP.uid;
-    ypBgmPlayLocal(t);
-    ypBgmCast('play', t, 0);
   }
   function ypBgmSearch(){
     var q=($('ypBgmSearch').value||'').trim().toLowerCase();
@@ -21033,20 +21056,27 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   function ypBgmApply(m){
     try{
       if(!m || m.action==='stop'){
-        BGM.on=false; $('ypBgm').style.display='none';
+        BGM.on=false; BGM.track=null; $('ypBgm').style.display='none';
         try{BGM.audio&&BGM.audio.pause();}catch(e){}
         ypRenderStatus(); return;
       }
       if(!m.track || !m.track.id) return;
       BGM.on=true; BGM.owner=(m.from&&m.from.uid)||YP.uid;
+      BGM.track={id:m.track.id,title:m.track.title||'',artist:m.track.artist||''};
       var a=ypBgmAudio();
-      var pos=(m.pos||0) + Math.max(0,(Date.now()/1000-(m.ts||Date.now()/1000)));
+      // 멈춤은 '보낸 사람이 멈춘 바로 그 시점'이 약속이다. 흐른 시간을 더하지
+      // 않고 그 값으로 맞춘다(재생일 때만 전송 지연만큼 앞당겨 계산한다).
+      var paused=(m.action==='pause');
+      var pos=(m.pos||0) + (paused?0:Math.max(0,(Date.now()/1000-(m.ts||Date.now()/1000))));
       var src='/api/music/file/'+m.track.id;
-      if(a.getAttribute('src')!==src) a.src=src;
-      if(Math.abs((a.currentTime||0)-pos)>2){ try{ a.currentTime=pos; }catch(e){} }
+      if(a.getAttribute('src')!==src){ a.src=src; ypBgmSeekWhenReady(a,pos); }
+      // 멈춤은 시점이 곧 약속이므로 어긋남 허용을 2초 → 0.25초로 좁혀 맞춘다.
+      else if(Math.abs((a.currentTime||0)-pos)>(paused?0.25:2)){ try{ a.currentTime=pos; }catch(e){} }
       $('ypBgmTitle').textContent=m.track.title||'알 수 없는 곡';
       $('ypBgmArtist').textContent=m.track.artist||'';
-      a.play().catch(function(){});
+      if(paused){ try{ a.pause(); }catch(e){} }
+      else { a.play().catch(function(){}); }
+      ypBgmSetPaused(paused);
       $('ypBgm').style.display='flex';
       ypRenderStatus();
     }catch(e){}

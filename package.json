@@ -9,6 +9,7 @@
     "migrate:oracle": "node scripts/migrate_to_oracle.mjs",
     "migrate:oracle:dry": "node scripts/migrate_to_oracle.mjs --dry",
     "test:music": "node test/music_controls.mjs && node test/music_queue_contract.mjs",
+    "test:bgm": "node test/yp_bgm_sync.cjs",
     "test:auth": "node test/auth_contract.mjs",
     "test:friends": "node test/friends_dm_contract.mjs && node test/yf_dm_frontend_contract.cjs",
     "test:gate": "node test/yp_gate_contract.cjs",
