@@ -4061,130 +4061,8 @@ body.sdy-booting #mpReopen{display:none !important;}
 
 
 /* === style block 10 === */
- 첫머리(190행대)  ② 음악 플레이어 스타일(18680·18810)
-       ③ v88-mobile(22886)        ④ ypStyle(23988)
-     같은 요소에 서로 다른 값이 2~4번씩 지정돼(.mp 는 width 가 4번,
-     .mp-btns button 은 크기가 3번) 어느 쪽이 이길지는 '파일에서 누가 더
-     아래냐'로 정해졌다. 그래서 크기가 제각각이고 위치가 제멋대로였다.
-
-     이 블록이 문서의 맨 마지막이므로, 폰에서는 여기 값이 항상 최종이다.
-     캄(데스크톱) 화면은 건드리지 않는다 — 전부 max-width:640px 안에만 있다.
-     ═══════════════════════════════════════════════════════════════════ -->
-<style id="v1414-phone">
-@media (max-width:640px){
-
-  /* ── 0. 아래쪽 떠 있는 것들의 공통 기준 ──
-     음악바·엽스코드칩·음악칩이 서로 겹치지 않게 한 줄로 쌓는다.
-     --ph-stack 은 '엽스코드 칩이 얼마나 위로 올라가야 하는가'.
-       · 음악바가 떠 있으면  → 바 높이만큼
-       · 음악칩만 있으면     → 칩 높이만큼                      */
-  body{--ph-safe:env(safe-area-inset-bottom,0px);--ph-gap:10px;
-       --ph-bar:58px;--ph-stack:52px;}
-  body.has-mpbar{--ph-stack:64px;}
-
-  /* ── 1. 카드 크기 ──
-     [버그] body.card-l .note-card{width:244px} 는 특이도가 (0,2,1),
-     폰 규칙 .note-card 는 (0,1,0). 미디어쿼리는 특이도를 올려주지 않으므로
-     설정에서 '큰 카드'를 고르면 폰에서도 244px 가 이겨 2열=488px 가 되어
-     390px 화면 밖으로 터졌다. cardSize 는 기기간 동기화되는 값이라
-     PC 에서 한 번 바꾸면 폰이 깨진 채로 남았다.
-     → 폰에서는 카드 크기 설정을 무시하고 항상 화면에 맞춘 2열로 고정한다. */
-  body .note-card,body .folder-card,body .add-card,
-  body.card-s .note-card,body.card-s .folder-card,body.card-s .add-card,
-  body.card-l .note-card,body.card-l .folder-card,body.card-l .add-card{
-      width:auto;flex:1 1 calc(50% - 4px);max-width:calc(50% - 4px);
-      min-width:0;border-radius:12px;}
-  /* 미리보기는 고정 높이(190px) 대신 카드 폭을 따라간다.
-     종이가 800x1100 이므로 카드가 좁아져도 비율이 유지된다. */
-  body .note-preview,body .folder-thumb,
-  body.card-s .note-preview,body.card-s .folder-thumb,
-  body.card-l .note-preview,body.card-l .folder-thumb{
-      height:auto;aspect-ratio:4/5;min-height:0;}
-  body .add-card,body.card-s .add-card,body.card-l .add-card{min-height:0;aspect-ratio:4/5.35;}
-  .note-grid{gap:8px;padding:0 8px;justify-content:flex-start;}
-  /* 아주 좁은 폰(≤380px)에서도 1열로 떨어뜨리지 않는다 — 1열은 카드가
-     과하게 커져서 한 화면에 한 장밖에 안 보인다. */
-  @media(max-width:380px){
-    body .note-card,body .folder-card,body .add-card,
-    body.card-s .note-card,body.card-s .folder-card,body.card-s .add-card,
-    body.card-l .note-card,body.card-l .folder-card,body.card-l .add-card{
-        flex:1 1 calc(50% - 3px);max-width:calc(50% - 3px);}
-    .note-grid{gap:6px;padding:0 6px;}
-  }
-
-  /* ── 2. 헤더 ── 한 줄 고정. 줄바꿈되면 높이가 들쭉날쭉해진다. */
-  .header{padding:6px 8px !important;
-      padding-left:max(8px,env(safe-area-inset-left)) !important;
-      padding-right:max(8px,env(safe-area-inset-right)) !important;}
-  .header .w-full{flex-wrap:nowrap !important;gap:6px;}
-  .app-brand{margin-left:0 !important;gap:7px !important;flex:1 1 auto;min-width:0;flex-wrap:nowrap;}
-  .app-brand h1{font-size:18px !important;max-width:none;flex:1 1 auto;min-width:0;
-      overflow:hidden !important;text-overflow:ellipsis !important;white-space:nowrap;}
-  .app-brand .logo-dot{width:26px;height:26px;font-size:14px;}
-  .hdr-right{flex:0 0 auto;flex-wrap:nowrap !important;gap:0 !important;margin-right:0 !important;}
-  .header .tool-btn{width:32px;height:32px;font-size:17px;}
-  .srv-gauge{width:30px;height:22px;}
-
-  /* ── 3. 본문 ── 아래 떠 있는 것들에 가리지 않도록 여백을 준다. */
-  main{padding:12px 4px !important;
-      padding-bottom:calc(var(--ph-safe) + 108px) !important;}
-
-  /* ── 4. 에디터 툴바 ── 크기 지정이 세 곳에서 싸우던 것을 하나로. */
-  .editor-toolbar{display:flex !important;align-items:center;gap:3px;
-      padding:6px !important;padding-top:max(6px,env(safe-area-inset-top)) !important;
-      min-height:46px;overflow-x:auto !important;overflow-y:hidden !important;
-      touch-action:pan-x !important;overscroll-behavior-x:contain;
-      -webkit-overflow-scrolling:touch;scrollbar-width:none;}
-  .editor-toolbar::-webkit-scrollbar{display:none;}
-  .editor-toolbar .tb-left,.editor-toolbar .tb-mid,.editor-toolbar .tb-right{
-      flex:0 0 auto;justify-self:auto;gap:2px;}
-  .editor-toolbar .tool-btn{width:34px !important;height:34px !important;font-size:17px !important;}
-  .editor-toolbar .tool-btn.sm{width:30px !important;height:30px !important;font-size:15px !important;}
-  .editor-toolbar #edTitle{flex:0 0 auto !important;width:132px;min-width:132px !important;font-size:13px !important;}
-  .tool-sep{margin:0 2px;}
-
-  /* ── 5. 음악바 ── width 가 네 번 지정돼 있던 것을 하나로. */
-  .mp{left:6px !important;right:6px !important;width:auto !important;
-      max-width:none !important;transform:none !important;
-      bottom:calc(var(--ph-safe) + 6px) !important;
-      gap:7px;padding:7px 9px;border-radius:14px;}
-  .mp-cover{width:36px;height:36px;}
-  .mp-title{font-size:12.5px;}
-  .mp-btns{gap:2px;}
-  .mp-btns button,#mpX{width:32px !important;height:32px !important;font-size:16px !important;}
-  .mp-btns .mp-pp{width:36px !important;height:36px !important;font-size:19px !important;}
-  #mpX{width:26px !important;height:26px !important;font-size:14px !important;}
-  .mp-prog{height:6px;}
-  /* 떠 있는 LP 원반은 화면 밖으로 나가지 않게 오른쪽 벽에 고정 */
-  .mp.mp-float{left:auto !important;right:8px !important;width:58px !important;height:58px !important;
-      max-width:58px !important;bottom:auto !important;}
-  .mp-float .mp-cover{left:4px;top:4px;width:50px;height:50px;}
-  /* 목록은 아래에서 올라오는 시트로 (가운데 뜨면 손이 안 닿는다) */
-  .mp-list{left:0 !important;right:0 !important;bottom:0 !important;
-      width:100% !important;max-width:none !important;transform:none !important;
-      max-height:min(70dvh,560px) !important;border-radius:16px 16px 0 0;
-      padding:10px;padding-bottom:calc(var(--ph-safe) + 10px);}
-  .mpb{left:6px !important;right:6px !important;width:auto !important;
-      max-width:none !important;max-height:86dvh !important;}
-
-  /* ── 6. 아래 떠 있는 단추들 ── 서로 겹치지 않게 한 줄로 쌓는다. */
-  #mpReopen{right:12px;bottom:calc(var(--ph-safe) + var(--ph-gap));
-      width:44px;height:44px;font-size:19px;}
-  #ypReopen{right:12px;bottom:calc(var(--ph-safe) + var(--ph-gap) + var(--ph-stack));
-      width:44px;height:44px;}
-
-  /* ── 7. 엽스코드 패널 ── 폰에서는 드래그로 옮긴 좌표를 무시하고
-     항상 화면에 꽉 맞춘다. (옮긴 뒤 화면을 돌리면 밖으로 나가 있었다) */
-  #ypApp{left:6px !important;right:6px !important;top:auto !important;
-      width:auto !important;max-width:none !important;
-      bottom:calc(var(--ph-safe) + var(--ph-gap)) !important;
-      height:min(74dvh,620px) !important;}
-  .yp-head{cursor:default;}
-
-  /* ── 8. 모달 ── */
-  .modal-box{max-width:none !important;width:calc(100vw - 20px) !important;
-      max-height:88dvh;overflow-y:auto;padding:18px !important;}
-}
+/* 14.14의 폰 규칙은 CSS 분리 과정에서 남은 <style> 태그 때문에 파싱되지
+   않았다. 모바일 규칙은 파일 끝의 `17.0 mobile` 블록 한 곳에서 관리한다. */
 
 
 /* === style block 11 === */
@@ -4938,3 +4816,527 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .yp-dm-more{align-self:center;border:1px solid #2c3342;background:#1a1f27;color:#9aa3b2;border-radius:999px;
   font-size:10.5px;padding:5px 12px;cursor:pointer;font-family:inherit;}
 .yp-dm-more:hover{border-color:#5865f2;color:#fff;}
+
+/* ═══════════════════════════════════════════════════════════════════
+   17.0 · 모바일 전용 최종 레이아웃
+
+   이 블록은 휴대폰 세로(폭 640px 이하)와 휴대폰 가로(낮은 화면 + coarse
+   pointer)에만 적용한다. 데스크톱 선언은 이 미디어쿼리 밖에서 변경하지 않는다.
+   모든 모바일 창은 safe-area와 visualViewport 높이(--sdy-mobile-vh)를 사용하고,
+   주요 조작은 한 손가락으로 누르기 쉬운 40~44px 이상으로 맞춘다.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width:640px), (max-height:560px) and (pointer:coarse){
+  /* ── 공통 viewport / safe area ─────────────────────────────── */
+  html{width:100%;height:100%;overflow:hidden!important;}
+  body{
+    --ph-safe:env(safe-area-inset-bottom,0px);
+    --ph-top:env(safe-area-inset-top,0px);
+    --ph-left:env(safe-area-inset-left,0px);
+    --ph-right:env(safe-area-inset-right,0px);
+    --ph-gap:10px;--ph-bar:66px;--ph-stack:54px;
+    --g-blur:9px;--g-blur-lg:13px;
+    width:100%;height:100%;min-height:100%;overflow:hidden!important;
+    touch-action:auto;overscroll-behavior-y:auto;
+  }
+  body.has-mpbar{--ph-stack:72px;}
+  button,a,[role="button"]{touch-action:manipulation;}
+  input[type=text],input[type=search],input[type=password],input[type=email],
+  input[type=url],input[type=tel],input[type=number],textarea,select{
+    font-size:16px!important;
+  }
+
+  /* ── 홈: 두 줄 고정 헤더 + 2열 노트 ──────────────────────── */
+  #mainView{
+    position:fixed!important;inset:0!important;width:100%;
+    height:var(--sdy-mobile-vh,100dvh)!important;min-height:0!important;
+    overflow-x:hidden!important;overflow-y:auto!important;
+    overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;
+  }
+  .header{
+    padding:6px 8px!important;
+    padding-top:max(6px,var(--ph-top))!important;
+    padding-left:max(8px,var(--ph-left))!important;
+    padding-right:max(8px,var(--ph-right))!important;
+  }
+  .header .w-full{
+    display:flex!important;flex-direction:column;align-items:stretch!important;
+    flex-wrap:nowrap!important;gap:4px!important;
+  }
+  .app-brand{
+    min-height:30px;margin-left:0!important;gap:7px!important;
+    flex:0 0 auto;min-width:0;flex-wrap:nowrap!important;
+  }
+  .app-brand h1{
+    flex:1 1 auto;min-width:0;max-width:none!important;font-size:19px!important;
+    overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;
+  }
+  .app-brand .logo-dot{width:28px;height:28px;font-size:15px;}
+  .link-bar{display:none!important;}
+  .hdr-right{
+    width:100%;min-width:0;min-height:44px;margin-right:0!important;
+    display:flex!important;align-items:center;justify-content:space-between;
+    flex:0 0 auto;flex-wrap:nowrap!important;gap:4px!important;
+    overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+  }
+  .hdr-right::-webkit-scrollbar{display:none;}
+  .hdr-right>#vaultBtn,.hdr-right>#adminToggleBtn,.search-wrap{display:none!important;}
+  .header .tool-btn,.header .offline-badge,.header .srv-gauge{
+    width:42px!important;min-width:42px;height:42px!important;min-height:42px;
+    padding:0!important;display:flex;align-items:center;justify-content:center;
+    border-radius:12px;font-size:19px!important;
+  }
+  .header .srv-gauge svg{width:36px;height:25px;}
+  .header .offline-badge span{display:none;}
+  #mainView main{
+    min-height:calc(var(--sdy-mobile-vh,100dvh) - 88px);
+    padding:10px 4px!important;
+    padding-bottom:calc(var(--ph-safe) + 122px)!important;
+    touch-action:pan-y;
+  }
+  body:has(#selectBar.show) #mainView main{padding-bottom:calc(var(--ph-safe) + 190px)!important;}
+  .breadcrumb{padding:2px 8px 8px;gap:5px;flex-wrap:wrap;font-size:13px;}
+  .breadcrumb button{min-height:40px;padding:7px 9px;}
+  .note-grid{gap:8px;padding:0 8px;justify-content:flex-start;}
+  body .note-card,body .folder-card,body .add-card,
+  body.card-s .note-card,body.card-s .folder-card,body.card-s .add-card,
+  body.card-l .note-card,body.card-l .folder-card,body.card-l .add-card{
+    width:auto;flex:1 1 calc(50% - 4px);max-width:calc(50% - 4px);
+    min-width:0;border-radius:14px;
+  }
+  body .note-preview,body .folder-thumb,
+  body.card-s .note-preview,body.card-s .folder-thumb,
+  body.card-l .note-preview,body.card-l .folder-thumb{
+    height:auto;min-height:0;aspect-ratio:4/5;
+  }
+  body .add-card,body.card-s .add-card,body.card-l .add-card{
+    min-height:0;aspect-ratio:4/5.35;
+  }
+  .note-card-name{min-height:48px;padding:9px 10px;font-size:13px;line-height:1.35;}
+  .note-card:hover,.folder-card:hover,.add-card:hover{transform:none;}
+  .note-card:active,.folder-card:active,.add-card:active{transform:scale(.98);}
+  .card-menu{display:flex;width:40px;height:40px;right:5px;top:5px;border-radius:11px;font-size:18px;}
+  .emoji-badge{width:40px;height:40px;top:5px;left:5px;opacity:.72;}
+  .pin-badge,.unlock-badge{width:36px;height:36px;}
+  .home-add-note{min-height:44px;padding:5px 14px 5px 7px;font-size:12.5px;}
+  .home-add-icon{width:32px;height:32px;font-size:20px;}
+  .stack-scene{padding-left:8px!important;padding-right:8px!important;}
+  .recent-row{scroll-snap-type:x proximity;max-width:calc(100vw - 12px)!important;padding-left:10px!important;padding-right:10px!important;}
+  .recent-row .note-card{scroll-snap-align:center;}
+
+  /* 선택 작업은 엄지손가락용 2×2 하단 작업판 */
+  .select-bar{
+    left:max(8px,var(--ph-left));right:max(8px,var(--ph-right));bottom:calc(var(--ph-safe) + 8px);
+    width:auto;display:grid;grid-template-columns:1fr 1fr;gap:7px;
+    padding:10px;border-radius:18px;transform:translateY(calc(100% + 28px));z-index:1600;
+  }
+  .select-bar.show{transform:translateY(0);}
+  .select-bar>span{grid-column:1/-1;text-align:center;}
+  .select-bar button{min-height:44px!important;padding:8px 10px!important;justify-content:center;}
+
+  /* ── 에디터: 폭 맞춤 종이 + 가로 스크롤 도구막대 ─────────── */
+  .editor{
+    width:100%;height:var(--sdy-mobile-vh,100dvh);bottom:auto;
+    overflow:hidden;
+  }
+  .editor-toolbar{
+    display:flex!important;align-items:center;gap:4px;
+    min-height:52px;padding:5px max(6px,var(--ph-right)) 5px max(6px,var(--ph-left))!important;
+    padding-top:max(5px,var(--ph-top))!important;
+    overflow-x:auto!important;overflow-y:hidden!important;
+    touch-action:pan-x!important;overscroll-behavior-x:contain;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .editor-toolbar::-webkit-scrollbar{display:none;}
+  .editor-toolbar .tb-left,.editor-toolbar .tb-mid,.editor-toolbar .tb-right{
+    flex:0 0 auto;justify-self:auto;gap:3px;
+  }
+  .editor-toolbar .tool-btn,.editor-toolbar .tool-btn.sm{
+    width:40px!important;min-width:40px;height:40px!important;min-height:40px;
+    font-size:18px!important;border-radius:11px;
+  }
+  .editor-toolbar #edTitle{
+    flex:0 0 150px!important;width:150px;min-width:150px!important;
+    min-height:40px;padding:7px 9px;font-size:16px!important;
+  }
+  .editor-toolbar .tb-group{padding:0;background:transparent;border:0;}
+  .tool-sep{margin:0 2px;}
+  .pg-nav{min-height:40px;padding:3px 6px!important;}
+  .pg-nav button{width:34px;height:34px;}
+  .pg-nav input{width:40px;height:34px;font-size:16px!important;}
+  .editor-body{
+    overflow:auto!important;min-width:0;
+    padding:8px 3px calc(var(--ph-safe) + 96px)!important;
+    scroll-padding:72px 0 calc(var(--ph-safe) + 120px);
+    -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+    touch-action:pan-x pan-y;
+  }
+  .pages-stage{margin:0 auto;}
+  .side-bar,.side-open{display:none!important;}
+  .side-panel{left:0!important;top:0;bottom:0;max-width:calc(100vw - 48px);}
+  .side-panel.show{width:min(86vw,340px)!important;}
+  .sp-head{min-height:48px;padding:8px 10px 8px 14px;}
+  .sp-head button,.sp-mini{width:40px;height:40px;}
+  .sp-item,.sp-sec{min-height:42px;padding-top:10px;padding-bottom:10px;}
+
+  #fmtBar{max-width:calc(100vw - 12px);overflow-x:auto;overflow-y:visible;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;padding:5px!important;}
+  #fmtBar::-webkit-scrollbar{display:none;}
+  #fmtBar .tool-btn{width:40px!important;min-width:40px;height:40px!important;}
+  #fmtBar #fsInput{width:48px;height:40px;font-size:16px!important;}
+  .tb-move{width:34px;height:34px;left:-39px;top:-39px;font-size:17px;}
+  .el-del{width:34px;height:34px;right:-39px;top:-39px;font-size:16px;}
+  .handle{width:var(--hs,18px);height:var(--hs,18px);}
+  .draw-toolbar{
+    left:max(6px,var(--ph-left))!important;right:max(6px,var(--ph-right))!important;
+    bottom:calc(var(--ph-safe) + 8px)!important;width:auto!important;max-width:none!important;
+    transform:none!important;overflow-x:auto!important;justify-content:flex-start;
+    padding:8px 10px!important;gap:10px;white-space:nowrap;z-index:1350!important;
+    -webkit-overflow-scrolling:touch;touch-action:pan-x;
+  }
+  .draw-toolbar .color-pick{width:34px;height:34px;min-width:34px;}
+  .draw-toolbar .tool-btn{width:42px!important;height:42px!important;min-width:42px;}
+
+  /* 에디터의 작은 팝업은 화면을 벗어나지 않는 모바일 시트로 */
+  .font-menu.show,.color-popover.show,.fav-pop.show,.tint-pop.show,.pin-pop.show{
+    position:fixed!important;left:max(8px,var(--ph-left))!important;right:max(8px,var(--ph-right))!important;
+    top:auto!important;bottom:calc(var(--ph-safe) + 8px)!important;
+    width:auto!important;min-width:0!important;max-width:none!important;max-height:58dvh;
+    overflow-y:auto;border-radius:16px;padding:10px;z-index:2050;
+  }
+  .font-item,.fav-item,.tint-opt{min-height:44px;}
+  .color-swatch{width:38px;height:38px;}
+  .pin-pop textarea{min-height:112px;font-size:16px!important;}
+  .pin-pop button{min-height:44px;}
+  .find-bar{
+    left:max(8px,var(--ph-left))!important;right:max(8px,var(--ph-right))!important;
+    top:calc(var(--ph-top) + 58px)!important;width:auto;max-width:none;
+    padding:8px;border-radius:14px;flex-wrap:wrap;
+  }
+  .find-bar input{flex:1 1 150px;width:auto;min-width:0;height:40px;}
+  .find-bar button{width:40px;height:40px;}
+  .find-row2{width:100%;}
+  .wf-bar{
+    left:max(8px,var(--ph-left));right:max(8px,var(--ph-right));top:calc(var(--ph-top) + 58px);
+    transform:none;max-width:none;white-space:normal;flex-wrap:wrap;border-radius:14px;
+  }
+  .wf-bar button{min-height:40px;}
+  .tbl-bar{
+    left:max(6px,var(--ph-left))!important;right:max(6px,var(--ph-right))!important;
+    width:auto;max-width:none;overflow-x:auto;white-space:nowrap;
+    -webkit-overflow-scrolling:touch;border-radius:14px;
+  }
+  .tbl-bar button{min-width:40px;width:40px;height:40px;}
+  .more-panel{
+    left:0;right:0;top:calc(var(--ph-top) + 52px);bottom:auto;width:100%;
+    max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - 54px);
+    border-radius:0 0 20px 20px;padding-bottom:var(--ph-safe);
+  }
+  .more-tabs button{min-height:44px;padding:10px 4px;}
+  .more-grid{grid-template-columns:repeat(3,1fr);}
+  .more-grid button{min-height:76px;}
+
+  /* ── 공통 모달: 모바일 하단 시트 ──────────────────────────── */
+  .modal-bg{
+    align-items:flex-end;justify-content:center;overflow:hidden;
+    padding:max(8px,var(--ph-top)) max(8px,var(--ph-right)) max(8px,var(--ph-safe)) max(8px,var(--ph-left));
+  }
+  .modal-box:not(.cards-box){
+    width:100%!important;max-width:none!important;
+    max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 16px)!important;
+    overflow-x:hidden;overflow-y:auto;padding:18px 16px!important;
+    border-radius:22px 22px 14px 14px!important;overscroll-behavior:contain;
+  }
+  #uploadProg,#importProg{align-items:center;}
+  #uploadProg .modal-box,#importProg .modal-box{width:min(330px,100%)!important;border-radius:18px!important;}
+  .modal-box input:not([type=range]):not([type=checkbox]):not([type=file]),
+  .modal-box select,.modal-box textarea{min-height:44px;max-width:100%;}
+  .modal-box>button,.modal-box .import-btn,.modal-box .size-preset-card,
+  .modal-box .trash-item button,.modal-box .sp-btn,.modal-box .v-act,
+  .latex-modal-actions button{min-height:44px;}
+  .modal-box .tool-btn,.modal-box .cards-x{min-width:42px;width:42px;height:42px;}
+  .set-row{align-items:flex-start;padding:14px 0;}
+  .set-row>.set-label{flex:1 1 130px;}
+  .set-row>div[style*="display:flex"]{max-width:100%;flex-wrap:wrap;}
+  .set-row select{min-width:132px;}
+  .accent-swatch{width:34px;height:34px;}
+  #sizePresetGrid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important;}
+  #exportModal .modal-box>div[style*="grid"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;}
+  .trash-item{align-items:flex-start;flex-wrap:wrap;}
+  .trash-item b{flex:1 1 calc(100% - 90px);}
+  .fcolor-dot{width:42px;height:42px;}
+  .ficon-btn{width:44px;height:44px;}
+  #keyBody{max-height:calc(var(--sdy-mobile-vh,100dvh) - 170px)!important;}
+  .key-row{align-items:flex-start;line-height:1.5;}
+
+  /* 보관함 */
+  #vaultModal .modal-box,#stickerModal .modal-box{height:min(88dvh,720px);display:flex;flex-direction:column;}
+  .vault-bar{flex:none;gap:6px;padding:8px;}
+  .vault-up,.vault-tool{min-width:44px;height:44px;}
+  .vault-search{flex:1 1 150px;min-width:120px;height:44px;}
+  .vault-sep{display:none;}
+  .vault-desk{flex:1;min-height:180px;max-height:none;padding:8px;}
+  .vault-grid{grid-template-columns:repeat(auto-fill,minmax(82px,1fr));}
+  .v-file{min-height:96px;padding:9px 5px;}
+  .vault-actbar{position:sticky;bottom:0;z-index:8;display:grid!important;grid-template-columns:1fr 1fr;}
+  .vault-actbar[style*="display:none"]{display:none!important;}
+  .vault-actbar .nm{grid-column:1/-1;}
+  .v-act{min-height:42px;justify-content:center;}
+
+  /* 암기 카드 창은 드래그 좌표 대신 화면 안에 고정 */
+  .modal-bg .modal-box.cards-box,.fcard-win,.fcard-win.moved{
+    left:max(7px,var(--ph-left))!important;right:max(7px,var(--ph-right))!important;
+    top:auto!important;bottom:calc(var(--ph-safe) + 7px)!important;
+    transform:none!important;width:auto!important;max-width:none!important;
+    height:min(88dvh,720px);max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 14px)!important;
+    border-radius:20px!important;
+  }
+  .fcard-head{min-height:44px;padding:4px 8px;cursor:default;touch-action:manipulation;}
+  .fcard-head .cards-x{width:40px;height:40px;}
+  #cardsHome,#cardsStudy,#cardsPaste,#cardsStats,#cardsAnalytics,#cardsBrowse{padding:12px;}
+  .cards-actions{display:grid;grid-template-columns:1fr 1fr;width:100%;}
+  .cards-actions .cd-btn{width:100%;min-height:44px;}
+  .fc-mode,.cd-opt,.cd-deck,.cd-br{min-height:48px;}
+  .cd-inner{height:min(42dvh,300px);}
+
+  /* ── 알림 / 서버 상태 / 로그인 ────────────────────────────── */
+  .notif-pop,.srv-pop{
+    left:max(6px,var(--ph-left))!important;right:max(6px,var(--ph-right))!important;
+    top:calc(var(--ph-top) + 92px)!important;width:auto!important;max-width:none;
+    max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - 104px);
+    border-radius:17px;
+  }
+  .notif-item{min-height:54px;}
+  #sdyAuthWrap,#ypGate{
+    align-items:flex-end;padding:max(8px,var(--ph-top)) max(8px,var(--ph-right)) max(8px,var(--ph-safe)) max(8px,var(--ph-left));
+  }
+  .sa-card,.ypg-card{
+    width:100%;max-width:none;max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 16px);
+    overflow-y:auto;border-radius:22px 22px 14px 14px;padding:22px 18px 18px;
+  }
+  .sa-x{width:44px;height:44px;top:7px;right:7px;}
+  .sa-step input,.sa-btn{min-height:46px;}
+  .sa-row{flex-wrap:wrap;}
+  .sa-row>label{width:100%;}
+  .sa-nickedit{width:100%;flex-basis:100%;}
+  .sa-mini{min-height:44px;}
+  .ypg-btn{min-height:62px;}
+
+  /* ── 음악: 컨트롤바 / 목록 / 큰 플레이어 / 편집창 ───────── */
+  .mp{
+    left:max(6px,var(--ph-left))!important;right:max(6px,var(--ph-right))!important;
+    bottom:calc(var(--ph-safe) + 6px)!important;width:auto!important;max-width:none!important;
+    transform:none!important;gap:6px;padding:7px 8px;border-radius:16px;
+  }
+  .mp-cover{width:38px;height:38px;}
+  .mp-title{font-size:12.5px;}
+  .mp-mid{flex:1 1 auto;min-width:44px;}
+  .mp-btns{flex:0 0 auto;gap:1px;}
+  .mp-btns button,#mpX{
+    width:40px!important;min-width:40px;height:40px!important;min-height:40px;font-size:18px!important;
+  }
+  .mp-btns .mp-pp{width:42px!important;height:42px!important;font-size:20px!important;}
+  #mpX{width:34px!important;min-width:34px;height:40px!important;font-size:16px!important;}
+  .mp-prog{height:7px;margin-top:8px;}
+  .mp.mp-float{
+    left:auto!important;right:max(8px,var(--ph-right))!important;bottom:auto!important;
+    width:62px!important;max-width:62px!important;height:62px!important;
+  }
+  .mp-float .mp-cover{left:4px;top:4px;width:54px;height:54px;}
+  .mp-float .mp-btns #mpPP{width:28px!important;min-width:28px;height:28px!important;}
+  .mp-list{
+    left:0!important;right:0!important;bottom:0!important;width:100%!important;max-width:none!important;
+    transform:none!important;max-height:min(76dvh,620px)!important;
+    padding:10px max(10px,var(--ph-right)) calc(var(--ph-safe) + 10px) max(10px,var(--ph-left));
+    border-radius:20px 20px 0 0;
+  }
+  .mp-library-tools{padding:8px 4px 4px;}
+  .mp-list .mp-search{min-height:44px;font-size:16px!important;}
+  .mp-sortbtn,.mp-addpl,.mp-lfoot button{min-width:42px;min-height:42px;}
+  .mp-tabs{overflow-x:auto;flex-wrap:nowrap;}
+  .mp-tabs button{min-height:42px;}
+  .mp-li,.mp-pl,.mp-plsub{min-height:48px;}
+  #mpReopen,#ypReopen{right:max(12px,var(--ph-right));width:46px;height:46px;}
+  #mpReopen{bottom:calc(var(--ph-safe) + var(--ph-gap));font-size:20px;}
+  #ypReopen{bottom:calc(var(--ph-safe) + var(--ph-gap) + var(--ph-stack));}
+
+  .mpb{
+    left:max(6px,var(--ph-left))!important;right:max(6px,var(--ph-right))!important;
+    top:auto!important;bottom:calc(var(--ph-safe) + 6px)!important;
+    width:auto!important;max-width:none!important;height:min(86dvh,720px);max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 12px)!important;
+    transform:none!important;border-radius:20px;
+  }
+  .mpb-head{min-height:44px;padding:3px 6px;cursor:default;touch-action:manipulation;}
+  .mpb-head button,.mpb-head .mpb-mini{width:40px!important;min-width:40px;height:40px!important;font-size:18px;}
+  .mpb-body{padding:10px 9px 8px;}
+  .mpb-now{gap:10px;padding:9px!important;}
+  .mpb-cwrap,.mpb-vinyl,.mpb-cwrap .mpb-cover{width:92px!important;height:92px!important;}
+  .mpb-title{font-size:15px!important;}
+  .mpb-ctl{gap:5px;}
+  .mpb-ctl button{width:42px;height:42px;font-size:20px;}
+  .mpb-ctl .pp{width:50px;height:50px;}
+  .mpb-row2 button,.mpb-ric{min-width:40px;height:40px;}
+  .mpb-tabs{flex-wrap:nowrap!important;overflow-x:auto;}
+  .mpb-tabs button,.mpb-tabs button.mpb-icon,#mpBig .mpb-tabs button.mp-sortbtn{min-height:40px;height:40px;}
+  .mpb-searchbar{min-height:44px;}
+  .mpb-searchbar input{font-size:16px!important;}
+  .mpb-li{min-height:46px;}
+  .mpb-pager button{min-height:40px;}
+  .mp-eqpop{left:6px!important;right:6px!important;width:auto!important;max-width:none!important;}
+
+  .mp-tagm{align-items:flex-end;padding:max(8px,var(--ph-top)) max(8px,var(--ph-right)) max(8px,var(--ph-safe)) max(8px,var(--ph-left));}
+  .mp-tagm .box{
+    width:100%;max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 16px);
+    border-radius:22px 22px 14px 14px;
+  }
+  .mp-tagm .head{min-height:50px;position:sticky;top:0;z-index:2;background:var(--card);}
+  .mp-tagm .head button{width:42px;height:42px;}
+  .mp-url-bar{flex-wrap:wrap;}
+  #mpTagUrlInput{flex-basis:100%!important;height:44px!important;}
+  #mpTagUrlBtn{height:44px!important;}
+  .mp-tagm input[type=text]{height:44px;}
+  .mp-tagm .cbtns button,.mp-tagm .acts button{min-height:42px;height:auto;}
+  .mp-tagm .acts{position:sticky;bottom:0;background:var(--card);padding-bottom:calc(var(--ph-safe) + 10px);}
+  .mp-addpop{
+    left:max(8px,var(--ph-left))!important;right:max(8px,var(--ph-right))!important;
+    top:auto!important;bottom:calc(var(--ph-safe) + 8px)!important;width:auto!important;
+    max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 16px);
+    overflow-y:auto;border-radius:20px;padding:14px;
+  }
+  .mp-addpop .head button{width:42px;height:42px;}
+  .mp-addpop .file,.mp-addpop input,.mp-addpop .go{min-height:46px;}
+
+  /* ── 엽스코드: 화면 안의 채팅 시트 ────────────────────────── */
+  #ypApp{
+    left:max(6px,var(--ph-left))!important;right:max(6px,var(--ph-right))!important;
+    top:auto!important;bottom:calc(var(--ph-safe) + 6px)!important;
+    width:auto!important;max-width:none!important;
+    height:min(78dvh,680px)!important;max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 12px);
+    border-radius:20px;
+  }
+  .yp-head{min-height:48px;padding:4px 7px;cursor:default;touch-action:manipulation;}
+  #ypApp #ypHead button,#ypHead #ypBack,#ypHead #ypFrBtn{width:40px;height:40px;font-size:18px;}
+  .yp-voice{padding:7px 8px;gap:6px;}
+  .ypv-join,.ypv-mute,.ypv-icon,.ypv-gear{width:40px;height:40px;font-size:17px;}
+  .yp-vchip{min-height:32px;}
+  .yp-bgm{flex-wrap:wrap;padding:7px 8px;}
+  .yp-bgm input[type=text]{width:auto;flex:1 1 130px;min-height:40px;font-size:16px!important;}
+  .yp-bgm input[type=range]{width:84px;}
+  .yp-stack{max-width:84%;}
+  .yp-img{max-width:min(72vw,260px);max-height:260px;}
+  .yp-file{min-width:0;max-width:min(76vw,280px);}
+  .yp-foot{padding:8px 8px max(8px,var(--ph-safe));}
+  .yp-tools button,.yp-send{width:42px;height:42px;}
+  .yp-input textarea{min-height:42px;font-size:16px!important;}
+  .yp-emoji{left:8px;right:8px;bottom:58px;grid-template-columns:repeat(6,1fr);}
+  .yp-emoji button{width:42px;height:42px;justify-self:center;font-size:20px;}
+  .yp-react-row button{width:40px;height:40px;}
+  .yp-settings{left:8px;right:8px;top:54px;width:auto;max-height:62dvh;overflow-y:auto;}
+  .yp-set-row{min-height:44px;}
+  .yp-set-btn{width:40px;height:40px;}
+  .ypfr-item{min-height:54px;}
+  .ypfr-btn{min-height:40px;padding:8px 11px;}
+  .ypfr-add input,.ypfr-add button{min-height:44px;}
+
+  /* ── 집중 시계 ─────────────────────────────────────────────── */
+  #focusClock{
+    height:var(--sdy-mobile-vh,100dvh);
+    padding:calc(var(--ph-top) + 116px) 10px calc(var(--ph-safe) + 118px);
+  }
+  #focusClock .fc-chrome.top{top:calc(var(--ph-top) + 50px);padding:6px 8px;}
+  #focusClock .fc-modes{display:flex;grid-template-columns:none;max-width:calc(100vw - 16px);overflow-x:auto;}
+  #focusClock .fc-modes button{min-height:42px;padding:8px 11px;white-space:nowrap;}
+  .fc-x{top:calc(var(--ph-top) + 8px);width:42px;height:42px;}
+  .fc-time{font-size:clamp(48px,19vw,104px);}
+  .fc-ring{width:min(42dvh,82vw,330px);height:min(42dvh,82vw,330px);}
+  .fc-ring .fc-time{font-size:clamp(42px,15vw,86px);}
+  .fc-chrome.bottom{max-height:112px;overflow-y:auto;padding:8px 8px max(10px,var(--ph-safe));}
+  .fc-btn{min-height:44px;padding:10px 15px;}
+  .fc-preset{min-height:40px;padding:8px 12px;}
+  .fc-custom input{height:42px;font-size:16px!important;}
+
+  /* ── 나머지 오버레이 / 발표 / 진행 상태 ─────────────────── */
+  .ctx-menu.show,.mpctx.show,.pl-mini{
+    left:max(8px,var(--ph-left))!important;right:max(8px,var(--ph-right))!important;
+    top:auto!important;bottom:calc(var(--ph-safe) + 8px)!important;
+    width:auto!important;min-width:0!important;max-width:none!important;
+    max-height:min(68dvh,560px)!important;overflow-x:hidden;overflow-y:auto;
+    border-radius:18px!important;padding:8px!important;overscroll-behavior:contain;
+  }
+  .ctx-menu.show .ctx-item,.mpctx .ci,.pl-mini button{min-height:44px;padding:11px 12px!important;}
+  .present{height:var(--sdy-mobile-vh,100dvh);padding:10px;}
+  .present img{max-width:calc(100vw - var(--ph-left) - var(--ph-right) - 12px);max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 78px);}
+  .present-bar{bottom:calc(var(--ph-safe) + 8px);}
+  .present-bar button{width:44px;height:44px;}
+  #viewer{padding:max(8px,var(--ph-top)) max(8px,var(--ph-right)) max(8px,var(--ph-safe)) max(8px,var(--ph-left));}
+  #viewer img{max-width:100%!important;max-height:100%!important;object-fit:contain;}
+  .toast{top:calc(var(--ph-top) + 8px);max-width:calc(100vw - var(--ph-left) - var(--ph-right) - 16px);padding:11px 16px;text-align:center;}
+  #welcomeToast{left:max(8px,var(--ph-left));right:max(8px,var(--ph-right));top:calc(var(--ph-top) + 8px);transform:translateY(-24px) scale(.96);padding:12px 14px;}
+  #welcomeToast.show{transform:none;}
+  #uploadBadge{left:max(8px,var(--ph-left))!important;right:max(8px,var(--ph-right))!important;bottom:calc(var(--ph-safe) + 72px)!important;width:auto;}
+  #expProg{width:calc(100vw - var(--ph-left) - var(--ph-right) - 24px)!important;max-width:420px;}
+  #trProg{top:calc(var(--ph-top) + 8px);width:calc(100vw - var(--ph-left) - var(--ph-right) - 16px);}
+  #staleBar{top:calc(var(--ph-top) + 8px);}
+  .latex-modal-box{width:100%!important;}
+  .latex-input{height:132px;margin:12px;width:calc(100% - 24px);}
+  .latex-preview{min-height:96px;margin:10px 12px;}
+  .latex-examples{padding:0 12px;}
+  .latex-examples button{min-height:40px;}
+}
+
+/* 아주 좁은 폰도 2열을 유지하되 간격만 줄인다. */
+@media (max-width:380px){
+  .note-grid{gap:6px;padding:0 6px;}
+  body .note-card,body .folder-card,body .add-card,
+  body.card-s .note-card,body.card-s .folder-card,body.card-s .add-card,
+  body.card-l .note-card,body.card-l .folder-card,body.card-l .add-card{
+    flex:1 1 calc(50% - 3px);max-width:calc(50% - 3px);
+  }
+  .header .tool-btn,.header .offline-badge,.header .srv-gauge{width:40px!important;min-width:40px;height:40px!important;}
+  .editor-toolbar #edTitle{flex-basis:132px!important;width:132px;min-width:132px!important;}
+}
+
+/* 휴대폰 가로: 넓은 폭은 쓰고 낮은 높이는 아낀다. coarse pointer라 PC에는 적용되지 않는다. */
+@media (max-height:560px) and (pointer:coarse) and (orientation:landscape){
+  .header{padding-top:max(4px,var(--ph-top))!important;padding-bottom:4px!important;}
+  .header .w-full{flex-direction:row;align-items:center!important;gap:8px!important;}
+  .app-brand{flex:1 1 auto;}
+  .app-brand h1{font-size:17px!important;}
+  .hdr-right{width:auto;flex:0 0 auto;}
+  #mainView main{padding-top:8px!important;}
+  body .note-card,body .folder-card,body .add-card,
+  body.card-s .note-card,body.card-s .folder-card,body.card-s .add-card,
+  body.card-l .note-card,body.card-l .folder-card,body.card-l .add-card{
+    flex:1 1 calc(25% - 6px);max-width:calc(25% - 6px);
+  }
+  .modal-bg{align-items:center;}
+  .modal-box:not(.cards-box){width:min(620px,100%)!important;border-radius:18px!important;}
+  #vaultModal .modal-box,#stickerModal .modal-box{width:min(760px,100%)!important;height:calc(var(--sdy-mobile-vh,100dvh) - 16px);}
+  .modal-bg .modal-box.cards-box,.fcard-win,.fcard-win.moved{
+    top:8px!important;bottom:8px!important;left:8px!important;right:8px!important;
+    height:auto;max-height:none!important;
+  }
+  .mp{
+    left:50%!important;right:auto!important;width:min(680px,calc(100vw - var(--ph-left) - var(--ph-right) - 12px))!important;
+    transform:translateX(-50%)!important;
+  }
+  .mpb{
+    left:50%!important;right:auto!important;width:min(720px,calc(100vw - var(--ph-left) - var(--ph-right) - 12px))!important;
+    height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 12px);
+    transform:translateX(-50%)!important;
+  }
+  .mpb-body{flex-direction:row;}
+  .mpb-stage{flex:0 0 45%;}
+  .mpb-drawer{flex:1 1 auto;}
+  #ypApp{
+    left:auto!important;right:max(6px,var(--ph-right))!important;top:max(6px,var(--ph-top))!important;
+    bottom:max(6px,var(--ph-safe))!important;width:min(430px,56vw)!important;height:auto!important;max-height:none;
+  }
+  #sdyAuthWrap,#ypGate{align-items:center;}
+  .sa-card,.ypg-card{width:min(440px,100%);border-radius:18px;}
+  #focusClock{padding:calc(var(--ph-top) + 58px) 72px calc(var(--ph-safe) + 74px);}
+  #focusClock .fc-chrome.top{top:var(--ph-top);}
+  #focusClock .fc-time{font-size:clamp(46px,14vh,82px);}
+  #focusClock .fc-ring{width:min(48vh,250px);height:min(48vh,250px);}
+  .fc-chrome.bottom{max-height:72px;}
+}

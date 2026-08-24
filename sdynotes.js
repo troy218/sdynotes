@@ -1497,7 +1497,13 @@
         g.innerHTML='';
         renderBreadcrumb();
 
-        const isHomeStack=!searchQuery&&!curFolder&&!selectMode;
+        /* 17.1 · 홈 복원
+           16.0~16.1에서 넣었던 카드 더미/최근 문서 2단 레이아웃은 넓은 PC에서도
+           카드를 한곳에 겹쳐 놓아 홈 그리드가 무너져 보였다. 원래 홈처럼
+           폴더 → 노트 → 새 노트를 한 격자에 나란히 둔다. 모바일에서는 같은 DOM을
+           CSS가 2열로 맞추므로 별도 렌더러가 필요 없다. 스택 코드는 기존 데이터와
+           동작을 건드리지 않도록 잠시 보존하되 렌더 경로에서는 사용하지 않는다. */
+        const isHomeStack=false;
         const filtered=getFiltered();
         const recentIds=isHomeStack?_getRecentIds():[];
         const recentSet=new Set(recentIds.map(id=>String(id)));
@@ -21761,13 +21767,30 @@ refreshEgg();
       폰은 화면을 돌리면 폭·높이가 통째로 바뀌는데, 예전엔 옮긴 좌표가
       px 로 그대로 남아 패널이 화면 밖으로 사라졌다. */
 (function(){
+  /* 세로 폰뿐 아니라 가로로 돌린 폰도 모바일 UI를 유지한다.
+     낮은 화면 조건에는 coarse pointer를 함께 걸어 낮게 줄인 PC 창은 건드리지 않는다. */
+  var PHONE_QUERY='(max-width:640px), (max-height:560px) and (pointer:coarse)';
   /* matchMedia 가 없는 환경(구형 WebView·테스트용 DOM)에서도 죽지 않게 */
   var PHONE=function(){
     try{
-      if(window.matchMedia) return window.matchMedia('(max-width:640px)').matches;
+      if(window.matchMedia) return window.matchMedia(PHONE_QUERY).matches;
     }catch(e){}
-    return (window.innerWidth||1024)<=640;
+    var touch=!!(window.navigator&&window.navigator.maxTouchPoints>0);
+    return (window.innerWidth||1024)<=640 || (touch&&(window.innerHeight||768)<=560);
   };
+
+  /* iOS 주소창·가상 키보드로 visual viewport가 바뀌어도 시트와 에디터가
+     실제 보이는 높이를 쓴다. 이 변수는 모바일 미디어쿼리 안에서만 소비된다. */
+  function syncViewport(){
+    var root=document.documentElement,body=document.body;
+    if(!root||!body) return;
+    var mobile=PHONE();
+    body.classList.toggle('sdy-mobile-ui',mobile);
+    if(!mobile){ root.style.removeProperty('--sdy-mobile-vh'); return; }
+    var vv=window.visualViewport;
+    var h=vv&&vv.height ? vv.height : (window.innerHeight||0);
+    if(h>0) root.style.setProperty('--sdy-mobile-vh',Math.round(h)+'px');
+  }
 
   /* ① 음악바 표시 여부 → body.has-mpbar */
   function syncBar(){
@@ -21804,7 +21827,7 @@ refreshEgg();
       if(isFinite(bt)) big.style.top =Math.max(6,Math.min(innerHeight-big.offsetHeight-6,bt))+'px';
     }
   }
-  function tick(){ syncBar(); clampFloats(); }
+  function tick(){ syncViewport(); syncBar(); clampFloats(); }
 
   function boot(){
     var pl=document.getElementById('musicPlayer');
@@ -21813,6 +21836,10 @@ refreshEgg();
     if(app) new MutationObserver(clampFloats).observe(app,{attributes:true,attributeFilter:['class']});
     addEventListener('resize',tick,{passive:true});
     addEventListener('orientationchange',function(){ setTimeout(tick,220); },{passive:true});
+    if(window.visualViewport){
+      window.visualViewport.addEventListener('resize',tick,{passive:true});
+      window.visualViewport.addEventListener('scroll',syncViewport,{passive:true});
+    }
     tick();
   }
   if(document.readyState==='loading') addEventListener('DOMContentLoaded',boot);
