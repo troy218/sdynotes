@@ -5152,6 +5152,8 @@
         hideEdLoading();
         updateLockUI();
         document.getElementById('editorView').classList.add('open');
+        document.documentElement.classList.add('in-editor');
+        document.body.classList.add('in-editor');
         setTimeout(()=>{ try{ startLive(); }catch(e){} },600);   // 실시간 커서 공유
         try{ startLiveDocSync(); }catch(e){}                     // 기기 간 실시간 반영
         // 14.14 · 슬라이드인 직후·레이아웃 확정 뒤 다시 한 번 강제 페인트
@@ -5188,6 +5190,8 @@
         stopLive();
         stopLiveDocSync();
         document.getElementById('editorView').classList.remove('open');
+        document.documentElement.classList.remove('in-editor');
+        document.body.classList.remove('in-editor');
         document.getElementById('pagesStage').innerHTML='';
         if(window._closeEdT) clearTimeout(window._closeEdT);
         window._closeEdT=setTimeout(async()=>{
@@ -5222,6 +5226,7 @@
         clearTimeout(_saveTimer); _saveTimer=null;
         if(!curNB||!doc) return;
         if(doc.__loadFailed) return;
+        try{ commitEditingText(); }catch(e){}
         // 14.14 · 본문이 비어 보이는데 디스크/서버에는 내용이 있는 상태면
         //   빈 문서로 덮어쓰지 않는다. (IO 미렌더·pages op 미스매치로 doc.pages 가
         //   비워진 직후 노트 전환/닫기가 일어나면 영구 유실되던 경로)
@@ -15822,6 +15827,13 @@ function restoreMusicState(){
   try{ d=JSON.parse(localStorage.getItem('sdy_music_state')||'null'); }catch(e){}
   _mpRestored=true;                      // 이 시점부터 저장을 연다
   try{ if(d) _applyMusicStateObject(d,{force:true}); }catch(e){}
+  try{
+    const t=cur();
+    if(t&&!A.src){
+      A.src=t.stream_url||('/api/music/file/'+t.id);
+      A._trackId=t.id; P.currentId=t.id;
+    }
+  }catch(e){}
 }
 try{
   window.sdyApplyMusicPrefs=_applyMusicPrefs;
@@ -16018,9 +16030,18 @@ function smoothPause(){
 let _ppWait=null;
 function pp(){
   if(!A.src){
+    const t=cur();
+    if(t){
+      const L=curList();
+      const k=(L||[]).findIndex(x=>x.id===t.id);
+      playIdx(k>=0?k:(P.idx>=0&&P.idx<L.length?P.idx:0));
+      return;
+    }
     // 14.14 · 아무것도 안 물려 있으면 대기열(없으면 라이브러리)의 현재 자리부터
     const L=curList();
     if(L&&L.length){ playIdx(P.idx>=0&&P.idx<L.length?P.idx:0); return; }
+    // 사용자 제스처 컨텍스트에서 오디오를 언락해 둔다
+    try{ A.play().then(()=>A.pause()).catch(()=>{}); }catch(e){}
     // 목록이 아직 비어 있으면(부팅 중 또는 이전 로드 실패) 로딩이 끝나기를 기다렸다가 자동으로 튼다
     if(_ppWait) return;
     // 이전 로드가 실패했으면(P.listDirty) 다시 시도
@@ -16783,7 +16804,15 @@ try{ const p=JSON.parse(localStorage.getItem('mp_pos')||'null'); if(p)P.pos=p; }
 // 12.0 · 칩은 <body> 첫머리에서 이미 만들어져 로딩 중에도 바로 보인다. 여기선 재활용만.
 const chip=document.getElementById('mpReopen');
 chip.title='음악 켜기';
-chip.onclick=()=>{ pl.style.display='flex'; chip.style.display='none'; P.collapsed=false; };
+chip.onclick=()=>{
+  pl.style.display='flex'; chip.style.display='none'; P.collapsed=false;
+  const t=cur();
+  if(t&&!A.src){
+    A.src=t.stream_url||('/api/music/file/'+t.id);
+    A._trackId=t.id; P.currentId=t.id;
+  }
+  renderTitle();
+};
 pl.style.display='none';
 // 로딩 중 사용자가 칩을 눌러 바를 열었으면 그 상태를 지킨다
 if(window.__mpChipOpened){ chip.style.display='none'; pl.style.display='flex'; }
@@ -16795,6 +16824,11 @@ updateRep();
 loadList().then(()=>{
   restoreMusicState();
   if(P.mode!=='bar') P.mode='bar';  // 노트 안이어도 진입 시엔 접힌 상태 유지
+  const t=cur();
+  if(t&&!A.src){
+    A.src=t.stream_url||('/api/music/file/'+t.id);
+    A._trackId=t.id; P.currentId=t.id;
+  }
   renderTitle();
   startTagPolling();              // 서버가 아직 태그 정리 중이면 이어서 반영
 });
@@ -18745,16 +18779,12 @@ const TAG_FIELD_NAME={title:'제목',artist:'가수',album:'앨범',year:'연도
 $('mpTagAuto').onclick=async()=>{
   if(!TAG_EDIT||_tagBusy) return;
   const id=TAG_EDIT;
-  // 저장 전 편집창 스냅숏 — 이 값들은 어떤 결과가 와도 덮지 않는다
-  const snap={};
+  // 저장 전 편집창 스냅숏 — 인식이 실패했을 때 이 값들은 절대 덮지 않는다
+  let snap={};
   TAG_FIELDS.forEach(([k,el])=>{ snap[k]=$(el).value.trim(); });
   snap.lyrics=$('mpTagLyrics').value.trim();
   let t0=P.list.find(x=>x.id===id)||{};
-  // hasTrackCover가 문자열 "false"를 실제 표지로 오인하지 않으므로,
-  // 표지가 없는 이전 레코드도 아래 ④ 표지 찾기 단계까지 진행한다.
   const hadCover=hasTrackCover(t0)||!!_scrapedCoverUrl;
-  const anyEmpty=TAG_FIELDS.some(([k])=>!snap[k])||!snap.lyrics||!hadCover;
-  if(!anyEmpty){ toast('모든 칸이 이미 채워져 있어요 · 찾을 빈칸이 없습니다',2400); return; }
   _tagBusy=true;
   const btn=$('mpTagAuto'); const html=btn.innerHTML;
   const setBtn=t=>{ btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> '+t; };
@@ -18778,24 +18808,33 @@ $('mpTagAuto').onclick=async()=>{
     }
   }
   try{
-    // ① 제목·가수가 둘 다 비었으면 → 소리 인식(AcoustID)으로 곡부터 알아낸다
-    if(!snap.title&&!snap.artist){
-      const st=await recogStatus().catch(()=>null);
-      if(st&&st.ready){
-        setBtn('듣는 중…');
-        if(hintEl) hintEl.textContent='소리 지문으로 곡을 알아내는 중… (최대 1~2분)';
-        try{
-          const r=await musicApiFetch('/api/music/recognize',{method:'POST',
-            headers:{'Content-Type':'application/json'},body:JSON.stringify({id})},180000);
-          const d=await r.json().catch(()=>({}));
-          if(!r.ok||!d.ok||!(d.recog&&(d.recog.title||d.recog.artist))) missed.push('소리 인식');
-          applyServer(await reload());
-        }catch(e){ missed.push('소리 인식'); }
+    // ① [무조건 1순위] 음원 음성 인식(AcoustID)을 먼저 실행
+    setBtn('음원 인식 중…');
+    if(hintEl) hintEl.textContent='소리 지문으로 음원을 인식하는 중… (최대 1~2분)';
+    let recogFound=false;
+    try{
+      const r=await musicApiFetch('/api/music/recognize',{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({id,force:true})},180000);
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.ok&&d.recog&&(d.recog.title||d.recog.artist)){
+        recogFound=true;
+        // 음원 인식 결과는 정확하므로 제목·가수를 반영하고 이를 바탕으로 다음 단계를 이어간다
+        if(d.recog.title) $('mpTagTitle').value=d.recog.title;
+        if(d.recog.artist) $('mpTagArtist').value=d.recog.artist;
+        if(d.recog.album&&!$('mpTagAlbum').value.trim()) $('mpTagAlbum').value=d.recog.album;
+        if(d.recog.year&&!$('mpTagYear').value.trim()) $('mpTagYear').value=d.recog.year;
+        // 인식된 정확한 정보를 스냅숏에 동기화
+        snap.title=$('mpTagTitle').value.trim();
+        snap.artist=$('mpTagArtist').value.trim();
+        await reload();
+      }else{
+        missed.push('음성 인식');
       }
-    }
-    // ② 태그 찾기(빈칸만) — 검색어는 편집창의 기존 제목·가수 (기존 정보 기반)
+    }catch(e){ missed.push('음성 인식'); }
+
+    // ② 태그 찾기 — 인식 결과(또는 기존 태그)를 바탕으로 나머지 빈칸(앨범, 연도, 장르 등)을 채운다
     if(TAG_FIELDS.some(([k,el])=>!$(el).value.trim())){
-      setBtn('정보 찾는 중…');
+      setBtn('태그 찾는 중…');
       try{
         const qq=qNow();
         const r=await musicApiFetch('/api/music/lookup',{method:'POST',
@@ -18803,12 +18842,13 @@ $('mpTagAuto').onclick=async()=>{
           body:JSON.stringify({id,force:true,fill_only:true,alt:_tagAlt,
             q_title:qq.title,q_artist:qq.artist})},120000);
         const d=await r.json().catch(()=>({}));
-        if(!r.ok||!d.ok) missed.push('기본 정보');
+        if(!r.ok||!d.ok) missed.push('기본 태그');
         applyServer(await reload());
         _tagAlt++;                       // 다음 누름 = 다음 후보
-      }catch(e){ missed.push('기본 정보'); }
+      }catch(e){ missed.push('기본 태그'); }
     }
-    // ③ 가사 — 여전히 비어 있으면 싱크 가사 → 일반 가사 차례로
+
+    // ③ 라이브(싱크) 가사 찾기
     if(!$('mpTagLyrics').value.trim()){
       setBtn('가사 찾는 중…');
       const qq=qNow();
@@ -18824,16 +18864,14 @@ $('mpTagAuto').onclick=async()=>{
         try{
           const r=await musicApiFetch('/api/music/lookup',{method:'POST',
             headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({id,lyrics_only:true,force:true})},60000);
+            body:JSON.stringify({id,lyrics_only:true,force:true,q_title:qq.title,q_artist:qq.artist})},60000);
           if(r.ok){ applyServer(await reload()); got=!!$('mpTagLyrics').value.trim(); }
         }catch(e){}
       }
       if(!got) missed.push('가사');
     }
-    // ④ 표지 — 없을 때만 (있는 표지는 절대 갈지 않는다)
-    //   hasTrackCover가 true여도 실제 표지 파일이 없을 수 있으므로,
-    //   서버에 cover_only:true 로 요청하면 서버가 '이미 있으면 건너뛰고'
-    //   없으면 찾아서 저장해 준다. → 항상 요청해도 안전하다.
+
+    // ④ 앨범 표지 찾기 (마지막)
     {
       setBtn('표지 찾는 중…');
       const qq=qNow();
