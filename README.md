@@ -51,7 +51,9 @@ Node 가 단일 소유하고, worker 가 내부 엔드포인트(`/internal/*`)�
 ```
 sdynotes-fast/
 ├── package.json          Node 의존성
-├── sdynotes.html         프런트 (SDB 로컬 DB shim 내장)
+├── sdynotes.html         프런트 마크업
+├── sdynotes.css          프런트 스타일시트 (HTML이 참조 — 배포 필수)
+├── sdynotes.js           프런트 스크립트 (HTML이 참조 — 배포 필수)
 ├── apply.sh              배포 스크립트 (★서버에서 실행 — 최초 1회 데이터 자동 이전)
 ├── scripts/
 │   ├── migrate_to_oracle.mjs        Supabase/Cloudinary → Oracle 디스크 일괄 이전
@@ -121,8 +123,8 @@ python3 worker/run.py
 ## 배포 (서버에서)
 
 ```bash
-# zip에 apply.sh · package.json · sdynotes.html · server/ · worker/ · scripts/ 를
-# 모두 넣고
+# zip에 apply.sh · package.json · sdynotes.html · sdynotes.css · sdynotes.js ·
+# server/ · worker/ · scripts/ 를 모두 넣고
 bash apply.sh
 ```
 
