@@ -5,7 +5,7 @@
 // 검증: 여러 라운드 뒤 양 기기가 같은 내용으로 수렴하고, 양쪽 편집이 모두 남는다.
 const fs = require('fs');
 const path = require('path');
-const html = fs.readFileSync(path.join(__dirname, '..', 'sdynotes.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', 'sdynotes.js'), 'utf8');
 const s = html.indexOf('function _sdyUnits');
 const e = html.indexOf('function _elById');
 const o = {};

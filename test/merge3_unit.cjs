@@ -1,6 +1,6 @@
-// 3-way 병합(협업 편집) 단위 테스트 — sdynotes.html 에서 실제 함수를 추출해 검증
+// 3-way 병합(협업 편집) 단위 테스트 — sdynotes.js 에서 실제 함수를 추출해 검증
 const fs = require('fs');
-const html = fs.readFileSync(require('path').join(__dirname, '..', 'sdynotes.html'), 'utf8');
+const html = fs.readFileSync(require('path').join(__dirname, '..', 'sdynotes.js'), 'utf8');
 const start = html.indexOf('function _sdyUnits');
 const end = html.indexOf('function _elById');
 if (start < 0 || end < 0) { console.error('merge functions not found'); process.exit(2); }

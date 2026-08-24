@@ -1,6 +1,6 @@
 // 정준 순서(min,max)로 병합 호출 시: 수렴성 + 무손실(삽입만) 검증
 const fs = require('fs');
-const html = fs.readFileSync(require('path').join(__dirname, '..', 'sdynotes.html'), 'utf8');
+const html = fs.readFileSync(require('path').join(__dirname, '..', 'sdynotes.js'), 'utf8');
 const start = html.indexOf('function _sdyUnits');
 const end = html.indexOf('function _elById');
 const block = html.slice(start, end);

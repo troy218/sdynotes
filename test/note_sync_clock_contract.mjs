@@ -15,10 +15,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const html = fs.readFileSync(path.join(root, 'sdynotes.html'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'sdynotes.js'), 'utf8');
 const engine = fs.readFileSync(path.join(root, 'server/src/lib/syncEngine.js'), 'utf8');
 
-// ── 1. 배포된 rev 시계 코드 추출 (실제 sdynotes.html 의 _nbNow) ──
+// ── 1. 배포된 rev 시계 코드 추출 (실제 sdynotes.js 의 _nbNow) ──
 const clockStart = html.indexOf('let _nbRev=Date.now();');
 const clockEnd = html.indexOf('function _nbNow(){', clockStart);
 assert.ok(clockStart > 0 && clockEnd > clockStart, '_nbRev/_nbNow 시계가 있어야 한다');

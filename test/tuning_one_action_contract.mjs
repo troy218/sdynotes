@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const root = new URL('..', import.meta.url);
-const html = fs.readFileSync(new URL('sdynotes.html', root), 'utf8');
+const html = fs.readFileSync(new URL('sdynotes.js', root), 'utf8');
 const music = fs.readFileSync(new URL('worker/sdynotes_worker/music.py', root), 'utf8');
 const cloud = fs.readFileSync(new URL('worker/sdynotes_worker/music_cloud.py', root), 'utf8');
 const importer = fs.readFileSync(new URL('worker/sdynotes_worker/importer.py', root), 'utf8');

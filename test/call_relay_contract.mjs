@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
 const chat = fs.readFileSync(new URL('../server/src/routes/chat.js', import.meta.url), 'utf8');
 const apply = fs.readFileSync(new URL('../apply.sh', import.meta.url), 'utf8');
 

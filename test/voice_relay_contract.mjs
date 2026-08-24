@@ -174,7 +174,7 @@ const rejected = await closed(wsC);
 ok('미가입 uid 거부 (4001)', rejected === 4001);
 
 // ── 8) 프론트엔드 릴레이 전용 계약 ──
-const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
 ok('클라이언트: 릴레이 음성 엔진 존재', /ypRelayStart/.test(html) && /voice-ws\?uid=/.test(html));
 ok('클라이언트: P2P 토글/ICE 없음', !/YPS\.relay/.test(html) && !/RTCPeerConnection/.test(html));
 ok('클라이언트: 재접속 시 캡처 그래프 유지', /YP\.relayNodes \? Promise\.resolve\(\) : ypRelayCapture/.test(html));
