@@ -14,6 +14,10 @@
     
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet">
+    <!-- KaTeX 본체(JS). CSS만 넣고 JS를 빼 먹으면 window.katex가 영원히 없어
+         수식이 전부 원문 텍스트(latex-fallback)로만 보인다 — 반드시 함께 둔다.
+         defer라 문서 순서상 본문 끝의 sdynotes.js보다 먼저 실행된다. -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
     
     
     
