@@ -1238,8 +1238,8 @@
                 if(!(await tryOpenFolder(f.id))) return;
             }
         }else{
-            // 17.4 · 홈(최상위)에 들어온다 — 덩어리+최근 줄이 보이는 아래쪽부터
-            // 시작한다 (새 노트 구역은 위로 올려 접어 둔다).
+            // 홈(최상위)에 들어오면 두 노트 줄부터 보여 주고, 클래식 새 노트
+            // 버튼은 그 바로 위에 숨겨 둔다.
             _homeEnterScroll=true;
         }
         curFolder=fid; cancelSelect(); renderGrid();
@@ -1436,10 +1436,10 @@
         }catch(e){ return String(Date.now()); }
     }
     let _lastGridSig='';
-    // ── 17.4 · 홈 재진입 스크롤 ──────────────────────────────────
-    // 문서를 보고 돌아온 홈(최근 줄이 있는 화면)은 '덩어리 + 최근'이 바로
-    // 보이도록 맨 아래에서 시작한다. 새 노트 만들기는 위쪽에 별도 구역으로
-    // 올려 두어, 화면을 위로 올려(스크롤을 위로) 꺼내 쓴다.
+    // ── 홈 재진입 스크롤 ─────────────────────────────────────────
+    // 문서를 보고 돌아온 홈은 '안 본 노트 더미 + 이미 본 노트' 두 줄에서
+    // 시작한다. 그 두 줄 바로 위에 예전 방식의 새 노트 버튼을 두어, 휠을
+    // 위로 한 칸만 굴리면 버튼이 나타난다.
     let _homeEnterScroll=false;
     function _homeScrollEl(){
         const mv=document.getElementById('mainView');
@@ -1456,16 +1456,6 @@
         try{ el.scrollTo({top,behavior:smooth?'smooth':'auto'}); }
         catch(e){ el.scrollTop=top; }
     }
-    function _homeScrollHint(){
-        // 처음 이 모드로 들어왔을 때만 잠깐 알려 주고 스르르 사라진다.
-        if(document.querySelector('.home-scroll-hint')) return;
-        const h=document.createElement('div');
-        h.className='home-scroll-hint';
-        h.innerHTML='<i class="ri-arrow-up-line"></i> 위로 올리면 새 노트를 만들 수 있어요';
-        document.body.appendChild(h);
-        requestAnimationFrame(()=>h.classList.add('show'));
-        setTimeout(()=>{ h.classList.remove('show'); setTimeout(()=>h.remove(),450); },2600);
-    }
     // ── 16.1 · 홈에서만 쓰는 '이번 접속' 기록 ─────────────────────
     // 서버 설정·localStorage에는 쓰지 않는다. 노트를 열었다가 돌아오면
     // 아래 줄로 잠시 내려놓고, 새로 접속하면 다시 원래 스택으로 돌아온다.
@@ -1476,6 +1466,30 @@
         const id=String(nbId);
         _sessionRecentIds=_sessionRecentIds.filter(x=>String(x)!==id);
         _sessionRecentIds.unshift(id);
+    }
+
+    // 최근 노트가 생긴 홈은 두 줄이 현재 화면 높이에 꼭 맞도록 카드 폭을
+    // 자동 계산한다. 위·아래 줄은 같은 높이를 쓰며, 사용자 카드 크기 설정은
+    // 최대 크기로만 존중해 낮은 화면에서 줄이 잘리지 않게 한다.
+    function _fitHomeRows(area){
+        if(!area||!area.classList.contains('has-recent')) return;
+        const scrollEl=_homeScrollEl();
+        const vh=(scrollEl&&scrollEl.clientHeight)||(window.innerHeight||800);
+        const header=document.querySelector('#mainView > .header');
+        const headerH=header?(header.getBoundingClientRect().height||header.offsetHeight||0):0;
+        const main=document.querySelector('#mainView > main');
+        let bottomPad=0;
+        try{ bottomPad=main?parseFloat(getComputedStyle(main).paddingBottom)||0:0; }catch(e){}
+        // 떠 있는 음악바 여백까지 포함한 아래 패딩은 화면의 30%까지만 예약한다.
+        bottomPad=Math.min(bottomPad,vh*.30);
+        const rowsH=Math.max(300,Math.round(vh-headerH-bottomPad+8));
+        const rowH=rowsH/2;
+        const settingMax=document.body.classList.contains('card-s')?160:
+                         (document.body.classList.contains('card-l')?244:200);
+        const screenMax=Math.max(96,(window.innerWidth||1024)-56);
+        const cardW=Math.max(96,Math.min(settingMax,screenMax,Math.floor((rowH-52)/1.30)));
+        area.style.setProperty('--home-rows-h',rowsH+'px');
+        area.style.setProperty('--home-card-w',cardW+'px');
     }
 
     // ── 홈 스택: 아래(폴더)에서 위(문서)로 한 장씩 오른쪽·위로 이동 ──
@@ -1494,21 +1508,27 @@
         const isTouch=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
         const maxSpread=isTouch?150:230;
         const spread=n>1?Math.min(maxSpread,available/(n-1)):0;
+        const compact=!!(container&&container.closest('.home-stack-area.has-recent'));
+        // 두 줄 모드에서는 카드가 많아져도 더미 자체가 한 줄 높이를 넘지 않게
+        // 겹침 간격을 자동 압축한다.
+        const compactX=n>1?Math.min(13,44/(n-1)):0;
+        const compactY=n>1?Math.min(6,24/(n-1)):0;
+        const fanY=n>1&&compact?Math.min(2.2,24/(n-1)):2.2;
         cards.forEach((c,i)=>{
             const off=i-mid;
             if(fanned){
                 const x=off*spread;
-                const y=off*2.2;
-                const rot=Math.max(-22,Math.min(22,off*4.2));
+                const y=off*fanY;
+                const rot=Math.max(-22,Math.min(22,off*(compact?Math.min(4.2,30/Math.max(1,n-1)):4.2)));
                 c.style.transform=`translate(-50%,-50%) translate3d(${x}px,${y}px,0) rotate(${rot}deg) scale(1)`;
                 c.style.zIndex=i+1;
                 c.style.opacity='1';
             }else{
                 // item 순서 자체가 깊이 순서다: 폴더 → 문서.
                 // 따라서 첫 카드(가장 아래)는 왼쪽 아래, 마지막 카드는 오른쪽 위다.
-                const x=off*13;
-                const y=off*-6;
-                const rot=off*1.25;
+                const x=off*(compact?compactX:13);
+                const y=off*(compact?-compactY:-6);
+                const rot=off*(compact?Math.min(1.25,9/Math.max(1,n-1)):1.25);
                 c.style.transform=`translate(-50%,-50%) translate3d(${x}px,${y}px,0) rotate(${rot}deg)`;
                 c.style.zIndex=i+1;
                 c.style.opacity='1';
@@ -1516,13 +1536,18 @@
         });
     }
     function _layoutHomeStacks(){
+        document.querySelectorAll('.home-stack-area.has-recent').forEach(_fitHomeRows);
         document.querySelectorAll('.note-stack').forEach(stack=>{
             const cards=Array.from(stack.children).filter(c=>
                 c.classList.contains('note-card')||c.classList.contains('folder-card'));
             if(!cards.length) return;
+            const compact=!!stack.closest('.home-stack-area.has-recent');
             const cardH=Math.max(...cards.map(c=>c.offsetHeight||300));
-            const depth=Math.min(180,Math.max(0,(cards.length-1)*6));
-            stack.style.height=Math.max(300,cardH+depth+30)+'px';
+            // 두 줄 모드의 줄 높이는 CSS 변수로 고정한다. 일반 홈은 기존 높이 유지.
+            if(!compact){
+                const depth=Math.min(180,Math.max(0,(cards.length-1)*6));
+                stack.style.height=Math.max(300,cardH+depth+30)+'px';
+            }else stack.style.removeProperty('height');
             _stackTransforms(cards,stack.classList.contains('fanned'));
         });
     }
@@ -1735,9 +1760,8 @@
             const area=document.createElement('div');
             area.className='home-stack-area';
 
-            // 새 노트 버튼은 스택 위에 고정된 가장 첫 번째 동작이다.
-            // 17.4 · 최근 줄이 있는 화면에서는 버튼을 '위쪽 새 노트 구역'에
-            // 올려 두고, 화면은 맨 아래(덩어리 + 최근)에서 시작한다.
+            // 예전처럼 새 노트는 이 버튼으로만 만든다. 최근 줄이 생기면
+            // 두 노트 줄 바로 위에 두고, 홈 진입 시에는 살짝 숨겨 둔다.
             const upper=document.createElement('div');
             upper.className='home-stack-upper';
             const zone=document.createElement('div');
@@ -1821,19 +1845,16 @@
 
             g.appendChild(area);
             if(recentNotes.length){
-                // 이번 접속에서 문서를 열어 본 적이 있는 홈 — 새 노트 구역을
-                // 접어 위로 올리고, 덩어리 + 최근 줄만 보이는 상태로 시작한다.
+                // 이번 접속에서 문서를 열어 본 홈 — 같은 높이의 두 줄만 먼저
+                // 보이고, 한 칸 위의 클래식 새 노트 버튼은 휠로 꺼낸다.
                 area.classList.add('has-recent');
+                _fitHomeRows(area);
                 if(_homeEnterScroll){
                     _homeEnterScroll=false;
                     const go=()=>_homeScrollBottom(false);
                     requestAnimationFrame(go);
                     setTimeout(go,60);
                     setTimeout(go,180);
-                    if(!sessionStorage.getItem('sdyHomeScrollHint')){
-                        try{ sessionStorage.setItem('sdyHomeScrollHint','1'); }catch(e){}
-                        setTimeout(_homeScrollHint,420);
-                    }
                 }
             }else{
                 _homeEnterScroll=false;
@@ -5196,8 +5217,8 @@
         if(window._closeEdT) clearTimeout(window._closeEdT);
         window._closeEdT=setTimeout(async()=>{
             try{ if(_impFlush) await _impFlush; }catch(e){}
-            // 17.4 · 문서를 보고 홈으로 돌아온다 — 덩어리 + 최근 줄이 보이는
-            // 아래쪽에서 시작하고, 새 노트는 위로 올려 꺼내게 한다.
+            // 문서를 보고 홈으로 돌아오면 자동 크기의 두 줄부터 보여 준다.
+            // 클래식 새 노트 버튼은 그 바로 위에 있어 휠 한 칸으로 나타난다.
             _homeEnterScroll=true;
             curNB=null;curMemo=null;doc=null;loadNBs();
         },400);
@@ -18474,8 +18495,12 @@ pl.addEventListener('click',e=>{
 });
 
 // ── 태그·표지 편집 창 ──
-let TAG_EDIT=null;
-function openTagEditor(id){
+let TAG_EDIT=null, _menuAutoFindId=null;
+function openTagEditor(id,opts){
+  opts=opts||{};
+  if(!opts.hidden&&_menuAutoFindId){
+    toast('우클릭 자동 찾기가 끝난 뒤 편집할 수 있어요',2200); return;
+  }
   const t=P.list.find(x=>x.id===id)||cur(); if(!t) return;
   TAG_EDIT=id;
   $('mpTagTitle').value=t.title||''; $('mpTagArtist').value=t.artist||'';
@@ -18483,7 +18508,8 @@ function openTagEditor(id){
   $('mpTagGenre').value=t.genre||'';
   $('mpTagLyrics').value=t.lyrics||t.lyrics_plain||'';
   if(t.lyrics===undefined&&(t.has_lyrics||t.has_sync)){
-    $('mpTagLyrics').value='가사 불러오는 중…';
+    // 숨은 자동 찾기에서는 안내 문구를 실제 가사로 오해하지 않게 빈칸 유지.
+    $('mpTagLyrics').value=opts.hidden?'':'가사 불러오는 중…';
     ensureLyrics(t).then(()=>{ if(TAG_EDIT===id) $('mpTagLyrics').value=t.lyrics||t.lyrics_plain||''; });
   }
   const im=$('mpTagCover');
@@ -18502,8 +18528,12 @@ function openTagEditor(id){
     b.title=ready?'소리 지문으로 인식 (0.85점 이상만 적용)':
       (st&&!st.fpcalc?'fpcalc 없음 (apply.sh 재실행)':'AcoustID 키 필요 (관리자)');
   });
-  $('mpTagModal').classList.add('show');
-  setTimeout(()=>{ try{ $('mpTagTitle').focus(); }catch(e){} },60);
+  // 우클릭 메뉴의 자동 찾기도 이 편집기의 입력칸을 같은 작업 버퍼로 쓴다.
+  // 그 경우에는 창을 띄우거나 숨은 입력칸으로 포커스를 옮기지 않는다.
+  if(!opts.hidden){
+    $('mpTagModal').classList.add('show');
+    setTimeout(()=>{ try{ $('mpTagTitle').focus(); }catch(e){} },60);
+  }
 }
 let _scrapedCoverUrl=null;
 async function scrapeTrackUrl(){
@@ -18779,6 +18809,7 @@ const TAG_FIELD_NAME={title:'제목',artist:'가수',album:'앨범',year:'연도
 $('mpTagAuto').onclick=async()=>{
   if(!TAG_EDIT||_tagBusy) return;
   const id=TAG_EDIT;
+  const fromTrackMenu=_menuAutoFindId===id;
   // 저장 전 편집창 스냅숏 — 인식이 실패했을 때 이 값들은 절대 덮지 않는다
   let snap={};
   TAG_FIELDS.forEach(([k,el])=>{ snap[k]=$(el).value.trim(); });
@@ -18787,7 +18818,10 @@ $('mpTagAuto').onclick=async()=>{
   const hadCover=hasTrackCover(t0)||!!_scrapedCoverUrl;
   _tagBusy=true;
   const btn=$('mpTagAuto'); const html=btn.innerHTML;
-  const setBtn=t=>{ btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> '+t; };
+  const setBtn=t=>{
+    btn.innerHTML='<i class="ri-loader-4-line mp-spin"></i> '+t;
+    if(fromTrackMenu) toast(t,3200);
+  };
   const hintEl=$('mpTagHint');
   const qNow=()=>({title:$('mpTagTitle').value.trim(),artist:$('mpTagArtist').value.trim()});
   const missed=[];
@@ -18906,6 +18940,29 @@ $('mpTagAuto').onclick=async()=>{
     else toast('빈칸에 넣을 정보를 찾지 못했어요'+missTxt,3200);
   } finally { btn.innerHTML=html; _tagBusy=false; }
 };
+
+// 전체 곡 화면의 우클릭 메뉴에서도 편집창의 '자동 찾기'와 완전히 같은
+// 파이프라인(소리 인식 → 빈 태그 → 싱크 가사 → 표지)을 실행한다.
+// 예전 메뉴는 lookupTrack() 한 번만 불러서, 지난 버전의 좋아진 음원 인식
+// 알고리즘을 건너뛰고 있었다. 숨은 편집 버퍼를 준비한 뒤 같은 핸들러를
+// 직접 기다리므로 두 진입점의 동작이 앞으로도 갈라지지 않는다.
+async function autoFindTrackFromMenu(id){
+  if(!id) return;
+  if(_tagBusy){ toast('다른 곡 정보를 찾고 있어요',1800); return; }
+  const t=P.list.find(x=>x.id===id);
+  if(!t) return;
+  _menuAutoFindId=id;
+  openTagEditor(id,{hidden:true});
+  try{
+    await $('mpTagAuto').onclick();
+  }finally{
+    _menuAutoFindId=null;
+    // 실제 편집창을 열지 않았으므로 숨은 작업 상태만 정리한다.
+    if(TAG_EDIT===id){
+      TAG_EDIT=null; _tagAlt=0; _coverAlt=0; _scrapedCoverUrl=null;
+    }
+  }
+}
 // ══════════════════════════════════════════════════════════
 //  11.6 · 소리로 노래 인식 (AcoustID 지문 → 제목·가수 → 표지·가사까지)
 //    이름도 태그도 엉망인 파일을 '소리 자체'로 알아낸다.
@@ -19106,7 +19163,7 @@ let _menuAt=0;
     if(a==='play'){ playFrom(filtered(),id,''); }
     else if(a==='next'){ queueNext(id); }
     else if(a==='pl'){ addToPlaylist(id); }
-    else if(a==='find'){ lookupTrack(id); }
+    else if(a==='find'){ autoFindTrackFromMenu(id); }
     else if(a==='edit'){ openTagEditor(id); }
     else if(a==='del'){ delTrack(id); }
   });
