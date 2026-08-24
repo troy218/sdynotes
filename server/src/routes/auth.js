@@ -14,6 +14,7 @@ import {
   emailValid, sanitizeEmail, sanitizeNick,
   requireUser, extractUserToken, userLogout, userChangeNick, userByTokenSync,
 } from '../lib/userauth.js';
+import { notifyAddInternal } from '../lib/notifyAdd.js';
 
 const DEV_CODE = ['1', 'true', 'yes'].includes(String(process.env.SDY_AUTH_DEV_CODE || '').toLowerCase());
 
@@ -79,6 +80,21 @@ export function registerAuth(app) {
       const code = r.need_nick ? 400 : 401;
       return reply.code(code).send(r);
     }
+    // 17.4 · 고정 아이디(회원) 로그인을 전체 알림 센터에 알린다.
+    //   짧은 시간에 몰리는 재로그인은 dedupe(15분 단위)로 묶어 잡음을 줄인다.
+    try {
+      const nick = (r.user && r.user.nick) || '누군가';
+      const bucket = Math.floor(Date.now() / 1000 / 900);   // 15분 바구니
+      if (r.isNew) {
+        await notifyAddInternal('login', `${nick} 님이 새로 가입했어요 🎉`,
+          '고정 닉네임 회원이 생겼어요 · 엽스코드에서 배지와 함께 대화해요',
+          `login-new:${r.user.uid}:${bucket}`);
+      } else {
+        await notifyAddInternal('login', `${nick} 님이 로그인했어요`,
+          '고정 아이디(회원) 로그인 · 엽스코드 고정 닉네임 계정',
+          `login:${r.user.uid}:${bucket}`);
+      }
+    } catch (e) { console.error('[auth] 로그인 알림 실패:', e?.message || e); }
     return reply.send({ ok: true, token: r.token, user: r.user });
   });
 

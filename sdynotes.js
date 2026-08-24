@@ -1237,6 +1237,10 @@
             for(const f of folderPath(fid)){
                 if(!(await tryOpenFolder(f.id))) return;
             }
+        }else{
+            // 17.4 · 홈(최상위)에 들어온다 — 덩어리+최근 줄이 보이는 아래쪽부터
+            // 시작한다 (새 노트 구역은 위로 올려 접어 둔다).
+            _homeEnterScroll=true;
         }
         curFolder=fid; cancelSelect(); renderGrid();
         if(!skipNav) openNav(()=>openFolder(folderParent(fid), true));   // 뒤로가기 → 상위 폴더로
@@ -1432,6 +1436,36 @@
         }catch(e){ return String(Date.now()); }
     }
     let _lastGridSig='';
+    // ── 17.4 · 홈 재진입 스크롤 ──────────────────────────────────
+    // 문서를 보고 돌아온 홈(최근 줄이 있는 화면)은 '덩어리 + 최근'이 바로
+    // 보이도록 맨 아래에서 시작한다. 새 노트 만들기는 위쪽에 별도 구역으로
+    // 올려 두어, 화면을 위로 올려(스크롤을 위로) 꺼내 쓴다.
+    let _homeEnterScroll=false;
+    function _homeScrollEl(){
+        const mv=document.getElementById('mainView');
+        if(mv){
+            const cs=getComputedStyle(mv);
+            if((cs.overflowY==='auto'||cs.overflowY==='scroll')&&mv.scrollHeight>mv.clientHeight+2) return mv;
+        }
+        const de=document.scrollingElement||document.documentElement;
+        return (de&&de.scrollHeight>de.clientHeight+2)?de:null;
+    }
+    function _homeScrollBottom(smooth){
+        const el=_homeScrollEl(); if(!el) return;
+        const top=el.scrollHeight-el.clientHeight;
+        try{ el.scrollTo({top,behavior:smooth?'smooth':'auto'}); }
+        catch(e){ el.scrollTop=top; }
+    }
+    function _homeScrollHint(){
+        // 처음 이 모드로 들어왔을 때만 잠깐 알려 주고 스르르 사라진다.
+        if(document.querySelector('.home-scroll-hint')) return;
+        const h=document.createElement('div');
+        h.className='home-scroll-hint';
+        h.innerHTML='<i class="ri-arrow-up-line"></i> 위로 올리면 새 노트를 만들 수 있어요';
+        document.body.appendChild(h);
+        requestAnimationFrame(()=>h.classList.add('show'));
+        setTimeout(()=>{ h.classList.remove('show'); setTimeout(()=>h.remove(),450); },2600);
+    }
     // ── 16.1 · 홈에서만 쓰는 '이번 접속' 기록 ─────────────────────
     // 서버 설정·localStorage에는 쓰지 않는다. 노트를 열었다가 돌아오면
     // 아래 줄로 잠시 내려놓고, 새로 접속하면 다시 원래 스택으로 돌아온다.
@@ -1497,6 +1531,11 @@
         if(!g) return;
         const sig=_gridSig();
         if(!force && sig===_lastGridSig && g.querySelector('.home-stack-area,.note-card,.folder-card,.add-card')){
+            // 17.4 · 홈에 재진입(변경 없이 돌아온 경우)도 아래쪽부터 보여 준다
+            if(_homeEnterScroll&&!curFolder&&!searchQuery&&!selectMode&&g.querySelector('.home-stack-area.has-recent')){
+                _homeEnterScroll=false;
+                requestAnimationFrame(()=>_homeScrollBottom(false));
+            }
             try{ requestAnimationFrame(()=>{ rescalePreviews(); _layoutHomeStacks(); }); }catch(e){}
             return;
         }
@@ -1697,15 +1736,20 @@
             area.className='home-stack-area';
 
             // 새 노트 버튼은 스택 위에 고정된 가장 첫 번째 동작이다.
+            // 17.4 · 최근 줄이 있는 화면에서는 버튼을 '위쪽 새 노트 구역'에
+            // 올려 두고, 화면은 맨 아래(덩어리 + 최근)에서 시작한다.
             const upper=document.createElement('div');
             upper.className='home-stack-upper';
+            const zone=document.createElement('div');
+            zone.className='home-add-zone';
             const add=document.createElement('button');
             add.type='button';
             add.className='home-add-note';
             add.setAttribute('aria-label','새 노트 만들기');
             add.innerHTML='<span class="home-add-icon"><i class="ri-add-line"></i></span><span>새 노트 만들기</span>';
             add.onclick=openCreateModal;
-            upper.appendChild(add);
+            zone.appendChild(add);
+            upper.appendChild(zone);
 
             const scene=document.createElement('div');
             scene.className='stack-scene';
@@ -1776,6 +1820,24 @@
             }
 
             g.appendChild(area);
+            if(recentNotes.length){
+                // 이번 접속에서 문서를 열어 본 적이 있는 홈 — 새 노트 구역을
+                // 접어 위로 올리고, 덩어리 + 최근 줄만 보이는 상태로 시작한다.
+                area.classList.add('has-recent');
+                if(_homeEnterScroll){
+                    _homeEnterScroll=false;
+                    const go=()=>_homeScrollBottom(false);
+                    requestAnimationFrame(go);
+                    setTimeout(go,60);
+                    setTimeout(go,180);
+                    if(!sessionStorage.getItem('sdyHomeScrollHint')){
+                        try{ sessionStorage.setItem('sdyHomeScrollHint','1'); }catch(e){}
+                        setTimeout(_homeScrollHint,420);
+                    }
+                }
+            }else{
+                _homeEnterScroll=false;
+            }
             setTimeout(()=>{
                 area.querySelectorAll('.note-card').forEach(c=>{
                     const r=c.getBoundingClientRect();
@@ -5130,6 +5192,9 @@
         if(window._closeEdT) clearTimeout(window._closeEdT);
         window._closeEdT=setTimeout(async()=>{
             try{ if(_impFlush) await _impFlush; }catch(e){}
+            // 17.4 · 문서를 보고 홈으로 돌아온다 — 덩어리 + 최근 줄이 보이는
+            // 아래쪽에서 시작하고, 새 노트는 위로 올려 꺼내게 한다.
+            _homeEnterScroll=true;
             curNB=null;curMemo=null;doc=null;loadNBs();
         },400);
     }
@@ -9682,7 +9747,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     let _notifItems=[], _notifOnline=1, _notifBusy=false;
     function notifIcon(k){
         return ({study:'ri-brain-line',achievement:'ri-sparkling-2-line',convert:'ri-file-transfer-line',
-            convert_done:'ri-file-check-line',pdf:'ri-file-pdf-2-line',error:'ri-error-warning-line',server:'ri-server-line'})[k]||'ri-notification-3-line';
+            convert_done:'ri-file-check-line',pdf:'ri-file-pdf-2-line',error:'ri-error-warning-line',server:'ri-server-line',
+            login:'ri-user-smile-line'})[k]||'ri-notification-3-line';
     }
     function notifAgo(ts){
         const s=Math.max(0,Date.now()/1000-(+ts||0));
@@ -16003,7 +16069,7 @@ A.addEventListener('ended',()=>{
   playNext(true);                                               // 14.14 · 멜론식 대기열 진행
 });
 // ── 진행 표시 (드래그 중에는 손가락 위치를 우선) ──
-let _seek=null, _showLeft=false;
+let _seek=null, _seekOwner='', _showLeft=false;   // _seekOwner: 드래그 주인('bar'|'big') 구분
 function paintProg(cur){
   const d=A.duration||0;
   const t=(cur==null?A.currentTime:cur);
@@ -16185,19 +16251,19 @@ $('mpDel').onclick=async()=>{ const t=cur(); if(!t)return;
     if(!A.duration) return;
     e.preventDefault();
     const cx=e.touches?e.touches[0].clientX:e.clientX;
-    _seek=at(cx); bar.classList.add('seeking');
+    _seek=at(cx); _seekOwner='bar'; bar.classList.add('seeking');
     paintProg(_seek); tip(_seek);
     bar.setPointerCapture&&e.pointerId!=null&&bar.setPointerCapture(e.pointerId);
   };
   const move=e=>{
-    if(_seek==null) return;
+    if(_seek==null||_seekOwner!=='bar') return;
     e.preventDefault();
     const cx=e.touches?e.touches[0].clientX:e.clientX;
     _seek=at(cx); paintProg(_seek); tip(_seek);
   };
   const up=()=>{
-    if(_seek==null) return;
-    A.currentTime=_seek; _seek=null;
+    if(_seek==null||_seekOwner!=='bar') return;
+    A.currentTime=_seek; _seek=null; _seekOwner='';
     bar.classList.remove('seeking'); paintProg();
   };
   bar.addEventListener('pointerdown',down);
@@ -17008,7 +17074,9 @@ function mpbToggleFull(){
   // 스테이지 빈 곳 더블클릭 = 전체 화면 해제 (버튼·슬라이더·서랍·헤더 위는 무시)
   mpbEl.addEventListener('dblclick',e=>{
     if(!mpIsFsNow()) return;
-    if(e.target.closest('button,input,a,canvas,select,textarea,.mpb-drawer,.mp-eqpop,.mpb-head,#mpBSearch,.mpb-seek,.mp-seek')) return;
+    // 17.4 · 진행바(.mpb-prog/#mpBProg · 컨트롤바 .mp-prog) 위의 빠른 두 번
+    //   잡기는 위치 조정이지 더블클릭이 아니므로 전체 화면을 풀지 않는다.
+    if(e.target.closest('button,input,a,canvas,select,textarea,.mpb-drawer,.mp-eqpop,.mpb-head,#mpBSearch,.mpb-prog,#mpBProg,.mp-prog,#mpProg')) return;
     mpbToggleFull();
   });
 })();
@@ -18041,6 +18109,10 @@ function _bigVisibleTracks(id){
 }
 
 // ── 큰 플레이어 진행바 ──
+// 17.4 · 아래 컨트롤 바와 똑같이 잡아서 옮긴다: 손가락/마우스가 막대를 벗어나
+//   옆으로 움직여도(포인터 캡처가 풀려도) 창(window) 단위 추적으로 놓치지
+//   않는다. 빠른 두 번 잡기가 더블클릭으로 번져 전체 화면이 풀리지도 않게
+//   한다(전체화면 dblclick 제외 목록에 .mpb-prog 추가).
 (function(){
   const bar=$('mpBProg'); if(!bar) return;
   // 시간(현재 | 전체)은 재생 위치를 잡는 동안에만 보여 준다.
@@ -18051,13 +18123,28 @@ function _bigVisibleTracks(id){
     clearTimeout(hideT); hideT=setTimeout(()=>el.classList.remove('show'),delay==null?900:delay); };
   const at=cx=>{ const r=bar.getBoundingClientRect();
     return Math.max(0,Math.min(1,(cx-r.left)/r.width))*(A.duration||0); };
-  bar.addEventListener('pointerdown',e=>{ if(!A.duration)return; e.preventDefault();
-    _seek=at(e.clientX); showTime(); paintProg(_seek);
-    try{ bar.setPointerCapture(e.pointerId); }catch(err){} });
-  bar.addEventListener('pointermove',e=>{ if(_seek==null)return; e.preventDefault();
-    _seek=at(e.clientX); showTime(); paintProg(_seek); });
-  const up=()=>{ if(_seek==null)return; A.currentTime=_seek; _seek=null; paintProg(); hideTime(); };
-  bar.addEventListener('pointerup',up); bar.addEventListener('pointercancel',up);
+  const down=e=>{
+    if(!A.duration) return;
+    e.preventDefault();
+    const cx=e.touches?e.touches[0].clientX:e.clientX;
+    _seek=at(cx); _seekOwner='big'; bar.classList.add('seeking'); showTime(); paintProg(_seek);
+    bar.setPointerCapture&&e.pointerId!=null&&bar.setPointerCapture(e.pointerId);
+  };
+  const move=e=>{
+    if(_seek==null||_seekOwner!=='big') return;
+    e.preventDefault();
+    const cx=e.touches?e.touches[0].clientX:e.clientX;
+    _seek=at(cx); showTime(); paintProg(_seek);
+  };
+  const up=()=>{ if(_seek==null||_seekOwner!=='big') return;
+    A.currentTime=_seek; _seek=null; _seekOwner=''; bar.classList.remove('seeking'); paintProg(); hideTime(); };
+  bar.addEventListener('pointerdown',down);
+  addEventListener('pointermove',move);
+  addEventListener('pointerup',up);
+  addEventListener('pointercancel',up);
+  bar.addEventListener('touchstart',down,{passive:false});
+  addEventListener('touchmove',move,{passive:false});
+  addEventListener('touchend',up);
   // 마우스를 올려 가늠할 때는 잠깐 보여 주지 않음 — 위치 잡을 때만 표시
 })();
 
@@ -22044,7 +22131,9 @@ refreshEgg();
     var b=$('saResend'); if(!b) return;
     var left=Math.max(0,Math.ceil(SA_COOL-(Date.now()/1000)));
     b.disabled=left>0;
-    b.textContent=left>0?('다시 받기 ('+left+'초)'):'코드 다시 받기';
+    // 17.4 · 아이콘을 지우지 않고 글자만 갈아 끼운다
+    b.innerHTML='<i class="'+(left>0?'ri-time-line':'ri-mail-send-line')+'"></i>'+
+      (left>0?('다시 받기 · '+left+'초'):'코드 다시 받기');
   }
   setInterval(function(){
     try{

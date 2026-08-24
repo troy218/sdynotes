@@ -158,6 +158,7 @@ export async function otpVerifyAndLogin(email, code, nickWanted) {
   return withLock('userauth', async () => {
     await usersLoad();
     let user = await userByEmail(email);
+    let isNew = false;
     if (!user) {
       const nick = sanitizeNick(nickWanted);
       // 코드는 살려 둔다 — 닉네임만 고쳐 다시 시도할 수 있게.
@@ -169,13 +170,14 @@ export async function otpVerifyAndLogin(email, code, nickWanted) {
         created_at: new Date().toISOString(),
       };
       users[user.uid] = user;
+      isNew = true;
       await usersSave();
     }
     otps.delete(email);   // 로그인 성공 확정 → 일회용 코드 폐기
     const token = crypto.randomBytes(32).toString('base64url');
     sessions.set(token, { uid: user.uid, exp: now + USER_SESSION_TTL });
     await sessionsSave();
-    return { ok: true, token, user: { uid: user.uid, email: user.email, nick: user.nick } };
+    return { ok: true, token, isNew, user: { uid: user.uid, email: user.email, nick: user.nick } };
   });
 }
 

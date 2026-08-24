@@ -179,6 +179,25 @@
             display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;
             box-shadow:0 3px 10px rgba(79,110,247,.35);
         }
+        /* 17.4 · 로고는 평소 깃털펜 아이콘만 — 마우스를 올리면 오른쪽으로
+           펼쳐지며 '동엽신의 끄적끄적'이 나타난다. (호버 없는 기기·폰은 종전대로) */
+        @media (hover:hover) and (min-width:901px){
+            .app-brand h1{
+                max-width:0;opacity:0;padding-left:0;padding-right:0;
+                transform:translateX(-8px);pointer-events:none;
+                transition:max-width .5s cubic-bezier(.22,.9,.3,1),opacity .28s ease,transform .5s cubic-bezier(.22,.9,.3,1);
+            }
+            .app-brand:hover h1, .app-brand:focus-within h1{
+                max-width:300px;opacity:1;transform:translateX(0);
+            }
+            .app-brand .logo-dot{
+                transition:transform .35s cubic-bezier(.22,.9,.3,1.2),box-shadow .3s,border-radius .3s;
+            }
+            .app-brand:hover .logo-dot{
+                transform:rotate(-8deg) scale(1.07);border-radius:10px;
+                box-shadow:0 5px 16px rgba(79,110,247,.5);
+            }
+        }
         /* 14.14 · 폰 헤더/본문 여백은 문서 끝 v1414-phone 블록 한 곳에서
            정한다. 예전엔 여기서 헤더를 flex-wrap:wrap 으로 두 줄로 만들고
            아래쪽 v88-mobile 이 다시 한 줄로 되돌리는 식으로 서로 싸워서,
@@ -2684,8 +2703,15 @@ body.sdy-booting #musicListPop{z-index:10001;}
     max-width:none;background:color-mix(in srgb,var(--accent) 12%,transparent);}
 .mpb-chips span.src.ok i{font-size:12px;line-height:1;}
 .mpb-prog{position:relative;height:5px;background:var(--bg2);border-radius:99px;
-    margin:6px 0 2px;cursor:pointer;touch-action:none;}
+    margin:6px 0 2px;cursor:pointer;touch-action:none;
+    user-select:none;-webkit-user-select:none;}
 .mpb-prog::before{content:'';position:absolute;left:0;right:0;top:-10px;bottom:-10px;}
+/* 17.4 · 위치를 잡는 동안 — 막대가 살짝 굵어지고 손잡이가 커진다 (아래 컨트롤 바와 동일) */
+.mpb-prog.seeking{height:8px;cursor:grabbing;}
+.mpb-prog.seeking #mpBKnob{
+    transform:translate(-50%,-50%) scale(1.28);
+    box-shadow:0 2px 10px color-mix(in srgb,var(--accent) 55%,rgba(0,0,0,.3));}
+#mpBig.mpb-fs .mpb-prog.seeking #mpBKnob,#mpBig:fullscreen .mpb-prog.seeking #mpBKnob{opacity:1;}
 #mpBFill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:99px;
     background:linear-gradient(90deg,var(--accent),var(--accent2));}
 #mpBKnob{position:absolute;top:50%;left:0;width:13px;height:13px;border-radius:50%;
@@ -2727,14 +2753,19 @@ body.sdy-booting #musicListPop{z-index:10001;}
     justify-content:center;font-size:15px;}
 .mpb-tabs button.mpb-icon:hover{color:var(--text1);border-color:var(--text3);}
 .mpb-tabs button.mpb-icon.on{background:var(--accent);color:#fff;border-color:var(--accent);}
-.mpb-searchbar{display:none;align-items:center;gap:7px;flex:none;
-    padding:6px 9px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);}
+.mpb-searchbar{display:none;align-items:center;gap:8px;flex:none;
+    padding:7px 13px;border:1px solid var(--border);border-radius:999px;background:var(--bg2);
+    transition:border-color .2s,box-shadow .2s;}
 .mpb-searchbar.show{display:flex;}
+/* 17.4 · 검색칸은 옆 칩들과 같은 둥근 알약 모양으로 — 포커스될 때만 은은하게 켜진다 */
+.mpb-searchbar:focus-within{
+    border-color:color-mix(in srgb,var(--accent) 55%,var(--border));
+    box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent);}
 .mpb-searchbar>i{color:var(--text3);font-size:14px;flex:none;}
 .mpb-searchbar input{flex:1;min-width:0;border:none;background:transparent;outline:none;
     color:var(--text1);font-size:12.5px;font-weight:600;}
 .mpb-searchbar button{border:none;background:transparent;color:var(--text3);cursor:pointer;
-    font-size:15px;line-height:1;padding:2px 3px;border-radius:6px;flex:none;}
+    font-size:15px;line-height:1;padding:2px 3px;border-radius:50%;flex:none;}
 .mpb-searchbar button:hover{color:var(--text1);background:var(--bg);}
 .mpb-list{flex:1;min-height:70px;overflow:auto;border-top:1px solid var(--border);padding-top:6px;}
 .mpb-li{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;
@@ -3409,8 +3440,9 @@ body.lyrmode #mpBig .mpb-tabs button.mp-sortbtn{display:none;}
 .mpb-reco-top small{font-size:9px;color:var(--accent);font-weight:900;letter-spacing:.13em;}
 .mpb-reco-top h2{font-size:22px;letter-spacing:-.06em;margin:2px 0 2px;color:var(--text1);}
 .mpb-reco-top p{font-size:11px;color:var(--text3);margin:0;}
-.mpb-reco-refresh{margin-left:auto;width:30px;height:30px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);color:var(--text2);cursor:pointer;}
+.mpb-reco-refresh{margin-left:auto;width:30px;height:30px;border:1px solid var(--border);border-radius:50%;background:var(--bg2);color:var(--text2);cursor:pointer;transition:border-color .2s,color .2s,transform .2s;}
 .mpb-reco-refresh:hover{border-color:var(--accent);color:var(--accent);}
+.mpb-reco-refresh:active{transform:rotate(180deg) scale(.94);}
 .mpb-reco-current{display:flex;align-items:center;gap:9px;padding:7px 9px;margin:0 0 8px;border:1px solid var(--border);border-radius:12px;background:color-mix(in srgb,var(--bg2) 72%,transparent);}
 .mpb-reco-current-art{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--accent);color:#fff;flex:none;}
 .mpb-reco-current-art img{width:100%;height:100%;object-fit:cover;}
@@ -4017,6 +4049,8 @@ body.sdy-booting #mpReopen{display:none !important;}
 .yp-empty{align-self:center;text-align:center;color:#6b7484;font-size:12px;margin:auto;line-height:1.8;}
 .yp-empty b{color:#c6cdd9;}
 .yp-empty .yp-egg{font-size:40px;display:block;margin-bottom:8px;}
+/* 17.4 · 환영 그림 — 고추 이모지 대신 떡볶이 SVG (assets/tteokbokki.svg) */
+.yp-empty svg.yp-egg{width:74px;height:auto;margin:0 auto 10px;filter:drop-shadow(0 10px 22px rgba(0,0,0,.35));}
 
 /* ── 애니메이션: 받은 말 = 왼쪽에서 휘익, 보낸 말 = 입력창에서 위로 휙 ── */
 .yp-line.anim .yp-bub,.yp-line.anim .yp-img,.yp-line.anim .yp-file{animation:ypInA .3s cubic-bezier(.18,.89,.32,1.28);}
@@ -4601,6 +4635,56 @@ body.has-wall #sdyAmbient{opacity:0;}
     border-color:color-mix(in srgb,var(--accent) 38%,var(--border));
 }
 .home-add-note:active{transform:scale(.97);}
+/* ── 17.4 · 최근 줄이 있는 홈: 새 노트 구역을 위로 접어 올린다 ──
+   화면은 '덩어리 + 최근'만 보이는 아래쪽에서 시작하고, 위로 올리면
+   이 구역이 나타나 새 노트를 만든다. */
+.home-add-zone{width:100%;display:flex;justify-content:center;}
+.home-stack-area.has-recent .home-add-zone{
+    position:relative;
+    min-height:min(72dvh,640px);
+    align-items:flex-end;
+    padding:18px 0 26px;
+}
+.home-stack-area.has-recent .home-add-zone::before{
+    content:'새 노트는 여기서 만들어요';
+    position:absolute;left:50%;top:clamp(56px,22%,150px);
+    transform:translateX(-50%);
+    display:flex;align-items:center;gap:7px;
+    font-size:12px;font-weight:700;letter-spacing:.02em;
+    color:var(--text3);opacity:.66;white-space:nowrap;
+    pointer-events:none;
+}
+.home-stack-area.has-recent .home-add-zone::after{
+    content:'';position:absolute;left:50%;top:calc(clamp(56px,22%,150px) + 30px);
+    width:17px;height:17px;transform:translateX(-50%);
+    background-color:var(--text3);opacity:.4;
+    -webkit-mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 19V5'/><path d='M5 12l7-7 7 7'/></svg>") center/contain no-repeat;
+    mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 19V5'/><path d='M5 12l7-7 7 7'/></svg>") center/contain no-repeat;
+    animation:homeZoneBob 2.2s ease-in-out infinite;
+    pointer-events:none;
+}
+@keyframes homeZoneBob{0%,100%{transform:translate(-50%,0);}50%{transform:translate(-50%,-5px);}}
+.home-stack-area.has-recent .home-add-note{
+    box-shadow:0 14px 34px color-mix(in srgb,var(--accent) 16%,transparent),
+               0 7px 20px rgba(25,35,75,.10),inset 0 1px 0 rgba(255,255,255,.35);
+}
+/* 진입 힌트 알림 — 잠깐 떴다 스르르 사라진다 */
+.home-scroll-hint{
+    position:fixed;left:50%;top:74px;z-index:2200;
+    transform:translate(-50%,-14px);
+    display:flex;align-items:center;gap:7px;
+    padding:8px 16px;border-radius:999px;
+    border:1px solid color-mix(in srgb,var(--accent) 30%,var(--border));
+    background:color-mix(in srgb,var(--card) 82%,transparent);
+    backdrop-filter:blur(12px) saturate(150%);
+    -webkit-backdrop-filter:blur(12px) saturate(150%);
+    color:var(--text2);font-size:12px;font-weight:800;
+    box-shadow:0 12px 32px rgba(15,23,42,.16);
+    opacity:0;pointer-events:none;
+    transition:opacity .4s ease,transform .4s cubic-bezier(.22,.9,.3,1);
+}
+.home-scroll-hint.show{opacity:1;transform:translate(-50%,0);}
+.home-scroll-hint i{color:var(--accent);font-size:15px;}
 .stack-scene{
     width:100%;min-height:0!important;
     display:flex;align-items:center;justify-content:center;
@@ -4730,26 +4814,40 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .sa-step input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,110,247,.15);}
 /* 이메일 입력 + 작은 '인증코드 받기' 버튼을 한 줄에 */
 .sa-emailrow{display:flex;gap:8px;align-items:stretch;}
-.sa-sendbtn{flex:0 0 auto;height:42px;padding:0 15px;border:none;border-radius:10px;
-  background:var(--accent);color:#fff;font-size:13px;font-weight:700;cursor:pointer;
-  white-space:nowrap;transition:filter .15s,transform .12s;}
+.sa-sendbtn{flex:0 0 auto;height:42px;padding:0 15px;border:none;border-radius:12px;
+  background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 72%,#8b5cf6));
+  box-shadow:0 7px 18px color-mix(in srgb,var(--accent) 26%,transparent),inset 0 1px 0 rgba(255,255,255,.28);
+  color:#fff;font-size:12.5px;font-weight:700;letter-spacing:.01em;cursor:pointer;
+  white-space:nowrap;transition:filter .15s,transform .12s,box-shadow .2s;}
 .sa-sendbtn:hover{filter:brightness(1.08);}
 .sa-sendbtn:active{transform:scale(.97);}
 .sa-sendbtn:disabled{opacity:.55;cursor:not-allowed;}
-.sa-btn{height:42px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;
-  font-weight:700;cursor:pointer;transition:filter .15s;}
-.sa-btn:hover{filter:brightness(1.08);}
-.sa-btn:disabled{opacity:.55;cursor:not-allowed;}
+/* 17.4 · 로그인 확인/재전송 버튼 — 글자를 줄이고 아이콘을 곁들인 조용한 결 */
+.sa-btn{height:42px;border:none;border-radius:12px;color:#fff;font-size:12.5px;
+  letter-spacing:.01em;font-weight:700;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 72%,#8b5cf6));
+  box-shadow:0 7px 18px color-mix(in srgb,var(--accent) 26%,transparent),inset 0 1px 0 rgba(255,255,255,.28);
+  transition:filter .15s,transform .12s,box-shadow .2s;}
+.sa-btn i{font-size:14px;opacity:.92;}
+.sa-btn:hover{filter:brightness(1.07);box-shadow:0 9px 22px color-mix(in srgb,var(--accent) 34%,transparent),inset 0 1px 0 rgba(255,255,255,.28);}
+.sa-btn:active{transform:scale(.975);}
+.sa-btn:disabled{opacity:.55;cursor:not-allowed;transform:none;}
 .sa-btn.ghost{background:var(--bg2);color:var(--text1);border:1px solid var(--border);}
 .sa-sent{font-size:12px;color:var(--text2);background:var(--bg2);border-radius:9px;padding:8px 11px;
   word-break:break-all;}
 #saCode{letter-spacing:7px;text-align:center;font-size:17px;font-weight:700;}
 .sa-nickrow{display:flex;flex-direction:column;gap:4px;}
 .sa-nicksub{font-size:11px;color:var(--text3);}
-.sa-linkbtn{border:none;background:transparent;color:var(--text3);font-size:12px;cursor:pointer;
-  text-decoration:underline;padding:2px;}
-.sa-linkbtn:hover{color:var(--text1);}
-.sa-linkbtn:disabled{opacity:.5;cursor:not-allowed;text-decoration:none;}
+.sa-linkbtn{border:1px solid var(--border);background:var(--bg2);color:var(--text3);font-size:11.5px;
+  font-weight:700;letter-spacing:.01em;cursor:pointer;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  min-height:32px;padding:0 16px;
+  transition:color .15s,border-color .15s,background .15s,transform .12s;}
+.sa-linkbtn i{font-size:12.5px;}
+.sa-linkbtn:hover{color:var(--text1);border-color:color-mix(in srgb,var(--text3) 45%,var(--border));background:color-mix(in srgb,var(--bg2) 70%,var(--card));}
+.sa-linkbtn:active{transform:scale(.97);}
+.sa-linkbtn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
 .sa-me{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:800;padding:2px 0 4px;}
 .sa-me>i:first-child{width:34px;height:34px;border-radius:10px;background:var(--accent);color:#fff;
   display:flex;align-items:center;justify-content:center;font-size:16px;flex:none;}
