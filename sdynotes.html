@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="sdynotes.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
-    <meta name="application-version" content="14.12.0">
+    <meta name="application-version" content="14.13.0">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -1405,8 +1405,10 @@
 
 <div id="ypApp" aria-label="엽스코드">
   <div class="yp-head" id="ypHead">
-    <b class="yp-ttl"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.2 V12.6"/><path d="M9.2 12.6 H14.8"/><path d="M9.2 12.6 V9.2"/><path d="M12 12.6 V8.6"/><path d="M14.8 12.6 V9.2"/><rect x="5.6" y="7.4" width="12.8" height="4.2" rx="2.1" fill="#ef4444"/><rect x="5.6" y="7.4" width="12.8" height="1.2" rx="0.6" fill="#fca5a5" opacity=".55"/></svg>엽스코드</b>
+    <b class="yp-ttl"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.2 V12.6"/><path d="M9.2 12.6 H14.8"/><path d="M9.2 12.6 V9.2"/><path d="M12 12.6 V8.6"/><path d="M14.8 12.6 V9.2"/><rect x="5.6" y="7.4" width="12.8" height="4.2" rx="2.1" fill="#ef4444"/><rect x="5.6" y="7.4" width="12.8" height="1.2" rx="0.6" fill="#fca5a5" opacity=".55"/></svg><span id="ypTtlTxt">엽스코드</span></b>
     <span class="sp"></span>
+    <button id="ypBack" title="공용방으로 돌아가기" style="display:none"><i class="ri-arrow-left-line"></i></button>
+    <button id="ypFrBtn" title="친구 · 1:1 대화 (로그인 필요)"><i class="ri-team-line"></i><em class="yp-frdot" id="ypFrDot" style="display:none"></em></button>
     <button id="ypFold" title="작게 접기"><i class="ri-subtract-line"></i></button>
   </div>
   <div class="yp-voice" id="ypVoice">
@@ -1427,6 +1429,9 @@
   <div class="yp-body" id="ypBody">
     <div class="yp-empty" id="ypEmpty"><span class="yp-egg">🌶️</span><b>엽스코드에 오신 걸 환영해요</b><br>텍스트 · 사진 · 파일 · 이모지 · 음성 · 배경음악</div>
   </div>
+  <!-- 16.3 · 친구 패널 / 1:1 대화(DM) 화면 — 공용방(ypBody)과 자리를 바꿔 낀다 -->
+  <div class="yp-dm-list" id="ypFriends" style="display:none"></div>
+  <div class="yp-body yp-dmbody" id="ypDmBody" style="display:none"></div>
   <div class="yp-react-row" id="ypReactRow"></div>
   <div class="yp-emoji" id="ypEmoji"></div>
   <div class="yp-settings" id="ypSettings"></div>

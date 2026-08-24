@@ -20854,6 +20854,8 @@ refreshEgg();
   }
   function ypSendText(){
     var ta=$('ypTxt'); var t=ta.value.trim(); if(!t) return;
+    // 16.3 · 1:1 대화(DM) 화면에서는 친구에게로 간다
+    if(YF.view==='dm'){ yfSendText(t); return; }
     ta.value=''; ypAutoGrow(ta); ta.focus();
     var local={id:ypTempId(),kind:'txt',uid:YP.uid,name:YP.name||'나',
       color:(YP.me&&YP.me.color)||'#a5b4fc',text:t,reactions:{},ts:Date.now()/1000,temp:true};
@@ -20876,6 +20878,8 @@ refreshEgg();
   }
   function ypUpload(file){
     if(!file) return;
+    // 16.3 · DM 화면에서는 친구에게 파일을 보낸다
+    if(YF.view==='dm'){ yfUploadDm(file); return; }
     var kind=file.type&&file.type.indexOf('image/')===0?'img':'file';
     var cap=kind==='img'?8*1024*1024:20*1024*1024;
     if(file.size>cap){ toast(kind==='img'?'사진은 8MB 이하만 가능해요':'파일은 20MB 이하만 가능해요',2400); return; }
@@ -21081,13 +21085,531 @@ refreshEgg();
     ov.innerHTML='<img src="/api/chat/file/'+id+'" alt="" style="max-width:92vw;max-height:92vh;border-radius:10px;">';
   };
 
+  /* ═══════════════════ 16.3 · 친구 + 1:1 대화(DM) ═══════════════════
+     로그인한 회원끼리 친구를 맺고(고정 닉네임으로 요청 → 상대가 수락)
+     1:1 대화를 나눈다.
+       · 친구 관계·대화 내용은 서버 디스크에 남는다 (공용방과 달리 '펑' 없음,
+         다만 대화는 30일 지나면 지워지고 사진/파일은 256MB 예산)
+       · 실시간 전파는 회원 SSE(/api/dm/stream) — 엽스코드를 열지 않아도 수신
+       · 뷰: room(공용방) ↔ friends(친구 목록·요청·추가) ↔ dm(1:1 대화)      */
+  var YF={
+    view:'room', peer:null,
+    friends:[], reqIn:[], reqOut:[],
+    threads:{}, msgs:{}, more:{}, peerRead:{},
+    es:null, _esT:null, _esBack:1500,
+    stickDm:true, _readSent:{}, _loadingOlder:false,
+  };
+  function yfToken(){ try{ return window.sdyAuthToken&&window.sdyAuthToken(); }catch(e){} return ''; }
+  function yfUser(){ try{ return window.sdyUser&&window.sdyUser(); }catch(e){} return null; }
+  function yfAuthed(){ var u=yfUser(); return !!(yfToken()&&u&&u.uid); }
+  function yfApi(path,opt){
+    opt=opt||{}; opt.headers=Object.assign({},opt.headers);
+    var tk=yfToken(); if(tk) opt.headers['x-sdy-auth']=tk;
+    return fetch(path,opt).then(function(r){
+      return r.json().then(function(d){ return {s:r.status,d:d}; }).catch(function(){ return {s:r.status,d:{ok:false}}; });
+    });
+  }
+  function yfColor(uid){
+    var cols=['#f9a8d4','#fda4af','#fdba74','#fcd34d','#bef264','#6ee7b7','#5eead4','#7dd3fc','#a5b4fc','#c4b5fd','#d8b4fe','#f0abfc'];
+    var h=0,s=String(uid||''); for(var i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+    return cols[h%cols.length];
+  }
+  function yfEsc(s){ return esc(s); }
+  function yfSize(n){ return ypSize(n); }
+
+  // ── 뷰 전환 (공용방 ↔ 친구 ↔ 1:1) ──
+  function yfViewShow(view){
+    YF.view=view;
+    var b=$('ypBody'), fb=$('ypFriends'), db=$('ypDmBody');
+    var foot=null; try{ foot=document.querySelector('#ypApp .yp-foot'); }catch(e){}
+    var back=$('ypBack'), ttl=$('ypTtlTxt'), ta=$('ypTxt');
+    if(b) b.style.display=view==='room'?'flex':'none';
+    if(fb) fb.style.display=view==='friends'?'flex':'none';
+    if(db) db.style.display=view==='dm'?'flex':'none';
+    if(back) back.style.display=view==='room'?'none':'inline-flex';
+    if(foot) foot.style.display=view==='friends'?'none':'';
+    if(ttl){
+      ttl.textContent = view==='room' ? '엽스코드'
+        : view==='friends' ? '친구 · 1:1 대화'
+        : (YF.peer ? ((YF.peer.online?'🟢 ':'')+YF.peer.nick) : '대화');
+    }
+    if(ta) ta.placeholder = (view==='dm'&&YF.peer) ? (YF.peer.nick+' 님에게 메시지…') : '메시지 보내기…';
+    if(view==='friends') yfRenderFriends();
+    if(view==='dm'){ YF.stickDm=true; yfRenderDm(false); if(YF.peer) yfReadLatest(YF.peer.uid); }
+  }
+  function yfToggleFriends(){
+    if(YF.view==='friends'){ yfViewShow('room'); return; }
+    yfViewShow('friends');
+    if(yfAuthed()){ yfFriendsLoad(); yfThreadsLoad(); }
+  }
+
+  function yfOpenDm(uid){
+    var f=null;
+    for(var i=0;i<YF.friends.length;i++){ if(YF.friends[i].uid===uid){ f=YF.friends[i]; break; } }
+    if(!f && YF.threads[uid]) f={uid:uid,nick:YF.threads[uid].nick||'친구',online:YF.threads[uid].online};
+    if(!f) f={uid:uid,nick:'친구',online:false};
+    YF.peer={uid:f.uid,nick:f.nick,online:!!f.online};
+    yfViewShow('dm');
+    yfHistoryLoad(uid,false);
+  }
+
+  // ── 데이터 읽기 ──
+  function yfFriendsLoad(){
+    if(!yfAuthed()){ yfRenderFriends(); return; }
+    yfApi('/api/friends/list').then(function(res){
+      if(res.d&&res.d.ok){
+        YF.friends=res.d.friends||[];
+        YF.reqIn=(res.d.requests&&res.d.requests.incoming)||[];
+        YF.reqOut=(res.d.requests&&res.d.requests.outgoing)||[];
+        if(YF.peer){ var f=null; for(var i=0;i<YF.friends.length;i++){ if(YF.friends[i].uid===YF.peer.uid){ f=YF.friends[i]; break; } } if(f){ YF.peer.nick=f.nick; YF.peer.online=!!f.online; if(YF.view==='dm') yfViewShow('dm'); } }
+      }
+      if(YF.view==='friends') yfRenderFriends();
+      yfBadgeRefresh();
+    }).catch(function(){});
+  }
+  function yfThreadsLoad(){
+    if(!yfAuthed()) return;
+    yfApi('/api/dm/threads').then(function(res){
+      if(res.d&&res.d.ok){
+        var nt={};
+        (res.d.threads||[]).forEach(function(t){ nt[t.uid]=t; });
+        YF.threads=nt;
+      }
+      if(YF.view==='friends') yfRenderFriends();
+      yfBadgeRefresh();
+    }).catch(function(){});
+  }
+  function yfHistoryLoad(uid, older){
+    if(!yfAuthed()||!uid) return;
+    var list=YF.msgs[uid]||[];
+    var p='/api/dm/history/'+encodeURIComponent(uid);
+    if(older && list.length && list[0].id) p+='?before='+encodeURIComponent(list[0].id)+'&limit=60';
+    yfApi(p).then(function(res){
+      if(!res.d||!res.d.ok){
+        if(res.d&&res.d.code==='not_friends'){ toast('친구가 아니에요 · 먼저 친구를 맺어 주세요',2400); yfViewShow('friends'); }
+        return;
+      }
+      var cur=YF.msgs[uid]||[];
+      var merged;
+      if(older) merged=res.d.msgs.concat(cur);
+      else{
+        // 서버 목록 + 아직 서버에 없는(방금 보낸) 임시 메시지 유지
+        merged=res.d.msgs.slice();
+        for(var i=0;i<cur.length;i++){ if(cur[i].temp) merged.push(cur[i]); }
+      }
+      YF.msgs[uid]=merged;
+      YF.more[uid]=!!res.d.more;
+      YF.peerRead[uid]=res.d.peer_read||0;
+      if(res.d.peer){ if(YF.peer&&YF.peer.uid===uid){ YF.peer.nick=res.d.peer.nick||YF.peer.nick; YF.peer.online=!!res.d.peer.online; if(YF.view==='dm'){ var ttl=$('ypTtlTxt'); if(ttl) ttl.textContent=(YF.peer.online?'🟢 ':'')+YF.peer.nick; } } }
+      if(YF.view==='dm'&&YF.peer&&YF.peer.uid===uid){
+        if(older){
+          var bodyEl=$('ypDmBody'); var oldH=bodyEl?bodyEl.scrollHeight:0;
+          yfRenderDm(false);
+          if(bodyEl) bodyEl.scrollTop=bodyEl.scrollHeight-oldH;
+        }else yfRenderDm(false);
+        yfReadLatest(uid);
+      }
+    }).catch(function(){});
+  }
+  function yfLoadOlder(){
+    if(YF._loadingOlder||!YF.peer||!YF.more[YF.peer.uid]) return;
+    YF._loadingOlder=true;
+    yfHistoryLoad(YF.peer.uid,true);
+    setTimeout(function(){ YF._loadingOlder=false; },600);
+  }
+
+  // ── 친구 액션 ──
+  function yfReqAction(path, body, doneMsg){
+    return yfApi(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})
+      .then(function(res){
+        if(res.d&&res.d.ok){ if(doneMsg) toast(doneMsg(res.d),2100); yfFriendsLoad(); yfThreadsLoad(); return true; }
+        toast((res.d&&res.d.error)||'실패했어요',2200);
+        return false;
+      }).catch(function(){ toast('서버에 연결하지 못했어요',2000); return false; });
+  }
+  function yfAddFriend(){
+    var inp=$('ypFrAddInp'); if(!inp) return;
+    var nick=inp.value.trim(); if(!nick){ toast('닉네임을 입력해 주세요',1800); return; }
+    yfReqAction('/api/friends/request',{nick:nick},function(d){
+      inp.value='';
+      return d.auto_accepted ? ('서로 요청해서 바로 친구가 됐어요 · '+d.user.nick) : (d.user.nick+' 님에게 친구 요청을 보냈어요');
+    });
+  }
+
+  // ── 읽음 처리 ──
+  function yfReadLatest(uid){
+    if(!yfAuthed()) return;
+    var list=YF.msgs[uid]||[]; if(!list.length) return;
+    var last=0; for(var i=list.length-1;i>=0;i--){ if(typeof list[i].id==='number'){ last=list[i].id; break; } }
+    if(!last) return;
+    if((YF._readSent[uid]||0)>=last) return;
+    YF._readSent[uid]=last;
+    yfApi('/api/dm/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:uid,id:last})})
+      .then(function(){ if(YF.threads[uid]){ YF.threads[uid].unread=0; yfBadgeRefresh(); } })
+      .catch(function(){});
+  }
+
+  // ── 뱃지 ──
+  function yfBadgeRefresh(){
+    var total=0;
+    for(var k in YF.threads){ total+=YF.threads[k].unread||0; }
+    var reqs=YF.reqIn.length;
+    var chip=$('ypChipDm');
+    if(chip){ chip.style.display=total>0?'flex':'none'; chip.textContent=total>99?'99+':String(total); }
+    var fd=$('ypFrDot');
+    if(fd){ fd.style.display=(total+reqs)>0?'inline-block':'none'; fd.textContent=String(Math.min(99,total+reqs)); }
+  }
+
+  // ── 친구 화면 렌더 ──
+  function yfRenderFriends(){
+    var box=$('ypFriends'); if(!box) return;
+    if(!yfAuthed()){
+      box.innerHTML=
+        '<div class="ypfr-login"><b>친구와 1:1로 대화해요</b>'+
+        '로그인하면 고정 닉네임으로 친구를 맺고<br>둘만의 대화를 나눌 수 있어요<br>'+
+        '<button id="ypFrLoginBtn"><i class="ri-user-3-line"></i> 로그인하고 친구 만들기</button></div>';
+      return;
+    }
+    var me=yfUser();
+    var h='';
+    h+='<div class="ypfr-ttl">친구 추가</div>';
+    h+='<div class="ypfr-add"><input type="text" id="ypFrAddInp" maxlength="16" placeholder="친구의 고정 닉네임" spellcheck="false">'+
+       '<button id="ypFrAddBtn"><i class="ri-user-add-line"></i>요청</button></div>';
+    if(YF.reqIn.length){
+      h+='<div class="ypfr-ttl">받은 요청 <span class="cnt hot">'+YF.reqIn.length+'</span></div>';
+      YF.reqIn.forEach(function(r){
+        h+='<div class="ypfr-item" data-uid="'+yfEsc(r.uid)+'">'+
+          '<div class="ypfr-ava" style="background:'+yfColor(r.uid)+'">'+yfEsc((r.nick||'?').slice(0,2))+'</div>'+
+          '<div class="ypfr-meta"><b>'+yfEsc(r.nick)+'<span class="yp-verified"><i class="ri-verified-badge-fill"></i></span></b><span>친구 요청을 보냈어요</span></div>'+
+          '<button class="ypfr-btn main" data-act="accept" data-uid="'+yfEsc(r.uid)+'">수락</button>'+
+          '<button class="ypfr-btn ghost" data-act="decline" data-uid="'+yfEsc(r.uid)+'">거절</button></div>';
+      });
+    }
+    h+='<div class="ypfr-ttl">친구 <span class="cnt">'+YF.friends.length+'</span></div>';
+    if(!YF.friends.length){
+      h+='<div class="ypfr-empty">아직 친구가 없어요<br>위에서 <b>고정 닉네임</b>으로 친구 요청을 보낸 뒤<br>상대가 수락하면 1:1 대화를 할 수 있어요</div>';
+    }
+    YF.friends.forEach(function(f){
+      var t=YF.threads[f.uid]||{};
+      var last=t.last? (t.last.kind==='img'?'[사진]':t.last.kind==='file'?'[파일]':(t.last.text||'')) : (f.online?'온라인 · 대화를 시작해 보세요':'대화를 시작해 보세요');
+      h+='<div class="ypfr-item" data-open="'+yfEsc(f.uid)+'" data-nick="'+yfEsc(f.nick)+'">'+
+        '<div class="ypfr-ava" style="background:'+yfColor(f.uid)+'">'+yfEsc((f.nick||'?').slice(0,2))+
+          '<span class="on-dot'+(f.online?' on':'')+'"></span></div>'+
+        '<div class="ypfr-meta"><b>'+yfEsc(f.nick)+'<span class="yp-verified"><i class="ri-verified-badge-fill"></i></span></b>'+
+          '<span class="last">'+yfEsc(String(last).slice(0,40))+'</span></div>'+
+        ((t.unread||0)>0?'<span class="ypfr-unread">'+Math.min(99,t.unread)+'</span>':'')+
+        '<button class="ypfr-btn ghost" data-act="remove" data-uid="'+yfEsc(f.uid)+'" title="친구 삭제"><i class="ri-close-line"></i></button></div>';
+    });
+    if(YF.reqOut.length){
+      h+='<div class="ypfr-ttl">보낸 요청 <span class="cnt">'+YF.reqOut.length+'</span></div>';
+      YF.reqOut.forEach(function(r){
+        h+='<div class="ypfr-item">'+
+          '<div class="ypfr-ava" style="background:'+yfColor(r.uid)+'">'+yfEsc((r.nick||'?').slice(0,2))+'</div>'+
+          '<div class="ypfr-meta"><b>'+yfEsc(r.nick)+'</b><span class="dim">수락을 기다리는 중…</span></div>'+
+          '<button class="ypfr-btn ghost" data-act="cancel" data-uid="'+yfEsc(r.uid)+'">취소</button></div>';
+      });
+    }
+    h+='<div class="ypfr-empty" style="padding-top:6px">내 고정 닉네임: <b>'+yfEsc(me&&me.nick||'')+'</b> · 친구에게 이 닉네임을 알려 주세요</div>';
+    box.innerHTML=h;
+  }
+  function yfFriendsClick(e){
+    if(!yfAuthed()){
+      var lb=e.target.closest&&e.target.closest('#ypFrLoginBtn');
+      if(lb&&window.sdyAuthOpen) window.sdyAuthOpen();
+      return;
+    }
+    var act=e.target.closest&&e.target.closest('[data-act]');
+    if(act){
+      var uid=act.getAttribute('data-uid'), a=act.getAttribute('data-act');
+      if(a==='accept') yfReqAction('/api/friends/accept',{uid:uid},function(d){ return (d.user?d.user.nick:'')+' 님과 친구가 됐어요'; });
+      else if(a==='decline') yfReqAction('/api/friends/decline',{uid:uid},function(){ return '요청을 거절했어요'; });
+      else if(a==='cancel') yfReqAction('/api/friends/cancel',{uid:uid},function(){ return '요청을 취소했어요'; });
+      else if(a==='remove'){
+        var row=act.closest('.ypfr-item'); var nm=row?row.getAttribute('data-nick')||'친구':'친구';
+        if(window.confirm(nm+' 님을 친구에서 삭제할까요?\n(대화 내용은 30일 뒤 자동으로 지워져요)'))
+          yfReqAction('/api/friends/remove',{uid:uid},function(){ return '친구를 삭제했어요'; });
+      }
+      return;
+    }
+    if(e.target.closest&&e.target.closest('#ypFrAddBtn')){ yfAddFriend(); return; }
+    var open=e.target.closest&&e.target.closest('[data-open]');
+    if(open){ yfOpenDm(open.getAttribute('data-open')); }
+  }
+
+  // ── 1:1 대화 렌더 ──
+  function yfDmCachePut(uid,msg,render){
+    var list=YF.msgs[uid]||(YF.msgs[uid]=[]);
+    for(var i=0;i<list.length;i++){ if(list[i].id===msg.id) { if(render&&YF.view==='dm'&&YF.peer&&YF.peer.uid===uid) yfRenderDm(true); return; } }
+    // 같은 내용의 임시 버블을 서버 메시지로 치환
+    for(var j=list.length-1;j>=0;j--){
+      var x=list[j];
+      if(x.temp&&x.from===msg.from&&x.text===msg.text){ list.splice(j,1,msg); if(render) yfCondRender(uid,true); return; }
+    }
+    list.push(msg);
+    if(render) yfCondRender(uid,true);
+  }
+  function yfCondRender(uid,smooth){ if(YF.view==='dm'&&YF.peer&&YF.peer.uid===uid) yfRenderDm(smooth); }
+  function yfTempDrop(uid,local){
+    var list=YF.msgs[uid]||[];
+    for(var i=0;i<list.length;i++){ if(list[i].id===local.id){ list.splice(i,1); break; } }
+    yfCondRender(uid,true);
+  }
+  function yfRenderDm(smooth){
+    var body=$('ypDmBody'); if(!body) return;
+    var peer=YF.peer; if(!peer){ body.innerHTML=''; return; }
+    var me=yfUser(); var myUid=me?me.uid:'';
+    var list=YF.msgs[peer.uid]||[];
+    var stick=YF.stickDm;
+    var h='';
+    if(YF.more[peer.uid]) h+='<button class="yp-dm-more">이전 대화 더 보기</button>';
+    if(!list.length){
+      h+='<div class="yp-empty"><span class="yp-egg">💬</span><b>'+yfEsc(peer.nick)+' 님과의 대화</b><br>첫 메시지를 보낸 보세요 · 사진과 파일도 보낸 수 있어요</div>';
+    }
+    // 같은 사람의 연속 메시지를 한 줄(그룹)로 묶는다
+    var gs=[]; var last=null;
+    for(var i=0;i<list.length;i++){
+      var m=list[i];
+      if(last&&last.from===m.from){ last.msgs.push(m); last.lastTs=m.ts; }
+      else{ last={from:m.from,msgs:[m],lastTs:m.ts}; gs.push(last); }
+    }
+    var readTo=YF.peerRead[peer.uid]||0;
+    for(var g=0;g<gs.length;g++){
+      var grp=gs[g]; var mine=grp.from===myUid;
+      h+='<div class="yp-line'+(mine?' me':'')+'">';
+      if(!mine){
+        h+='<div class="yp-ava" style="background:'+yfColor(peer.uid)+'">'+yfEsc((peer.nick||'?').slice(0,2))+'</div>';
+      }
+      h+='<div class="yp-stack">';
+      if(!mine) h+='<div class="yp-who">'+yfEsc(peer.nick)+'<span class="yp-verified" title="회원 · 고정 닉네임"><i class="ri-verified-badge-fill"></i></span></div>';
+      for(var k=0;k<grp.msgs.length;k++){
+        var mm=grp.msgs[k];
+        h+='<div class="yp-bwrap">';
+        if(mine&&!mm.temp&&typeof mm.id==='number'&&mm.id>readTo) h+='<span class="yp-dm-cnt">1</span>';
+        if(mm.kind==='img'&&mm.file){
+          h+= mm.file.gone
+            ? '<div class="yp-bub" style="opacity:.6">오래돼 사라진 사진이에요 🫥</div>'
+            : '<img class="yp-img" loading="lazy" src="/api/dm/file/'+mm.file.id+'?token='+encodeURIComponent(yfToken())+'" alt="사진" data-zoom="'+mm.file.id+'">';
+        }else if(mm.kind==='file'&&mm.file){
+          h+= mm.file.gone
+            ? '<div class="yp-bub" style="opacity:.6">오래돼 사라진 파일이에요 🫥</div>'
+            : '<a class="yp-file" href="/api/dm/file/'+mm.file.id+'?token='+encodeURIComponent(yfToken())+'" target="_blank" rel="noopener" download="'+yfEsc(mm.file.name)+'">'+
+              '<span class="fi"><i class="ri-file-3-line"></i></span><span class="fm"><span class="fn">'+yfEsc(mm.file.name)+'</span><span class="fs">'+yfSize(mm.file.size||0)+'</span></span>'+
+              '<i class="ri-download-2-line" style="color:#8b93a5;font-size:14px"></i></a>';
+        }else{
+          h+='<div class="yp-bub">'+yfEsc(mm.text||'')+'</div>';
+        }
+        if(mine&&!mm.temp){
+          h+='<button class="yp-del" title="메시지 삭제" data-dm-del="'+mm.id+'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12"/></svg></button>';
+        }
+        h+='</div>';
+      }
+      h+='<div class="yp-time">'+ypTime(grp.lastTs)+'</div>';
+      h+='</div></div>';
+    }
+    body.innerHTML=h;
+    if(stick){
+      if(smooth&&body.scrollTo) body.scrollTo({top:body.scrollHeight,behavior:'smooth'});
+      else body.scrollTop=body.scrollHeight;
+    }
+  }
+  function yfDmBodyClick(e){
+    var del=e.target.closest&&e.target.closest('[data-dm-del]');
+    if(del){
+      var id=parseInt(del.getAttribute('data-dm-del'),10);
+      if(id) yfDelDm(id);
+      return;
+    }
+    var img=e.target.closest&&e.target.closest('img[data-zoom]');
+    if(img){ yfDmZoom(img.getAttribute('data-zoom')); return; }
+    if(e.target.closest&&e.target.closest('.yp-dm-more')){ yfLoadOlder(); }
+  }
+  function yfDmZoom(fid){
+    var ov=$('ypZoom');
+    if(!ov){
+      ov=document.createElement('div'); ov.id='ypZoom';
+      ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:9990;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+      ov.onclick=function(){ ov.parentNode&&ov.parentNode.removeChild(ov); };
+      document.body.appendChild(ov);
+    }
+    ov.innerHTML='<img src="/api/dm/file/'+fid+'?token='+encodeURIComponent(yfToken())+'" alt="" style="max-width:92vw;max-height:92vh;border-radius:10px;">';
+  }
+  function yfDelDm(id){
+    var peer=YF.peer; if(!peer) return;
+    yfApi('/api/dm/del',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:peer.uid,id:id})})
+      .then(function(res){
+        if(res.d&&res.d.ok){
+          var list=YF.msgs[peer.uid]||[];
+          for(var i=0;i<list.length;i++){ if(list[i].id===id){ list.splice(i,1); break; } }
+          yfRenderDm(false);
+        }else toast((res.d&&res.d.error)||'지우지 못했어요',2000);
+      }).catch(function(){ toast('지우지 못했어요',2000); });
+  }
+  function yfSendText(t){
+    var peer=YF.peer, me=yfUser(); if(!peer||!me) return;
+    var ta=$('ypTxt'); ta.value=''; ypAutoGrow(ta); ta.focus();
+    var local={id:ypTempId(),kind:'txt',from:me.uid,text:t,ts:Date.now()/1000,temp:true};
+    (YF.msgs[peer.uid]||(YF.msgs[peer.uid]=[])).push(local);
+    YF.stickDm=true; yfRenderDm(true);
+    yfApi('/api/dm/msg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:peer.uid,text:t})})
+      .then(function(res){
+        if(res.d&&res.d.ok&&res.d.msg){
+          yfDmCachePut(peer.uid,res.d.msg,true);
+          if(YF.threads[peer.uid]){ YF.threads[peer.uid].last={text:res.d.msg.text,kind:'txt',ts:res.d.msg.ts}; }
+          yfReadLatest(peer.uid);
+        }else{
+          yfTempDrop(peer.uid,local);
+          toast((res.d&&res.d.error)||'보내지 못했어요',2200);
+        }
+      })
+      .catch(function(){ yfTempDrop(peer.uid,local); toast('보내지 못했어요 · 연결을 확인해 주세요',2000); });
+  }
+  function yfUploadDm(file){
+    var peer=YF.peer; if(!peer) return;
+    var kind=file.type&&file.type.indexOf('image/')===0?'img':'file';
+    var cap=kind==='img'?8*1024*1024:20*1024*1024;
+    if(file.size>cap){ toast(kind==='img'?'사진은 8MB 이하만 가능해요':'파일은 20MB 이하만 가능해요',2400); return; }
+    toast(kind==='img'?'사진을 올리는 중…':'파일을 올리는 중…',1400);
+    var fd=new FormData(); fd.append('to',peer.uid); fd.append('file',file,file.name||'file');
+    fetch('/api/dm/upload',{method:'POST',headers:{'x-sdy-auth':yfToken()},body:fd})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d&&d.ok&&d.msg){ yfDmCachePut(peer.uid,d.msg,true); yfReadLatest(peer.uid); }
+        else toast((d&&d.error)||'올리지 못했어요',2400);
+      })
+      .catch(function(){ toast('올리지 못했어요 · 연결을 확인해 주세요',2400); });
+  }
+
+  // ── 회원 SSE (실시간 수신) ──
+  function yfHandle(ev){
+    if(!ev||!ev.type) return;
+    if(ev.type==='hello'){ return; }
+    if(ev.type==='dm_msg'){
+      var peer=ev.peer, m=ev.msg; if(!peer||!m) return;
+      var mine=yfUser()&&m.from===yfUser().uid;
+      // 캐시 + 스레드 반영
+      var viewing=YF.view==='dm'&&YF.peer&&YF.peer.uid===peer;
+      yfDmCachePut(peer,m,viewing&&YP.open);
+      if(YF.threads[peer]) YF.threads[peer].last={text:m.text,kind:m.kind,ts:m.ts};
+      if(!mine){
+        if(typeof ev.unread==='number'){
+          if(!YF.threads[peer]) YF.threads[peer]={uid:peer,unread:0};
+          YF.threads[peer].unread=ev.unread;
+        }
+        // DM 화면을 보고 있으면 바로 읽음 처리, 아니면 알림
+        if(viewing&&YP.open&&document.visibilityState==='visible'){
+          YF.stickDm=YF.stickDm||ypNearBottom();
+          yfReadLatest(peer);
+        }else{
+          if(YPS.sound) ypBeep('msg');
+          if(YPS.desk) ypNotify(m.name||'친구', (m.text||(m.kind==='img'?'[사진]':'[파일]')));
+          yfChipShakeDm();
+        }
+      }
+      if(YF.view==='friends') yfRenderFriends();
+      yfBadgeRefresh();
+      return;
+    }
+    if(ev.type==='dm_read'){
+      if(ev.peer){ YF.peerRead[ev.peer]=ev.id||0; if(YF.view==='dm'&&YF.peer&&YF.peer.uid===ev.peer) yfRenderDm(false); }
+      return;
+    }
+    if(ev.type==='dm_del'){
+      var uid2=ev.peer; var li=YF.msgs[uid2]||[];
+      for(var i=0;i<li.length;i++){ if(li[i].id===ev.id){ li.splice(i,1); break; } }
+      yfCondRender(uid2,false);
+      return;
+    }
+    if(ev.type==='presence'){
+      if(ev.uid){
+        for(var pi=0;pi<YF.friends.length;pi++){ if(YF.friends[pi].uid===ev.uid) YF.friends[pi].online=!!ev.online; }
+        if(YF.threads[ev.uid]) YF.threads[ev.uid].online=!!ev.online;
+        if(YF.peer&&YF.peer.uid===ev.uid){ YF.peer.online=!!ev.online; if(YF.view==='dm'){ var ttl=$('ypTtlTxt'); if(ttl) ttl.textContent=(YF.peer.online?'🟢 ':'')+YF.peer.nick; } }
+        if(YF.view==='friends') yfRenderFriends();
+      }
+      return;
+    }
+    if(ev.type==='friend'){
+      var u=ev.user||{};
+      if(ev.action==='req_in'){ toast((u.nick||'누군가')+' 님이 친구 요청을 보냈어요',2600); if(YPS.sound) ypBeep('msg'); yfChipShakeDm(); }
+      else if(ev.action==='accepted'){ toast((u.nick||'상대')+' 님과 친구가 됐어요',2400); if(YPS.sound) ypBeep('msg'); }
+      else if(ev.action==='declined'){ toast((u.nick||'상대')+' 님이 친구 요청을 거절했어요',2400); }
+      else if(ev.action==='removed'){ toast((u.nick||'상대')+' 님이 친구를 삭제했어요',2400); if(YF.peer&&u.uid===YF.peer.uid&&YF.view==='dm') yfViewShow('friends'); }
+      yfFriendsLoad(); yfThreadsLoad();
+      return;
+    }
+  }
+  function yfChipShakeDm(){ var c=$('ypReopen'); if(!c||YP.open) return; c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); }
+  function yfStream(tk){
+    if(YF.es){ try{YF.es.close();}catch(e){} YF.es=null; }
+    var es;
+    try{ es=new EventSource('/api/dm/stream?token='+encodeURIComponent(tk)); }catch(e){ return; }
+    YF.es=es;
+    es.addEventListener('dm',function(e){ var m; try{m=JSON.parse(e.data);}catch(_){return;} yfHandle(m); });
+    es.onerror=function(){
+      try{es.close();}catch(e){}
+      if(YF.es!==es) return;
+      YF.es=null;
+      clearTimeout(YF._esT);
+      var wait=YF._esBack; YF._esBack=Math.min(15000,Math.round(YF._esBack*1.7));
+      YF._esT=setTimeout(yfStreamStart,wait);
+    };
+  }
+  function yfStreamStart(){
+    var tk=yfToken();
+    if(!tk){
+      if(YF.es){ try{YF.es.close();}catch(e){} YF.es=null; }
+      return;
+    }
+    YF._esBack=1500;
+    yfStream(tk);
+    yfThreadsLoad();
+    yfFriendsLoad();
+  }
+
   // ── 배선 ──
   var chip=document.createElement('button');
   chip.id='ypReopen'; chip.title='엽스코드 · 채팅';
-  chip.innerHTML=TTEK+'<span class="yp-badge yp-voice" id="ypChipVoice"></span>';
+  chip.innerHTML=TTEK+'<span class="yp-badge yp-voice" id="ypChipVoice"></span><span class="yp-badge yp-dm" id="ypChipDm" style="display:none"></span>';
   chip.onclick=function(){ if(YP.open) ypClose(); else ypEnter(); };
   document.body.appendChild(chip);
   chip.style.display='flex';
+
+  // 16.3 · 친구/1:1 대화 배선
+  (function(){
+    var frBtn=$('ypFrBtn'), backBtn=$('ypBack'), frBox=$('ypFriends'), dmBody=$('ypDmBody');
+    if(frBtn) frBtn.onclick=function(){ yfToggleFriends(); };
+    if(backBtn) backBtn.onclick=function(){ yfViewShow('room'); };
+    if(frBox){
+      frBox.addEventListener('click',yfFriendsClick);
+      frBox.addEventListener('keydown',function(e){
+        if(e.key==='Enter'&&e.target&&e.target.id==='ypFrAddInp'){ e.preventDefault(); yfAddFriend(); }
+      });
+    }
+    if(dmBody){
+      dmBody.addEventListener('click',yfDmBodyClick);
+      dmBody.addEventListener('scroll',function(){
+        YF.stickDm=dmBody.scrollHeight-dmBody.scrollTop-dmBody.clientHeight<110;
+        if(dmBody.scrollTop<30&&YF.more[YF.peer?YF.peer.uid:'']) yfLoadOlder();
+      });
+    }
+    // 로그인 상태 변화 → 스트림·목록 정리
+    window.addEventListener('sdy-auth',function(){
+      if(yfAuthed()){ yfStreamStart(); }
+      else{
+        if(YF.es){ try{YF.es.close();}catch(e){} YF.es=null; }
+        clearTimeout(YF._esT);
+        YF.friends=[];YF.reqIn=[];YF.reqOut=[];YF.threads={};YF.msgs={};YF.peerRead={};
+        if(YF.view!=='room') yfViewShow('room');
+        yfBadgeRefresh();
+      }
+    });
+    // DM 화면을 보고 있다가 탭으로 돌아오면 읽음 처리
+    document.addEventListener('visibilitychange',function(){
+      if(document.visibilityState==='visible'&&YF.view==='dm'&&YF.peer) yfReadLatest(YF.peer.uid);
+    });
+    // 부팅 시 이미 로그인돼 있으면 바로 연결
+    if(yfAuthed()) yfStreamStart();
+  })();
 
   var bodyEl=$('ypBody');
   bodyEl.addEventListener('scroll',function(){ YP.stick=ypNearBottom(); });

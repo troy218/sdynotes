@@ -4738,3 +4738,78 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .mp-li .mp-upmark i{font-size:9px;flex:none;opacity:.85;}
 .mp-li .mp-upmark:hover{color:var(--accent);border-color:var(--accent);}
 .mp-li.on .mp-upmark{color:var(--accent);background:rgba(79,110,247,.12);border-color:rgba(79,110,247,.35);}
+
+/* ═══════════════════════════════════════════════════════════════════
+   16.3 · 친구 + 1:1 대화(DM) — 엽스코드 창 안의 뷰 전환
+   공용방(ypBody) · 친구 목록(ypFriends) · 1:1 대화(ypDmBody) 셋이
+   같은 자리를 바꿔 낀다.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 헤더 친구 버튼 + 안 읽은 점 */
+#ypHead #ypBack,#ypHead #ypFrBtn{position:relative;width:24px;height:19px;}
+#ypHead #ypFrBtn i{font-size:12.5px;}
+#ypHead .yp-frdot{position:absolute;top:-4px;right:-6px;min-width:14px;height:14px;padding:0 3px;
+  border-radius:999px;background:#ef4444;color:#fff;font-size:9px;font-weight:800;line-height:14px;
+  text-align:center;font-style:normal;box-shadow:0 0 0 2px #15181f;}
+
+/* ── 친구 화면 (목록·요청·추가) — 공용방 본문 자리 ── */
+.yp-dm-list{flex:none;flex-grow:1;overflow-y:auto;padding:12px 12px 10px;display:flex;flex-direction:column;gap:8px;
+  background:radial-gradient(120% 90% at 50% 0%,#141821 0%,#0f1115 55%);min-height:80px;}
+.yp-dm-list::-webkit-scrollbar{width:8px;}
+.yp-dm-list::-webkit-scrollbar-thumb{background:#2a3040;border-radius:8px;}
+.ypfr-ttl{font-size:10.5px;font-weight:800;color:#6b7484;letter-spacing:.4px;margin:8px 2px 0;display:flex;align-items:center;gap:6px;}
+.ypfr-ttl:first-child{margin-top:0;}
+.ypfr-ttl .cnt{background:#2a3140;color:#c6cdd9;border-radius:999px;font-size:9.5px;padding:0 6px;line-height:14px;}
+.ypfr-ttl .cnt.hot{background:#ef4444;color:#fff;}
+.ypfr-add{display:flex;gap:6px;padding:2px 0 4px;}
+.ypfr-add input{flex:1;min-width:0;background:#1a1f27;border:1px solid #2c3342;color:#e7eaf0;border-radius:10px;
+  font-size:12px;padding:8px 10px;outline:none;font-family:inherit;}
+.ypfr-add input:focus{border-color:#8b5cf6;}
+.ypfr-add input::placeholder{color:#6b7484;}
+.ypfr-add button{flex:none;border:none;border-radius:10px;padding:0 12px;background:linear-gradient(135deg,#5865f2,#8b5cf6);
+  color:#fff;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;font-family:inherit;}
+.ypfr-add button:hover{filter:brightness(1.12);}
+.ypfr-add button:disabled{opacity:.55;cursor:default;filter:none;}
+.ypfr-empty{padding:14px 8px;text-align:center;color:#6b7484;font-size:11.5px;line-height:1.75;}
+.ypfr-empty b{color:#c6cdd9;}
+.ypfr-item{display:flex;align-items:center;gap:9px;background:#161b24;border:1px solid #232a37;border-radius:12px;
+  padding:8px 10px;transition:border-color .15s ease;}
+.ypfr-item:hover{border-color:#39465c;}
+.ypfr-ava{position:relative;width:32px;height:32px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+  color:#1f2937;font-size:12px;font-weight:800;background:linear-gradient(135deg,#a5b4fc,#f0abfc);flex-shrink:0;}
+.ypfr-ava .on-dot{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;background:#3f4756;
+  border:2px solid #10141b;transition:background .2s ease;}
+.ypfr-ava .on-dot.on{background:#22c55e;}
+.ypfr-meta{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25;}
+.ypfr-meta b{font-size:12.5px;color:#e7eaf0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:4px;}
+.ypfr-meta b .yp-verified{margin-left:1px;font-size:10px;}
+.ypfr-meta span{font-size:10px;color:#6b7484;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ypfr-meta span.dim{font-style:normal;}
+.ypfr-meta .last{color:#8b93a5;}
+.ypfr-unread{flex:none;min-width:17px;height:17px;padding:0 5px;border-radius:999px;background:#ef4444;color:#fff;
+  font-size:10px;font-weight:800;line-height:17px;text-align:center;box-shadow:0 2px 6px rgba(239,68,68,.4);}
+.ypfr-btn{flex:none;border:1px solid #343c4c;background:#1d232e;color:#c6cdd9;border-radius:9px;font-size:11px;
+  padding:6px 10px;cursor:pointer;font-weight:700;font-family:inherit;transition:all .15s ease;}
+.ypfr-btn:hover{border-color:#5865f2;color:#fff;}
+.ypfr-btn.main{border:none;background:linear-gradient(135deg,#5865f2,#8b5cf6);color:#fff;}
+.ypfr-btn.main:hover{filter:brightness(1.12);}
+.ypfr-btn.ghost{background:transparent;border-color:#2c3342;color:#8b93a5;font-weight:600;}
+.ypfr-btn.ghost:hover{border-color:#ef4444;color:#fca5a5;}
+.ypfr-login{margin:10px 2px;padding:16px 14px;text-align:center;background:#161b24;border:1px dashed #39414f;
+  border-radius:14px;color:#9aa3b2;font-size:12px;line-height:1.8;}
+.ypfr-login b{color:#e7eaf0;display:block;font-size:13px;margin-bottom:2px;}
+.ypfr-login button{margin-top:9px;border:none;border-radius:10px;padding:9px 16px;background:linear-gradient(135deg,#5865f2,#8b5cf6);
+  color:#fff;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;}
+.ypfr-login button:hover{filter:brightness(1.12);}
+
+/* ── 1:1 대화 본문 ── */
+.yp-dmbody{min-height:80px;}
+/* 상대가 아직 안 읽은 내 메시지 옆 '1' — 카톡처럼 버블 왼쪽 아래 */
+.yp-bwrap .yp-dm-cnt{position:absolute;left:-15px;bottom:2px;font-size:9.5px;font-weight:800;color:#f0abfc;
+  line-height:1;pointer-events:none;}
+.yp-line:not(.me) .yp-dm-cnt{display:none;}
+/* 칩의 DM 안 읽은 뱃지 */
+#ypReopen .yp-badge.yp-dm{background:linear-gradient(135deg,#f43f5e,#ef4444);color:#fff;font-weight:800;font-size:10px;}
+.yp-dm-more{align-self:center;border:1px solid #2c3342;background:#1a1f27;color:#9aa3b2;border-radius:999px;
+  font-size:10.5px;padding:5px 12px;cursor:pointer;font-family:inherit;}
+.yp-dm-more:hover{border-color:#5865f2;color:#fff;}

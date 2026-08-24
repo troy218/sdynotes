@@ -10,6 +10,8 @@ __pycache__/
 .sdy_escrow.key
 .sdy_users.json
 .sdy_user_sessions.json
+.sdy_friends.json
+.sdy_dm.json
 notifications.json
 imported/
 imported_docs/
@@ -22,6 +24,7 @@ music/
 sync/
 vault/
 db/
+dm/
 .oracle_migrated
 .oracle_migrated.report.json
 _yt_cookies.txt.bak
