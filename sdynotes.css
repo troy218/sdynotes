@@ -2424,12 +2424,6 @@
         /* 글래스 블러 완화 → 스크롤 성능 개선 (모바일) */
         .header{backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);}
         .editor-toolbar{backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);}
-        /* 야구 이스터에그 (메인화면: 공이 화면 밖까지 날아가도록 전체 오버레이) */
-        #bbEgg{position:fixed;left:0;bottom:0;z-index:1041;display:none;
-            pointer-events:none;opacity:.95;}
-        #bbTap{position:fixed;left:106px;bottom:8px;width:68px;height:76px;z-index:1042;
-            display:none;background:transparent;border:none;padding:0;margin:0;
-            cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
         /* ================= /5.35 ================= */
 
         /* ================= 6.1 ================= */
@@ -3086,9 +3080,8 @@ body.sdy-booting #musicListPop{z-index:10001;}
 
 /* === style block 4 === */
 
-/* 시작 화면은 정적인 상태만 유지: 집게/야구/플로팅 요소가 위로 올라오지 못하게 한다. */
-#splash:not(.hide)~#clawFx,#splash:not(.hide)~#bbEgg,#splash:not(.hide)~#bbTap,
-body.sdy-booting #clawFx,body.sdy-booting #bbEgg,body.sdy-booting #bbTap{display:none!important}
+/* 시작 화면에서는 장식용 집게를 숨긴다. */
+#splash:not(.hide)~#clawFx,body.sdy-booting #clawFx{display:none!important}
 
 /* 8.8 responsive pass: phone and tablet prioritize the current task, not decorative controls */
 @media (max-width:1024px){
@@ -3116,8 +3109,6 @@ body.sdy-booting #clawFx,body.sdy-booting #bbEgg,body.sdy-booting #bbTap{display
   }
   .ctx-menu.show{max-width:calc(100vw - 16px)!important;max-height:calc(100dvh - 16px)!important;
       overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain}
-  /* 야구는 JS가 모바일 배율을 이미 계산한다. CSS 재축소를 하지 않아 터치 좌표와 그림을 일치시킨다. */
-  #bbEgg,#bbTap{transform:none!important}
 }
 @media (max-width:640px){
   /* Android Chrome는 html/body를 동시에 스크롤러로 두면 카드에서 시작한 스와이프가
@@ -3166,7 +3157,6 @@ body.sdy-booting #clawFx,body.sdy-booting #bbEgg,body.sdy-booting #bbTap{display
   /* 14.14 · 음악바/목록의 크기·위치는 문서 끝 v1414-phone 에서만 정한다.
      (여기서 .mp-btns button 을 29px 로 줄이던 규칙이 위쪽 34px 규칙을
      덮어써서 단추가 손가락보다 작아져 있었다.) */
-  #bbEgg,#bbTap{transform:none!important}
 }
 
 
@@ -4199,7 +4189,6 @@ body.sdy-booting #mpReopen{display:none !important;}
    밝은 테두리 + 깊은 부드러운 그림자.
    이 블록은 문서 맨 마지막에 실려 같은 특이도의 이전 규칙을 덮어쓴다.
    건드리지 않는 것:
-     · 이스터에그 #bbEgg / #bbTap (캔버스·버튼 자체와 그 색상 변수)
      · 음악 전체화면 .mpb-fs 규칙 (이미 유리의 기준)
      · #cardsModal 의 backdrop-filter:none !important (성능 예외 유지)
    ═══════════════════════════════════════════════════════════════════ */
@@ -5116,6 +5105,56 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
     #musicListPop .mp-lbody{border-radius:14px;}
 }
 
+/* quick clean styling for library tabs and tools */
+.mp-library-tools{display:flex;gap:12px;padding:8px 10px;background:#1a1a24;border-radius:8px;align-items:center;}
+.mpb-tabs{display:flex;gap:10px;padding:6px 10px;background:rgba(255,255,255,0.05);border-radius:6px;}
+.mpb-tabs button{border:none;background:transparent;color:#ddd;padding:4px 8px;border-radius:4px;font-size:0.85rem;cursor:pointer;}
+.mpb-tabs button.active,.mpb-tabs button:hover{background:#333;color:#fff;}
+
+
+/* 17.5 · 홈 정보 구조: 동작 버튼은 sticky 헤더 아래에 항상 보이고,
+   노트 더미와 최근 편집 목록은 같은 폭·간격의 두 구역으로 정렬한다. */
+.home-stack-area{gap:0;padding:0 0 24px!important;}
+.home-stack-upper{max-width:960px;z-index:1;}
+.home-add-zone,
+.home-stack-area.has-recent .home-add-zone{
+    width:min(100%,800px);height:auto;min-height:58px;padding:4px 18px 10px;
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
+    position:relative;z-index:2;
+}
+.home-section-title{
+    margin:0;display:flex;align-items:center;gap:8px;color:var(--text1);
+    font-size:15px;font-weight:850;letter-spacing:-.02em;line-height:1.2;
+}
+.home-section-title i{color:var(--accent);font-size:17px;}
+.home-add-note{z-index:2;flex:none;}
+.home-stack-area.has-recent .stack-scene,
+.home-stack-area.has-recent .recent-section{
+    height:calc(var(--home-rows-h,560px) / 2);min-height:140px;
+}
+.home-stack-area.has-recent .stack-scene{padding:4px 18px 12px!important;}
+.home-stack-area.has-recent .recent-section{
+    display:flex;flex-direction:column;align-items:center;overflow:visible;
+    position:relative;z-index:1;padding:10px 0 0!important;margin:0!important;
+    border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent)!important;
+}
+.recent-section > .recent-title{
+    display:block!important;width:min(100%,800px);padding:0 18px 7px;box-sizing:border-box;
+    color:var(--text2);font-size:13px;
+}
+.home-stack-area.has-recent .recent-row{
+    flex:1 1 auto;width:max-content;max-width:calc(100vw - 28px);height:auto;
+    align-items:flex-start;padding:4px 16px 38px!important;margin:0 auto!important;
+    overflow-x:auto;overflow-y:visible;position:relative;z-index:1;
+}
+@media(max-width:640px){
+    .home-add-zone,.home-stack-area.has-recent .home-add-zone{padding:2px 8px 8px;min-height:54px;}
+    .home-section-title{font-size:14px;}
+    .recent-section > .recent-title{padding-left:12px;padding-right:12px;}
+    .home-stack-area.has-recent .recent-row{max-width:calc(100vw - 8px);padding:4px 10px 30px!important;}
+}
+
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 
@@ -5641,9 +5680,3 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   #focusClock .fc-ring{width:min(48vh,250px);height:min(48vh,250px);}
   .fc-chrome.bottom{max-height:72px;}
 }
-
-/* quick clean styling for library tabs and tools */
-.mp-library-tools{display:flex;gap:12px;padding:8px 10px;background:#1a1a24;border-radius:8px;align-items:center;}
-.mpb-tabs{display:flex;gap:10px;padding:6px 10px;background:rgba(255,255,255,0.05);border-radius:6px;}
-.mpb-tabs button{border:none;background:transparent;color:#ddd;padding:4px 8px;border-radius:4px;font-size:0.85rem;cursor:pointer;}
-.mpb-tabs button.active,.mpb-tabs button:hover{background:#333;color:#fff;}
