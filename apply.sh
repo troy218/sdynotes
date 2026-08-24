@@ -10,8 +10,8 @@
 #                                      (Supabase/Cloudinary 사용 안 함)
 #                                      예전 클라우드 모드: SDY_STORAGE=cloud
 #
-#  zip 안에  apply.sh · package.json · sdynotes.html · server/ · worker/ ·
-#  scripts/ 를 폴더 없이 넣어 보내고, 서버에서 이것만 실행하면 됩니다.
+#  zip 안에  apply.sh · package.json · sdynotes.html · sdynotes.css · sdynotes.js ·
+#  server/ · worker/ · scripts/ 를 폴더 없이 넣어 보내고, 서버에서 이것만 실행하면 됩니다.
 #      bash apply.sh
 #
 #  처음 실행 → Node/파이썬/서비스/nginx 까지 자동 설치
@@ -36,12 +36,16 @@ ok(){  echo -e "  \033[1;32m✓\033[0m $*"; }
 die(){ echo -e "\n\033[1;31m✗ $*\033[0m"; exit 1; }
 
 [ -f "$SRC/sdynotes.html" ]      || die "sdynotes.html 이 없습니다 (현재 위치: $SRC)"
+[ -f "$SRC/sdynotes.css" ]       || die "sdynotes.css 가 없습니다 — HTML이 참조하는 스타일 파일입니다 (현재 위치: $SRC)"
+[ -f "$SRC/sdynotes.js" ]        || die "sdynotes.js 가 없습니다 — HTML이 참조하는 스크립트 파일입니다 (현재 위치: $SRC)"
 [ -f "$SRC/package.json" ]       || die "package.json 이 없습니다"
 [ -f "$SRC/server/src/index.js" ] || die "server/src/index.js 가 없습니다 — zip에 server/ 폴더를 통째로 넣어 주세요"
 [ -f "$SRC/worker/run.py" ]      || die "worker/run.py 가 없습니다 — zip에 worker/ 폴더를 통째로 넣어 주세요"
 
 say "0/6  배포 파일 확인"
 echo "  sdynotes.html  $(du -h "$SRC/sdynotes.html" | cut -f1)  ($(date -r "$SRC/sdynotes.html" '+%m-%d %H:%M'))"
+echo "  sdynotes.css   $(du -h "$SRC/sdynotes.css"  | cut -f1)  ($(date -r "$SRC/sdynotes.css"  '+%m-%d %H:%M'))"
+echo "  sdynotes.js    $(du -h "$SRC/sdynotes.js"   | cut -f1)  ($(date -r "$SRC/sdynotes.js"   '+%m-%d %H:%M'))"
 echo "  server/        $(find "$SRC/server" -name '*.js' | wc -l) 개 JS 모듈"
 echo "  worker/        $(find "$SRC/worker" -name '*.py' | wc -l) 개 PY 모듈"
 
@@ -61,6 +65,8 @@ if [ -f "$APP_DIR/package.json" ]; then
 fi
 
 sudo cp "$SRC/sdynotes.html" "$APP_DIR/sdynotes.html"
+sudo cp "$SRC/sdynotes.css"  "$APP_DIR/sdynotes.css"
+sudo cp "$SRC/sdynotes.js"   "$APP_DIR/sdynotes.js"
 sudo cp "$SRC/package.json"  "$APP_DIR/package.json"
 rm -rf "$APP_DIR/server" "$APP_DIR/worker" "$APP_DIR/scripts"
 cp -r "$SRC/server" "$APP_DIR/server"
@@ -68,7 +74,7 @@ cp -r "$SRC/worker" "$APP_DIR/worker"
 [ -d "$SRC/scripts" ] && cp -r "$SRC/scripts" "$APP_DIR/scripts"
 sudo chown -R "$USER:$USER" "$APP_DIR"
 
-ok "sdynotes.html ($(du -h "$APP_DIR/sdynotes.html" | cut -f1))"
+ok "sdynotes.html / .css / .js 배포됨 ($(du -h "$APP_DIR/sdynotes.html" | cut -f1), $(du -h "$APP_DIR/sdynotes.css" | cut -f1), $(du -h "$APP_DIR/sdynotes.js" | cut -f1))"
 ok "server/ + worker/ + package.json"
 
 # ── Node 의존성 설치 ────────────────────────────────────────
