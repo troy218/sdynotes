@@ -16,6 +16,7 @@
     "test:musicfs": "node test/music_fs_smoke.mjs",
     "test:phone": "node test/phone_layout_contract.mjs && node test/mobile_runtime_smoke.mjs",
     "test:table": "node test/editor_table_contract.mjs && node test/editor_table_runtime.mjs",
+    "test:place": "node test/editor_place_runtime.mjs",
     "test:polish": "node test/ui_polish_orientation_contract.mjs && python3 test/import_orientation_runtime.py",
     "test:sync": "node test/note_sync_clock_contract.mjs && node test/collab_protocol.cjs && node test/merge3_unit.cjs && node test/empty_note_render_contract.mjs",
     "test:save": "node test/save_outbox_contract.mjs",

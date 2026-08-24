@@ -5209,19 +5209,28 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 /* 17.6 · 최근 줄의 세로 잘림·스크롤바 제거
    가로 스크롤 상자(overflow-x:auto)에서는 overflow-y:visible 이 auto 로
    계산되므로, 카드+아래 그림자(52px 가량)가 줄 높이만 넘어도 세로 스크롤바가
-   생기고 카드 아래가 딱 잘린다. 그래서 줄 높이를 60px 아래로 내리고 -60px
-   음수 마진으로 흐름 높이는 그대로 둔다(화면 맞춤 레이아웃에 영향 없음).
-   아래 패딩 56px = 카드 여백(4) + 그림자(52) 가량이 들어오는 클리핑 경계.
-   줄 높이의 정확한 값(--home-row-h)은 JS 가 제목·패딩을 재서 넣는다. */
+   생기고 카드 아래가 딱 잘린다. 그래서 줄 높이를 아래로 내리고 그만큼 음수
+   마진으로 흐름 높이는 그대로 둔다(화면 맞춤 레이아웃에 영향 없음).
+   줄 높이의 정확한 값(--home-row-h)은 JS 가 제목·패딩·마진을 재서 넣는다.
+
+   17.7 · 카드 '옆' 그림자 잘림까지 함께 없앴다.
+   호버 그림자는 0 34px 60px -14px + scale(1.015) + translateY(-6px) 라
+   카드 기준으로 위 8px · 좌우 18px · 아래 42px 까지 번진다. 예전 여유는
+   위 4px · 좌우 16px · 아래 56px(=카드 아래 여백 4 + 52) 이라 호버 카드의
+   위쪽과 양옆이 잘렸다. 그래서 위 패딩을 18px, 좌우를 34px 로 넉넉히 잡고
+   그만큼을 음수 마진(-14px)으로 도로 빼서 카드 자리·두 줄 레이아웃·아래
+   오버플로(60px)까지 1px 도 바꾸지 않았다. 아래 패딩 56px 은 이미 그림자
+   42px 보다 크므로 그대로 둔다(더 키우면 main 의 세로 스크롤이 다시 생긴다).
+   줄 높이(--home-row-h)는 이 패딩·마진을 JS 가 직접 읽어서 계산한다. */
 .home-stack-area.has-recent .recent-row{
     height:var(--home-row-h,auto);
     box-sizing:border-box;
-    padding:4px 16px 56px!important;
-    margin:0 auto -60px!important;
+    padding:18px 34px 56px!important;
+    margin:-14px auto -60px!important;
     overflow-x:auto;overflow-y:hidden;
 }
 @media(max-width:640px){
-    .home-stack-area.has-recent .recent-row{padding:4px 10px 56px!important;}
+    .home-stack-area.has-recent .recent-row{padding:18px 22px 56px!important;}
 }
 /* 두 줄이 화면 높이에 정확히 들어맞는 홈은 min-height 가 몇 px 을 더
    붙여 세로 스크롤·아래 잘림을 만들지 않게 한다. */
@@ -5332,7 +5341,8 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   .home-add-note{min-height:44px;padding:5px 14px 5px 7px;font-size:12.5px;}
   .home-add-icon{width:32px;height:32px;font-size:20px;}
   .stack-scene{padding-left:8px!important;padding-right:8px!important;}
-  .recent-row{scroll-snap-type:x proximity;max-width:calc(100vw - 12px)!important;padding-left:10px!important;padding-right:10px!important;}
+  /* 17.7 · 좌우 22px 는 호버 그림자(±18px)가 잘리지 않는 최소 여유 */
+  .recent-row{scroll-snap-type:x proximity;max-width:calc(100vw - 12px)!important;padding-left:22px!important;padding-right:22px!important;}
   .recent-row .note-card{scroll-snap-align:center;}
 
   /* 선택 작업은 엄지손가락용 2×2 하단 작업판 */

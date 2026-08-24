@@ -87,6 +87,28 @@ assert.match(area.style.getPropertyValue('--home-card-w'), /^\d+px$/, '두 줄 �
 assert.match(css, /\.home-stack-area\.has-recent \.stack-scene,\s*\.home-stack-area\.has-recent \.recent-section\s*\{[^}]*height:calc\(var\(--home-rows-h,680px\) \/ 2\)/s,
   '안 본 더미와 이미 본 줄은 정확히 같은 두 줄 높이를 쓴다');
 
+// 17.7 · 최근 줄은 그림자 여유(패딩)를 키운 만큼 음수 마진으로 흐름 높이를
+// 되돌린다. 그래서 '줄 높이 + 위 마진 + 아래 마진 = 줄에 배정된 높이' 가
+// 항상 성립해야 두 줄 레이아웃이 1px 도 움직이지 않는다.
+{
+  const px = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+  const rowEl = area.querySelector('.recent-row');
+  const rcs = window.getComputedStyle(rowEl);
+  const rowH = px(area.style.getPropertyValue('--home-row-h'));
+  const rowsH = px(area.style.getPropertyValue('--home-rows-h'));
+  const sec = area.querySelector('.recent-section');
+  const secPT = px(window.getComputedStyle(sec).paddingTop);
+  const titleEl = sec.querySelector('.recent-title');
+  const titleH = (titleEl && window.getComputedStyle(titleEl).display !== 'none') ? px(titleEl.offsetHeight) : 0;
+  const flow = rowH + px(rcs.marginTop) + px(rcs.marginBottom);
+  assert.ok(rowH > 0, '줄 높이(--home-row-h)가 계산되어 있다');
+  // jsdom 은 계산 패딩·마진을 0 으로 주므로, 이 검증은 'JS 가 CSS 값을 읽어서
+  // 그대로 썼는지(상수를 다시 쓰지 않는지)'를 본다. 실제 값(18/34/64 · -14/-68)은
+  // editor_table_contract.mjs 가 CSS 원문에서 확인한다.
+  assert.equal(flow, Math.round(rowsH / 2 - secPT - titleH),
+    `줄의 흐름 높이는 배정된 높이와 같다 (row=${rowH} mt=${rcs.marginTop} mb=${rcs.marginBottom} → ${flow})`);
+}
+
 // ── ③ 큰 플레이어 진행바: window 추적 드래그 ──
 const big = document.getElementById('mpBig');
 big.classList.add('open');
