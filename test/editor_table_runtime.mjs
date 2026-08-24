@@ -138,6 +138,15 @@ try {
     && document.getElementById('tableGhost').style.display === 'none'
     && !document.body.classList.contains('placing-table'));
 
+  const newestCell=[...paper.querySelectorAll('.tb.in-tbl')]
+    .sort((a,b)=>parseFloat(b.style.left)-parseFloat(a.style.left))[0];
+  newestCell.querySelector('.tb-content').dispatchEvent(new window.MouseEvent('mousedown',
+    {bubbles:true,button:0,detail:1,clientX:605,clientY:605}));
+  document.dispatchEvent(new window.KeyboardEvent('keydown',{bubbles:true,key:'Delete'}));
+  await wait(120);
+  check('셀을 고른 뒤 Delete를 누르면 표 안쪽과 거터가 함께 완전히 사라진다',
+    paper.querySelectorAll('.tb.in-tbl').length===6 && paper.querySelectorAll('.tbl-box').length===1);
+
   const fatal = errors.filter(Boolean);
   check('표 배치·선택·정렬·이동 중 치명적 런타임 오류가 없다', fatal.length === 0);
   if (fatal.length) console.log(fatal.slice(0, 5).join('\n---\n'));

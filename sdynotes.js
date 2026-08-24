@@ -7295,11 +7295,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(penActive) return;   // 그리기 모드는 draw-surface가 처리
         curPageIdx=pageIdx; updatePageInfo();
         const t=e.target;
-        // 표 배치 모드: 고스트의 중심이 눌린 지점에 오도록 자유 배치한다.
+        // 표 배치 모드: 미리보기와 실제 표가 똑같은 문서 좌표를 사용한다.
         if(tablePlace){
             e.preventDefault(); e.stopPropagation();
             const cfg=tablePlace, p=pageLocal(e,pageIdx);
-            const c=clampEl(p.x-cfg.w/2,p.y-cfg.h/2,cfg.w,cfg.h);
+            const c=clampTableOrigin(cfg,p.x-cfg.w/2,p.y-cfg.h/2);
             cancelTablePlacement();
             insertTable(cfg.rows,cfg.cols,pageIdx,Math.round(c.x),Math.round(c.y));
             return;
@@ -8396,14 +8396,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!tid) return;
         if(pi == null) pi = curPageIdx;
         if(!noAsk && !confirm('표를 통째로 삭제할까요?')) return;
+        const table=findTbl(pi,tid);
+        const group=(table&&table.group)||('g_'+tid);
+        const selectedWasInTable=!!(selected&&selected.el&&(()=>{
+            const el=findEl(+selected.el.dataset.pageIdx,selected.el.dataset.id);
+            return el&&(tblOf(el)===tid||el.group===group);
+        })());
         pushHistory();
-        doc.pages[pi].els = (doc.pages[pi].els || []).filter(e => tblOf(e) !== tid && (e.group !== 'g_' + tid));
+        // 셀, 실제 테두리 stroke, 선택용 거터/손잡이까지 같은 표에 속한 것은 전부 제거한다.
+        doc.pages[pi].els = (doc.pages[pi].els || []).filter(e => tblOf(e) !== tid && e.group !== group);
         doc.pages[pi].tables = (pageTables(pi) || []).filter(x => x.id !== tid);
-        if(selected && selected.el){
-            const lid = selected.el.dataset.id, lpi = +selected.el.dataset.pageIdx;
-            const el = findEl(lpi, lid);
-            if(el && (tblOf(el) === tid || el.group === 'g_' + tid)) clearSel();
-        }
+        document.querySelectorAll('.layer-tbl .tbl-box').forEach(n=>{ if(n.dataset.tid===String(tid)) n.remove(); });
+        if(selectedWasInTable) clearSel();
         clearActiveTbl();
         renderPageEls(pi); renderTblDivs(pi); saveDoc();
         toast('표를 삭제했습니다 (Ctrl+Z 로 되돌리기)', 1800);
@@ -8723,15 +8727,23 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const ch=40;
         return {rows,cols,cw,ch,w:cw*cols,h:ch*rows};
     }
+    // 미리보기와 실제 삽입이 반드시 같은 종이 안쪽 경계를 사용한다.
+    function clampTableOrigin(dim,x,y){
+        const size=paperSize();
+        return {
+            x:Math.max(8,Math.min(Math.round(x),Math.max(8,size.w-dim.w-8))),
+            y:Math.max(8,Math.min(Math.round(y),Math.max(8,size.h-dim.h-8)))
+        };
+    }
     function insertTable(rows,cols,pageIdx,x,y){
         const dim=tableInsertSize(rows,cols);
         rows=dim.rows; cols=dim.cols;
         const pi=(pageIdx==null?curPageIdx:pageIdx);
         const size=paperSize(),cw=dim.cw,ch=dim.ch;
-        let ox=(x==null? Math.round((size.w-cw*cols)/2) : Math.round(x));
-        let oy=(y==null? 120 : Math.round(y));
-        ox=Math.max(8,Math.min(ox,Math.max(8,size.w-cw*cols-8)));
-        oy=Math.max(8,Math.min(oy,Math.max(8,size.h-ch*rows-8)));
+        const origin=clampTableOrigin(dim,
+            x==null?(size.w-dim.w)/2:x,
+            y==null?120:y);
+        const ox=origin.x, oy=origin.y;
 
         pushHistory();
         const tid='tb_'+Math.random().toString(36).slice(2,9);
@@ -11002,8 +11014,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!g) return;
         g.style.setProperty('--tbl-rows',dim.rows);
         g.style.setProperty('--tbl-cols',dim.cols);
-        g.style.width=Math.round(dim.w*pageScale)+'px';
-        g.style.height=Math.round(dim.h*pageScale)+'px';
         g.style.display='block';
         const lb=document.getElementById('tableGhostLabel');
         if(lb) lb.textContent=dim.rows+' × '+dim.cols+' 표';
@@ -11015,9 +11025,21 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     function moveTableGhost(clientX,clientY){
         const g=document.getElementById('tableGhost'); if(!g||!tablePlace) return;
-        const gw=tablePlace.w*pageScale,gh=tablePlace.h*pageScale;
-        g.style.left=Math.max(8,Math.min(clientX-gw/2,innerWidth-gw-8))+'px';
-        g.style.top=Math.max(42,Math.min(clientY-gh/2,innerHeight-gh-8))+'px';
+        // 포인터 아래 종이의 실제 화면 배율을 사용한다. 브라우저 90% zoom이나
+        // 사용자 확대 상태에서도 클릭 후 만들어지는 표와 픽셀 단위로 일치한다.
+        const hit=typeof document.elementFromPoint==='function'
+            ?document.elementFromPoint(clientX,clientY):null;
+        const paper=(hit&&hit.closest&&hit.closest('.paper'))||paperAt(curPageIdx);
+        if(!paper) return;
+        const pi=+paper.dataset.pageIdx;
+        const p=pageLocal({clientX,clientY},pi);
+        const origin=clampTableOrigin(tablePlace,p.x-tablePlace.w/2,p.y-tablePlace.h/2);
+        const r=paper.getBoundingClientRect(),sc=pageScreenScale(pi);
+        g.style.width=Math.round(tablePlace.w*sc.x)+'px';
+        g.style.height=Math.round(tablePlace.h*sc.y)+'px';
+        g.style.left=Math.round(r.left+origin.x*sc.x)+'px';
+        g.style.top=Math.round(r.top+origin.y*sc.y)+'px';
+        g.dataset.pageIdx=String(pi);
     }
     function cancelTablePlacement(){
         tablePlace=null;
@@ -11163,8 +11185,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(e.key==='Escape'){
             if(closeTopOverlay()) return;
         }
-        // 표 셀 범위: 방향키로 이동, Shift+방향키로 직사각형 확장,
-        // Enter/F2로 마지막 셀 편집, Delete는 표가 아니라 칸 내용만 비운다.
+        // 표 셀 범위: 방향키로 이동, Shift+방향키로 직사각형 확장.
+        // Delete는 표 전체를 제거하고 Backspace는 선택한 칸의 내용만 비운다.
         if(tblCellSelection&&!document.querySelector('.tb.edit')&&doc
            &&document.getElementById('editorView').classList.contains('open')
            &&!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||'')){
@@ -11184,7 +11206,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 return;
             }
             if(e.key==='Enter'||e.key==='F2'){ e.preventDefault(); editTblSelectionCell(); return; }
-            if(e.key==='Delete'||e.key==='Backspace'){ e.preventDefault(); clearTblCellContents(); return; }
+            if(e.key==='Delete'){
+                e.preventDefault();
+                const s=tblCellSelection;
+                tblDelAll(true,s.tid,s.pageIdx);
+                return;
+            }
+            if(e.key==='Backspace'){ e.preventDefault(); clearTblCellContents(); return; }
         }
         // 단축키 도움말
         // 사용법은 설정에서만 연다 (노트 안에서는 뜨지 않음)

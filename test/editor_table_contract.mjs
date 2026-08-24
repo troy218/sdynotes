@@ -64,9 +64,16 @@ check('선택 셀 범위에 가로·세로 정렬과 배경색을 저장한다',
   && fn('tblCellVAlign').includes('el.vAlign=dir')
   && fn('tblCellFill').includes('el.cellBg=color'));
 check('상단 가로 정렬도 선택 셀 범위에 적용된다', fn('setAlign').includes('selectedTblCellEls().length'));
-check('선택 셀에서 Delete는 표 삭제 대신 내용만 지운다',
+check('선택 셀에서 Delete는 표 전체를 지우고 Backspace는 내용만 지운다',
   fn('clearTblCellContents').includes("el.html=''")
-  && js.includes("if(e.key==='Delete'||e.key==='Backspace'){ e.preventDefault(); clearTblCellContents(); return; }"));
+  && /if\(e\.key==='Delete'\)[\s\S]{0,180}tblDelAll\(true,s\.tid,s\.pageIdx\)/.test(js)
+  && js.includes("if(e.key==='Backspace'){ e.preventDefault(); clearTblCellContents(); return; }"));
+check('표 미리보기와 실제 삽입이 같은 종이 좌표 경계를 쓴다',
+  fn('moveTableGhost').includes('clampTableOrigin(tablePlace')
+  && fn('insertTable').includes('clampTableOrigin(dim'));
+check('표 전체 삭제가 셀·stroke·거터 메타데이터를 모두 제거한다',
+  fn('tblDelAll').includes('tblOf(e) !== tid && e.group !== group')
+  && fn('tblDelAll').includes("document.querySelectorAll('.layer-tbl .tbl-box')"));
 check('표 도구막대에 셀 정렬과 배경색 조절이 노출된다',
   html.includes("tblCellAlign('center')") && html.includes("tblCellVAlign('middle')") && html.includes('tblCellFill(this.value)'));
 
