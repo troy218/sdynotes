@@ -6,6 +6,10 @@
            나머지 장식 글꼴 12종은 첫 화면을 그린 뒤에 뒤에서 받는다
            (@import 는 CSS 파싱을 막아, 예전엔 이것 때문에 시작이 느렸다) */
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
+        /* 데스크톱은 사용자가 늘 브라우저 90% 배율에서 보던 정보 밀도로 시작한다.
+           루트 zoom은 고정 레이어까지 한 번에 축소해 개별 화면마다 크기가 달라지지
+           않게 하며, 폰은 가독성과 기존 터치 배치를 위해 100%를 유지한다. */
+        @media (min-width:641px) and (pointer:fine){ html{zoom:.9;} }
         *{font-family:'Noto Sans KR',sans-serif;margin:0;padding:0;box-sizing:border-box;}
 
         /* 16.24 · 유틸리티 클래스 복구 — HTML이 쓰는 레이아웃 유틸(flex·w-full·py-4 등)이
@@ -1349,8 +1353,12 @@
         }
         .tbl-bar button:hover{background:var(--bg2);color:var(--text1);}
         .tbl-bar button.danger:hover{background:rgba(231,76,60,.12);color:#e74c3c;}
-        .tbl-bar .sep{width:1px;height:18px;background:var(--border);margin:0 3px;}
-        .tbl-bar{padding:3px;gap:1px;}
+        .tbl-bar .sep{width:1px;height:18px;background:var(--border);margin:0 3px;flex:none;}
+        .tbl-bar{padding:3px;gap:1px;max-width:calc(100vw - 16px);overflow-x:auto;}
+        .tbl-color{position:relative;width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+            color:var(--text2);border-radius:3px;cursor:pointer;flex:none;font-size:16px;overflow:hidden;}
+        .tbl-color:hover{background:var(--bg2);color:var(--text1);}
+        .tbl-color input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;}
 
         /* ===== 문서 안에서 찾기 (Ctrl+F) ===== */
         .find-bar{
@@ -1572,11 +1580,22 @@
             display:flex;flex-direction:column;justify-content:center;
             padding:6px 8px;box-sizing:border-box;
         }
-        .tb.in-tbl.edit .tb-content{display:block;}
-        .tb.in-tbl.edit .tb-content{overflow:auto;}
+        .tb.in-tbl.edit .tb-content{display:block;overflow:auto;}
+        /* Word처럼 드래그한 직사각형 셀 범위. 셀 데이터와는 별도의 선택 표시라
+           정렬·색을 적용한 뒤에도 표 선과 내용의 원래 배치는 바뀌지 않는다. */
+        .tb.in-tbl.tbl-cell-sel{z-index:61!important;}
+        .tb.in-tbl.tbl-cell-sel .tb-content{
+            border-color:color-mix(in srgb,var(--accent) 72%,transparent)!important;
+            background:color-mix(in srgb,var(--accent) 17%,transparent)!important;
+            box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 26%,transparent);
+        }
+        .tb.in-tbl.tbl-cell-anchor .tb-content{
+            border-color:var(--accent)!important;
+            box-shadow:inset 0 0 0 1.5px var(--accent);
+        }
         /* 표 칸은 비어 있어도 안내문·점선을 띄우지 않는다 */
         .tb.in-tbl:not(.edit) .tb-content[data-empty="true"]::before{content:"";}
-        .tb.in-tbl:not(.edit):not(.sel) .tb-content{border-color:transparent!important;}
+        .tb.in-tbl:not(.edit):not(.sel):not(.tbl-cell-sel) .tb-content{border-color:transparent!important;}
         /* PDF 줄 단위 텍스트 — 내부 절대좌표 스팬이 단어 위치를 보존 */
         .tb.tight .tb-content{
             padding:0;min-width:0;min-height:0;line-height:1;
@@ -1643,7 +1662,25 @@
         .text-ghost .tg-corner.c1{left:-4px;top:-4px}.text-ghost .tg-corner.c2{right:-4px;top:-4px}
         .text-ghost .tg-corner.c3{left:-4px;bottom:-4px}.text-ghost .tg-corner.c4{right:-4px;bottom:-4px}
         @keyframes caretBlink{50%{opacity:0}}
-        body.placing-text #pagesStage .paper{cursor:crosshair;}
+        body.placing-text #pagesStage .paper,body.placing-table #pagesStage .paper{cursor:crosshair;}
+        .table-ghost{
+            position:fixed;left:0;top:0;pointer-events:none;display:none;z-index:1002;
+            border:2px solid color-mix(in srgb,var(--accent) 82%,white 18%);border-radius:3px;
+            background-color:color-mix(in srgb,var(--accent) 7%,var(--card));
+            background-image:linear-gradient(to right,color-mix(in srgb,var(--accent) 55%,transparent) 1px,transparent 1px),
+                             linear-gradient(to bottom,color-mix(in srgb,var(--accent) 55%,transparent) 1px,transparent 1px);
+            background-size:calc(100% / var(--tbl-cols,3)) 100%,100% calc(100% / var(--tbl-rows,3));
+            box-shadow:0 14px 34px rgba(40,55,120,.18);opacity:.9;
+        }
+        .table-ghost .tg-label{
+            position:absolute;left:0;top:-34px;white-space:nowrap;
+            background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff;font-size:10.5px;
+            padding:6px 8px;border-radius:9px;display:flex;align-items:center;gap:6px;
+            box-shadow:0 5px 16px color-mix(in srgb,var(--accent) 35%,transparent);
+        }
+        .table-ghost .tg-label b{font-size:11px}.table-ghost .tg-label em{font-style:normal;opacity:.82;}
+        .table-ghost .tg-label kbd{margin-left:2px;padding:1px 5px;border-radius:5px;background:rgba(255,255,255,.2);
+            font:700 9px/1.5 ui-monospace,monospace;}
 
         .draw-toolbar{
             position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
@@ -4734,11 +4771,17 @@ body.card-l .note-stack .note-card,body.card-l .note-stack .folder-card{width:24
 }
 .home-stack-area.has-recent .recent-section{
     display:flex;align-items:stretch;padding:0!important;margin:0!important;
+    /* 홈 콘텐츠 중에는 가장 위, sticky 헤더(z=50)보다는 아래 */
+    position:relative;z-index:40;overflow:visible;isolation:isolate;
 }
 .home-stack-area.has-recent .recent-row{
-    width:max-content;height:100%;box-sizing:border-box;
-    align-items:center;padding:10px 16px 18px!important;margin:0 auto!important;
-    overflow-x:auto;overflow-y:hidden;
+    width:max-content;height:calc(100% + 112px);box-sizing:border-box;
+    /* 가로 스크롤 상자는 세로 overflow도 함께 잘라 버린다. 그래서 둘째 줄의
+       실제 클리핑 경계를 112px 아래로 내리고 음수 여백으로 두 줄 높이는 그대로
+       유지한다. 어두운 테마의 큰 70px blur도 내부 안전 영역에서 끝까지 보인다. */
+    align-items:center;padding:14px 18px 126px!important;margin:0 auto -112px!important;
+    overflow-x:auto;overflow-y:hidden;position:relative;z-index:1;
+    isolation:isolate;
 }
 .home-stack-area.has-recent .note-stack .note-card,
 .home-stack-area.has-recent .note-stack .folder-card,
@@ -4790,6 +4833,7 @@ body.card-l .note-stack .note-card,body.card-l .note-stack .folder-card{width:24
 .recent-row{padding-bottom:72px !important;margin-bottom:-40px !important;}
 .recent-row .note-card{
     position:relative;left:auto;top:auto;max-width:none;flex-shrink:0;transform:none;opacity:1;width:200px;flex:0 0 200px;
+    z-index:1;isolation:isolate;
     box-shadow:var(--g-hi),
                0 2px 5px -1px rgba(15,23,42,.08),
                0 10px 24px -6px rgba(15,23,42,.16),

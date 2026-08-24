@@ -5118,7 +5118,7 @@
         const _cfg=getCfg(nb.id);
         const _needLoad=!!(_cfg.lock&&_cfg.lock.enc) || !!_cfg.serverDoc;
         if(_needLoad) showEdLoading(isLocked(nb.id)?'잠금 해제 중…':'문서 불러오는 중…');
-        try{ closeFind(); clearActiveTbl(); closePanel(); closePin();
+        try{ closeFind(); clearActiveTbl(); cancelTablePlacement(); closePanel(); closePin();
              if(wfOn) wfOff(); wfStats=[]; wfMap=null;
              if(pinMode) togglePinMode(); }catch(e){}
         const isLocal=String(nb.id).startsWith('local_');
@@ -5189,7 +5189,7 @@
 
     function closeEditor(){
         if(!document.getElementById('editorView').classList.contains('open')) return;   // 이미 닫힘
-        try{ closeFind(); clearActiveTbl(); closePanel(); closePin();
+        try{ closeFind(); clearActiveTbl(); cancelTablePlacement(); closePanel(); closePin();
              if(wfOn) wfOff();
              if(pinMode) togglePinMode();
              if(presentOn) endPresent();
@@ -5678,7 +5678,9 @@
             return true;
         });
         const drop=new Set();
-        const texts=out.filter(e=>e.type==='text'&&e.x!=null&&(e.w||0)>2&&(e.h||0)>2);
+        // 표 셀은 서로 맞닿고 기존 글상자 위에 놓일 수도 있는 정상 구조다.
+        // 일반 가져오기 중복 제거에 섞으면 작은 셀이 전부 사라져 선만 남는다.
+        const texts=out.filter(e=>e.type==='text'&&!e.tbl&&e.x!=null&&(e.w||0)>2&&(e.h||0)>2);
         const latexs=out.filter(e=>e.type==='latex'&&e.x!=null);
         for(let i=0;i<texts.length;i++){
             const a=texts[i], A=_elBox(a), aa=Math.max(1,A.w*A.h);
@@ -6776,6 +6778,15 @@
         c.style.fontSize=(el.fontSize||16)+'px';
         c.style.fontFamily=fontCSS(el.font||'noto');
         if(el.align) c.style.textAlign=el.align;
+        if(el.textColor) c.style.color=el.textColor;
+        if(el.cellBg) c.style.backgroundColor=el.cellBg;
+        if(el.fontWeight) c.style.fontWeight=el.fontWeight;
+        if(el.fontStyle) c.style.fontStyle=el.fontStyle;
+        if(el.textDecoration) c.style.textDecoration=el.textDecoration;
+        if(el.tbl){
+            const va={top:'flex-start',middle:'center',bottom:'flex-end'}[el.vAlign||'middle'];
+            c.style.justifyContent=va||'center';
+        }
         c.innerHTML=el.html||'';
         // 가져온(tight) 상자: 저장된 자간/띄어쓰기/줄간격 반영 + 자동 안겹침
         if(el.tight){
@@ -6916,7 +6927,7 @@
 
     // ============ 선택/드래그 ============
     let selected=null, drag=null, resize=null;
-    let textToolActive=false, curFontSize=16, _textPointerBlockUntil=0;
+    let textToolActive=false, tablePlace=null, curFontSize=16, _textPointerBlockUntil=0;
 
     // 선택된 것이 항상 맨 앞으로 오도록 해당 레이어를 끌어올린다
     function liftLayers(){
@@ -7213,10 +7224,10 @@
         const paper=e.target.closest&&e.target.closest('#pagesStage .paper');
         if(paper){
             const i=+paper.dataset.pageIdx;
-            const r=paper.getBoundingClientRect();
+            const p=pageLocal(e,i);
             lastMouse.pageIdx=i;
-            lastMouse.x=(e.clientX-r.left)/pageScale;
-            lastMouse.y=(e.clientY-r.top)/pageScale;
+            lastMouse.x=p.x;
+            lastMouse.y=p.y;
         }
     },true);
 
@@ -7244,6 +7255,19 @@
         const sy=r.height? s.h/r.height : 1/Math.max(.001,pageScale);
         return {x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy};
     }
+    // 브라우저/CSS 배율과 페이지 자체 배율을 모두 포함한 화면→문서 델타.
+    // pageScale로만 나누면 사이트 기본 90%에서 포인터와 요소가 점점 어긋난다.
+    function pageClientDelta(pageIdx,dx,dy){
+        const paper=paperAt(pageIdx), r=paper&&paper.getBoundingClientRect();
+        const s=paperSize();
+        return {x:r&&r.width?dx*s.w/r.width:dx/Math.max(.001,pageScale),
+                y:r&&r.height?dy*s.h/r.height:dy/Math.max(.001,pageScale)};
+    }
+    function pageScreenScale(pageIdx){
+        const paper=paperAt(pageIdx), r=paper&&paper.getBoundingClientRect();
+        const s=paperSize();
+        return {x:r&&s.w?r.width/s.w:pageScale,y:r&&s.h?r.height/s.h:pageScale};
+    }
     // 종이 밖으로 나가는 것도 허용한다 (내보낼 때 잘린다).
     // 완전히 사라져 되찾지 못하는 것만 막는다.
     function clampEl(x,y,w,h){
@@ -7260,6 +7284,15 @@
         if(penActive) return;   // 그리기 모드는 draw-surface가 처리
         curPageIdx=pageIdx; updatePageInfo();
         const t=e.target;
+        // 표 배치 모드: 고스트의 중심이 눌린 지점에 오도록 자유 배치한다.
+        if(tablePlace){
+            e.preventDefault(); e.stopPropagation();
+            const cfg=tablePlace, p=pageLocal(e,pageIdx);
+            const c=clampEl(p.x-cfg.w/2,p.y-cfg.h/2,cfg.w,cfg.h);
+            cancelTablePlacement();
+            insertTable(cfg.rows,cfg.cols,pageIdx,Math.round(c.x),Math.round(c.y));
+            return;
+        }
         // 메모 붙이기 모드
         if(pinMode&&!t.closest('.pin')){
             e.preventDefault();
@@ -7290,7 +7323,9 @@
         if(gHost && !t.closest('.handle') && !t.closest('.tb-edge')
            && !document.querySelector('.tb.edit')){
             const gEl=findEl(pageIdx,gHost.dataset.id);
-            if(gEl&&gEl.group&&!multiSel.some(m=>m.id===gHost.dataset.id)){
+            // 표의 group은 선·칸을 원자적으로 보관하기 위한 내부 묶음이다.
+            // 일반 객체 그룹처럼 펼치면 셀 선택보다 다중 이동이 먼저 시작된다.
+            if(gEl&&gEl.group&&!tblOf(gEl)&&!multiSel.some(m=>m.id===gHost.dataset.id)){
                 e.preventDefault();
                 if(expandGroupSelection(pageIdx,gHost.dataset.id)){ startMultiDrag(e); return; }
             }
@@ -7367,13 +7402,12 @@
                   ox:parseFloat(w.style.left)||0,oy:parseFloat(w.style.top)||0,pending:true};
             return;
         }
-        // 표 칸 위(또는 칸 사이 여백)를 눌렀다면 좌표에 맞는 칸으로 넘긴다.
-        // 칸 상자는 실제 칸보다 넓어 옆 칸 영역까지 덮고 있기 때문.
+        // 표 칸은 한 번 눌러 셀 선택, 그대로 끌어 Word식 직사각형 범위 선택.
+        // 더블클릭할 때만 글자 편집으로 들어가므로 셀을 가로질러 끌 수 있다.
         {
             const tbHit=t.closest('.tb');
             if(tbHit && e.button===0 && !e.altKey && !penActive && !textToolActive
-               && !t.closest('.handle') && !t.closest('.tb-edge')
-               && !document.querySelector('.tb.edit')){
+               && !t.closest('.handle') && !t.closest('.tb-edge')){
                 const hitEl=findEl(pageIdx,tbHit.dataset.id);
                 if(hitEl && hitEl.tbl){
                     const cell=tblCellAt(pageIdx,e);
@@ -7381,19 +7415,25 @@
                         e.preventDefault();
                         const node=paperAt(pageIdx).querySelector(`.tb[data-id="${cell.id}"]`);
                         if(node){
-                            deselectAll(true); clearMulti();
-                            const c=node.querySelector('.tb-content');
-                            enterEdit(node,true);
-                            enableTextSelect(c);
-                            const r=caretRangeAt(e.clientX,e.clientY,c);
-                            if(r){
-                                const sel=window.getSelection();
-                                sel.removeAllRanges(); sel.addRange(r);
-                                textSel={host:c,anchor:{node:r.startContainer,off:r.startOffset},
-                                         focusEnd:null,mode:'char',cellDrag:{pageIdx,tid:cell.tid}};
-                                saveSel();
-                            }
                             drag=null;
+                            if(e.detail>=2){
+                                clearTblCellSelection();
+                                deselectAll(true); clearMulti();
+                                const c=node.querySelector('.tb-content');
+                                enterEdit(node,true); enableTextSelect(c);
+                                const r=caretRangeAt(e.clientX,e.clientY,c);
+                                if(r){
+                                    const wr=expandToWord(r,c),sel=window.getSelection();
+                                    sel.removeAllRanges(); sel.addRange(wr);
+                                    textSel={host:c,anchor:{node:wr.startContainer,off:wr.startOffset},
+                                        focusEnd:{node:wr.endContainer,off:wr.endOffset},mode:'word',
+                                        wordStart:{node:wr.startContainer,off:wr.startOffset},
+                                        wordEnd:{node:wr.endContainer,off:wr.endOffset},cellDrag:{pageIdx,tid:cell.tid}};
+                                    saveSel();
+                                }
+                            }else{
+                                startTblCellSelection(e,pageIdx,cell);
+                            }
                             return;
                         }
                     }
@@ -7498,6 +7538,11 @@
         // 펜 획 (얇은 hit 영역에 정확히 닿았을 때만)
         const sg=t.closest('.stroke-g');
         if(sg){
+            const sgEl=findEl(pageIdx,sg.dataset.id);
+            if(sgEl&&tblOf(sgEl)&&e.button===0&&!e.altKey){
+                const cell=tblCellAt(pageIdx,e);
+                if(cell){ e.preventDefault(); startTblCellSelection(e,pageIdx,cell); drag=null; return; }
+            }
             e.preventDefault();
             if(e.ctrlKey||e.metaKey){                 // Ctrl+클릭 = 다중 선택 토글
                 toggleMultiSelect(pageIdx,sg);
@@ -7514,29 +7559,11 @@
             drag={el:sg,pageIdx,sx:e.clientX,sy:e.clientY,ox:el.dx||0,oy:el.dy||0,pending:true,isStroke:true};
             return;
         }
-        // 표 안쪽(칸 사이 여백 포함)에서 시작하면 칸 글자를 바로 선택한다.
-        // 표를 끌지 않고, 일반 글상자를 긁는 것과 동일하게 동작.
+        // 표의 투명한 안쪽 여백에서 시작해도 가장 가까운 셀 범위를 고른다.
         if(e.button===0 && !penActive && !textToolActive){
             const cell=tblCellAt(pageIdx,e);
             if(cell){
-                e.preventDefault();
-                deselectAll(true); clearMulti();
-                const node=paperAt(pageIdx).querySelector(`.tb[data-id="${cell.id}"]`);
-                if(node){
-                    const c=node.querySelector('.tb-content');
-                    enterEdit(node,true);
-                    enableTextSelect(c);
-                    const r=caretRangeAt(e.clientX,e.clientY,c);
-                    if(r){
-                        const sel=window.getSelection();
-                        sel.removeAllRanges(); sel.addRange(r);
-                        textSel={host:c,anchor:{node:r.startContainer,off:r.startOffset},
-                                 focusEnd:null,mode:'char',cellDrag:{pageIdx,tid:cell.tid}};
-                        saveSel();
-                    }
-                    drag=null;
-                    return;
-                }
+                e.preventDefault(); startTblCellSelection(e,pageIdx,cell); drag=null; return;
             }
         }
         // 빈 종이에서 드래그 → 영역 선택
@@ -7598,9 +7625,21 @@
     document.addEventListener('mousemove',e=>{
         const ghost=document.getElementById('textGhost');
         if(textToolActive&&ghost){
-            const gw=TB_W*pageScale, gh=TB_H*pageScale;
+            const gw=TB_W*pageScale,gh=TB_H*pageScale;
             ghost.style.left=Math.max(8,Math.min(e.clientX-gw/2,innerWidth-gw-8))+'px';
             ghost.style.top=Math.max(42,Math.min(e.clientY-gh/2,innerHeight-gh-8))+'px';
+        }
+        if(tablePlace) moveTableGhost(e.clientX,e.clientY);
+
+        if(tblCellPick){
+            const cell=tblCellAt(tblCellPick.pageIdx,e);
+            if(cell&&cell.tid===tblCellPick.tid&&tblCellSelection){
+                tblCellSelection.r1=cell.r; tblCellSelection.c1=cell.c;
+                setActiveTbl(tblCellPick.pageIdx,cell.tid,cell.r,cell.c);
+                paintTblCellSelection();
+            }
+            e.preventDefault();
+            return;
         }
 
         if(textSel){
@@ -7649,7 +7688,8 @@
         if(marquee){ e.preventDefault(); updateMarquee(e); return; }
         if(multiDrag){
             e.preventDefault();
-            const dx=(e.clientX-multiDrag.sx)/pageScale, dy=(e.clientY-multiDrag.sy)/pageScale;
+            const dd=pageClientDelta(multiDrag.pageIdx,e.clientX-multiDrag.sx,e.clientY-multiDrag.sy);
+            const dx=dd.x,dy=dd.y;
             if(!multiDrag.moved){
                 if(Math.abs(e.clientX-multiDrag.sx)<3&&Math.abs(e.clientY-multiDrag.sy)<3) return;
                 multiDrag.moved=true; pushHistory();
@@ -7674,7 +7714,8 @@
             return;
         }
         if(drag){
-            const dx=(e.clientX-drag.sx)/pageScale, dy=(e.clientY-drag.sy)/pageScale;
+            const dd=pageClientDelta(drag.pageIdx,e.clientX-drag.sx,e.clientY-drag.sy);
+            const dx=dd.x,dy=dd.y;
             if(drag.pending){
                 if(Math.abs(e.clientX-drag.sx)<3&&Math.abs(e.clientY-drag.sy)<3) return;
                 drag.pending=false; pushHistory();
@@ -7704,7 +7745,8 @@
         }
         if(resize){
             e.preventDefault();
-            const dx=(e.clientX-resize.sx)/pageScale, dy=(e.clientY-resize.sy)/pageScale;
+            const dd=pageClientDelta(resize.pageIdx,e.clientX-resize.sx,e.clientY-resize.sy);
+            const dx=dd.x,dy=dd.y;
             let nw=resize.sw, nh=resize.sh;
             let nx=resize.ox, ny=resize.oy;
             const dir=resize.dir;
@@ -7759,6 +7801,7 @@
 
     document.addEventListener('mouseup',()=>{
         clearSnapLines();
+        if(tblCellPick) tblCellPick=null;
         if(marquee){ endMarquee(); }
         if(multiDrag){
             if(multiDrag.moved){
@@ -7834,6 +7877,8 @@
     // 중요어 분석 상태 (아래에서 쓰는 함수보다 먼저 선언 — TDZ 방지)
     let wfOn=false, wfStats=[], wfMap=null, wfPick=null, wfMin=2;
     let activeTbl=null;            // {pageIdx,tid,r,c}
+    let tblCellSelection=null;     // {pageIdx,tid,r0,c0,r1,c1} 직사각형 셀 범위
+    let tblCellPick=null;          // 포인터로 범위를 끄는 동안의 앵커
     let tblDrag=null, tblScale=null, tblMove=null;
 
     function pageTables(pi){
@@ -7849,6 +7894,77 @@
     function tblSize(t){ return {w:t.cw.reduce((a,b)=>a+b,0), h:t.ch.reduce((a,b)=>a+b,0)}; }
     function colX(t,i){ let x=t.x; for(let k=0;k<i;k++) x+=t.cw[k]; return x; }
     function rowY(t,i){ let y=t.y; for(let k=0;k<i;k++) y+=t.ch[k]; return y; }
+
+    function selectedTblCellEls(){
+        const s=tblCellSelection;
+        if(!s||!doc||!doc.pages[s.pageIdx]) return [];
+        const r0=Math.min(s.r0,s.r1),r1=Math.max(s.r0,s.r1);
+        const c0=Math.min(s.c0,s.c1),c1=Math.max(s.c0,s.c1);
+        return tblCells(s.pageIdx,s.tid).filter(el=>
+            el.tbl.r>=r0&&el.tbl.r<=r1&&el.tbl.c>=c0&&el.tbl.c<=c1);
+    }
+    function paintTblCellSelection(){
+        document.querySelectorAll('#pagesStage .tb.tbl-cell-sel,#pagesStage .tb.tbl-cell-anchor').forEach(n=>{
+            n.classList.remove('tbl-cell-sel','tbl-cell-anchor');
+            n.removeAttribute('aria-selected');
+        });
+        const s=tblCellSelection;
+        if(!s) return;
+        const paper=paperAt(s.pageIdx); if(!paper) return;
+        selectedTblCellEls().forEach(el=>{
+            const n=paper.querySelector(`.tb[data-id="${el.id}"]`); if(!n) return;
+            n.classList.add('tbl-cell-sel'); n.setAttribute('aria-selected','true');
+            if(el.tbl.r===s.r1&&el.tbl.c===s.c1) n.classList.add('tbl-cell-anchor');
+        });
+    }
+    function clearTblCellSelection(){
+        tblCellSelection=null; tblCellPick=null; paintTblCellSelection();
+    }
+    function startTblCellSelection(e,pi,cell){
+        const old=tblCellSelection;
+        deselectAll(true); clearMulti(); clearTextSelection(); selected=null;
+        const extend=!!(e.shiftKey&&old&&old.pageIdx===pi&&old.tid===cell.tid);
+        tblCellSelection={pageIdx:pi,tid:cell.tid,
+            r0:extend?old.r0:cell.r,c0:extend?old.c0:cell.c,r1:cell.r,c1:cell.c};
+        tblCellPick={pageIdx:pi,tid:cell.tid,sx:e.clientX,sy:e.clientY};
+        setActiveTbl(pi,cell.tid,cell.r,cell.c);
+        paintTblCellSelection();
+    }
+    function tblCellApply(fn,msg){
+        const cells=selectedTblCellEls();
+        if(!cells.length){ toast('표에서 칸을 먼저 선택하세요',1400); return false; }
+        pushHistory(); cells.forEach(fn);
+        renderPageEls(tblCellSelection.pageIdx); saveDoc();
+        if(msg) toast(msg,1100);
+        return true;
+    }
+    function tblCellAlign(dir){
+        tblCellApply(el=>{ el.align=dir; },({left:'왼쪽',center:'가운데',right:'오른쪽'})[dir]+' 정렬');
+    }
+    function tblCellVAlign(dir){
+        tblCellApply(el=>{ el.vAlign=dir; },({top:'위쪽',middle:'세로 가운데',bottom:'아래쪽'})[dir]+' 정렬');
+    }
+    function tblCellFill(color){
+        tblCellApply(el=>{ if(color) el.cellBg=color; else delete el.cellBg; },color?'칸 배경색 적용':'칸 배경색 지움');
+    }
+    function clearTblCellContents(){
+        tblCellApply(el=>{ el.html=''; },'선택한 칸 내용 지움');
+    }
+    function moveTblCellSelection(dr,dc,extend){
+        const s=tblCellSelection,t=s&&findTbl(s.pageIdx,s.tid); if(!s||!t) return false;
+        const nr=Math.max(0,Math.min(t.ch.length-1,s.r1+dr));
+        const nc=Math.max(0,Math.min(t.cw.length-1,s.c1+dc));
+        if(!extend){ s.r0=nr; s.c0=nc; }
+        s.r1=nr; s.c1=nc;
+        setActiveTbl(s.pageIdx,s.tid,nr,nc); paintTblCellSelection();
+        return true;
+    }
+    function editTblSelectionCell(){
+        const s=tblCellSelection,paper=s&&paperAt(s.pageIdx); if(!s||!paper) return false;
+        const el=tblCells(s.pageIdx,s.tid).find(x=>x.tbl.r===s.r1&&x.tbl.c===s.c1);
+        const node=el&&paper.querySelector(`.tb[data-id="${el.id}"]`); if(!node) return false;
+        clearTblCellSelection(); enterEdit(node,false); return true;
+    }
 
     // 표의 선과 칸 위치를 표 정보에 맞춰 다시 만든다
     function rebuildTable(pi,tid,opt){
@@ -7963,6 +8079,7 @@
             mv.addEventListener('mousedown',e=>startTblMove(e,pi,t.id));
             box.appendChild(mv);
         });
+        paintTblCellSelection();
     }
     function renderAllTblDivs(){ if(doc) doc.pages.forEach((p,i)=>{ if(paperAt(i)) renderTblDivs(i); }); }
 
@@ -7976,9 +8093,9 @@
         });
         if(!paper) return;
         const pi=+paper.dataset.pageIdx;
-        const r=paper.getBoundingClientRect();
-        const x=(e.clientX-r.left)/pageScale, y=(e.clientY-r.top)/pageScale;
-        const m=TBL_NEAR/Math.max(.2,pageScale);
+        const p=pageLocal(e,pi),sc=pageScreenScale(pi);
+        const x=p.x,y=p.y;
+        const m=TBL_NEAR/Math.max(.2,Math.min(sc.x,sc.y));
         paper.querySelectorAll('.tbl-box').forEach(box=>{
             const t=findTbl(pi,box.dataset.tid); if(!t) return;
             const s=tblSize(t);
@@ -7998,32 +8115,19 @@
         const t=findTbl(pi,tid); if(!t) return;
         // 손잡이는 칸 글자 위를 살짝 덮는다. 눌린 지점이 경계선에서
         // 얼마나 떨어졌는지로 '크기 조절'과 '글자 선택'을 가른다.
-        const paperR=paperAt(pi).getBoundingClientRect();
+        const paperR=paperAt(pi).getBoundingClientRect(),sc=pageScreenScale(pi);
         const edge = (kind==='col')
-            ? Math.abs(e.clientX-(paperR.left+colX(t,idx+1)*pageScale))
-            : Math.abs(e.clientY-(paperR.top +rowY(t,idx+1)*pageScale));
+            ? Math.abs(e.clientX-(paperR.left+colX(t,idx+1)*sc.x))
+            : Math.abs(e.clientY-(paperR.top +rowY(t,idx+1)*sc.y));
         const GRAB=4;                       // 경계선 ±4px = 크기 조절
         if(edge>GRAB){
             // 경계에서 먼 곳 → 그 자리의 칸 글자를 선택한다
             const cell=tblCellAt(pi,e);
             if(cell){
-                const node=paperAt(pi).querySelector(`.tb[data-id="${cell.id}"] .tb-content`);
-                if(node){
-                    e.preventDefault(); e.stopPropagation();
-                    const w=node.closest('.tb');
-                    deselectAll(true); clearMulti();
-                    enterEdit(w,true); enableTextSelect(node);
-                    const cr=caretRangeAt(e.clientX,e.clientY,node);
-                    if(cr){
-                        const sel=window.getSelection();
-                        sel.removeAllRanges(); sel.addRange(cr);
-                        textSel={host:node,anchor:{node:cr.startContainer,off:cr.startOffset},
-                                 focusEnd:null,mode:'char',cellDrag:{pageIdx:pi,tid}};
-                        saveSel();
-                    }
-                    drag=null;
-                    return;
-                }
+                e.preventDefault(); e.stopPropagation();
+                startTblCellSelection(e,pi,cell);
+                drag=null;
+                return;
             }
         }
         e.preventDefault(); e.stopPropagation();
@@ -8051,11 +8155,23 @@
     // ===== 표 통째로 이동 =====
     function startTblMove(e,pi,tid){
         e.preventDefault(); e.stopPropagation();
-        const t=findTbl(pi,tid); if(!t) return;
+        const t=findTbl(pi,tid),paper=paperAt(pi); if(!t||!paper) return;
         pushHistory();
-        deselectAll(true); clearMulti();
-        tblMove={pi,tid,sx:e.clientX,sy:e.clientY,ox:t.x,oy:t.y,moved:false};
+        deselectAll(true); clearMulti(); clearTblCellSelection();
+        // 이동 중에는 데이터/레이어를 매 프레임 재생성하지 않는다. 현재 칸·선·선택틀을
+        // 같은 델타로 즉시 움직이고, mouseup에서 한 번만 canonical table로 재구성한다.
+        const cells=tblCells(pi,tid).map(el=>paper.querySelector(`.tb[data-id="${el.id}"]`)).filter(Boolean);
+        const strokes=(doc.pages[pi].els||[]).filter(el=>el.type==='stroke'&&tblOf(el)===tid)
+            .map(el=>paper.querySelector(`.stroke-g[data-id="${el.id}"]`)).filter(Boolean);
+        const box=paper.querySelector(`.tbl-box[data-tid="${tid}"]`);
+        tblMove={pi,tid,sx:e.clientX,sy:e.clientY,ox:t.x,oy:t.y,moved:false,cells,strokes,box};
         setActiveTbl(pi,tid,0,0);
+    }
+    function previewTblMove(m,dx,dy){
+        const tr=`translate(${dx}px,${dy}px)`;
+        m.cells.forEach(n=>{ n.style.transform=tr; });
+        m.strokes.forEach(n=>{ n.setAttribute('transform',`translate(${dx},${dy})`); });
+        if(m.box) m.box.style.transform=tr;
     }
 
     document.addEventListener('mousemove',e=>{
@@ -8063,7 +8179,8 @@
         if(tblDrag){
             e.preventDefault();
             const t=findTbl(tblDrag.pi,tblDrag.tid); if(!t) return;
-            const d=(tblDrag.kind==='col'?(e.clientX-tblDrag.sx):(e.clientY-tblDrag.sy))/Math.max(.05,pageScale);
+            const dd=pageClientDelta(tblDrag.pi,e.clientX-tblDrag.sx,e.clientY-tblDrag.sy);
+            const d=tblDrag.kind==='col'?dd.x:dd.y;
             if(Math.abs(d)>2) tblDrag.moved=true;
             const min=tblDrag.kind==='col'?TBL_MINW:TBL_MINH;
             const arr=tblDrag.kind==='col'?t.cw:t.ch;
@@ -8083,8 +8200,8 @@
         if(tblScale){
             e.preventDefault();
             const t=findTbl(tblScale.pi,tblScale.tid); if(!t) return;
-            const dx=(e.clientX-tblScale.sx)/Math.max(.05,pageScale);
-            const dy=(e.clientY-tblScale.sy)/Math.max(.05,pageScale);
+            const dd=pageClientDelta(tblScale.pi,e.clientX-tblScale.sx,e.clientY-tblScale.sy);
+            const dx=dd.x,dy=dd.y;
             if(Math.abs(dx)>2||Math.abs(dy)>2) tblScale.moved=true;
             const west=(tblScale.dir==='nw'||tblScale.dir==='sw');
             const north=(tblScale.dir==='nw'||tblScale.dir==='ne');
@@ -8118,12 +8235,11 @@
         if(tblMove){
             e.preventDefault();
             const t=findTbl(tblMove.pi,tblMove.tid); if(!t) return;
-            const dx=(e.clientX-tblMove.sx)/Math.max(.05,pageScale);
-            const dy=(e.clientY-tblMove.sy)/Math.max(.05,pageScale);
+            const dd=pageClientDelta(tblMove.pi,e.clientX-tblMove.sx,e.clientY-tblMove.sy);
+            const dx=Math.round(dd.x),dy=Math.round(dd.y);
             if(Math.abs(dx)>2||Math.abs(dy)>2) tblMove.moved=true;
-            t.x=Math.round(tblMove.ox+dx); t.y=Math.round(tblMove.oy+dy);
-            rebuildTable(tblMove.pi,tblMove.tid,{quiet:true});
-            tblRepaint(tblMove.pi);
+            tblMove.dx=dx; tblMove.dy=dy;
+            previewTblMove(tblMove,dx,dy);
             return;
         }
     });
@@ -8131,7 +8247,16 @@
         let pi=null;
         if(tblDrag){ pi=tblDrag.pi; if(tblDrag.moved) saveDoc(); tblDrag=null; }
         if(tblScale){ pi=tblScale.pi; if(tblScale.moved) saveDoc(); tblScale=null; }
-        if(tblMove){ pi=tblMove.pi; if(tblMove.moved) saveDoc(); tblMove=null; }
+        if(tblMove){
+            pi=tblMove.pi;
+            const t=findTbl(tblMove.pi,tblMove.tid);
+            if(t&&tblMove.moved){ t.x=tblMove.ox+(tblMove.dx||0); t.y=tblMove.oy+(tblMove.dy||0); }
+            else if(t){ t.x=tblMove.ox; t.y=tblMove.oy; }
+            rebuildTable(tblMove.pi,tblMove.tid,{quiet:true});
+            renderPageEls(tblMove.pi);
+            if(tblMove.moved) saveDoc();
+            tblMove=null;
+        }
         if(pi!=null){ renderTblDivs(pi); positionTblBar(); }
     });
 
@@ -8150,6 +8275,7 @@
     }
     function clearActiveTbl(){
         activeTbl=null;
+        clearTblCellSelection();
         const bar=document.getElementById('tblBar');
         if(bar) bar.classList.remove('show');
         document.querySelectorAll('.tbl-box.on').forEach(n=>n.classList.remove('on'));
@@ -8160,10 +8286,10 @@
         const t=findTbl(activeTbl.pageIdx,activeTbl.tid);
         const paper=paperAt(activeTbl.pageIdx);
         if(!t||!paper){ clearActiveTbl(); return; }
-        const r=paper.getBoundingClientRect();
-        let left=r.left+t.x*pageScale+30;      // 이동 손잡이를 가리지 않도록
-        let top=r.top+t.y*pageScale-48;
-        if(top<64) top=r.top+(t.y+tblSize(t).h)*pageScale+14;
+        const r=paper.getBoundingClientRect(),sc=pageScreenScale(activeTbl.pageIdx);
+        let left=r.left+t.x*sc.x+30;      // 이동 손잡이를 가리지 않도록
+        let top=r.top+t.y*sc.y-48;
+        if(top<64) top=r.top+(t.y+tblSize(t).h)*sc.y+14;
         left=Math.max(8,Math.min(left,innerWidth-bar.offsetWidth-8));
         top=Math.max(60,Math.min(top,innerHeight-52));
         bar.style.left=left+'px'; bar.style.top=top+'px';
@@ -8183,7 +8309,7 @@
     }
     // 표가 '선택된 상태'인지 (칸을 편집 중이면 아니다)
     function tblSelectedForDelete(){
-        return !!activeTbl && !document.querySelector('.tb.edit')
+        return !!activeTbl && !tblCellSelection && !document.querySelector('.tb.edit')
                && !selected && !multiSel.length;
     }
 
@@ -8191,7 +8317,7 @@
         if(!activeTbl){ toast('표 안을 먼저 눌러 주세요',1600); return; }
         const {pageIdx:pi,tid}=activeTbl;
         const t=findTbl(pi,tid); if(!t) return;
-        pushHistory();
+        pushHistory(); clearTblCellSelection();
         const list=doc.pages[pi].els||[];
         if(kind==='row'){
             if(t.ch.length>=40){ toast('행은 40개까지입니다',1600); return; }
@@ -8216,7 +8342,7 @@
         const t=findTbl(pi,tid); if(!t) return;
         if(kind==='row'&&t.ch.length<=1){ tblDelAll(); return; }
         if(kind==='col'&&t.cw.length<=1){ tblDelAll(); return; }
-        pushHistory();
+        pushHistory(); clearTblCellSelection();
         const at=kind==='row'?activeTbl.r:activeTbl.c;
         if(kind==='row') t.ch.splice(at,1); else t.cw.splice(at,1);
         doc.pages[pi].els=(doc.pages[pi].els||[]).filter(e=>{
@@ -8383,10 +8509,10 @@
             acc+=len;
         }
         if(!started) return [];
-        const pr=paper.getBoundingClientRect();
+        const pr=paper.getBoundingClientRect(),sc=pageScreenScale(hit.pageIdx);
         return Array.from(range.getClientRects()).map(r=>({
-            x:(r.left-pr.left)/pageScale, y:(r.top-pr.top)/pageScale,
-            w:r.width/pageScale, h:r.height/pageScale }));
+            x:(r.left-pr.left)/sc.x, y:(r.top-pr.top)/sc.y,
+            w:r.width/sc.x, h:r.height/sc.y }));
     }
     function paintFindHits(){
         document.querySelectorAll('.find-layer').forEach(l=>l.innerHTML='');
@@ -8579,12 +8705,18 @@
             closePin();
     });
 
-    function insertTable(rows,cols,pageIdx,x,y){
+    function tableInsertSize(rows,cols){
         rows=Math.max(1,Math.min(40,rows|0)); cols=Math.max(1,Math.min(20,cols|0));
-        const pi=(pageIdx==null?curPageIdx:pageIdx);
         const size=paperSize();
         const cw=Math.min(150,Math.max(TBL_MINW,Math.floor((size.w-120)/cols)));
         const ch=40;
+        return {rows,cols,cw,ch,w:cw*cols,h:ch*rows};
+    }
+    function insertTable(rows,cols,pageIdx,x,y){
+        const dim=tableInsertSize(rows,cols);
+        rows=dim.rows; cols=dim.cols;
+        const pi=(pageIdx==null?curPageIdx:pageIdx);
+        const size=paperSize(),cw=dim.cw,ch=dim.ch;
         let ox=(x==null? Math.round((size.w-cw*cols)/2) : Math.round(x));
         let oy=(y==null? 120 : Math.round(y));
         ox=Math.max(8,Math.min(ox,Math.max(8,size.w-cw*cols-8)));
@@ -10843,12 +10975,43 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!v) return;
         const m=String(v).match(/(\d+)\s*[x\u00d7,\s]\s*(\d+)/);
         if(!m){ toast('예: 3 x 4 형식으로 입력해 주세요',2200); return; }
-        insertTable(+m[1],+m[2],curPageIdx,null,null);
+        beginTablePlacement(+m[1],+m[2]);
+    }
+    function beginTablePlacement(rows,cols){
+        const dim=tableInsertSize(rows,cols),g=document.getElementById('tableGhost');
+        setTextTool(false);
+        if(penActive) finishDrawing();
+        tablePlace=dim;
+        if(!g) return;
+        g.style.setProperty('--tbl-rows',dim.rows);
+        g.style.setProperty('--tbl-cols',dim.cols);
+        g.style.width=Math.round(dim.w*pageScale)+'px';
+        g.style.height=Math.round(dim.h*pageScale)+'px';
+        g.style.display='block';
+        const lb=document.getElementById('tableGhostLabel');
+        if(lb) lb.textContent=dim.rows+' × '+dim.cols+' 표';
+        document.body.classList.add('placing-table');
+        const p=paperAt(curPageIdx),r=p&&p.getBoundingClientRect();
+        moveTableGhost(r?r.left+r.width/2:innerWidth/2,
+                       r?r.top+Math.min(r.height*.25,200):innerHeight/2);
+        toast('종이에서 원하는 위치를 눌러 표를 배치하세요',2200);
+    }
+    function moveTableGhost(clientX,clientY){
+        const g=document.getElementById('tableGhost'); if(!g||!tablePlace) return;
+        const gw=tablePlace.w*pageScale,gh=tablePlace.h*pageScale;
+        g.style.left=Math.max(8,Math.min(clientX-gw/2,innerWidth-gw-8))+'px';
+        g.style.top=Math.max(42,Math.min(clientY-gh/2,innerHeight-gh-8))+'px';
+    }
+    function cancelTablePlacement(){
+        tablePlace=null;
+        const g=document.getElementById('tableGhost'); if(g) g.style.display='none';
+        document.body.classList.remove('placing-table');
     }
 
     function toggleTextTool(){ setTextTool(!textToolActive); }
     function setTextTool(on){
         textToolActive=!!on;
+        if(on&&tablePlace) cancelTablePlacement();
         if(on&&penActive) finishDrawing();
         const g=document.getElementById('textGhost');
         g.style.display=on?'block':'none';
@@ -10871,6 +11034,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         g.style.height=Math.round(TB_H*pageScale)+'px';
         const c=g.querySelector('.tg-caret');
         if(c) c.style.height=Math.round((curFontSize*1.4)*pageScale)+'px';
+        if(tablePlace){
+            const tg=document.getElementById('tableGhost');
+            if(tg){ tg.style.width=Math.round(tablePlace.w*pageScale)+'px'; tg.style.height=Math.round(tablePlace.h*pageScale)+'px'; }
+        }
     }
     const TB_W=200, TB_H=48;
 
@@ -10901,6 +11068,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(document.getElementById('latexModal').style.display==='flex'){ closeLatexModal(); return true; }
         if(pinMode){ togglePinMode(); return true; }
         if(findOpen){ closeFind(); return true; }
+        if(tablePlace){ cancelTablePlacement(); return true; }
         if(activeTbl){ clearActiveTbl(); return true; }
         if(focusMode){ toggleFocus(); return true; }
         if(sidePanel){ closePanel(); return true; }
@@ -10977,6 +11145,29 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         if(e.key==='Escape'){
             if(closeTopOverlay()) return;
+        }
+        // 표 셀 범위: 방향키로 이동, Shift+방향키로 직사각형 확장,
+        // Enter/F2로 마지막 셀 편집, Delete는 표가 아니라 칸 내용만 비운다.
+        if(tblCellSelection&&!document.querySelector('.tb.edit')&&doc
+           &&document.getElementById('editorView').classList.contains('open')
+           &&!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||'')){
+            const dirs={ArrowLeft:[0,-1],ArrowRight:[0,1],ArrowUp:[-1,0],ArrowDown:[1,0]};
+            if(dirs[e.key]){
+                e.preventDefault(); moveTblCellSelection(dirs[e.key][0],dirs[e.key][1],e.shiftKey); return;
+            }
+            if(e.key==='Tab'){
+                e.preventDefault();
+                const s=tblCellSelection,t=findTbl(s.pageIdx,s.tid),n=t&&t.cw.length;
+                if(t&&n){
+                    const total=t.ch.length*n;
+                    const at=Math.max(0,Math.min(total-1,s.r1*n+s.c1+(e.shiftKey?-1:1)));
+                    s.r0=s.r1=Math.floor(at/n); s.c0=s.c1=at%n;
+                    setActiveTbl(s.pageIdx,s.tid,s.r1,s.c1); paintTblCellSelection();
+                }
+                return;
+            }
+            if(e.key==='Enter'||e.key==='F2'){ e.preventDefault(); editTblSelectionCell(); return; }
+            if(e.key==='Delete'||e.key==='Backspace'){ e.preventDefault(); clearTblCellContents(); return; }
         }
         // 단축키 도움말
         // 사용법은 설정에서만 연다 (노트 안에서는 뜨지 않음)
@@ -11228,10 +11419,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     });
 
     function surfacePos(e,pageIdx){
-        const paper=paperAt(pageIdx);
-        const r=paper.getBoundingClientRect();
         const t=(e.touches&&e.touches[0])?e.touches[0]:e;
-        return {x:(t.clientX-r.left)/pageScale, y:(t.clientY-r.top)/pageScale};
+        return pageLocal(t,pageIdx);
     }
 
     let shapeStart=null;
@@ -11651,7 +11840,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             toast(`글꼴: ${f.label}`,1100);
             return;
         }
-        // ② 선택된 텍스트 상자(들)
+        // ② 선택한 표 셀 범위 전체
+        if(selectedTblCellEls().length){
+            tblCellApply(el=>{ el.font=id; },`선택한 칸 글꼴: ${f.label}`);
+            return;
+        }
+        // ③ 선택된 텍스트 상자(들)
         let targets=[];
         if(multiSel.length) targets=multiSel.map(m=>m.node).filter(n=>n.classList.contains('tb'));
         if(!targets.length) targets=Array.from(document.querySelectorAll('#pagesStage .tb.edit,#pagesStage .tb.sel'));
@@ -11740,16 +11934,29 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         currentTextColor=c;
         document.getElementById('tcBar').style.background=c;
         document.getElementById('tcGlyph').style.color=c;
+        if(selectedTblCellEls().length){ tblCellApply(el=>{ el.textColor=c; },'선택한 칸 글자색 적용'); return; }
         withSelection(()=>document.execCommand('foreColor',false,c));
     }
     function applyHighlight(c){
         if(c){ currentHlColor=c; document.getElementById('hlBar').style.background=c; }
+        if(selectedTblCellEls().length){ tblCellFill(c||''); return; }
         withSelection(()=>{
             if(c){ if(!document.execCommand('hiliteColor',false,c)) document.execCommand('backColor',false,c); }
             else { if(!document.execCommand('hiliteColor',false,'transparent')) document.execCommand('backColor',false,'transparent'); }
         });
     }
-    function execFmt(cmd){ withSelection(()=>document.execCommand(cmd,false,null)); }
+    function execFmt(cmd){
+        const cells=selectedTblCellEls();
+        if(cells.length){
+            const spec={bold:['fontWeight','700'],italic:['fontStyle','italic'],underline:['textDecoration','underline']}[cmd];
+            if(spec){
+                const [key,val]=spec,remove=cells.every(el=>el[key]===val);
+                tblCellApply(el=>{ if(remove) delete el[key]; else el[key]=val; },'선택한 칸 글자 서식 적용');
+                return;
+            }
+        }
+        withSelection(()=>document.execCommand(cmd,false,null));
+    }
 
     // 문단 정렬 — 선택 영역이 있으면 그 문단만, 없으면 선택한 상자 전체
     function setAlign(dir){
@@ -11757,6 +11964,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const sel=window.getSelection();
         const live=sel&&!sel.isCollapsed&&document.querySelector('.tb.edit');
         if(live){ withSelection(()=>document.execCommand(cmd,false,null)); return; }
+        if(selectedTblCellEls().length){ tblCellAlign(dir); return; }
         let targets=multiSel.length
             ? multiSel.map(m=>m.node).filter(nd=>nd.classList.contains('tb'))
             : [];
@@ -11784,6 +11992,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             document.execCommand('unlink',false,null);
             const w=host.closest('.tb'); if(w) syncTextEl(w);
             toast('선택 영역 서식 지움',1200);
+            return;
+        }
+        if(selectedTblCellEls().length){
+            tblCellApply(el=>{
+                el.html=stripFormatting(el.html||''); el.fontSize=curFontSize;
+                delete el.textColor; delete el.font; delete el.fontWeight;
+                delete el.fontStyle; delete el.textDecoration;
+            },'선택한 칸 글자 서식 지움');
             return;
         }
         // 상자 단위
@@ -11820,6 +12036,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function setFS(v){
         curFontSize=Math.max(2,Math.min(200,Math.round(v)));
         document.getElementById('fsInput').value=curFontSize;
+        if(selectedTblCellEls().length){
+            tblCellApply(el=>{ el.fontSize=curFontSize; },`선택한 칸 글자 ${curFontSize}px`);
+            return;
+        }
         const host=restoreSel();
         if(host){
             document.execCommand('styleWithCSS',false,true);
@@ -13538,10 +13758,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function onLiveMove(e){
         const paper=e.target.closest&&e.target.closest('#pagesStage .paper');
         if(!paper) return;
-        const r=paper.getBoundingClientRect();
-        liveLast={ x:(e.clientX-r.left)/pageScale,
-                   y:(e.clientY-r.top)/pageScale,
-                   page:+paper.dataset.pageIdx||0 };
+        const pi=+paper.dataset.pageIdx||0,p=pageLocal(e,pi);
+        liveLast={ x:p.x,y:p.y,page:pi };
         liveMoved=true;
     }
     // 지금 하고 있는 일을 한 마디로 (다른 사람 화면에 함께 표시)
@@ -14105,8 +14323,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         closePops();
         const pageIdx=+paper.dataset.pageIdx;
         curPageIdx=pageIdx; updatePageInfo();
-        const r=paper.getBoundingClientRect();
-        const px=(e.clientX-r.left)/pageScale, py=(e.clientY-r.top)/pageScale;
+        const p=pageLocal(e,pageIdx),px=p.x,py=p.y;
         lastMouse.clientX=e.clientX; lastMouse.clientY=e.clientY;
         lastMouse.pageIdx=pageIdx; lastMouse.x=px; lastMouse.y=py;
 

@@ -170,7 +170,6 @@
                 <div class="tb-group">
                     <button onclick="toggleTextTool()" id="textToolBtn" class="tool-btn" title="텍스트 상자"><i class="ri-text"></i></button>
                     <button onclick="triggerImgUpload()" class="tool-btn" title="사진 추가"><i class="ri-image-add-line"></i></button>
-                    <button onclick="document.getElementById('importInput').click()" class="tool-btn core-tool" title="문서 가져오기 (PDF/Word)"><i class="ri-file-upload-line"></i></button>
                     <button onclick="openTableModal()" class="tool-btn tb-hide-sm" title="표 삽입"><i class="ri-table-line"></i></button>
                     <button onclick="openLatexModal()" class="tool-btn tb-hide-sm" title="수식 삽입"><i class="ri-function-line"></i></button>
                     <button onclick="togglePen()" id="penBtn" class="tool-btn" title="펜 쓰기"><i class="ri-pen-nib-line"></i></button>
@@ -308,6 +307,7 @@
 
                     <div class="more-sec" data-ms="note" hidden>
                         <div class="more-grid">
+                            <button onclick="mi(()=>document.getElementById('importInput').click())"><i class="ri-file-upload-line"></i><span>문서 가져오기</span></button>
                             <button onclick="mi(()=>openExportModal())"><i class="ri-download-2-line"></i><span>내보내기</span></button>
                             <button onclick="mi(()=>lockCurrentNote())" id="lockBtn"><i class="ri-lock-unlock-line"></i><span>노트 잠금</span></button>
                             <button onclick="makeCheckpoint()"><i class="ri-save-3-line"></i><span>지점 저장</span></button>
@@ -359,6 +359,9 @@
         <span class="tg-placeholder">여기에 글을 입력하세요</span>
         <span class="tg-caret"></span>
         <i class="tg-corner c1"></i><i class="tg-corner c2"></i><i class="tg-corner c3"></i><i class="tg-corner c4"></i>
+    </div>
+    <div id="tableGhost" class="table-ghost" aria-hidden="true">
+        <span class="tg-label"><i class="ri-table-line"></i><b id="tableGhostLabel">표</b><em>눌러서 배치</em><kbd>Esc</kbd></span>
     </div>
 
     <div id="selectBar" class="select-bar">
@@ -980,7 +983,17 @@
         <button onclick="tblDel('col')" title="이 열 삭제"><i class="ri-delete-column"></i></button>
         <button onclick="tblFit()" title="칸 크기 고르게"><i class="ri-layout-grid-line"></i></button>
         <div class="sep"></div>
-        <button onclick="tblDelAll()" class="danger" title="표 전체 삭제 (Delete)"><i class="ri-delete-bin-6-line"></i></button>
+        <button onclick="tblCellAlign('left')" title="선택한 칸 왼쪽 정렬"><i class="ri-align-left"></i></button>
+        <button onclick="tblCellAlign('center')" title="선택한 칸 가운데 정렬"><i class="ri-align-center"></i></button>
+        <button onclick="tblCellAlign('right')" title="선택한 칸 오른쪽 정렬"><i class="ri-align-right"></i></button>
+        <div class="sep"></div>
+        <button onclick="tblCellVAlign('top')" title="선택한 칸 위쪽 정렬"><i class="ri-align-top"></i></button>
+        <button onclick="tblCellVAlign('middle')" title="선택한 칸 세로 가운데 정렬"><i class="ri-align-vertically"></i></button>
+        <button onclick="tblCellVAlign('bottom')" title="선택한 칸 아래쪽 정렬"><i class="ri-align-bottom"></i></button>
+        <label class="tbl-color" title="선택한 칸 배경색"><i class="ri-paint-fill"></i><input type="color" value="#fff7cc" oninput="tblCellFill(this.value)"></label>
+        <button onclick="tblCellFill('')" title="선택한 칸 배경색 지우기"><i class="ri-eraser-line"></i></button>
+        <div class="sep"></div>
+        <button onclick="tblDelAll()" class="danger" title="표 전체 삭제"><i class="ri-delete-bin-6-line"></i></button>
     </div>
 
     <!-- 즐겨찾는 페이지 -->
