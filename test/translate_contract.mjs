@@ -171,9 +171,8 @@ ok('번역 전후 공백 보존', r.ok === true && r.text === '\n  번역:preser
   r = await post('/api/translate/gloss', { terms: ['AlphaOne', 'BetaTwo', 'GammaThree', 'DeltaFour'], target: 'ko' });
   const extCalls = calls.length;
   ok('용어 번역은 실패해도 원문을 그대로 돌려준다', r.ok === true && r.gloss && r.gloss.AlphaOne === 'AlphaOne' && r.gloss.DeltaFour === 'DeltaFour');
-  // 옛 구현이라면 묶음 3호스트 + 용어별 4×3호스트 = 15호출. 새 구현은 묶음 3호출 뒤
-  // 첫 용어 재시도에서 (모든 호스트 쿨다운) 즉시 원문 반환 = 추가 호출 0회.
-  ok('엔진 다운 시 용어별 재시도는 첫 실패에서 중단 (폭주 없음)', extCalls === 3);
+  // 묶음 1회(엔진 순회)만 하고 용어별 재시도는 하지 않는다. 옛 구현은 15회 이상.
+  ok('엔진 다운 시 용어별 재시도로 폭주하지 않음', extCalls > 0 && extCalls <= 12);
   await new Promise((r2) => setTimeout(r2, 200));
 }
 
@@ -182,6 +181,31 @@ calls = [];
 extFetch = () => json200([[['こんにちは', 'hello', null, null]], null, 'en']);
 r = await post('/api/translate', { text: 'hello there friend', target: 'ja' });
 ok('ja 대상 그대로 전달', r.ok === true && calls[0] && /tl=ja/.test(calls[0].url));
+
+// ── 10) gtx 가 전부 429여도 다른 Google 갈래가 되면 성공 ──
+await new Promise((r2) => setTimeout(r2, 200));
+{
+  extFetch = (u) => {
+    if (/client=gtx/.test(u) || /translate_a\/single\?client=gtx/.test(u)) return new Response('rl', { status: 429 });
+    if (/client=at/.test(u)) return json200({ sentences: [{ trans: '대체 성공' }] });
+    return new Response('nf', { status: 404 });
+  };
+  calls = [];
+  r = await post('/api/translate', { text: 'fallback engine please', target: 'ko' });
+  ok('gtx 429 이후 client=at 으로 성공', r.ok === true && r.text === '대체 성공');
+  ok('실패한 gtx 다음 갈래를 실제로 호출했다', calls.some((c) => /client=at/.test(c.url)));
+}
+
+// ── 11) dj=1 · /t 배열 응답도 같은 파서로 읽는다 ──
+await new Promise((r2) => setTimeout(r2, 220));
+{
+  extFetch = (u) => {
+    if (/translate\.google|clients5\.google/.test(u)) return json200({ sentences: [{ trans: '문장형' }] });
+    return new Response('nf', { status: 404 });
+  };
+  r = await post('/api/translate', { text: 'dj one format please', target: 'ko' });
+  ok('dj=1 sentences 형식 파싱', r.ok === true && r.text === '문장형');
+}
 
 await app.close();
 console.log(`\n${pass} passed, ${fail} failed`);

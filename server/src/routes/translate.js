@@ -1,13 +1,20 @@
-// EN<->KO 번역 — Google 비공개 엔드포인트 3개를 순회(POST 방식)하고
-// LibreTranslate 를 백업으로 쓴다. 원본 translate.py 포트.
+// EN<->KO 번역 — Google 비공개 엔드포인트 여러 갈래를 순회하고
+// LibreTranslate · MyMemory 를 백업으로 쓴다. 원본 translate.py 포트.
 //
 // 15.0 · '번역 실패'가 반복되던 원인 3개를 고쳤다.
 //   ① 긴 글을 GET 쿼리로 보내 URL 길이 한도(≈8KB)에 걸려 414/실패 →
 //      본문(POST)으로 보낸다. client=gtx 는 POST 를 지원한다.
 //   ② 호스트 하나가 429(무료 한도)를 내면 10분간 엔진 전체를 잠갔는데,
-//      이제 '그 호스트만' 2분 잠그고 나머지 호스트로 즉시 재시도한다.
+//      이제 '그 호스트만' 잠시 잠그고 나머지 호스트로 즉시 재시도한다.
 //   ③ 글을 한 덩어리로 보내면 길이/한도에 걸리기 쉬워 → 문장 경계에서
 //      1400자 조각으로 나눠 보내고, 되돌릴 땐 원본 그대로 이어 붙인다.
+//
+// 15.2 · gtx 한 갈래가 막히면 상자마다 '번역 실패'가 쏟아지던 문제.
+//   · gtx POST 가 죽어도 짧은 글은 GET 으로 한 번 더 본다 (옛 빠른 경로).
+//   · client=at · dict-chrome-ex · batchexecute · MyMemory 를 이어서 시도.
+//   · 응답 형식이 달라도(dj=1, /t 배열) 같은 파서로 글을 꺼낸다.
+//   · '빈 결과'만으로 호스트를 잠그지 않는다 (한 문장 파싱 실패 ≠ 엔진 사망).
+//   · 용어 묶음이 실패하면 용어별 재시도를 생략해 한도를 더 깎지 않는다.
 import crypto from 'node:crypto';
 import { LT_URL, LT_KEY, TR_ENGINE } from '../lib/config.js';
 
@@ -24,11 +31,17 @@ const GOOGLE_HOSTS = [
 // Node fetch(undici)는 User-Agent 를 안 보낸다. Google 이 일부 요청을
 // 걸러내지 않도록 브라우저 토큰을 붙인다.
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const G_HEADERS = {
+  'User-Agent': UA,
+  Accept: 'application/json, text/plain, */*',
+  Referer: 'https://translate.google.com/',
+};
 
 // 호스트별 429/5xx 쿨다운. 예전의 '전역 10분 잠금' 보다 훨씬 빨리 회복되고,
 // 다른 호스트는 계속 쓸 수 있다. 왜 잠겼는지(429/5xx)도 기억해서
 // 나중에 '한도 초과' 안내를 그대로 내보낼 수 있게 한다.
-const HOST_COOLDOWN_MS = Math.max(0, parseInt(process.env.TRANSLATE_HOST_COOLDOWN_MS || '120000', 10));
+const HOST_COOLDOWN_MS = Math.max(0, parseInt(process.env.TRANSLATE_HOST_COOLDOWN_MS || '60000', 10));
+const HOST_SOFT_COOLDOWN_MS = Math.max(0, parseInt(process.env.TRANSLATE_HOST_SOFT_COOLDOWN_MS || String(Math.min(15000, HOST_COOLDOWN_MS)), 10));
 const hostCooldown = new Map(); // host -> { until: epoch ms, reason: 'google 429' 등 }
 
 const looksKorean = (t) => {
@@ -68,6 +81,56 @@ function chunkKeep(s, limit = 1400) {
   return parts;
 }
 
+function cooldownMsFor(msg, eName) {
+  if (/429/.test(msg)) return HOST_COOLDOWN_MS;
+  if (/google 5\d\d/.test(msg) || /fetch failed/i.test(msg) || eName === 'TimeoutError' || eName === 'AbortError' || /aborted due to timeout/i.test(msg)) {
+    return HOST_SOFT_COOLDOWN_MS;
+  }
+  return 0;
+}
+
+// gtx / client=at / dict-chrome-ex / dj=1 응답을 한곳에서 푼다.
+function parseGoogleJson(j) {
+  if (typeof j === 'string') {
+    const s = j.trim();
+    if (!s) return '';
+    try { j = JSON.parse(s); } catch { return ''; }
+  }
+  if (!j) return '';
+  if (typeof j.translatedText === 'string') return j.translatedText;
+  if (Array.isArray(j.sentences)) {
+    return j.sentences.map((s) => (s && s.trans) || '').join('');
+  }
+  if (Array.isArray(j)) {
+    // /translate_a/t : [["안녕","en"]] 또는 ["안녕","en"]
+    if (typeof j[0] === 'string') return j[0];
+    if (Array.isArray(j[0])) {
+      if (typeof j[0][0] === 'string' && !Array.isArray(j[0][0])) {
+        // [["안녕 세계","en"]] 또는 [[["안녕","hello",...], ...], ...] 의 후자?
+        // 후자는 j[0][0] 이 배열. 여기 분기는 전자.
+        if (!Array.isArray(j[0][0])) {
+          return j.map((row) => (Array.isArray(row) ? row[0] : '') || '').join('');
+        }
+      }
+      // classic gtx: [[["안녕","hello",null,null], ...], null, "en"]
+      return j[0].map((seg) => (Array.isArray(seg) ? seg[0] : '') || '').join('');
+    }
+  }
+  return '';
+}
+
+async function readGoogle(r) {
+  if (!r.ok) throw new Error(`google ${r.status}`);
+  const raw = await r.text();
+  let j;
+  try { j = JSON.parse(raw); } catch {
+    throw new Error('google 응답 형식');
+  }
+  const out = parseGoogleJson(j);
+  if (!String(out).trim()) throw new Error('빈 결과');
+  return out;
+}
+
 async function viaLibre(text, target) {
   if (!LT_URL) throw new Error('LibreTranslate 미설정');
   const tgt = trLtCode(target);
@@ -91,42 +154,31 @@ async function viaLibre(text, target) {
 }
 
 // Google 1회 시도. POST 본문으로 보내고(길이 무관), 짧은 글에서 POST 가
-// 거부되면 옛 방식(GET)으로 한 번 더 본다.
+// 거부·타임아웃되면 옛 방식(GET)으로 한 번 더 본다.
 async function googleOnce(host, text, target) {
   const url = `${host}/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(target)}&dt=t&ie=UTF-8&oe=UTF-8`;
-  const parse = async (r) => {
-    if (!r.ok) throw new Error(`google ${r.status}`);
-    const j = await r.json();
-    const out = (j?.[0] || []).map((seg) => seg?.[0] || '').join('');
-    if (!out.trim()) throw new Error('빈 결과');
-    return out;
-  };
+  const getOnce = () => fetch(`${url}&q=${encodeURIComponent(text)}`, {
+    headers: G_HEADERS, signal: AbortSignal.timeout(8000),
+  }).then(readGoogle);
+
   try {
     const r = await fetch(url, {
       method: 'POST',
       headers: {
+        ...G_HEADERS,
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'User-Agent': UA,
       },
       body: 'q=' + encodeURIComponent(text),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(8000),
     });
-    return await parse(r);
+    return await readGoogle(r);
   } catch (e) {
-    // Node fetch 는 AbortSignal.timeout 을 'AbortError' 가 아니라
-    // 'TimeoutError'(메시지 'The operation was aborted due to timeout')로 던진다.
-    // 옛 코드는 이걸 놓쳐, 죽은 호스트에 GET 까지 한 번 더 본 뒤(최대 30초 스톨)
-    // 쿨다운에도 넣지 못해 매 요청마다 같은 호스트에서 또 멈췄다.
-    const eName = String((e && e.name) || '');
+    // 짧은 글은 POST 가 죽어도 GET 이 되는 경우가 많다 (15.0 이전의 빠른 경로).
+    // 429/5xx 는 같은 호스트 GET 도 거의 실패하므로 건너뛴다.
     const eMsg = String((e && e.message) || '');
-    const retriable = eName === 'AbortError' || eName === 'TimeoutError'
-      || /google (429|5\d\d)/.test(eMsg) || /fetch failed/i.test(eMsg);
-    if (retriable) throw e;                        // 호스트 문제 → 다음 호스트
-    if (text.length <= 1200) {                     // POST 자체가 거부된 경우
-      const g = await fetch(`${url}&q=${encodeURIComponent(text)}`, {
-        headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000),
-      });
-      return await parse(g);
+    if (/google (429|5\d\d)/.test(eMsg)) throw e;
+    if (text.length <= 1200) {
+      try { return await getOnce(); } catch { /* fall through */ }
     }
     throw e;
   }
@@ -160,11 +212,11 @@ async function viaGoogle(text, target) {
       const eName = String((e && e.name) || '');
       const msg = String((e && e.message) || e);
       errs.push(`${host.replace('https://', '')}: ${msg || eName}`);
-      // 429(무료 한도)·5xx·타임아웃·연결 실패·빈 결과 → 그 호스트만 잠시 쉰다.
-      // 타임아웃/연결 실패까지 쿨다운해야 죽은 호스트에 매번 15~30초씩 멈추지 않는다.
-      if (/google (429|5\d\d)|aborted due to timeout|fetch failed|빈 결과/.test(msg)
-          || eName === 'TimeoutError' || eName === 'AbortError') {
-        const until = Date.now() + HOST_COOLDOWN_MS;
+      // 429(무료 한도)·5xx·타임아웃·연결 실패 → 그 호스트만 잠시 쉰다.
+      // '빈 결과'는 그 문장만의 파싱 문제일 수 있어 호스트를 잠그지 않는다.
+      const wait = cooldownMsFor(msg, eName);
+      if (wait > 0) {
+        const until = Date.now() + wait;
         hostCooldown.set(host, { until, reason: msg || eName });
         noteCooldown(until);
       }
@@ -180,35 +232,206 @@ async function viaGoogle(text, target) {
   throw err;
 }
 
+// Android 클라이언트(client=at). gtx 와 한도가 달라 막힌 뒤에도 되는 경우가 많다.
+async function viaGoogleAt(text, target) {
+  const key = 'google-at';
+  const cd = hostCooldown.get(key);
+  if (cd && cd.until > Date.now()) throw new Error(`google-at 쿨다운(${cd.reason})`);
+  const url = `https://translate.google.com/translate_a/single?client=at&dt=t&dt=rm&dj=1&sl=auto&tl=${encodeURIComponent(target)}`;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...G_HEADERS,
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      },
+      body: new URLSearchParams({ sl: 'auto', tl: target, q: text }).toString(),
+      signal: AbortSignal.timeout(10000),
+    });
+    const out = await readGoogle(r);
+    hostCooldown.delete(key);
+    return out;
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    const wait = cooldownMsFor(msg, e && e.name);
+    if (wait > 0) hostCooldown.set(key, { until: Date.now() + wait, reason: msg });
+    const err = new Error(msg.startsWith('google') ? msg.replace('google', 'google-at') : `google-at ${msg}`);
+    if (/429/.test(msg)) err.limited = true;
+    throw err;
+  }
+}
+
+// Chrome 사전 확장 엔드포인트. 응답이 [["글","en"]] 형태다.
+async function viaChromeDict(text, target) {
+  const key = 'google-chrome';
+  const cd = hostCooldown.get(key);
+  if (cd && cd.until > Date.now()) throw new Error(`google-chrome 쿨다운(${cd.reason})`);
+  if (text.length > 1200) throw new Error('google-chrome 너무 김');
+  const url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=${encodeURIComponent(target)}&q=${encodeURIComponent(text)}`;
+  try {
+    const r = await fetch(url, { headers: G_HEADERS, signal: AbortSignal.timeout(10000) });
+    const out = await readGoogle(r);
+    hostCooldown.delete(key);
+    return out;
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    const wait = cooldownMsFor(msg, e && e.name);
+    if (wait > 0) hostCooldown.set(key, { until: Date.now() + wait, reason: msg });
+    const err = new Error(msg.startsWith('google') ? msg.replace('google', 'google-chrome') : `google-chrome ${msg}`);
+    if (/429/.test(msg)) err.limited = true;
+    throw err;
+  }
+}
+
+function parseBatchExecute(raw) {
+  const body = String(raw || '').replace(/^\)\]\}'\s*/, '');
+  for (const chunk of body.split('\n')) {
+    const s = chunk.trim();
+    if (!s.startsWith('[')) continue;
+    let arr;
+    try { arr = JSON.parse(s); } catch { continue; }
+    if (!Array.isArray(arr)) continue;
+    const rows = (arr[0] === 'wrb.fr') ? [arr] : arr;
+    for (const translation of rows) {
+      if (!Array.isArray(translation) || translation[0] !== 'wrb.fr') continue;
+      if (!translation[2]) continue;
+      let inner;
+      try { inner = JSON.parse(translation[2]); } catch { continue; }
+      try {
+        const cell = inner?.[1]?.[0]?.[0];
+        if (!cell) continue;
+        if (cell[5] == null) return String(cell[0] || '');
+        return cell[5].map((o) => (o && o[0]) || '').filter(Boolean).join('');
+      } catch { /* next row */ }
+    }
+  }
+  return '';
+}
+
+// translate.google.com 이 쓰는 batchexecute. gtx 보다 한도가 느슨하다.
+async function viaGoogleBatch(text, target) {
+  const key = 'google-batch';
+  const cd = hostCooldown.get(key);
+  if (cd && cd.until > Date.now()) throw new Error(`google-batch 쿨다운(${cd.reason})`);
+  const rpcids = 'MkEWBc';
+  const qs = new URLSearchParams({
+    rpcids,
+    'source-path': '/',
+    'f.sid': '',
+    bl: '',
+    hl: 'en-US',
+    'soc-app': '1',
+    'soc-platform': '1',
+    'soc-device': '1',
+    _reqid: String(1000 + Math.floor(Math.random() * 9000)),
+    rt: 'c',
+  });
+  const freq = [[rpcids, JSON.stringify([[text, 'auto', target, true], [null]]), null, '0']];
+  try {
+    const r = await fetch(`https://translate.google.com/_/TranslateWebserverUi/data/batchexecute?${qs}`, {
+      method: 'POST',
+      headers: {
+        ...G_HEADERS,
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      },
+      body: 'f.req=' + encodeURIComponent(JSON.stringify([freq])) + '&',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!r.ok) throw new Error(`google-batch ${r.status}`);
+    const out = parseBatchExecute(await r.text());
+    if (!String(out).trim()) throw new Error('빈 결과');
+    hostCooldown.delete(key);
+    return out;
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    const wait = cooldownMsFor(msg, e && e.name);
+    if (wait > 0) hostCooldown.set(key, { until: Date.now() + wait, reason: msg });
+    const err = new Error(msg);
+    if (/429/.test(msg)) err.limited = true;
+    throw err;
+  }
+}
+
+// 키 없는 공개 백업. 품질은 Google 보다 떨어지지만 '실패'보다는 낫다.
+async function viaMyMemory(text, target) {
+  const key = 'mymemory';
+  const cd = hostCooldown.get(key);
+  if (cd && cd.until > Date.now()) throw new Error(`mymemory 쿨다운(${cd.reason})`);
+  const src = detectSource(text);
+  const tgt = target === 'zh-CN' ? 'zh-CN' : target;
+  if (src === tgt) return text;
+  const out = [];
+  try {
+    for (const ch of chunkKeep(text, 450)) {
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(ch)}&langpair=${encodeURIComponent(`${src}|${tgt}`)}`;
+      const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(12000) });
+      if (!r.ok) throw new Error(`mymemory ${r.status}`);
+      const j = await r.json();
+      const t = j?.responseData?.translatedText;
+      if (!t || /MYMEMORY WARNING/i.test(t)) throw new Error('mymemory 한도');
+      out.push(t);
+    }
+    const res = out.join('');
+    if (!res.trim()) throw new Error('mymemory 빈 결과');
+    hostCooldown.delete(key);
+    return res;
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    const wait = cooldownMsFor(msg, e && e.name);
+    if (wait > 0) hostCooldown.set(key, { until: Date.now() + wait, reason: msg });
+    throw e;
+  }
+}
+
+async function mapParts(text, fn) {
+  const parts = chunkKeep(text);
+  const outs = [];
+  for (const p of parts) outs.push(await fn(p));
+  const joined = outs.join('');
+  if (!joined.trim()) throw new Error('빈 결과');
+  return joined;
+}
+
 async function translateCore(text, target) {
   const preferLibre = TR_ENGINE === 'libre';
-  let googleErr = null;
-  if (!preferLibre) {
+  let limitedErr = null;
+  let lastErr = null;
+  const remember = (e) => {
+    lastErr = e;
+    if (e && e.limited) limitedErr = e;
+  };
+
+  const tryEng = async (label, fn) => {
     try {
-      // 짧게 나눠 보낸다 — 무료 엔진은 요청이 짧을수록 안정적이다.
-      const parts = chunkKeep(text);
-      const outs = [];
-      for (const p of parts) outs.push(await viaGoogle(p, target));
-      const joined = outs.join('');
-      if (!joined.trim()) throw new Error('빈 결과');
-      return [joined, 'google'];
+      const out = await fn();
+      if (out && String(out).trim()) return out;
+      throw new Error('빈 결과');
     } catch (e) {
-      googleErr = e;   // limited 플래그 포함한 원본 에러를 보존한다
-      console.log(`[translate] Google 실패(${String((e && e.message) || e).slice(0, 200)}) → LibreTranslate 백업 시도`);
+      remember(e);
+      console.log(`[translate] ${label} 실패(${String((e && e.message) || e).slice(0, 160)})`);
+      return null;
     }
+  };
+
+  if (!preferLibre) {
+    let hit = await tryEng('Google gtx', () => mapParts(text, (p) => viaGoogle(p, target)));
+    if (hit) return [hit, 'google'];
+    hit = await tryEng('Google at', () => mapParts(text, (p) => viaGoogleAt(p, target)));
+    if (hit) return [hit, 'google'];
+    hit = await tryEng('Google chrome', () => viaChromeDict(text, target));
+    if (hit) return [hit, 'google'];
+    hit = await tryEng('Google batch', () => mapParts(text, (p) => viaGoogleBatch(p, target)));
+    if (hit) return [hit, 'google'];
   }
   if (LT_URL) {
-    try {
-      const out = await viaLibre(text, target);
-      return [out, 'libre'];
-    } catch (le) {
-      // Google 의 429 가 핵심 원인이면 그 안내를 우선 보존한다.
-      if (googleErr && googleErr.limited) throw googleErr;
-      throw le;
-    }
+    const hit = await tryEng('LibreTranslate', () => viaLibre(text, target));
+    if (hit) return [hit, 'libre'];
   }
-  // 마지막까지 실패 → '왜' 실패했는지(429 등)를 그대로 실어 보낸다.
-  throw googleErr || new Error('LibreTranslate 미설정');
+  const mm = await tryEng('MyMemory', () => viaMyMemory(text, target));
+  if (mm) return [mm, 'mymemory'];
+
+  // 마지막까지 실패 → Google 429 가 핵심이면 그 안내를 우선 보존한다.
+  throw limitedErr || lastErr || new Error('LibreTranslate 미설정');
 }
 
 const TOK_RE = /\[\[\s*(\d+)\s*\]\]/g;
@@ -324,10 +547,14 @@ export function registerTranslate(app) {
     try {
       const tr = (s) => translateCore(s, target).then((r) => r[0] || s);
       let res = '';
-      try { res = await tr(need.join('\n')); } catch { res = ''; }
+      let batchFailed = false;
+      try { res = await tr(need.join('\n')); } catch { res = ''; batchFailed = true; }
       const lines = res.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
       if (lines.length === need.length) {
         need.forEach((t, i) => { out[t] = lines[i] || t; });
+      } else if (batchFailed) {
+        // 엔진이 죽은 상태에서 용어별 재시도는 한도만 더 깎는다.
+        for (const t of need) out[t] = t;
       } else {
         // 용어별 재시도 중 엔진이 죽으면(429 등) 즉시 멈추고 나머지는 원문을 둔다.
         // 예전처럼 최대 80회를 넋놓고 본 남으면 무료 엔진 한도만 더 깎아 먹어서
