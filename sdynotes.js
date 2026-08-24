@@ -1317,8 +1317,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             <div class="ctx-item" onclick="closeCtxMenu();emptyFolder('${fid}')"><i class="ri-inbox-unarchive-line"></i> 노트 모두 꺼내기</div>
             <div class="ctx-item danger" onclick="closeCtxMenu();removeFolder('${fid}')"><i class="ri-delete-bin-6-line"></i> 폴더 삭제</div>`;
         m.classList.add('show');
-        m.style.left=Math.min(e.clientX,window.innerWidth-210)+'px';
-        m.style.top=Math.min(e.clientY,window.innerHeight-230)+'px';
+        // fixed 메뉴 — 화면 px → CSS px 로 바꿔야 배율(90%)만큼 밀리지 않는다
+        m.style.left=Math.min(window.sdyUiCss(e.clientX),window.sdyUiCss(window.innerWidth)-210)+'px';
+        m.style.top=Math.min(window.sdyUiCss(e.clientY),window.sdyUiCss(window.innerHeight)-230)+'px';
     }
 
     let styleFid=null;
@@ -2041,8 +2042,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     function moveLift(x,y){
         if(!lift) return;
-        lift.ghost.style.left=x+'px';
-        lift.ghost.style.top=y+'px';
+        // 고스트는 fixed — style.left/top 에는 화면 px 가 아니라 CSS px 를 넣는다
+        lift.ghost.style.left=window.sdyUiCss(x)+'px';
+        lift.ghost.style.top=window.sdyUiCss(y)+'px';
         document.querySelectorAll('.folder-card').forEach(f=>f.classList.remove('drop'));
         const el=document.elementFromPoint(x,y);
         const fc=el&&el.closest?el.closest('.folder-card'):null;
@@ -3101,8 +3103,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 `<i class="ri-delete-bin-6-line"></i> 삭제</div>`;
         m.classList.add('show');
         const mw=m.offsetWidth||200, mh=m.offsetHeight||160;
-        m.style.left=Math.min(e.clientX,innerWidth-mw-8)+'px';
-        m.style.top=Math.min(e.clientY,innerHeight-mh-8)+'px';
+        m.style.left=Math.min(window.sdyUiCss(e.clientX),window.sdyUiCss(innerWidth)-mw-8)+'px';
+        m.style.top=Math.min(window.sdyUiCss(e.clientY),window.sdyUiCss(innerHeight)-mh-8)+'px';
     }
     function removeLink(i){
         closeCtxMenu();
@@ -3663,10 +3665,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!cand.length) html+=`<div class="ctx-item" style="opacity:.5;pointer-events:none">옮길 폴더가 없습니다</div>`;
         m.innerHTML=html;
         m.classList.add('show');
-        const x=(ev&&ev.clientX)||lastMouse.clientX||120;
-        const y=(ev&&ev.clientY)||lastMouse.clientY||120;
-        m.style.left=Math.min(x,window.innerWidth-230)+'px';
-        m.style.top=Math.min(y,window.innerHeight-(m.offsetHeight||260)-8)+'px';
+        const x=window.sdyUiCss((ev&&ev.clientX)||lastMouse.clientX||120);
+        const y=window.sdyUiCss((ev&&ev.clientY)||lastMouse.clientY||120);
+        m.style.left=Math.min(x,window.sdyUiCss(window.innerWidth)-230)+'px';
+        m.style.top=Math.min(y,window.sdyUiCss(window.innerHeight)-(m.offsetHeight||260)-8)+'px';
     }
     function doMoveFolder(fid,pid){
         closeCtxMenu();
@@ -5289,7 +5291,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     function closeEditor(){
         if(!document.getElementById('editorView').classList.contains('open')) return;   // 이미 닫힘
-        try{ closeFind(); clearActiveTbl(); cancelTablePlacement(); closePanel(); closePin();
+        try{ closeFind(); clearActiveTbl(); cancelTablePlacement(); cancelPlaceMode(); closePanel(); closePin();
              if(wfOn) wfOff();
              if(pinMode) togglePinMode();
              if(presentOn) endPresent();
@@ -5630,6 +5632,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // 메모 모드는 pointer 캡처 단계에서 먼저 받는다. 텍스트 상자·이미지
             // 위에서도 자식 선택/드래그 이벤트에 빼앗기지 않고 그 지점에 붙는다.
             paper.addEventListener('pointerdown',e=>{
+                // 요소 배치 모드(그림·수식)도 캡처 단계에서 받는다 — 자식 요소가
+                // 이벤트를 가로채도 누른 바로 그 지점(pageLocal 문서 좌표)에 놓인다.
+                if(placeMode){
+                    e.preventDefault(); e.stopPropagation();
+                    const p=pageLocal(e,i); commitPlaceAt(i,p.x,p.y); return;
+                }
                 if(pinMode&&!e.target.closest('.pin')){
                     e.preventDefault(); e.stopPropagation();
                     const p=pageLocal(e,i); _pinPointerBlockUntil=Date.now()+500;
@@ -6565,9 +6573,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(node.isConnected&&window.katex){ node.innerHTML=latexHTML(el.latex||'',!!el.displayMath); requestAnimationFrame(fit); }
         },500);
     }
-    let latexEditing=null;
+    let latexEditing=null, _latexAnchor=null;
     function openLatexModal(id,pi){
-        latexEditing=null;
+        latexEditing=null; _latexAnchor=null;
+        cancelPlaceMode();
         let src='E = mc^2', display=true;
         if(id!=null&&pi!=null){
             const el=findEl(+pi,id);
@@ -6595,19 +6604,34 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const src=document.getElementById('latexInput').value.trim();
         if(!src){ toast('LaTeX 수식을 입력해 주세요',1500); return; }
         const display=document.getElementById('latexDisplay').checked;
-        pushHistory();
-        let pi; const wasEdit=!!latexEditing;
+        // ① 기존 수식 수정 — 자리 그대로
         if(latexEditing){
-            pi=latexEditing.pageIdx; const el=findEl(pi,latexEditing.id); if(!el) return;
+            pushHistory();
+            const pi=latexEditing.pageIdx, el=findEl(pi,latexEditing.id);
+            if(!el){ closeLatexModal(); return; }
             el.latex=src; el.displayMath=display?1:0; el.fontSize=el.fontSize||20;
-        }else{
-            const w=display?400:230, h=display?82:48, pt=pastePoint(w,h); pi=pt.pageIdx;
-            doc.pages[pi].els.push({type:'latex',id:uid('m'),latex:src,x:pt.x,y:pt.y,w,h,
-                fontSize:display?22:18,displayMath:display?1:0});
+            closeLatexModal();
+            if(renderedPages.has(pi)) renderPageEls(pi);
+            saveDoc(); toast('수식을 수정했습니다',1300);
+            return;
         }
+        // ② 우클릭 '수식 넣기' — 눌렀던 바로 그 지점(문서 좌표)에
+        const anchor=_latexAnchor; _latexAnchor=null;
         closeLatexModal();
-        if(renderedPages.has(pi)) renderPageEls(pi);
-        saveDoc(); toast(wasEdit?'수식을 수정했습니다':'수식을 넣었습니다',1300);
+        if(anchor&&doc.pages[anchor.pageIdx]){
+            const w=display?400:230, h=display?82:48;
+            pushHistory();
+            const c=clampEl(anchor.x-w/2,anchor.y-h/2,w,h);
+            doc.pages[anchor.pageIdx].els.push({type:'latex',id:uid('m'),latex:src,
+                x:Math.round(c.x),y:Math.round(c.y),w,h,
+                fontSize:display?22:18,displayMath:display?1:0});
+            if(renderedPages.has(anchor.pageIdx)) renderPageEls(anchor.pageIdx);
+            saveDoc(); toast('수식을 넣었습니다',1300);
+            return;
+        }
+        // ③ 도구막대 '수식 넣기' — 상자·표처럼 고스트를 보여 주고 누른 자리에 넣는다.
+        //    예전엔 '마우스가 마지막으로 스쳐 간 자리'에 들어가 커서와 어긋나 보였다.
+        beginLatexPlacement(src,display);
     }
 
     function buildLatexEl(el,pageIdx){
@@ -7759,6 +7783,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const ghost=document.getElementById('textGhost');
         if(textToolActive&&ghost) moveTextGhost(e.clientX,e.clientY);
         if(tablePlace) moveTableGhost(e.clientX,e.clientY);
+        if(placeMode) movePlaceGhost(e.clientX,e.clientY);
 
         if(tblCellPick){
             const cell=tblCellAt(tblCellPick.pageIdx,e);
@@ -10671,6 +10696,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     let pinMode=false, curPin=null, _pinPointerBlockUntil=0;
     function togglePinMode(){
         pinMode=!pinMode;
+        if(pinMode) cancelPlaceMode();
         document.body.classList.toggle('pin-mode',pinMode);
         document.querySelectorAll('.js-pin').forEach(b=>b.classList.toggle('active',pinMode));
         toast(pinMode?'메모 붙이기 · 종이의 원하는 곳을 클릭하세요':'메모 붙이기 해제',2000);
@@ -10719,10 +10745,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         pop.classList.add('show');
         const paper=paperAt(pi);
         if(paper){
-            const r=paper.getBoundingClientRect();
-            let L=r.left+n.x*pageScale+14, T=r.top+n.y*pageScale-10;
-            L=Math.max(8,Math.min(L,innerWidth-268));
-            T=Math.max(60,Math.min(T,innerHeight-190));
+            // 팝업은 fixed(CSS px) — 종이 사각(화면 px)과 단위를 맞춰야
+            // 사이트 기본 배율(90%)에서도 메모 바로 옆에 붙는다.
+            const r=paper.getBoundingClientRect(), psc=uiPageScale(pi), k=uiCssZoom();
+            let L=r.left/k+n.x*psc.x+14, T=r.top/k+n.y*psc.y-10;
+            L=Math.max(8,Math.min(L,uiCss(innerWidth)-268));
+            T=Math.max(60,Math.min(T,uiCss(innerHeight)-190));
             pop.style.left=L+'px'; pop.style.top=T+'px';
         }
         setTimeout(()=>document.getElementById('pinText').focus(),50);
@@ -11130,6 +11158,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const dim=tableInsertSize(rows,cols),g=document.getElementById('tableGhost');
         setTextTool(false);
         if(penActive) finishDrawing();
+        cancelPlaceMode();
         tablePlace=dim;
         if(!g) return;
         g.style.setProperty('--tbl-rows',dim.rows);
@@ -11195,10 +11224,128 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.body.classList.remove('placing-table');
     }
 
+    // ============ 요소 배치 모드 (그림·수식) ============
+    // 예전엔 텍스트 상자·표만 '누른 자리 = 생기는 자리' 보정(pageLocal)이 돼 있었고
+    //  · 그림은 도구막대에서 넣으면 늘 쪽 한가욵데에,
+    //  · 수식은 마우스가 마지막으로 스쳐 지나간 자리(오래된 lastMouse)에 들어갔다.
+    // 사이트 기본 배율(html zoom 90%) 아래서는 기준점과 결과의 단위가 엇갈려
+    // '커서보다 한 뼘(≈1cm) 오른쪽에 생긴다'고 느껴지던 것의 실제 원인이다.
+    // 그림·수식도 상자·표와 같은 방식으로 바꾼다: 커서를 따라다니는 고스트를
+    // 문서 좌표로 그리고(moveTextGhost 와 같은 변환), 누른 그 지점에 똑같이 넣는다.
+    let placeMode=null;   // {kind:'image',items:[{file,url,box}],idx,w,h}
+                          // {kind:'latex',src,display,fontSize,w,h}
+    function beginImgPlacement(items){
+        if(!items||!items.length) return;
+        cancelPlaceMode();
+        if(penActive) finishDrawing();
+        setTextTool(false); if(tablePlace) cancelTablePlacement();
+        if(pinMode) togglePinMode();
+        deselectAll();
+        placeMode={kind:'image',items,idx:0,w:items[0].box.w,h:items[0].box.h};
+        placeGhostShow();
+        toast(items.length>1
+            ? `종이를 눌러 그림을 차례로 배치하세요 (총 ${items.length}장)`
+            : '종이에서 원하는 위치를 눌러 그림을 배치하세요',2200);
+    }
+    function beginLatexPlacement(src,display){
+        cancelPlaceMode();
+        if(penActive) finishDrawing();
+        setTextTool(false); if(tablePlace) cancelTablePlacement();
+        if(pinMode) togglePinMode();
+        deselectAll();
+        placeMode={kind:'latex',src,display,
+            w:display?400:230, h:display?82:48, fontSize:display?22:18};
+        placeGhostShow();
+        toast('종이에서 원하는 위치를 눌러 수식을 배치하세요',2200);
+    }
+    function placeGhostShow(){
+        const pm=placeMode, g=document.getElementById('placeGhost');
+        if(!pm||!g) return;
+        const body=document.getElementById('placeGhostBody');
+        const ic=document.getElementById('placeGhostIcon'), lb=document.getElementById('placeGhostLabel');
+        if(pm.kind==='image'){
+            const it=pm.items[pm.idx];
+            pm.w=it.box.w; pm.h=it.box.h;
+            if(ic) ic.className='ri-image-add-line';
+            if(lb) lb.textContent=pm.items.length>1?`그림 ${pm.idx+1}/${pm.items.length}`:'그림 넣기';
+            body.innerHTML=`<div class="pg-scale" style="width:${it.box.w}px;height:${it.box.h}px;`+
+                `background-image:url('${it.url}')"></div>`;
+        }else{
+            if(ic) ic.className='ri-function-line';
+            if(lb) lb.textContent='수식 넣기';
+            body.innerHTML=`<div class="pg-scale pg-latex" style="width:${pm.w}px;height:${pm.h}px;`+
+                `font-size:${pm.fontSize}px;line-height:1.05">${latexHTML(pm.src,pm.display)}</div>`;
+        }
+        g.style.display='block';
+        document.body.classList.add('placing-el');
+        // 첫 위치: 현재 쪽 위쪽 중앙 (상자·표 고스트와 같은 규칙)
+        const p=paperAt(curPageIdx), r=p&&p.getBoundingClientRect();
+        movePlaceGhost(r?r.left+r.width/2:innerWidth/2,
+                       r?r.top+Math.min(r.height*.22,200):innerHeight/3);
+    }
+    function movePlaceGhost(clientX,clientY){
+        const g=document.getElementById('placeGhost'); if(!g||!placeMode) return;
+        // moveTextGhost 와 같은 변환: 포인터 아래 종이의 실제 화면 사각형을 기준으로
+        // 문서 좌표를 구하고, 고스트는 화면 UI CSS px 로 놓는다. 배율이 몇 %이든
+        // 고스트 = 만들어질 요소 다.
+        const hit=typeof document.elementFromPoint==='function'
+            ?document.elementFromPoint(clientX,clientY):null;
+        const over=hit&&hit.closest&&hit.closest('.paper');
+        const paper=over||paperAt(curPageIdx);
+        if(!paper) return;
+        const pi=+paper.dataset.pageIdx, s=paperSize();
+        const p=over?pageLocal({clientX,clientY},pi):{x:s.w/2,y:Math.min(s.h*.22,180)};
+        const o=clampEl(p.x-placeMode.w/2,p.y-placeMode.h/2,placeMode.w,placeMode.h);
+        const r=paper.getBoundingClientRect(),sc=uiPageScale(pi),k=uiCssZoom();
+        g.style.width=Math.round(placeMode.w*sc.x)+'px';
+        g.style.height=Math.round(placeMode.h*sc.y)+'px';
+        g.style.left=Math.round(r.left/k+o.x*sc.x)+'px';
+        g.style.top=Math.round(r.top/k+o.y*sc.y)+'px';
+        g.dataset.pageIdx=String(pi);
+        const inner=g.querySelector('.pg-scale');
+        if(inner) inner.style.transform=`scale(${sc.x})`;
+    }
+    // 배치 모드에서 종이를 눌렀다 — 미리보기와 똑같은 문서 좌표에 넣는다.
+    function commitPlaceAt(pi,x,y){
+        const pm=placeMode; if(!pm) return;
+        if(pm.kind==='image'){
+            const it=pm.items[pm.idx];
+            if(it) placeImgItem(it,pi,x,y);
+            pm.idx++;
+            saveDoc(); runUploadQueue();
+            if(pm.idx>=pm.items.length){ cancelPlaceMode(); toast('그림을 넣었습니다',1300); }
+            else placeGhostShow();      // 다음 장 크기·미리보기로 교체
+            return;
+        }
+        if(pm.kind==='latex'){
+            pushHistory();
+            const c=clampEl(x-pm.w/2,y-pm.h/2,pm.w,pm.h);
+            doc.pages[pi].els.push({type:'latex',id:uid('m'),latex:pm.src,
+                x:Math.round(c.x),y:Math.round(c.y),w:pm.w,h:pm.h,
+                fontSize:pm.fontSize,displayMath:pm.display?1:0});
+            if(renderedPages.has(pi)) renderPageEls(pi);
+            saveDoc(); cancelPlaceMode(); toast('수식을 넣었습니다',1300);
+            return;
+        }
+        cancelPlaceMode();
+    }
+    function cancelPlaceMode(){
+        if(!placeMode) return;
+        // 아직 배치하지 않은 그림의 로컬 미리보기 URL 은 주인이 없으니 돌려준다.
+        if(placeMode.kind==='image'&&placeMode.items){
+            placeMode.items.slice(placeMode.idx).forEach(it=>{ try{ URL.revokeObjectURL(it.url); }catch(e){} });
+        }
+        placeMode=null;
+        const g=document.getElementById('placeGhost');
+        if(g){ g.style.display='none'; const b=document.getElementById('placeGhostBody'); if(b) b.innerHTML=''; }
+        document.body.classList.remove('placing-el');
+    }
+
     function toggleTextTool(){ setTextTool(!textToolActive); }
     function setTextTool(on){
         textToolActive=!!on;
         if(on&&tablePlace) cancelTablePlacement();
+        if(on) cancelPlaceMode();
         if(on&&penActive) finishDrawing();
         const g=document.getElementById('textGhost');
         g.style.display=on?'block':'none';
@@ -11218,6 +11365,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function sizeTextGhost(){
         if(textToolActive) moveTextGhost(lastMouse.clientX||0,lastMouse.clientY||0);
         if(tablePlace) moveTableGhost(lastMouse.clientX||0,lastMouse.clientY||0);
+        if(placeMode) movePlaceGhost(lastMouse.clientX||0,lastMouse.clientY||0);
     }
     const TB_W=200, TB_H=48;
 
@@ -11249,6 +11397,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(pinMode){ togglePinMode(); return true; }
         if(findOpen){ closeFind(); return true; }
         if(tablePlace){ cancelTablePlacement(); return true; }
+        if(placeMode){ cancelPlaceMode(); return true; }
         if(activeTbl){ clearActiveTbl(); return true; }
         if(focusMode){ toggleFocus(); return true; }
         if(sidePanel){ closePanel(); return true; }
@@ -11523,6 +11672,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function togglePen(){
         if(penActive){ finishDrawing(); return; }
         setTextTool(false);
+        cancelPlaceMode();
         deselectAll();
         penActive=true;
         document.getElementById('penBtn').classList.add('active');
@@ -11601,7 +11751,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     document.addEventListener('mousemove',e=>{
         if(!penActive) return;
         const tc=document.getElementById('toolCursor');
-        tc.style.left=e.clientX+'px'; tc.style.top=e.clientY+'px';
+        // fixed 요소의 style.left/top 은 CSS px — 화면 px(clientX)를 그대로 넣으면
+        // 사이트 기본 배율(90%)만큼 펜 미리보기가 실제 포인터에서 어긋난다.
+        tc.style.left=uiCss(e.clientX)+'px'; tc.style.top=uiCss(e.clientY)+'px';
     });
 
     function surfacePos(e,pageIdx){
@@ -12263,10 +12415,30 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
 
     // ============ 이미지 ============
-    function triggerImgUpload(){
+    let _imgPickAnchor=null;   // 우클릭 '사진 넣기'로 연 경우: 그 지점(문서 좌표)
+    function triggerImgUpload(anchor){
         if(penActive) finishDrawing();
         setTextTool(false); deselectAll();
+        cancelPlaceMode(); if(tablePlace) cancelTablePlacement();
+        _imgPickAnchor=(anchor&&Number.isFinite(anchor.x)&&Number.isFinite(anchor.y))?anchor:null;
         document.getElementById('imgInput').click();
+    }
+    // 파일 선택 결과: 우클릭 지점이 잡혀 있으면 그 자리에 바로, 아니면 배치 모드로.
+    // 예전에는 도구막대에서 고륜 파일이 항상 쪽 한가욤데에 들어가 커서와 동떨어져 보였다.
+    async function onImgPicked(input){
+        const anchor=_imgPickAnchor; _imgPickAnchor=null;
+        try{
+            const items=await filesToImgItems(input?input.files:null);
+            if(!items.length||!doc) return;
+            if(anchor&&doc.pages[anchor.pageIdx]){
+                for(let i=0;i<items.length;i++)
+                    placeImgItem(items[i],anchor.pageIdx,anchor.x+i*16,anchor.y+i*16);
+                saveDoc(); runUploadQueue();
+                toast(items.length>1?`${items.length}장을 넣었습니다`:'그림을 넣었습니다',1300);
+            }else{
+                beginImgPlacement(items);
+            }
+        }finally{ if(input) input.value=''; }
     }
 
     // 원본 비율 그대로 배치 (정사각 고정 제거)
@@ -12303,31 +12475,47 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
     }
 
-    async function uploadImgs(files,atPoint){
-        const list=Array.from(files||[]).filter(f=>f.type.startsWith('image/'));
-        if(!list.length||!doc) return;
-
-        // ① 즉시 로컬 미리보기로 배치 (네트워크 대기 없음)
-        for(let i=0;i<list.length;i++){
-            const file=list[i];
-            const localURL=URL.createObjectURL(file);
-            const nat=await imageNaturalSize(localURL);   // 로컬이라 즉시 완료
-            const box=fitBox(nat.w,nat.h);
-            // 붙여넣기면 마우스 위치, 아니면 현재 페이지 기준
-            const pt=atPoint? pastePoint(box.w,box.h)
-                            : (()=>{const s=paperSize();
-                                    const c=clampEl((s.w-box.w)/2, 60+i*24, box.w, box.h);
-                                    return {pageIdx:curPageIdx,x:Math.round(c.x),y:Math.round(c.y)};})();
-            const pageIdx=pt.pageIdx;
-            pushHistory();
-            const el={type:'image',id:uid('i'),url:localURL,localURL,pending:true,
-                x:pt.x+(atPoint?i*16:0), y:pt.y+(atPoint?i*16:0), w:box.w,h:box.h};
-            doc.pages[pageIdx].els.push(el);
-            renderPageEls(pageIdx);
-            uploadQueue.push({file, id:el.id, pageIdx, nbId:curNB.id});
-            uploadTotal++;
+    // 파일 목록 → 배치 준비물 (로컬 미리보기 URL·자연 크기·맞춤 상자)을 만든다.
+    async function filesToImgItems(files){
+        const list=Array.from(files||[]).filter(f=>f&&f.type&&f.type.startsWith('image/'));
+        const items=[];
+        for(const f of list){
+            const url=URL.createObjectURL(f);
+            const nat=await imageNaturalSize(url);   // 로컬이라 즉시 완료
+            items.push({file:f,url,box:fitBox(nat.w,nat.h)});
         }
-        updateUploadBadge();
+        return items;
+    }
+    // 그림 한 장을 문서 좌표 (cx,cy) 중심에 둔다. 업로드는 큐가 백그라운드로 이어서 처리.
+    function placeImgItem(item,pageIdx,cx,cy){
+        pushHistory();
+        const c=clampEl(cx-item.box.w/2,cy-item.box.h/2,item.box.w,item.box.h);
+        const el={type:'image',id:uid('i'),url:item.url,localURL:item.url,pending:true,
+            x:Math.round(c.x),y:Math.round(c.y),w:item.box.w,h:item.box.h};
+        doc.pages[pageIdx].els.push(el);
+        renderPageEls(pageIdx);
+        uploadQueue.push({file:item.file,id:el.id,pageIdx,nbId:curNB.id});
+        uploadTotal++; updateUploadBadge();
+        return el;
+    }
+
+    async function uploadImgs(files,atPoint){
+        if(!doc) return;
+        const items=await filesToImgItems(files);
+        if(!items.length) return;
+        const s=paperSize();
+        // ① 즉시 로컬 미리보기로 배치 (네트워크 대기 없음)
+        for(let i=0;i<items.length;i++){
+            const it=items[i];
+            if(atPoint){
+                // 붙여넣기면 마우스 위치에 연달아 살짝씩 어긋나게
+                const pt=pastePoint(it.box.w,it.box.h);
+                placeImgItem(it,pt.pageIdx,pt.x+it.box.w/2+i*16,pt.y+it.box.h/2+i*16);
+            }else{
+                // 지정 지점이 없으면 현재 페이지 위쪽에 차례로
+                placeImgItem(it,curPageIdx,s.w/2,60+i*24+it.box.h/2);
+            }
+        }
         saveDoc();
         document.getElementById('imgInput').value='';
         runUploadQueue();
@@ -14973,8 +15161,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }else toast('클립보드가 비어 있습니다',1400);
             }catch(err){ toast('Ctrl+V 로 붙여넣어 주세요',1800); }
         }
-        else if(a==='img'){ triggerImgUpload(); }
-        else if(a==='new-latex'){ lastMouse.pageIdx=pi;lastMouse.x=t.x;lastMouse.y=t.y;openLatexModal(); }
+        else if(a==='img'){ triggerImgUpload({pageIdx:pi,x:t.x,y:t.y}); }
+        else if(a==='new-latex'){ openLatexModal(); _latexAnchor={pageIdx:pi,x:t.x,y:t.y}; }
         else if(a==='latex-edit'){ openLatexModal(t.el.dataset.id,pi); }
         else if(a==='pen'){ togglePen(); }
         else if(a==='page-dup'){ duplicatePage(); }

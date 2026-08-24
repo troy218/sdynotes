@@ -208,7 +208,7 @@
             </div>
 
 
-            <input type="file" id="imgInput" multiple accept="image/*" class="hidden" onchange="uploadImgs(this.files)">
+            <input type="file" id="imgInput" multiple accept="image/*" class="hidden" onchange="onImgPicked(this)">
         </div>
 
         <!-- ── 떠 있는 글자 서식 막대 ──────────────────────────────
@@ -366,6 +366,11 @@
     </div>
     <div id="tableGhost" class="table-ghost" aria-hidden="true">
         <span class="tg-label"><i class="ri-table-line"></i><b id="tableGhostLabel">표</b><em>눌러서 배치</em><kbd>Esc</kbd></span>
+    </div>
+    <!-- 그림·수식 배치 고스트 — 누른 자리 = 생기는 자리 (상자·표와 동일 규칙) -->
+    <div id="placeGhost" class="place-ghost" aria-hidden="true">
+        <span class="tg-label"><i id="placeGhostIcon" class="ri-image-add-line"></i><b id="placeGhostLabel">그림 넣기</b><em>눌러서 배치</em><kbd>Esc</kbd></span>
+        <div id="placeGhostBody" class="pg-body"></div>
     </div>
 
     <div id="selectBar" class="select-bar">
