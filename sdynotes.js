@@ -12899,9 +12899,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         beginTrTask();
         showTrProg(null,(TR_NAME[target]||target)+'로 번역 중… · 중단하려면 [중단] 또는 Esc');
         try{
-            await learnGlossary([src],target);            // 6.1: 전문용어 먼저 학습
+            // 본문을 먼저 바꾼다. 용어 학습을 앞에 두면 무료 엔진 한도를
+            // 먼저 깎아 정작 상자 번역이 '실패'로 떨어졌다.
             if(trCancel) throw new Error(TR_CANCEL);
             const out=await apiTranslate(src,target,doc.glossary);
+            learnGlossary([src],target).then(n=>{ if(n){ try{ saveDoc(); queueOps(); }catch(e){} } }).catch(()=>{});
             pushHistory();
             if(isTight){
                 // 가지런한 일반 텍스트 상자로 전환 (찌부됨 방지)
@@ -13115,6 +13117,90 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(letters<=3 && /[0-9]/.test(s) && s.length<=24) return true;
         return false;
     }
+    // 논문 잡음: 참고문헌 번호·DOI·연도만 있는 조각은 번역하지 않는다.
+    function isPaperNoise(src){
+        const s=String(src||'').replace(/\s+/g,' ').trim();
+        if(!s) return true;
+        if(/^\[[0-9,\s–\-]+\]$/.test(s)) return true;
+        if(/^\(\s*\d{4}[a-z]?\s*\)$/.test(s)) return true;
+        if(/^(doi:|https?:\/\/|arxiv:)/i.test(s)) return true;
+        if(/^[A-Za-z][A-Za-z\-']+ et al\.?$/i.test(s)) return true;
+        if(/^(vol\.?|pp?\.?|no\.?)\s*[\d\-]+$/i.test(s)) return true;
+        if(/^[\d.,+\-±%=\s]+$/.test(s) && s.length<=20) return true;
+        return false;
+    }
+    function trLooksTarget(s,target){
+        const t=String(s||'');
+        if(target==='ko'){
+            let ko=0; for(const ch of t) if(ch>='\uAC00'&&ch<='\uD7A3') ko++;
+            return ko>=Math.max(2,Math.floor(t.trim().length*0.2));
+        }
+        if(target==='ja') return /[\u3040-\u30ff]/.test(t);
+        if(target==='zh-CN'||target==='zh') return /[\u4e00-\u9fff]/.test(t)&&!/[\u3040-\u30ff]/.test(t);
+        if(target==='en'){
+            const letters=(t.match(/[A-Za-z]/g)||[]).length;
+            const ko=(t.match(/[\uAC00-\uD7A3]/g)||[]).length;
+            return letters>=8 && ko===0;
+        }
+        return false;
+    }
+    function applyTrResult(o,out){
+        if(!out||!String(out).trim()) return false;
+        o.el.tight=0; o.el.fit=0; delete o.el.fitDown;
+        o.el.html=esc(out).replace(/\n/g,'<br>');
+        if(doc.pages[o.pi]) doc.pages[o.pi].__dirty=true;
+        try{
+            syncState();
+            const rev=Date.now()+Math.random();
+            doc.__localRev.set(o.el.id,rev);
+            doc.__lastHash.set(o.el.id,JSON.stringify(o.el));
+        }catch(e){}
+        const node=document.querySelector('.tb[data-id="'+o.el.id+'"]');
+        const c=node&&node.querySelector('.tb-content');
+        if(node&&c){
+            node.classList.remove('tight');
+            c.innerHTML=o.el.html;
+            fitTranslated(node,c,o.el);
+        }else o.el.trPending=1;
+        return true;
+    }
+    // 논문 PDF 는 한 줄=한 상자인 경우가 많다. 짧은 상자를 한 요청으로 묶어
+    // 문맥도 살리고 무료 엔진 한도도 덜 깎는다.
+    function packTrJobs(list){
+        const shorts=list.filter(o=>o.src.length<=240).length;
+        const pack=list.length>=5 || shorts>=4;
+        if(!pack) return list.map(o=>({items:[o]}));
+        const packs=[]; let cur=null;
+        const flush=()=>{ if(cur) packs.push(cur); cur=null; };
+        list.forEach(o=>{
+            const short=o.src.length<=240;
+            if(!short){ flush(); packs.push({items:[o]}); return; }
+            if(!cur){ cur={items:[o]}; return; }
+            const next=cur.items.reduce((n,x)=>n+x.src.length,0)+o.src.length+10*cur.items.length;
+            if(cur.items.length>=12 || next>1800){ flush(); cur={items:[o]}; }
+            else cur.items.push(o);
+        });
+        flush();
+        return packs;
+    }
+    function joinTrPack(items){
+        if(items.length===1) return items[0].src;
+        return items.map((o,i)=>i===0?o.src:('§#'+(i+1)+'§\n'+o.src)).join('\n');
+    }
+    function splitTrPack(out,n){
+        if(n<=1) return [String(out||'')];
+        const parts=[]; let rest=String(out||'');
+        for(let i=2;i<=n;i++){
+            const mark='§#'+i+'§';
+            const idx=rest.indexOf(mark);
+            if(idx<0) return null;
+            parts.push(rest.slice(0,idx).replace(/^\s+|\s+$/g,''));
+            rest=rest.slice(idx+mark.length);
+        }
+        parts.push(rest.replace(/^\s+|\s+$/g,''));
+        if(parts.length!==n || parts.some(p=>!p)) return null;
+        return parts;
+    }
     function collectPageEls(pi){
         const pg=(doc.pages||[])[pi]; const out=[];
         if(!pg) return out;
@@ -13160,53 +13246,75 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         trBusy=true;
         beginTrTask();
         let failCnt=0, lastErr='', okCnt=0;
-        const remaining=()=>q.length;
+        const remaining=()=>q.reduce((n,p)=>n+((p&&p.items)||[p]).length,0);
         let q=[];
         try{
-            showTrProg(0,label+' · 전문용어 학습 중… · 중단하려면 [중단]/Esc');
-            const learned=await learnGlossary(list.map(o=>o.src),target);
-            if(learned){ saveDoc(); queueOps(); }          // 사전도 함께 저장/공유
+            showTrProg(0,label+' · 번역 준비… · 중단하려면 [중단]/Esc');
             pushHistory();                                 // 되돌리기 한 번으로 전체 복구
-            q=list.slice();
+            const jobs=list.filter(o=>{
+                if(trLooksTarget(o.src,target)){ okCnt++; return false; }
+                return true;
+            });
+            const packs=packTrJobs(jobs);
+            q=packs.slice();
+            const totalPacks=Math.max(1,packs.length);
             const worker=async()=>{
                 while(q.length&&!trCancel){
-                    const o=q.shift();
-                    showTrProg((okCnt+failCnt)/list.length,
-                        label+' · 번역 '+Math.min(okCnt+failCnt+1,list.length)+'/'+list.length
+                    const pack=q.shift();
+                    const items=pack.items||[pack];
+                    const done=okCnt+failCnt;
+                    showTrProg(done/Math.max(1,list.length),
+                        label+' · 번역 '+Math.min(done+items.length,list.length)+'/'+list.length
                         +(failCnt?' · 실패 '+failCnt:'')+' · 중단: [중단]/Esc');
                     try{
-                        const out=await apiTranslateRetry(o.src,target,doc.glossary);
-                        if(out&&String(out).trim()){
-                            o.el.tight=0; o.el.fit=0; delete o.el.fitDown;
-                            o.el.html=esc(out).replace(/\n/g,'<br>');
-                            if(doc.pages[o.pi]) doc.pages[o.pi].__dirty=true; // 에빅션 방지
-                            try{
-                                syncState();
-                                const rev=Date.now()+Math.random();
-                                doc.__localRev.set(o.el.id,rev);
-                                doc.__lastHash.set(o.el.id,JSON.stringify(o.el));
-                            }catch(e){}
-                            const node=document.querySelector('.tb[data-id="'+o.el.id+'"]');
-                            const c=node&&node.querySelector('.tb-content');
-                            if(node&&c){
-                                node.classList.remove('tight');
-                                c.innerHTML=o.el.html;
-                                fitTranslated(node,c,o.el);
+                        if(items.length===1){
+                            const out=await apiTranslateRetry(items[0].src,target,doc.glossary);
+                            if(applyTrResult(items[0],out)) okCnt++;
+                        }else{
+                            const joined=joinTrPack(items);
+                            const out=await apiTranslateRetry(joined,target,doc.glossary);
+                            const parts=splitTrPack(out,items.length);
+                            if(parts){
+                                items.forEach((o,i)=>{ if(applyTrResult(o,parts[i])) okCnt++; else failCnt++; });
+                            }else if(/제한|429/.test(String(out||''))){
+                                failCnt+=items.length;
+                                lastErr='지금 번역 요청이 몰려 잠시 제한됐어요';
                             }else{
-                                o.el.trPending=1;          // 그려질 때 맞춤
+                                // 구분자가 깨지면 그 묶음만 상자별로 한 번 더 (429는 안 함)
+                                for(const o of items){
+                                    if(trCancel){ q.unshift({items:items.slice(items.indexOf(o))}); break; }
+                                    try{
+                                        const one=await apiTranslateRetry(o.src,target,doc.glossary);
+                                        if(applyTrResult(o,one)) okCnt++; else failCnt++;
+                                    }catch(e){
+                                        if(e&&e.message===TR_CANCEL){ q.unshift({items:[o]}); break; }
+                                        failCnt++; lastErr=String(e&&e.message||'');
+                                        if(/제한|429/.test(lastErr)){
+                                            const rest=items.slice(items.indexOf(o)+1);
+                                            failCnt+=rest.length;
+                                            break;
+                                        }
+                                    }
+                                }
                             }
-                            okCnt++;
                         }
                     }catch(e){
-                        if(e&&e.message===TR_CANCEL){ q.unshift(o); }   // 도중에 멈춘 상자는 '남은 것'으로 되돌림
-                        else { failCnt++; lastErr=String(e&&e.message||''); }
+                        if(e&&e.message===TR_CANCEL){ q.unshift(pack); }
+                        else {
+                            failCnt+=items.length;
+                            lastErr=String(e&&e.message||'');
+                        }
                     }
-                    await trSleep(220);                        // 번역 서버에 숨 돌려주기 (중단 시 즉시 깸)
+                    await trSleep(packs.length>8?80:160);
                 }
             };
-            await Promise.all([worker(),worker()]);
+            // 논문은 묶음이 이미 커서 일꾼 2개면 한도만 더 깎인다. 묶음이 많을 때만 2개.
+            await Promise.all(totalPacks>=6?[worker(),worker()]:[worker()]);
             // 중단했어도 이미 완료된 상자는 유실하지 않고 저장한다
             await persistTranslatedChange();
+            learnGlossary(list.map(o=>o.src),target)
+                .then(n=>{ if(n){ try{ saveDoc(); queueOps(); }catch(e){} } })
+                .catch(()=>{});
             const left=remaining();
             if(trCancel){
                 toast(label+' 번역을 중단했어요 · 완료한 '+okCnt+'개 상자는 저장했습니다'
@@ -13250,6 +13358,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         hideTrProg();
         await translateEls(list,target,'문서 전체');
     }
+    try{
+        window.__sdyTranslate={
+            page:translatePageAction,
+            doc:translateDocAction,
+            getDoc:()=>doc,
+            pack:packTrJobs,
+        };
+    }catch(e){}
     /* ============ /6.1 번역 ============ */
 
     // 가져온(tight) 상자에서 복사 시: 절대스팬 사이 줄바꿈을 공백으로 정돈해

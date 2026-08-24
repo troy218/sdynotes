@@ -352,6 +352,36 @@ try {
     await until('진행바 닫힘(선택)', () => !trProgVisible());
   }
 
+  // ══ ⑨ 논문형: 짧은 상자 여러 개를 한 요청으로 묶어 번역 ══
+  {
+    const api = window.__sdyTranslate;
+    check('번역 테스트 손잡이가 있다', !!(api && api.getDoc && api.page));
+    const d = api.getDoc();
+    check('에디터 doc 이 노출된다', !!(d && d.pages && d.pages[0]));
+    const lines = [
+      'We measured gene expression after treatment.',
+      'The difference was statistically significant.',
+      'RNA samples were extracted from each well.',
+      'Western blotting confirmed protein levels.',
+      'These findings support the proposed model.',
+      'Further work will examine the pathway.',
+    ];
+    lines.forEach((html, i) => {
+      d.pages[0].els.push({
+        type: 'text', id: 'tbP' + i, x: 60, y: 420 + i * 36, w: 500, h: 32, html,
+      });
+    });
+    const calls0 = window.__trCalls;
+    const pageP = api.page(0, 'ko');
+    await Promise.race([pageP, until('논문 페이지 번역 완료', () => /번역 완료|부분 완료/.test(toastText()), 8000)]);
+    try { await pageP; } catch {}
+    const used = window.__trCalls - calls0;
+    const packed = window.__trLog.slice(calls0).some(r => /§#2§/.test(r.text));
+    check('짧은 논문 상자 6개는 요청 3번 이하로 묶인다', used >= 1 && used <= 3);
+    check('한 요청에 여러 논문 문장이 함께 실렸다', packed || used === 1);
+    await until('진행바 닫힘(논문)', () => !trProgVisible());
+  }
+
   const unexpected = errors.filter(m => !/Not implemented|navigation|getComputedStyle|HTMLMediaElement/.test(m));
   console.log(unexpected.length ? '\n⚠ 페이지 오류 로그:\n' + unexpected.join('\n') : '\n페이지 오류 로그 없음');
   console.log(`\n${pass} passed`);
