@@ -12,6 +12,9 @@ import crypto from 'node:crypto';
 import { LT_URL, LT_KEY, TR_ENGINE } from '../lib/config.js';
 
 const cache = new Map(); // key -> text (max ~500)
+// 같은 문서의 여러 상자가 동시에 같은 문장을 요청하거나 사용자가 재클릭해도
+// 외부 무료 엔진에 중복 요청을 보내지 않는다. 요청 폭주/429의 가장 흔한 원인이다.
+const inFlight = new Map(); // key -> Promise<{ text, engine }>
 
 const GOOGLE_HOSTS = [
   'https://translate.googleapis.com',
@@ -43,16 +46,11 @@ function detectSource(t) {
   return 'en';
 }
 
-// LibreTranslate 용: 문장 단위로 붙여 보낸다(띄어쓰기로 연결).
+// LibreTranslate도 Google과 같은 방식으로 자른다. 이전 구현은 문장 경계의
+// 공백/줄바꿈을 버린 뒤 ' '로 다시 붙여, 백업 엔진을 탄 번역문이 저장될 때
+// 원본의 문단 구조가 바뀌는 문제가 있었다.
 function chunkText(s, limit = 1000) {
-  const parts = [];
-  let cur = '';
-  for (const seg of s.split(/(?<=[.!?\n\u3002\uff01\uff1f])\s*/)) {
-    if (cur.length + seg.length > limit && cur) { parts.push(cur); cur = seg; }
-    else cur = cur ? cur + seg : seg;
-  }
-  if (cur) parts.push(cur);
-  return parts;
+  return chunkKeep(s, limit);
 }
 
 // Google 용: 문장/줄 경계에서 자르되 잘린 조각을 이어 붙이면
@@ -87,7 +85,7 @@ async function viaLibre(text, target) {
     const j = await r.json();
     out.push(j?.translatedText || '');
   }
-  const res = out.filter(Boolean).join(' ').trim();
+  const res = out.filter(Boolean).join('');
   if (!res) throw new Error('LibreTranslate 빈 결과');
   return res;
 }
@@ -195,7 +193,13 @@ function maskGloss(text, gloss) {
 export function registerTranslate(app) {
   app.post('/api/translate', async (req, reply) => {
     const data = req.body || {};
-    const text = String(data.text || '').trim();
+    // String(object)는 "[object Object]"를 번역하는 사고를 만든다. API 입력을
+    // 명확히 문자열로 제한하고, 앞뒤 공백은 결과에 다시 붙여 편집 내용을 보존한다.
+    if (typeof data.text !== 'string') return reply.code(400).send({ ok: false, error: '번역할 내용은 문자열이어야 합니다' });
+    const rawText = data.text;
+    const lead = (rawText.match(/^\s*/) || [''])[0];
+    const tail = (rawText.match(/\s*$/) || [''])[0];
+    const text = rawText.slice(lead.length, rawText.length - tail.length);
     let target = String(data.target || '').toLowerCase();
     let gloss = data.gloss || {};
     if (!gloss || typeof gloss !== 'object' || Array.isArray(gloss)) gloss = {};
@@ -206,22 +210,37 @@ export function registerTranslate(app) {
     if (target === 'zh-cn') target = 'zh-CN';
 
     const gkey = crypto.createHash('sha256').update(JSON.stringify(gloss, Object.keys(gloss).sort())).digest('hex').slice(0, 12);
-    const key = `>${target}:${gkey}:${crypto.createHash('sha256').update(text).digest('hex')}`;
+    const key = `>${target}:${gkey}:${crypto.createHash('sha256').update(rawText).digest('hex')}`;
     if (cache.has(key)) return reply.send({ ok: true, text: cache.get(key), target, cached: true });
     try {
-      if (target === 'ko' && looksKorean(text)) {
-        return reply.send({ ok: true, text, target, unchanged: true });
+      const source = detectSource(text);
+      // 이미 목적 언어인 경우에도 ko만 예외였던 탓에 영문→en, 일본어→ja는
+      // 불필요하게 외부 서버를 거쳤다. 네 언어 모두 즉시 반환한다.
+      if (source === trLtCode(target)) {
+        return reply.send({ ok: true, text: rawText, target, unchanged: true });
       }
-      const [masked, mapping] = maskGloss(text, gloss);
-      const [out, engine] = await translateCore(masked, target);
-      if (!out) return reply.code(502).send({ ok: false, error: '번역 결과가 비었습니다' });
-      let final = out;
-      if (Object.keys(mapping).length) {
-        final = final.replace(TOK_RE, (m, g1) => mapping[String(g1).trim()] ?? m);
+      let job = inFlight.get(key);
+      if (!job) {
+        job = (async () => {
+          const [masked, mapping] = maskGloss(text, gloss);
+          const [out, engine] = await translateCore(masked, target);
+          if (!out || !String(out).trim()) throw new Error('번역 결과가 비었습니다');
+          let final = out;
+          if (Object.keys(mapping).length) {
+            final = final.replace(TOK_RE, (m, g1) => mapping[String(g1).trim()] ?? m);
+          }
+          // 엔진이 앞뒤 공백을 정리하더라도 노트에 있던 공백은 그대로 보존한다.
+          final = lead + final + tail;
+          if (cache.size >= 500) cache.delete(cache.keys().next().value);
+          cache.set(key, final);
+          return { text: final, engine };
+        })();
+        inFlight.set(key, job);
+        // 실패한 Promise를 Map에 남기면 이후 재시도가 영구 실패한다.
+        job.finally(() => inFlight.delete(key)).catch(() => {});
       }
-      if (cache.size > 500) cache.delete(cache.keys().next().value);
-      cache.set(key, final);
-      return reply.send({ ok: true, text: final, target, engine });
+      const result = await job;
+      return reply.send({ ok: true, text: result.text, target, engine: result.engine });
     } catch (e) {
       const detail = String((e && e.message) || e).slice(0, 160);
       console.error('[translate] 실패:', detail);

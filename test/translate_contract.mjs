@@ -93,6 +93,11 @@ calls = [];
 r = await post('/api/translate', { text: '이미 한국어 텍스트입니다', target: 'ko' });
 ok('한국어→ko 는 unchanged', r.ok === true && r.unchanged === true && calls.length === 0);
 
+// 목적 언어가 영어/일본어/중국어인 경우도 이미 같은 언어라면 외부 호출을 하지 않는다.
+calls = [];
+r = await post('/api/translate', { text: 'already English', target: 'en' });
+ok('영어→en 도 unchanged', r.ok === true && r.unchanged === true && r.text === 'already English' && calls.length === 0);
+
 // ── 6) 용어 사전 마스킹 유지 ──
 extFetch = (u, opts) => {
   const q = decodeURIComponent(String(opts.body || '').replace(/^q=/, ''));   // 마스크된 입력을 그대로 돌려줌
@@ -101,6 +106,15 @@ extFetch = (u, opts) => {
 r = await post('/api/translate', { text: 'the CRISPR system works', target: 'ko', gloss: { CRISPR: '크리스퍼' } });
 ok('용어 마스킹 복원', r.ok === true && r.text === 'the 크리스퍼 system works');
 ok('마스크된 입력은 용어가 치환된 채 전송됨', calls.at(-1).body && decodeURIComponent(calls.at(-1).body) === 'q=the [[0]] system works');
+
+// 편집기에 있던 앞뒤 줄바꿈/공백은 번역 후 저장할 텍스트에도 보존돼야 한다.
+calls = [];
+extFetch = (u, opts) => {
+  const q = decodeURIComponent(String(opts.body || '').replace(/^q=/, ''));
+  return json200([[[`번역:${q}`, q, null, null]], null, 'en']);
+};
+r = await post('/api/translate', { text: '\n  preserve me  \n', target: 'ko' });
+ok('번역 전후 공백 보존', r.ok === true && r.text === '\n  번역:preserve me  \n');
 
 // ── 7) ja 대상 정규화 ( ALLOWED 목록 ) ──
 calls = [];
