@@ -3,10 +3,10 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.13.3">
+<link rel="stylesheet" href="sdynotes.css?v=14.13.4">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
-    <meta name="application-version" content="14.13.3">
+    <meta name="application-version" content="14.13.4">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -155,7 +155,13 @@
                         </button>
                         <div id="fontMenu" class="font-menu"></div>
                     </div>
-                    
+
+                    <span class="tool-sep tb-hide-sm"></span>
+
+                    <button onclick="chFS(-2)" onmousedown="event.preventDefault()" class="tool-btn sm tb-hide-sm tb-hide-md" title="글씨 작게"><i class="ri-subtract-line"></i></button>
+                    <input id="fsInput" type="number" min="2" max="200" value="16" onmousedown="saveSel()" oninput="if(this.value)setFS(+this.value)" title="글자 크기">
+                    <button onclick="chFS(2)" onmousedown="event.preventDefault()" class="tool-btn sm tb-hide-sm tb-hide-md" title="글씨 크게"><i class="ri-add-line"></i></button>
+
                     <span class="tool-sep tb-hide-sm"></span>
 
                     <button onclick="execFmt('bold')" onmousedown="saveSel();event.preventDefault()" class="tool-btn sm" title="굵게"><i class="ri-bold"></i></button>
@@ -167,6 +173,16 @@
                             <span class="glyph" id="tcGlyph">A</span><span class="bar" id="tcBar"></span>
                         </button>
                         <button class="caret" onmousedown="saveSel();event.preventDefault()" onclick="togglePop('textColorPop')"><i class="ri-arrow-down-s-fill"></i></button>
+                        <div class="color-popover" id="textColorPop"></div>
+                    </div>
+
+                    <div class="split-btn" id="hlWrap">
+                        <button class="main" onmousedown="saveSel();event.preventDefault()" onclick="applyHighlight(currentHlColor)" title="형광펜 적용">
+                            <span class="glyph"><i class="ri-mark-pen-line"></i></span>
+                            <span class="bar" id="hlBar" style="background:#ffff00;"></span>
+                        </button>
+                        <button class="caret" onmousedown="saveSel();event.preventDefault()" onclick="togglePop('hlPop')" title="형광펜 색 선택"><i class="ri-arrow-down-s-fill"></i></button>
+                        <div class="color-popover" id="hlPop"></div>
                     </div>
 
                     <span class="tool-sep"></span>
@@ -219,40 +235,8 @@
             <input type="file" id="imgInput" multiple accept="image/*" class="hidden" onchange="onImgPicked(this)">
         </div>
 
-        <!-- ── 떠 있는 글자 서식 막대 ──────────────────────────────
-             글상자를 고르면 그 상자 위에 나타난다 (fmt-on).
-             위치는 positionFmtBar() 가 잡는다. -->
-        <div id="fmtBar">
-            <button onclick="chFS(-2)" onmousedown="event.preventDefault()" class="tool-btn" title="글씨 작게"><i class="ri-subtract-line"></i></button>
-            <input id="fsInput" type="number" min="2" max="200" value="16" onmousedown="saveSel()" oninput="setFS(+this.value)" title="글자 크기">
-            <button onclick="chFS(2)" onmousedown="event.preventDefault()" class="tool-btn" title="글씨 크게"><i class="ri-add-line"></i></button>
-
-            <span class="tool-sep"></span>
-
-            <button onclick="execFmt('bold')" onmousedown="saveSel();event.preventDefault()" class="tool-btn" title="굵게 (Ctrl+B)"><i class="ri-bold"></i></button>
-            <button onclick="execFmt('italic')" onmousedown="saveSel();event.preventDefault()" class="tool-btn" title="기울임 (Ctrl+I)"><i class="ri-italic"></i></button>
-            <button onclick="execFmt('underline')" onmousedown="saveSel();event.preventDefault()" class="tool-btn" title="밑줄 (Ctrl+U)"><i class="ri-underline"></i></button>
-
-            <span class="tool-sep"></span>
-
-            <div class="split-btn" id="textColorWrap">
-                <button class="main" onmousedown="saveSel();event.preventDefault()" onclick="applyTextColor(currentTextColor)" title="글자색 적용">
-                    <span class="glyph" id="tcGlyph">A</span>
-                    <span class="bar" id="tcBar"></span>
-                </button>
-                <button class="caret" onmousedown="saveSel();event.preventDefault()" onclick="togglePop('textColorPop')" title="글자색 선택"><i class="ri-arrow-down-s-fill"></i></button>
-                <div class="color-popover" id="textColorPop"></div>
-            </div>
-
-            <div class="split-btn" id="hlWrap">
-                <button class="main" onmousedown="saveSel();event.preventDefault()" onclick="applyHighlight(currentHlColor)" title="형광펜 적용">
-                    <span class="glyph"><i class="ri-mark-pen-line"></i></span>
-                    <span class="bar" id="hlBar" style="background:#ffff00;"></span>
-                </button>
-                <button class="caret" onmousedown="saveSel();event.preventDefault()" onclick="togglePop('hlPop')" title="형광펜 색 선택"><i class="ri-arrow-down-s-fill"></i></button>
-                <div class="color-popover" id="hlPop"></div>
-            </div>
-        </div>
+        <!-- 14.13.4 · 떠 있던 글자 서식 막대(fmtBar)는 상단 바(글꼴·크기·굵기·색·형광펜)와
+             중복이라 없앴다. 모든 글자 서식은 상단 바에서 한다. -->
 
         <!-- ── 더보기 서랍 (모든 기능이 여기 정리돼 있다) ── -->
         <div id="moreSheet" class="more-sheet" onclick="if(event.target===this)closeMore()">
@@ -1450,6 +1434,6 @@
      ═══════════════════════════════════════════════════════════════════ -->
 
 
-<script src="sdynotes.js?v=14.13.3" defer></script>
+<script src="sdynotes.js?v=14.13.4" defer></script>
 </body>
 </html>

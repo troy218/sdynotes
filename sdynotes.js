@@ -12142,61 +12142,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return savedHost;
     }
     document.addEventListener('selectionchange',saveSel);
-    // 글자 서식 도구는 '글상자를 다룰 때'만 보여 준다 (평소엔 화면이 조용하게)
-    function syncFmtBar(){
-        const ed=document.getElementById('editorView');
-        if(!ed||!ed.classList.contains('open')) return;
-        const box=document.querySelector('#pagesStage .tb:not(.latex-box).edit, #pagesStage .tb:not(.latex-box).sel, #pagesStage .tb:not(.latex-box).msel');
-        let on=!!box;
-        if(!on&&typeof textTool!=='undefined'&&textTool) on=true;
-        ed.classList.toggle('fmt-on',on);
-        if(on) positionFmtBar(box);
-    }
-    // 9.2 · 서식 막대를 고른 글상자 위에 띄운다.
-    //  · 위가 좁으면 상자 아래로 내려서 붙인다
-    //  · 화면 좌우로 넘치지 않게 가둔다
-    //  · 고른 상자가 없으면(글쓰기 도구만 켠 상태) 툴바 아래 가운데
-    function positionFmtBar(box){
-        const bar=document.getElementById('fmtBar');
-        if(!bar) return;
-        const prev=bar.style.display;
-        if(getComputedStyle(bar).display==='none'){ bar.style.display='flex'; bar.style.visibility='hidden'; }
-        const bw=bar.offsetWidth||420, bh=bar.offsetHeight||44;
-        bar.style.display=prev; bar.style.visibility='';
-        const pad=8, GAP=10;
-        const tb=document.querySelector('.editor-toolbar');
-        const topLimit=(tb?tb.getBoundingClientRect().bottom:0)+GAP;
-        let left, top;
-        if(box){
-            const r=box.getBoundingClientRect();
-            left=r.left+r.width/2-bw/2;
-            top=r.top-bh-GAP;
-            if(top<topLimit) top=r.bottom+GAP;      // 위가 좁으면 아래로
-        }else{
-            left=window.innerWidth/2-bw/2;
-            top=topLimit;
-        }
-        left=Math.max(pad,Math.min(left,window.innerWidth-bw-pad));
-        top =Math.max(topLimit,Math.min(top,window.innerHeight-bh-pad));
-        bar.style.left=Math.round(left)+'px';
-        bar.style.top =Math.round(top)+'px';
-    }
-    (function(){
-        const st=document.getElementById('pagesStage');
-        if(!st) return;
-        // 선택 상태는 여러 경로에서 바뀐다 → DOM 변화를 보고 따라간다
-        new MutationObserver(()=>{ clearTimeout(window.__fmtT);
-            window.__fmtT=setTimeout(syncFmtBar,40); })
-            .observe(st,{subtree:true,attributes:true,attributeFilter:['class'],childList:true});
-        document.addEventListener('selectionchange',()=>{ clearTimeout(window.__fmtT2);
-            window.__fmtT2=setTimeout(syncFmtBar,60); });
-        // 종이를 스크롤하거나 창 크기가 바뀌면 막대도 따라간다
-        const _follow=()=>{ const ed=document.getElementById('editorView');
-            if(ed&&ed.classList.contains('fmt-on')) syncFmtBar(); };
-        const body=document.getElementById('editorBody');
-        if(body) body.addEventListener('scroll',_follow,{passive:true});
-        window.addEventListener('resize',_follow);
-    })();
+    // 14.13.4 · 글상자 옆에 떠 있던 서식 막대(fmtBar)를 없앴다 — 상단 바와 항목이
+    //   중복됐기 때문. 글자 서식(글꼴·크기·굵기·색·형광펜)은 전부 상단 바에서 한다.
 
     // ===== 글꼴 선택 =====
     // 각 항목을 '해당 글꼴 자체'로 렌더링해 이름만 보고도 어떤 폰트인지 바로 알 수 있게 한다.
@@ -12347,31 +12294,122 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!e.target.closest('.font-wrap')) closeFontMenu();
     });
 
+    // 14.13.4 · execCommand(foreColor/hiliteColor) 가 선택지의 span 을 다시 짜면서
+    //   기존 인라인 font-family 을 떨어뜨려 글꼴이 '기본으로 초기화'되는 환경을 대비한다.
+    //   색/형광펜 적용 후 선택 영역 글꼴을 점검하고, 잃은 부분만 원본 글꼴로 다시 감싼다.
+    function _keepFontOnSel(host){
+        try{
+            const s=window.getSelection();
+            if(!s||s.isCollapsed||!s.rangeCount) return;
+            const r=s.getRangeAt(0);
+            const anc=r.commonAncestorContainer.nodeType===1
+                ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
+            const c=anc&&anc.closest?anc.closest('.tb-content'):null;
+            if(!c||!host||!host.contains(anc)) return;
+            // 선택 시작 지점에 걸린 글꼴 (노드 → 상자까지 위로 탐색)
+            let css='',n=anc;
+            while(n&&n!==c){ if(n.style&&n.style.fontFamily){ css=n.style.fontFamily; break; } n=n.parentElement; }
+            if(!css) return;                      // 상자에서 상속받은 글꼴이면 잃을 글꼴이 없음
+            // 선택 영역의 모든 글자가 이미 그 글꼴이면 그대로 둔다 (span 중복 방지)
+            const d=document.createElement('div');
+            d.appendChild(r.cloneContents());
+            const tw=document.createTreeWalker(d,NodeFilter.SHOW_TEXT);
+            let need=false,tn;
+            while(tn=tw.nextNode()){
+                if(!tn.nodeValue.trim()) continue;
+                let p=tn.parentElement,has=false;
+                while(p&&p!==d){ if(p.style&&p.style.fontFamily===css){ has=true; break; } p=p.parentElement; }
+                if(!has){ need=true; break; }
+            }
+            d.remove();
+            if(!need) return;
+            // 원본 글꼴로 다시 감싸기
+            const span=document.createElement('span');
+            span.style.fontFamily=css;
+            span.appendChild(r.extractContents());
+            r.insertNode(span);
+            const nr=document.createRange(); nr.selectNodeContents(span);
+            s.removeAllRanges(); s.addRange(nr);
+        }catch(e){}
+    }
     function withSelection(fn){
         const host=restoreSel();
         if(!host){ toast('텍스트를 드래그해 선택하세요',1300); return false; }
         document.execCommand('styleWithCSS',false,true);
         fn(host);
+        _keepFontOnSel(host);                     // 글꼴 초기화 방지
         // 선택 유지 → 워드처럼 연속 적용 가능
         saveSel();
         const w=host.closest('.tb');
         if(w) syncTextEl(w);
         return true;
     }
+    // 14.13.4 · 글자 선택 없이 '상자'만 고른 상태 → 상자 전체에 서식을 칠할 대상
+    function _boxFmtTargets(){
+        let t=multiSel.length
+            ? multiSel.map(m=>m.node).filter(n=>n&&n.classList&&n.classList.contains('tb')&&!n.classList.contains('latex-box'))
+            : [];
+        if(!t.length) t=Array.from(document.querySelectorAll('#pagesStage .tb.sel,#pagesStage .tb.msel,#pagesStage .tb.edit'))
+            .filter(n=>!n.classList.contains('latex-box'));
+        return t;
+    }
+    // 상자 안 내용 전체를 골라 서식 함수를 적용 (편집 중이 아닌 상자는 편집 모드를 원상복구)
+    function _paintBoxAll(w,fn){
+        const c=w.querySelector('.tb-content'); if(!c) return;
+        const wasEdit=w.classList.contains('edit');
+        c.contentEditable='true';
+        try{ c.focus({preventScroll:true}); }catch(e){}
+        const r=document.createRange(); r.selectNodeContents(c);
+        const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        document.execCommand('styleWithCSS',false,true);
+        fn();
+        _keepFontOnSel(c);
+        c.contentEditable=wasEdit?'true':'false';
+        if(!wasEdit){ try{ s.removeAllRanges(); }catch(e){} }
+        syncTextEl(w);
+    }
+    // 14.13.4 · 순서: ① 표 셀 → ② 글자 선택 범위 → ③ 상자만 고른 상태(상자 전체)
     function applyTextColor(c){
         currentTextColor=c;
         document.getElementById('tcBar').style.background=c;
         document.getElementById('tcGlyph').style.color=c;
         if(selectedTblCellEls().length){ tblCellApply(el=>{ el.textColor=c; },'선택한 칸 글자색 적용'); return; }
-        withSelection(()=>document.execCommand('foreColor',false,c));
+        const sel=window.getSelection();
+        if(sel&&sel.rangeCount&&!sel.isCollapsed
+           &&sel.anchorNode&&sel.anchorNode.closest&&sel.anchorNode.closest('.tb-content')){
+            withSelection(()=>document.execCommand('foreColor',false,c)); return;
+        }
+        const targets=_boxFmtTargets();
+        if(targets.length){
+            pushHistory();
+            targets.forEach(w=>_paintBoxAll(w,()=>document.execCommand('foreColor',false,c)));
+            saveDoc();
+            toast(targets.length>1?targets.length+'개 상자 글자색 적용':'상자 전체 글자색 적용',1000);
+            return;
+        }
+        toast('텍스트를 드래그하거나 상자를 고르세요',1300);
     }
     function applyHighlight(c){
         if(c){ currentHlColor=c; document.getElementById('hlBar').style.background=c; }
         if(selectedTblCellEls().length){ tblCellFill(c||''); return; }
-        withSelection(()=>{
+        const doHl=()=>{
             if(c){ if(!document.execCommand('hiliteColor',false,c)) document.execCommand('backColor',false,c); }
             else { if(!document.execCommand('hiliteColor',false,'transparent')) document.execCommand('backColor',false,'transparent'); }
-        });
+        };
+        const sel=window.getSelection();
+        if(sel&&sel.rangeCount&&!sel.isCollapsed
+           &&sel.anchorNode&&sel.anchorNode.closest&&sel.anchorNode.closest('.tb-content')){
+            withSelection(doHl); return;
+        }
+        const targets=_boxFmtTargets();
+        if(targets.length){
+            pushHistory();
+            targets.forEach(w=>_paintBoxAll(w,doHl));
+            saveDoc();
+            toast(targets.length>1?targets.length+'개 상자 형광펜 적용':'상자 전체 형광펜 적용',1000);
+            return;
+        }
+        toast('텍스트를 드래그하거나 상자를 고르세요',1300);
     }
     function execFmt(cmd){
         const cells=selectedTblCellEls();
