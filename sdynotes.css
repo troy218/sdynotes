@@ -1303,10 +1303,10 @@
         /* 표 감지 영역 — 가까이 가면 손잡이가 은은하게 나타난다 */
         .tbl-box{position:absolute;pointer-events:none;}
         /* 손잡이는 가까이 갔을 때(.near)나 선택했을 때(.on)만 눌린다 */
-        .tbl-box .tbl-div,.tbl-box .tbl-h,.tbl-box .tbl-plus,.tbl-box .tbl-move{pointer-events:none;}
+        .tbl-box .tbl-div,.tbl-box .tbl-h,.tbl-box .tbl-stretch,.tbl-box .tbl-move{pointer-events:none;}
         .tbl-box.near .tbl-div,.tbl-box.on .tbl-div,
         .tbl-box.near .tbl-h,.tbl-box.on .tbl-h,
-        .tbl-box.near .tbl-plus,.tbl-box.on .tbl-plus,
+        .tbl-box.near .tbl-stretch,.tbl-box.on .tbl-stretch,
         .tbl-box.near .tbl-move,.tbl-box.on .tbl-move{pointer-events:auto;}
         .tbl-frame{
             position:absolute;inset:0;pointer-events:none;border-radius:2px;
@@ -1336,17 +1336,24 @@
         .tbl-box.near .tbl-h,.tbl-box.on .tbl-h{opacity:1;}
         .tbl-h.nw{cursor:nwse-resize;} .tbl-h.se{cursor:nwse-resize;}
         .tbl-h.ne{cursor:nesw-resize;} .tbl-h.sw{cursor:nesw-resize;}
-        /* 변 중앙의 + 버튼 */
-        .tbl-plus{
-            position:absolute;width:20px;height:20px;transform:translate(-50%,-50%);
-            border-radius:50%;background:var(--accent);color:#fff;cursor:pointer;
-            display:flex;align-items:center;justify-content:center;font-size:13px;
-            box-shadow:0 2px 6px rgba(79,110,247,.4);border:2px solid var(--card);
+        /* 변 중앙 손잡이 — ＋ 대신 '한 축으로만' 늘리기 (위·아래=세로, 왼·오른쪽=가로) */
+        .tbl-stretch{
+            position:absolute;width:15px;height:15px;transform:translate(-50%,-50%);
+            border-radius:50%;background:var(--card);border:var(--bw,1.6px) solid var(--accent);
+            box-shadow:0 2px 6px rgba(79,110,247,.35);
             opacity:0;transition:opacity .15s,transform .12s;pointer-events:none;
             zoom:calc(1/var(--pz,1));
         }
-        .tbl-box.near .tbl-plus,.tbl-box.on .tbl-plus{opacity:.92;}
-        .tbl-plus:hover{opacity:1;transform:translate(-50%,-50%) scale(1.18);}
+        .tbl-stretch::before{
+            content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+            background:var(--accent);border-radius:2px;
+        }
+        .tbl-stretch.top::before,.tbl-stretch.bottom::before{width:2px;height:9px;}
+        .tbl-stretch.left::before,.tbl-stretch.right::before{width:9px;height:2px;}
+        .tbl-box.near .tbl-stretch,.tbl-box.on .tbl-stretch{opacity:.95;}
+        .tbl-stretch:hover{opacity:1;transform:translate(-50%,-50%) scale(1.18);}
+        .tbl-stretch.top,.tbl-stretch.bottom{cursor:ns-resize;}
+        .tbl-stretch.left,.tbl-stretch.right{cursor:ew-resize;}
         /* 이동 손잡이 */
         .tbl-move{
             position:absolute;left:0;top:0;width:22px;height:22px;
