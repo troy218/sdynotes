@@ -368,12 +368,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         refreshWallUI();
         toast('기본 배경으로 되돌렸습니다',1600);
     }
-    function chWallVeil(v){
-        const map=[0,22,43,64,85];
-        S.wallVeil=map[Math.max(0,Math.min(4,parseInt(v)||0))];
-        saveS(); applyWallpaper();
-        try{ pushSettings(); }catch(e){}
-    }
     function refreshWallUI(){
         const p=document.getElementById('wallPrev');
         if(p){
@@ -390,10 +384,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         const rm=document.getElementById('wallRmBtn');
         if(rm) rm.style.display=S.wall?'':'none';
-        const vr=document.getElementById('wallVeilRow');
-        if(vr) vr.style.display=S.wall?'':'none';
-        const vs=document.getElementById('wallVeil');
-        if(vs){ const map=[0,22,43,64,85]; const idx=map.indexOf(S.wallVeil===undefined?43:S.wallVeil); vs.value=(idx>=0?idx:2); }
     }
     function tglDark(){S.dark=!S.dark;saveS();applyTheme();document.getElementById('darkTgl').classList.toggle('on',S.dark);renderGrid();
         try{ pushSettings(); }catch(e){}}
@@ -12209,19 +12199,30 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     })();
 
     // ===== 글꼴 선택 =====
+    // 각 항목을 '해당 글꼴 자체'로 렌더링해 이름만 보고도 어떤 폰트인지 바로 알 수 있게 한다.
+    //   좌측: 실제 글꼴로 그린 미리보기 문구 (Ag 한글 가나다)
+    //   우측: 글꼴 이름 (항상 Noto Sans 로 표시해 항상 가독) + 현재 선택 시 체크
     function buildFontMenu(){
         const m=document.getElementById('fontMenu');
         if(m.dataset.ready==='1') return;
         FONTS.forEach(f=>{
             const it=document.createElement('div');
             it.className='font-item'; it.dataset.f=f.id;
-            it.style.fontFamily=f.css;
-            it.innerHTML=`<span>${f.label} <span style="opacity:.6">Ag 한글</span></span>`;
+            it.innerHTML=`<span class="fi-sample" style="font-family:${f.css}">Ag 한글 가나다</span>`+
+                         `<span class="fi-name">${f.label}</span>`+
+                         `<i class="ri-checkbox-fill fi-check"></i>`;
             it.onmousedown=e=>e.preventDefault();
             it.onclick=(e)=>{ e.stopPropagation(); applyFont(f.id); closeFontMenu(); };
             m.appendChild(it);
         });
         m.dataset.ready='1';
+        // 미리보기가 실제 폰트로 그려지도록, 아직 안 불러온 글꼴은 여기에서 선제 로드
+        if(document.fonts&&document.fonts.load){
+            FONTS.forEach(f=>{
+                const fam=f.css.split(',')[0];           // 주 패밀리 (따옴표 포함)
+                try{ document.fonts.load('16px '+fam).catch(()=>{}); }catch(e){}
+            });
+        }
     }
     function toggleFontMenu(){
         buildFontMenu();
@@ -12230,9 +12231,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         closePops();
         m.classList.toggle('show',willShow);
         if(willShow){
+            // 툴바의 블러(글래스)가 fixed 의 기준점을 바꾸어 위치가 어긋나므로
+            // 색 팝오버와 같은 방식으로 body 로 옮긴 뒤 배치한다.
+            if(m.parentElement!==document.body) document.body.appendChild(m);
             const r=document.getElementById('fontBtn').getBoundingClientRect();
-            m.style.left=Math.min(r.left,window.innerWidth-224)+'px';
-            m.style.top=(r.bottom+6)+'px';
+            const cw=v=>window.sdyUiCss?window.sdyUiCss(v):(Number(v)||0);  // html zoom(.9) 보정
+            m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-240)+'px';
+            m.style.top=(cw(r.bottom)+6)+'px';
+            // 현재 선택된 글꼴 표시 (강조 + 체크)
             m.querySelectorAll('.font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===curFont));
         }
     }
@@ -15764,7 +15770,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         ]],
         ['배경화면 · 음악',[
             ['설정 → 배경화면','내 사진을 홈 화면 배경으로 (모든 기기에 함께 적용)'],
-            ['배경 밝기','사진 위 글씨가 잘 보이도록 덮는 정도를 조절'],
             ['노트를 열면','배경 사진은 자동으로 숨겨져 글쓰기에 방해되지 않아요'],
             ['음악 ＋ 버튼','파일 선택창에서 여러 곡을 한 번에 골라 올릴 수 있어요'],
         ]],

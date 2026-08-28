@@ -3,10 +3,10 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.13.1">
+<link rel="stylesheet" href="sdynotes.css?v=14.13.2">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
-    <meta name="application-version" content="14.13.1">
+    <meta name="application-version" content="14.13.2">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -142,10 +142,11 @@
             <div class="tb-mid">
                 <!-- ═══ Word-like Formatting Group ═══ -->
                 <div class="tb-group fmt-group">
-                    <div class="font-wrap tb-hide-sm">
-                        <button id="fontBtn" class="font-btn" onmousedown="saveSel();event.preventDefault()" onclick="toggleFontMenu()">
+                    <div class="font-wrap">
+                        <button id="fontBtn" class="font-btn" onmousedown="saveSel();event.preventDefault()" onclick="toggleFontMenu()" title="글꼴">
                             <span id="fontLabel">노토 산스</span><i class="ri-arrow-down-s-fill"></i>
                         </button>
+                        <div id="fontMenu" class="font-menu"></div>
                     </div>
                     
                     <span class="tool-sep tb-hide-sm"></span>
@@ -215,16 +216,6 @@
              글상자를 고르면 그 상자 위에 나타난다 (fmt-on).
              위치는 positionFmtBar() 가 잡는다. -->
         <div id="fmtBar">
-            <div class="font-wrap">
-                <button id="fontBtn" class="font-btn" onmousedown="saveSel();event.preventDefault()"
-                        onclick="toggleFontMenu()" title="글꼴">
-                    <span id="fontLabel">노토 산스</span><i class="ri-arrow-down-s-fill"></i>
-                </button>
-                <div id="fontMenu" class="font-menu"></div>
-            </div>
-
-            <span class="tool-sep"></span>
-
             <button onclick="chFS(-2)" onmousedown="event.preventDefault()" class="tool-btn" title="글씨 작게"><i class="ri-subtract-line"></i></button>
             <input id="fsInput" type="number" min="2" max="200" value="16" onmousedown="saveSel()" oninput="setFS(+this.value)" title="글자 크기">
             <button onclick="chFS(2)" onmousedown="event.preventDefault()" class="tool-btn" title="글씨 크게"><i class="ri-add-line"></i></button>
@@ -410,11 +401,6 @@
                             style="padding:7px 12px;border-radius:4px;background:var(--bg2);color:var(--text1);border:1px solid var(--border);font-size:12.5px;cursor:pointer;">사진·동영상 선택</button>
                     <button id="wallRmBtn" onclick="clearWallpaper()" style="display:none;padding:7px 10px;border-radius:4px;background:var(--bg2);color:#e74c3c;border:1px solid var(--border);font-size:12.5px;cursor:pointer;">지우기</button>
                 </div>
-            </div>
-            <div class="set-row" id="wallVeilRow" style="display:none;">
-                <span class="set-label text-sm">배경 밝기<span class="dim">글씨가 잘 보이도록 덮는 정도</span></span>
-                <input id="wallVeil" type="range" min="0" max="4" step="1" value="2"
-                       oninput="chWallVeil(this.value)" style="width:150px;">
             </div>
             <div class="set-row">
                 <span class="set-label text-sm">기본 종이<span class="dim">새 노트의 종이</span></span>
@@ -1457,6 +1443,6 @@
      ═══════════════════════════════════════════════════════════════════ -->
 
 
-<script src="sdynotes.js?v=14.13.1" defer></script>
+<script src="sdynotes.js?v=14.13.2" defer></script>
 </body>
 </html>

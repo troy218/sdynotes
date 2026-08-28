@@ -874,7 +874,7 @@
         .font-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .font-menu{
             position:fixed;z-index:2000;background:var(--card);border:1px solid var(--border);
-            border-radius:4px;padding:6px;display:none;min-width:210px;max-height:340px;overflow-y:auto;
+            border-radius:10px;padding:6px;display:none;min-width:232px;max-height:340px;overflow-y:auto;
             box-shadow:0 10px 30px rgba(0,0,0,.18);
         }
         .font-menu.show{display:block;}
@@ -886,13 +886,21 @@
         .key-row kbd{display:inline-block;padding:2px 7px;border-radius:3px;background:var(--bg2);
             border:1px solid var(--border);border-bottom-width:2px;font-size:11px;font-family:inherit;
             color:var(--text2);white-space:nowrap;}
+        /* 14.13 · 항목 = 실제 글꼴로 그린 미리보기 + 글꼴 이름 + 현재 선택 체크 */
         .font-item{
-            padding:9px 11px;border-radius:3px;cursor:pointer;font-size:15px;color:var(--text1);
-            display:flex;align-items:center;justify-content:space-between;gap:8px;
+            padding:8px 10px;border-radius:8px;cursor:pointer;font-size:15px;color:var(--text1);
+            display:flex;align-items:center;gap:10px;
         }
+        .font-item .fi-sample{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+            font-size:15px;line-height:1.35;color:var(--text1);}
+        .font-item .fi-name{flex:none;font-size:11px;color:var(--text3);
+            font-family:'Noto Sans KR',sans-serif;white-space:nowrap;}
+        .font-item .fi-check{flex:none;display:none;font-size:15px;color:var(--accent);line-height:1;}
         .font-item:hover{background:var(--bg2);}
-        .font-item.sel{background:rgba(79,110,247,.12);color:var(--accent);}
-        .font-item small{font-size:10px;color:var(--text3);font-family:'Noto Sans KR',sans-serif;}
+        .font-item.sel{background:color-mix(in srgb, var(--accent) 12%, transparent);}
+        .font-item.sel .fi-sample{color:var(--accent);}
+        .font-item.sel .fi-name{color:var(--accent);}
+        .font-item.sel .fi-check{display:block;}
 
         .color-popover{
             position:fixed;z-index:2000;background:var(--card);
@@ -1731,7 +1739,8 @@
         .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);z-index:1900;display:none;align-items:center;justify-content:center;padding:16px;}
         @keyframes fadeInUp{from{opacity:0;transform:translateY(10px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
         .modal-box{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:24px;max-width:420px;width:100%;animation:fadeInUp .28s ease-out;}
-        .tgl{position:relative;width:44px;height:24px;background:var(--border);border-radius:4px;cursor:pointer;}
+        /* 14.13 · 토글은 앱 전체의 라운드/필(999px) 디자인 언어에 맞춰 사각을 버림 */
+        .tgl{position:relative;width:44px;height:24px;background:var(--border);border-radius:999px;cursor:pointer;transition:background .25s;}
         .tgl.on{background:var(--accent);}
         .tgl .dot{position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .3s;}
         .tgl.on .dot{transform:translateX(20px);}
