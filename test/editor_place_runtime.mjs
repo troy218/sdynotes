@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import jsdom from 'jsdom';
+import { installWindowGuard, closeDoms } from './jsdom_guard.mjs';
 const { JSDOM, VirtualConsole } = jsdom;
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -54,7 +55,8 @@ try {
   dom = await JSDOM.fromURL(base + '/', {
     resources: 'usable', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(window) {
-      window.innerWidth = 1280; window.innerHeight = 800;
+      installWindowGuard(window); // 14.13.5 · close 전 타이머 추적
+            window.innerWidth = 1280; window.innerHeight = 800;
       window.matchMedia = query => ({ matches: query.includes('pointer:fine'), media: query,
         addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){} });
       window.IntersectionObserver = class { observe(){} unobserve(){} disconnect(){} };
@@ -211,7 +213,8 @@ try {
   // 창을 닫기 전에 남아 있는 rAF(=setTimeout) 콜백을 먼저 돌린다.
   // 닫힌 뒤 돌면 jsdom 의 document 가 없어져 테스트 프로세스가 깨진다.
   await wait(80);
-  if (dom) dom.window.close();
+  await closeDoms([dom]);
+
   child.kill('SIGTERM');
   await Promise.race([new Promise(r => child.once('exit', r)), wait(1500)]);
   if (child.exitCode === null) child.kill('SIGKILL');

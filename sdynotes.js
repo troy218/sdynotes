@@ -368,12 +368,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         refreshWallUI();
         toast('기본 배경으로 되돌렸습니다',1600);
     }
-    function chWallVeil(v){
-        const map=[0,22,43,64,85];
-        S.wallVeil=map[Math.max(0,Math.min(4,parseInt(v)||0))];
-        saveS(); applyWallpaper();
-        try{ pushSettings(); }catch(e){}
-    }
     function refreshWallUI(){
         const p=document.getElementById('wallPrev');
         if(p){
@@ -390,10 +384,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         const rm=document.getElementById('wallRmBtn');
         if(rm) rm.style.display=S.wall?'':'none';
-        const vr=document.getElementById('wallVeilRow');
-        if(vr) vr.style.display=S.wall?'':'none';
-        const vs=document.getElementById('wallVeil');
-        if(vs){ const map=[0,22,43,64,85]; const idx=map.indexOf(S.wallVeil===undefined?43:S.wallVeil); vs.value=(idx>=0?idx:2); }
     }
     function tglDark(){S.dark=!S.dark;saveS();applyTheme();document.getElementById('darkTgl').classList.toggle('on',S.dark);renderGrid();
         try{ pushSettings(); }catch(e){}}
@@ -12152,76 +12142,34 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return savedHost;
     }
     document.addEventListener('selectionchange',saveSel);
-    // 글자 서식 도구는 '글상자를 다룰 때'만 보여 준다 (평소엔 화면이 조용하게)
-    function syncFmtBar(){
-        const ed=document.getElementById('editorView');
-        if(!ed||!ed.classList.contains('open')) return;
-        const box=document.querySelector('#pagesStage .tb:not(.latex-box).edit, #pagesStage .tb:not(.latex-box).sel, #pagesStage .tb:not(.latex-box).msel');
-        let on=!!box;
-        if(!on&&typeof textTool!=='undefined'&&textTool) on=true;
-        ed.classList.toggle('fmt-on',on);
-        if(on) positionFmtBar(box);
-    }
-    // 9.2 · 서식 막대를 고른 글상자 위에 띄운다.
-    //  · 위가 좁으면 상자 아래로 내려서 붙인다
-    //  · 화면 좌우로 넘치지 않게 가둔다
-    //  · 고른 상자가 없으면(글쓰기 도구만 켠 상태) 툴바 아래 가운데
-    function positionFmtBar(box){
-        const bar=document.getElementById('fmtBar');
-        if(!bar) return;
-        const prev=bar.style.display;
-        if(getComputedStyle(bar).display==='none'){ bar.style.display='flex'; bar.style.visibility='hidden'; }
-        const bw=bar.offsetWidth||420, bh=bar.offsetHeight||44;
-        bar.style.display=prev; bar.style.visibility='';
-        const pad=8, GAP=10;
-        const tb=document.querySelector('.editor-toolbar');
-        const topLimit=(tb?tb.getBoundingClientRect().bottom:0)+GAP;
-        let left, top;
-        if(box){
-            const r=box.getBoundingClientRect();
-            left=r.left+r.width/2-bw/2;
-            top=r.top-bh-GAP;
-            if(top<topLimit) top=r.bottom+GAP;      // 위가 좁으면 아래로
-        }else{
-            left=window.innerWidth/2-bw/2;
-            top=topLimit;
-        }
-        left=Math.max(pad,Math.min(left,window.innerWidth-bw-pad));
-        top =Math.max(topLimit,Math.min(top,window.innerHeight-bh-pad));
-        bar.style.left=Math.round(left)+'px';
-        bar.style.top =Math.round(top)+'px';
-    }
-    (function(){
-        const st=document.getElementById('pagesStage');
-        if(!st) return;
-        // 선택 상태는 여러 경로에서 바뀐다 → DOM 변화를 보고 따라간다
-        new MutationObserver(()=>{ clearTimeout(window.__fmtT);
-            window.__fmtT=setTimeout(syncFmtBar,40); })
-            .observe(st,{subtree:true,attributes:true,attributeFilter:['class'],childList:true});
-        document.addEventListener('selectionchange',()=>{ clearTimeout(window.__fmtT2);
-            window.__fmtT2=setTimeout(syncFmtBar,60); });
-        // 종이를 스크롤하거나 창 크기가 바뀌면 막대도 따라간다
-        const _follow=()=>{ const ed=document.getElementById('editorView');
-            if(ed&&ed.classList.contains('fmt-on')) syncFmtBar(); };
-        const body=document.getElementById('editorBody');
-        if(body) body.addEventListener('scroll',_follow,{passive:true});
-        window.addEventListener('resize',_follow);
-    })();
+    // 14.13.4 · 글상자 옆에 떠 있던 서식 막대(fmtBar)를 없앴다 — 상단 바와 항목이
+    //   중복됐기 때문. 글자 서식(글꼴·크기·굵기·색·형광펜)은 전부 상단 바에서 한다.
 
     // ===== 글꼴 선택 =====
+    // 각 항목을 '해당 글꼴 자체'로 렌더링해 이름만 보고도 어떤 폰트인지 바로 알 수 있게 한다.
+    //   좌측: 실제 글꼴로 그린 미리보기 문구 (Ag 한글 가나다)
+    //   우측: 글꼴 이름 (항상 Noto Sans 로 표시해 항상 가독) + 현재 선택 시 체크
     function buildFontMenu(){
         const m=document.getElementById('fontMenu');
         if(m.dataset.ready==='1') return;
         FONTS.forEach(f=>{
             const it=document.createElement('div');
             it.className='font-item'; it.dataset.f=f.id;
-            it.style.fontFamily=f.css;
-            it.innerHTML=`<span>${f.label} <span style="opacity:.6">Ag 한글</span></span>`;
+            it.innerHTML=`<span class="fi-sample" style="font-family:${f.css}">Ag 한글 가나다</span>`+
+                         `<span class="fi-name">${f.label}</span>`+
+                         `<i class="ri-checkbox-fill fi-check"></i>`;
             it.onmousedown=e=>e.preventDefault();
             it.onclick=(e)=>{ e.stopPropagation(); applyFont(f.id); closeFontMenu(); };
             m.appendChild(it);
         });
         m.dataset.ready='1';
+        // 미리보기가 실제 폰트로 그려지도록, 아직 안 불러온 글꼴은 여기에서 선제 로드
+        if(document.fonts&&document.fonts.load){
+            FONTS.forEach(f=>{
+                const fam=f.css.split(',')[0];           // 주 패밀리 (따옴표 포함)
+                try{ document.fonts.load('16px '+fam).catch(()=>{}); }catch(e){}
+            });
+        }
     }
     function toggleFontMenu(){
         buildFontMenu();
@@ -12230,9 +12178,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         closePops();
         m.classList.toggle('show',willShow);
         if(willShow){
+            // 툴바의 블러(글래스)가 fixed 의 기준점을 바꾸어 위치가 어긋나므로
+            // 색 팝오버와 같은 방식으로 body 로 옮긴 뒤 배치한다.
+            if(m.parentElement!==document.body) document.body.appendChild(m);
             const r=document.getElementById('fontBtn').getBoundingClientRect();
-            m.style.left=Math.min(r.left,window.innerWidth-224)+'px';
-            m.style.top=(r.bottom+6)+'px';
+            const cw=v=>window.sdyUiCss?window.sdyUiCss(v):(Number(v)||0);  // html zoom(.9) 보정
+            m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-240)+'px';
+            m.style.top=(cw(r.bottom)+6)+'px';
+            // 현재 선택된 글꼴 표시 (강조 + 체크)
             m.querySelectorAll('.font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===curFont));
         }
     }
@@ -12341,31 +12294,122 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!e.target.closest('.font-wrap')) closeFontMenu();
     });
 
+    // 14.13.4 · execCommand(foreColor/hiliteColor) 가 선택지의 span 을 다시 짜면서
+    //   기존 인라인 font-family 을 떨어뜨려 글꼴이 '기본으로 초기화'되는 환경을 대비한다.
+    //   색/형광펜 적용 후 선택 영역 글꼴을 점검하고, 잃은 부분만 원본 글꼴로 다시 감싼다.
+    function _keepFontOnSel(host){
+        try{
+            const s=window.getSelection();
+            if(!s||s.isCollapsed||!s.rangeCount) return;
+            const r=s.getRangeAt(0);
+            const anc=r.commonAncestorContainer.nodeType===1
+                ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
+            const c=anc&&anc.closest?anc.closest('.tb-content'):null;
+            if(!c||!host||!host.contains(anc)) return;
+            // 선택 시작 지점에 걸린 글꼴 (노드 → 상자까지 위로 탐색)
+            let css='',n=anc;
+            while(n&&n!==c){ if(n.style&&n.style.fontFamily){ css=n.style.fontFamily; break; } n=n.parentElement; }
+            if(!css) return;                      // 상자에서 상속받은 글꼴이면 잃을 글꼴이 없음
+            // 선택 영역의 모든 글자가 이미 그 글꼴이면 그대로 둔다 (span 중복 방지)
+            const d=document.createElement('div');
+            d.appendChild(r.cloneContents());
+            const tw=document.createTreeWalker(d,NodeFilter.SHOW_TEXT);
+            let need=false,tn;
+            while(tn=tw.nextNode()){
+                if(!tn.nodeValue.trim()) continue;
+                let p=tn.parentElement,has=false;
+                while(p&&p!==d){ if(p.style&&p.style.fontFamily===css){ has=true; break; } p=p.parentElement; }
+                if(!has){ need=true; break; }
+            }
+            d.remove();
+            if(!need) return;
+            // 원본 글꼴로 다시 감싸기
+            const span=document.createElement('span');
+            span.style.fontFamily=css;
+            span.appendChild(r.extractContents());
+            r.insertNode(span);
+            const nr=document.createRange(); nr.selectNodeContents(span);
+            s.removeAllRanges(); s.addRange(nr);
+        }catch(e){}
+    }
     function withSelection(fn){
         const host=restoreSel();
         if(!host){ toast('텍스트를 드래그해 선택하세요',1300); return false; }
         document.execCommand('styleWithCSS',false,true);
         fn(host);
+        _keepFontOnSel(host);                     // 글꼴 초기화 방지
         // 선택 유지 → 워드처럼 연속 적용 가능
         saveSel();
         const w=host.closest('.tb');
         if(w) syncTextEl(w);
         return true;
     }
+    // 14.13.4 · 글자 선택 없이 '상자'만 고른 상태 → 상자 전체에 서식을 칠할 대상
+    function _boxFmtTargets(){
+        let t=multiSel.length
+            ? multiSel.map(m=>m.node).filter(n=>n&&n.classList&&n.classList.contains('tb')&&!n.classList.contains('latex-box'))
+            : [];
+        if(!t.length) t=Array.from(document.querySelectorAll('#pagesStage .tb.sel,#pagesStage .tb.msel,#pagesStage .tb.edit'))
+            .filter(n=>!n.classList.contains('latex-box'));
+        return t;
+    }
+    // 상자 안 내용 전체를 골라 서식 함수를 적용 (편집 중이 아닌 상자는 편집 모드를 원상복구)
+    function _paintBoxAll(w,fn){
+        const c=w.querySelector('.tb-content'); if(!c) return;
+        const wasEdit=w.classList.contains('edit');
+        c.contentEditable='true';
+        try{ c.focus({preventScroll:true}); }catch(e){}
+        const r=document.createRange(); r.selectNodeContents(c);
+        const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        document.execCommand('styleWithCSS',false,true);
+        fn();
+        _keepFontOnSel(c);
+        c.contentEditable=wasEdit?'true':'false';
+        if(!wasEdit){ try{ s.removeAllRanges(); }catch(e){} }
+        syncTextEl(w);
+    }
+    // 14.13.4 · 순서: ① 표 셀 → ② 글자 선택 범위 → ③ 상자만 고른 상태(상자 전체)
     function applyTextColor(c){
         currentTextColor=c;
         document.getElementById('tcBar').style.background=c;
         document.getElementById('tcGlyph').style.color=c;
         if(selectedTblCellEls().length){ tblCellApply(el=>{ el.textColor=c; },'선택한 칸 글자색 적용'); return; }
-        withSelection(()=>document.execCommand('foreColor',false,c));
+        const sel=window.getSelection();
+        if(sel&&sel.rangeCount&&!sel.isCollapsed
+           &&sel.anchorNode&&sel.anchorNode.closest&&sel.anchorNode.closest('.tb-content')){
+            withSelection(()=>document.execCommand('foreColor',false,c)); return;
+        }
+        const targets=_boxFmtTargets();
+        if(targets.length){
+            pushHistory();
+            targets.forEach(w=>_paintBoxAll(w,()=>document.execCommand('foreColor',false,c)));
+            saveDoc();
+            toast(targets.length>1?targets.length+'개 상자 글자색 적용':'상자 전체 글자색 적용',1000);
+            return;
+        }
+        toast('텍스트를 드래그하거나 상자를 고르세요',1300);
     }
     function applyHighlight(c){
         if(c){ currentHlColor=c; document.getElementById('hlBar').style.background=c; }
         if(selectedTblCellEls().length){ tblCellFill(c||''); return; }
-        withSelection(()=>{
+        const doHl=()=>{
             if(c){ if(!document.execCommand('hiliteColor',false,c)) document.execCommand('backColor',false,c); }
             else { if(!document.execCommand('hiliteColor',false,'transparent')) document.execCommand('backColor',false,'transparent'); }
-        });
+        };
+        const sel=window.getSelection();
+        if(sel&&sel.rangeCount&&!sel.isCollapsed
+           &&sel.anchorNode&&sel.anchorNode.closest&&sel.anchorNode.closest('.tb-content')){
+            withSelection(doHl); return;
+        }
+        const targets=_boxFmtTargets();
+        if(targets.length){
+            pushHistory();
+            targets.forEach(w=>_paintBoxAll(w,doHl));
+            saveDoc();
+            toast(targets.length>1?targets.length+'개 상자 형광펜 적용':'상자 전체 형광펜 적용',1000);
+            return;
+        }
+        toast('텍스트를 드래그하거나 상자를 고르세요',1300);
     }
     function execFmt(cmd){
         const cells=selectedTblCellEls();
@@ -15764,7 +15808,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         ]],
         ['배경화면 · 음악',[
             ['설정 → 배경화면','내 사진을 홈 화면 배경으로 (모든 기기에 함께 적용)'],
-            ['배경 밝기','사진 위 글씨가 잘 보이도록 덮는 정도를 조절'],
             ['노트를 열면','배경 사진은 자동으로 숨겨져 글쓰기에 방해되지 않아요'],
             ['음악 ＋ 버튼','파일 선택창에서 여러 곡을 한 번에 골라 올릴 수 있어요'],
         ]],
@@ -15893,18 +15936,32 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 
     // ===== 노트 추가/삭제 뽑기 기계(크레인) 애니메이션 =====
     // 위쪽 쇠 와이어 + 금속 집게가 '실제 노트 카드'를 잡아 옮긴다.
-    const CLAW_W=72, CLAW_H=54;
+    // 14.13.2 · 집게는 카드 폭에 비례해 크기가 변한다(어떤 화면·카드 크기에서도
+    //   같은 비율로 양쪽을 감싸고, 들고 내려오는 미리보기는 실제 카드와 박스가
+    //   완전히 동일해 놓는 순간에 크기가 튀지 않는다).
+    const CLAW_W=100, CLAW_H=60, CLAW_GRIP=53;   // SVG viewBox 단위 (발끝 y=53)
+    // 카드 폭(UI px) → 집게 배율. 200px 카드 ≈ 1.6 (집게 160px, 발끝 ±56px).
+    function _clawScaleFor(w){ return Math.max(.75, Math.min(2.4, (Number(w)||125)/125)); }
+    function _clawGripD(s){ return CLAW_GRIP*(Number(s)||1); }   // 머리 윗변 → 발끝 깊이
     // 첫 파일의 금속 집게 SVG. 복제할 때마다 그라데이션 id 를 다르게 해서
     // 숨겨진 원본 url(#cMetal) 을 가리키지 않게 한다 (파일 이동 때 집게가 안 보이던 원인).
+    // 팔은 좌우 대칭(±35)이고, viewBox 100 의 70% 폭을 펴서 카드 양쪽을 감싼다.
     function _clawSvgHtml(){
         const gid='cMetal_'+Math.random().toString(36).slice(2,9);
-        return '<svg width="72" height="54" viewBox="0 0 72 54" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+        const armL='M36 18 C 19 30, 12 40, 15 53', armR='M64 18 C 81 30, 88 40, 85 53';
+        return '<svg width="100" height="60" viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
             +'<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1">'
-            +'<stop offset="0" stop-color="#d3d9e0"/><stop offset="1" stop-color="#7c8794"/>'
-            +'</linearGradient></defs>'
-            +'<rect x="24" y="0" width="24" height="10" rx="3" fill="url(#'+gid+')" stroke="#56606c" stroke-width="1.5"/>'
-            +'<path d="M26 10 C 12 26, 9 40, 17 49" fill="none" stroke="url(#'+gid+')" stroke-width="6" stroke-linecap="round"/>'
-            +'<path d="M46 10 C 60 26, 63 40, 55 49" fill="none" stroke="url(#'+gid+')" stroke-width="6" stroke-linecap="round"/>'
+            +'<stop offset="0" stop-color="#eaeef3"/><stop offset=".5" stop-color="#b7c1cc"/>'
+            +'<stop offset="1" stop-color="#66717e"/></linearGradient></defs>'
+            +'<rect x="46.5" y="0" width="7" height="8" rx="2" fill="#5b6570"/>'
+            +'<rect x="28" y="5" width="44" height="13" rx="5" fill="url(#'+gid+')" stroke="#4a5460" stroke-width="1.5"/>'
+            +'<rect x="32.5" y="8" width="35" height="3.5" rx="1.75" fill="rgba(255,255,255,.55)"/>'
+            +'<circle cx="36" cy="18" r="4.5" fill="url(#'+gid+')" stroke="#4a5460" stroke-width="1.2"/>'
+            +'<circle cx="64" cy="18" r="4.5" fill="url(#'+gid+')" stroke="#4a5460" stroke-width="1.2"/>'
+            +'<path d="'+armL+'" fill="none" stroke="#4a5460" stroke-width="9.5" stroke-linecap="round"/>'
+            +'<path d="'+armR+'" fill="none" stroke="#4a5460" stroke-width="9.5" stroke-linecap="round"/>'
+            +'<path d="'+armL+'" fill="none" stroke="url(#'+gid+')" stroke-width="6.5" stroke-linecap="round"/>'
+            +'<path d="'+armR+'" fill="none" stroke="url(#'+gid+')" stroke-width="6.5" stroke-linecap="round"/>'
             +'</svg>';
     }
     // 첫 데이터·폴더 동기화가 끝날 때까지는 집게를 아예 만들지 않는다.
@@ -15948,7 +16005,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function _ease(t){ return 1-Math.pow(1-t,3); }
     let _clawToken=0;
     // 실제 카드를 클론해서 '뽑기 기계가 잡을 노트'로 만든다
-    function _clawNoteVisual(card){
+    function _clawNoteVisual(card, r){
         try{ if(card._render) card._render(); }catch(e){}   // 미리보기 강제 렌더
         const clone=card.cloneNode(true);
         clone.classList.add('claw-grab');
@@ -15965,7 +16022,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         clone.querySelectorAll('.emoji-picker,.select-check,.card-menu,.pin-badge,'
             +'.unlock-badge,.lock-overlay,.admin-verified,.live-dot,'
             +'.folder-menu-btn,.folder-lock').forEach(n=>n.remove());
-        clone.style.width=''; clone.style.height='';
+        // 14.13.2 · 원본 카드의 실제 박스(측정한 left/top/width/height)를 그대로
+        //   강제한다. 카드 폭은 데스크톱 고정 200px, 폰은 2열 % 배분, 카드 크기
+        //   설정(body.card-s/l)까지 환경마다 달라 CSS 크기에 맡기면 들고 내려오는
+        //   미리보기가 실제 카드보다 작아/크게 보였다. 박스를 동일하게 맞출 것.
+        if(r){
+            clone.style.width =Math.round(r.width)+'px';
+            clone.style.height=Math.round(r.height)+'px';
+        }
         clone.style.maxWidth='none';
         return clone;
     }
@@ -15994,20 +16058,25 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function _clawPlaceParts(head,wire,note,headX,headY,noteW,withNote){
         if(!head||!wire) return;
         const rig=_clawRig(headX,headY);
+        const scale=_clawScaleFor(noteW);        // 카드 폭 비례 배율
         const angle=rig.angle.toFixed(3)+'deg';
         head.style.left=headX+'px'; head.style.top=headY+'px';
         head.style.setProperty('--claw-angle',angle);
-        if(!head.style.getPropertyValue('--claw-scale')) head.style.setProperty('--claw-scale','1');
+        head.style.setProperty('--claw-scale',String(scale));
         wire.style.left=rig.anchorX+'px'; wire.style.top='0px';
         wire.style.height=rig.length+'px';
         wire.style.setProperty('--claw-angle',angle);
         if(note&&withNote){
-            // 회전된 집게의 실제 발끝을 카드 중앙에 붙인다.
-            const grab=CLAW_H-6, a=rig.lean*Math.PI/180;
+            // 회전된 집게의 실제 발끝을 카드 중앙 상단에 붙인다.
+            const grab=_clawGripD(scale), a=rig.lean*Math.PI/180;
             const gripX=headX+Math.sin(a)*grab;
             const gripY=headY+Math.cos(a)*grab;
             note.style.left=Math.round(gripX-noteW/2)+'px';
             note.style.top=Math.round(gripY)+'px';
+            // 14.13.2 · 들고 있는 노트도 집게와 같은 각도로 매달린다.
+            //   예전엔 줄·집게만 기울고 노트만 똑바르게 떠 있어서 어색했는데,
+            //   줄-집게-노트가 한 세트처럼 보이고 놓는 순간에 바로 선다.
+            note.style.transform='rotate('+angle+')';
         }
     }
     // 집게 머리 + 와이어 + 노트를 특정 좌표로 정렬
@@ -16047,25 +16116,32 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         };
         let placed=false;
         const hideCard  =()=>{ if(placed)return; _liveCards().forEach(n=>{ try{ n.style.visibility='hidden'; }catch(e){} }); };
-        const revealCard=()=>{ placed=true; _liveCards().forEach(n=>{ try{ n.style.visibility=''; }catch(e){} }); };
+        // 놓이는 순간 실제 카드가 살짝 '착지'하면서 안정되는 느낌
+        const revealCard=()=>{ placed=true; _liveCards().forEach(n=>{ try{
+            n.style.visibility='';
+            n.classList.add('claw-landed');
+            setTimeout(()=>n.classList.remove('claw-landed'),360);
+        }catch(e){} }); };
         const finish=()=>{ if(settled)return; settled=true; revealCard(); if(done)done(); };
         setTimeout(finish, 2600);              // rAF 멈춤 대비 안전장치
         try{ card.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
         const r=_clawRect(card);
         const targetX=r.left+r.width/2;
-        const targetHeadY=r.top-CLAW_H+2;      // 집게가 노트 윗부분을 잡는 위치
+        const scale=_clawScaleFor(r.width);
         const noteW=Math.max(r.width, 60);
+        const targetHeadY=r.top-_clawGripD(scale);   // 발끝이 카드 윗변에 닿는 위치
         // 실제 카드 클론 (숨기기 전에 떠야 미리보기가 그대로 복사된다)
-        const clone=_clawNoteVisual(card);
+        const clone=_clawNoteVisual(card, r);
         note.innerHTML=''; note.appendChild(clone);
         note.style.width=noteW+'px';
         note.style.opacity='1';
         hideCard();                                        // 아직 "존재하지 않는" 상태
-        const startY=-CLAW_H-160;              // 화면 위에서 시작
+        const startY=-(CLAW_H*scale)-140;      // 화면 위에서 시작
         _clawPos(targetX, startY, note, noteW);
         if(!_clawShow()){ revealCard(); finish(); return; }
         const t0=performance.now();
         const MOVE_T=260, DROP_T=620, RELEASE_T=240, UP_T=430;
+        const landAngle=_clawRig(targetX,targetHeadY).angle;   // 내려앉을 때 돌려줄 기울기
         function step(now){
             if(tok!==_clawToken){ revealCard(); finish(); return; }
             const t=now-t0;
@@ -16076,13 +16152,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 hideCard();
                 const p=_ease((t-MOVE_T)/DROP_T);
                 _clawPos(targetX, startY+(targetHeadY-startY)*p, note, noteW);
-            }else if(t<MOVE_T+DROP_T+RELEASE_T){ // 놓는 순간: 여기서 실제 카드가 생긴다
+            }else if(t<MOVE_T+DROP_T+RELEASE_T){ // 놓는 순간: 노트가 제자리에 똑바로 선다
+                hideCard();
                 _clawPos(targetX, targetHeadY, note, noteW);
-                if(!placed){                    // 클론 → 실제 카드로 교대 (깜빡임 없이)
+                // 집게 기울기 → 0 (노트가 카드 위에 똑바로 내려앉은 다음 교대)
+                const pr=_ease((t-MOVE_T-DROP_T)/RELEASE_T);
+                note.style.transform='rotate('+(landAngle*(1-pr)).toFixed(3)+'deg)';
+            }else if(t<MOVE_T+DROP_T+RELEASE_T+UP_T){ // 똑바로 선 직후 실제 카드로 교대 + 빈 집게 상승
+                if(!placed){                    // 클론 → 실제 카드 교대 (크기·각도 완벽 일치)
                     revealCard();
                     note.style.opacity='0';
                 }
-            }else if(t<MOVE_T+DROP_T+RELEASE_T+UP_T){ // 빈 집게만 위로 올라간다
                 const p=_ease((t-MOVE_T-DROP_T-RELEASE_T)/UP_T);
                 _clawPos(targetX, targetHeadY-p*(targetHeadY+260), null, noteW);
             }else{
@@ -16118,18 +16198,21 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         try{ card.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
         const r=_clawRect(card);
         const targetX=r.left+r.width/2;
-        const grabHeadY=r.top-CLAW_H+2;
+        const scale=_clawScaleFor(r.width);
         const noteW=Math.max(r.width, 60);
-        const clone=_clawNoteVisual(card);
+        const grabHeadY=r.top-_clawGripD(scale);
+        const clone=_clawNoteVisual(card, r);
         note.innerHTML=''; note.appendChild(clone);
         note.style.width=noteW+'px';
         note.style.opacity='0';
         note.style.display='none';
-        const startY=-CLAW_H-160;
+        const startY=-(CLAW_H*scale)-140;
         _clawPos(targetX, startY, null, noteW);
         _clawShow();
         const t0=performance.now();
         const MOVE_T=260, DROP_T=560, GRAB_T=180, LIFT_T=560;
+        // 14.13.2 · 화면 가까운 쪽으로 살짝 비스듬히 던진다 (예전엔 항상 오른쪽으로만)
+        const dir=targetX<=innerWidth/2?-1:1;
         let grabbed=false;
         function step(now){
             if(tok!==_clawToken){ finish(); return; }
@@ -16147,15 +16230,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     note.style.opacity='1';
                 }
                 _clawPos(targetX, grabHeadY, note, noteW);
-            }else if(t<MOVE_T+DROP_T+GRAB_T+LIFT_T){ // 노트를 쥔 채 끌어올려 회전하며 던짐
+            }else if(t<MOVE_T+DROP_T+GRAB_T+LIFT_T){ // 노트를 쥔 채 끌어올려 던짐
                 const p=_ease((t-MOVE_T-DROP_T-GRAB_T)/LIFT_T);
-                const x=p*innerWidth*0.5;
+                const x=p*innerWidth*0.5*dir;
                 const y=grabHeadY-p*(innerHeight*1.2);
-                const rot=p*560;
+                // 14.13.2 · 560도 돌려던지던 것을 한 바퀴 미만의 자연스러운 회전으로
+                const rot=p*150*dir;
                 // 던지는 동안에도 줄 끝과 집게 윗중심을 같은 기하로 계산한다.
                 _clawPos(targetX+x,y,note,noteW);
                 note.style.transform='rotate('+rot+'deg)';
-                note.style.opacity=String(Math.max(0,1-p*1.5));
+                note.style.opacity=String(Math.max(0,1-p*1.4));
             }else{
                 _clawHide();
                 note.innerHTML=''; note.style.opacity=''; note.style.transform=''; note.style.display='';
@@ -16182,21 +16266,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         try{ card.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
         const r=_clawRect(card);
         const targetX=r.left+r.width/2;
-        const grabHeadY=r.top-CLAW_H+2;
+        const scale=_clawScaleFor(r.width);
         const noteW=Math.max(r.width, 60);
+        const grabHeadY=r.top-_clawGripD(scale);
         let fX=innerWidth/2, fY=innerHeight*0.38;
         if(folderEl){
             try{ folderEl.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
             const fr=_clawRect(folderEl);
-            fX=fr.left+fr.width/2; fY=fr.top-CLAW_H+2;
+            fX=fr.left+fr.width/2; fY=fr.top-_clawGripD(_clawScaleFor(fr.width));
         }
-        const clone=_clawNoteVisual(card);
+        const clone=_clawNoteVisual(card, r);
         note.innerHTML=''; note.appendChild(clone);
         note.style.width=noteW+'px';
         note.style.opacity='0';
         note.style.display='none';
         note.style.transform='';
-        const startY=-CLAW_H-160;
+        const startY=-(CLAW_H*scale)-140;
         _clawPos(targetX, startY, null, noteW);
         if(!_clawShow()){ finish(); return; }
         const t0=performance.now();
@@ -16225,11 +16310,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 _clawPos(hx, hy, note, noteW);
             }else if(t<MOVE_T+DROP_T+GRAB_T+CARRY_T+SINK_T){
                 const p=_ease((t-MOVE_T-DROP_T-GRAB_T-CARRY_T)/SINK_T);
-                const scale=1-p*0.65;
+                const shrink=1-p*0.65;
                 _clawPos(fX, fY, note, noteW);
                 note.style.opacity=String(Math.max(0,1-p));
-                note.style.transform='scale('+scale+')';
-                head.style.setProperty('--claw-scale',String(scale));
+                note.style.transform='scale('+shrink+')';
+                // 집게도 현재(노트 비례) 크기를 기준으로 같이 줄어든다
+                head.style.setProperty('--claw-scale',String(scale*shrink));
             }else{
                 _clawHide();
                 note.innerHTML=''; note.style.opacity=''; note.style.transform=''; note.style.display='';
@@ -16266,9 +16352,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             try{ card.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){}
             const r=_clawRect(card);
             const targetX=r.left+r.width/2;
-            const grabHeadY=r.top-CLAW_H+2;
+            const scale=_clawScaleFor(r.width);
             const noteW=Math.max(r.width,60);
-            const clone=_clawNoteVisual(card);
+            const grabHeadY=r.top-_clawGripD(scale);
+            const clone=_clawNoteVisual(card, r);
             const unit=document.createElement('div');
             unit.className='claw-unit';
             const wire=document.createElement('div'); wire.className='claw-wire';
@@ -16281,7 +16368,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             unit.appendChild(wire); unit.appendChild(head); unit.appendChild(note);
             fx.appendChild(unit);
             return {card,unit,wire,head,note,targetX,grabHeadY,noteW,
-                    startY:-CLAW_H-160-(Math.random()*60), grabbed:false};
+                    startY:-(CLAW_H*scale)-160-(Math.random()*60), grabbed:false};
         });
         _clawShow();
         const place=(u,headY,headX,withNote)=>{
@@ -16313,10 +16400,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     place(u,u.grabHeadY,u.targetX,true);
                 }else if(t<MOVE_T+DROP_T+GRAB_T+LIFT_T){
                     const p=_ease((t-MOVE_T-DROP_T-GRAB_T)/LIFT_T);
-                    const x=p*innerWidth*0.5, y=u.grabHeadY-p*(innerHeight*1.2), rot=p*560;
+                    // 14.13.2 · 가까운 쪽으로 한 바퀴 미만 회전 (예전 560도)
+                    const dir=u.targetX<=innerWidth/2?-1:1;
+                    const x=p*innerWidth*0.5*dir, y=u.grabHeadY-p*(innerHeight*1.2), rot=p*150*dir;
                     place(u,y,u.targetX+x,true);
                     u.note.style.transform='rotate('+rot+'deg)';
-                    u.note.style.opacity=String(Math.max(0,1-p*1.5));
+                    u.note.style.opacity=String(Math.max(0,1-p*1.4));
                 }
             });
             if(t>=MOVE_T+DROP_T+GRAB_T+LIFT_T){
@@ -16355,15 +16444,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(folderEl){
             try{ folderEl.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){}
             const fr=_clawRect(folderEl);
-            fX=fr.left+fr.width/2; fY=fr.top-CLAW_H+2;
+            fX=fr.left+fr.width/2; fY=fr.top-_clawGripD(_clawScaleFor(fr.width));
         }
         const units=show.map(card=>{
             try{ card.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){}
             const r=_clawRect(card);
             const targetX=r.left+r.width/2;
-            const grabHeadY=r.top-CLAW_H+2;
+            const scale=_clawScaleFor(r.width);
             const noteW=Math.max(r.width,60);
-            const clone=_clawNoteVisual(card);
+            const grabHeadY=r.top-_clawGripD(scale);
+            const clone=_clawNoteVisual(card, r);
             const unit=document.createElement('div');
             unit.className='claw-unit';
             const wire=document.createElement('div'); wire.className='claw-wire';
@@ -16376,7 +16466,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             unit.appendChild(wire); unit.appendChild(head); unit.appendChild(note);
             fx.appendChild(unit);
             return {card,unit,wire,head,note,targetX,grabHeadY,noteW,
-                    startY:-CLAW_H-160-(Math.random()*60), grabbed:false};
+                    startY:-(CLAW_H*scale)-160-(Math.random()*60), grabbed:false};
         });
         _clawShow();
         const place=(u,headY,headX,withNote)=>{
@@ -16415,10 +16505,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }else if(t<MOVE_T+DROP_T+GRAB_T+CARRY_T+SINK_T){
                     // 폴더 안으로 가라앉듯 사라진다
                     const p=_ease((t-MOVE_T-DROP_T-GRAB_T-CARRY_T)/SINK_T);
-                    const scale=1-p*0.6;
+                    const shrink=1-p*0.6;
                     u.note.style.opacity=String(Math.max(0,1-p));
-                    u.note.style.transform='scale('+scale+')';
-                    u.head.style.setProperty('--claw-scale',String(scale));
+                    u.note.style.transform='scale('+shrink+')';
+                    // 집게도 현재(노트 비례) 크기를 기준으로 같이 줄어든다
+                    u.head.style.setProperty('--claw-scale',String(_clawScaleFor(u.noteW)*shrink));
                 }
             });
             if(t>=MOVE_T+DROP_T+GRAB_T+CARRY_T+SINK_T){

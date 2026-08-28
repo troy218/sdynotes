@@ -53,8 +53,8 @@ assert.match(js, /pr\.width\/Math\.max\(1,ps\.w\)/,
   '상대 커서는 pageScale 상수가 아니라 실제 종이 화면 크기로 환산');
 
 // 배포 중 반쪽 파일/구 캐시가 섞이지 않도록 에셋을 버전 고정하고 원자 교체한다.
-assert.match(html, /sdynotes\.css\?v=14\.13\.1/);
-assert.match(html, /sdynotes\.js\?v=14\.13\.1/);
+assert.match(html, /sdynotes\.css\?v=14\.13\.5/);
+assert.match(html, /sdynotes\.js\?v=14\.13\.5/);
 assert.match(apply, /deploy_atomic/);
 assert.match(apply, /node --check "\$SRC\/sdynotes\.js"/);
 

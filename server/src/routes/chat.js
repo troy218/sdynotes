@@ -9,6 +9,8 @@
 import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { userByTokenSync, nickTaken } from '../lib/userauth.js';
+// 14.13.4 · 이름에 든 색 이름(복숭아빛 등)과 닉네임 색을 맞춤 → lib/pastel.js
+import { pickPastel } from '../lib/pastel.js';
 
 // 비회원이 써도 되는 이름인지 — 회원 고정닉과 겹치면 거짓.
 // (userauth 가 부팅되지 않은 테스트 환경에선 항상 참)
@@ -28,9 +30,7 @@ const FILE_MAX = 20 * 1024 * 1024;
 const FILE_BUDGET = Math.max(64, parseInt(process.env.SDY_CHAT_FILE_MB || '512', 10)) * 1024 * 1024;
 const REACTIONS = ['👍', '❤️', '😂', '🔥', '😮', '🎉'];
 
-// 라이브와 동일한 파스텔 팔레트 (닉네임 색 = 라이브 커서 색과 같은 톤)
-const PASTELS = ['#f9a8d4', '#fda4af', '#fdba74', '#fcd34d', '#bef264', '#6ee7b7',
-                 '#5eead4', '#7dd3fc', '#a5b4fc', '#c4b5fd', '#d8b4fe', '#f0abfc'];
+// 14.13.4 · 파스텔 팔레트 + 이름 색 대응은 lib/pastel.js 에서 (라이브와 공유)
 
 const state = {
   members: new Map(),   // uid -> {uid,name,color,ts,voice,mute}
@@ -50,14 +50,6 @@ const streams = new Map();
 const pending = new Map(); // uid -> event[]
 
 const nowSec = () => Date.now() / 1000;
-
-function pickPastel() {
-  const used = new Set();
-  for (const m of state.members.values()) if (m.color) used.add(m.color);
-  const free = PASTELS.filter((c) => !used.has(c));
-  const pool = free.length ? free : PASTELS;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
 
 const publicMembers = () =>
   [...state.members.values()].map((m) => ({
@@ -373,7 +365,10 @@ export function registerChat(app) {
     }
     let me = state.members.get(uid);
     if (!me) {
-      me = { uid, name, color: pickPastel(), ts: nowSec(), voice: false, mute: false, verified: !!user };
+      const used = new Set();
+      for (const m of state.members.values()) if (m.color) used.add(m.color);
+      // 이름의 색(복숭아빛 후투티 → 복숭아색)을 닉네임 색으로 준다. 이미 쓰이면 빈 색으로.
+      me = { uid, name, color: pickPastel(used, name), ts: nowSec(), voice: false, mute: false, verified: !!user };
       state.members.set(uid, me);
       chatPresence();
     } else {

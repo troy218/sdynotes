@@ -5,8 +5,10 @@ import './lib/env.js';   // 16.2 · .env 로더 — config 가 env 를 읽기 �
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
+import compress from '@fastify/compress';
 import { ensureDirs } from './lib/paths.js';
 import { APP_VERSION, oracleStorage } from './lib/config.js';
+import { compressOptions, noCompressForBinaryRoutes } from './lib/perf.js';
 import { sessionsLoad } from './lib/admin.js';
 import { createWorkerProxy } from './lib/workerProxy.js';
 
@@ -43,6 +45,12 @@ const app = Fastify({
 
 await app.register(cors, { origin: true });
 await app.register(multipart, { limits: { fileSize: 512 * 1024 * 1024, files: 1 } });
+// 14.13.5 · 2코어 박스 — JSON 응답 압축을 켠다. MB 단위 동기화/목록 페이로드의
+// 대역폭을 크게 줄이고, 압축 CPU 는 2코어에서 감당할 여유가 생겼다.
+// 파일·바이너리 스트림(이미지/음성/영상/다운로드)은 압축 이득이 없는데 큰 파일을
+// 압축기로 돌리면 CPU 만 태우므로 제외한다 (compress 플러그인보다 먼저 등록).
+app.addHook('onRoute', noCompressForBinaryRoutes());
+await app.register(compress, compressOptions());
 
 const worker = createWorkerProxy({ app });
 

@@ -17,7 +17,19 @@
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import jsdom from 'jsdom';
+import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs';
+import { installWindowGuard, closeDoms } from './jsdom_guard.mjs';
 const { JSDOM, VirtualConsole } = jsdom;
+
+// 14.13.5 · 데이터 루트 격리 (공유 db 반복 실행 오염 방지)
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-trans-'));
+process.env.SDY_BASE_DIR = TMP;
+{
+  const REPO = path.resolve(new URL('..', import.meta.url).pathname);
+  for (const f of ['sdynotes.html', 'sdynotes.js', 'sdynotes.css']) fs.copyFileSync(path.join(REPO, f), path.join(TMP, f));
+}
 
 let pass = 0;
 const check = (name, cond) => {
@@ -94,7 +106,8 @@ try {
   dom = await JSDOM.fromURL(base + '/', {
     resources: 'usable', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(window) {
-      window.innerWidth = 1280; window.innerHeight = 800;
+      installWindowGuard(window); // 14.13.5 · close 전 타이머 추적
+            window.innerWidth = 1280; window.innerHeight = 800;
       window.matchMedia = query => ({ matches: query.includes('pointer:fine'), media: query,
         addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
       window.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
@@ -396,7 +409,9 @@ try {
     await q({ table: 'notebooks', op: 'delete', filters: [{ field: 'id', op: 'eq', value: ins.data.id }] });
   } catch {}
 } finally {
-  try { dom && dom.window.close(); } catch {}
+  await closeDoms([dom]);
+
   child.kill('SIGKILL');
+  fs.rmSync(TMP, { recursive: true, force: true });
   setTimeout(() => process.exit(0), 400).unref();
 }

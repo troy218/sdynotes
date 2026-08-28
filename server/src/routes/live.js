@@ -1,18 +1,9 @@
 // 실시간 커서 공유 (같은 노트를 여럿이 볼 때) + SSE 이벤트 스트림.
 import { subscribe, unsubscribe } from '../lib/sse.js';
+// 14.13.4 · 이름에 든 색 이름(복숭아빛 등)과 커서 색을 맞춤 → lib/pastel.js
+import { pickPastel } from '../lib/pastel.js';
 
 const LIVE_TTL = 12; // seconds
-// 14.9 · 연한 파스텔톤 팔레트. 입장 순서가 아니라 방 안의 색을 피해 랜덤으로 고른다.
-const PASTELS = ['#f9a8d4', '#fda4af', '#fdba74', '#fcd34d', '#bef264', '#6ee7b7',
-                 '#5eead4', '#7dd3fc', '#a5b4fc', '#c4b5fd', '#d8b4fe', '#f0abfc'];
-
-function pickPastel(room) {
-  const used = new Set();
-  for (const v of room.values()) if (v && v.color) used.add(v.color);
-  const free = PASTELS.filter((c) => !used.has(c));
-  const pool = free.length ? free : PASTELS;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
 
 const live = new Map(); // note -> Map(uid -> {...})
 
@@ -26,7 +17,13 @@ export function registerLive(app) {
     let room = live.get(note);
     if (!room) { room = new Map(); live.set(note, room); }
     let me = room.get(uid);
-    if (!me) { me = { color: pickPastel(room) }; room.set(uid, me); }
+    if (!me) {
+      const used = new Set();
+      for (const v of room.values()) if (v && v.color) used.add(v.color);
+      // 이름의 색(복숭아빛 후투티 → 복숭아색)을 커서 색으로 준다. 이미 쓰이면 빈 색으로.
+      me = { color: pickPastel(used, String(d.name || '익명').slice(0, 24)) };
+      room.set(uid, me);
+    }
     Object.assign(me, {
       name: String(d.name || '익명').slice(0, 24),
       x: d.x, y: d.y, page: d.page || 0,

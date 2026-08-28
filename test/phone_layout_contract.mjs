@@ -165,7 +165,7 @@ ok('집중시계 모드/버튼/링이 작은 화면 안에 맞는다',
 /* ── 7. 모든 주요 기능 root가 HTML과 모바일 계약에 남아 있는가 ── */
 console.log('\n[7] 주요 기능 표면 누락 방지');
 const roots = [
-  'mainView','noteGrid','editorView','moreSheet','fmtBar','selectBar',
+  'mainView','noteGrid','editorView','moreSheet','selectBar',
   'setModal','trashModal','createModal','vaultModal','adminModal','folderStyleModal',
   'keyModal','delModal','pwModal','exportModal','importProg','infoModal','stickerModal',
   'latexModal','cardsModal','srvPop','notifPop','findBar','tblBar','pinPop','presentView',
@@ -175,13 +175,19 @@ const roots = [
 const missingRoots = roots.filter(id => !new RegExp(`id=["']${id}["']`).test(html));
 ok(`주요 기능 root ${roots.length}개가 모두 HTML에 있다`, missingRoots.length === 0, missingRoots.join(', '));
 const surfaceTokens = [
-  '#mainView', '.note-grid', '.editor-toolbar', '.more-panel', '#fmtBar', '.select-bar',
+  '#mainView', '.note-grid', '.editor-toolbar', '.more-panel', '.select-bar',
   '.modal-bg', '.modal-box', '#vaultModal', '.fcard-win', '.notif-pop', '.srv-pop',
   '.find-bar', '.tbl-bar', '.pin-pop', '.present', '.mp-list', '.mpb', '.mp-tagm',
   '.mp-addpop', '#focusClock', '.sa-card', '.ypg-card', '#ypApp'
 ];
 const missingTokens = surfaceTokens.filter(s => !mobileSource.includes(s));
 ok(`모바일 최종 블록이 기능 표면 ${surfaceTokens.length}종을 모두 다룬다`, missingTokens.length === 0, missingTokens.join(', '));
+// 14.13.4 · 떠 있던 서식 막대(fmtBar)는 상단 바와 중복이라 없앴다 — 의도적 제거를 잠근다.
+ok('14.13.4 fmtBar(떠 있는 서식 막대)가 HTML에서 제거됐다', !/id=["']fmtBar["']/.test(html));
+ok('14.13.4 글자 크기/형광펜이 상단 바(.editor-toolbar) 안에 있다',
+  has(html, /class="tb-group fmt-group"/) &&
+  has(html, /id="fsInput"[^>]*oninput="[^"]*setFS/) &&
+  has(html, /id="hlWrap"/));
 
 /* ── 8. 회전/리사이즈/데스크톱 보존 ───────────────────────── */
 console.log('\n[8] 회전과 데스크톱 홈 복원');
