@@ -6237,6 +6237,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 너무 작아지거나 커지지 않게
         if(f<1 && Math.min(bb.w,bb.h)*f<12) return false;
         if(f>1 && Math.max(bb.w,bb.h)*f>4000) return false;
+        let lastFS=0;        // 마지막으로 키운/줄인 글상자의 글자 크기 (툴바 동기화용)
         items.forEach(it=>{
             const el=findEl(it.pageIdx,it.id); if(!el) return;
             if(el.type==='stroke'){
@@ -6261,18 +6262,45 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 el.x=Math.round(cx+((el.x||0)-cx)*f);
                 el.y=Math.round(cy+((el.y||0)-cy)*f);
                 el.w=Math.round(nw); el.h=Math.round(nh);
-                if(el.type==='text'&&el.fontSize)
-                    el.fontSize=Math.max(6,Math.round(el.fontSize*f));
+                // 14.16 · Alt+휠로 상자를 키우면 겉모양만 커지고 글씨는 옛 크기로
+                //   남아, 그 뒤 '+' 를 누르면 툴바의 낡은 값(처음 16)으로 되돌아갔다.
+                //   → 상자에 적용한 배율을 '그 상자의 글자 크기'로 같이 저장한다.
+                if(el.type==='text'){
+                    el.fontSize=Math.max(6,Math.round((el.fontSize||16)*f));
+                    lastFS=el.fontSize;
+                }
                 const node=it.node;
                 if(node){
                     node.style.left=el.x+'px'; node.style.top=el.y+'px';
                     node.style.width=el.w+'px'; node.style.height=el.h+'px';
                     const c=node.querySelector('.tb-content');
-                    if(c&&el.fontSize) c.style.fontSize=el.fontSize+'px';
+                    if(c&&el.type==='text'&&el.fontSize){
+                        c.style.fontSize=el.fontSize+'px';
+                        // 상자 안에서 '이 단어만' 키워 둔 글자도 같은 배율로 함께
+                        if(scaleInlineFS(c,f)) el.html=stripWF(c.innerHTML);
+                    }
                 }
             }
         });
+        // 방금 바뀐 글자 크기를 툴바에도 옮겨 둔다 → 이어서 '+' 를 눌러도
+        //   지금 보이는 크기에서 더 커진다 (작아지지 않는다).
+        if(lastFS) setToolbarFS(lastFS);
         return true;
+    }
+
+    // 상자 안에 '부분적으로만' 지정된 글자 크기(span style="font-size")가 있으면
+    // 상자 배율과 같은 비율로 함께 키우고, 실제로 바꾼 것이 있으면 true 를 준다.
+    function scaleInlineFS(c,f){
+        if(!c||!f) return false;
+        let spans=null;
+        try{ spans=c.querySelectorAll('[style*="font-size"]'); }catch(e){ return false; }
+        if(!spans||!spans.length) return false;
+        let n=0;
+        spans.forEach(sp=>{
+            const v=parseFloat(sp.style.fontSize); if(!v) return;
+            sp.style.fontSize=Math.max(2,Math.round(v*f))+'px'; n++;
+        });
+        return n>0;
     }
 
     // ===== 객체 묶기 (그룹) =====
@@ -7210,6 +7238,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.querySelectorAll('.tb.sel,.paper-img.sel,.stroke-g.sel').forEach(o=>{ if(o!==w) o.classList.remove('sel'); });
         w.classList.add('edit'); w.classList.remove('sel');
         selected={type:'text',el:w};
+        syncFSFromTarget();          // 편집에 들어간 상자의 글자 크기를 툴바에
         const c=w.querySelector('.tb-content');
         c.contentEditable='true';
         if(c.getAttribute('data-empty')==='true') c.innerHTML='';
@@ -7622,6 +7651,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             e.preventDefault();
             const w=t.closest('.tb');
             deselectAll(); w.classList.add('sel'); selected={type:'text',el:w};
+            syncFSFromTarget();
             drag={el:w,pageIdx,sx:e.clientX,sy:e.clientY,
                   ox:parseFloat(w.style.left)||0,oy:parseFloat(w.style.top)||0,pending:true};
             return;
@@ -7708,6 +7738,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     deselectAll(true); clearMulti();
                     tb.classList.add('sel');
                     selected={type:'text',el:tb};
+                    syncFSFromTarget();          // 툴바 글자 크기를 이 상자 값으로
                 }
                 drag=null;
                 return;
@@ -7738,6 +7769,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             e.preventDefault();
             deselectAll(true); tb.classList.add('sel');
             selected={type:'text',el:tb};
+            syncFSFromTarget();
             drag={el:tb,pageIdx,sx:e.clientX,sy:e.clientY,ox:parseFloat(tb.style.left)||0,oy:parseFloat(tb.style.top)||0,pending:true};
             return;
         }
@@ -12147,7 +12179,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 
     // ===== 글꼴 선택 =====
     // 각 항목을 '해당 글꼴 자체'로 렌더링해 이름만 보고도 어떤 폰트인지 바로 알 수 있게 한다.
-    //   좌측: 실제 글꼴로 그린 미리보기 문구 (Ag 한글 가나다)
+    //   좌측: 실제 글꼴로 그린 미리보기 문구 (abc 가나다)
     //   우측: 글꼴 이름 (항상 Noto Sans 로 표시해 항상 가독) + 현재 선택 시 체크
     function buildFontMenu(){
         const m=document.getElementById('fontMenu');
@@ -12155,7 +12187,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         FONTS.forEach(f=>{
             const it=document.createElement('div');
             it.className='font-item'; it.dataset.f=f.id;
-            it.innerHTML=`<span class="fi-sample" style="font-family:${f.css}">Ag 한글 가나다</span>`+
+            it.innerHTML=`<span class="fi-sample" style="font-family:${f.css}">abc 가나다</span>`+
                          `<span class="fi-name">${f.label}</span>`+
                          `<i class="ri-checkbox-fill fi-check"></i>`;
             it.onmousedown=e=>e.preventDefault();
@@ -12498,7 +12530,53 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const text=(box.textContent||'').replace(/\n{3,}/g,'\n\n').replace(/[ \t]+\n/g,'\n').trim();
         return esc(text).replace(/\n/g,'<br>');
     }
-    function chFS(d){ setFS(curFontSize + (curFontSize<=10 ? (d>0?1:-1) : d)); }
+    // 14.16 · 툴바의 글자 크기칸과 '지금 보고 있는 글자'를 맞추는 장치
+    //  상자를 Alt+휠로 키우거나 다른 상자를 집었을 때 툴바 값이 낡은 채로 남아
+    //  '+' 를 누르면 도로 작아지던 것을 막는다.
+    function setToolbarFS(v){
+        v=Math.max(2,Math.min(200,Math.round(Number(v)||0)));
+        if(!v||v===curFontSize) return;
+        curFontSize=v;
+        const inp=document.getElementById('fsInput');
+        if(inp&&document.activeElement!==inp) inp.value=v;
+    }
+    // 지금 글자 크기를 물어볼 대상: 표 칸 → 편집 중인 상자 → 선택한 상자
+    function activeTextFS(){
+        try{
+            const cells=selectedTblCellEls();
+            if(cells.length&&cells[0]&&cells[0].fontSize) return cells[0].fontSize;
+        }catch(e){}
+        let node=null;
+        if(selected&&selected.type==='text'&&selected.el) node=selected.el;   // 편집 중/방금 집은 상자
+        if(!node&&multiSel.length===1) node=multiSel[0].node;
+        if(!node) node=document.querySelector('#pagesStage .tb.edit');
+        if(!node) node=document.querySelector('#pagesStage .tb.sel');
+        if(!node||!node.isConnected) return 0;
+        const c=node.querySelector('.tb-content'); if(!c) return 0;
+        // 화면에 실제로 그려진 크기를 우선한다 (자동 맞춤 상자도 헷갈리지 않게)
+        let v=parseFloat(c.style.fontSize);
+        if(!v){ try{ const el=findEl(+node.dataset.pageIdx,node.dataset.id); v=el&&el.fontSize; }catch(e){} }
+        return Math.round(Number(v)||0);
+    }
+    function syncFSFromTarget(){ setToolbarFS(activeTextFS()); }
+    // 상자 안의 '일부 글자'를 드래그해 골라 둔 상태면 그쪽 크기를 기준으로 삼는다
+    function hasInlineTextSel(){
+        try{
+            const s=window.getSelection();
+            if(s&&s.rangeCount&&!s.isCollapsed){
+                const r=s.getRangeAt(0);
+                const n=r.commonAncestorContainer;
+                const host=n.nodeType===1?n:n.parentElement;
+                if(host&&host.closest&&host.closest('.tb-content')) return true;
+            }
+            if(savedRange&&!savedRange.collapsed&&savedHost&&document.body.contains(savedHost)) return true;
+        }catch(e){}
+        return false;
+    }
+    function chFS(d){
+        if(!hasInlineTextSel()) syncFSFromTarget();   // 지금 보이는 크기에서 증감
+        setFS(curFontSize + (curFontSize<=10 ? (d>0?1:-1) : d));
+    }
     function setFS(v){
         curFontSize=Math.max(2,Math.min(200,Math.round(v)));
         document.getElementById('fsInput').value=curFontSize;
