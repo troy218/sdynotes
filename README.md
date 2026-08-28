@@ -1,4 +1,4 @@
-# SDYnotes 14.13.0 — Fastify + Python worker + Oracle 자체 저장소
+# SDYnotes 14.13.1 — Fastify + Python worker + Oracle 자체 저장소
 
 기존 단일 `app.py`(약 11,000줄)를 **"빠른 부분은 Node, 무거운 부분만 Python"** 으로
 재설계한 백엔드입니다. **14.12 부터 모든 데이터(상태·파일)는 이 Oracle VM 디스크에
@@ -9,6 +9,13 @@
 
 프런트(`sdynotes.html`)의 주요 변화:
 
+- **14.13.1 화면 동작 보정**: 90% 데스크톱 배율에서도 기존 금속 집게와 줄이
+  정확히 이어지고, 화면 위치에 따라 최대 3.2°만 자연스럽게 기울어집니다.
+  상대 커서는 25fps 수신 + GPU 이동으로 바뀌었고 펜·북마크·음악창 포인터의
+  배율 어긋남도 바로잡았습니다. 빠른 노트 전환 시 편집기가 열리지 않던 회귀도
+  수정했습니다.
+- **안전한 재배포**: `apply.sh`가 JS 문법/버전을 먼저 검사하고 프런트 파일을
+  원자적으로 교체합니다. HTML의 버전 쿼리로 이전 JS/CSS가 섞이지 않습니다.
 - **Supabase 직접 접속 제거**: 노트 목록/본문(notebooks·memos·images)을 예전엔
   브라우저에서 Supabase 로 직접 저장했지만, 이제 같은 서버의 `/api/db/query`
   (오라클 디스크 저장소)가 담당합니다. 기존 코드가 그대로 동작하도록 supabase-js
@@ -208,7 +215,7 @@ grep -n 'location /api/chat/voice-ws' /etc/nginx/sites-available/memo
   서로 덮어써져 곡이 사라질 수 있습니다. gunicorn 다중 worker 금지.
 - `SUPABASE_SERVICE_KEY` 등 비밀키는 zip/로그/프런트에 절대 노출 금지.
   (oracle 모드에선 이 키들이 필요 없고, 남아 있어도 무시됩니다.)
-- `APP_VERSION` 은 프런트 `<meta name="application-version">`(14.13.0) 와 일치해야
+- `APP_VERSION` 은 프런트 `<meta name="application-version">`(14.13.1) 와 일치해야
   합니다.
 - 이스터에그(쫄라맨 야구)는 프런트 전용 — `sdynotes.html` 그대로 서빙하므로 유지.
 - **디스크가 이제 영구 저장소** — 음원/이미지/보관함이 모두 VM 디스크에 쌓이므로,

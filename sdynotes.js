@@ -3010,10 +3010,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const ghost=chip.cloneNode(true);
         ghost.id='linkGhost'; ghost.removeAttribute('href');
         ghost.style.cssText='position:fixed;z-index:900;pointer-events:none;opacity:.92;'+
-            'box-shadow:0 8px 24px rgba(0,0,0,.32);left:'+r.left+'px;top:'+r.top+'px;width:'+r.width+'px;';
+            'box-shadow:0 8px 24px rgba(0,0,0,.32);left:'+window.sdyUiCss(r.left)+'px;'+
+            'top:'+window.sdyUiCss(r.top)+'px;width:'+window.sdyUiCss(r.width)+'px;';
         document.body.appendChild(ghost);
         chip.style.opacity='.35'; chip.style.touchAction='none';
-        linkDrag={from:i, ghost, chip, cur:i, x:pt.clientX, y:pt.clientY, moved:false};
+        // 집은 지점과 칩 좌상단 사이 간격을 유지해야 첫 move에서 칩이 포인터로
+        // 순간이동하지 않는다. grab 좌표는 elementFromPoint와 같은 화면 px로 둔다.
+        linkDrag={from:i, ghost, chip, cur:i, x:pt.clientX, y:pt.clientY,
+                  grabX:pt.clientX-r.left,grabY:pt.clientY-r.top,moved:false};
         if(navigator.vibrate) navigator.vibrate(18);
         document.body.style.userSelect='none';
         toast('끌어서 순서를 바꾸세요',1500);
@@ -3021,8 +3025,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function moveLinkDrag(x,y){
         if(!linkDrag) return;
         if(Math.abs(x-linkDrag.x)>4||Math.abs(y-linkDrag.y)>4) linkDrag.moved=true;
-        linkDrag.ghost.style.left=x+'px';
-        linkDrag.ghost.style.top=y+'px';
+        linkDrag.x=x; linkDrag.y=y;
+        linkDrag.ghost.style.left=window.sdyUiCss(x-linkDrag.grabX)+'px';
+        linkDrag.ghost.style.top=window.sdyUiCss(y-linkDrag.grabY)+'px';
         const chips=[...document.getElementById('linkBar').querySelectorAll('.link-chip')];
         let pos=0;
         for(let k=0;k<chips.length;k++){
@@ -5228,9 +5233,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 stopLive();
                 stopLiveDocSync();
             }catch(e){}
-            // 저장·전송을 기다리는 동안 다른 노트 열기가 시작됐다면
-            // 이 요청은 이제 뒤늦은 요청이므로 취소한다.
-            if(openSeq!==_sdyOpenSeq||!curNB||curNB.id!==openedId) return;
+            // 이 구간의 curNB는 아직 '이전에 열었던 노트'가 정상이다. openedId와
+            // 비교하면 다른 카드를 누를 때마다 여기서 반환되어 편집기가 안 열린다.
+            // 겹친 새 openNB 요청이 있는지만 순번으로 판별한다.
+            if(openSeq!==_sdyOpenSeq) return;
         }
         // 이전 노트의 저장은 위에서 확정했으므로 남은 디바운스 타이머를 내린다.
         // 그래야 교체 직후 그 타이머가 새 노트로 엉뚱하게 흐르지 않는다.
@@ -5328,6 +5334,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     function closeEditor(){
         if(!document.getElementById('editorView').classList.contains('open')) return;   // 이미 닫힘
+        // 노트 전환 fetch가 진행 중이면 그 응답이 닫힌 편집기를 다시 열지 못하게 한다.
+        _sdyOpenSeq++;
+        hideEdLoading();
         try{ closeFind(); clearActiveTbl(); cancelTablePlacement(); cancelPlaceMode(); closePanel(); closePin();
              if(wfOn) wfOff();
              if(pinMode) togglePinMode();
@@ -11819,13 +11828,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const n=parseInt(f,16);
         return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
     }
-    document.addEventListener('mousemove',e=>{
+    const _toolCursorMove=('PointerEvent' in window)?'pointermove':'mousemove';
+    document.addEventListener(_toolCursorMove,e=>{
         if(!penActive) return;
+        const points=typeof e.getCoalescedEvents==='function'?e.getCoalescedEvents():null;
+        const p=points&&points.length?points[points.length-1]:e;
         const tc=document.getElementById('toolCursor');
-        // fixed 요소의 style.left/top 은 CSS px — 화면 px(clientX)를 그대로 넣으면
-        // 사이트 기본 배율(90%)만큼 펜 미리보기가 실제 포인터에서 어긋난다.
-        tc.style.left=uiCss(e.clientX)+'px'; tc.style.top=uiCss(e.clientY)+'px';
-    });
+        // left/top을 계속 바꾸면 레이아웃이 매번 다시 계산되어 고주사율 포인터가
+        // 버벅였다. 최신 좌표만 GPU transform 변수로 넘긴다.
+        tc.style.setProperty('--cursor-x',uiCss(p.clientX)+'px');
+        tc.style.setProperty('--cursor-y',uiCss(p.clientY)+'px');
+    },{passive:true});
 
     function surfacePos(e,pageIdx){
         const t=(e.touches&&e.touches[0])?e.touches[0]:e;
@@ -14436,16 +14449,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }catch(e){ return makeLiveName(); }
     }
     let liveTimer=null, liveRateTimer=null, liveLast={x:null,y:null,page:0},
-        liveOn=false, liveMoved=false, _liveBusy=false, _liveQueued=false;
-    // 14.15 · 마우스 위치는 이동 중 80ms(약 12.5Hz)마다, 조용하면 4초 heartbeat 만
-    //   보낸다. 예전엔 4초마다만 보내 실시간 커서가 통통 끊겨 뛰었다.
-    const LIVE_RATE_MS=80, LIVE_HEARTBEAT_MS=4000;
+        liveOn=false, liveMoved=false, _liveBusy=false, _liveQueued=false,
+        _liveLastPoll=0;
+    // 상대가 있을 때는 25fps로 왕복하고, 혼자일 때도 600ms마다 가볍게 확인한다.
+    // 내 마우스가 멈췄다고 polling까지 4초 멈추면 움직이는 상대 커서가 내 화면에서
+    // 4초씩 얼어 보였던 것이 '현재 위치가 바로 안 오는' 핵심 원인이었다.
+    const LIVE_RATE_MS=40, LIVE_DISCOVER_MS=600, LIVE_HEARTBEAT_MS=4000;
+    const LIVE_MOVE_EVENT=('PointerEvent' in window)?'pointermove':'mousemove';
     const livePeerCount={};        // 노트별 동시 접속자 수
 
     function startLive(){
         if(liveOn||!curNB) return;
-        liveOn=true; liveMoved=true;
-        document.addEventListener('mousemove',onLiveMove);
+        liveOn=true; liveMoved=true; _liveLastPoll=0;
+        document.addEventListener(LIVE_MOVE_EVENT,onLiveMove,{passive:true});
         liveTimer=setInterval(livePing,LIVE_HEARTBEAT_MS);
         clearInterval(liveRateTimer);
         liveRateTimer=setInterval(liveFastTick,LIVE_RATE_MS);
@@ -14454,7 +14470,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function stopLive(){
         if(!liveOn) return;
         liveOn=false;
-        document.removeEventListener('mousemove',onLiveMove);
+        document.removeEventListener(LIVE_MOVE_EVENT,onLiveMove);
         clearInterval(liveTimer); liveTimer=null;
         clearInterval(liveRateTimer); liveRateTimer=null;
         _liveBusy=false; _liveQueued=false;
@@ -14465,18 +14481,24 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             body:JSON.stringify({note:nb,uid:LIVE_ME}),keepalive:true}).catch(()=>{});
         document.querySelectorAll('.live-cur').forEach(n=>n.remove());
     }
-    // 이동 중일 때만 빠른 주기로 보낸다. 한 번 보냈으면 liveMoved 를 내려
-    // 멈춘 뒤에는 4초 heartbeat 까지 네트워크를 쉰다.
+    // 상대가 보이는 동안에는 내가 가만히 있어도 계속 받아야 한다. 혼자일 때만
+    // 발견 주기로 낮춰 서버와 배터리 부담을 줄인다.
     function liveFastTick(){
         if(!liveOn||!curNB) return;
-        if(!liveMoved && !liveAct()) return;
-        liveMoved=false;
+        const now=performance.now();
+        const hasPeer=(livePeerCount[curNB.id]||1)>1;
+        if(!liveMoved && !hasPeer && !liveAct() && now-_liveLastPoll<LIVE_DISCOVER_MS) return;
+        liveMoved=false; _liveLastPoll=now;
         livePing();
     }
     function onLiveMove(e){
         const paper=e.target.closest&&e.target.closest('#pagesStage .paper');
         if(!paper) return;
-        const pi=+paper.dataset.pageIdx||0,p=pageLocal(e,pi);
+        // 고주사율 마우스/펜은 한 이벤트에 좌표가 여럿 묶인다. 가장 최신 좌표를
+        // 사용해야 커서가 한 프레임 뒤를 따라오지 않는다.
+        const samples=typeof e.getCoalescedEvents==='function'?e.getCoalescedEvents():null;
+        const point=samples&&samples.length?samples[samples.length-1]:e;
+        const pi=+paper.dataset.pageIdx||0,p=pageLocal(point,pi);
         liveLast={ x:p.x,y:p.y,page:pi };
         liveMoved=true;
     }
@@ -14496,17 +14518,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     async function livePing(){
         if(!liveOn||!curNB) return;
-        // 14.15 · 응답이 뒤섞여 커서가 뒤로 튀지 않게 하나씩 직렬 전송한다.
-        //   이동 중 연속 호출(80ms)은 busy 면 다음 완료 후 이어서 한 번 보낸다.
+        // 응답이 뒤섞여 커서가 뒤로 튀지 않게 하나씩 직렬 전송한다.
+        // 이동 중 연속 호출은 busy 면 다음 완료 직후 최신 좌표로 한 번 이어 보낸다.
         if(_liveBusy){ _liveQueued=true; return; }
+        const noteId=curNB.id;       // await 사이 노트 전환 시 옛 응답을 새 문서에 그리지 않음
         _liveBusy=true;
         try{
             const r=await fetch('/api/live/ping',{method:'POST',
                 headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({note:curNB.id,uid:LIVE_ME,name:liveName(),
+                body:JSON.stringify({note:noteId,uid:LIVE_ME,name:liveName(),
                     x:liveLast.x,y:liveLast.y,page:liveLast.page,on:true,
                     act:liveAct(),ts:Date.now()})});
             const d=await r.json().catch(()=>({}));
+            if(!liveOn||!curNB||curNB.id!==noteId) return;
             if(d&&d.ok){
                 // 5.35: 표시 순서를 매번 완전 랜덤으로 (같은 순서 고정 방지)
                 const peers=(d.peers||[]).slice();
@@ -14519,7 +14543,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const bd=document.getElementById('liveBadge');
                 const nm=document.getElementById('liveNum');
                 if(bd&&nm){ nm.textContent=n; bd.style.display=n>1?'inline-flex':'none'; }
-                livePeerCount[curNB.id]=n;
+                livePeerCount[noteId]=n;
             }
         }catch(e){ /* 서버 없으면 조용히 무시 */ }
         finally{
@@ -14548,6 +14572,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 document.body.appendChild(layer);
             }
             let n=document.getElementById('live_'+p.uid);
+            const isNew=!n;
             if(!n){
                 n=document.createElement('div');
                 n.id='live_'+p.uid; n.className='live-cur';
@@ -14562,9 +14587,20 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const nmEl=n.querySelector('.live-nm');
             nmEl.textContent=(p.name||'익명')+(p.act?' · '+p.act:'');
             nmEl.style.background=p.color||'#ef4444';
-            const pr=paper.getBoundingClientRect();
-            n.style.left=(pr.left+p.x*pageScale)+'px';
-            n.style.top =(pr.top +p.y*pageScale)+'px';
+            const pr=paper.getBoundingClientRect(), ps=paperSize();
+            // pageScale은 루트 90% zoom과 전환 중 배율을 모른다. 실제 종이 사각형으로
+            // 문서 좌표→화면 좌표를 구한 뒤 fixed 레이어의 CSS px로 변환한다.
+            const screenX=pr.left+(Number(p.x)||0)*(pr.width/Math.max(1,ps.w));
+            const screenY=pr.top +(Number(p.y)||0)*(pr.height/Math.max(1,ps.h));
+            const x=_clawCss(screenX), y=_clawCss(screenY);
+            if(isNew) n.style.transition='none';
+            n.style.setProperty('--live-x',x.toFixed(2)+'px');
+            n.style.setProperty('--live-y',y.toFixed(2)+'px');
+            if(isNew){
+                // 첫 등장만 원점에서 날아오지 않게 즉시 놓고, 다음 프레임부터 보간.
+                void n.offsetWidth;
+                n.style.transition='';
+            }
         });
         document.querySelectorAll('.live-cur').forEach(n=>{
             if(!seen.has(n.id.replace('live_',''))) n.remove();
@@ -15897,8 +15933,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const fx=_clawEl('clawFx');
             if(fx) fx.querySelectorAll('.claw-unit').forEach(u=>u.remove());
             const hn=_clawEl('clawNote'); if(hn){ hn.innerHTML=''; hn.style.opacity=''; hn.style.transform=''; hn.style.display=''; }
-            const hd=_clawEl('clawHead'); if(hd){ hd.style.top=''; hd.style.left=''; hd.style.transform=''; hd.style.display=''; }
-            const w=_clawEl('clawWire'); if(w){ w.style.height=''; w.style.left=''; w.style.display=''; }
+            const hd=_clawEl('clawHead'); if(hd){
+                hd.style.top=''; hd.style.left=''; hd.style.transform=''; hd.style.display='';
+                hd.style.removeProperty('--claw-angle'); hd.style.removeProperty('--claw-scale');
+            }
+            const w=_clawEl('clawWire'); if(w){
+                w.style.height=''; w.style.left=''; w.style.top=''; w.style.transform=''; w.style.display='';
+                w.style.removeProperty('--claw-angle');
+            }
         }catch(e){}
         try{ document.querySelectorAll('.note-card,.folder-card').forEach(c=>{ c.style.visibility=''; }); }catch(e){}
     }
@@ -15927,17 +15969,51 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         clone.style.maxWidth='none';
         return clone;
     }
+    // getBoundingClientRect()는 화면 px, zoom 된 fixed 레이어의 left/top은 UI CSS px다.
+    // 두 단위를 섞으면 90% 데스크톱 환경에서 집게가 카드 오른쪽 아래로 밀린다.
+    function _clawCss(v){
+        return window.sdyUiCss?window.sdyUiCss(v):(Number(v)||0);
+    }
+    function _clawRect(el){
+        const r=el.getBoundingClientRect();
+        return {left:_clawCss(r.left),top:_clawCss(r.top),
+                width:_clawCss(r.width),height:_clawCss(r.height)};
+    }
+    // 화면 가운데 위쪽의 크레인 레일에서 가장자리 카드 쪽으로 아주 조금
+    // 벌어지게 한다(최대 3.2°). 과한 사선은 피하면서 현재 뷰포트에 자연스럽게
+    // 맞고, 줄의 끝점과 집게 윗중심은 정확히 같은 좌표를 사용한다.
+    function _clawRig(headX,headY){
+        const vw=Math.max(1,window.innerWidth||document.documentElement.clientWidth||1);
+        const edge=Math.max(-1,Math.min(1,(headX-vw/2)/(vw/2)));
+        const lean=edge*3.2;
+        const y=Math.max(0,headY);
+        const rad=lean*Math.PI/180;
+        const anchorX=headX-Math.tan(rad)*y;
+        return {angle:-lean,anchorX,length:y/Math.max(.98,Math.cos(rad)),lean};
+    }
+    function _clawPlaceParts(head,wire,note,headX,headY,noteW,withNote){
+        if(!head||!wire) return;
+        const rig=_clawRig(headX,headY);
+        const angle=rig.angle.toFixed(3)+'deg';
+        head.style.left=headX+'px'; head.style.top=headY+'px';
+        head.style.setProperty('--claw-angle',angle);
+        if(!head.style.getPropertyValue('--claw-scale')) head.style.setProperty('--claw-scale','1');
+        wire.style.left=rig.anchorX+'px'; wire.style.top='0px';
+        wire.style.height=rig.length+'px';
+        wire.style.setProperty('--claw-angle',angle);
+        if(note&&withNote){
+            // 회전된 집게의 실제 발끝을 카드 중앙에 붙인다.
+            const grab=CLAW_H-6, a=rig.lean*Math.PI/180;
+            const gripX=headX+Math.sin(a)*grab;
+            const gripY=headY+Math.cos(a)*grab;
+            note.style.left=Math.round(gripX-noteW/2)+'px';
+            note.style.top=Math.round(gripY)+'px';
+        }
+    }
     // 집게 머리 + 와이어 + 노트를 특정 좌표로 정렬
     function _clawPos(headX, headY, note, noteW){
-        const head=_clawEl('clawHead'), wire=_clawEl('clawWire');
-        head.style.left=headX+'px'; head.style.top=headY+'px';
-        wire.style.left=headX+'px';
-        wire.style.top='0px';
-        wire.style.height=Math.max(0, headY)+'px';     // 화면 맨 위에서 집게까지
-        if(note){
-            note.style.left=Math.round(headX-noteW/2)+'px';
-            note.style.top=Math.round(headY+CLAW_H-6)+'px';
-        }
+        _clawPlaceParts(_clawEl('clawHead'),_clawEl('clawWire'),note,
+                        headX,headY,noteW,!!note);
     }
     // ① 노트 추가: 크레인이 실제 노트를 잡고 내려와 카드가 놓인 자리에 두고 간다
     function playClawDrop(card, done){
@@ -15975,7 +16051,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const finish=()=>{ if(settled)return; settled=true; revealCard(); if(done)done(); };
         setTimeout(finish, 2600);              // rAF 멈춤 대비 안전장치
         try{ card.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
-        const r=card.getBoundingClientRect();
+        const r=_clawRect(card);
         const targetX=r.left+r.width/2;
         const targetHeadY=r.top-CLAW_H+2;      // 집게가 노트 윗부분을 잡는 위치
         const noteW=Math.max(r.width, 60);
@@ -16040,7 +16116,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const finish=()=>{ if(settled)return; settled=true; try{ card.style.visibility=''; }catch(e){} try{ if(ghost) ghost.remove(); }catch(e){} if(done)done(); };
         setTimeout(finish, 2400);              // rAF 멈춤 대비 안전장치
         try{ card.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
-        const r=card.getBoundingClientRect();
+        const r=_clawRect(card);
         const targetX=r.left+r.width/2;
         const grabHeadY=r.top-CLAW_H+2;
         const noteW=Math.max(r.width, 60);
@@ -16076,12 +16152,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const x=p*innerWidth*0.5;
                 const y=grabHeadY-p*(innerHeight*1.2);
                 const rot=p*560;
-                head.style.left=Math.round(targetX+x)+'px';
-                head.style.top=y+'px';
-                _clawEl('clawWire').style.left=Math.round(targetX+x)+'px';
-                _clawEl('clawWire').style.height=Math.max(0,y)+'px';
-                note.style.left=Math.round(targetX+x-noteW/2)+'px';
-                note.style.top=Math.round(y+CLAW_H-6)+'px';
+                // 던지는 동안에도 줄 끝과 집게 윗중심을 같은 기하로 계산한다.
+                _clawPos(targetX+x,y,note,noteW);
                 note.style.transform='rotate('+rot+'deg)';
                 note.style.opacity=String(Math.max(0,1-p*1.5));
             }else{
@@ -16108,14 +16180,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const finish=()=>{ if(settled)return; settled=true; try{ card.style.visibility=''; }catch(e){} if(done)done(); };
         setTimeout(finish, 3200);
         try{ card.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
-        const r=card.getBoundingClientRect();
+        const r=_clawRect(card);
         const targetX=r.left+r.width/2;
         const grabHeadY=r.top-CLAW_H+2;
         const noteW=Math.max(r.width, 60);
         let fX=innerWidth/2, fY=innerHeight*0.38;
         if(folderEl){
             try{ folderEl.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
-            const fr=folderEl.getBoundingClientRect();
+            const fr=_clawRect(folderEl);
             fX=fr.left+fr.width/2; fY=fr.top-CLAW_H+2;
         }
         const clone=_clawNoteVisual(card);
@@ -16157,11 +16229,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 _clawPos(fX, fY, note, noteW);
                 note.style.opacity=String(Math.max(0,1-p));
                 note.style.transform='scale('+scale+')';
-                head.style.transform='translateX(-50%) scale('+scale+')';
+                head.style.setProperty('--claw-scale',String(scale));
             }else{
                 _clawHide();
                 note.innerHTML=''; note.style.opacity=''; note.style.transform=''; note.style.display='';
-                head.style.top=''; head.style.left=''; head.style.transform='';
+                head.style.top=''; head.style.left='';
+                head.style.removeProperty('--claw-angle'); head.style.removeProperty('--claw-scale');
                 if(grabbed){ try{ card.style.visibility=''; }catch(e){} }
                 finish();
                 return;
@@ -16191,7 +16264,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const show=valid.slice(0,12);
         const units=show.map(card=>{
             try{ card.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){}
-            const r=card.getBoundingClientRect();
+            const r=_clawRect(card);
             const targetX=r.left+r.width/2;
             const grabHeadY=r.top-CLAW_H+2;
             const noteW=Math.max(r.width,60);
@@ -16211,14 +16284,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     startY:-CLAW_H-160-(Math.random()*60), grabbed:false};
         });
         _clawShow();
-        const place=(u,headY,withNote)=>{
-            u.head.style.left=u.targetX+'px'; u.head.style.top=headY+'px';
-            u.wire.style.left=u.targetX+'px'; u.wire.style.top='0px';
-            u.wire.style.height=Math.max(0,headY)+'px';
-            if(withNote){
-                u.note.style.left=Math.round(u.targetX-u.noteW/2)+'px';
-                u.note.style.top=Math.round(headY+CLAW_H-6)+'px';
-            }
+        const place=(u,headY,headX,withNote)=>{
+            _clawPlaceParts(u.head,u.wire,u.note,headX,headY,u.noteW,withNote);
         };
         const t0=performance.now();
         const MOVE_T=260, DROP_T=560, GRAB_T=200, LIFT_T=620;
@@ -16232,10 +16299,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
             const t=now-t0;
             units.forEach(u=>{
-                if(t<MOVE_T){ place(u,u.startY,false); }
+                if(t<MOVE_T){ place(u,u.startY,u.targetX,false); }
                 else if(t<MOVE_T+DROP_T){
                     const p=_ease((t-MOVE_T)/DROP_T);
-                    place(u, u.startY+(u.grabHeadY-u.startY)*p, false);
+                    place(u, u.startY+(u.grabHeadY-u.startY)*p, u.targetX, false);
                 }else if(t<MOVE_T+DROP_T+GRAB_T){
                     if(!u.grabbed){
                         u.grabbed=true;
@@ -16243,16 +16310,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         u.note.style.display='';
                         u.note.style.opacity='1';
                     }
-                    place(u,u.grabHeadY,true);
+                    place(u,u.grabHeadY,u.targetX,true);
                 }else if(t<MOVE_T+DROP_T+GRAB_T+LIFT_T){
                     const p=_ease((t-MOVE_T-DROP_T-GRAB_T)/LIFT_T);
                     const x=p*innerWidth*0.5, y=u.grabHeadY-p*(innerHeight*1.2), rot=p*560;
-                    u.head.style.left=Math.round(u.targetX+x)+'px';
-                    u.head.style.top=y+'px';
-                    u.wire.style.left=Math.round(u.targetX+x)+'px';
-                    u.wire.style.height=Math.max(0,y)+'px';
-                    u.note.style.left=Math.round(u.targetX+x-u.noteW/2)+'px';
-                    u.note.style.top=Math.round(y+CLAW_H-6)+'px';
+                    place(u,y,u.targetX+x,true);
                     u.note.style.transform='rotate('+rot+'deg)';
                     u.note.style.opacity=String(Math.max(0,1-p*1.5));
                 }
@@ -16292,12 +16354,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         let fX=innerWidth/2, fY=innerHeight*0.4;
         if(folderEl){
             try{ folderEl.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){}
-            const fr=folderEl.getBoundingClientRect();
+            const fr=_clawRect(folderEl);
             fX=fr.left+fr.width/2; fY=fr.top-CLAW_H+2;
         }
         const units=show.map(card=>{
             try{ card.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){}
-            const r=card.getBoundingClientRect();
+            const r=_clawRect(card);
             const targetX=r.left+r.width/2;
             const grabHeadY=r.top-CLAW_H+2;
             const noteW=Math.max(r.width,60);
@@ -16318,13 +16380,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         });
         _clawShow();
         const place=(u,headY,headX,withNote)=>{
-            u.head.style.left=headX+'px'; u.head.style.top=headY+'px';
-            u.wire.style.left=headX+'px'; u.wire.style.top='0px';
-            u.wire.style.height=Math.max(0,headY)+'px';
-            if(withNote){
-                u.note.style.left=Math.round(headX-u.noteW/2)+'px';
-                u.note.style.top=Math.round(headY+CLAW_H-6)+'px';
-            }
+            _clawPlaceParts(u.head,u.wire,u.note,headX,headY,u.noteW,withNote);
         };
         const t0=performance.now();
         const MOVE_T=260, DROP_T=520, GRAB_T=180, CARRY_T=700, SINK_T=280;
@@ -16362,7 +16418,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     const scale=1-p*0.6;
                     u.note.style.opacity=String(Math.max(0,1-p));
                     u.note.style.transform='scale('+scale+')';
-                    u.head.style.transform='translateX(-50%) scale('+scale+')';
+                    u.head.style.setProperty('--claw-scale',String(scale));
                 }
             });
             if(t>=MOVE_T+DROP_T+GRAB_T+CARRY_T+SINK_T){
@@ -16445,7 +16501,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function playNoteIntoFolderAnim(fid){
         const fc=document.querySelector('.folder-card[data-folder-id="'+fid+'"]');
         if(!fc) return;
-        const r=fc.getBoundingClientRect();
+        const r=_clawRect(fc);
         const holder=document.createElement('div');
         holder.style.cssText='position:fixed;z-index:1049;pointer-events:none;'+
                             'left:'+Math.max(8,r.left+8)+'px;top:'+Math.max(8,r.top-46)+'px;';
@@ -17761,13 +17817,16 @@ let drag=null;
 pl.addEventListener('pointerdown',e=>{
   if(P.mode!=='float')return;
   if(e.target.closest('button')||e.target.closest('.mp-prog'))return;
-  drag={sx:e.clientX,sy:e.clientY,r:pl.getBoundingClientRect()};
+  const r=pl.getBoundingClientRect();
+  drag={sx:e.clientX,sy:e.clientY,top:window.sdyUiCss(r.top)};
   try{ pl.setPointerCapture(e.pointerId); }catch(err){}
 });
 pl.addEventListener('pointermove',e=>{
   if(!drag)return;
-  // 오른쪽 벽에 붙은 채 위아래로만 이동 (튀지 않음)
-  const y=Math.max(56,Math.min(innerHeight-80, drag.r.top+(e.clientY-drag.sy)));
+  // 화면 px 델타를 zoom 된 fixed UI px로 바꾼다. 그대로 더하면 90% 화면에서
+  // 플레이어가 포인터보다 느리게 따라오며 매번 위치가 조금씩 어긋났다.
+  const y=Math.max(56,Math.min(innerHeight-80,
+      drag.top+window.sdyUiCss(e.clientY-drag.sy)));
   pl.style.top=y+'px';
   P.pos={y};
 });

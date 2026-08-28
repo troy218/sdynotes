@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-#  SDYnotes 14.12.0 적용 스크립트 (Fastify + Python worker 개편판)
+#  SDYnotes 14.13.1 적용 스크립트 (Fastify + Python worker 개편판)
 #  ★서버 안에서 실행★
 #
 #  구조:
@@ -42,6 +42,22 @@ die(){ echo -e "\n\033[1;31m✗ $*\033[0m"; exit 1; }
 [ -f "$SRC/server/src/index.js" ] || die "server/src/index.js 가 없습니다 — zip에 server/ 폴더를 통째로 넣어 주세요"
 [ -f "$SRC/worker/run.py" ]      || die "worker/run.py 가 없습니다 — zip에 worker/ 폴더를 통째로 넣어 주세요"
 
+# 실행 중인 서버에 잘린 JS가 노출되기 전에 문법부터 검사한다. Node가 아직 없는
+# 최초 설치에서는 3단계 설치 후 서비스 기동 검사가 대신 맡는다.
+if command -v node >/dev/null 2>&1; then
+    node --check "$SRC/sdynotes.js" >/dev/null || die "sdynotes.js 문법 오류 — 배포를 중단합니다"
+    node --check "$SRC/server/src/index.js" >/dev/null || die "server/src/index.js 문법 오류 — 배포를 중단합니다"
+fi
+# HTML과 서버 버전이 어긋나면 브라우저가 이전 JS/CSS를 계속 조합할 수 있다.
+HTML_VER=$(sed -n 's/.*application-version" content="\([^"]*\)".*/\1/p' "$SRC/sdynotes.html" | head -1)
+SERVER_VER=$(sed -n "s/.*APP_VERSION = '\([^']*\)'.*/\1/p" "$SRC/server/src/lib/config.js" | head -1)
+[ -n "$HTML_VER" ] && [ "$HTML_VER" = "$SERVER_VER" ] \
+    || die "프런트 버전($HTML_VER)과 서버 버전($SERVER_VER)이 다릅니다"
+grep -q "sdynotes.js?v=$HTML_VER" "$SRC/sdynotes.html" \
+    || die "sdynotes.js 캐시 버전이 HTML 버전과 다릅니다"
+grep -q "sdynotes.css?v=$HTML_VER" "$SRC/sdynotes.html" \
+    || die "sdynotes.css 캐시 버전이 HTML 버전과 다릅니다"
+
 say "0/6  배포 파일 확인"
 echo "  sdynotes.html  $(du -h "$SRC/sdynotes.html" | cut -f1)  ($(date -r "$SRC/sdynotes.html" '+%m-%d %H:%M'))"
 echo "  sdynotes.css   $(du -h "$SRC/sdynotes.css"  | cut -f1)  ($(date -r "$SRC/sdynotes.css"  '+%m-%d %H:%M'))"
@@ -64,10 +80,19 @@ if [ -f "$APP_DIR/package.json" ]; then
     cp -r "$APP_DIR/worker" "$APP_DIR/worker.bak" 2>/dev/null || true
 fi
 
-sudo cp "$SRC/sdynotes.html" "$APP_DIR/sdynotes.html"
-sudo cp "$SRC/sdynotes.css"  "$APP_DIR/sdynotes.css"
-sudo cp "$SRC/sdynotes.js"   "$APP_DIR/sdynotes.js"
-sudo cp "$SRC/package.json"  "$APP_DIR/package.json"
+# 큰 프런트 파일을 제자리 cp 하면 복사 중 접속한 브라우저가 '절반짜리 JS'를
+# 받을 수 있다. 같은 파일시스템의 임시 파일을 완성한 뒤 mv로 원자 교체하고,
+# 새 HTML은 JS/CSS가 모두 준비된 마지막에 공개한다.
+deploy_atomic(){
+    local src="$1" dst="$2" tmp="${2}.deploy.$$"
+    install -m 0644 "$src" "$tmp"
+    mv -f "$tmp" "$dst"
+}
+deploy_atomic "$SRC/sdynotes.js"   "$APP_DIR/sdynotes.js"
+deploy_atomic "$SRC/sdynotes.css"  "$APP_DIR/sdynotes.css"
+deploy_atomic "$SRC/package.json"  "$APP_DIR/package.json"
+[ -f "$SRC/package-lock.json" ] && deploy_atomic "$SRC/package-lock.json" "$APP_DIR/package-lock.json"
+deploy_atomic "$SRC/sdynotes.html" "$APP_DIR/sdynotes.html"
 rm -rf "$APP_DIR/server" "$APP_DIR/worker" "$APP_DIR/scripts"
 cp -r "$SRC/server" "$APP_DIR/server"
 cp -r "$SRC/worker" "$APP_DIR/worker"
@@ -171,6 +196,9 @@ else
         && sudo apt-get install -y -qq nodejs >/dev/null 2>&1 \
         && ok "node $(node -v)" || die "Node.js 설치 실패 — 직접 설치 후 재실행해 주세요"
 fi
+# 최초 설치까지 포함해 실제로 복사된 프런트/서버 파일을 한 번 더 확인한다.
+node --check "$APP_DIR/sdynotes.js" >/dev/null || die "배포된 sdynotes.js 문법 오류"
+node --check "$APP_DIR/server/src/index.js" >/dev/null || die "배포된 서버 JS 문법 오류"
 
 # 파이썬 워커 라이브러리
 PKGS="flask flask-cors beautifulsoup4 cloudinary pillow-heif pymupdf python-docx deep-translator requests mutagen openpyxl yt-dlp bgutil-ytdlp-pot-provider==1.3.1"
@@ -542,6 +570,8 @@ ok "서비스 실행 중 (node + worker)"
 H=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/health" || true)
 A=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/api/admin/status" || true)
 P=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)
+JS=$(curl -s -m 8 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/sdynotes.js?v=$HTML_VER" || true)
+CSS=$(curl -s -m 8 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/sdynotes.css?v=$HTML_VER" || true)
 YT=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/youtube/status" || true)
 RECOG=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/music/recognize/status" || true)
 CLOUD=$(curl -s -m 5 "http://127.0.0.1:$PORT/api/cloud/status" || true)
@@ -551,6 +581,7 @@ VOICE_WS=${VOICE_WS:-0}
 
 echo
 echo "  페이지        : $P"
+echo "  프런트 JS/CSS : $JS / $CSS   $([ "$JS" = 200 ] && [ "$CSS" = 200 ] && echo '(정상)' || echo '(★실패)')"
 echo "  관리자 API    : $A   $([ "$A" = 200 ] && echo '(정상)' || echo '(★실패)')"
 echo "  health        : $H"
 echo "  클라우드 상태  : $CLOUD"
@@ -585,7 +616,7 @@ else
 fi
 echo
 
-if [ "$A" = "200" ] && [ "$P" = "200" ]; then
+if [ "$A" = "200" ] && [ "$P" = "200" ] && [ "$JS" = "200" ] && [ "$CSS" = "200" ]; then
     IP=$(curl -s -m 5 ifconfig.me 2>/dev/null || echo "서버주소")
     echo -e "\033[1;32m✅ 배포 성공 →  http://$IP/\033[0m"
     rm -rf "$APP_DIR/server.bak" "$APP_DIR/worker.bak"
