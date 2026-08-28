@@ -284,7 +284,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     function uid(p){ return p+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
     function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
-    function toast(m,ms=2000){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),ms);}
+    function toast(m,ms=2000){ if(!document) return; const t=document.getElementById('toast'); if(!t) return; t.textContent=m;t.classList.add('show');setTimeout(()=>{ if(t.isConnected) t.classList.remove('show'); },ms);}
     // 색을 밝게/어둡게 (p<0 어둡게, p>0 밝게)
     function shade(hex,p){
         try{
@@ -487,14 +487,19 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     // ============ 동기화 로딩바 ============
     let syncCount=0;
-    function setSyncPct(p){ const f=document.getElementById('syncFill');
+    function setSyncPct(p){
+        if(!document) return;   // 창이 닫힌 뒤 남은 타이머 — DOM 이 없으면 그냥 무시
+        const f=document.getElementById('syncFill');
         if(f) f.style.width=Math.max(0,Math.min(100,p))+'%'; }
     function syncStart(){ syncCount++; const b=document.getElementById('syncBar');
         b.classList.add('on'); setSyncPct(35); }
     function syncEnd(){ syncCount=Math.max(0,syncCount-1);
         if(!syncCount){ setSyncPct(100);
-            setTimeout(()=>{ document.getElementById('syncBar').classList.remove('on');
-                setSyncPct(0); },450); } }
+            setTimeout(()=>{
+                if(!document) return;   // 창이 닫힌 뒤의 잔여 타이머 방어
+                const b=document.getElementById('syncBar');
+                if(b){ b.classList.remove('on'); setSyncPct(0); }
+            },450); } }
 
     function getCfg(id){ try{return JSON.parse(localStorage.getItem('nb_'+id)||'{}');}catch(e){return {};} }
     function setCfg(id,c){ try{localStorage.setItem('nb_'+id,JSON.stringify(c));return true;}
@@ -5364,6 +5369,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     let saveStateTimer=null;
     function setSaveState(txt,hold){
+        if(!document) return;   // 창이 닫힌 뒤 남은 비동기 잔여물 — 무시
         const el=document.getElementById('saveState');
         if(!el) return;
         el.textContent=txt;
@@ -5517,6 +5523,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function isOnline(){ return navigator.onLine!==false; }
 
     function updateOfflineUI(){
+        if(!document) return;   // 창이 닫힌 뒤 남은 비동기 잔여물 — 무시
         const n=outboxCount();
         const el=document.getElementById('offlineBadge');
         if(!el) return;

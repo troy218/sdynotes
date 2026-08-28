@@ -7,6 +7,9 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import jsdom from 'jsdom';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
 import { installWindowGuard, closeDoms } from './jsdom_guard.mjs';
 const { JSDOM, VirtualConsole } = jsdom;
 
@@ -19,6 +22,18 @@ async function freePort() {
   const p = s.address().port;
   await new Promise(r => s.close(r));
   return p;
+}
+
+// 14.13.7 · 이 테스트는 반드시 임시 저장소에서 돈다. 예전엔 SDY_BASE_DIR 없이
+//   서버가 repo 루트의 db/ 에 노트를 쌓았고, 다음 실행이 '첫 카드'로 그
+//   이전 실행이 저장한 표가 든 노트를 열어 '고스트 자리 == 실제 자리' 검사가
+//   깨졌다 (가장 앞 .tb 가 표 칸이 됨). 실행마다 깨끗한 저장소 + 새 파일을
+//   쓴다.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-place-'));
+process.env.SDY_BASE_DIR = TMP;
+{
+  const REPO = path.resolve(new URL('..', import.meta.url).pathname);
+  for (const f of ['sdynotes.html', 'sdynotes.js', 'sdynotes.css']) fs.copyFileSync(path.join(REPO, f), path.join(TMP, f));
 }
 
 const port = await freePort();
@@ -88,7 +103,10 @@ try {
   const { window } = dom, { document } = window;
   const boot = Date.now();
   while (Date.now() - boot < 8_000 && !document.querySelector('.note-stack .note-card')) await wait(60);
-  document.querySelector('.note-stack .note-card').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  const card = [...document.querySelectorAll('.note-stack .note-card')]
+    .find(c => (c.textContent || '').includes('배치 런타임'));
+  check('배치 런타임 노트 카드가 보인다', !!card);
+  card.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await wait(1100);
   check('배치 런타임용 노트가 열린다', document.getElementById('editorView').classList.contains('open'));
   check('배치 관련 API가 전역으로 준비된다',
@@ -218,4 +236,5 @@ try {
   child.kill('SIGTERM');
   await Promise.race([new Promise(r => child.once('exit', r)), wait(1500)]);
   if (child.exitCode === null) child.kill('SIGKILL');
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
 }
