@@ -9,6 +9,11 @@
 
 프런트(`sdynotes.html`)의 주요 변화:
 
+- **14.13.7 글자 크기 보정**: Alt+휠로 글상자를 키우면(줄이면) 그 배율이 상자의
+  '글자 크기'로 그대로 저장되고 툴바의 숫자칸도 같이 따라갑니다. 그래서 키운 직후
+  툴바의 '+'를 눌러도 옛 값(처음 16)으로 되돌아가지 않고 지금 보이는 크기에서 더
+  커집니다. 상자를 집거나 편집에 들어갈 때도 툴바가 그 상자의 크기를 보여 줍니다.
+  글꼴 목록의 미리보기 문구는 `abc 가나다` 로 통일했습니다.
 - **14.13.1 화면 동작 보정**: 90% 데스크톱 배율에서도 기존 금속 집게와 줄이
   정확히 이어지고, 화면 위치에 따라 최대 3.2°만 자연스럽게 기울어집니다.
   상대 커서는 25fps 수신 + GPU 이동으로 바뀌었고 펜·북마크·음악창 포인터의
@@ -365,6 +370,9 @@ node test/migrate_oracle_sim.mjs   # 모의 Supabase/Cloudinary → 오라클 �
 # 16.3 — 친구 + 1:1 대화 (서버 계약 48건 + 프런트 jsdom 29건)
 node test/friends_dm_contract.mjs  # 친구 요청/수락/삭제·DM 전송/읽음/파일 권한·SSE (npm run test:friends)
 node test/yf_dm_frontend_contract.cjs # 친구 패널·DM 뷰·전송 계약·뱃지·비로그인 안내 (jsdom)
+
+# 14.13.7 — Alt 배율 글자 크기 저장 + 툴바 동기화 + 글꼴 미리보기 문구
+npm run test:font                     # 소스 계약 + jsdom 런타임(Alt+휠 → '+' → 서버 저장)
 
 # 클라우드(legacy) 모드 (실제 키 없이 모의 서버로)
 python3 test/cloud_smoke.py     # worker 클라우드 음악 변이 (모의 Supabase+Cloudinary)
