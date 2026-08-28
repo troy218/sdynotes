@@ -53,6 +53,11 @@ const ASSETS = {
   '/sdynotes.js': { file: 'sdynotes.js', type: 'text/javascript; charset=utf-8' },
   '/sdynotes.css': { file: 'sdynotes.css', type: 'text/css; charset=utf-8' },
 };
+// 14.13.5 · sdynotes.js/css 는 항상 ?v= 버전과 함께 불러오므로 URL 자체가 버전
+// 스탬프다 → 브라우저가 장기 캐시(immutable)해도 배포 시 새 버전 URL 로 갱신된다.
+// (HTML 은 버전을 싣는 페이지라 no-cache 유지.) 예전 no-cache 매번 재확인
+// 왕복을 없애서 로딩이 빨라진다.
+const IMMUTABLE = 'public, max-age=31536000, immutable';
 const assetCache = new Map(); // path -> {mtime, raw, gz, etag}
 
 export function serveAsset(req, reply, urlPath) {
@@ -76,11 +81,11 @@ export function serveAsset(req, reply, urlPath) {
     assetCache.set(urlPath, c);
   }
   if (req.headers['if-none-match'] === c.etag) {
-    reply.code(304).header('ETag', c.etag).header('Cache-Control', 'no-cache, must-revalidate').send();
+    reply.code(304).header('ETag', c.etag).header('Cache-Control', IMMUTABLE).send();
     return true;
   }
   const gzip = /gzip/.test((req.headers['accept-encoding'] || '').toLowerCase());
-  reply.type(a.type).header('ETag', c.etag).header('Cache-Control', 'no-cache, must-revalidate');
+  reply.type(a.type).header('ETag', c.etag).header('Cache-Control', IMMUTABLE);
   if (gzip) reply.header('Content-Encoding', 'gzip').send(c.gz);
   else reply.send(c.raw);
   return true;

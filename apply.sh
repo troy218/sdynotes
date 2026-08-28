@@ -336,7 +336,14 @@ UV_THREADS=$((CPU_N * 2))
 [ "$UV_THREADS" -lt 8 ]  && UV_THREADS=8
 [ "$UV_THREADS" -gt 24 ] && UV_THREADS=24
 
-ok "메모리 튜닝: RAM ${RAM_MB}MB → Node 힙 ${NODE_HEAP_MB}MB(전체 예산 ${NODE_MAX_MB}MB, 채팅파일 ${CHAT_FILE_MB}MB) / 워커 예산 ${WORKER_MAX_MB}MB (자식 ${IMP_MAX_CHUNKS}×${IMP_CHILD_MEM_MB}MB, 동시잡 ${IMP_CONC}) / UV 스레드 ${UV_THREADS}"
+# 14.13.5 · 2코어/12GB 대응 — 메모리가 넉넉하면 동기화 상태 캐시를 더 크게.
+# (협업 중 1초에 여러 번 도는 전체 상태 읽기의 반복 JSON.parse 를 줄인다)
+if   [ "$RAM_MB" -ge 10240 ]; then SYNC_CACHE_MAX=3000
+elif [ "$RAM_MB" -ge 6144  ]; then SYNC_CACHE_MAX=2000
+else                                SYNC_CACHE_MAX=1500
+fi
+
+ok "메모리 튜닝: RAM ${RAM_MB}MB → Node 힙 ${NODE_HEAP_MB}MB(전체 예산 ${NODE_MAX_MB}MB, 채팅파일 ${CHAT_FILE_MB}MB, sync캐시 ${SYNC_CACHE_MAX}개) / 워커 예산 ${WORKER_MAX_MB}MB (자식 ${IMP_MAX_CHUNKS}×${IMP_CHILD_MEM_MB}MB, 동시잡 ${IMP_CONC}) / UV 스레드 ${UV_THREADS}"
 
 sudo tee "/etc/systemd/system/$SVC.service" > /dev/null <<EOF
 [Unit]
@@ -352,6 +359,7 @@ Environment="HOME=$HOME"
 Environment="NODE_OPTIONS=--max-old-space-size=$NODE_HEAP_MB"
 Environment="UV_THREADPOOL_SIZE=$UV_THREADS"
 Environment="SDY_CHAT_FILE_MB=$CHAT_FILE_MB"
+Environment="SDY_SYNC_CACHE_MAX=$SYNC_CACHE_MAX"
 $ENV_LINES
 LimitNOFILE=65535
 ExecStart=$(command -v node) $APP_DIR/server/src/index.js
@@ -403,6 +411,18 @@ server {
     listen 80 default_server;
     server_name _;
     client_max_body_size 100M;
+    # 14.13.5 · 버전화된 프런트 에셋 — nginx 가 디스크에서 직접 내보내고 1년 캐시
+    #   (URL 의 ?v= 가 배포마다 바뀐다 → stale 리스크 없음, 재확인 왕복 제로)
+    location = /sdynotes.js {
+        root $APP_DIR;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        access_log off;
+    }
+    location = /sdynotes.css {
+        root $APP_DIR;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        access_log off;
+    }
     location /api/chat/voice-ws {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_http_version 1.1;
@@ -444,6 +464,21 @@ EOF
         if ! grep -qE '^[[:space:]]*proxy_buffering[[:space:]]+off;' "$NGINX_CONF"; then
             sudo sed -i '/proxy_set_header X-Forwarded-For/a\        proxy_buffering off;\n        proxy_cache off;' "$NGINX_CONF"
             NGINX_CHANGED=1
+        fi
+        # 14.13.5 · 버전화된 프런트 에셋 장기 캐시 location 보강 (idempotent)
+        if ! grep -q 'location = /sdynotes.js' "$NGINX_CONF" 2>/dev/null; then
+            STATIC_PY="$SRC/scripts/ensure_nginx_static_cache.py"
+            [ -f "$STATIC_PY" ] || STATIC_PY="$APP_DIR/scripts/ensure_nginx_static_cache.py"
+            if [ -f "$STATIC_PY" ]; then
+                sudo cp "$NGINX_CONF" "$NGINX_CONF.bak.static"
+                if sudo python3 "$STATIC_PY" "$NGINX_CONF" "$APP_DIR" | grep -q '^inserted'; then
+                    NGINX_CHANGED=1
+                    ok "nginx 프런트 에셋 장기 캐시 경로 추가"
+                else
+                    sudo mv "$NGINX_CONF.bak.static" "$NGINX_CONF"
+                fi
+                rm -f "$NGINX_CONF.bak.static"
+            fi
         fi
         # 기존 site 파일(이전 배포)에는 location / 만 있다. Connection "" 가
         # WebSocket 핸드셰이크를 삼키므로, 파일 유무와 관계없이 Upgrade 경로를

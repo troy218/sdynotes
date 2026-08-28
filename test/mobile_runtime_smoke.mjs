@@ -8,7 +8,21 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import jsdom from 'jsdom';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
+import { installWindowGuard, closeDoms } from './jsdom_guard.mjs';
 const { JSDOM, VirtualConsole } = jsdom;
+
+// 14.13.5 · 데이터 루트 격리 — 공유 db 를 쓰는 채로 반복 실행하면 테스트들이 서로
+// 오염시킨다 (스택 첫 카드가 달라지고, 같은 노트에 테이블 등이 누적되어 계약이
+// 간헛 깨짐). 서버 자식 프로세스가 이 env 를 이어받아 임시 루트에서 돈다.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-mobile-'));
+process.env.SDY_BASE_DIR = TMP;
+{
+  const REPO = path.resolve(new URL('..', import.meta.url).pathname);
+  for (const f of ['sdynotes.html', 'sdynotes.js', 'sdynotes.css']) fs.copyFileSync(path.join(REPO, f), path.join(TMP, f));
+}
 
 let pass = 0;
 const check = (name, cond) => {
@@ -68,7 +82,8 @@ try {
     pretendToBeVisual: true,
     virtualConsole,
     beforeParse(window) {
-      Object.defineProperty(window, 'innerWidth', { value: 390, writable: true, configurable: true });
+      installWindowGuard(window); // 14.13.5 · close 전 타이머 추적
+            Object.defineProperty(window, 'innerWidth', { value: 390, writable: true, configurable: true });
       Object.defineProperty(window, 'innerHeight', { value: 844, writable: true, configurable: true });
       Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 5, writable: true, configurable: true });
 
@@ -220,8 +235,10 @@ try {
   if (serverLog) console.error('\nserver log:\n' + serverLog.slice(-3000));
   process.exitCode = 1;
 } finally {
-  if (dom) dom.window.close();
+  await closeDoms([dom]);
+
   child.kill('SIGTERM');
   await Promise.race([new Promise(resolve => child.once('exit', resolve)), wait(1500)]);
   if (child.exitCode === null) child.kill('SIGKILL');
+  fs.rmSync(TMP, { recursive: true, force: true });
 }

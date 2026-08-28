@@ -11,6 +11,24 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { DIRS } from './paths.js';
 import { readJson, writeJsonAtomic, withLock } from './store.js';
+// 14.13.5 · 행 파일 읽기 병렬 폭 (lib/perf.js, CPU 수 비례)
+import { DB_READ_CONCURRENCY } from './perf.js';
+
+// 읽기 전용 행 파일들을 유계(bounded)로 병렬 파싱한다. (쓰기는 락 안에서 순차)
+async function mapRows(items, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  const n = Math.min(DB_READ_CONCURRENCY, items.length);
+  const workers = Array.from({ length: n }, async () => {
+    while (true) {
+      const j = i++;
+      if (j >= items.length) return;
+      out[j] = await fn(items[j], j);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
 
 // 프런트 shim 이 쓸 수 있는 테이블 화이트리스트 (그 외는 전부 거절).
 export const DB_TABLES = new Set(['notebooks', 'memos', 'images']);
@@ -54,12 +72,9 @@ async function listRowIds(table) {
 
 export async function dbList(table) {
   const ids = await listRowIds(table);
-  const rows = [];
-  for (const id of ids) {
-    const r = await readJson(dbRowPath(table, id), null);
-    if (r && typeof r === 'object') rows.push(r);
-  }
-  return rows;
+  // 14.13.5 · 순차 파싱 → 유계 병렬 파싱 (읽기는 안전)
+  const parsed = await mapRows(ids, (id) => readJson(dbRowPath(table, id), null));
+  return parsed.filter((r) => r && typeof r === 'object');
 }
 
 function matchRow(row, filters) {
@@ -158,12 +173,12 @@ export async function dbQuery(q) {
       if (size > DB_ROW_MAX_BYTES) return { data: null, error: { message: `갱신 내용이 너무 큽니다 (${size}B)` } };
       const changed = await withLock('db:' + table, async () => {
         const ids = await listRowIds(table);
+        const parsed = await mapRows(ids, (id) => readJson(dbRowPath(table, id), null));
         let n = 0;
-        for (const id of ids) {
-          const p = dbRowPath(table, id);
-          const row = await readJson(p, null);
+        for (let j = 0; j < ids.length; j++) {
+          const row = parsed[j];
           if (!row || !matchRow(row, filters)) continue;
-          await writeJsonAtomic(p, { ...row, ...set });
+          await writeJsonAtomic(dbRowPath(table, ids[j]), { ...row, ...set });
           n += 1;
         }
         return n;

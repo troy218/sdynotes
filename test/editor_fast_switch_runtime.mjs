@@ -10,9 +10,23 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import jsdom from 'jsdom';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
+import { installWindowGuard, closeDoms } from './jsdom_guard.mjs';
 const { JSDOM, VirtualConsole } = jsdom;
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
+
+// 14.13.5 · 데이터 루트 격리 — 공유 db 를 쓰는 채로 반복 실행하면 테스트들이 서로
+// 오염시킨다 (스택 첫 카드가 달라지고, 같은 노트에 테이블 등이 누적되어 계약이
+// 간헛 깨짐). 서버 자식 프로세스가 이 env 를 이어받아 임시 루트에서 돈다.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-switch-'));
+process.env.SDY_BASE_DIR = TMP;
+{
+  const REPO = path.resolve(new URL('..', import.meta.url).pathname);
+  for (const f of ['sdynotes.html', 'sdynotes.js', 'sdynotes.css']) fs.copyFileSync(path.join(REPO, f), path.join(TMP, f));
+}
 let pass = 0;
 const check = (name, cond) => { assert.ok(cond, name); pass++; console.log('  ✓ ' + name); };
 async function freePort() {
@@ -68,7 +82,8 @@ try {
   dom = await JSDOM.fromURL(base + '/', {
     resources: 'usable', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(window) {
-      window.innerWidth = 1280; window.innerHeight = 800;
+      installWindowGuard(window); // 14.13.5 · close 전 타이머 추적
+            window.innerWidth = 1280; window.innerHeight = 800;
       window.matchMedia = query => ({ matches: query.includes('pointer:fine'), media: query,
         addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){} });
       window.IntersectionObserver = class { observe(){} unobserve(){} disconnect(){} };
@@ -137,8 +152,10 @@ try {
   process.exitCode = 1;
 } finally {
   await wait(80);
-  if (dom) dom.window.close();
+  await closeDoms([dom]);
+
   child.kill('SIGTERM');
   await Promise.race([new Promise(r => child.once('exit', r)), wait(1500)]);
   if (child.exitCode === null) child.kill('SIGKILL');
+  fs.rmSync(TMP, { recursive: true, force: true });
 }

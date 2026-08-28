@@ -7,6 +7,8 @@ import { SETTINGS_SCHEMA, APP_VERSION } from './config.js';
 import { sbGet, sbPut, sbEnabled } from './supabase.js';
 import { readJson, writeJsonAtomic, withLock } from './store.js';
 import { mergeText3 } from './textmerge.js';
+// 14.13.5 · 캐시 한계는 lib/perf.js 에서 (env 로 조율 가능)
+import { SYNC_CACHE_MAX, SYNC_CACHE_TTL_LOCAL, SYNC_CACHE_TTL_SB } from './perf.js';
 
 export function syncPath(nb) {
   return path.join(DIRS.sync, String(nb).replace(/[^0-9a-zA-Z-]/g, '') + '.json');
@@ -18,21 +20,20 @@ export function syncPath(nb) {
 // 이 반복이 CPU/대역폭을 잡아먹어 협업 입력이 밀릴 수 있다.
 // push 는 즉시 캐시를 갱신하고, pull 은 아주 짧은 TTL(=최대 지연) 안에서
 // 캐시를 재사용한다.
+// 14.13.5 · 12GB/2코어 박스에 맞춰 캐시 용량·TTL 을 lib/perf.js 로 옮겼다.
 const STATE_CACHE = new Map(); // nb -> {state, at}
-const LOCAL_TTL = 700;
-const SB_TTL = 1500;
 
 function cacheGet(nb) {
   const hit = STATE_CACHE.get(nb);
   if (!hit) return null;
-  const ttl = sbEnabled() ? SB_TTL : LOCAL_TTL;
+  const ttl = sbEnabled() ? SYNC_CACHE_TTL_SB : SYNC_CACHE_TTL_LOCAL;
   if (Date.now() - hit.at > ttl) return null;
   return hit.state;
 }
 
 function cacheSet(nb, state) {
   STATE_CACHE.set(nb, { state, at: Date.now() });
-  if (STATE_CACHE.size > 200) STATE_CACHE.delete(STATE_CACHE.keys().next().value);
+  if (STATE_CACHE.size > SYNC_CACHE_MAX) STATE_CACHE.delete(STATE_CACHE.keys().next().value);
 }
 
 export function syncCacheInvalidate(nb) {
