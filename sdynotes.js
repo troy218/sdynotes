@@ -228,6 +228,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     let doc=null;
     let curPageIdx=0;
     let history=[]; let redoStack=[];
+    // 14.15 · 빠른 연속 작업 가드
+    //  - _sdyOpenSeq: 다른 노트 열기가 겹칠 때 이전 openNB 의 뒤늦은 이어짐을 무효화
+    //  - _docId: 현재 doc 객체가 어느 노트의 것인지 기록 → 저장 타이머가 노트 교체
+    //    중에 이전 본문을 새 노트에 덮어쓰지 못하게 한다.
+    //  - _saveNoteId: saveDoc 을 예약할 당시 노트 → 예약이 노트 교체를 넘어가면 무시
+    let _sdyOpenSeq=0, _docId=null, _saveNoteId=null;
 
     function blankPage(){ return {id:'p_'+Math.random().toString(36).slice(2,9), els:[]}; }
     function blankDoc(preset){
@@ -4996,7 +5002,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             decCache.delete(curNB.id);
             adminPlainUnlocked.delete(curNB.id);
             adminOpenedNotes.delete(curNB.id);
-            if(plain){ doc=plain; persistDoc(curNB.id,plain); }
+            if(plain){ doc=plain; _docId=curNB.id; persistDoc(curNB.id,plain); }
             queueSync(curNB.id);
             try{ pushSettingsNow(); }catch(e){}
             updateLockUI(); renderGrid(); toast('잠금 해제됨 🔓');
@@ -5205,6 +5211,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             try{ ensureVisiblePagesRendered(); }catch(e){}
             return;
         }
+        // 14.15 · 열기 요청 순번을 찍는다.
+        //   빠르게 다른 노트를 연 동안 이전 openNB 가 뒤늦게 이어져서
+        //   - 이전 노트의 curMemo 본문을 새 노트에 applyServerState 로 덮고
+        //   - 이전 노트의 doc 을 새 노트로 놓고
+        //   - 이전 노트의 실시간 동기화를 새 노트에 걸어 버리는
+        //   것을 막는다. 모든 await 뒤에서 openSeq 를 검증한다.
+        const openSeq=++_sdyOpenSeq;
+        const openedId=nb.id;
         if(curNB && doc){
             try{
                 commitEditingText();
@@ -5214,8 +5228,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 stopLive();
                 stopLiveDocSync();
             }catch(e){}
+            // 저장·전송을 기다리는 동안 다른 노트 열기가 시작됐다면
+            // 이 요청은 이제 뒤늦은 요청이므로 취소한다.
+            if(openSeq!==_sdyOpenSeq||!curNB||curNB.id!==openedId) return;
         }
-        curNB=nb; history=[]; redoStack=[]; curPageIdx=0;
+        // 이전 노트의 저장은 위에서 확정했으므로 남은 디바운스 타이머를 내린다.
+        // 그래야 교체 직후 그 타이머가 새 노트로 엉뚱하게 흐르지 않는다.
+        clearTimeout(_saveTimer); _saveTimer=null; _saveNoteId=null;
+        curNB=nb; history=[]; redoStack=[]; curPageIdx=0; _histT=0;
+        // 14.15 · 이전 노트의 선택/드래그 상태를 새 노트에 옮기지 않는다.
+        try{ clearMulti(); }catch(e){}
+        selected=null; drag=null; resize=null; textSel=null;
         // 잠긴 노트(복호화)나 대용량 문서(서버 로드)는 시간이 걸리므로 로딩 표시
         const _cfg=getCfg(nb.id);
         const _needLoad=!!(_cfg.lock&&_cfg.lock.enc) || !!_cfg.serverDoc;
@@ -5224,15 +5247,23 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
              if(wfOn) wfOff(); wfStats=[]; wfMap=null;
              if(pinMode) togglePinMode(); }catch(e){}
         const isLocal=String(nb.id).startsWith('local_');
+        let memoFor=null;
         if(!isLocal&&SB){
             syncStart();
             try{
                 const{data:ms}=await SB.from('memos').select('*').eq('notebook_id',nb.id).order('created_at').limit(1);
-                if(ms&&ms.length) curMemo=ms[0];
-                else{ const{data:nm}=await SB.from('memos').insert([{notebook_id:nb.id,content:'',font_size:S.defFS}]).select().single(); curMemo=nm; }
-                if(curMemo&&curMemo.content) applyServerState(nb.id,curMemo.content);
-            }catch(e){ curMemo={id:'local_memo_'+Date.now(),notebook_id:nb.id}; }
+                if(openSeq!==_sdyOpenSeq||!curNB||curNB.id!==openedId) return;
+                if(ms&&ms.length) memoFor=ms[0];
+                else{
+                    const{data:nm}=await SB.from('memos').insert([{notebook_id:nb.id,content:'',font_size:S.defFS}]).select().single();
+                    if(openSeq!==_sdyOpenSeq||!curNB||curNB.id!==openedId) return;
+                    memoFor=nm;
+                }
+                if(memoFor&&memoFor.content) applyServerState(nb.id,memoFor.content);
+            }catch(e){ memoFor={id:'local_memo_'+Date.now(),notebook_id:nb.id}; }
             finally{ syncEnd(); }
+            if(openSeq!==_sdyOpenSeq||!curNB||curNB.id!==openedId) return;
+            curMemo=memoFor;
         }else{
             curMemo={id:'local_memo_'+nb.id,notebook_id:nb.id};
         }
@@ -5241,16 +5272,22 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // 9.1 · 잠금 해제가 예외로 끝나도 덮개는 반드시 걷는다.
             try{ okUnlock=await tryUnlock(nb.id); }
             catch(e){ console.warn('unlock failed',e); okUnlock=false; }
-            if(!okUnlock){ hideEdLoading(); curNB=null; curMemo=null; return; }
+            if(openSeq!==_sdyOpenSeq||!curNB||curNB.id!==openedId) return;
+            if(!okUnlock){ hideEdLoading(); curNB=null; curMemo=null; _docId=null; return; }
         }
+        let loadedDoc=null;
         try{
-            doc=await loadDocAsync(nb.id);
+            loadedDoc=await loadDocAsync(nb.id);
         }catch(e){
             // 본문을 못 불러와도 '노트 여는 중…'에서 멈추지 않게 한다.
-            hideEdLoading(); curNB=null; curMemo=null;
+            if(openSeq!==_sdyOpenSeq||!curNB||curNB.id!==openedId) return;
+            hideEdLoading(); curNB=null; curMemo=null; _docId=null;
             try{ toast('노트를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.'); }catch(_){}
             return;
         }
+        // 14.15 · 로드가 끝나기 전에 다른 노트를 열었으면 이 doc 은 버린다.
+        if(openSeq!==_sdyOpenSeq||!curNB||curNB.id!==openedId) return;
+        doc=loadedDoc; _docId=nb.id;
         setTimeout(async()=>{
             try{ await initSync(); }catch(e){}
             try{ startSlicePrefill(); }catch(e){}
@@ -5322,7 +5359,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // 문서를 보고 홈으로 돌아오면 자동 크기의 두 줄부터 보여 준다.
             // 클래식 새 노트 버튼은 그 바로 위에 있어 휠 한 칸으로 나타난다.
             _homeEnterScroll=true;
-            curNB=null;curMemo=null;doc=null;loadNBs();
+            curNB=null;curMemo=null;doc=null;_docId=null;loadNBs();
         },400);
     }
 
@@ -5340,7 +5377,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     let _saveTimer=null;
     function saveDoc(){
         if(!curNB||!doc) return;
+        // 14.15 · 현재 doc 가 열려 있는 노트의 것과 다르면 (노트 교체 로딩 중)
+        //   저장을 예약하지 않는다. 예약하면 400ms 뒤 이전 본문을 새 노트에
+        //   persistDoc 으로 덮어쓸 수 있다.
+        if(_docId && _docId!==curNB.id) return;
         if(doc.__loadFailed){ setSaveState('본문 안 불림 · 저장 건너뜀'); return; }
+        _saveNoteId=curNB.id;                 // 이 예약이 어느 노트 것인지 고정
         setSaveState('저장 중...');
         clearTimeout(_saveTimer);
         _saveTimer=setTimeout(flushSaveDoc,400);
@@ -5348,6 +5390,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function flushSaveDoc(){
         clearTimeout(_saveTimer); _saveTimer=null;
         if(!curNB||!doc) return;
+        // 14.15 · 예약이 노트 교체를 넘어갔거나 doc 이 현재 노트 것이 아니면 무시
+        if(_saveNoteId && _saveNoteId!==curNB.id){ _saveNoteId=null; return; }
+        if(_docId && _docId!==curNB.id){ _saveNoteId=null; return; }
+        _saveNoteId=null;
         if(doc.__loadFailed) return;
         try{ commitEditingText(); }catch(e){}
         // 14.14 · 본문이 비어 보이는데 디스크/서버에는 내용이 있는 상태면
@@ -5534,6 +5580,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     function queueSync(nbId){
+        // 14.15 · 노트 교체 중에 이전 노트의 doc 이 새 노트 id 로 올라가지 않게
+        if(_docId && _docId!==nbId) return;
         pendingNB={id:nbId, memo:curMemo, d:doc?JSON.parse(JSON.stringify(doc)):loadDoc(nbId), title:(document.getElementById('edTitle').value||'').trim()};
         clearTimeout(syncTimer);
         syncTimer=setTimeout(flushSync,250);
@@ -6016,9 +6064,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         doc.pages.push(blankPage());
         curPageIdx=doc.pages.length-1;
         renderPages(); saveDoc();
+        // 14.15 · 빠른 노트 전환 뒤에 스크롤이 새 노트의 엉뚱한 쪽을 옮기지 않게
+        const _d=doc, _pi=curPageIdx;
         setTimeout(()=>{
-            const w=document.querySelectorAll('.page-wrap')[curPageIdx];
-            if(w) w.scrollIntoView({behavior:'smooth',block:'center'});
+            if(doc!==_d||!curNB) return;
+            const w=document.querySelectorAll('.page-wrap')[_pi];
+            if(w && typeof w.scrollIntoView==='function') w.scrollIntoView({behavior:'smooth',block:'center'});
         },60);
         toast(`페이지 ${doc.pages.length} 추가됨`,1200);
     }
@@ -6896,6 +6947,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function buildTextEl(el,pageIdx){
         const w=document.createElement('div');
         w.className='tb'; w.dataset.id=el.id; w.dataset.pageIdx=pageIdx;
+        // 14.15 · 이 DOM 이 어느 노트의 그리기인지 기록 → 교체 후 남은 타이머가
+        //   새 노트 doc 을 잘못 수정하지 않도록 syncTextEl 이 검증한다.
+        w.dataset.nbId=(curNB&&curNB.id)||'';
+        w._sdyRv=doc&&doc.__rv;
         w.style.cssText=`left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`;
         const c=document.createElement('div');
         c.className='tb-content'; c.contentEditable='false';
@@ -6982,6 +7037,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     function syncTextEl(w){
+        // 14.15 · 노트를 빠르게 바꾸거나 되돌리기로 다시 그린 뒤에 남은 타이머가
+        //   새 노트/새 doc 의 같은 id 요소를 건드리지 않게 한다.
+        //   - DOM 이 떨어져 있으면 무시 (다시 그린 화면은 새 타이머를 쓴다)
+        //   - 속한 노트나 renderVersion 이 다르면 무시
+        if(!w||!w.isConnected) return;
+        if(curNB&&w.dataset.nbId&&curNB.id!==w.dataset.nbId) return;
+        if(doc&&doc.__rv!=null&&w._sdyRv!=null&&doc.__rv!==w._sdyRv) return;
         try{
             if(doc&&w&&w.dataset.pageIdx!=null&&doc.pages[+w.dataset.pageIdx])
                 doc.pages[+w.dataset.pageIdx].__dirty=true;   // 편집분: 에빅션 금지
@@ -7032,6 +7094,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         redoStack.push(JSON.stringify(doc));
         if(redoStack.length>60) redoStack.shift();
         try{ doc=JSON.parse(s); }catch(e){ doc=keep; return; }
+        _docId=(curNB&&curNB.id)||null;
         reviveDocMaps(keep);
         selected=null; clearMulti();
         if(curPageIdx>=doc.pages.length) curPageIdx=doc.pages.length-1;
@@ -7043,6 +7106,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const keep=doc;
         history.push(JSON.stringify(doc));
         try{ doc=JSON.parse(s); }catch(e){ doc=keep; return; }
+        _docId=(curNB&&curNB.id)||null;
         reviveDocMaps(keep);
         selected=null; clearMulti();
         if(curPageIdx>=doc.pages.length) curPageIdx=doc.pages.length-1;
@@ -7100,6 +7164,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     function commitEditingText(only){
+        // 14.15 · 노트 교체 중(새 doc 이 아직 안 왔거나 이전 doc 이 남은 상태)에는
+        //   이전 편집 상자를 새 노트/다른 노트 본문에 커밋하지 않는다.
+        if(!doc||!curNB) return;
+        if(_docId && _docId!==curNB.id) return;
         const list=only?[only]:Array.from(document.querySelectorAll('.tb.edit'));
         // 색칠 상태였다면 편집이 끝난 상자에 색을 다시 입힌다
         if(wfOn) setTimeout(()=>{
@@ -10526,14 +10594,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!confirm('이 시점으로 되돌릴까요? 지금 내용은 되돌리기(Ctrl+Z)로 복구할 수 있습니다.')) return;
         pushHistory();
         try{ doc=JSON.parse(c.data); }catch(e){ toast('복원할 수 없습니다',2000); return; }
+        _docId=(curNB&&curNB.id)||null;
         curPageIdx=Math.min(c.pg||0,(doc.pages||[]).length-1);
         renderPages(); saveDoc(); closeCheckpoints();
-        // 저장해 둔 쪽으로 스크롤 이동
+        // 저장해 둔 쪽으로 스크롤 이동 (노트 전환 뒤에는 새 노트를 건드리지 않는다)
+        const _rd=doc, _rpi=curPageIdx;
         setTimeout(()=>{
             try{
+                if(doc!==_rd||!curNB) return;
                 const size=paperSize();
                 const body=document.getElementById('editorBody');
-                body.scrollTop=(curPageIdx)*(size.h+PAGE_GAP)*pageScale;
+                body.scrollTop=(_rpi)*(size.h+PAGE_GAP)*pageScale;
                 updatePageInfo();
             }catch(e){}
         },80);
@@ -13594,17 +13665,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(_syncGap!==SYNC_FAST){ _syncGap=SYNC_FAST; _armSync(SYNC_FAST); }
     }
     async function startLiveDocSync(){
+        // 14.15 · 요청을 보내는 사이에 다른 노트를 열었으면 이 결과를
+        //   새 노트 doc 에 넣지 않는다.
+        const d=doc, nid=(curNB&&curNB.id)||null;
         stopLiveDocSync();
         try{
-            if(doc&&doc.__ref){
+            if(d&&d.__ref){
                 const r=await fetch('/api/import/docfile/'
-                    +encodeURIComponent(doc.__ref)+'?meta=1',{cache:'no-store'});
+                    +encodeURIComponent(d.__ref)+'?meta=1',{cache:'no-store'});
                 const m=await r.json().catch(()=>({}));
-                if(m&&m.ok) doc.__ver=m.version;
-            }else if(SB&&curMemo&&curMemo.updated_at){
-                doc.__sbVer=curMemo.updated_at;
+                if(doc!==d||!curNB||curNB.id!==nid) return;
+                if(m&&m.ok) d.__ver=m.version;
+            }else if(SB&&curMemo&&curMemo.updated_at&&doc===d){
+                d.__sbVer=curMemo.updated_at;
             }
         }catch(e){}
+        if(doc!==d||!curNB||curNB.id!==nid) return;
         _syncGap=SYNC_FAST; _syncQuiet=0;
         _armSync(SYNC_FAST);
     }
@@ -14008,7 +14084,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             // 14.13 · Lamport 시계 캐치업: 서버가 본 최대 rev 로 내 시계를 올려,
             //   시계가 느린 기기의 다음 편집도 서버 LWW 에서 이기게 한다.
             _nbRev=Math.max(_nbRev, d.version||0);
-            const ops=(d.ops||[]).sort((a,b)=>(a.rev||0)-(b.rev||0));
+            let ops=(d.ops||[]).slice().sort((a,b)=>(a.rev||0)-(b.rev||0));
+            // 14.15 · 서버 pull 은 __pages__ 를 별도 필드(pages)로 돌려준다.
+            //   ops 에는 pages 가 포함되지 않으므로, 처음 열거나 늦게 pull 한
+            //   기기는 추가/삭제된 페이지를 전혀 못 받았다. 여기서 상태 페이지를
+            //   __pages__ op 으로 합성해 맨 앞에 붙여 같은 적용 경로를 태운다.
+            {
+                const rp=(d&&d.pages)||null;
+                if(rp && parseFloat(rp.rev||0) > (doc.__pagesRev||0)){
+                    ops=[{id:'__pages__',kind:'pages',dev:'server',
+                          rev:parseFloat(rp.rev||0),
+                          ids:Array.isArray(rp.ids)?rp.ids:[]}, ...ops];
+                }
+            }
             // 14.13 · __pages__ op(페이지 목록)을 요소 op 보다 먼저 적용한다.
             //   새 페이지가 생긴 직후의 요소 op 이 페이지 목록보다 먼저 오면
             //   upsertEl 이 index 를 '마지막 페이지'로 잘라 붙여, 한 페이지의
@@ -14026,7 +14114,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             for(const op of ordered){
                 if(doc!==_d0) return [];   // 14.13 · 루프 안 await(loadBatch) 너머로 노트가 바뀌면 중단
                 if(op.id==='__pages__'){
-                    if((op.rev||0)>(doc.__pagesRev||0)){ applyPagesOp(op); changed=true; chPages.add(-1); }
+                    if((op.rev||0)>(doc.__pagesRev||0)){
+                        applyPagesOp(op);
+                        // 14.15 · 방금 받은 페이지 목록을 '_lastPages' 에 반영해
+                        //   같은 목록을 곧장 재푸시(pages rev 소모)하지 않는다.
+                        if(doc) doc.__lastPages=(doc.pages||[]).map(p=>p.id).join(',');
+                        changed=true; chPages.add(-1);
+                    }
                     continue;
                 }
                 const local=doc.__localRev.get(op.id)||0;
@@ -14341,14 +14435,20 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             return v;
         }catch(e){ return makeLiveName(); }
     }
-    let liveTimer=null, liveLast={x:null,y:null,page:0}, liveOn=false, liveMoved=false;
+    let liveTimer=null, liveRateTimer=null, liveLast={x:null,y:null,page:0},
+        liveOn=false, liveMoved=false, _liveBusy=false, _liveQueued=false;
+    // 14.15 · 마우스 위치는 이동 중 80ms(약 12.5Hz)마다, 조용하면 4초 heartbeat 만
+    //   보낸다. 예전엔 4초마다만 보내 실시간 커서가 통통 끊겨 뛰었다.
+    const LIVE_RATE_MS=80, LIVE_HEARTBEAT_MS=4000;
     const livePeerCount={};        // 노트별 동시 접속자 수
 
     function startLive(){
         if(liveOn||!curNB) return;
         liveOn=true; liveMoved=true;
         document.addEventListener('mousemove',onLiveMove);
-        liveTimer=setInterval(livePing,4000);
+        liveTimer=setInterval(livePing,LIVE_HEARTBEAT_MS);
+        clearInterval(liveRateTimer);
+        liveRateTimer=setInterval(liveFastTick,LIVE_RATE_MS);
         livePing();
     }
     function stopLive(){
@@ -14356,12 +14456,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         liveOn=false;
         document.removeEventListener('mousemove',onLiveMove);
         clearInterval(liveTimer); liveTimer=null;
+        clearInterval(liveRateTimer); liveRateTimer=null;
+        _liveBusy=false; _liveQueued=false;
         const bd=document.getElementById('liveBadge'); if(bd) bd.style.display='none';
         const nb=curNB&&curNB.id;
         if(nb) fetch('/api/live/leave',{method:'POST',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({note:nb,uid:LIVE_ME}),keepalive:true}).catch(()=>{});
         document.querySelectorAll('.live-cur').forEach(n=>n.remove());
+    }
+    // 이동 중일 때만 빠른 주기로 보낸다. 한 번 보냈으면 liveMoved 를 내려
+    // 멈춘 뒤에는 4초 heartbeat 까지 네트워크를 쉰다.
+    function liveFastTick(){
+        if(!liveOn||!curNB) return;
+        if(!liveMoved && !liveAct()) return;
+        liveMoved=false;
+        livePing();
     }
     function onLiveMove(e){
         const paper=e.target.closest&&e.target.closest('#pagesStage .paper');
@@ -14386,12 +14496,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     async function livePing(){
         if(!liveOn||!curNB) return;
+        // 14.15 · 응답이 뒤섞여 커서가 뒤로 튀지 않게 하나씩 직렬 전송한다.
+        //   이동 중 연속 호출(80ms)은 busy 면 다음 완료 후 이어서 한 번 보낸다.
+        if(_liveBusy){ _liveQueued=true; return; }
+        _liveBusy=true;
         try{
             const r=await fetch('/api/live/ping',{method:'POST',
                 headers:{'Content-Type':'application/json'},
                 body:JSON.stringify({note:curNB.id,uid:LIVE_ME,name:liveName(),
                     x:liveLast.x,y:liveLast.y,page:liveLast.page,on:true,
-                    act:liveAct()})});
+                    act:liveAct(),ts:Date.now()})});
             const d=await r.json().catch(()=>({}));
             if(d&&d.ok){
                 // 5.35: 표시 순서를 매번 완전 랜덤으로 (같은 순서 고정 방지)
@@ -14408,6 +14522,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 livePeerCount[curNB.id]=n;
             }
         }catch(e){ /* 서버 없으면 조용히 무시 */ }
+        finally{
+            _liveBusy=false;
+            if(_liveQueued && liveOn){
+                _liveQueued=false;
+                setTimeout(()=>{ if(liveOn) livePing(); },0);
+            }
+        }
     }
     function drawPeers(peers){
         const stage=document.getElementById('pagesStage');
@@ -15640,7 +15761,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         playClawThrow(_c, ()=>{
             // 항상 휴지통으로 (영구 삭제 없음)
             moveToTrash(nbId);
-            curNB=null;curMemo=null;doc=null;renderGrid();
+            curNB=null;curMemo=null;doc=null;_docId=null;renderGrid();
             toast('휴지통으로 이동했습니다 · 30일 후 자동 삭제');
         });
     }

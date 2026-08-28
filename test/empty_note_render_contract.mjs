@@ -49,7 +49,8 @@ ok('applyPagesOp 이 빈 {id,els:[]} 로 무조건 교체하지 않는다',
   !/doc\.pages=ids\.map\(id=>byId\[id\]\|\|\{id,els:\[\],tables:\[\]\}\);/.test(applySrc));
 
 // ── 3. 빈 저장 가드 ─────────────────────────────────────────────
-const flushSrc = js.slice(js.indexOf('function flushSaveDoc'), js.indexOf('function flushSaveDoc') + 900);
+// 앞에 빠른 전환 가드가 추가될 수 있으므로 함수 전체를 뽑아 검사한다.
+const flushSrc = js.slice(js.indexOf('function flushSaveDoc'), js.indexOf('function getAdminEdits'));
 ok('flushSaveDoc 이 로컬 본문 있는 빈 doc 저장을 막는다',
   /본문 복구 중 · 빈 저장 건너뜀/.test(flushSrc) || /locN>0/.test(flushSrc));
 
