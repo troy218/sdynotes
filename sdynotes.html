@@ -3,10 +3,10 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.13.2">
+<link rel="stylesheet" href="sdynotes.css?v=14.13.3">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
-    <meta name="application-version" content="14.13.2">
+    <meta name="application-version" content="14.13.3">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -43,15 +43,22 @@
     <div id="clawFx">
         <div class="claw-wire" id="clawWire"></div>
         <div class="claw-head" id="clawHead">
-            <svg width="72" height="54" viewBox="0 0 72 54" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <svg width="100" height="60" viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <defs>
                     <linearGradient id="cMetal" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0" stop-color="#d3d9e0"/><stop offset="1" stop-color="#7c8794"/>
+                        <stop offset="0" stop-color="#eaeef3"/><stop offset=".5" stop-color="#b7c1cc"/>
+                        <stop offset="1" stop-color="#66717e"/>
                     </linearGradient>
                 </defs>
-                <rect x="24" y="0" width="24" height="10" rx="3" fill="url(#cMetal)" stroke="#56606c" stroke-width="1.5"/>
-                <path d="M26 10 C 12 26, 9 40, 17 49" fill="none" stroke="url(#cMetal)" stroke-width="6" stroke-linecap="round"/>
-                <path d="M46 10 C 60 26, 63 40, 55 49" fill="none" stroke="url(#cMetal)" stroke-width="6" stroke-linecap="round"/>
+                <rect x="46.5" y="0" width="7" height="8" rx="2" fill="#5b6570"/>
+                <rect x="28" y="5" width="44" height="13" rx="5" fill="url(#cMetal)" stroke="#4a5460" stroke-width="1.5"/>
+                <rect x="32.5" y="8" width="35" height="3.5" rx="1.75" fill="rgba(255,255,255,.55)"/>
+                <circle cx="36" cy="18" r="4.5" fill="url(#cMetal)" stroke="#4a5460" stroke-width="1.2"/>
+                <circle cx="64" cy="18" r="4.5" fill="url(#cMetal)" stroke="#4a5460" stroke-width="1.2"/>
+                <path d="M36 18 C 19 30, 12 40, 15 53" fill="none" stroke="#4a5460" stroke-width="9.5" stroke-linecap="round"/>
+                <path d="M64 18 C 81 30, 88 40, 85 53" fill="none" stroke="#4a5460" stroke-width="9.5" stroke-linecap="round"/>
+                <path d="M36 18 C 19 30, 12 40, 15 53" fill="none" stroke="url(#cMetal)" stroke-width="6.5" stroke-linecap="round"/>
+                <path d="M64 18 C 81 30, 88 40, 85 53" fill="none" stroke="url(#cMetal)" stroke-width="6.5" stroke-linecap="round"/>
             </svg>
         </div>
         <div class="claw-note" id="clawNote"></div>
@@ -1443,6 +1450,6 @@
      ═══════════════════════════════════════════════════════════════════ -->
 
 
-<script src="sdynotes.js?v=14.13.2" defer></script>
+<script src="sdynotes.js?v=14.13.3" defer></script>
 </body>
 </html>

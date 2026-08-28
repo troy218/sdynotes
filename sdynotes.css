@@ -152,30 +152,39 @@
             animation:spin .7s linear infinite;}
         #edLoading .ed-txt{font-size:12.5px;color:var(--text2);}
 
-        /* ===== 노트 추가/삭제 뽑기 기계(크레인) 애니메이션 ===== */
+        /* ===== 노트 추가/삭제 뽑기 기계(크레인) 애니메이션 =====
+           14.13.2 · 집게는 카드 폭에 비례해 --claw-scale 로 크기가 변한다
+           (기본 크기 100×60 → 200px 카드에선 1.6배). 들고 있는 노트는
+           transform-origin 50% 0(= 집게 발끝)을 중심으로 집게와 같은
+           각도로 매달린다. */
         #clawFx{position:fixed;inset:0;z-index:10050;pointer-events:none;display:none;overflow:hidden;}
-        #clawFx .claw-wire{position:absolute;left:0;top:0;width:3px;z-index:1;
-            background:linear-gradient(180deg,#5b6672,#9aa3ad 50%,#5b6672);
-            box-shadow:0 0 3px rgba(0,0,0,.45);
+        #clawFx .claw-wire{position:absolute;left:0;top:0;width:4px;z-index:1;
+            background:linear-gradient(180deg,#49525c,#98a2ad 45%,#49525c);
+            box-shadow:0 0 4px rgba(0,0,0,.4);
+            border-radius:2px;
             /* 줄의 윗점을 축으로 회전한다. JS가 같은 --claw-angle을 집게에도
                넣으므로 기울어진 화면에서도 줄과 집게 중심축이 한 줄로 이어진다. */
             transform-origin:50% 0;
             transform:translateX(-50%) rotate(var(--claw-angle,0deg));
             will-change:transform,height;}
-        #clawFx .claw-head{position:absolute;left:0;top:0;width:72px;height:54px;z-index:3;
+        #clawFx .claw-head{position:absolute;left:0;top:0;width:100px;height:60px;z-index:3;
             transform-origin:50% 0;
             transform:translateX(-50%) rotate(var(--claw-angle,0deg)) scale(var(--claw-scale,1));
             will-change:transform;transition:none;overflow:visible;
-            filter:drop-shadow(0 4px 8px rgba(0,0,0,.3));}
+            filter:drop-shadow(0 6px 10px rgba(0,0,0,.28));}
         /* Tailwind svg{height:auto} 가 집게를 납작하게 만들지 않게, svg 자체만 고정한다.
            svg * 에 크기를 주면 linearGradient 가 깨져 폴더로 옮길 때 집게가 안 보였다. */
         #clawFx .claw-head svg{
-            width:72px!important;height:54px!important;max-width:none!important;max-height:none!important;
+            width:100px!important;height:60px!important;max-width:none!important;max-height:none!important;
             display:block!important;}
         .katex-error{color:inherit!important;background:none!important;}
-        #clawFx .claw-note{position:absolute;left:0;top:0;will-change:transform;transition:none;}
+        #clawFx .claw-note{position:absolute;left:0;top:0;will-change:transform;transition:none;
+            transform-origin:50% 0;}
         #clawFx .claw-note .note-card{margin:0;box-shadow:0 16px 38px rgba(0,0,0,.34);}
         #clawFx .claw-unit{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;}
+        /* 집게가 내려놓은 카드가 살짝 '착지'하며 안정되는 모션 */
+        @keyframes clawLand{from{transform:scale(.988) translateY(3px);}to{transform:none;}}
+        .note-card.claw-landed,.folder-card.claw-landed{animation:clawLand .3s cubic-bezier(.2,.8,.3,1);}
 
         /* 상단 동기화 로딩바 — 산만해서 없앰.
            (저장 상태는 툴바의 '저장됨' 글자로 조용히 알려준다) */
