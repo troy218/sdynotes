@@ -156,9 +156,16 @@
         #clawFx{position:fixed;inset:0;z-index:10050;pointer-events:none;display:none;overflow:hidden;}
         #clawFx .claw-wire{position:absolute;left:0;top:0;width:3px;z-index:1;
             background:linear-gradient(180deg,#5b6672,#9aa3ad 50%,#5b6672);
-            box-shadow:0 0 3px rgba(0,0,0,.45);transform:translateX(-50%);}
+            box-shadow:0 0 3px rgba(0,0,0,.45);
+            /* 줄의 윗점을 축으로 회전한다. JS가 같은 --claw-angle을 집게에도
+               넣으므로 기울어진 화면에서도 줄과 집게 중심축이 한 줄로 이어진다. */
+            transform-origin:50% 0;
+            transform:translateX(-50%) rotate(var(--claw-angle,0deg));
+            will-change:transform,height;}
         #clawFx .claw-head{position:absolute;left:0;top:0;width:72px;height:54px;z-index:3;
-            transform:translateX(-50%);will-change:transform;transition:none;overflow:visible;
+            transform-origin:50% 0;
+            transform:translateX(-50%) rotate(var(--claw-angle,0deg)) scale(var(--claw-scale,1));
+            will-change:transform;transition:none;overflow:visible;
             filter:drop-shadow(0 4px 8px rgba(0,0,0,.3));}
         /* Tailwind svg{height:auto} 가 집게를 납작하게 만들지 않게, svg 자체만 고정한다.
            svg * 에 크기를 주면 linearGradient 가 깨져 폴더로 옮길 때 집게가 안 보였다. */
@@ -369,11 +376,12 @@
 
         /* 다른 사용자의 마우스 */
         .live-cur{
-            position:fixed;z-index:1050;pointer-events:none;
-            /* 14.15 · 전송 주기를 80ms 로 높였으므로 전환을 더 짧게(0.1s) 잡아
-               끊김이 아니라 쫓아가는 느낌이 나게 한다. */
-            transition:left .1s linear, top .1s linear;
-            will-change:left,top;
+            position:fixed;left:0;top:0;z-index:1050;pointer-events:none;
+            /* left/top 보간은 매 프레임 레이아웃을 다시 잡고 0.1초씩 뒤를 쫓았다.
+               GPU transform을 짧게 보간해 현재 위치에는 빠르게 붙고 이동은 매끈하게. */
+            transform:translate3d(var(--live-x,0),var(--live-y,0),0);
+            transition:transform .045s linear;
+            will-change:transform;
             filter:drop-shadow(0 1px 2px rgba(0,0,0,.25));
         }
         .live-nm{
@@ -1631,7 +1639,8 @@
         /* ===== 펜/지우개 실제 크기 커서 ===== */
         .tool-cursor{
             position:fixed;left:0;top:0;z-index:1000;pointer-events:none;display:none;
-            transform:translate(-50%,-50%);border-radius:50%;box-sizing:border-box;
+            transform:translate3d(var(--cursor-x,0),var(--cursor-y,0),0) translate(-50%,-50%);
+            will-change:transform;border-radius:50%;box-sizing:border-box;
         }
         .tool-cursor.pen{border:1.5px solid rgba(0,0,0,.65);background:rgba(0,0,0,.12);}
         .dark .tool-cursor.pen{border-color:rgba(255,255,255,.8);}

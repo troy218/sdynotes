@@ -114,14 +114,22 @@ try {
   await wait(1200);
   check('노트 카드 클릭 시 에디터가 열린다', document.getElementById('editorView').classList.contains('open'));
 
+  // 편집기가 열린 상태에서 다른 카드 열기 요청이 들어와도 이전 curNB와 새 id를
+  // 잘못 비교해 중간 반환하지 않아야 한다(14.15 회귀 방지).
+  const secondTitle = secondCard.querySelector('.note-card-name span').textContent;
+  secondCard.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await wait(1400);
+  check('열린 편집기에서 다른 노트로 바로 전환된다',
+    document.getElementById('edTitle').value === secondTitle);
+
   // 닫기
   window.navBack && window.navBack();
   await wait(900);
   check('에디터를 닫으면 홈으로 돌아온다', !document.getElementById('editorView').classList.contains('open'));
 
   const recent = document.querySelectorAll('.recent-row .note-card');
-  check('편집하고 나온 노트는 아래 최근 줄에 놓인다', recent.length >= 1);
-  check('연 노트는 스택에서는 빠진다', document.querySelectorAll('.note-stack .note-card').length === stackCards.length - 1);
+  check('편집하고 나온 노트는 아래 최근 줄에 놓인다', recent.length >= 2);
+  check('연 노트는 스택에서는 빠진다', document.querySelectorAll('.note-stack .note-card').length === stackCards.length - 2);
 
   const fatal = errs.filter(Boolean);
   check('치명적 JS 오류 없음', fatal.length === 0);

@@ -4,8 +4,8 @@ import { JSDOM, VirtualConsole } from 'jsdom';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
 const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
-const fullHtml = html.includes('<script src="sdynotes.js"')
-  ? html.replace(/<script src="sdynotes\.js"[^>]*><\/script>/, '<script>' + js + '</script>')
+const fullHtml = html.includes('<script src="sdynotes.js')
+  ? html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, '<script>' + js + '</script>')
   : html;
 const errors = [];
 const vc = new VirtualConsole();

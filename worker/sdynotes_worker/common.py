@@ -52,7 +52,7 @@ for _d in (IMG_DIR, DOCS_DIR, UPLOAD_DIR, JOBS_DIR, MUSIC_DIR, SYNC_DIR):
     except Exception:
         pass
 
-APP_VERSION = "14.12.0"
+APP_VERSION = "14.13.1"
 SETTINGS_SCHEMA = 3
 
 _STORAGE_MODE = (os.environ.get("SDY_STORAGE") or "oracle").strip().lower()

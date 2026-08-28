@@ -20,13 +20,15 @@ assert.match(pullBody, /doc\.__lastPages=\(doc\.pages\|\|\[\]\)\.map\(p=>p\.id\)
   'applyPagesOp must refresh __lastPages so the same list is not re-pushed');
 
 // ── 3. 라이브 커서를 자주, 부드럽게 ────────────────────────────────
-assert.match(js, /const LIVE_RATE_MS=80, LIVE_HEARTBEAT_MS=4000;/,
-  'live cursor needs a fast moving rate (80ms) plus a slow heartbeat (4s)');
+assert.match(js, /const LIVE_RATE_MS=40, LIVE_DISCOVER_MS=600, LIVE_HEARTBEAT_MS=4000;/,
+  'live cursor needs a 25fps peer rate, low-cost discovery, and a slow heartbeat');
 assert.match(js, /liveRateTimer=setInterval\(liveFastTick,LIVE_RATE_MS\)/,
   'startLive must schedule the fast live cursor tick');
 assert.match(js, /function liveFastTick\(\)\{/, 'liveFastTick must exist');
-assert.match(js, /if\(!liveMoved && !liveAct\(\)\) return;/,
-  'liveFastTick should only send while the pointer is moving or an action is shown');
+assert.match(js, /const hasPeer=.*livePeerCount/,
+  'liveFastTick must detect whether a peer is present');
+assert.match(js, /!liveMoved && !hasPeer && !liveAct\(\)/,
+  'liveFastTick must keep polling while a peer moves even if my pointer is still');
 assert.match(js, /if\(_liveBusy\)\{ _liveQueued=true; return; \}/,
   'livePing must serialize overlapping requests so cursors do not jump backwards');
 
