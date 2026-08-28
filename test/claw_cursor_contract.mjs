@@ -19,6 +19,13 @@ assert.match(js, /function _clawRect\([\s\S]*?_clawCss\(r\.left\)/,
   '집게 대상 사각형의 left/top/width를 모두 UI 좌표로 측정');
 assert.match(js, /_clawPlaceParts\(u\.head,u\.wire,u\.note/,
   '다중 집게도 단일 집게와 같은 정렬 함수 사용');
+assert.match(js, /function _clawCardGeom\(/, '스택 카드는 AABB가 아니라 실제 박스·회전·윗변을 잰다');
+assert.match(js, /function _clawAim\(/, '집게 머리는 카드 윗변 중심에 발끝이 닿도록 겨눈다');
+assert.match(js, /clone\.style\.transform='none'/, '클론은 스택 translate\\+rotate 를 벗긴다');
+assert.match(js, /_clawPlaceParts\(head,wire,note,headX,headY,noteW,withNote,cardAngle\)/,
+  '카드 각도를 줄·집게·노트에 같이 넘긴다');
+assert.match(css, /#clawFx \.claw-note \.note-card[\s\S]*?transform:none !important/,
+  '집게 안 클론은 CSS 로도 스택 변환을 강제 해제');
 
 // 순수 기하 함수를 꺼내 실제 줄 끝이 집게 윗중심에 닿는지 좌우에서 확인한다.
 const rigMatch = js.match(/function _clawRig\(headX,headY\)\{[\s\S]*?\n    \}/);
@@ -39,6 +46,21 @@ assert.ok(ctx.result[0].angle > 0 && ctx.result[2].angle < 0,
   '화면 가운데를 기준으로 좌우 방향이 자연스럽게 반대');
 assert.ok(Math.abs(ctx.result[1].angle) < 1e-9, '화면 가운데에서는 수직');
 
+// 부채꼴처럼 카드가 기울면 줄도 그 각도로 이어져야 한다.
+const rigAtMatch = js.match(/function _clawRigAt\(headX,headY,angleDeg\)\{[\s\S]*?\n    \}/);
+assert.ok(rigAtMatch, '_clawRigAt 함수가 있어야 한다');
+const ctx2 = { Math };
+vm.runInNewContext(`${rigAtMatch[0]}; result=[_clawRigAt(600,600,0),_clawRigAt(600,600,22),_clawRigAt(600,600,-18)]`, ctx2);
+for (const [i, rig] of ctx2.result.entries()) {
+  const ang = [0, 22, -18][i];
+  const rad = rig.angle * Math.PI / 180;
+  const endX = rig.anchorX - Math.sin(rad) * rig.length;
+  const endY = Math.cos(rad) * rig.length;
+  assert.ok(Math.abs(endX - 600) < 0.02, `카드 각도 줄 끝 x (${ang})`);
+  assert.ok(Math.abs(endY - 600) < 0.02, `카드 각도 줄 끝 y (${ang})`);
+  assert.equal(rig.angle, ang);
+}
+
 // 상대 커서는 내가 멈춰도 계속 받아야 하며 left/top 대신 합성 transform으로 이동한다.
 assert.match(js, /const LIVE_RATE_MS=40, LIVE_DISCOVER_MS=600/,
   '상대가 있을 때 25fps, 혼자일 때 저빈도 탐색');
@@ -53,8 +75,8 @@ assert.match(js, /pr\.width\/Math\.max\(1,ps\.w\)/,
   '상대 커서는 pageScale 상수가 아니라 실제 종이 화면 크기로 환산');
 
 // 배포 중 반쪽 파일/구 캐시가 섞이지 않도록 에셋을 버전 고정하고 원자 교체한다.
-assert.match(html, /sdynotes\.css\?v=14\.13\.5/);
-assert.match(html, /sdynotes\.js\?v=14\.13\.5/);
+assert.match(html, /sdynotes\.css\?v=14\.13\.6/);
+assert.match(html, /sdynotes\.js\?v=14\.13\.6/);
 assert.match(apply, /deploy_atomic/);
 assert.match(apply, /node --check "\$SRC\/sdynotes\.js"/);
 

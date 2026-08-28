@@ -16007,6 +16007,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 실제 카드를 클론해서 '뽑기 기계가 잡을 노트'로 만든다
     function _clawNoteVisual(card, r){
         try{ if(card._render) card._render(); }catch(e){}   // 미리보기 강제 렌더
+        const geom=_clawCardGeom(card);
         const clone=card.cloneNode(true);
         clone.classList.add('claw-grab');
         // 10.0 · '빈 집게' 수정: 이 클론은 원본과 같은 data-nb-id/data-folder-id 를
@@ -16016,21 +16017,40 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         try{
             clone.removeAttribute('data-nb-id');
             clone.removeAttribute('data-folder-id');
+            clone.removeAttribute('id');
+            clone.classList.remove('home-open','home-lift','home-peek','claw-landed');
             clone.style.visibility='visible';
-            clone.style.opacity='';
+            clone.style.opacity='1';
         }catch(e){}
         clone.querySelectorAll('.emoji-picker,.select-check,.card-menu,.pin-badge,'
             +'.unlock-badge,.lock-overlay,.admin-verified,.live-dot,'
             +'.folder-menu-btn,.folder-lock').forEach(n=>n.remove());
-        // 14.13.2 · 원본 카드의 실제 박스(측정한 left/top/width/height)를 그대로
-        //   강제한다. 카드 폭은 데스크톱 고정 200px, 폰은 2열 % 배분, 카드 크기
-        //   설정(body.card-s/l)까지 환경마다 달라 CSS 크기에 맡기면 들고 내려오는
-        //   미리보기가 실제 카드보다 작아/크게 보였다. 박스를 동일하게 맞출 것.
-        if(r){
-            clone.style.width =Math.round(r.width)+'px';
-            clone.style.height=Math.round(r.height)+'px';
-        }
+        // 14.13.6 · 홈 스택은 translate(-50%,-50%)+rotate 를 인라인으로 심는다.
+        //   AABB 폭·그 변환을 클론에 남기면 집게 안 노트가 작고 휘어 보였다.
+        //   레이아웃 크기만 강제하고 변환은 부모 .claw-note 의 매달림 회전에 맡긴다.
+        const w=Math.round(geom.width), h=Math.round(geom.height);
+        clone.style.position='relative';
+        clone.style.left='auto';
+        clone.style.top='auto';
+        clone.style.right='auto';
+        clone.style.bottom='auto';
+        clone.style.margin='0';
+        clone.style.transform='none';
+        clone.style.transformOrigin='50% 0';
+        clone.style.width=w+'px';
+        clone.style.height=h+'px';
+        clone.style.minWidth=w+'px';
         clone.style.maxWidth='none';
+        clone.style.flex='0 0 '+w+'px';
+        clone.style.zIndex='1';
+        if(geom.pvH){
+            const pv=clone.querySelector('.note-preview, .folder-thumb');
+            if(pv){
+                pv.style.height=Math.round(geom.pvH)+'px';
+                pv.style.minHeight=Math.round(geom.pvH)+'px';
+            }
+        }
+        try{ rescaleOne(clone.querySelector('.note-preview')); }catch(e){}
         return clone;
     }
     // getBoundingClientRect()는 화면 px, zoom 된 fixed 레이어의 left/top은 UI CSS px다.
@@ -16055,9 +16075,76 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const anchorX=headX-Math.tan(rad)*y;
         return {angle:-lean,anchorX,length:y/Math.max(.98,Math.cos(rad)),lean};
     }
-    function _clawPlaceParts(head,wire,note,headX,headY,noteW,withNote){
+    // 14.13.6 · 홈 스택/부채꼴처럼 카드 각도가 있으면 줄·집게를 그 각도로 맞춘다.
+    //   CSS rotate(θ) 에서 아래 방향 벡터는 (-sin θ, cos θ).
+    function _clawRigAt(headX,headY,angleDeg){
+        const th=(Number(angleDeg)||0)*Math.PI/180;
+        const y=Math.max(0,headY);
+        const c=Math.max(.5,Math.cos(th));
+        const length=y/c;
+        const ang=Number(angleDeg)||0;
+        return {angle:ang,anchorX:headX+Math.sin(th)*length,length,lean:-ang};
+    }
+    function _clawCardRot(el){
+        try{
+            const tr=getComputedStyle(el).transform;
+            if(!tr||tr==='none') return 0;
+            let a,b;
+            if(typeof DOMMatrixReadOnly==='function'){
+                const m=new DOMMatrixReadOnly(tr); a=m.a; b=m.b;
+            }else{
+                const nums=tr.match(/matrix(?:3d)?\(([^)]+)\)/);
+                if(!nums) return 0;
+                const p=nums[1].split(',').map(Number);
+                a=p[0]; b=p[1];
+            }
+            const deg=Math.atan2(b,a)*180/Math.PI;
+            return Math.abs(deg)<.08?0:deg;
+        }catch(e){ return 0; }
+    }
+    function _clawCardGeom(el){
+        const r=_clawRect(el);
+        const width=Math.max(1, el.offsetWidth||Math.round(r.width)||200);
+        const height=Math.max(1, el.offsetHeight||Math.round(r.height)||1);
+        const rot=_clawCardRot(el);
+        let gripX=r.left+r.width/2, gripY=r.top;
+        try{
+            const probe=document.createElement('i');
+            probe.setAttribute('aria-hidden','true');
+            probe.style.cssText='position:absolute;left:50%;top:0;width:0;height:0;margin:0;padding:0;border:0;pointer-events:none;visibility:hidden;';
+            el.appendChild(probe);
+            const pr=probe.getBoundingClientRect();
+            probe.remove();
+            if(pr){
+                gripX=_clawCss(pr.left+pr.width/2);
+                gripY=_clawCss(pr.top);
+            }
+        }catch(e){}
+        let pvH=0;
+        try{
+            const pv=el.querySelector('.note-preview, .folder-thumb');
+            if(pv) pvH=pv.offsetHeight||0;
+        }catch(e){}
+        return {width,height,rot,gripX,gripY,left:r.left,top:r.top,aabbW:r.width,aabbH:r.height,pvH};
+    }
+    function _clawUseRot(rot){ return Math.abs(Number(rot)||0)>.2; }
+    function _clawHeadFromGrip(gripX,gripY,angleDeg,scale){
+        const grab=_clawGripD(scale);
+        const th=(Number(angleDeg)||0)*Math.PI/180;
+        return {x:gripX+Math.sin(th)*grab, y:gripY-Math.cos(th)*grab, grab};
+    }
+    function _clawAim(el){
+        const g=_clawCardGeom(el);
+        const noteW=Math.max(g.width,60);
+        const scale=_clawScaleFor(noteW);
+        const useRot=_clawUseRot(g.rot);
+        const hd=_clawHeadFromGrip(g.gripX,g.gripY,useRot?g.rot:0,scale);
+        return {g,noteW,scale,useRot,ang:useRot?g.rot:null,targetX:hd.x,headY:hd.y};
+    }
+    function _clawPlaceParts(head,wire,note,headX,headY,noteW,withNote,cardAngle){
         if(!head||!wire) return;
-        const rig=_clawRig(headX,headY);
+        const useCard=cardAngle!=null && isFinite(Number(cardAngle));
+        const rig=useCard?_clawRigAt(headX,headY,Number(cardAngle)):_clawRig(headX,headY);
         const scale=_clawScaleFor(noteW);        // 카드 폭 비례 배율
         const angle=rig.angle.toFixed(3)+'deg';
         head.style.left=headX+'px'; head.style.top=headY+'px';
@@ -16068,9 +16155,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         wire.style.setProperty('--claw-angle',angle);
         if(note&&withNote){
             // 회전된 집게의 실제 발끝을 카드 중앙 상단에 붙인다.
-            const grab=_clawGripD(scale), a=rig.lean*Math.PI/180;
-            const gripX=headX+Math.sin(a)*grab;
-            const gripY=headY+Math.cos(a)*grab;
+            // CSS rotate(θ) · 발끝 = head + (-sin θ, cos θ) * grab
+            const grab=_clawGripD(scale), th=rig.angle*Math.PI/180;
+            const gripX=headX-Math.sin(th)*grab;
+            const gripY=headY+Math.cos(th)*grab;
             note.style.left=Math.round(gripX-noteW/2)+'px';
             note.style.top=Math.round(gripY)+'px';
             // 14.13.2 · 들고 있는 노트도 집게와 같은 각도로 매달린다.
@@ -16080,9 +16168,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
     }
     // 집게 머리 + 와이어 + 노트를 특정 좌표로 정렬
-    function _clawPos(headX, headY, note, noteW){
+    function _clawPos(headX, headY, note, noteW, cardAngle){
         _clawPlaceParts(_clawEl('clawHead'),_clawEl('clawWire'),note,
-                        headX,headY,noteW,!!note);
+                        headX,headY,noteW,!!note,cardAngle);
     }
     // ① 노트 추가: 크레인이 실제 노트를 잡고 내려와 카드가 놓인 자리에 두고 간다
     function playClawDrop(card, done){
@@ -16119,52 +16207,55 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         // 놓이는 순간 실제 카드가 살짝 '착지'하면서 안정되는 느낌
         const revealCard=()=>{ placed=true; _liveCards().forEach(n=>{ try{
             n.style.visibility='';
-            n.classList.add('claw-landed');
-            setTimeout(()=>n.classList.remove('claw-landed'),360);
+            // 스택/부채꼴 카드는 transform 이 각도 그 자체라 clawLand 애니를 씌우면 휘어진다.
+            if(!(n.closest&&n.closest('.note-stack'))){
+                n.classList.add('claw-landed');
+                setTimeout(()=>n.classList.remove('claw-landed'),360);
+            }
         }catch(e){} }); };
         const finish=()=>{ if(settled)return; settled=true; revealCard(); if(done)done(); };
         setTimeout(finish, 2600);              // rAF 멈춤 대비 안전장치
         try{ card.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
-        const r=_clawRect(card);
-        const targetX=r.left+r.width/2;
-        const scale=_clawScaleFor(r.width);
-        const noteW=Math.max(r.width, 60);
-        const targetHeadY=r.top-_clawGripD(scale);   // 발끝이 카드 윗변에 닿는 위치
+        const aim=_clawAim(card);
+        const noteW=aim.noteW, scale=aim.scale, cardAng=aim.ang;
+        const targetX=aim.targetX, targetHeadY=aim.headY;
         // 실제 카드 클론 (숨기기 전에 떠야 미리보기가 그대로 복사된다)
-        const clone=_clawNoteVisual(card, r);
+        const clone=_clawNoteVisual(card, aim.g);
         note.innerHTML=''; note.appendChild(clone);
         note.style.width=noteW+'px';
+        note.style.height=Math.round(aim.g.height)+'px';
         note.style.opacity='1';
         hideCard();                                        // 아직 "존재하지 않는" 상태
         const startY=-(CLAW_H*scale)-140;      // 화면 위에서 시작
-        _clawPos(targetX, startY, note, noteW);
+        _clawPos(targetX, startY, note, noteW, cardAng);
         if(!_clawShow()){ revealCard(); finish(); return; }
         const t0=performance.now();
         const MOVE_T=260, DROP_T=620, RELEASE_T=240, UP_T=430;
-        const landAngle=_clawRig(targetX,targetHeadY).angle;   // 내려앉을 때 돌려줄 기울기
+        const landAngle=cardAng!=null?cardAng:_clawRig(targetX,targetHeadY).angle;
         function step(now){
             if(tok!==_clawToken){ revealCard(); finish(); return; }
             const t=now-t0;
             if(t<MOVE_T){                      // 상단에서 목표 x로 이동(노트를 든 채)
                 hideCard();                    // 재렌더로 카드가 되살아나도 계속 숨긴다
-                _clawPos(targetX, startY, note, noteW);
+                _clawPos(targetX, startY, note, noteW, cardAng);
             }else if(t<MOVE_T+DROP_T){         // 아래로 내려옴(노트를 잡은 채)
                 hideCard();
                 const p=_ease((t-MOVE_T)/DROP_T);
-                _clawPos(targetX, startY+(targetHeadY-startY)*p, note, noteW);
-            }else if(t<MOVE_T+DROP_T+RELEASE_T){ // 놓는 순간: 노트가 제자리에 똑바로 선다
+                _clawPos(targetX, startY+(targetHeadY-startY)*p, note, noteW, cardAng);
+            }else if(t<MOVE_T+DROP_T+RELEASE_T){ // 놓는 순간: 스택이면 카드 각도 유지, 격자면 바로 선다
                 hideCard();
-                _clawPos(targetX, targetHeadY, note, noteW);
-                // 집게 기울기 → 0 (노트가 카드 위에 똑바로 내려앉은 다음 교대)
-                const pr=_ease((t-MOVE_T-DROP_T)/RELEASE_T);
-                note.style.transform='rotate('+(landAngle*(1-pr)).toFixed(3)+'deg)';
-            }else if(t<MOVE_T+DROP_T+RELEASE_T+UP_T){ // 똑바로 선 직후 실제 카드로 교대 + 빈 집게 상승
+                _clawPos(targetX, targetHeadY, note, noteW, cardAng);
+                if(cardAng==null){
+                    const pr=_ease((t-MOVE_T-DROP_T)/RELEASE_T);
+                    note.style.transform='rotate('+(landAngle*(1-pr)).toFixed(3)+'deg)';
+                }
+            }else if(t<MOVE_T+DROP_T+RELEASE_T+UP_T){ // 실제 카드로 교대 + 빈 집게 상승
                 if(!placed){                    // 클론 → 실제 카드 교대 (크기·각도 완벽 일치)
                     revealCard();
                     note.style.opacity='0';
                 }
                 const p=_ease((t-MOVE_T-DROP_T-RELEASE_T)/UP_T);
-                _clawPos(targetX, targetHeadY-p*(targetHeadY+260), null, noteW);
+                _clawPos(targetX, targetHeadY-p*(targetHeadY+260), null, noteW, cardAng);
             }else{
                 _clawHide();
                 note.innerHTML=''; note.style.opacity='';
@@ -16196,18 +16287,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const finish=()=>{ if(settled)return; settled=true; try{ card.style.visibility=''; }catch(e){} try{ if(ghost) ghost.remove(); }catch(e){} if(done)done(); };
         setTimeout(finish, 2400);              // rAF 멈춤 대비 안전장치
         try{ card.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
-        const r=_clawRect(card);
-        const targetX=r.left+r.width/2;
-        const scale=_clawScaleFor(r.width);
-        const noteW=Math.max(r.width, 60);
-        const grabHeadY=r.top-_clawGripD(scale);
-        const clone=_clawNoteVisual(card, r);
+        const aim=_clawAim(card);
+        const noteW=aim.noteW, scale=aim.scale, cardAng=aim.ang;
+        const targetX=aim.targetX, grabHeadY=aim.headY;
+        const clone=_clawNoteVisual(card, aim.g);
         note.innerHTML=''; note.appendChild(clone);
         note.style.width=noteW+'px';
+        note.style.height=Math.round(aim.g.height)+'px';
         note.style.opacity='0';
         note.style.display='none';
         const startY=-(CLAW_H*scale)-140;
-        _clawPos(targetX, startY, null, noteW);
+        _clawPos(targetX, startY, null, noteW, cardAng);
         _clawShow();
         const t0=performance.now();
         const MOVE_T=260, DROP_T=560, GRAB_T=180, LIFT_T=560;
@@ -16218,10 +16308,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(tok!==_clawToken){ finish(); return; }
             const t=now-t0;
             if(t<MOVE_T){                      // 빈 집게가 상단에서 목표 위치로 수평 이동
-                _clawPos(targetX, startY, null, noteW);
+                _clawPos(targetX, startY, null, noteW, cardAng);
             }else if(t<MOVE_T+DROP_T){         // 빈 집게가 노트 위로 하강
                 const p=_ease((t-MOVE_T)/DROP_T);
-                _clawPos(targetX, startY+(grabHeadY-startY)*p, null, noteW);
+                _clawPos(targetX, startY+(grabHeadY-startY)*p, null, noteW, cardAng);
             }else if(t<MOVE_T+DROP_T+GRAB_T){  // 노트를 집는 순간 (실제 노트를 숨기고 집게 클론 활성화)
                 if(!grabbed){
                     grabbed=true;
@@ -16229,7 +16319,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     note.style.display='';
                     note.style.opacity='1';
                 }
-                _clawPos(targetX, grabHeadY, note, noteW);
+                _clawPos(targetX, grabHeadY, note, noteW, cardAng);
             }else if(t<MOVE_T+DROP_T+GRAB_T+LIFT_T){ // 노트를 쥔 채 끌어올려 던짐
                 const p=_ease((t-MOVE_T-DROP_T-GRAB_T)/LIFT_T);
                 const x=p*innerWidth*0.5*dir;
@@ -16264,25 +16354,24 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const finish=()=>{ if(settled)return; settled=true; try{ card.style.visibility=''; }catch(e){} if(done)done(); };
         setTimeout(finish, 3200);
         try{ card.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
-        const r=_clawRect(card);
-        const targetX=r.left+r.width/2;
-        const scale=_clawScaleFor(r.width);
-        const noteW=Math.max(r.width, 60);
-        const grabHeadY=r.top-_clawGripD(scale);
+        const aim=_clawAim(card);
+        const noteW=aim.noteW, scale=aim.scale, cardAng=aim.ang;
+        const targetX=aim.targetX, grabHeadY=aim.headY;
         let fX=innerWidth/2, fY=innerHeight*0.38;
         if(folderEl){
             try{ folderEl.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){}
-            const fr=_clawRect(folderEl);
-            fX=fr.left+fr.width/2; fY=fr.top-_clawGripD(_clawScaleFor(fr.width));
+            const fa=_clawAim(folderEl);
+            fX=fa.targetX; fY=fa.headY;
         }
-        const clone=_clawNoteVisual(card, r);
+        const clone=_clawNoteVisual(card, aim.g);
         note.innerHTML=''; note.appendChild(clone);
         note.style.width=noteW+'px';
+        note.style.height=Math.round(aim.g.height)+'px';
         note.style.opacity='0';
         note.style.display='none';
         note.style.transform='';
         const startY=-(CLAW_H*scale)-140;
-        _clawPos(targetX, startY, null, noteW);
+        _clawPos(targetX, startY, null, noteW, cardAng);
         if(!_clawShow()){ finish(); return; }
         const t0=performance.now();
         const MOVE_T=220, DROP_T=520, GRAB_T=160, CARRY_T=640, SINK_T=260;
@@ -16291,10 +16380,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(tok!==_clawToken){ finish(); return; }
             const t=now-t0;
             if(t<MOVE_T){
-                _clawPos(targetX, startY, null, noteW);
+                _clawPos(targetX, startY, null, noteW, cardAng);
             }else if(t<MOVE_T+DROP_T){
                 const p=_ease((t-MOVE_T)/DROP_T);
-                _clawPos(targetX, startY+(grabHeadY-startY)*p, null, noteW);
+                _clawPos(targetX, startY+(grabHeadY-startY)*p, null, noteW, cardAng);
             }else if(t<MOVE_T+DROP_T+GRAB_T){
                 if(!grabbed){
                     grabbed=true;
@@ -16302,18 +16391,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     note.style.display='';
                     note.style.opacity='1';
                 }
-                _clawPos(targetX, grabHeadY, note, noteW);
+                _clawPos(targetX, grabHeadY, note, noteW, cardAng);
             }else if(t<MOVE_T+DROP_T+GRAB_T+CARRY_T){
                 const p=_ease((t-MOVE_T-DROP_T-GRAB_T)/CARRY_T);
                 const hx=targetX+(fX-targetX)*p;
                 const hy=grabHeadY+(fY-grabHeadY)*p;
-                _clawPos(hx, hy, note, noteW);
+                _clawPos(hx, hy, note, noteW, cardAng);
             }else if(t<MOVE_T+DROP_T+GRAB_T+CARRY_T+SINK_T){
                 const p=_ease((t-MOVE_T-DROP_T-GRAB_T-CARRY_T)/SINK_T);
                 const shrink=1-p*0.65;
-                _clawPos(fX, fY, note, noteW);
+                _clawPos(fX, fY, note, noteW, cardAng);
                 note.style.opacity=String(Math.max(0,1-p));
-                note.style.transform='scale('+shrink+')';
+                note.style.transform='rotate('+(cardAng||0)+'deg) scale('+shrink+')';
                 // 집게도 현재(노트 비례) 크기를 기준으로 같이 줄어든다
                 head.style.setProperty('--claw-scale',String(scale*shrink));
             }else{
@@ -16350,12 +16439,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const show=valid.slice(0,12);
         const units=show.map(card=>{
             try{ card.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){}
-            const r=_clawRect(card);
-            const targetX=r.left+r.width/2;
-            const scale=_clawScaleFor(r.width);
-            const noteW=Math.max(r.width,60);
-            const grabHeadY=r.top-_clawGripD(scale);
-            const clone=_clawNoteVisual(card, r);
+            const aim=_clawAim(card);
+            const clone=_clawNoteVisual(card, aim.g);
             const unit=document.createElement('div');
             unit.className='claw-unit';
             const wire=document.createElement('div'); wire.className='claw-wire';
@@ -16364,15 +16449,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const note=document.createElement('div'); note.className='claw-note';
             note.style.display='none';
             note.style.opacity='0';
+            note.style.width=aim.noteW+'px';
+            note.style.height=Math.round(aim.g.height)+'px';
             note.appendChild(clone);
             unit.appendChild(wire); unit.appendChild(head); unit.appendChild(note);
             fx.appendChild(unit);
-            return {card,unit,wire,head,note,targetX,grabHeadY,noteW,
-                    startY:-(CLAW_H*scale)-160-(Math.random()*60), grabbed:false};
+            return {card,unit,wire,head,note,targetX:aim.targetX,grabHeadY:aim.headY,noteW:aim.noteW,
+                    cardAng:aim.ang, startY:-(CLAW_H*aim.scale)-160-(Math.random()*60), grabbed:false};
         });
         _clawShow();
         const place=(u,headY,headX,withNote)=>{
-            _clawPlaceParts(u.head,u.wire,u.note,headX,headY,u.noteW,withNote);
+            _clawPlaceParts(u.head,u.wire,u.note,headX,headY,u.noteW,withNote,u.cardAng);
         };
         const t0=performance.now();
         const MOVE_T=260, DROP_T=560, GRAB_T=200, LIFT_T=620;
@@ -16443,17 +16530,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         let fX=innerWidth/2, fY=innerHeight*0.4;
         if(folderEl){
             try{ folderEl.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){}
-            const fr=_clawRect(folderEl);
-            fX=fr.left+fr.width/2; fY=fr.top-_clawGripD(_clawScaleFor(fr.width));
+            const fa=_clawAim(folderEl);
+            fX=fa.targetX; fY=fa.headY;
         }
         const units=show.map(card=>{
             try{ card.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){}
-            const r=_clawRect(card);
-            const targetX=r.left+r.width/2;
-            const scale=_clawScaleFor(r.width);
-            const noteW=Math.max(r.width,60);
-            const grabHeadY=r.top-_clawGripD(scale);
-            const clone=_clawNoteVisual(card, r);
+            const aim=_clawAim(card);
+            const clone=_clawNoteVisual(card, aim.g);
             const unit=document.createElement('div');
             unit.className='claw-unit';
             const wire=document.createElement('div'); wire.className='claw-wire';
@@ -16462,15 +16545,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const note=document.createElement('div'); note.className='claw-note';
             note.style.display='none';
             note.style.opacity='0';
+            note.style.width=aim.noteW+'px';
+            note.style.height=Math.round(aim.g.height)+'px';
             note.appendChild(clone);
             unit.appendChild(wire); unit.appendChild(head); unit.appendChild(note);
             fx.appendChild(unit);
-            return {card,unit,wire,head,note,targetX,grabHeadY,noteW,
-                    startY:-(CLAW_H*scale)-160-(Math.random()*60), grabbed:false};
+            return {card,unit,wire,head,note,targetX:aim.targetX,grabHeadY:aim.headY,noteW:aim.noteW,
+                    cardAng:aim.ang, startY:-(CLAW_H*aim.scale)-160-(Math.random()*60), grabbed:false};
         });
         _clawShow();
         const place=(u,headY,headX,withNote)=>{
-            _clawPlaceParts(u.head,u.wire,u.note,headX,headY,u.noteW,withNote);
+            _clawPlaceParts(u.head,u.wire,u.note,headX,headY,u.noteW,withNote,u.cardAng);
         };
         const t0=performance.now();
         const MOVE_T=260, DROP_T=520, GRAB_T=180, CARRY_T=700, SINK_T=280;
@@ -16507,7 +16592,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     const p=_ease((t-MOVE_T-DROP_T-GRAB_T-CARRY_T)/SINK_T);
                     const shrink=1-p*0.6;
                     u.note.style.opacity=String(Math.max(0,1-p));
-                    u.note.style.transform='scale('+shrink+')';
+                    u.note.style.transform='rotate('+(u.cardAng||0)+'deg) scale('+shrink+')';
                     // 집게도 현재(노트 비례) 크기를 기준으로 같이 줄어든다
                     u.head.style.setProperty('--claw-scale',String(_clawScaleFor(u.noteW)*shrink));
                 }

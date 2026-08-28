@@ -180,7 +180,14 @@
         .katex-error{color:inherit!important;background:none!important;}
         #clawFx .claw-note{position:absolute;left:0;top:0;will-change:transform;transition:none;
             transform-origin:50% 0;}
-        #clawFx .claw-note .note-card{margin:0;box-shadow:0 16px 38px rgba(0,0,0,.34);}
+        /* 14.13.6 · 홈 스택 클론이 가져오는 translate(-50%,-50%)+rotate 를 벗겨
+           실제 카드 박스만 남긴다. 매달림 회전은 부모 .claw-note 가 맡는다. */
+        #clawFx .claw-note .note-card,
+        #clawFx .claw-note .folder-card{
+            position:relative !important;left:auto !important;top:auto !important;
+            right:auto !important;bottom:auto !important;margin:0 !important;
+            transform:none !important;transform-origin:50% 0;
+            max-width:none !important;box-shadow:0 16px 38px rgba(0,0,0,.34);}
         #clawFx .claw-unit{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;}
         /* 집게가 내려놓은 카드가 살짝 '착지'하며 안정되는 모션 */
         @keyframes clawLand{from{transform:scale(.988) translateY(3px);}to{transform:none;}}
