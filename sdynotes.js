@@ -7234,6 +7234,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const c0=w.querySelector('.tb-content');
             if(el&&c0&&c0.querySelector('.wf')) c0.innerHTML=el.html||'';
         }
+        // 14.13.7 · 다른 상자에 남아 있던 글자 선택(저장된 범위)은 이제 무효다.
+        //   이걸 지우지 않으면 편집 중 색/형광펜을 칠할 때 엉뚱한 상자의
+        //   선택이 복원되어 그쪽이 칠해진다.
+        clearTextSelection();
         document.querySelectorAll('.tb.edit').forEach(o=>{ if(o!==w){ commitEditingText(o); o.classList.remove('edit'); const c=o.querySelector('.tb-content'); if(c)c.contentEditable='false'; }});
         document.querySelectorAll('.tb.sel,.paper-img.sel,.stroke-g.sel').forEach(o=>{ if(o!==w) o.classList.remove('sel'); });
         w.classList.add('edit'); w.classList.remove('sel');
@@ -8253,7 +8257,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!opt||!opt.quiet){ renderPageEls(pi); renderTblDivs(pi); saveDoc(); }
     }
 
-    // ===== 표 테두리(선택 틀) · 꼭짓점 · 경계 잡이 · + 버튼 =====
+    // ===== 표 테두리(선택 틀) · 꼭짓점 · 경계 잡이 · 변 중앙 늘리기 손잡이 =====
     // 조잡한 파란 막대 대신, 텍스트 상자와 같은 감각의 얇은 틀 + 손잡이로 그린다.
     function renderTblDivs(pi){
         const paper=paperAt(pi); if(!paper) return;
@@ -8305,25 +8309,23 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 h.addEventListener('mousedown',e=>startTblScale(e,pi,t.id,dir));
                 box.appendChild(h);
             });
-            // ⑤ 변 중앙의 + 버튼 — 가까이 가면 나타나 행/열을 추가
-            const plus=(cls,left,top,kind,dir,tip)=>{
-                const b=document.createElement('div');
-                b.className='tbl-plus '+cls;
-                b.style.left=left+'px'; b.style.top=top+'px';
-                b.title=tip;
-                b.innerHTML='<i class="ri-add-line"></i>';
-                b.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation(); });
-                b.addEventListener('click',e=>{
-                    e.preventDefault(); e.stopPropagation();
-                    setActiveTbl(pi,t.id, dir>0?t.ch.length-1:0, dir>0?t.cw.length-1:0);
-                    tblAdd(kind,dir);
-                });
-                box.appendChild(b);
+            // ⑤ 변 중앙 손잡이 — ＋ 버튼 대신 '한 축으로만' 늘리기
+            //    행/열 추가는 이미 표 도구 막대(tblBar)에 있으므로, 이 자리는
+            //    위·아래 = 세로(높이)만, 왼·오른쪽 = 가로(너비)만 늘리는 손잡이다.
+            const edge=(cls,left,top,dir)=>{
+                const h=document.createElement('div');
+                h.className='tbl-stretch '+cls;
+                h.style.left=left+'px'; h.style.top=top+'px';
+                h.title=dir==='top'||dir==='bottom'
+                    ?'끌어서 세로(높이)로만 늘리기'
+                    :'끌어서 가로(너비)로만 늘리기';
+                h.addEventListener('mousedown',e=>startTblStretch(e,pi,t.id,dir));
+                box.appendChild(h);
             };
-            plus('top',    size.w/2, 0,      'row',-1,'맨 위에 행 추가');
-            plus('bottom', size.w/2, size.h, 'row', 1,'맨 아래에 행 추가');
-            plus('left',   0,        size.h/2,'col',-1,'맨 왼쪽에 열 추가');
-            plus('right',  size.w,   size.h/2,'col', 1,'맨 오른쪽에 열 추가');
+            edge('top',    size.w/2, 0,      'top');
+            edge('bottom', size.w/2, size.h, 'bottom');
+            edge('left',   0,        size.h/2,'left');
+            edge('right',  size.w,   size.h/2,'right');
             // ⑥ 왼쪽 위 이동 손잡이 — 표 전체를 잡아 옮긴다
             const mv=document.createElement('div');
             mv.className='tbl-move';
@@ -8405,6 +8407,22 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         setActiveTbl(pi,tid,activeTbl&&activeTbl.tid===tid?activeTbl.r:0,
                              activeTbl&&activeTbl.tid===tid?activeTbl.c:0);
     }
+    // ===== 변 중앙 손잡이 — 한 축으로만 표 늘리기 =====
+    //   위·아래 = 세로(높이)만, 왼·오른쪽 = 가로(너비)만.
+    //   행/열 추가는 표 도구 막대(tblBar)에서 하므로 손잡이는 늘리기 전용이다.
+    function startTblStretch(e,pi,tid,dir){
+        e.preventDefault(); e.stopPropagation();
+        const t=findTbl(pi,tid); if(!t) return;
+        pushHistory();
+        const size=tblSize(t);
+        tblScale={pi,tid,dir,sx:e.clientX,sy:e.clientY,
+                  ox:t.x,oy:t.y,ow:size.w,oh:size.h,
+                  cw:t.cw.slice(),ch:t.ch.slice(),
+                  stretch:(dir==='top'||dir==='bottom')?'v':'h',
+                  moved:false};
+        setActiveTbl(pi,tid,activeTbl&&activeTbl.tid===tid?activeTbl.r:0,
+                             activeTbl&&activeTbl.tid===tid?activeTbl.c:0);
+    }
     // ===== 표 통째로 이동 =====
     function startTblMove(e,pi,tid){
         e.preventDefault(); e.stopPropagation();
@@ -8449,13 +8467,33 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             tblRepaint(tblDrag.pi);
             return;
         }
-        // 꼭짓점 확대/축소
+        // 꼭짓점 확대/축소 · 변 중앙 한 축 늘리기
         if(tblScale){
             e.preventDefault();
             const t=findTbl(tblScale.pi,tblScale.tid); if(!t) return;
             const dd=pageClientDelta(tblScale.pi,e.clientX-tblScale.sx,e.clientY-tblScale.sy);
             const dx=dd.x,dy=dd.y;
             if(Math.abs(dx)>2||Math.abs(dy)>2) tblScale.moved=true;
+            // 14.13.7 · 변 중앙 손잡이: 한 축으로만 늘린다
+            //   위·아래 = 세로(높이)만 · 왼·오른쪽 = 가로(너비)만 (전체 비율 유지)
+            if(tblScale.stretch){
+                if(tblScale.stretch==='v'){
+                    const grow=tblScale.dir==='bottom'?dy:-dy;
+                    const nh=Math.max(TBL_MINH*tblScale.ch.length, tblScale.oh+grow);
+                    const ky=nh/tblScale.oh;
+                    t.ch=tblScale.ch.map(v=>Math.max(TBL_MINH,Math.round(v*ky)));
+                    if(tblScale.dir==='top') t.y=Math.round(tblScale.oy+tblScale.oh-nh);
+                }else{
+                    const grow=tblScale.dir==='right'?dx:-dx;
+                    const nw=Math.max(TBL_MINW*tblScale.cw.length, tblScale.ow+grow);
+                    const kx=nw/tblScale.ow;
+                    t.cw=tblScale.cw.map(v=>Math.max(TBL_MINW,Math.round(v*kx)));
+                    if(tblScale.dir==='left') t.x=Math.round(tblScale.ox+tblScale.ow-nw);
+                }
+                rebuildTable(tblScale.pi,tblScale.tid,{quiet:true});
+                tblRepaint(tblScale.pi);
+                return;
+            }
             const west=(tblScale.dir==='nw'||tblScale.dir==='sw');
             const north=(tblScale.dir==='nw'||tblScale.dir==='ne');
             // 꼭짓점은 끄는 대로 (가로·세로 따로) — 비율 고정 없음.
@@ -12367,7 +12405,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function withSelection(fn){
         const host=restoreSel();
         if(!host){ toast('텍스트를 드래그해 선택하세요',1300); return false; }
-        document.execCommand('styleWithCSS',false,true);
+        // execCommand 가 없는 환경(일부 웹뷰·jsdom)에서는 스킵 — 색/형광펜은
+        // execCommand 를 쓰지 않으므로 styleWithCSS 유무와 무관하다.
+        if(document.execCommand) document.execCommand('styleWithCSS',false,true);
         fn(host);
         _keepFontOnSel(host);                     // 글꼴 초기화 방지
         // 선택 유지 → 워드처럼 연속 적용 가능
@@ -12385,36 +12425,113 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             .filter(n=>!n.classList.contains('latex-box'));
         return t;
     }
-    // 상자 안 내용 전체를 골라 서식 함수를 적용 (편집 중이 아닌 상자는 편집 모드를 원상복구)
-    function _paintBoxAll(w,fn){
+    // 14.13.7 · 글자색/형광펜은 execCommand 대신 직접 span 으로 입힌다.
+    //   execCommand(foreColor/hiliteColor) 는 브라우저가 선택 영역을 다시
+    //   짜면서 상자에 걸린 글꼴(font-family)을 떨어뜨려 '글꼴이 풀리는' 문제가
+    //   있었다. 직접 감싸면 기존 span(글꼴·굵기·크기 등)은 그대로 두고 새
+    //   스타일만 얹히므로 글꼴이 절대 풀리지 않는다.
+    // 선택 범위(또는 상자 전체)와 겹치는 텍스트 노드 목록
+    function textNodesInRange(r){
+        const out=[];
+        const root=r.commonAncestorContainer;
+        const tw=document.createTreeWalker(root.nodeType===3?root.parentNode:root, NodeFilter.SHOW_TEXT);
+        let n;
+        while(n=tw.nextNode()){ if(r.intersectsNode(n)) out.push(n); }
+        return out;
+    }
+    // 현재 선택 범위 안의 텍스트 노드마다 스타일 span 으로 감싼다
+    // (부분 선택된 텍스트 노드는 쪼개서 선택 구간만 감싼다)
+    function wrapSelStyle(prop,value){
+        try{
+            const s=window.getSelection(); if(!s||s.isCollapsed||!s.rangeCount) return;
+            const r=s.getRangeAt(0);
+            const nodes=textNodesInRange(r);
+            const wrapped=[];
+            nodes.forEach(tn=>{
+                const start=(r.startContainer===tn)?r.startOffset:0;
+                const end=(r.endContainer===tn)?r.endOffset:tn.nodeValue.length;
+                if(start>=end) return;
+                const span=document.createElement('span');
+                span.style[prop]=value;
+                tn.splitText(end);            // 뒤쪽은 원래 자리에 남긴다
+                const mid=tn.splitText(start); // 선택 구간
+                tn.parentNode.insertBefore(span,mid);
+                span.appendChild(mid);
+                wrapped.push(span);
+            });
+            // 선택을 감싼 span 전체로 다시 잡아 연속 적용이 가능하게 한다
+            if(wrapped.length){
+                const nr=document.createRange();
+                nr.setStartBefore(wrapped[0]);
+                nr.setEndAfter(wrapped[wrapped.length-1]);
+                s.removeAllRanges(); s.addRange(nr);
+            }
+        }catch(e){}
+    }
+    // 선택 영역의 형광펜 지우기 — 배경색을 가진 가장 가까운 span 의
+    // background-color 를 제거한다 (execCommand 'transparent' 와 같은 동작).
+    function clearSelBg(){
+        try{
+            const s=window.getSelection(); if(!s||s.isCollapsed||!s.rangeCount) return;
+            const r=s.getRangeAt(0);
+            const root=r.commonAncestorContainer;
+            const host=root.nodeType===3?root.parentElement:root;
+            const c=host&&host.closest?host.closest('.tb-content'):null;
+            if(!c) return;
+            const nodes=textNodesInRange(r);
+            const removed=new Set();          // 이미 지운 span 은 다시 건드리지 않는다
+            nodes.forEach(tn=>{
+                let anc=tn.parentElement;
+                while(anc&&anc!==c){
+                    if(removed.has(anc)) break;
+                    const bg=anc.style&&anc.style.backgroundColor;
+                    if(bg&&bg!=='transparent'&&bg!=='rgba(0, 0, 0, 0)'){
+                        anc.style.removeProperty('background-color');
+                        removed.add(anc);
+                        break;
+                    }
+                    anc=anc.parentElement;
+                }
+            });
+        }catch(e){}
+    }
+    // 상자 안 내용 전체에 스타일을 입힌다 (prop=null 이면 형광펜 전체 지우기)
+    // 편집 모드 여부와 무관하게 DOM 을 직접 고치므로 글꼴이 풀리지 않는다.
+    function _paintBoxAll(w,prop,value){
         const c=w.querySelector('.tb-content'); if(!c) return;
-        const wasEdit=w.classList.contains('edit');
-        c.contentEditable='true';
-        try{ c.focus({preventScroll:true}); }catch(e){}
-        const r=document.createRange(); r.selectNodeContents(c);
-        const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
-        document.execCommand('styleWithCSS',false,true);
-        fn();
-        _keepFontOnSel(c);
-        c.contentEditable=wasEdit?'true':'false';
-        if(!wasEdit){ try{ s.removeAllRanges(); }catch(e){} }
+        if(!prop){
+            c.querySelectorAll('*').forEach(n=>{
+                const bg=n.style&&n.style.backgroundColor;
+                if(bg&&bg!=='transparent'&&bg!=='rgba(0, 0, 0, 0)')
+                    n.style.removeProperty('background-color');
+            });
+            syncTextEl(w);
+            return;
+        }
+        const tw=document.createTreeWalker(c,NodeFilter.SHOW_TEXT);
+        const nodes=[];
+        let n; while(n=tw.nextNode()){ if(String(n.nodeValue||'').trim()) nodes.push(n); }
+        nodes.forEach(tn=>{
+            const span=document.createElement('span');
+            span.style[prop]=value;
+            tn.parentNode.insertBefore(span,tn);
+            span.appendChild(tn);
+        });
         syncTextEl(w);
     }
-    // 14.13.4 · 순서: ① 표 셀 → ② 글자 선택 범위 → ③ 상자만 고른 상태(상자 전체)
+    // 14.13.7 · 순서: ① 표 셀 → ② 글자 선택 범위(저장된 선택 포함) → ③ 상자만 고른 상태(상자 전체)
     function applyTextColor(c){
         currentTextColor=c;
         document.getElementById('tcBar').style.background=c;
         document.getElementById('tcGlyph').style.color=c;
         if(selectedTblCellEls().length){ tblCellApply(el=>{ el.textColor=c; },'선택한 칸 글자색 적용'); return; }
-        const sel=window.getSelection();
-        if(sel&&sel.rangeCount&&!sel.isCollapsed
-           &&sel.anchorNode&&sel.anchorNode.closest&&sel.anchorNode.closest('.tb-content')){
-            withSelection(()=>document.execCommand('foreColor',false,c)); return;
+        if(hasInlineTextSel()){
+            withSelection(()=>wrapSelStyle('color',c)); return;
         }
         const targets=_boxFmtTargets();
         if(targets.length){
             pushHistory();
-            targets.forEach(w=>_paintBoxAll(w,()=>document.execCommand('foreColor',false,c)));
+            targets.forEach(w=>_paintBoxAll(w,'color',c));
             saveDoc();
             toast(targets.length>1?targets.length+'개 상자 글자색 적용':'상자 전체 글자색 적용',1000);
             return;
@@ -12424,19 +12541,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function applyHighlight(c){
         if(c){ currentHlColor=c; document.getElementById('hlBar').style.background=c; }
         if(selectedTblCellEls().length){ tblCellFill(c||''); return; }
-        const doHl=()=>{
-            if(c){ if(!document.execCommand('hiliteColor',false,c)) document.execCommand('backColor',false,c); }
-            else { if(!document.execCommand('hiliteColor',false,'transparent')) document.execCommand('backColor',false,'transparent'); }
-        };
-        const sel=window.getSelection();
-        if(sel&&sel.rangeCount&&!sel.isCollapsed
-           &&sel.anchorNode&&sel.anchorNode.closest&&sel.anchorNode.closest('.tb-content')){
-            withSelection(doHl); return;
+        if(hasInlineTextSel()){
+            withSelection(()=>{ if(c) wrapSelStyle('background-color',c); else clearSelBg(); });
+            return;
         }
         const targets=_boxFmtTargets();
         if(targets.length){
             pushHistory();
-            targets.forEach(w=>_paintBoxAll(w,doHl));
+            targets.forEach(w=>_paintBoxAll(w, c?'background-color':null, c||''));
             saveDoc();
             toast(targets.length>1?targets.length+'개 상자 형광펜 적용':'상자 전체 형광펜 적용',1000);
             return;
@@ -15804,8 +15916,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             ['글자를 고르고 Ctrl + C','고른 글자만 깔끔하게 복사 (가져온 PDF 도 정상)'],
         ]],
         ['표',[
-            ['표에 마우스를 올리면','테두리 · 손잡이 · ＋ 버튼이 나타남'],
-            ['변 가운데 ＋','그 방향으로 행 · 열 추가'],
+            ['표에 마우스를 올리면','테두리 · 손잡이가 나타남'],
+            ['변 가운데 손잡이','위·아래 = 세로로만, 왼·오른쪽 = 가로로만 늘리기'],
+            ['표를 고르면 나오는 막대','행 · 열 추가/삭제 · 칸 정렬 · 배경색'],
             ['꼭짓점 끌기','가로 · 세로 조절 (Shift = 비율 유지)'],
             ['경계 끌기','그 열 너비 · 행 높이만 조절'],
             ['경계 끌 때 Shift','옆 칸에서 나눠 가짐 (전체 크기 유지)'],
