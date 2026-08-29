@@ -5912,6 +5912,153 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 }
 
 
+/* ═══════════════════════════════════════════════════════════
+   18.0 · 해돌이 — 초귀요미 해달 마스코트 (CodePen 원본 그대로)
+   · 노래 해달(.mp-otter, svg.om-music) : 하단 음악 컨트롤바 위
+   · 노트 해달(.note-otter, svg.om-doc) : 노트 편집기 왼쪽 아래
+     → 누르면 om-idea(전구)로 잠깐 변신했다가 돌아온다 (sdynotes.js)
+   상태 클래스(svg.om-*)가 소품·표정·애니메이션을 갈아끼운다.
+   om-correct/om-wrong 도 마스코트 공통으로 쓸 수 있게 남겨 둔다.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── 자리 잡기 ── */
+.mp-otter{position:absolute;left:-10px;bottom:calc(100% + 5px);width:62px;height:62px;
+  pointer-events:none;filter:drop-shadow(0 3px 8px rgba(0,0,0,.16));}
+.mp.mp-float .mp-otter{display:none;}   /* 플로팅 원형 모드엔 하단 바가 없으니 숨긴다 */
+.note-otter{position:absolute;left:10px;bottom:10px;width:78px;height:78px;z-index:6;
+  cursor:pointer;filter:drop-shadow(0 3px 8px rgba(0,0,0,.14));
+  transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
+.note-otter.draw-on{bottom:calc(64px + 14px);}   /* 그리기 툴바가 뜨면 위로 피한다 */
+.mp-otter svg,.note-otter svg{width:100%;height:100%;display:block;overflow:visible;}
+.note-otter svg{transition:transform .15s cubic-bezier(.22,.9,.3,1.12);}
+.note-otter:hover svg{transform:translateY(-2px) scale(1.04);}
+.note-otter:active svg{transform:scale(.93);}
+.note-otter:focus-visible{outline:2px dashed var(--accent);outline-offset:4px;border-radius:16px;}
+
+/* ── 애니메이션 기초 ── */
+.om-outer{transform-origin:center center;animation:om-float 3s infinite ease-in-out;}
+.om-inner{transform-origin:center center;animation:om-breathe 2.5s infinite ease-in-out;}
+@keyframes om-float{0%,100%{transform:translateY(0) rotate(-15deg);}50%{transform:translateY(-8px) rotate(-12deg);}}
+@keyframes om-breathe{0%,100%{transform:scaleX(1) scaleY(1);}50%{transform:scaleX(1.02) scaleY(0.98);}}
+@keyframes om-happy-bounce{
+  0%,100%{transform:translateY(0) rotate(-15deg) scale(1, 1);}
+  15%{transform:translateY(5px) rotate(-15deg) scale(1.1, 0.9);}
+  40%{transform:translateY(-25px) rotate(-5deg) scale(0.95, 1.05);}
+  60%{transform:translateY(-25px) rotate(-25deg) scale(0.95, 1.05);}
+  80%{transform:translateY(0) rotate(-15deg) scale(1.05, 0.95);}
+  90%{transform:translateY(-5px) rotate(-15deg) scale(1, 1);}
+}
+@keyframes om-sad-wobble{
+  0%,100%{transform:translateY(0) rotate(-15deg);}
+  20%{transform:translateY(20px) rotate(-25deg);}
+  40%{transform:translateY(20px) rotate(-10deg);}
+  60%{transform:translateY(20px) rotate(-25deg);}
+  80%{transform:translateY(20px) rotate(-15deg);}
+}
+@keyframes om-groove{0%,50%,100%{transform:translateY(0) rotate(-15deg);}25%{transform:translateY(-7px) rotate(-11deg);}75%{transform:translateY(-7px) rotate(-19deg);}}
+@keyframes om-paw-up{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
+@keyframes om-cup-pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.3);}}
+@keyframes om-note-float{
+  0%{transform:translateY(4px) scale(0.8);opacity:0;}
+  25%{opacity:1;}
+  70%{opacity:1;}
+  100%{transform:translateY(-14px) scale(1);opacity:0;}
+}
+@keyframes om-present{0%,100%{transform:translateY(0) rotate(-15deg);}50%{transform:translateY(-10px) rotate(-13deg);}}
+@keyframes om-doc-sway{0%,100%{transform:rotate(-2.5deg);}50%{transform:rotate(2.5deg);}}
+@keyframes om-eureka{
+  0%,45%,100%{transform:translateY(0) rotate(-15deg);}
+  60%{transform:translateY(-12px) rotate(-10deg);}
+  75%{transform:translateY(-10px) rotate(-20deg);}
+  90%{transform:translateY(0) rotate(-15deg);}
+}
+@keyframes om-bulb-pulse{
+  0%,45%,100%{transform:scale(1) rotate(0deg);}
+  60%{transform:scale(1.18) rotate(-5deg);}
+  75%{transform:scale(1.22) rotate(4deg);}
+  90%{transform:scale(1.1) rotate(0deg);}
+}
+@keyframes om-ray-flicker{0%,45%,100%{opacity:0.35;}60%,85%{opacity:1;}}
+@keyframes om-paw-wave{
+  0%,45%,100%{transform:rotate(0deg) translateY(0);}
+  60%{transform:rotate(-10deg) translateY(-4px);}
+  75%{transform:rotate(6deg) translateY(-2px);}
+  90%{transform:rotate(0deg) translateY(0);}
+}
+@keyframes om-sparkle{0%{transform:scale(0) rotate(0);opacity:0;}50%{transform:scale(1.2) rotate(90deg);opacity:1;}100%{transform:scale(0) rotate(180deg);opacity:0;}}
+@keyframes om-teardrop{
+  0%{transform:translateY(0) scale(0);opacity:0;}
+  20%{transform:translateY(5px) scale(1);opacity:1;}
+  80%{transform:translateY(15px) scale(0.8);opacity:0;}
+  100%{transform:translateY(15px) scale(0);opacity:0;}
+}
+
+/* ── 소품/표정 기본 표시 ── */
+.om-prop-music,.om-prop-doc,.om-prop-idea,
+.om-face-happy,.om-face-sad,.om-face-idea,
+.om-fx-happy,.om-fx-sad{display:none;}
+
+/* ── 노래: 헤드폰 · 어깨장 · 음표 · 신난 표정 ── */
+svg.om-music .om-prop-starfish{display:none;}
+svg.om-music .om-prop-music{display:block;}
+svg.om-music .om-face-idle{display:none;}
+svg.om-music .om-face-happy{display:block;}
+svg.om-music .om-outer{animation:om-groove 1.6s infinite ease-in-out;}
+svg.om-music .om-paw-l{animation:om-paw-up 0.8s infinite ease-in-out;transform-box:fill-box;transform-origin:center;}
+svg.om-music .om-paw-r{animation:om-paw-up 0.8s infinite ease-in-out 0.4s;transform-box:fill-box;transform-origin:center;}
+svg.om-music .om-cup-inner{animation:om-cup-pulse 1.6s infinite ease-in-out;transform-box:fill-box;transform-origin:center;}
+svg.om-music .om-note{animation:om-note-float 2s infinite ease-in-out;transform-box:fill-box;transform-origin:center;opacity:0;}
+svg.om-music .om-note2{animation-delay:1s;}
+
+/* ── 문서(노트): 서류를 내밀며 살랑 ── */
+svg.om-doc .om-prop-starfish{display:none;}
+svg.om-doc .om-prop-doc{display:block;}
+svg.om-doc .om-outer{animation:om-present 2.4s infinite ease-in-out;}
+svg.om-doc .om-doc-group{animation:om-doc-sway 2.4s infinite ease-in-out;transform-box:fill-box;transform-origin:top center;}
+
+/* ── 아이디어: 전구 · 번쩍 · 눈 반짝 ── */
+svg.om-idea .om-prop-starfish{display:none;}
+svg.om-idea .om-prop-idea{display:block;}
+svg.om-idea .om-face-idle{display:none;}
+svg.om-idea .om-face-idea{display:block;}
+svg.om-idea .om-outer{animation:om-eureka 2.8s infinite ease-in-out;}
+svg.om-idea .om-bulb{animation:om-bulb-pulse 2.8s infinite ease-in-out;transform-box:fill-box;transform-origin:center;}
+svg.om-idea .om-rays{animation:om-ray-flicker 2.8s infinite ease-in-out;}
+svg.om-idea .om-paw-up{animation:om-paw-wave 2.8s infinite ease-in-out;transform-box:fill-box;transform-origin:center;}
+
+/* ── 정답: 폴짝 · 반짝반짝 · 볼터치 강조 ── */
+svg.om-correct .om-face-idle{display:none;}
+svg.om-correct .om-face-happy{display:block;}
+svg.om-correct .om-fx-happy{
+  display:block;transform-box:fill-box;transform-origin:center;
+  animation:om-sparkle 1s ease-in-out forwards;
+}
+svg.om-correct .om-outer{animation:om-happy-bounce 1s ease-in-out;}
+svg.om-correct .om-blush{
+  fill:#ff7da1;transform-box:fill-box;transform-origin:center;
+  transform:scale(1.3);transition:all 0.2s;
+}
+
+/* ── 오답: 흐느적 · 눈물 ── */
+svg.om-wrong .om-face-idle{display:none;}
+svg.om-wrong .om-face-sad{display:block;}
+svg.om-wrong .om-fx-sad{
+  display:block;transform-box:fill-box;transform-origin:top center;
+  animation:om-teardrop 1s ease-in-out forwards;
+}
+svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
+
+/* ── 폰 · 움직임 줄이기 ── */
+@media(max-width:640px){
+  .mp-otter{left:-4px;bottom:calc(100% + 3px);width:46px;height:46px;}
+  .note-otter{left:8px;bottom:8px;width:56px;height:56px;}
+  .note-otter.draw-on{bottom:calc(52px + 10px);}
+}
+@media(prefers-reduced-motion:reduce){
+  .mp-otter *,.note-otter *{animation:none!important;}
+}
+
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 
@@ -6468,4 +6615,3 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   .fcard-win.fcard-max .cd-keyhints{display:none;}     /* 터치 기기 — 키보드 안내는 의미가 없다 */
   .fcard-win.fcard-max #cardsStudy .cd-sess{display:none;} /* 폰 상단바는 좁으니 진행률·연속 정답만 */
 }
-

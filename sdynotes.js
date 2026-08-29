@@ -23558,6 +23558,40 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     mo.observe(pl,{attributes:true,attributeFilter:['style']});
   })();
 
+  // ── 18.0 · 해돌이(해달 마스코트) ──────────────────────────────
+  //   노래 해달(.mp-otter)은 #musicPlayer 안에 들어 있어
+  //   하단 바가 뜨면 저절로 따라 나온다(표시 제어는 CSS 에 있다).
+  //   노트 해달(#noteOtter)은 누르면 om-idea(전구)로 잠깐 변신했다가
+  //   om-doc(문서 내밀기) 모습으로 돌아온다 — CodePen 원본 상태 머신 그대로.
+  (function(){
+    var note=$('noteOtter'); if(!note) return;
+    var svg=note.querySelector('svg');
+    var t=null;
+    function otterIdea(){
+      if(!svg) return;
+      svg.classList.remove('om-doc','om-idea');
+      void svg.getBoundingClientRect();          // 애니메이션 재시작용 reflow
+      svg.classList.add('om-idea');
+      clearTimeout(t);
+      t=setTimeout(function(){
+        svg.classList.remove('om-idea');
+        void svg.getBoundingClientRect();
+        svg.classList.add('om-doc');
+      },2800);                                   // eureka 한 바퀴(2.8s) 뒤 원래 모습으로
+    }
+    note.addEventListener('click',otterIdea);
+    note.addEventListener('keydown',function(e){
+      if(e.key==='Enter'||e.key===' '){ e.preventDefault(); otterIdea(); }
+    });
+    // 그리기 툴바가 하단을 차지하면 해달을 툴바 위로 피신시킨다
+    var dt=$('drawToolbar');
+    if(dt&&typeof MutationObserver!=='undefined'){
+      new MutationObserver(function(){
+        note.classList.toggle('draw-on',dt.style.display==='flex');
+      }).observe(dt,{attributes:true,attributeFilter:['style']});
+    }
+  })();
+
   ypDrag();
 
   // ── 16.2 · 입장 게이트: '로그인' 또는 '비회원' ──
