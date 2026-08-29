@@ -1,7 +1,19 @@
 // Environment-derived configuration (mirrors sdynotes/common.py + per-module consts).
 import crypto from 'node:crypto';
 
-export const APP_VERSION = '14.16.0';
+// ── 버전 · 작업마다 반드시 올려라 ─────────────────────────────────────
+// 작업 하나가 끝나면 아래 5곳을 '같은 번호로' 함께 올린다 (x.y.z 의 z +1).
+//   ① package.json                     "version"
+//   ② package-lock.json                "version" 2곳 (최상단 + packages."")
+//   ③ server/src/lib/config.js         APP_VERSION            ← 여기
+//   ④ worker/sdynotes_worker/common.py APP_VERSION
+//   ⑤ sdynotes.html                    <meta application-version>
+//                                      + sdynotes.css?v=  /  sdynotes.js?v=
+// 하나라도 빠지면 → apply.sh 의 버전 검사가 배포를 중단한다.
+// ⑤의 ?v= 를 안 올리면 → nginx 가 sdynotes.js/css 를 1년 immutable 로 캐싱하므로
+//   이미 접속한 브라우저가 옛 JS/CSS 를 1년 동안 계속 쓴다(조용히 깨진다).
+//   그래서 내리는 쪽이 아니라 '올리는' 쪽으로 맞춘다.
+export const APP_VERSION = '14.16.2';
 export const SETTINGS_SCHEMA = 3;
 
 // ── 저장소 모드 ────────────────────────────────────────────────────────

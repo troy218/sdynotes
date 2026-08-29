@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-#  SDYnotes 14.13.1 적용 스크립트 (Fastify + Python worker 개편판)
+#  SDYnotes 적용 스크립트 (Fastify + Python worker 개편판)
+#  · 버전은 server/src/lib/config.js 의 APP_VERSION 이 기준이다 (이 숫자만 믿지 마라)
 #  ★서버 안에서 실행★
 #
 #  구조:
@@ -49,6 +50,9 @@ if command -v node >/dev/null 2>&1; then
     node --check "$SRC/server/src/index.js" >/dev/null || die "server/src/index.js 문법 오류 — 배포를 중단합니다"
 fi
 # HTML과 서버 버전이 어긋나면 브라우저가 이전 JS/CSS를 계속 조합할 수 있다.
+# (작업 후 버전을 올릴 때 함께 바꿔야 하는 5곳 = package.json · package-lock.json
+#  · server/src/lib/config.js · worker/sdynotes_worker/common.py · sdynotes.html
+#  — 자세한 규칙은 server/src/lib/config.js 상단 주석 참조)
 HTML_VER=$(sed -n 's/.*application-version" content="\([^"]*\)".*/\1/p' "$SRC/sdynotes.html" | head -1)
 SERVER_VER=$(sed -n "s/.*APP_VERSION = '\([^']*\)'.*/\1/p" "$SRC/server/src/lib/config.js" | head -1)
 [ -n "$HTML_VER" ] && [ "$HTML_VER" = "$SERVER_VER" ] \
