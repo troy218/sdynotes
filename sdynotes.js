@@ -12883,7 +12883,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         // execCommand 가 없는 환경(일부 웹뷰·jsdom)에서는 스킵 — 색/형광펜은
         // execCommand 를 쓰지 않으므로 styleWithCSS 유무와 무관하다.
         if(document.execCommand) document.execCommand('styleWithCSS',false,true);
+        const cap=captureSelFonts();              // 실행 전 부분 글꼴 기억
         fn(host);
+        restoreSelFonts(cap);                     // 잃은 부분 글꼴 되살리기
         _keepFontOnSel(host);                     // 글꼴 초기화 방지
         // 선택 유지 → 워드처럼 연속 적용 가능
         saveSel();
@@ -12928,6 +12930,106 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             return css;
         }catch(e){ return ''; }
     }
+    // 선택 범위와 겹치는 텍스트 노드 + 범위 안 국소 오프셋({s,e})
+    function _selContacts(r){
+        const out=[];
+        if(!r) return out;
+        const root=r.commonAncestorContainer;
+        const walkRoot=root.nodeType===3?root.parentNode:root;
+        if(!walkRoot) return out;
+        try{
+            const tw=document.createTreeWalker(walkRoot,NodeFilter.SHOW_TEXT);
+            let n;
+            while(n=tw.nextNode()){
+                if(!r.intersectsNode(n)) continue;
+                let s=0,e=n.nodeValue.length;
+                if(r.startContainer===n) s=r.startOffset;
+                if(r.endContainer===n) e=r.endOffset;
+                if(s>=e) continue;
+                out.push({node:n,s,e});
+            }
+        }catch(e){}
+        return out;
+    }
+    function _selFontHost(r){
+        const root=r.commonAncestorContainer;
+        const el=root.nodeType===1?root:root.parentElement;
+        return (el&&el.closest&&el.closest('.tb-content'))||null;
+    }
+    // execCommand(bold/italic 등)이 선택 영역을 다시 짜면서 상자 안의
+    // '부분 글꼴 span'을 떨어뜨려 글꼴이 풀린다. 실행 전에 선택 구간의
+    // 글꼴을 글자 오프셋으로 기억해 두고, 실행 뒤 같은 구간에 되살린다.
+    function captureSelFonts(){
+        try{
+            const s=window.getSelection();
+            if(!s||s.isCollapsed||!s.rangeCount) return null;
+            const r=s.getRangeAt(0), host=_selFontHost(r);
+            if(!host) return null;
+            const contacts=_selContacts(r);
+            if(!contacts.length) return null;
+            let text=''; const ranges=[];
+            contacts.forEach(ct=>{
+                const seg=ct.node.nodeValue.slice(ct.s,ct.e);
+                const font=_nearestInlineFont(ct.node,host);
+                if(font) ranges.push({s:text.length,e:text.length+seg.length,font});
+                text+=seg;
+            });
+            return ranges.length?{text,ranges,host}:null;
+        }catch(e){ return null; }
+    }
+    function _wrapTextSegment(node,st,ed,font){
+        if(!node||ed<=st) return;
+        const len=node.nodeValue.length;
+        const start=Math.max(0,Math.min(len,st)), end=Math.max(start,Math.min(len,ed));
+        if(end<=start) return;
+        try{
+            if(end<node.nodeValue.length) node.splitText(end);
+            const mid=node.splitText(start);
+            const span=document.createElement('span');
+            span.style.fontFamily=font;
+            node.parentNode.insertBefore(span,mid);
+            span.appendChild(mid);
+        }catch(e){}
+    }
+    function restoreSelFonts(cap){
+        if(!cap||!cap.ranges) return;
+        try{
+            const s=window.getSelection();
+            if(!s||s.isCollapsed||!s.rangeCount) return;
+            const r=s.getRangeAt(0), host=cap.host||_selFontHost(r);
+            if(!host) return;
+            const contacts=_selContacts(r);
+            if(!contacts.length) return;
+            let text=''; const items=[];
+            contacts.forEach(ct=>{
+                items.push({node:ct.node,s:ct.s,e:ct.e,start:text.length,len:ct.e-ct.s});
+                text+=ct.node.nodeValue.slice(ct.s,ct.e);
+            });
+            if(text!==cap.text) return;   // 서식 적용으로 글자 자체가 바뀌었으면 중단
+            for(let i=items.length-1;i>=0;i--){
+                const it=items[i];
+                const segs=[];
+                cap.ranges.forEach(fr=>{
+                    const from=Math.max(fr.s-it.start,0), to=Math.min(fr.e-it.start,it.len);
+                    if(to>from){
+                        // 이미 부분 글꼴 span 이 살아 있으면 되감지 않는다.
+                        const cur=_nearestInlineFont(it.node,host);
+                        if(cur!==fr.font) segs.push({from,to,font:fr.font});
+                    }
+                });
+                if(!segs.length) continue;
+                segs.sort((a,b)=>b.from-a.from);
+                let node=it.node;
+                segs.forEach(seg=>{
+                    // 위에서 오른쪽(큰 오프셋)부터 쪼개므로, 아래쪽 오프셋은
+                    // node 의 앞부분 그대로라 원본 오프셋을 그대로 쓸 수 있다.
+                    const len=node.nodeValue.length;
+                    if(seg.to>len) seg.to=len;
+                    _wrapTextSegment(node,seg.from,seg.to,seg.font);
+                });
+            }
+        }catch(e){}
+    }
     // 현재 선택 범위 안의 텍스트 노드마다 스타일 span 으로 감싼다
     // (부분 선택된 텍스트 노드는 쪼개서 선택 구간만 감싼다)
     function wrapSelStyle(prop,value){
@@ -12959,6 +13061,69 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 s.removeAllRanges(); s.addRange(nr);
             }
         }catch(e){}
+    }
+    // 굵게/기울임/밑줄 토글 — execCommand 가 선택 영역을 다시 짜면서 부분
+    // 글꼴 span 을 떨어뜨리는 문제를 피하기 위해 색/형광펜처럼 직접 span 으로
+    // 입힌다. 토글 여부는 '선택 영역 전체가 이미 같은 값인가'로 판정한다.
+    function _selHasPropAll(prop,value){
+        try{
+            const s=window.getSelection();
+            if(!s||s.isCollapsed||!s.rangeCount) return false;
+            const r=s.getRangeAt(0), host=_selFontHost(r);
+            if(!host) return false;
+            const contacts=_selContacts(r);
+            if(!contacts.length) return false;
+            for(const ct of contacts){
+                let p=ct.node.parentElement, found=false;
+                while(p&&p!==host){
+                    const v=p.style&&p.style[prop];
+                    const same=!!v && (
+                        String(v).toLowerCase()===String(value).toLowerCase()
+                        || (prop==='fontWeight' && (v==='bold' || String(+v)>=600))
+                    );
+                    if(same){ found=true; break; }
+                    p=p.parentElement;
+                }
+                if(!found) return false;
+            }
+            return true;
+        }catch(e){ return false; }
+    }
+    function clearSelStyle(prop){
+        try{
+            const s=window.getSelection();
+            if(!s||s.isCollapsed||!s.rangeCount) return;
+            const r=s.getRangeAt(0), host=_selFontHost(r);
+            if(!host) return;
+            const contacts=_selContacts(r), done=new Set();
+            contacts.forEach(ct=>{
+                let anc=ct.node.parentElement;
+                while(anc&&anc!==host){
+                    if(done.has(anc)) break;
+                    if(anc.style&&anc.style[prop]!==''&&anc.style[prop]!=null){
+                        anc.style.removeProperty(prop);
+                        done.add(anc);
+                        if(!anc.style.cssText.trim()){
+                            anc.removeAttribute('style');
+                            if(!anc.getAttributeNames().length){
+                                const par=anc.parentNode;
+                                while(anc.firstChild) par.insertBefore(anc.firstChild,anc);
+                                par.normalize();
+                            }
+                        }
+                        break;
+                    }
+                    anc=anc.parentElement;
+                }
+            });
+            host.querySelectorAll('span').forEach(sp=>{
+                if(!sp.getAttributeNames().length&&!sp.querySelector('*')&&!sp.textContent.trim()) sp.remove();
+            });
+        }catch(e){}
+    }
+    function toggleSelStyle(prop,value){
+        if(_selHasPropAll(prop,value)) clearSelStyle(prop);
+        else wrapSelStyle(prop,value);
     }
     // 선택 영역의 형광펜 지우기 — 배경색을 가진 가장 가까운 span 의
     // background-color 를 제거한다 (execCommand 'transparent' 와 같은 동작).
@@ -13075,6 +13240,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 tblCellApply(el=>{ if(remove) delete el[key]; else el[key]=val; },'선택한 칸 글자 서식 적용');
                 return;
             }
+        }
+        const spec={bold:['fontWeight','700'],italic:['fontStyle','italic'],underline:['textDecoration','underline']}[cmd];
+        if(spec){
+            // 14.16.2 · 글자 서식은 execCommand 대신 직접 span 으로 토글해
+            //   부분 글꼴(font-family span)이 풀리지 않게 한다.
+            withSelection(()=>toggleSelStyle(spec[0],spec[1]));
+            return;
         }
         withSelection(()=>{ if(document.execCommand) document.execCommand(cmd,false,null); });
     }

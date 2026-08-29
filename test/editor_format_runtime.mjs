@@ -213,6 +213,65 @@ try {
       check('부분 글꼴에 색을 입혀도 Gaegu 가 남는다', stillGaegu);
       check('부분 글꼴에 색을 입혀도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
     }
+
+    // ── ⑥ 부분 글꼴 + 굵게/기울임/밑줄(execFmt) → 글꼴 보존 ──────────────
+    // execCommand 대신 직접 span 으로 토글해도 부분 글꼴(Gaegu)이
+    // 풀리지 않는지 확인한다.
+    if (gaeguSpans.length) {
+      const gg = gaeguSpans[0];
+      const rrB = document.createRange();
+      rrB.selectNodeContents(gg);
+      sel.removeAllRanges(); sel.addRange(rrB);
+      window.saveSel();
+      window.execFmt('bold');
+      await wait(120);
+      const ggB = [...content.querySelectorAll('span[style*="font-family"]')]
+        .find(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄'));
+      const boldSpan = [...content.querySelectorAll('span[style*="font-weight"]')]
+        .some(s => (s.style.fontWeight === '700' || s.style.fontWeight === 'bold') && (s.textContent || '').includes('둘째 줄'));
+      check('굵게 해도 부분 글꼴(Gaegu)이 남는다', !!ggB);
+      check('굵게가 선택 구간에 입혀진다', boldSpan);
+      check('굵게 후에도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
+
+      const rrI = document.createRange();
+      rrI.selectNodeContents(ggB);
+      window.saveSel();
+      window.execFmt('italic');
+      await wait(120);
+      check('기울임 후에도 부분 글꼴(Gaegu)이 남는다',
+        [...content.querySelectorAll('span[style*="font-family"]')]
+          .some(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄')));
+      check('기울임 후에도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
+
+      const rrU = document.createRange();
+      const gg2 = [...content.querySelectorAll('span[style*="font-family"]')]
+        .find(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄'))
+        || [...content.querySelectorAll('span')].find(s => (s.textContent || '').includes('둘째 줄'));
+      rrU.selectNodeContents(gg2);
+      sel.removeAllRanges(); sel.addRange(rrU);
+      window.saveSel();
+      window.execFmt('underline');
+      await wait(120);
+      check('밑줄 후에도 부분 글꼴(Gaegu)이 남는다',
+        [...content.querySelectorAll('span[style*="font-family"]')]
+          .some(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄')));
+      check('밑줄 후에도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
+
+      // 토글 해제도 부분 글꼴을 풀지 않아야 한다
+      const rrU2 = document.createRange();
+      const gg3 = [...content.querySelectorAll('span[style*="font-family"]')]
+        .find(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄'))
+        || [...content.querySelectorAll('span')].find(s => (s.textContent || '').includes('둘째 줄'));
+      rrU2.selectNodeContents(gg3);
+      sel.removeAllRanges(); sel.addRange(rrU2);
+      window.saveSel();
+      window.execFmt('underline');
+      await wait(120);
+      check('밑줄을 다시 눌러 지워도 부분 글꼴(Gaegu)이 남는다',
+        [...content.querySelectorAll('span[style*="font-family"]')]
+          .some(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄')));
+      check('밑줄을 지워도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
+    }
   }
 
   // 상자 전체 형광펜을 입혀도 부분 글꼴 유지
