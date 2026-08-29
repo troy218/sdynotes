@@ -6019,7 +6019,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 
 /* ═══════════════════════════════════════════════════════════════════
    18.2 · 해돌이 스쿼드 (Notion '해돌이 스쿼드' om- 접두어 그대로)
-   · 편지 해돌이(.yp-otter)  : 엽스코드 왼쪽 아래
+   · 편지 해돌이(.yp-otter)  : 엽스코드 첫 입장(채팅 없을 때) 정가운데 크게
    · 비행기 해돌이(.plane-otter): 홈 화면에서 아주 가끔 왼쪽 위 → 오른쪽으로 날아감
    · 커피 해돌이(.set-otter) : 설정 창 오른쪽 아래
    · 독서 해돌이(.fc-otter)  : 타이머(집중) 화면 왼쪽 아래
@@ -6107,10 +6107,10 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 }
 .om-wavehand{animation:om-wavehand 1.6s ease-in-out infinite;transform-box:fill-box;transform-origin:30% 85%;}
 
-/* ── ① 편지 해돌이 — 엽스코드 왼쪽 아래 ── */
-.yp-otter{position:absolute;left:10px;bottom:62px;width:76px;height:76px;z-index:5;
-  cursor:pointer;}
-.yp-otter .om-say{font-size:10.5px;}
+/* ── ① 편지 해돌이 — 엽스코드 첫 입장(채팅 없을 때) 본문 정가운데 크게 ── */
+/*   빈 채팅 안내(.yp-empty)는 메시지가 생기면 display:none 이라 해돌이도 같이 사라진다 */
+.yp-otter{display:block;width:160px;margin:0 auto 6px;cursor:pointer;}
+.yp-otter .om-say{font-size:11.5px;}
 
 /* ── ② 비행기 해돌이 — 홈에서 아주 가끔 왼쪽 위 → 오른쪽 횡단 ── */
 .plane-otter{position:fixed;left:-240px;top:clamp(64px,12vh,150px);
@@ -6124,27 +6124,28 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 /* ── ③ 커피 해돌이 — 설정 창 오른쪽 아래 ── */
 .set-otter{position:fixed;right:20px;bottom:18px;width:92px;height:92px;z-index:2;cursor:pointer;}
 
-/* ── ④ 독서 해돌이 — 타이머(집중) 화면 왼쪽 아래 ── */
-.fc-otter{position:absolute;left:clamp(10px,3vw,44px);bottom:clamp(96px,14vh,140px);
+/* ── ④ 독서 해돌이 — 타이머(집중) 화면 왼쪽 아래 (버튼 바 바로 위까지 내려앉힌다) ── */
+.fc-otter{position:absolute;left:clamp(10px,3vw,44px);bottom:clamp(70px,9vh,92px);
   width:96px;height:96px;z-index:4;cursor:pointer;}
 .fc-otter .om-say{font-size:11.5px;}
 
-/* ── ⑤ 졸리는 해돌이 — 사용법 · 단축키 설명 가장 아래 ── */
-.keys-otter{display:block;margin:12px auto 2px;width:96px;height:96px;cursor:pointer;}
+/* ── ⑤ 졸리는 해돌이 — 사용법·단축키 설명을 가장 아래로 스크롤해야 보인다
+      (keyBody 스크롤 영역 맨 끝에 들어 있어 평소엔 화면 밖에 있다) ── */
+.keys-otter{display:block;margin:4px auto 0;width:96px;height:96px;cursor:pointer;flex:none;}
 .keys-otter .om-say{font-size:11px;}
 
 /* ── 폰 · 작은 화면 ── */
 @media (max-width:640px), (max-height:560px) and (pointer:coarse){
-  .yp-otter{left:8px;bottom:calc(var(--ph-safe,0px) + 56px);width:58px;height:58px;}
+  .yp-otter{width:124px;margin:0 auto 4px;}
   .set-otter{right:10px;top:max(10px,var(--ph-top,0px));bottom:auto;width:62px;height:62px;}
-  .fc-otter{left:10px;bottom:calc(var(--ph-safe,0px) + 118px);width:64px;height:64px;}
+  .fc-otter{left:10px;bottom:calc(var(--ph-safe,0px) + 84px);width:64px;height:64px;}
   .fc-otter .om-say{font-size:10.5px;}
   .plane-otter{width:110px;}
-  .keys-otter{width:72px;height:72px;margin:10px auto 0;}
+  .keys-otter{width:72px;height:72px;margin:2px auto 0;}
   .keys-otter .om-say{font-size:10.5px;}
 }
 @media (max-height:560px) and (pointer:coarse) and (orientation:landscape){
-  .fc-otter{bottom:calc(var(--ph-safe,0px) + 84px);}
+  .fc-otter{bottom:calc(var(--ph-safe,0px) + 66px);}
   .set-otter{top:calc(var(--ph-top,0px) + 8px);}
 }
 @media(prefers-reduced-motion:reduce){
