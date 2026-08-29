@@ -30,8 +30,8 @@ assert.match(html, /<div class="cd-keyhints"/,
 
 assert.match(css, /\.fcard-win\.fcard-anim\{[^}]*transition:[^}]*left \.52s[^}]*top \.52s[^}]*width \.52s[^}]*height \.52s/,
   '확장 모핑은 left/top/width/height 전환이 있어야 한다 (음악플레이어 .mpb-anim 과 같은 곡선)');
-assert.match(css, /\.fcard-win\.fcard-max\{[^}]*left:8px!important[^}]*top:8px!important[^}]*width:calc\(100vw - 16px\)!important[^}]*height:calc\(100dvh - 16px\)!important/,
-  '확장 틀은 뷰포트에서 창 여백 8px 만 남기고 채워야 한다');
+assert.match(css, /\.fcard-win\.fcard-max\{[^}]*left:0!important[^}]*top:0!important[^}]*width:var\(--fcard-max-w,calc\(100vw\)\)!important[^}]*height:var\(--fcard-max-h,calc\(100dvh\)\)!important/,
+  '확장 틀은 실측 뷰포트(--fcard-max-w/h)로 모니터를 빈틈없이 채워야 한다 (100vw/100dvh 의 배율·스크롤바 어긋남을 없앰)');
 assert.match(css, /\.fcard-win\.fcard-max #cardsStudy \.cd-sess\{display:inline-flex;\}/,
   '세션 칩은 확장 모드 + 학습 화면에서만 보여야 한다');
 assert.match(css, /@media \(max-width:640px\)[^{]*\{[^}]*\.fcard-win\.fcard-max\{[^}]*left:0!important[^}]*width:100vw!important/,
@@ -43,6 +43,8 @@ assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{[^}]*\.fcard-win\.f
 
 assert.match(js, /function fcardMaxSet\(on\)\{/,
   'fcardMaxSet 이 정의돼 있어야 한다');
+assert.match(js, /function _fcardMaxFill\(\)\{[\s\S]{0,300}sdyViewportBox/,
+  '확장 크기는 창 이동범위와 같은 실측(sdyViewportBox)으로 재야 한다');
 const maxSetBody = (js.match(/function fcardMaxSet\(on\)\{[\s\S]*?\n    \}\n/) || [''])[0];
 assert.ok(maxSetBody.length > 100, 'fcardMaxSet 본문을 잘라 낼 수 있어야 한다');
 assert.ok(!/requestFullscreen|webkitRequestFullscreen/.test(maxSetBody),

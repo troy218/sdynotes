@@ -5323,42 +5323,54 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .cd-otter{display:none;}     /* 창 모드에서는 숨김 — 확장모드에서만 등장 */
 .fcard-win.fcard-max .cd-stage{
   flex:1 1 auto;display:flex;align-items:center;justify-content:center;
-  gap:clamp(16px,2.2vw,40px);
+  gap:clamp(24px,3vw,72px);
   min-height:0;
   width:100%;
   position:relative;
   /* 배경에 은은한 공부방 오로라 */
 }
 .fcard-win.fcard-max .cd-stage::before{
-  content:'';position:absolute;inset:-20px -40px -40px;z-index:0;pointer-events:none;
+  content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
   background:
-    radial-gradient(40% 55% at 18% 88%,rgba(126,202,232,.25),transparent 70%),
-    radial-gradient(42% 50% at 88% 20%,rgba(139,92,246,.18),transparent 70%),
-    radial-gradient(32% 40% at 65% 90%,rgba(79,110,247,.16),transparent 70%);
+    radial-gradient(40% 55% at 18% 88%,rgba(126,202,232,.22),transparent 70%),
+    radial-gradient(42% 50% at 88% 20%,rgba(139,92,246,.16),transparent 70%),
+    radial-gradient(32% 40% at 65% 90%,rgba(79,110,247,.14),transparent 70%);
   filter:blur(4px);
-  border-radius:24px;
+  border-radius:20px;
 }
+/* 해달은 '작고 귀여운 옆자리 친구' — 카드와 절대 겹치지 않도록 고정폭 flex 항목 */
 .fcard-win.fcard-max .cd-otter{
-  display:block;flex:0 0 clamp(220px,26vw,340px);
-  position:relative;z-index:1;align-self:flex-end;
-  transform-origin:50% 92%;
-  animation:otterBob 4.4s ease-in-out infinite;
+  display:block;flex:0 0 clamp(120px,13vw,180px);
+  position:relative;z-index:1;align-self:center;
+  transform-origin:50% 90%;
+  animation:otterBob 4.2s ease-in-out infinite;
   pointer-events:none;
 }
-.dark .fcard-win.fcard-max .cd-otter{filter:saturate(.95) brightness(.95);}
-.cd-otter-svg{display:block;width:100%;height:auto;filter:drop-shadow(0 12px 22px rgba(60,40,20,.22));}
+.dark .fcard-win.fcard-max .cd-otter{filter:saturate(.95) brightness(1.02);}
+.cd-otter-svg{display:block;width:100%;height:auto;filter:drop-shadow(0 10px 18px rgba(70,80,100,.28));}
 @keyframes otterBob{
   0%,100%{transform:translateY(0) rotate(-1deg);}
-  50%{transform:translateY(-6px) rotate(1.5deg);}
+  50%{transform:translateY(-7px) rotate(1.6deg);}
 }
 
-/* 기본 idle에서 조개를 들고 살짝 흔들 */
+/* 눈 깜빡임 — 오픈 눈이 주기적으로 살짝 감긴다 (귀여움 포인트) */
+.otter-eye-open{transform-box:fill-box;transform-origin:center;}
+.cd-otter:not([data-mood="sleep"]) .otter-eye-open{animation:otterBlink 4.6s ease-in-out infinite;}
+@keyframes otterBlink{
+  0%,86%,100%{transform:scaleY(1);}
+  90%,94%{transform:scaleY(.08);}
+}
+
+/* 기본 idle에서 조개를 두 손으로 감싸 쥐고 살짝 흔든다 */
 .otter-tail{transform-origin:168px 178px;animation:otterTail 3.8s ease-in-out infinite;}
-@keyframes otterTail{0%,100%{transform:rotate(-4deg);}50%{transform:rotate(5deg);}}
-.otter-hand-l{transform-origin:88% 60%;animation:otterHandL 3.2s ease-in-out infinite;}
-.otter-hand-r{transform-origin:12% 60%;animation:otterHandR 3.2s ease-in-out infinite;}
-@keyframes otterHandL{0%,100%{transform:rotate(-4deg);}50%{transform:rotate(4deg);}}
-@keyframes otterHandR{0%,100%{transform:rotate(4deg);}50%{transform:rotate(-4deg);}}
+@keyframes otterTail{0%,100%{transform:rotate(-5deg);}50%{transform:rotate(6deg);}}
+.otter-hand-l{transform-origin:88% 60%;animation:otterHandL 3s ease-in-out infinite;}
+.otter-hand-r{transform-origin:12% 60%;animation:otterHandR 3s ease-in-out infinite;}
+@keyframes otterHandL{0%,100%{transform:rotate(-3deg);}50%{transform:rotate(3deg);}}
+@keyframes otterHandR{0%,100%{transform:rotate(3deg);}50%{transform:rotate(-3deg);}}
+/* 조개가 손과 함께 살랑살랑 */
+.otter-held-clam{transform-box:fill-box;transform-origin:50% 90%;animation:otterClam 3s ease-in-out infinite;}
+@keyframes otterClam{0%,100%{transform:rotate(-2deg);}50%{transform:rotate(2.5deg);}}
 .otter-water path{animation:water 4s linear infinite;}
 .otter-water path:nth-child(2){animation-duration:5.5s;animation-direction:reverse;opacity:.4;}
 @keyframes water{to{transform:translateX(-34px);}}
@@ -5477,9 +5489,9 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   100%{opacity:0;transform:translate(calc(-50% + var(--px,40px)),calc(var(--py,-70px))) scale(1.1) rotate(var(--pr,25deg));}
 }
 
-/* 카드 영역 — 해달 옆에서 flex */
+/* 카드 영역 — 해달 옆에서 flex. max-width 는 유효한 길이값이어야 한다(1fr 은 무효). */
 .fcard-win.fcard-max .cd-cardzone{
-  flex:1 1 0;min-width:0;max-width:min(760px,1fr);
+  flex:1 1 0;min-width:0;max-width:760px;
   position:relative;z-index:1;
   display:flex;flex-direction:column;gap:14px;
 }
@@ -5632,13 +5644,13 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   border:1px solid color-mix(in srgb,var(--border) 55%,rgba(255,255,255,.3));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 3px 10px rgba(15,23,42,.05);}
 
-/* 중간 폭 대응: 해달이 아래로 */
+/* 중간 폭 대응: 해달이 카드 아래로 (겹침 원천 차단) */
 @media (max-width:1100px){
-  .fcard-win.fcard-max .cd-stage{flex-direction:column-reverse;align-items:center;gap:14px;padding:8px 0 0;}
-  .fcard-win.fcard-max .cd-otter{flex:0 0 auto;width:200px;align-self:center;margin-top:-10px;
+  .fcard-win.fcard-max .cd-stage{flex-direction:column-reverse;align-items:center;gap:6px;padding:4px 0 0;}
+  .fcard-win.fcard-max .cd-otter{flex:0 0 auto;width:132px;align-self:center;margin-top:-4px;
     animation-name:otterBobSmall;}
   @keyframes otterBobSmall{0%,100%{transform:translateY(0);}50%{transform:translateY(-4px);}}
-  .fcard-win.fcard-max .cd-cardzone{width:100%;max-width:820px;}
+  .fcard-win.fcard-max .cd-cardzone{width:100%;max-width:760px;}
   .otter-bubble{left:auto;right:4%;top:0;transform-origin:90% 100%;}
   .otter-bubble::after{left:auto;right:-10px;bottom:14px;border:10px solid transparent;border-left-color:#fff;border-right:0;filter:drop-shadow(2px 1px 0 color-mix(in srgb,var(--accent) 40%,var(--border)));}
   .dark .otter-bubble::after{border-left-color:#1d2028;filter:drop-shadow(2px 1px 0 rgba(107,127,247,.4));}
@@ -5654,22 +5666,21 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
                                    color-mix(in srgb,var(--card) 76%,transparent)) !important;
     border:1px solid color-mix(in srgb,var(--border) 55%,rgba(255,255,255,.35)) !important;
   }
-  /* 해달은 작은 코너 캐릭터(카드 위에 떠있는 작은 친구) */
-  .fcard-win.fcard-max .cd-stage{flex-direction:column-reverse;gap:8px;padding:0;}
+  /* 해달은 카드 아래에 조그맣게 — 문제와 절대 겹치지 않는다 */
+  .fcard-win.fcard-max .cd-stage{flex-direction:column-reverse;gap:4px;padding:0;}
   .fcard-win.fcard-max .cd-otter{
-    position:absolute;right:6px;top:-4px;
-    width:86px;flex:none;align-self:auto;z-index:5;
+    position:relative;width:80px;flex:none;align-self:center;z-index:1;
     animation:otterMobileBob 3.6s ease-in-out infinite;
-    filter:drop-shadow(0 6px 10px rgba(0,0,0,.2));
+    filter:drop-shadow(0 6px 10px rgba(0,0,0,.18));
     pointer-events:none;
   }
   @keyframes otterMobileBob{0%,100%{transform:translateY(0) rotate(-4deg);}50%{transform:translateY(-3px) rotate(3deg);}}
   .otter-bubble{
-    position:absolute;top:10px;right:82px;left:auto;max-width:180px;
+    position:absolute;bottom:96%;right:-10px;top:auto;left:auto;max-width:180px;
     padding:8px 12px;font-size:12px;border-radius:14px;
   }
-  .otter-bubble::after{left:auto;right:-8px;bottom:10px;border:8px solid transparent;border-left-color:#fff;border-right:0;filter:drop-shadow(2px 1px 0 color-mix(in srgb,var(--accent) 40%,var(--border)));}
-  .dark .otter-bubble::after{border-left-color:#1d2028;}
+  .otter-bubble::after{left:auto;right:14px;top:100%;bottom:auto;border:8px solid transparent;border-top-color:#fff;border-bottom:0;filter:drop-shadow(0 2px 1px color-mix(in srgb,var(--accent) 40%,var(--border)));}
+  .dark .otter-bubble::after{border-top-color:#1d2028;}
   /* 말풍선 카드 (폰 전용 둥근 말풍선 모양) */
   .fcard-win.fcard-max .cd-inner{height:min(38dvh,340px);}
   .fcard-win.fcard-max .cd-face{
@@ -5723,24 +5734,16 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
              box-shadow .52s ease !important;
 }
 
-/* ── 확장 틀: 뷰포트 가득. 8px 여백은 '떠 있는 창'이라는 표식 (그래서 전체화면과 구분된다) ── */
+/* ── 확장 틀: 뷰포트 가득 — '새 사이트에 들어온 듯' 빈틈 없이 모니터를 채운다.
+     크기는 JS(_fcardMaxFill)가 실측 뷰포트로 잡은 --fcard-max-w/h 를 쓴다.
+     (14.13.8 창 이동범위의 같은 자 — 100vw/100dvh 는 배율·스크롤바에 따라 어긋났다)
+     CSS 변수가 없으면(측정 실패 등) 100vw/100dvh 로 떨어진다. ── */
 .fcard-win.fcard-max{
-  left:8px!important;top:8px!important;right:auto!important;bottom:auto!important;
-  width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important;
-  height:calc(100dvh - 16px)!important;max-height:calc(100dvh - 16px)!important;
-  border-radius:22px!important;transform:none!important;
+  left:0!important;top:0!important;right:auto!important;bottom:auto!important;
+  width:var(--fcard-max-w,calc(100vw))!important;max-width:var(--fcard-max-w,calc(100vw))!important;
+  height:var(--fcard-max-h,calc(100dvh))!important;max-height:var(--fcard-max-h,calc(100dvh))!important;
+  border-radius:0!important;transform:none!important;
   box-shadow:0 30px 90px rgba(0,0,0,.38)!important;
-}
-/* safe-area 가 있는 기기(iPhone 노치·홈바 등)에서는 여백을 safe-area 로 보정해 꽉 채운다 */
-@supports(padding:max(0px)){
-  .fcard-win.fcard-max{
-    left:max(8px,env(safe-area-inset-left,0px))!important;
-    top:max(8px,env(safe-area-inset-top,0px))!important;
-    width:calc(100vw - 16px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px))!important;
-    max-width:calc(100vw - 16px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px))!important;
-    height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important;
-    max-height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important;
-  }
 }
 .fcard-win.fcard-max #cardsHome,.fcard-win.fcard-max #cardsStudy,
 .fcard-win.fcard-max #cardsPaste,.fcard-win.fcard-max #cardsStats,
@@ -5850,10 +5853,119 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 @media (prefers-reduced-motion:reduce){
   .fcard-win.fcard-anim{transition:none !important;}
   .fcard-win.fcard-max .cd-otter,
-  .otter-tail,.otter-hand-l,.otter-hand-r,.otter-water path{animation:none !important;}
+  .otter-tail,.otter-hand-l,.otter-hand-r,.otter-held-clam,.otter-eye-open,.otter-water path{animation:none !important;}
   .otter-fx .p{display:none !important;}
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════
+   15.3 · 듀오링고식 암기카드 UI 개편
+   · 학습 방식 버튼 = 색깔별 3D 타일(아래 두꺼운 테두리, 누르면 눌리는 느낌)
+   · 답 보기 = 깔끔한 카드 + 아래 테두리, 듀오링고 그린 진행바·확정 버튼
+   · 확장 모드는 '새 사이트에 들어온 듯' 독립된 풀페이지(단색 배경 + 앱바)
+   ═══════════════════════════════════════════════════════════════════ */
+.fcard-win{
+  --duo-green:#58cc02;--duo-green-d:#46a302;
+  --duo-blue:#1cb0f6;--duo-blue-d:#1899d6;
+  --duo-orange:#ff9600;--duo-orange-d:#e08600;
+  --duo-red:#ff4b4b;--duo-red-d:#ea2b2b;
+  --duo-purple:#ce82ff;--duo-purple-d:#a560cc;
+  --duo-yellow:#ffc800;--duo-yellow-d:#e0a800;
+}
+/* ── 공통 버튼: 아래 테두리가 두꺼운 '눌리는' 버튼 ── */
+.fcard-win .cd-btn{
+  border:2px solid var(--border);border-bottom-width:4px;
+  border-radius:14px;background:var(--card);
+  font-weight:800;letter-spacing:-.01em;
+  box-shadow:0 1px 0 rgba(15,23,42,.04);
+  transition:transform .12s ease,filter .15s,box-shadow .15s,border-color .15s;
+}
+.fcard-win .cd-btn:active{transform:translateY(2px);border-bottom-width:2px;}
+.fcard-win .cd-btn.primary{
+  background:var(--duo-green);border-color:var(--duo-green-d);color:#fff;
+  box-shadow:0 3px 0 var(--duo-green-d),0 10px 22px rgba(88,204,2,.22);
+}
+.fcard-win .cd-btn.primary:hover{filter:brightness(1.05);transform:translateY(-1px);color:#fff;}
+.fcard-win .cd-btn.primary:active{transform:translateY(2px);box-shadow:0 1px 0 var(--duo-green-d);}
+/* ── 학습 방식 타일(cardsStats) — 색깔별 3D 버튼 ── */
+.fcard-win .fc-mode{
+  border:none;border-bottom:4px solid var(--mode-d,var(--duo-blue-d));
+  background:var(--mode,var(--duo-blue));
+  color:#fff;border-radius:16px;
+  box-shadow:0 3px 0 var(--mode-d,var(--duo-blue-d));
+  transition:transform .12s ease,filter .15s;
+}
+.fcard-win .fc-mode:nth-child(1){--mode:var(--duo-green);--mode-d:var(--duo-green-d);}
+.fcard-win .fc-mode:nth-child(2){--mode:var(--duo-blue);--mode-d:var(--duo-blue-d);}
+.fcard-win .fc-mode:nth-child(3){--mode:var(--duo-orange);--mode-d:var(--duo-orange-d);}
+.fcard-win .fc-mode:nth-child(4){--mode:var(--duo-red);--mode-d:var(--duo-red-d);}
+.fcard-win .fc-mode:nth-child(5){--mode:var(--duo-purple);--mode-d:var(--duo-purple-d);}
+.fcard-win .fc-mode:nth-child(6){--mode:var(--duo-yellow);--mode-d:var(--duo-yellow-d);}
+.fcard-win .fc-mode:hover{filter:brightness(1.06);transform:translateY(-2px);}
+.fcard-win .fc-mode:active{transform:translateY(2px);box-shadow:0 1px 0 var(--mode-d,var(--duo-blue-d));}
+.fcard-win .fc-mode i,
+.fcard-win.fcard-max .fc-mode i{
+  color:#fff;background:rgba(255,255,255,.20);
+  border-radius:11px;box-shadow:none;flex:none;
+}
+.fcard-win .fc-mode b{color:#fff;font-size:13px;}
+.fcard-win .fc-mode:nth-child(6) b{color:#7a5c00;}
+.fcard-win .fc-mode:nth-child(6) i{color:#7a5c00;background:rgba(255,255,255,.35);}
+/* ── 답 보기(객관식): 하얀 카드 + 아래 테두리 ── */
+.fcard-win .cd-opt{
+  border:2px solid var(--border);border-bottom-width:4px;
+  border-radius:14px;background:var(--card);
+  box-shadow:0 1px 0 rgba(15,23,42,.03);
+  font-weight:600;
+  transition:transform .12s,border-color .15s,background .15s;
+}
+.fcard-win .cd-opt:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--border));transform:translateY(-1px);}
+.fcard-win .cd-opt:active{transform:translateY(1px);border-bottom-width:2px;}
+.fcard-win .cd-opt i.num{border:2px solid var(--border);font-weight:800;box-sizing:border-box;}
+.fcard-win .cd-opt.ok,.fcard-win .cd-opt.no{color:#fff;border-bottom-width:4px;}
+.fcard-win .cd-opt.ok{background:#58cc02;border-color:#46a302;}
+.fcard-win .cd-opt.ok i.num{background:rgba(255,255,255,.25);color:#fff;border-color:rgba(255,255,255,.5);}
+.fcard-win .cd-opt.no{background:#ff4b4b;border-color:#ea2b2b;}
+.fcard-win .cd-opt.no i.num{background:rgba(255,255,255,.25);color:#fff;border-color:rgba(255,255,255,.5);}
+.fcard-win .cd-opt.pick{background:#ddf4ff;border-color:#1cb0f6;}
+.fcard-win .cd-opt.pick i.num{background:#1cb0f6;color:#fff;border-color:#1cb0f6;}
+/* ── 진행바 = 듀오링고 그린 ── */
+.fcard-win .cd-prog{height:12px;background:var(--bg2);box-shadow:inset 0 1px 2px rgba(15,23,42,.08);}
+.fcard-win #cdProgFill{background:linear-gradient(90deg,var(--duo-green),#8ee000);box-shadow:none;}
+/* ── 질문 카드: 깔끔하고 넉넉하게 ── */
+.fcard-win .cd-qq{background:var(--card);border:2px solid var(--border);border-radius:18px;}
+/* ── 묶음 카드(홈): 눌리는 타일 + 색 포인트 ── */
+.fcard-win .cd-deck{
+  border:2px solid var(--border);border-bottom-width:4px;border-radius:16px;
+  background:var(--card);
+  transition:transform .12s ease,border-color .15s,box-shadow .15s;
+}
+.fcard-win .cd-deck:hover{transform:translateY(-2px);
+  border-color:color-mix(in srgb,var(--accent) 45%,var(--border));}
+.fcard-win .cd-deck:active{transform:translateY(1px);border-bottom-width:2px;}
+/* 뒤집기 채점 버튼도 눌리는 3D */
+.fcard-win .cd-grade2 button{border-bottom:3px solid rgba(0,0,0,.18);}
+.fcard-win .cd-grade2 .cd-ng{background:var(--duo-red);}
+.fcard-win .cd-grade2 .cd-ok{background:var(--duo-green);}
+/* ── 확장 모드: 단색 페이지 배경 + 상단 앱바 → '새 사이트' 느낌 ── */
+.fcard-win.fcard-max{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none;}
+.dark .fcard-win.fcard-max{background:linear-gradient(180deg,#14161d,#10121a);}
+.fcard-win.fcard-max .fcard-head{
+  position:sticky;top:0;z-index:30;
+  background:color-mix(in srgb,var(--card) 82%,transparent);
+  backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%);
+  border-bottom:1px solid var(--border);
+}
+.fcard-win.fcard-max #cardsHome,.fcard-win.fcard-max #cardsStudy,
+.fcard-win.fcard-max #cardsPaste,.fcard-win.fcard-max #cardsStats,
+.fcard-win.fcard-max #cardsAnalytics,.fcard-win.fcard-max #cardsBrowse{
+  padding-top:22px;overflow-x:hidden;
+}
+/* 확장 모드 학습 방식 타일: 아이콘 위 · 글자 아래, 가운데 정렬 */
+.fcard-win.fcard-max .fc-mode{flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;gap:8px;padding:22px 12px;}
+.fcard-win.fcard-max .fc-mode i{font-size:26px;padding:10px;}
+.fcard-win.fcard-max .fc-mode b{font-size:13px;}
 
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃

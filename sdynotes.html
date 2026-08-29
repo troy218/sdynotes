@@ -810,184 +810,165 @@
               <!-- 귀여운 해달 '해동이' SVG — 여러 표정·말풍선·손 아이템을 CSS/JS로 토글 -->
               <svg class="cd-otter-svg" viewBox="0 0 220 240" xmlns="http://www.w3.org/2000/svg">
                 <defs>
-                  <radialGradient id="otterBelly" cx="50%" cy="40%" r="60%">
-                    <stop offset="0" stop-color="#fff2dc"/>
-                    <stop offset="1" stop-color="#f0d9b6"/>
+                  <radialGradient id="otterBelly" cx="50%" cy="42%" r="62%">
+                    <stop offset="0" stop-color="#fdfbf6"/>
+                    <stop offset="1" stop-color="#ebe4d6"/>
                   </radialGradient>
                   <linearGradient id="otterFur" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stop-color="#7a5138"/>
-                    <stop offset=".6" stop-color="#5a3a25"/>
-                    <stop offset="1" stop-color="#3e2716"/>
+                    <stop offset="0" stop-color="#c9d1dc"/>
+                    <stop offset=".55" stop-color="#a5afbd"/>
+                    <stop offset="1" stop-color="#8995a5"/>
                   </linearGradient>
                   <linearGradient id="otterFurLight" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stop-color="#8d6246"/>
-                    <stop offset="1" stop-color="#6b442c"/>
+                    <stop offset="0" stop-color="#e2e7ee"/>
+                    <stop offset="1" stop-color="#c3cbd7"/>
                   </linearGradient>
                   <radialGradient id="otterCheek" cx="50%" cy="50%" r="50%">
-                    <stop offset="0" stop-color="#ff9aa8" stop-opacity=".85"/>
-                    <stop offset="1" stop-color="#ff9aa8" stop-opacity="0"/>
+                    <stop offset="0" stop-color="#ffb7c3" stop-opacity=".9"/>
+                    <stop offset="1" stop-color="#ffb7c3" stop-opacity="0"/>
                   </radialGradient>
-                  <radialGradient id="otterShine" cx="35%" cy="30%" r="60%">
-                    <stop offset="0" stop-color="#fff" stop-opacity=".55"/>
-                    <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+                  <radialGradient id="otterShine" cx="35%" cy="28%" r="65%">
+                    <stop offset="0" stop-color="#ffffff" stop-opacity=".6"/>
+                    <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
                   </radialGradient>
                 </defs>
                 <!-- 그림자 -->
-                <ellipse class="otter-shadow" cx="110" cy="228" rx="58" ry="7" fill="#000" opacity=".22"/>
-                <!-- 꼬리 (물에 떠 있는 해달처럼 몸 옆에 둥글게) -->
-                <g class="otter-tail">
-                  <path d="M168 188 C205 178 218 148 196 130 C183 118 172 130 172 148 C172 162 174 174 170 186 Z"
-                        fill="url(#otterFur)" stroke="#2a180c" stroke-width="2.2" stroke-linejoin="round"/>
-                  <path d="M178 150 C192 146 200 140 198 132" fill="none" stroke="#2a180c" stroke-width="1.5" opacity=".55" stroke-linecap="round"/>
+                <ellipse class="otter-shadow" cx="110" cy="229" rx="54" ry="7" fill="#000" opacity=".16"/>
+                <!-- 물결 -->
+                <g class="otter-water" fill="none" stroke="#a7d7ee" stroke-width="2.4" stroke-linecap="round" opacity=".8">
+                  <path d="M34 216 q8 -5 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0"/>
+                  <path d="M42 224 q8 -4 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0" opacity=".5"/>
                 </g>
-                <!-- 몸통 (배를 보이고 누운 자세) -->
+                <!-- 꼬리 -->
+                <g class="otter-tail">
+                  <path d="M168 186 C206 176 218 146 194 128 C180 116 170 130 171 150 C172 163 173 175 169 186 Z"
+                        fill="url(#otterFur)" stroke="#4b5563" stroke-width="2.2" stroke-linejoin="round"/>
+                  <path d="M178 148 C191 144 199 138 197 130" fill="none" stroke="#4b5563" stroke-width="1.5" opacity=".5" stroke-linecap="round"/>
+                </g>
+                <!-- 몸통 -->
                 <g class="otter-body">
                   <path d="M52 168 C44 136 60 98 110 92 C160 98 178 138 170 170 C164 198 138 214 110 214 C80 214 58 196 52 168 Z"
-                        fill="url(#otterFur)" stroke="#2a180c" stroke-width="2.5" stroke-linejoin="round"/>
-                  <!-- 배 -->
+                        fill="url(#otterFur)" stroke="#4b5563" stroke-width="2.5" stroke-linejoin="round"/>
                   <path d="M66 168 C62 146 78 118 110 114 C142 118 158 148 154 170 C150 190 132 202 110 202 C86 202 70 188 66 168 Z"
-                        fill="url(#otterBelly)" stroke="#2a180c" stroke-width="1.8" stroke-linejoin="round"/>
-                  <!-- 배 털 디테일 -->
-                  <path d="M80 178 q8 4 16 0 M102 186 q8 3 16 0 M124 182 q8 3 16 -1" fill="none" stroke="#c8a57e" stroke-width="1.3" stroke-linecap="round" opacity=".7"/>
+                        fill="url(#otterBelly)" stroke="#4b5563" stroke-width="1.8" stroke-linejoin="round"/>
+                  <path d="M80 178 q8 4 16 0 M102 186 q8 3 16 0 M124 182 q8 3 16 -1" fill="none" stroke="#d6cdbd" stroke-width="1.3" stroke-linecap="round" opacity=".7"/>
                 </g>
-                <!-- 왼발 -->
+                <!-- 발 -->
                 <g class="otter-foot otter-foot-l">
-                  <ellipse cx="66" cy="200" rx="15" ry="10" fill="url(#otterFurLight)" stroke="#2a180c" stroke-width="2"/>
-                  <path d="M56 197 q-2 -5 3 -9 M62 193 q-2 -6 4 -9 M70 193 q0 -7 5 -8" fill="none" stroke="#2a180c" stroke-width="1.6" stroke-linecap="round"/>
+                  <ellipse cx="66" cy="201" rx="15" ry="10" fill="url(#otterFurLight)" stroke="#4b5563" stroke-width="2"/>
+                  <path d="M57 198 q-2 -5 3 -9 M63 194 q-2 -6 4 -9 M71 194 q0 -7 5 -8" fill="none" stroke="#4b5563" stroke-width="1.6" stroke-linecap="round"/>
                 </g>
-                <!-- 오른발 -->
                 <g class="otter-foot otter-foot-r">
-                  <ellipse cx="156" cy="200" rx="15" ry="10" fill="url(#otterFurLight)" stroke="#2a180c" stroke-width="2"/>
-                  <path d="M146 197 q-2 -5 3 -9 M152 193 q-2 -6 4 -9 M160 193 q0 -7 5 -8" fill="none" stroke="#2a180c" stroke-width="1.6" stroke-linecap="round"/>
+                  <ellipse cx="156" cy="201" rx="15" ry="10" fill="url(#otterFurLight)" stroke="#4b5563" stroke-width="2"/>
+                  <path d="M147 198 q-2 -5 3 -9 M153 194 q-2 -6 4 -9 M161 194 q0 -7 5 -8" fill="none" stroke="#4b5563" stroke-width="1.6" stroke-linecap="round"/>
                 </g>
-                <!-- 손 -- 기본은 배 위에 모으고, 정답 땐 들고 박수/하트, 틀렸을 땐 입을 가림 -->
+                <!-- 손 + 조개 -->
                 <g class="otter-hands">
                   <g class="otter-hand otter-hand-l">
                     <path d="M88 174 C78 172 72 162 82 154 C92 148 100 156 98 166 C97 170 93 174 88 174 Z"
-                          fill="url(#otterFurLight)" stroke="#2a180c" stroke-width="2" stroke-linejoin="round"/>
+                          fill="url(#otterFurLight)" stroke="#4b5563" stroke-width="2" stroke-linejoin="round"/>
                   </g>
                   <g class="otter-hand otter-hand-r">
                     <path d="M134 174 C144 172 150 162 140 154 C130 148 122 156 124 166 C125 170 129 174 134 174 Z"
-                          fill="url(#otterFurLight)" stroke="#2a180c" stroke-width="2" stroke-linejoin="round"/>
+                          fill="url(#otterFurLight)" stroke="#4b5563" stroke-width="2" stroke-linejoin="round"/>
                   </g>
-                  <!-- 들고 있는 조개(기본) / 하트(정답) / 책(공부중) 등은 CSS class 로 교체 -->
                   <g class="otter-held otter-held-clam">
-                    <path d="M96 158 Q110 142 126 158 Q120 170 111 170 Q102 170 96 158 Z"
-                          fill="#e8d5b8" stroke="#6b442c" stroke-width="1.8" stroke-linejoin="round"/>
-                    <path d="M96 158 Q110 166 126 158" fill="none" stroke="#6b442c" stroke-width="1.6"/>
-                    <path d="M101 160 q5 3 10 0 M107 163 q5 2 8 0" fill="none" stroke="#b89470" stroke-width="1" stroke-linecap="round" opacity=".7"/>
+                    <path d="M95 156 Q110 138 127 156 Q122 171 111 171 Q100 171 95 156 Z"
+                          fill="#f5e3c6" stroke="#8a6f4d" stroke-width="1.8" stroke-linejoin="round"/>
+                    <path d="M97 157 Q110 166 125 157" fill="none" stroke="#8a6f4d" stroke-width="1.6"/>
+                    <path d="M101 159 q5 4 10 0 M107 163 q5 3 8 0 M105 155 q5 4 10 0" fill="none" stroke="#b89470" stroke-width="1" stroke-linecap="round" opacity=".8"/>
+                    <circle cx="111" cy="152" r="2" fill="#fff" opacity=".7"/>
                   </g>
                   <g class="otter-held otter-held-heart" style="display:none">
-                    <path d="M111 148 c-6 -10 -19 -6 -16 5 c1 5 7 10 16 16 c9 -6 15 -11 16 -16 c3 -11 -10 -15 -16 -5 z"
-                          fill="#ff5d7a" stroke="#a02036" stroke-width="1.8" stroke-linejoin="round"/>
-                    <ellipse cx="106" cy="149" rx="3" ry="2" fill="#fff" opacity=".6"/>
+                    <path d="M111 146 c-6 -10 -19 -6 -16 5 c1 5 7 10 16 16 c9 -6 15 -11 16 -16 c3 -11 -10 -15 -16 -5 z"
+                          fill="#ff6b8b" stroke="#c0395b" stroke-width="1.8" stroke-linejoin="round"/>
+                    <ellipse cx="106" cy="147" rx="3" ry="2" fill="#fff" opacity=".7"/>
                   </g>
                   <g class="otter-held otter-held-book" style="display:none">
-                    <rect x="93" y="150" width="34" height="22" rx="3" fill="#4f6ef7" stroke="#2a3ca0" stroke-width="1.8"/>
+                    <rect x="93" y="150" width="34" height="22" rx="3" fill="#5a7bf7" stroke="#2a3ca0" stroke-width="1.8"/>
                     <path d="M110 150 v22" stroke="#2a3ca0" stroke-width="1.4"/>
                     <path d="M97 156 h10 M97 161 h10 M97 166 h6 M113 156 h10 M113 161 h10 M113 166 h6"
-                          stroke="#cdd6ff" stroke-width="1.2" stroke-linecap="round"/>
+                          stroke="#d6ddff" stroke-width="1.2" stroke-linecap="round"/>
                   </g>
                   <g class="otter-held otter-held-peek" style="display:none">
-                    <!-- 양 손이 눈을 가리는 모습 -->
-                    <ellipse cx="90" cy="128" rx="14" ry="12" fill="url(#otterFurLight)" stroke="#2a180c" stroke-width="2"/>
-                    <ellipse cx="132" cy="128" rx="14" ry="12" fill="url(#otterFurLight)" stroke="#2a180c" stroke-width="2"/>
+                    <ellipse cx="90" cy="126" rx="14" ry="12" fill="url(#otterFurLight)" stroke="#4b5563" stroke-width="2"/>
+                    <ellipse cx="132" cy="126" rx="14" ry="12" fill="url(#otterFurLight)" stroke="#4b5563" stroke-width="2"/>
                   </g>
                 </g>
                 <!-- 머리 -->
                 <g class="otter-head">
-                  <!-- 얼굴 라이트 털 -->
                   <path d="M60 116 C58 88 80 68 110 68 C140 68 162 88 160 116 C158 138 140 152 110 152 C80 152 62 138 60 116 Z"
-                        fill="url(#otterFurLight)" stroke="#2a180c" stroke-width="2.5" stroke-linejoin="round"/>
-                  <!-- 이마 하이라이트 -->
+                        fill="url(#otterFurLight)" stroke="#4b5563" stroke-width="2.5" stroke-linejoin="round"/>
                   <ellipse cx="100" cy="82" rx="28" ry="14" fill="url(#otterShine)"/>
-                  <!-- 귀 -->
                   <g class="otter-ear otter-ear-l">
-                    <ellipse cx="68" cy="96" rx="10" ry="12" fill="url(#otterFur)" stroke="#2a180c" stroke-width="2" transform="rotate(-18 68 96)"/>
-                    <ellipse cx="69" cy="98" rx="5" ry="7" fill="#d8a488" transform="rotate(-18 69 98)"/>
+                    <ellipse cx="68" cy="96" rx="10" ry="12" fill="url(#otterFur)" stroke="#4b5563" stroke-width="2" transform="rotate(-18 68 96)"/>
+                    <ellipse cx="69" cy="98" rx="5" ry="7" fill="#f6d3d9" transform="rotate(-18 69 98)"/>
                   </g>
                   <g class="otter-ear otter-ear-r">
-                    <ellipse cx="152" cy="96" rx="10" ry="12" fill="url(#otterFur)" stroke="#2a180c" stroke-width="2" transform="rotate(18 152 96)"/>
-                    <ellipse cx="151" cy="98" rx="5" ry="7" fill="#d8a488" transform="rotate(18 151 98)"/>
+                    <ellipse cx="152" cy="96" rx="10" ry="12" fill="url(#otterFur)" stroke="#4b5563" stroke-width="2" transform="rotate(18 152 96)"/>
+                    <ellipse cx="151" cy="98" rx="5" ry="7" fill="#f6d3d9" transform="rotate(18 151 98)"/>
                   </g>
-                  <!-- 주둥이(밝은 털 영역) -->
                   <path d="M86 118 Q110 148 134 118 Q130 136 110 140 Q90 136 86 118 Z"
-                        fill="#f4dcb8" stroke="#2a180c" stroke-width="1.8" stroke-linejoin="round"/>
-                  <!-- 코 -->
-                  <path d="M103 118 q7 -5 14 0 q-1 7 -7 9 q-6 -2 -7 -9 z" fill="#1e130b" stroke="#000" stroke-width="1"/>
-                  <ellipse cx="107" cy="117" rx="1.6" ry="1" fill="#fff" opacity=".7"/>
-                  <!-- 입/입모양 — 기본·웃음·감동·찡그림 을 별도 path로 -->
+                        fill="#faf6ee" stroke="#4b5563" stroke-width="1.8" stroke-linejoin="round"/>
+                  <path d="M103 118 q7 -5 14 0 q-1 7 -7 9 q-6 -2 -7 -9 z" fill="#3a4250" stroke="#20262e" stroke-width="1"/>
+                  <ellipse cx="107" cy="117" rx="1.6" ry="1" fill="#fff" opacity=".8"/>
                   <g class="otter-mouth">
-                    <path class="otter-mouth-def" d="M103 130 Q110 136 117 130" fill="none" stroke="#2a180c" stroke-width="2.2" stroke-linecap="round"/>
-                    <path class="otter-mouth-happy" d="M100 129 Q110 140 120 129 Q110 135 100 129 Z" fill="#ff5d7a" stroke="#2a180c" stroke-width="2" stroke-linejoin="round" style="display:none"/>
-                    <path class="otter-mouth-sad" d="M103 135 Q110 129 117 135" fill="none" stroke="#2a180c" stroke-width="2.2" stroke-linecap="round" style="display:none"/>
-                    <path class="otter-mouth-wow" d="M107 130 q3 6 6 0 q-3 4 -6 0 z" fill="#5a2a1a" stroke="#2a180c" stroke-width="1.8" stroke-linejoin="round" style="display:none"/>
-                    <path class="otter-mouth-sleep" d="M103 131 q7 -2 14 0" fill="none" stroke="#2a180c" stroke-width="2" stroke-linecap="round" style="display:none"/>
-                    <!-- 혀 (행복할 때만) -->
-                    <path class="otter-tongue" d="M107 133 q3 4 6 0 q-3 3 -6 0 z" fill="#ff8fa3" style="display:none"/>
+                    <path class="otter-mouth-def" d="M104 129 Q110 134 116 129" fill="none" stroke="#4b5563" stroke-width="2.2" stroke-linecap="round"/>
+                    <path class="otter-mouth-happy" d="M100 127 Q110 140 120 127 Q110 134 100 127 Z" fill="#ff7d94" stroke="#c0395b" stroke-width="2" stroke-linejoin="round" style="display:none"/>
+                    <path class="otter-mouth-sad" d="M103 134 Q110 129 117 134" fill="none" stroke="#4b5563" stroke-width="2.2" stroke-linecap="round" style="display:none"/>
+                    <path class="otter-mouth-wow" d="M107 129 q3 6 6 0 q-3 4 -6 0 z" fill="#6b7482" stroke="#4b5563" stroke-width="1.8" stroke-linejoin="round" style="display:none"/>
+                    <path class="otter-mouth-sleep" d="M103 130 q7 -2 14 0" fill="none" stroke="#4b5563" stroke-width="2" stroke-linecap="round" style="display:none"/>
+                    <path class="otter-tongue" d="M107 132 q3 4 6 0 q-3 3 -6 0 z" fill="#ff9fb0" style="display:none"/>
                   </g>
-                  <!-- 볼 -->
-                  <circle cx="82" cy="124" r="9" fill="url(#otterCheek)"/>
-                  <circle cx="138" cy="124" r="9" fill="url(#otterCheek)"/>
-                  <!-- 눈 — 여러 상태 class 로 토글 -->
+                  <circle cx="82" cy="123" r="9" fill="url(#otterCheek)"/>
+                  <circle cx="138" cy="123" r="9" fill="url(#otterCheek)"/>
                   <g class="otter-eyes">
-                    <!-- 기본 반짝 눈 -->
                     <g class="otter-eye otter-eye-l otter-eye-open">
-                      <ellipse cx="88" cy="110" rx="7" ry="8" fill="#1a1009"/>
-                      <circle cx="90" cy="107" r="2.4" fill="#fff"/>
-                      <circle cx="86" cy="112" r="1.1" fill="#fff"/>
+                      <ellipse cx="88" cy="110" rx="8" ry="9" fill="#2b3340"/>
+                      <circle cx="90.5" cy="106.5" r="3.2" fill="#fff"/>
+                      <circle cx="85" cy="112.5" r="1.4" fill="#fff"/>
                     </g>
                     <g class="otter-eye otter-eye-r otter-eye-open">
-                      <ellipse cx="132" cy="110" rx="7" ry="8" fill="#1a1009"/>
-                      <circle cx="134" cy="107" r="2.4" fill="#fff"/>
-                      <circle cx="130" cy="112" r="1.1" fill="#fff"/>
+                      <ellipse cx="132" cy="110" rx="8" ry="9" fill="#2b3340"/>
+                      <circle cx="134.5" cy="106.5" r="3.2" fill="#fff"/>
+                      <circle cx="129" cy="112.5" r="1.4" fill="#fff"/>
                     </g>
-                    <!-- 웃는 눈(^_^) -->
                     <g class="otter-eye otter-eye-l otter-eye-happy" style="display:none">
-                      <path d="M80 112 Q88 102 96 112" fill="none" stroke="#1a1009" stroke-width="3" stroke-linecap="round"/>
+                      <path d="M80 111 Q88 101 96 111" fill="none" stroke="#2b3340" stroke-width="3.2" stroke-linecap="round"/>
                     </g>
                     <g class="otter-eye otter-eye-r otter-eye-happy" style="display:none">
-                      <path d="M124 112 Q132 102 140 112" fill="none" stroke="#1a1009" stroke-width="3" stroke-linecap="round"/>
+                      <path d="M124 111 Q132 101 140 111" fill="none" stroke="#2b3340" stroke-width="3.2" stroke-linecap="round"/>
                     </g>
-                    <!-- 찡한 눈(틀렸을 때) -->
                     <g class="otter-eye otter-eye-l otter-eye-sad" style="display:none">
-                      <path d="M80 114 Q88 108 96 114" fill="none" stroke="#1a1009" stroke-width="2.8" stroke-linecap="round"/>
-                      <path d="M82 107 L94 112" stroke="#1a1009" stroke-width="1.6" stroke-linecap="round"/>
+                      <path d="M80 114 Q88 108 96 114" fill="none" stroke="#2b3340" stroke-width="2.8" stroke-linecap="round"/>
+                      <path d="M83 107 L94 112" stroke="#2b3340" stroke-width="1.6" stroke-linecap="round"/>
                     </g>
                     <g class="otter-eye otter-eye-r otter-eye-sad" style="display:none">
-                      <path d="M124 114 Q132 108 140 114" fill="none" stroke="#1a1009" stroke-width="2.8" stroke-linecap="round"/>
-                      <path d="M126 112 L138 107" stroke="#1a1009" stroke-width="1.6" stroke-linecap="round"/>
+                      <path d="M124 114 Q132 108 140 114" fill="none" stroke="#2b3340" stroke-width="2.8" stroke-linecap="round"/>
+                      <path d="M126 112 L137 107" stroke="#2b3340" stroke-width="1.6" stroke-linecap="round"/>
                     </g>
-                    <!-- 감은 눈(자는 듯 / 생각) -->
                     <g class="otter-eye otter-eye-l otter-eye-sleep" style="display:none">
-                      <path d="M80 111 Q88 115 96 111" fill="none" stroke="#1a1009" stroke-width="2.4" stroke-linecap="round"/>
+                      <path d="M80 111 Q88 115 96 111" fill="none" stroke="#2b3340" stroke-width="2.4" stroke-linecap="round"/>
                     </g>
                     <g class="otter-eye otter-eye-r otter-eye-sleep" style="display:none">
-                      <path d="M124 111 Q132 115 140 111" fill="none" stroke="#1a1009" stroke-width="2.4" stroke-linecap="round"/>
+                      <path d="M124 111 Q132 115 140 111" fill="none" stroke="#2b3340" stroke-width="2.4" stroke-linecap="round"/>
                     </g>
-                    <!-- 하트눈(대박 정답) -->
                     <g class="otter-eye otter-eye-l otter-eye-heart" style="display:none">
                       <path d="M82 107 c-4 -6 -11 -3 -8 4 c1 3 5 6 10 8 c5 -2 9 -5 10 -8 c3 -7 -4 -10 -8 -4 c-1 -1 -3 -1 -4 0 z"
-                            fill="#ff5d7a" stroke="#a02036" stroke-width="1.2"/>
+                            fill="#ff6b8b" stroke="#c0395b" stroke-width="1.2"/>
                     </g>
                     <g class="otter-eye otter-eye-r otter-eye-heart" style="display:none">
                       <path d="M126 107 c-4 -6 -11 -3 -8 4 c1 3 5 6 10 8 c5 -2 9 -5 10 -8 c3 -7 -4 -10 -8 -4 c-1 -1 -3 -1 -4 0 z"
-                            fill="#ff5d7a" stroke="#a02036" stroke-width="1.2"/>
+                            fill="#ff6b8b" stroke="#c0395b" stroke-width="1.2"/>
                     </g>
                   </g>
-                  <!-- 코수염 -->
-                  <g stroke="#2a180c" stroke-width="1.1" stroke-linecap="round" opacity=".75">
+                  <g stroke="#4b5563" stroke-width="1.1" stroke-linecap="round" opacity=".7">
                     <path d="M78 123 q-8 -1 -14 1 M78 127 q-9 0 -14 -1 M78 121 q-7 -4 -13 -5"/>
                     <path d="M142 123 q8 -1 14 1 M142 127 q9 0 14 -1 M142 121 q7 -4 13 -5"/>
                   </g>
                 </g>
-                <!-- 물결 (배 밑) -->
-                <g class="otter-water" fill="none" stroke="#7ec9e8" stroke-width="2.4" stroke-linecap="round" opacity=".75">
-                  <path d="M32 214 q8 -5 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0"/>
-                  <path d="M38 222 q8 -4 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0" opacity=".5"/>
-                </g>
-                <!-- 이벤트: 별/하트가 떠오름 (기본 숨김, JS에서 복제해 날림) -->
               </svg>
+
               <!-- 말풍선 -->
               <div class="otter-bubble" id="otterBubble"></div>
               <!-- 뿅하고 뜨는 파티클 타겟(JS에서 여기에 별/하트를 append) -->

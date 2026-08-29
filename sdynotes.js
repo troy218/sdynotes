@@ -9397,6 +9397,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         b.innerHTML=_fcardMax?'<i class="ri-fullscreen-exit-line"></i>':'<i class="ri-fullscreen-line"></i>';
         b.title=_fcardMax?'원래 크기로 (F · Esc)':'사이트 안에서 크게 보기 (F)';
     }
+    // 15.0 · 확장 틀의 크기를 '실측 뷰포트'로 직접 잰다.
+    //   예전엔 CSS 의 100vw/100dvh 에 기대서 배율·스크롤바·브라우저마다 오른쪽/아래가
+    //   잘리거나 못 가는 영역이 남았다. 14.13.8 '창 이동범위' 업데이트의 같은 자
+    //   (sdyViewportBox · 창과 동일한 UI CSS px) 로 재므로 모니터에 정확히 꽉 찬다.
+    function _fcardMaxFill(){
+        const win=_fcardWinEl(); if(!win) return;
+        try{
+            const vp=window.sdyViewportBox?window.sdyViewportBox():null;
+            if(vp&&vp.w>0&&vp.h>0){
+                win.style.setProperty('--fcard-max-w',Math.round(vp.w)+'px');
+                win.style.setProperty('--fcard-max-h',Math.round(vp.h)+'px');
+            }
+        }catch(e){}
+    }
+    // 확장 중 창 크기가 바뀌면(모니터 변경·회전·배율) 틀을 다시 잰다
+    addEventListener('resize',()=>{ if(_fcardMax) _fcardMaxFill(); },{passive:true});
     function _fcardAnimKick(){            // 모핑 transition 은 켜질/꺼질 때만 잠깐 붙인다 (드래그 간섭 방지)
         const win=_fcardWinEl(); if(!win) return;
         win.classList.add('fcard-anim');
@@ -9421,10 +9437,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const hpx=Math.round(win.offsetHeight||0)||Math.round((win.getBoundingClientRect&&win.getBoundingClientRect().height)||0);
             if(hpx>0) win.style.height=hpx+'px';          // 높이가 auto 라 모핑이 끊기지 않게 고정
             _fcardPreH=Math.round(win.offsetHeight||0)||null;
+            // 실측 뷰포트 크기로 목표 지점을 미리 잡아 둔다 (창 이동범위의 자와 같은 좌표계)
+            _fcardMaxFill();
             // 클래스 css(뷰포트 단위)가 인라인 크기를 덮으므로 한 박자 늦게 붙여
             // 현재 창 자리에서 화면 가득 자라나는 모핑이 보이게 한다
             requestAnimationFrame(()=>requestAnimationFrame(()=>{
                 if(!_fcardMax) return;    // 누르자마자 다시 접은 경합은 무시
+                _fcardMaxFill();
                 win.classList.add('fcard-max');
                 setTimeout(()=>{ if(win.classList.contains('fcard-max')) win.style.height=''; },540);
             }));
