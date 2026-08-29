@@ -22,11 +22,28 @@
 
 /* === script block 2 === */
 
-/* 모든 플로팅 창이 공유하는 화면 경계 규칙.
-   좌우/상하 모두 같은 8px 안전 여백을 쓰며 어떤 창도 화면 밖으로 나가지 않는다.
-   데스크톱은 html{zoom:.9} 를 쓰므로 화면 좌표(clientX/getBoundingClientRect)와
-   fixed 요소의 style.left/top·offsetWidth 가 서로 다른 단위를 쓴다.
-   플로팅 창은 'UI CSS px'로만 재고, 화면 좌표가 들어오면 먼저 그 단위로 바꾼다. */
+/* ══ 플로팅 창 공용 · '모니터 안쪽' 경계 규칙 ═════════════════════════════
+   엽스코드 · 단어카드 · 음악플레이어 … 모든 플로팅 창은 position:fixed 이고
+   style.left/top 에 'UI CSS px' 라는 단위를 쓴다. 데스크톱은 html{zoom:.9} 를
+   쓰기 때문에 이 단위가 화면 px(clientX·getBoundingClientRect) 와 0.9:1 로
+   어긋난다. 창과 화면을 같은 단위로 맞춰 재야 하는 이유다.
+
+   예전엔 화면 폭·높이를 window.innerWidth / documentElement.clientWidth /
+   visualViewport 를 섞어 '추정'했다. 이 셋의 단위는 브라우저·배율·스크롤바·
+   pinch 에 따라 제각각이라, 추정치가 실제보다 작아지면 오른쪽(아래) 10% 가량이
+   창이 갈 수 없는 영역으로 남았다. → 추정을 버리고 직접 잰다.
+   창과 똑같은 position:fixed 좌표계에 자 두 개를 붙인다.
+       · 100px 자     : 화면 px ↔ UI CSS px 배율을 그때그때 직접 잰다
+       · 화면 가득 자 : 창들이 실제로 다닐 수 있는 사각형
+   두 자는 같은 공간에서 재므로 브라우저가 zoom 을 어느 API 에 반영하든 비율이
+   맞는다. 그래서 배율·브라우저·디바이스 종류와 무관하게 이동범위는 항상
+   모니터(뷰포트) 안쪽 전체이고, 밖으로는 한 픽셀도 나가지 않는다.
+
+   ▼ FLOAT-BOUNDS 마커는 test/floating_window_bounds_zoom_sim.mjs 가 이 블록만
+     뽑아 가짜 브라우저 환경(엔진마다 단위가 다른 상황)에서 돌린다.
+     마커를 지우거나 사이를 뜯어내면 테스트가 실패한다. */
+/* FLOAT-BOUNDS:BEGIN */
+
 window.sdyUiCssZoom=(function(){
     var probe=null;
     return function(){
@@ -47,30 +64,75 @@ window.sdyUiCssZoom=(function(){
         }catch(e){ return 1; }
     };
 })();
+/* 화면 px → 창이 쓰는 UI CSS px */
 window.sdyUiCss=function(v){ return (Number(v)||0)/window.sdyUiCssZoom(); };
+
+/* 창이 다닐 수 있는 화면 사각형 {w,h}. 단위: 창과 동일한 UI CSS px.
+   rect 실측과 offsetWidth 중 큰 쪽을 쓴다 — 어떤 엔진은 offsetWidth 에 배율을
+   씌워 리포트하므로 둘 중 하나는 반드시 '창이 쓰는 단위' 이다.
+   짧게 재서 오른쪽이 잘리는 것이 가장 나쁜 실패다. */
+window.sdyViewportBox=(function(){
+    var probe=null, cached=null, cachedAt=-1e9;
+    /* 화면 px 로 리포트되는 값인지 UI CSS px 로 리포트되는 값인지 알 수 없는
+       신호(innerWidth) 는 두 해석 중 큰 쪽을 택한다. */
+    function toUi(v){
+        v=Number(v)||0;
+        if(!(v>0)) return 0;
+        return Math.max(v,v/window.sdyUiCssZoom());
+    }
+    return function(){
+        /* 드래그 중엔 pointermove 때마다 불린다. 레이아웃 읽기를 최대 1 프레임
+           (8ms) 만 재사용한다 — 판정이 매 이동 다시 돌므로 어긋남이 누적되지 않는다. */
+        var now=(window.performance&&window.performance.now)?window.performance.now():Date.now();
+        if(cached&&now-cachedAt<8) return cached;
+        var w=0,h=0;
+        try{
+            if(!probe||!probe.isConnected){
+                probe=document.getElementById('uiViewportProbeGlobal');
+                if(!probe){
+                    probe=document.createElement('div');
+                    probe.id='uiViewportProbeGlobal';
+                    probe.setAttribute('aria-hidden','true');
+                    probe.style.cssText='position:fixed;left:0;top:0;right:0;bottom:0;'+
+                        'margin:0;padding:0;border:0;overflow:hidden;visibility:hidden;pointer-events:none;';
+                    (document.body||document.documentElement).appendChild(probe);
+                }
+            }
+            var r=probe.getBoundingClientRect();
+            w=Math.max(Math.round(window.sdyUiCss(r.width)),Math.round(probe.offsetWidth)||0);
+            h=Math.max(Math.round(window.sdyUiCss(r.height)),Math.round(probe.offsetHeight)||0);
+        }catch(e){}
+        if(!(w>0)||!(h>0)){
+            /* 아직 레이아웃이 안 잡힌 첫 프레임·프로브 미지원 엔진에서만 여기 온다. */
+            var de=document.documentElement, vv=window.visualViewport;
+            if(!(w>0)) w=Math.max(toUi(window.innerWidth),toUi(vv&&vv.width),(de&&de.clientWidth)||0);
+            if(!(h>0)) h=Math.max(toUi(window.innerHeight),toUi(vv&&vv.height),(de&&de.clientHeight)||0);
+        }
+        cached={w:Math.round(w)||0,h:Math.round(h)||0}; cachedAt=now;
+        return cached;
+    };
+})();
+
+/* 창 하나를 화면 안으로 잡아둔다. x,y 는 창이 쓰려는 style.left/top(UI CSS px),
+   반환도 같은 단위. 벗어나는 벽만 되돌리므로 창이 화면 밖으로 나가도
+   드래그 한 번으로 도로 잡을 수 있다. 폭·높이는 창 자신의 실측을 쓰므로
+   창이 화면보다 크면(저 해상도·전체화면 모핑) 양 벽에 눌리지 않고 0 부터 닮는다.
+   재는 데 실패하면 손대지 않고 그대로 돌려준다 — 0 으로 붙이면 창이 왼쪽
+   벽에 달라붙는 별개의 버그가 된다. */
 window.sdyClampFloatingRect=function(el,x,y,gap){
-    gap=Number.isFinite(gap)?gap:8;
-    var vv=window.visualViewport, de=document.documentElement;
-    /* innerWidth / clientWidth / offsetWidth 는 fixed UI가 쓰는 CSS px,
-       visualViewport 값은 화면 px일 수 있어 보조값만 UI CSS px로 바꿔 합친다. */
-    var vw=Math.max(
-        Math.round(window.innerWidth||0),
-        Math.round((de&&de.clientWidth)||0),
-        Math.round(window.sdyUiCss((vv&&vv.width)||0))
-    );
-    var vh=Math.max(
-        Math.round(window.innerHeight||0),
-        Math.round((de&&de.clientHeight)||0),
-        Math.round(window.sdyUiCss((vv&&vv.height)||0))
-    );
+    gap=Number.isFinite(gap)?Math.max(0,gap):8;
+    var vp=window.sdyViewportBox(), vw=vp.w, vh=vp.h;
+    var out={x:Number(x)||0,y:Number(y)||0};
+    if(!(vw>0)||!(vh>0)) return out;
     var r=el?el.getBoundingClientRect():null;
-    var w=el?(el.offsetWidth||Math.round(window.sdyUiCss(r&&r.width||0))):0;
-    var h=el?(el.offsetHeight||Math.round(window.sdyUiCss(r&&r.height||0))):0;
+    var w=Math.max(el?(el.offsetWidth||0):0,r?Math.round(window.sdyUiCss(r.width)):0);
+    var h=Math.max(el?(el.offsetHeight||0):0,r?Math.round(window.sdyUiCss(r.height)):0);
     var minX=w+gap*2<=vw?gap:0, minY=h+gap*2<=vh?gap:0;
     var maxX=Math.max(minX,vw-w-minX), maxY=Math.max(minY,vh-h-minY);
-    return {x:Math.max(minX,Math.min(maxX,Number(x)||0)),
-            y:Math.max(minY,Math.min(maxY,Number(y)||0))};
+    return {x:Math.max(minX,Math.min(maxX,out.x)),
+            y:Math.max(minY,Math.min(maxY,out.y))};
 };
+/* FLOAT-BOUNDS:END */
 
 
 /* 12.0 · 음악 플로팅 칩을 페이지 첫 페인트 때 바로 띄운다 (로딩·곡 목록과 무관).
@@ -7502,7 +7564,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // ── 화면 px ↔ 화면 UI 가 쓰는 CSS px ──────────────────────────────
     // 데스크톱은 html{zoom:.9} 로 그려진다. 이 배율 때문에 같은 'px' 가 두 가지다.
     //   · clientX·getBoundingClientRect → 배율이 적용된 화면 px
-    //   · style.left·offsetWidth·innerWidth → 배율 전 CSS px  (Element.currentCSSZoom)
+    //   · style.left·offsetWidth          → 배율 전 CSS px  (Element.currentCSSZoom)
+    //   · innerWidth·clientWidth          → 엔진·배율에 따라 둘 중 어느 쪽도 될 수
+    //     있다. 그래서 이 값으로 화면 범위를 '추정'하면 어떤 환경에서든 한쪽으로
+    //     어긋난다. 창 경계는 파일 맨 앞의 공용 실측(sdyViewportBox) 을 쓰고,
+    //     아래 uiCss 는 '화면 px → UI CSS px' 환산에만 쓴다.
     // 그래서 화면 px 를 그대로 style.left 에 넣으면 고스트·도구막대가 커서에서
     // (1-배율)×거리 만큼 어긋나고, 눌러서 만든 상자·표는 커서 자리에 생긴다.
     // '미리보기는 여기, 결과는 저기' 가 되는 직접 원인이다. 배율은 고정 상수로
@@ -9180,7 +9246,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         head.addEventListener('pointerup',endD); head.addEventListener('pointercancel',endD);
         addEventListener('resize',()=>{
             if(document.getElementById('cardsModal').style.display!=='flex') return;
-            const r=win.getBoundingClientRect(),c=sdyClampFloatingRect(win,r.left,r.top);
+            /* rect 는 화면 px, style.left 는 UI CSS px — 그냥 넣으면 창이 왼쪽으로
+               배율만큼 밀려나고 그 만큼 오른쪽이 좁아진다. 반드시 환산해서 넘긴다. */
+            const r=win.getBoundingClientRect(),
+                  c=sdyClampFloatingRect(win,window.sdyUiCss(r.left),window.sdyUiCss(r.top));
             win.classList.add('moved'); win.style.left=c.x+'px'; win.style.top=c.y+'px';
         },{passive:true});
     })();
@@ -18199,8 +18268,13 @@ pl.addEventListener('pointermove',e=>{
   if(!drag)return;
   // 화면 px 델타를 zoom 된 fixed UI px로 바꾼다. 그대로 더하면 90% 화면에서
   // 플레이어가 포인터보다 느리게 따라오며 매번 위치가 조금씩 어긋났다.
-  const y=Math.max(56,Math.min(innerHeight-80,
-      drag.top+window.sdyUiCss(e.clientY-drag.sy)));
+  // 아래·오른쪽 제한도 같은 단위여야 한다. 예전엔 innerHeight(화면 px)에서
+  // 바 높이를 빼지 않고 80으로 대충 잡았기 때문에 90% 배율에서 화면 아래쪽
+  // 10% 가량에 바를 놓을 수 없었다. 공용 경계 함수(실측 기반)에 맡긴다.
+  const c=window.sdyClampFloatingRect(pl,
+      window.sdyUiCss(pl.getBoundingClientRect().left),
+      drag.top+window.sdyUiCss(e.clientY-drag.sy));
+  const y=Math.max(56,c.y);          // 56: 상단 헤더에 겹치지 않게 지켜야 하는 최소치
   pl.style.top=y+'px';
   P.pos={y};
 });
@@ -18352,7 +18426,12 @@ function clampMpb(){
   const w=parseFloat(mpbEl.style.width)||r.width;
   const h=parseFloat(mpbEl.style.height)||r.height;
   let x=parseFloat(mpbEl.style.left); let y=parseFloat(mpbEl.style.top);
-  if(!isFinite(x)) x=(innerWidth-w)/2;
+  if(!isFinite(x)){
+    // 처음 열 때 화면 가운데. innerWidth 은 화면 px, style.left 는 UI CSS px 라
+    // 그대로 쓰면 90% 배율에서 창이 왼쪽으로 5% 어긋난다 — 공용 실측을 쓴다.
+    const vp=sdyViewportBox();
+    x=Math.round((((vp.w||window.innerWidth)||1024)-(w||0))/2);
+  }
   if(!isFinite(y)) y=72;
   const c=sdyClampFloatingRect(mpbEl,x,y);
   mpbEl.style.left=Math.round(c.x)+'px'; mpbEl.style.top=Math.round(c.y)+'px';
@@ -18372,11 +18451,15 @@ function _applyBigSize(){
   // 12.10.1 · 하단 추천/목록이 잘리지 않도록 세로를 늘린다.
   //   기존 황금비 1:1.618보다 세로형인 1:1.36으로 조정했다.
   //   창의 외곽은 화면 안에 맞추고, 내부 목록은 남은 공간에서 스크롤한다.
+  //   화면 크기도 창이 쓰는 단위(UI CSS px)로 재야 한다 — innerWidth(화면 px)를
+  //   그대로 쓰면 90% 배율에서 창이 화면보다 10% 작게 잡혀 오른쪽·아래가 논다.
   const ratio=1.36;
-  let w=Math.min(880,innerWidth-16);
+  const vp=sdyViewportBox();
+  const vw=vp.w||innerWidth, vh=vp.h||innerHeight;
+  let w=Math.min(880,vw-16);
   let h=Math.round(w/ratio);
-  if(h>innerHeight-24){ h=innerHeight-24; w=Math.min(w,Math.round(h*ratio)); }
-  mpbEl.style.width=w+'px'; mpbEl.style.height=h+'px';
+  if(h>vh-24){ h=vh-24; w=Math.min(w,Math.round(h*ratio)); }
+  mpbEl.style.width=Math.round(w)+'px'; mpbEl.style.height=Math.round(h)+'px';
 }
 function openBig(){
   // 큰 플레이어가 열리면 작은 목록 팝업과 아래 컨트롤바는 숨긴다 (겹침 제거)
@@ -20534,9 +20617,19 @@ function openTrackMenu(x,y,id){
   if(isAdm()) h+=`<div class="ci danger" data-a="del"><i class="ri-delete-bin-line"></i>삭제</div>`;
   m.innerHTML=h;
   m.classList.add('show');
-  const r=m.getBoundingClientRect();
-  m.style.left=Math.max(8,Math.min(innerWidth-r.width-8,x))+'px';
-  m.style.top=Math.max(8,Math.min(innerHeight-r.height-8,y))+'px';
+  /* x,y 는 우클릭 지점(화면 px), menu.style.left 는 UI CSS px. 단위 두 개를
+     한 번에 맞춰야 메뉴가 커서 아래에 뜨고 오른쪽 끝까지 화면 안에 남는다. */
+  var vp=window.sdyViewportBox();
+  var mr=m.getBoundingClientRect();
+  var mw=m.offsetWidth||Math.round(window.sdyUiCss(mr.width)),
+      mh=m.offsetHeight||Math.round(window.sdyUiCss(mr.height));
+  var vw=vp.w||Math.round(window.sdyUiCss(window.innerWidth)),
+      vh=vp.h||Math.round(window.sdyUiCss(window.innerHeight));
+  var mx=window.sdyUiCss(x), my=window.sdyUiCss(y);
+  if(vw>0) m.style.left=Math.max(8,Math.min(mx,vw-mw-8))+'px';
+  else     m.style.left=Math.max(8,mx)+'px';
+  if(vh>0) m.style.top =Math.max(8,Math.min(my,vh-mh-8))+'px';
+  else     m.style.top =Math.max(8,my)+'px';
   m._tid=t.id;
 }
 let _menuAt=0;
@@ -23082,13 +23175,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }else if(app.classList.contains('open')){
         var l=parseFloat(app.style.left),t=parseFloat(app.style.top);
         if(isFinite(l)||isFinite(t)){
-          /* 이전 좌표를 먼저 보존해 회전 뒤에도 같은 쪽에 머물게 하고,
-             마지막 판정은 모든 창과 동일한 공용 경계 함수에 맡긴다. */
-          var w=app.offsetWidth,h=app.offsetHeight;
-          if(isFinite(l)) l=Math.max(8,Math.min(innerWidth-w-8,l));
-          if(isFinite(t)) t=Math.max(8,Math.min(innerHeight-h-8,t));
-          var ar=app.getBoundingClientRect();
-          var c=sdyClampFloatingRect(app,isFinite(l)?l:window.sdyUiCss(ar.left),isFinite(t)?t:window.sdyUiCss(ar.top));
+          /* 공용 경계 함수에만 판정을 맡긴다. 예전엔 여기서 innerWidth·innerHeight
+             (화면 px) 로 한 번 먼저 잘라 냈는데, 창 폭·높이는 UI CSS px 라
+             90% 배율에서 오른쪽·아래 10% 는 애초에 후보에서 사라졌다.
+             미리 자르지 않으면 회전·리사이즈 뒤에도 같은 쪽에 남는다. */
+          var c=sdyClampFloatingRect(app,isFinite(l)?l:window.sdyUiCss(app.getBoundingClientRect().left),
+                                        isFinite(t)?t:window.sdyUiCss(app.getBoundingClientRect().top));
           app.style.left=c.x+'px'; app.style.top=c.y+'px';
         }
       }

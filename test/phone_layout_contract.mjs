@@ -203,8 +203,12 @@ ok('폰에서 엽스코드의 드래그 인라인 좌표를 지운다',
   has(js, /if\(PHONE\(\)\)\{[\s\S]{0,160}app\.style\.left='';app\.style\.top=''/));
 ok('resize와 orientationchange 모두 재배치한다',
   has(js, /addEventListener\('resize',tick/) && has(js, /addEventListener\('orientationchange'/));
-ok('PC에서는 드래그 좌표를 보존하고 화면 안으로만 clamp한다',
-  has(js, /else if\(app\.classList\.contains\('open'\)\)[\s\S]{0,320}Math\.min\(innerWidth-w-8,l\)/));
+/* 14.13.8 · 예전 이 계약은 innerWidth(화면 px) 으로 미리 자르는 코드를 요구했다.
+   창 폭·높이는 UI CSS px 라 90% 배율에서 오른쪽 10% 가 후보에서 사라졌다 —
+   '화면 안으로만 clamp' 의 옳은 형태는 공용 경계 함수(실측 기반)에만 판정을 맡기는 것. */
+ok('PC에서는 드래그 좌표를 보존하고 공용 경계 함수로만 clamp한다',
+  has(js, /else if\(app\.classList\.contains\('open'\)\)[\s\S]{0,420}sdyClampFloatingRect\(app,/) &&
+  !has(js, /else if\(app\.classList\.contains\('open'\)\)[\s\S]{0,420}Math\.min\(innerWidth-/));
 ok('모바일 최종 소스에 데스크톱 min-width 규칙이 없다', !/min-width:\s*641px/.test(mobileSource));
 
 console.log(`\n모바일 레이아웃 계약: PASS ${pass} / FAIL ${fail}`);
