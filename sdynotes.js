@@ -9655,7 +9655,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                      :(k.count?Math.round(k.learned/k.count*100):0);
             const seen=k.seen||0;
             return `<div class="cd-deck" data-deck="${k.id}">
-                <div class="cd-ring" style="background:conic-gradient(var(--accent) ${pct*3.6}deg,var(--bg) 0)">
+                <div class="cd-ring" style="background:conic-gradient(var(--accent) ${pct*3.6}deg,color-mix(in srgb,var(--accent) 18%,var(--bg2)) 0)">
                   <span style="background:var(--bg2);width:28px;height:28px;border-radius:50%;
                         display:flex;align-items:center;justify-content:center;">${pct}%</span></div>
                 <div class="t"><b>${esc(k.title)}</b>
@@ -10092,7 +10092,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         _cdSessStart();                       // 15.0 · 세션 칩(정답률·시간) 시작
         showPane('cardsStudy');
         _fcardTitle('짝 맞추기 · '+((_deckCur&&_deckCur.title)||'암기 카드'));
-        ['cdFlip','cdQuiz','cdDone','cdTestReport','cdFlipGrade','cdMastery','cdNextBtn','cdExplain']
+        ['cdFlip','cdQuiz','cdDone','cdTestReport','cdFlipGrade','cdMastery','cdNextBtn','cdExplain','cdQBar']
             .forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
         const ar=document.getElementById('cdAutoResult'); if(ar){ ar.textContent=''; ar.className='cd-typeres'; }
         document.getElementById('cdMatch').style.display='';
@@ -10206,6 +10206,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.getElementById('cdProgFill').style.width=(_qi/_queue.length*100)+'%';
         renderMastery();
         const body=document.getElementById('cardsStudy'); if(body) body.scrollTop=0;
+
+        // 15.4 · 문제는 항상 위에 — 뒤집기/객관식 공용 질문 바
+        const qbar=document.getElementById('cdQBar');
+        if(qbar){
+            qbar.style.display='';
+            const qtitle=document.getElementById('cdQuestion');
+            if(qtitle) qtitle.textContent=c.front||'';
+            const qchip=document.getElementById('cdQType');
+            if(qchip) qchip.textContent=(c.type==='choice')?'객관식':'뒤집기 카드';
+            // 질문 바 입장 애니메이션 다시 재생
+            qbar.classList.remove('cd-qin'); void qbar.offsetWidth; qbar.classList.add('cd-qin');
+        }
 
         if(c.type==='choice'){
             quiz.style.display='';
@@ -10366,6 +10378,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.getElementById('cdFlip').style.display='none';
         document.getElementById('cdQuiz').style.display='none';
         document.getElementById('cdFlipGrade').style.display='none';
+        { const qb=document.getElementById('cdQBar'); if(qb) qb.style.display='none'; }   // 15.4
         document.getElementById('cdProgFill').style.width='100%';
         document.getElementById('cdExplain').style.display='none';
         document.getElementById('cdNextBtn').style.display='none';
