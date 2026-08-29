@@ -5530,6 +5530,17 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 }
 .dark .otter-bubble::after{border-top-color:rgba(28,30,46,.92);}
 
+/* 18.1 · 노트/노래 해돌이용 작은 말풍선 — 해돌이 머리 위, 왼쪽 정렬로 오른쪽으로 뻗는다 */
+.otter-bubble-mini{
+  left:0;right:auto;margin:0;bottom:calc(100% + 6px);
+  width:max-content;max-width:190px;
+  padding:7px 11px;font-size:12px;line-height:1.35;border-radius:14px;
+  transform-origin:20% 100%;
+}
+.otter-bubble-mini::after{
+  left:18px;margin-left:0;bottom:-8px;border-width:8px;
+}
+
 /* 파티클 효과 */
 .otter-fx{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:4;}
 .otter-fx .p{position:absolute;left:50%;top:30%;font-size:20px;

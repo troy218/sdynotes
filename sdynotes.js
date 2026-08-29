@@ -23641,6 +23641,72 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }
   })();
 
+  // ── 18.1 · 노트/노래 해돌이 말풍선 — 가만히 있으면 가끔씩 멘트를 바꿔가며 혼잣말한다 ──
+  (function(){
+    var note=$('noteOtter'), noteBub=$('noteOtterBubble');
+    var mp=$('mpOtterBubble'), mpRoot=document.querySelector('.mp-otter');
+    var pl=$('musicPlayer');
+
+    // 말풍선 보여주기 (show 클래스 + 타이머로 자동 숨김)
+    function speak(bubble,text,dur){
+      if(!bubble||!text) return;
+      bubble.textContent=text;
+      bubble.classList.add('show');
+      if(bubble._t) clearTimeout(bubble._t);
+      bubble._t=setTimeout(function(){ bubble.classList.remove('show'); }, dur||2400);
+    }
+    function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+    // ── 노트(문서) 해돌이 ──
+    var NOTE_IDLE=[
+      '오늘은 뭘 끄적일까 해돌~?',
+      '집중하면 뭐든 돼! 해돌~',
+      '아이디어 떠오르면 날 눌러봐 해돌!',
+      '끄적끄적~ 글 쓰는 거 재밌지? 해돌~',
+      '휴식도 중요해! 물 한 잔 어때 해돌~?',
+      '천천히 써도 괜찮아 해돌~'
+    ];
+    var NOTE_TAP=[
+      '굿 아이디어! 해돌~!',
+      '오! 멋진 생각이다 해돌~!',
+      '번쩍! 아이디어가 떠올랐해돌!',
+      '역시 너야! 해돌~'
+    ];
+    var editor=$('editorView');
+    if(note&&noteBub){
+      note.addEventListener('click',function(){ speak(noteBub,pick(NOTE_TAP),1800); });
+      setInterval(function(){
+        if(editor&&!editor.classList.contains('open')) return;  // 편집기가 닫혀 있으면 조용히
+        speak(noteBub,pick(NOTE_IDLE),2400);
+      }, 16000);
+    }
+
+    // ── 노래 해돌이 ──
+    var MP_IDLE=[
+      '둠칫둠칫~!',
+      '제 이름은 해돌이야. 만나서 반갑해돌!',
+      '이 노래 너무 좋다 해돌~',
+      '볼륨 한 번 올려볼까 해돌~?',
+      '어깨가 절로 들썩이네 해돌~',
+      '나도 같이 흔들고 싶어 해돌~'
+    ];
+    function mpSongPhrase(){
+      try{
+        var t=cur();
+        if(t&&t.title) return '지금 "'+t.title+'" 같이 들을래 해돌~?';
+      }catch(e){}
+      return null;
+    }
+    if(mp&&pl){
+      setInterval(function(){
+        if(!mpRoot||!mpRoot.offsetParent) return;      // 음악바가 안 보이면 조용히
+        if(!pl.classList.contains('mp-bar')) return;   // 플로팅 원형 모드면 말풍선 안 띄움
+        var song=mpSongPhrase();
+        speak(mp, (song&&Math.random()<0.4)?song:pick(MP_IDLE), 2600);
+      }, 13000);
+    }
+  })();
+
   ypDrag();
 
   // ── 16.2 · 입장 게이트: '로그인' 또는 '비회원' ──
