@@ -5518,11 +5518,27 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 }
 .fcard-win.fcard-max .cd-otter{
   /* 18.1 · 새 해돌이는 정사각형(200x200) — 카드 중앙을 가리지 않게
-     전체화면의 왼쪽 아래에 띄운다(비-전체화면은 아래 가운데). */
+     전체화면의 왼쪽 아래에 띄운다(비-전체화면은 아래 가운데).
+     18.3 · 화면이 넉넉하면 왼쪽 아래가 아니라 '문제의 진짜 왼쪽'에 붙는다
+            (아래 media query 에서 카드와 나란히 세로 가운데 정렬). */
   display:block;position:absolute;
   left:clamp(18px,5vw,72px);bottom:clamp(10px,4vh,34px);
   width:clamp(104px,12vw,150px);height:auto;
   z-index:3;pointer-events:none;
+}
+/* 18.3 · 폭이 넉넉한 화면 — 해돌이를 문제(카드) 왼쪽, 세로 가운데에 앉힌다.
+   절대 위치가 아니라 카드와 나란한 flex 항목이라 좁혀도 카드를 덮지 않는다.
+   (말풍선·파티클이 해돌이 기준으로 뜨도록 position:relative 는 유지) */
+@media (min-width:920px){
+  .fcard-win.fcard-max .cd-otter{
+    position:relative;left:auto;bottom:auto;
+    flex:0 0 auto;align-self:center;
+    width:clamp(96px,10vw,140px);
+  }
+  /* 말풍선은 해돌이 왼쪽에 붙여 오른쪽으로 뻗게 — 화면 왼쪽에서 잘리지 않는다 */
+  .fcard-win.fcard-max .cd-otter .otter-bubble{
+    left:0;right:auto;margin:0;max-width:250px;transform-origin:20% 100%;}
+  .fcard-win.fcard-max .cd-otter .otter-bubble::after{left:46px;margin-left:0;}
 }
 /* 확장(비-전체화면) 암기카드에서도 카드 아래쪽에 해돌이를 보여 준다. */
 .fcard-win:not(.fcard-max) .cd-cardzone{order:1;width:100%;min-width:0;}
@@ -6111,6 +6127,10 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 /*   빈 채팅 안내(.yp-empty)는 메시지가 생기면 display:none 이라 해돌이도 같이 사라진다 */
 .yp-otter{display:block;width:160px;margin:0 auto 6px;cursor:pointer;}
 .yp-otter .om-say{font-size:11.5px;}
+/* 18.3 · 입장 게이트(로그인/비회원 고르는 첫 화면)에도 같은 편지 해돌이를 앉힌다.
+   채팅방은 '○○님이 들어왔어요' 안내가 바로 떠서 이 해돌이를 볼 새가 없기 때문.
+   (복제는 sdynotes.js — .yp-empty 의 해돌이를 그대로 옮겨 쓴다) */
+.ypg-card .yp-otter{width:118px;margin:-4px auto 0;}
 
 /* ── ② 비행기 해돌이 — 홈에서 아주 가끔 왼쪽 위 → 오른쪽 횡단 ── */
 .plane-otter{position:fixed;left:-240px;top:clamp(64px,12vh,150px);
@@ -6124,10 +6144,20 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 /* ── ③ 커피 해돌이 — 설정 창 오른쪽 아래 ── */
 .set-otter{position:fixed;right:20px;bottom:18px;width:92px;height:92px;z-index:2;cursor:pointer;}
 
-/* ── ④ 독서 해돌이 — 타이머(집중) 화면 왼쪽 아래 (버튼 바 바로 위까지 내려앉힌다) ── */
-.fc-otter{position:absolute;left:clamp(10px,3vw,44px);bottom:clamp(70px,9vh,92px);
+/* ── ④ 독서 해돌이 — 타이머(집중) 화면 왼쪽 아래 ──
+   18.3 · 공중에 떠 보이지 않게 화면 바닥에 거의 붙여 앉힌다.
+   아래 버튼 바는 가운데 정렬이라 왼쪽 자리는 비어 있다. */
+.fc-otter{position:absolute;left:clamp(10px,3vw,44px);
+  bottom:max(8px,env(safe-area-inset-bottom,0px));
   width:96px;height:96px;z-index:4;cursor:pointer;}
 .fc-otter .om-say{font-size:11.5px;}
+/* 화면이 좁아 버튼·프리셋 바가 왼쪽까지 차오르면 해돌이를 조금 줄이고,
+   바 내용은 해돌이 자리를 피해 가운데 정렬한다(양쪽을 같게 줘 가운데는 유지).
+   아래 폰 규칙이 이보다 뒤에 있어 폰(가로폭 640 이하)은 폰 값이 이긴다. */
+@media (max-width:1024px){
+  .fc-otter{width:76px;height:76px;left:clamp(8px,2vw,24px);}
+  .fc-chrome.bottom{padding-left:104px;padding-right:104px;}
+}
 
 /* ── ⑤ 졸리는 해돌이 — 사용법·단축키 설명을 가장 아래로 스크롤해야 보인다
       (keyBody 스크롤 영역 맨 끝에 들어 있어 평소엔 화면 밖에 있다) ── */
@@ -6137,6 +6167,13 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 /* ── 폰 · 작은 화면 ── */
 @media (max-width:640px), (max-height:560px) and (pointer:coarse){
   .yp-otter{width:124px;margin:0 auto 4px;}
+  .ypg-card .yp-otter{width:92px;}
+  /* 게이트 카드는 넘치면 스크롤(overflow)되어 말풍선이 위로 뜨면 잘린다 — 아래로 뿜는다 */
+  .ypg-card .yp-otter .om-say{top:auto;bottom:-2px;
+    transform:translate(-50%,100%) scale(.8);}
+  .ypg-card .yp-otter .om-say.om-on{transform:translate(-50%,100%) scale(1);}
+  .ypg-card .yp-otter .om-say::after{top:-5px;bottom:auto;
+    border-top:none;border-bottom-color:#3d2314;}
   .set-otter{right:10px;top:max(10px,var(--ph-top,0px));bottom:auto;width:62px;height:62px;}
   .fc-otter{left:10px;bottom:calc(var(--ph-safe,0px) + 84px);width:64px;height:64px;}
   .fc-otter .om-say{font-size:10.5px;}

@@ -9633,16 +9633,37 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // ── 18.0 · 해설 포맷터 — '정답 근거 + ①②③ 보기별 해설'을 예쁜 목록으로 ──
     // AI 프롬프트가 ① 원문자 번호로 각 보기 해설을 붙여 주므로, 그 항목을 줄로 나눠 보여 준다.
     // 원문자(①)는 글꼴에 따라 깨질 수 있어 숫자 배지(.ex-n)로 바꿔 그린다.
+    // 18.3 · 객관식은 보기를 섞어 보여 주므로(order = 화면 순서 → 원래 보기 번호),
+    //   해설 번호도 화면에 보이는 보기 번호에 맞춰 다시 매긴다. 노트의 ①②③ 은
+    //   '원래 보기 순서'라 그대로 두면 위 보기 번호(1,2,3…)와 해설 번호가 어긋났다.
     const _EX_CIRCLED='①②③④⑤⑥⑦⑧⑨⑩';
-    function fmtExplain(t){
+    function fmtExplain(t,order){
         t=(t||'').trim(); if(!t) return '';
         const parts=t.split(new RegExp('(?=[①②③④⑤⑥⑦⑧⑨⑩])')).map(s=>s.trim()).filter(Boolean);
         if(parts.length<2) return '<div class="ex-lead">'+esc(t)+'</div>';
-        return parts.map(p=>{
+        const leads=[], items=[];
+        parts.forEach(function(p){
             const idx=_EX_CIRCLED.indexOf(p[0]);
-            if(idx<0) return '<div class="ex-lead">'+esc(p)+'</div>';
-            return '<div class="ex-item"><span class="ex-n">'+(idx+1)+'</span>'+esc(p.slice(1))+'</div>';
-        }).join('');
+            if(idx<0) leads.push(p); else items.push({opt:idx,text:p.slice(1)});
+        });
+        if(!items.length) return '<div class="ex-lead">'+esc(t)+'</div>';
+        const hasOrder=Array.isArray(order)&&order.length>0;
+        // 화면에 보이는 번호: order 안에서의 자리 + 1 (없으면 원래 번호)
+        const shownOf=function(opt){
+            if(!hasOrder) return opt+1;
+            const pos=order.indexOf(opt);
+            return pos<0?(opt+1):(pos+1);
+        };
+        if(hasOrder) items.sort(function(a,b){
+            const pa=order.indexOf(a.opt), pb=order.indexOf(b.opt);
+            // order 에 없는 항목(보기보다 해설이 많을 때)은 뒤로 보낸다
+            return (pa<0?1e6+a.opt:pa)-(pb<0?1e6+b.opt:pb);
+        });
+        return leads.map(p=>'<div class="ex-lead">'+esc(p)+'</div>').join('')+
+            items.map(function(it){
+                return '<div class="ex-item" data-opt="'+it.opt+'">'+
+                       '<span class="ex-n">'+shownOf(it.opt)+'</span>'+esc(it.text)+'</div>';
+            }).join('');
     }
     function copyPrompt(){
         const t=CARD_PROMPT;
@@ -10447,9 +10468,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         const ex=document.getElementById('cdExplain');
         if(ex){
-            ex.innerHTML=fmtExplain(c.note)||('<div class="ex-lead">'+esc('정답은 “'+((c.opts||[])[c.answer]||c.back||'')+'”입니다. 핵심 개념을 한 번 더 확인해 보세요.')+'</div>');
-            // 18.0 · 보기별 해설(①②③…)은 보기 원래 순서 — 정답 보기는 민트, 오답은 로즈로 물들인다
-            ex.querySelectorAll('.ex-item').forEach((el,k)=>el.classList.add(k===c.answer?'ex-right':'ex-wrong'));
+            // 18.3 · 해설 번호를 화면에 보이는 보기 번호에 맞춘다 (보기는 섞여 있다)
+            ex.innerHTML=fmtExplain(c.note,c.__order)||('<div class="ex-lead">'+esc('정답은 “'+((c.opts||[])[c.answer]||c.back||'')+'”입니다. 핵심 개념을 한 번 더 확인해 보세요.')+'</div>');
+            // 18.3 · 정답/오답 색은 '원래 보기 번호'(data-opt)로 판정한다 —
+            //   해설 목록은 화면에 보이는 섞인 순서로 다시 나열되므로 나열 순서(k)로는 맞지 않는다.
+            ex.querySelectorAll('.ex-item').forEach(el=>{
+                const oi=+((el.dataset&&el.dataset.opt));
+                el.classList.add(oi===c.answer?'ex-right':'ex-wrong');
+            });
             ex.style.display='block';
         }
         document.getElementById('cdNextBtn').style.display='flex';
@@ -23939,6 +23965,31 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }
   })();
 
+  // ── 18.3 · 입장 게이트에도 편지 해돌이를 ───────────────────────────────
+  //   엽스코드에 처음 들어오면 '○○님이 들어왔어요' 안내가 곧바로 떠서
+  //   빈 채팅 화면(.yp-empty)의 해돌이는 볼 새가 없이 사라진다.
+  //   그래서 로그인할지 말지 고르는 첫 화면(입장 게이트)에도 같은 해돌이를
+  //   복제해 둔다 — 누르면 편지 선물 + 말풍선은 그대로(아래 스쿼드가 묶어 준다).
+  (function(){
+    var gate=document.querySelector('#ypGate .ypg-card');
+    var src=document.querySelector('#ypEmpty .yp-otter');
+    if(!gate||!src||document.getElementById('ypGateOtter')) return;
+    var c=src.cloneNode(true);
+    c.id='ypGateOtter';
+    c.setAttribute('data-word','어서 와! 편지 들고 기다렸어 해돌~');
+    gate.insertBefore(c,gate.firstChild);
+  })();
+  // 게이트가 열릴 때 한 번 인사 — 말풍선은 해돌이 위(카드 밖)로 뜬다
+  var _ypGateHiT=null;
+  function ypGateOtterHello(){
+    var o=document.getElementById('ypGateOtter'); if(!o) return;
+    var say=o.querySelector('.om-say'); if(!say) return;
+    say.textContent=o.getAttribute('data-word')||'반가워 해돌~';
+    say.classList.add('om-on');
+    clearTimeout(_ypGateHiT);
+    _ypGateHiT=setTimeout(function(){ say.classList.remove('om-on'); },2800);
+  }
+
   // ── 18.2 · 해돌이 스쿼드 인터랙션 (Notion '해돌이 스쿼드') ──────────────
   //   편지(엽스코드) · 커피(설정) · 독서(타이머) 해돌이는 누르면
   //   쭈뼛-뾰쪽 + 선물 파티클 + 말풍선(om-say).
@@ -24024,6 +24075,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var g=$('ypGate');
     if(!g){ ypJoin(); ypOpen(); return; }
     g.style.display='flex';
+    try{ ypGateOtterHello(); }catch(e){}   // 18.3 · 첫 화면에서 편지 해돌이가 인사
   }
   window.__ypEnter=ypEnter;
   (function(){
