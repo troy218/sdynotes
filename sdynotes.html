@@ -757,8 +757,10 @@
         <div id="cardsHome">
           <!-- 18.0 · 전체화면 환영 헤더 — 심심한 홈 대신 파스텔 히어로 (창 모드에선 숨김) -->
           <div class="cd-hero">
-            <svg class="cd-hero-otter" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                <g id="hotter-body-group" class="otter-body-group" transform="rotate(-15, 100, 100)">
+            <svg class="cd-hero-otter" viewBox="0 0 158 251" xmlns="http://www.w3.org/2000/svg">
+                <g id="hotter-body-group" class="otter-body-group" transform="rotate(-15, 101, 120)">
+                  <!-- 15.5 · 화면(뷰박스) 안에 해달이 온전히 들어오도록 중심 재맞춤 -->
+                  <g transform="translate(1, 20)">
                   <g id="hotter-inner" class="otter-inner">
                     <!-- 꼬리 -->
                     <path class="otter-tail" d="M 40 145 C 20 160 10 175 30 185 C 50 195 70 175 60 155 Z" fill="#a88265" stroke="#3d2314" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -887,14 +889,15 @@
 
                   <!-- 별 반짝이 FX (Happy) -->
                   <g class="fx-happy otter-fx-happy">
-                    <path d="M 40 40 L 45 25 L 50 40 L 65 45 L 50 50 L 45 65 L 40 50 L 25 45 Z" fill="#ffdd57" stroke="#3d2314" stroke-width="1.5"/>
-                    <path d="M 140 15 L 143 5 L 146 15 L 156 18 L 146 21 L 143 31 L 140 21 L 130 18 Z" fill="#ffdd57" stroke="#3d2314" stroke-width="1.5" transform="scale(0.7) translate(40, -10)"/>
+                    <path class="otter-star" d="M 53 47 L 58 32 L 63 47 L 78 52 L 63 57 L 58 72 L 53 57 L 38 52 Z" fill="#ffdd57" stroke="#3d2314" stroke-width="1.5"/>
+                    <path class="otter-star" d="M 126 31.5 L 128.1 24.5 L 130.2 31.5 L 137.2 33.6 L 130.2 35.7 L 128.1 42.7 L 126 35.7 L 119 33.6 Z" fill="#ffdd57" stroke="#3d2314" stroke-width="1.5"/>
                   </g>
 
                   <!-- 눈물 방울 FX (Sad) -->
                   <g class="fx-sad otter-fx-sad">
-                    <path d="M 125 40 C 130 50, 135 50, 130 55 C 125 50, 120 50, 125 40 Z" fill="#60a5fa" stroke="#3d2314" stroke-width="1.8"/>
+                    <path class="otter-tear" d="M 125 40 C 130 50, 135 50, 130 55 C 125 50, 120 50, 125 40 Z" fill="#60a5fa" stroke="#3d2314" stroke-width="1.8"/>
                   </g>
+                  </g><!-- /중심 재맞춤 시프트 -->
                 </g>
               </svg>
             <div class="cd-hero-txt">
@@ -965,8 +968,10 @@
           <div class="cd-stage" id="cdStage">
             <div class="cd-otter" id="cdOtter" aria-hidden="true">
               <!-- 귀여운 해달 '해동이' SVG — 여러 표정·말풍선·손 아이템을 CSS/JS로 토글 -->
-              <svg class="cd-otter-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                <g id="otter-body-group" class="otter-body-group" transform="rotate(-15, 100, 100)">
+              <svg class="cd-otter-svg" viewBox="0 0 158 251" xmlns="http://www.w3.org/2000/svg">
+                <g id="otter-body-group" class="otter-body-group" transform="rotate(-15, 101, 120)">
+                  <!-- 15.5 · 화면(뷰박스) 안에 해달이 온전히 들어오도록 중심 재맞춤 -->
+                  <g transform="translate(1, 20)">
                   <g id="otter-inner" class="otter-inner">
                     <!-- 꼬리 -->
                     <path class="otter-tail" d="M 40 145 C 20 160 10 175 30 185 C 50 195 70 175 60 155 Z" fill="#a88265" stroke="#3d2314" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1095,14 +1100,15 @@
 
                   <!-- 별 반짝이 FX (Happy) -->
                   <g class="fx-happy otter-fx-happy">
-                    <path d="M 40 40 L 45 25 L 50 40 L 65 45 L 50 50 L 45 65 L 40 50 L 25 45 Z" fill="#ffdd57" stroke="#3d2314" stroke-width="1.5"/>
-                    <path d="M 140 15 L 143 5 L 146 15 L 156 18 L 146 21 L 143 31 L 140 21 L 130 18 Z" fill="#ffdd57" stroke="#3d2314" stroke-width="1.5" transform="scale(0.7) translate(40, -10)"/>
+                    <path class="otter-star" d="M 53 47 L 58 32 L 63 47 L 78 52 L 63 57 L 58 72 L 53 57 L 38 52 Z" fill="#ffdd57" stroke="#3d2314" stroke-width="1.5"/>
+                    <path class="otter-star" d="M 126 31.5 L 128.1 24.5 L 130.2 31.5 L 137.2 33.6 L 130.2 35.7 L 128.1 42.7 L 126 35.7 L 119 33.6 Z" fill="#ffdd57" stroke="#3d2314" stroke-width="1.5"/>
                   </g>
 
                   <!-- 눈물 방울 FX (Sad) -->
                   <g class="fx-sad otter-fx-sad">
-                    <path d="M 125 40 C 130 50, 135 50, 130 55 C 125 50, 120 50, 125 40 Z" fill="#60a5fa" stroke="#3d2314" stroke-width="1.8"/>
+                    <path class="otter-tear" d="M 125 40 C 130 50, 135 50, 130 55 C 125 50, 120 50, 125 40 Z" fill="#60a5fa" stroke="#3d2314" stroke-width="1.8"/>
                   </g>
+                  </g><!-- /중심 재맞춤 시프트 -->
                 </g>
               </svg>
 
