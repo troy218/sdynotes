@@ -5282,7 +5282,428 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
    붙여 세로 스크롤·아래 잘림을 만들지 않게 한다. */
 #mainView:has(.home-stack-area.has-recent) main{min-height:0!important;}
 /* ═══════════════════════════════════════════════════════════
-   15.0 · 암기 카드 확장 모드 — '브라우저 전체화면'이 아니라 사이트 안에서만 꽉 차는 창
+   15.2 · 암기 카드 대개편 — 유리몰입 + 해달 '해동이' 마스코트 + 유동 풀스크린
+     · 확장모드가 뷰포트 크기에 맞춰 정말 꽉 찬다 (920px cap 해제, stage flex)
+     · 해달 캐릭터(SVG)는 학습 상태에 따라 표정·손·말풍선이 바뀐다
+     · 작은 화면(폰)에서는 해달이 카드 위 작은 뱃지로만 나오고 카드는 폰 전용
+       세로형 말풍선 모양으로 바뀐다 (데스크톱 네모 카드와 완전히 다르게)
+     · 카드·버튼·묶음카드 모두 현대적인 글래스 둥근 디자인
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── 창 프레임 — 글래스 + 부드러운 그림자, 둥근 22px ── */
+.fcard-win{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 96%,transparent),
+                                 color-mix(in srgb,var(--card) 82%,transparent));
+  backdrop-filter:blur(22px) saturate(150%);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);
+  border:1px solid color-mix(in srgb,var(--border) 70%,rgba(255,255,255,.25)) !important;
+  border-radius:22px !important;
+  box-shadow:0 2px 4px rgba(15,23,42,.06),
+             0 28px 80px -12px rgba(15,23,42,.32),
+             inset 0 1px 0 rgba(255,255,255,.55) !important;
+}
+.dark .fcard-win{
+  background:linear-gradient(180deg,rgba(28,30,40,.92),rgba(20,22,30,.88));
+  border-color:rgba(255,255,255,.07) !important;
+  box-shadow:0 2px 4px rgba(0,0,0,.3),
+             0 30px 90px rgba(0,0,0,.65),
+             inset 0 1px 0 rgba(255,255,255,.07) !important;
+}
+.fcard-head{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 60%,transparent),
+                                 color-mix(in srgb,var(--card) 40%,transparent)) !important;
+  backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);
+  border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent) !important;
+}
+.fcard-head>b{letter-spacing:-.01em;}
+
+/* ── 해달 '해동이' stage (확장모드 전용) ── */
+.cd-stage{display:block;}
+.fcard-win:not(.fcard-max) .cd-stage{display:block;}
+.cd-otter{display:none;}     /* 창 모드에서는 숨김 — 확장모드에서만 등장 */
+.fcard-win.fcard-max .cd-stage{
+  flex:1 1 auto;display:flex;align-items:center;justify-content:center;
+  gap:clamp(16px,2.2vw,40px);
+  min-height:0;
+  width:100%;
+  position:relative;
+  /* 배경에 은은한 공부방 오로라 */
+}
+.fcard-win.fcard-max .cd-stage::before{
+  content:'';position:absolute;inset:-20px -40px -40px;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(40% 55% at 18% 88%,rgba(126,202,232,.25),transparent 70%),
+    radial-gradient(42% 50% at 88% 20%,rgba(139,92,246,.18),transparent 70%),
+    radial-gradient(32% 40% at 65% 90%,rgba(79,110,247,.16),transparent 70%);
+  filter:blur(4px);
+  border-radius:24px;
+}
+.fcard-win.fcard-max .cd-otter{
+  display:block;flex:0 0 clamp(220px,26vw,340px);
+  position:relative;z-index:1;align-self:flex-end;
+  transform-origin:50% 92%;
+  animation:otterBob 4.4s ease-in-out infinite;
+  pointer-events:none;
+}
+.dark .fcard-win.fcard-max .cd-otter{filter:saturate(.95) brightness(.95);}
+.cd-otter-svg{display:block;width:100%;height:auto;filter:drop-shadow(0 12px 22px rgba(60,40,20,.22));}
+@keyframes otterBob{
+  0%,100%{transform:translateY(0) rotate(-1deg);}
+  50%{transform:translateY(-6px) rotate(1.5deg);}
+}
+
+/* 기본 idle에서 조개를 들고 살짝 흔들 */
+.otter-tail{transform-origin:168px 178px;animation:otterTail 3.8s ease-in-out infinite;}
+@keyframes otterTail{0%,100%{transform:rotate(-4deg);}50%{transform:rotate(5deg);}}
+.otter-hand-l{transform-origin:88% 60%;animation:otterHandL 3.2s ease-in-out infinite;}
+.otter-hand-r{transform-origin:12% 60%;animation:otterHandR 3.2s ease-in-out infinite;}
+@keyframes otterHandL{0%,100%{transform:rotate(-4deg);}50%{transform:rotate(4deg);}}
+@keyframes otterHandR{0%,100%{transform:rotate(4deg);}50%{transform:rotate(-4deg);}}
+.otter-water path{animation:water 4s linear infinite;}
+.otter-water path:nth-child(2){animation-duration:5.5s;animation-direction:reverse;opacity:.4;}
+@keyframes water{to{transform:translateX(-34px);}}
+
+/* 해달 표정/상태 class 토글 */
+.cd-otter[data-mood="happy"] .otter-eye-open,
+.cd-otter[data-mood="happy"] .otter-eye-sad,
+.cd-otter[data-mood="happy"] .otter-eye-sleep,
+.cd-otter[data-mood="happy"] .otter-eye-heart{display:none !important;}
+.cd-otter[data-mood="happy"] .otter-eye-happy{display:block !important;}
+.cd-otter[data-mood="happy"] .otter-mouth-def,
+.cd-otter[data-mood="happy"] .otter-mouth-sad,
+.cd-otter[data-mood="happy"] .otter-mouth-wow,
+.cd-otter[data-mood="happy"] .otter-mouth-sleep{display:none !important;}
+.cd-otter[data-mood="happy"] .otter-mouth-happy,
+.cd-otter[data-mood="happy"] .otter-tongue{display:block !important;}
+.cd-otter[data-mood="happy"] .otter-held-clam{display:none;}
+.cd-otter[data-mood="happy"] .otter-held-heart{display:block !important;}
+.cd-otter[data-mood="happy"]{animation:otterHappy .6s cubic-bezier(.2,.9,.3,1.2);}
+@keyframes otterHappy{
+  0%{transform:scale(.96) rotate(-2deg);}
+  40%{transform:scale(1.05) rotate(2deg);}
+  100%{transform:scale(1) rotate(-1deg);}
+}
+
+.cd-otter[data-mood="love"] .otter-eye-open,
+.cd-otter[data-mood="love"] .otter-eye-sad,
+.cd-otter[data-mood="love"] .otter-eye-sleep,
+.cd-otter[data-mood="love"] .otter-eye-happy{display:none !important;}
+.cd-otter[data-mood="love"] .otter-eye-heart{display:block !important;}
+.cd-otter[data-mood="love"] .otter-mouth-def,
+.cd-otter[data-mood="love"] .otter-mouth-sad,
+.cd-otter[data-mood="love"] .otter-mouth-wow,
+.cd-otter[data-mood="love"] .otter-mouth-sleep{display:none !important;}
+.cd-otter[data-mood="love"] .otter-mouth-happy,
+.cd-otter[data-mood="love"] .otter-tongue{display:block !important;}
+.cd-otter[data-mood="love"] .otter-held-clam{display:none;}
+.cd-otter[data-mood="love"] .otter-held-heart{display:block !important;}
+
+.cd-otter[data-mood="sad"] .otter-eye-open,
+.cd-otter[data-mood="sad"] .otter-eye-happy,
+.cd-otter[data-mood="sad"] .otter-eye-sleep,
+.cd-otter[data-mood="sad"] .otter-eye-heart{display:none !important;}
+.cd-otter[data-mood="sad"] .otter-eye-sad{display:block !important;}
+.cd-otter[data-mood="sad"] .otter-mouth-def,
+.cd-otter[data-mood="sad"] .otter-mouth-happy,
+.cd-otter[data-mood="sad"] .otter-mouth-wow,
+.cd-otter[data-mood="sad"] .otter-mouth-sleep{display:none !important;}
+.cd-otter[data-mood="sad"] .otter-mouth-sad{display:block !important;}
+.cd-otter[data-mood="sad"] .otter-held-clam,
+.cd-otter[data-mood="sad"] .otter-held-heart,
+.cd-otter[data-mood="sad"] .otter-held-book{display:none;}
+.cd-otter[data-mood="sad"] .otter-held-peek{display:block !important;}
+.cd-otter[data-mood="sad"]{animation:otterSad .5s ease;}
+@keyframes otterSad{
+  0%,100%{transform:translateY(0);}
+  40%{transform:translateY(3px) rotate(-2deg);}
+}
+
+.cd-otter[data-mood="think"] .otter-eye-open,
+.cd-otter[data-mood="think"] .otter-eye-happy,
+.cd-otter[data-mood="think"] .otter-eye-sad,
+.cd-otter[data-mood="think"] .otter-eye-heart{display:none !important;}
+.cd-otter[data-mood="think"] .otter-eye-sleep{display:block !important;}
+.cd-otter[data-mood="think"] .otter-mouth-def,
+.cd-otter[data-mood="think"] .otter-mouth-happy,
+.cd-otter[data-mood="think"] .otter-mouth-sad,
+.cd-otter[data-mood="think"] .otter-mouth-wow{display:none !important;}
+.cd-otter[data-mood="think"] .otter-mouth-sleep{display:block !important;}
+.cd-otter[data-mood="think"] .otter-held-clam,
+.cd-otter[data-mood="think"] .otter-held-heart,
+.cd-otter[data-mood="think"] .otter-held-peek{display:none;}
+.cd-otter[data-mood="think"] .otter-held-book{display:block !important;}
+
+.cd-otter[data-mood="wow"] .otter-mouth-def,
+.cd-otter[data-mood="wow"] .otter-mouth-happy,
+.cd-otter[data-mood="wow"] .otter-mouth-sad,
+.cd-otter[data-mood="wow"] .otter-mouth-sleep{display:none !important;}
+.cd-otter[data-mood="wow"] .otter-mouth-wow{display:block !important;}
+
+/* idle 기본값을 확실히 (기본이 클램 들고 open 눈) */
+.cd-otter .otter-eye-sad,.cd-otter .otter-eye-happy,.cd-otter .otter-eye-sleep,.cd-otter .otter-eye-heart{display:none;}
+.cd-otter .otter-mouth-happy,.cd-otter .otter-mouth-sad,.cd-otter .otter-mouth-wow,.cd-otter .otter-mouth-sleep,
+.cd-otter .otter-tongue{display:none;}
+.cd-otter .otter-held-heart,.cd-otter .otter-held-book,.cd-otter .otter-held-peek{display:none;}
+
+/* 말풍선 */
+.otter-bubble{
+  position:absolute;left:62%;top:4%;
+  background:#fff;border:2px solid color-mix(in srgb,var(--accent) 40%,var(--border));
+  color:var(--text1);padding:10px 14px;border-radius:18px;
+  font-size:13px;font-weight:700;line-height:1.4;max-width:180px;
+  box-shadow:0 10px 24px rgba(15,23,42,.12),inset 0 1px 0 rgba(255,255,255,.7);
+  opacity:0;transform:translateY(6px) scale(.8);transform-origin:-10% 100%;
+  pointer-events:none;transition:opacity .25s,transform .25s cubic-bezier(.2,.9,.3,1.3);
+  white-space:pre-wrap;word-break:keep-all;z-index:3;
+}
+.dark .otter-bubble{background:#1d2028;border-color:rgba(107,127,247,.4);color:#f0f2ff;
+  box-shadow:0 10px 28px rgba(0,0,0,.5);}
+.otter-bubble.show{opacity:1;transform:translateY(0) scale(1);}
+.otter-bubble::after{
+  content:'';position:absolute;left:-10px;bottom:14px;
+  border:10px solid transparent;border-right-color:#fff;border-left:0;
+  filter:drop-shadow(-2px 1px 0 color-mix(in srgb,var(--accent) 40%,var(--border)));
+}
+.dark .otter-bubble::after{border-right-color:#1d2028;filter:drop-shadow(-2px 1px 0 rgba(107,127,247,.4));}
+
+/* 파티클(별/하트) 타겟 */
+.otter-fx{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:4;}
+.otter-fx .p{position:absolute;left:50%;top:30%;font-size:18px;
+  animation:otterPop .9s cubic-bezier(.2,.9,.3,1.2) forwards;
+  will-change:transform,opacity;text-shadow:0 2px 4px rgba(0,0,0,.15);}
+@keyframes otterPop{
+  0%{opacity:0;transform:translate(-50%,0) scale(.3) rotate(0);}
+  40%{opacity:1;}
+  100%{opacity:0;transform:translate(calc(-50% + var(--px,40px)),calc(var(--py,-70px))) scale(1.1) rotate(var(--pr,25deg));}
+}
+
+/* 카드 영역 — 해달 옆에서 flex */
+.fcard-win.fcard-max .cd-cardzone{
+  flex:1 1 0;min-width:0;max-width:min(760px,1fr);
+  position:relative;z-index:1;
+  display:flex;flex-direction:column;gap:14px;
+}
+
+/* ── 확장 모드 카드 본체 — 더 크고 부드럽고, 그림자 입체적으로 ── */
+.fcard-win.fcard-max .cd-face{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 94%,transparent),
+                                 color-mix(in srgb,var(--card) 82%,transparent));
+  backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+  border:1px solid color-mix(in srgb,var(--border) 60%,rgba(255,255,255,.3));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),
+             0 18px 50px -10px rgba(15,23,42,.18);
+}
+.dark .fcard-win.fcard-max .cd-face{
+  background:linear-gradient(180deg,rgba(32,34,46,.95),rgba(24,26,36,.88));
+  border-color:rgba(255,255,255,.07);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),
+             0 18px 50px rgba(0,0,0,.5);
+}
+.fcard-win.fcard-max .cd-rear{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 14%,var(--card)),
+                                 color-mix(in srgb,var(--accent) 8%,var(--card)));
+  border-color:color-mix(in srgb,var(--accent) 38%,var(--border));
+}
+
+/* 버튼·요소 현대화 */
+.fcard-win .cd-btn{
+  border-radius:14px;
+  transition:transform .15s cubic-bezier(.2,.8,.3,1.2),box-shadow .2s,background .2s,color .2s,border-color .2s;
+  box-shadow:0 2px 6px rgba(15,23,42,.04);
+}
+.fcard-win .cd-btn:hover{transform:translateY(-2px);box-shadow:0 8px 18px color-mix(in srgb,var(--accent) 22%,transparent);}
+.fcard-win .cd-btn.primary{
+  background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 65%,#8b5cf6));
+  border-color:transparent;
+  box-shadow:0 8px 20px color-mix(in srgb,var(--accent) 30%,transparent),inset 0 1px 0 rgba(255,255,255,.25);
+}
+.fcard-win .cd-btn.primary:hover{filter:brightness(1.08) saturate(1.05);}
+.cd-grade2{
+  display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;
+}
+.cd-grade2 button{
+  padding:14px;border:none;border-radius:16px;cursor:pointer;
+  font-size:14px;font-weight:800;letter-spacing:-.01em;
+  transition:transform .15s,box-shadow .2s,filter .2s;
+  box-shadow:0 4px 10px rgba(0,0,0,.06);
+}
+.cd-grade2 .cd-ng{
+  background:linear-gradient(135deg,#ff7676,#ef4444);color:#fff;
+}
+.cd-grade2 .cd-ok{
+  background:linear-gradient(135deg,#34d399,#10b981);color:#fff;
+}
+.cd-grade2 button:hover{transform:translateY(-2px);filter:brightness(1.05);
+  box-shadow:0 10px 22px rgba(0,0,0,.18);}
+.cd-grade2 button:active{transform:scale(.97);}
+
+/* 묶음 카드도 유리 느낌 */
+.fcard-win.fcard-max .cd-deck{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 94%,transparent),
+                                 color-mix(in srgb,var(--card) 80%,transparent));
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid color-mix(in srgb,var(--border) 60%,rgba(255,255,255,.25));
+  border-radius:18px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 6px 16px rgba(15,23,42,.06);
+  transition:transform .2s cubic-bezier(.2,.8,.3,1.2),box-shadow .2s,border-color .2s;
+}
+.fcard-win.fcard-max .cd-deck:hover{transform:translateY(-3px);
+  box-shadow:0 14px 30px -6px rgba(15,23,42,.18);}
+
+/* 학습 방식 카드도 현대적으로 */
+.fcard-win .fc-mode{
+  border-radius:18px;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 96%,transparent),
+                                 color-mix(in srgb,var(--card) 82%,transparent));
+  border:1px solid color-mix(in srgb,var(--border) 55%,rgba(255,255,255,.3));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 4px 10px rgba(15,23,42,.04);
+  transition:transform .2s cubic-bezier(.2,.8,.3,1.2),box-shadow .2s,border-color .2s;
+}
+.fcard-win .fc-mode:hover{transform:translateY(-4px) scale(1.02);
+  box-shadow:0 14px 28px -6px color-mix(in srgb,var(--accent) 28%,transparent);}
+.fcard-win.fcard-max .fc-mode i{
+  padding:10px;border-radius:14px;
+  background:color-mix(in srgb,var(--accent) 16%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 28%,transparent);
+  font-size:26px;margin-bottom:6px;
+}
+
+/* 객관식 보기도 입체적으로 */
+.cd-opt{border-radius:16px !important;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 96%,transparent),
+                                 color-mix(in srgb,var(--card) 84%,transparent));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 3px 8px rgba(15,23,42,.05);
+  transition:transform .15s,border-color .2s,box-shadow .2s;
+}
+.cd-opt:hover{transform:translateY(-2px);
+  box-shadow:0 10px 22px -4px color-mix(in srgb,var(--accent) 22%,transparent);}
+.cd-opt i.num{
+  background:color-mix(in srgb,var(--accent) 14%,var(--card));
+  border:1px solid color-mix(in srgb,var(--accent) 30%,var(--border));
+  border-radius:50% !important;color:var(--accent);font-weight:800;
+}
+
+/* 진행바 부드럽게 - 유리 트랙에 그라데이션 */
+.cd-prog{background:color-mix(in srgb,var(--card) 60%,transparent);
+  box-shadow:inset 0 1px 2px rgba(15,23,42,.08);border-radius:99px;overflow:hidden;height:8px;}
+#cdProgFill{
+  background:linear-gradient(90deg,var(--accent),#8b5cf6);
+  box-shadow:0 0 8px color-mix(in srgb,var(--accent) 60%,transparent);
+}
+
+/* ── 확장 모드 = 뷰포트 꽉 유동 fill (920px cap 해제) ── */
+.fcard-win.fcard-max{
+  border-radius:22px !important;
+}
+.fcard-win.fcard-max #cardsStudy>*{
+  max-width:none;   /* 꽉 차게 */
+}
+.fcard-win.fcard-max #cardsHome,.fcard-win.fcard-max #cardsStudy,
+.fcard-win.fcard-max #cardsPaste,.fcard-win.fcard-max #cardsStats,
+.fcard-win.fcard-max #cardsAnalytics,.fcard-win.fcard-max #cardsBrowse{
+  padding:24px 32px 28px;
+}
+.fcard-win.fcard-max #cardsStudy{
+  display:flex; flex-direction:column;
+  overflow-y:auto;
+  padding-top:20px; padding-bottom:20px;
+  gap:10px;
+}
+/* 카드 높이도 유동적으로 (뷰포트 비율 기반, 최대 cap은 없앰) */
+.fcard-win.fcard-max .cd-inner{height:clamp(280px,42dvh,560px);}
+.fcard-win.fcard-max .cd-face{padding:32px 36px;gap:14px;}
+.fcard-win.fcard-max .cd-txt{font-size:clamp(22px,2vw,32px);line-height:1.55;}
+.fcard-win.fcard-max .cd-grade2{max-width:none;}
+.fcard-win.fcard-max .cd-qq{font-size:clamp(20px,1.6vw,26px);padding:28px 28px;line-height:1.6;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 96%,transparent),
+                                 color-mix(in srgb,var(--card) 84%,transparent));
+  border-radius:20px;}
+.fcard-win.fcard-max .cd-opts{grid-template-columns:1fr 1fr;gap:12px;margin-top:20px;}
+.fcard-win.fcard-max .cd-opt{padding:18px 18px;font-size:15px;border-radius:16px;}
+.fcard-win.fcard-max .fc-modes{grid-template-columns:repeat(6,1fr);gap:12px;max-width:1400px;}
+.fcard-win.fcard-max .cards-list{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;}
+.fcard-win.fcard-max .cd-statrow{max-width:860px;}
+.fcard-win.fcard-max .cd-match{max-width:1100px;}
+.fcard-win.fcard-max .cd-mgrid{grid-template-columns:repeat(4,1fr);gap:12px;}
+.fcard-win.fcard-max .cd-tile{min-height:108px;font-size:14.5px;padding:16px;border-radius:16px;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 96%,transparent),
+                                 color-mix(in srgb,var(--card) 84%,transparent));
+  border:1px solid color-mix(in srgb,var(--border) 55%,rgba(255,255,255,.3));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 3px 10px rgba(15,23,42,.05);}
+
+/* 중간 폭 대응: 해달이 아래로 */
+@media (max-width:1100px){
+  .fcard-win.fcard-max .cd-stage{flex-direction:column-reverse;align-items:center;gap:14px;padding:8px 0 0;}
+  .fcard-win.fcard-max .cd-otter{flex:0 0 auto;width:200px;align-self:center;margin-top:-10px;
+    animation-name:otterBobSmall;}
+  @keyframes otterBobSmall{0%,100%{transform:translateY(0);}50%{transform:translateY(-4px);}}
+  .fcard-win.fcard-max .cd-cardzone{width:100%;max-width:820px;}
+  .otter-bubble{left:auto;right:4%;top:0;transform-origin:90% 100%;}
+  .otter-bubble::after{left:auto;right:-10px;bottom:14px;border:10px solid transparent;border-left-color:#fff;border-right:0;filter:drop-shadow(2px 1px 0 color-mix(in srgb,var(--accent) 40%,var(--border)));}
+  .dark .otter-bubble::after{border-left-color:#1d2028;filter:drop-shadow(2px 1px 0 rgba(107,127,247,.4));}
+  .fcard-win.fcard-max .fc-modes{grid-template-columns:repeat(3,1fr);}
+  .fcard-win.fcard-max .cd-mgrid{grid-template-columns:repeat(3,1fr);}
+}
+
+/* ── 작은 화면(폰): 전혀 다른 카드 모양 (말풍선 형태) + 해달은 작은 코너 캐릭터 ── */
+@media (max-width:640px), (max-height:560px) and (pointer:coarse){
+  /* 카드 창도 유리 느낌으로 */
+  .fcard-win{
+    background:linear-gradient(180deg,color-mix(in srgb,var(--card) 92%,transparent),
+                                   color-mix(in srgb,var(--card) 76%,transparent)) !important;
+    border:1px solid color-mix(in srgb,var(--border) 55%,rgba(255,255,255,.35)) !important;
+  }
+  /* 해달은 작은 코너 캐릭터(카드 위에 떠있는 작은 친구) */
+  .fcard-win.fcard-max .cd-stage{flex-direction:column-reverse;gap:8px;padding:0;}
+  .fcard-win.fcard-max .cd-otter{
+    position:absolute;right:6px;top:-4px;
+    width:86px;flex:none;align-self:auto;z-index:5;
+    animation:otterMobileBob 3.6s ease-in-out infinite;
+    filter:drop-shadow(0 6px 10px rgba(0,0,0,.2));
+    pointer-events:none;
+  }
+  @keyframes otterMobileBob{0%,100%{transform:translateY(0) rotate(-4deg);}50%{transform:translateY(-3px) rotate(3deg);}}
+  .otter-bubble{
+    position:absolute;top:10px;right:82px;left:auto;max-width:180px;
+    padding:8px 12px;font-size:12px;border-radius:14px;
+  }
+  .otter-bubble::after{left:auto;right:-8px;bottom:10px;border:8px solid transparent;border-left-color:#fff;border-right:0;filter:drop-shadow(2px 1px 0 color-mix(in srgb,var(--accent) 40%,var(--border)));}
+  .dark .otter-bubble::after{border-left-color:#1d2028;}
+  /* 말풍선 카드 (폰 전용 둥근 말풍선 모양) */
+  .fcard-win.fcard-max .cd-inner{height:min(38dvh,340px);}
+  .fcard-win.fcard-max .cd-face{
+    border-radius:28px !important;padding:28px 22px;
+    background:linear-gradient(180deg,color-mix(in srgb,var(--card) 97%,transparent),
+                                   color-mix(in srgb,var(--card) 86%,transparent)) !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 18px 40px -10px rgba(15,23,42,.25) !important;
+  }
+  /* 카드 아래 작은 꼬리(말풍선) - 데스크톱과 구별되는 포인트 */
+  .fcard-win.fcard-max .cd-face::after{
+    content:'';position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);
+    width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;
+    border-top:16px solid color-mix(in srgb,var(--card) 90%,transparent);
+    filter:drop-shadow(0 4px 6px rgba(15,23,42,.12));
+  }
+  .fcard-win.fcard-max .cd-rear::after{border-top-color:color-mix(in srgb,var(--accent) 18%,var(--card));}
+  /* 채점 버튼도 말풍선에 어울리게 더 둥글고 통통하게 */
+  .fcard-win.fcard-max .cd-grade2{margin-top:22px;gap:10px;}
+  .fcard-win.fcard-max .cd-grade2 button{padding:16px;border-radius:20px;font-size:15px;}
+  /* 객관식은 1열 말풍선 */
+  .fcard-win.fcard-max .cd-qq{border-radius:24px;padding:22px 20px;font-size:clamp(18px,5vw,22px);}
+  .fcard-win.fcard-max .cd-opts{grid-template-columns:1fr;gap:10px;margin-top:14px;}
+  .fcard-win.fcard-max .cd-opt{padding:16px;border-radius:18px;font-size:14px;}
+  /* 학습 방식도 폰에 맞게 */
+  .fcard-win.fcard-max .fc-modes{grid-template-columns:repeat(2,1fr);}
+  .fcard-win.fcard-max .fc-mode{padding:14px 12px;border-radius:20px;flex-direction:row;text-align:left;}
+  .fcard-win.fcard-max .fc-mode i{font-size:20px;padding:8px;border-radius:12px;margin-bottom:0;}
+  /* 전체화면 여백 없애기 */
+  .fcard-win.fcard-max{border-radius:0 !important;box-shadow:none !important;}
+  /* 세션/키보드 안내는 그대로 숨김 (모바일) */
+}
+
+/* ═══════════════════════════════════════════════════════════
+   15.0 · 암기 카드 확장 모드 — '브라우저 전체화면'이 아니라 사이트 안에서만 꽉 차는 창 (이전 섹션 계속) */
    · 공부 중 다른 탭을 왔다 갔다 합니다. Fullscreen API 를 쓰면 그 흐름이 깨져서 쓰지 않는다.
    · 모양·전환은 음악플레이어 전체화면(16.0)과 같은 규칙 — 창이 그 자리에서 부드럽게 커지는
      모핑(.fcard-anim), 같은 펼침 아이콘(ri-fullscreen-line), Esc 로 한 단계씩 해제.
@@ -5307,8 +5728,19 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   left:8px!important;top:8px!important;right:auto!important;bottom:auto!important;
   width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important;
   height:calc(100dvh - 16px)!important;max-height:calc(100dvh - 16px)!important;
-  border-radius:18px!important;transform:none!important;
+  border-radius:22px!important;transform:none!important;
   box-shadow:0 30px 90px rgba(0,0,0,.38)!important;
+}
+/* safe-area 가 있는 기기(iPhone 노치·홈바 등)에서는 여백을 safe-area 로 보정해 꽉 채운다 */
+@supports(padding:max(0px)){
+  .fcard-win.fcard-max{
+    left:max(8px,env(safe-area-inset-left,0px))!important;
+    top:max(8px,env(safe-area-inset-top,0px))!important;
+    width:calc(100vw - 16px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px))!important;
+    max-width:calc(100vw - 16px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px))!important;
+    height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important;
+    max-height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important;
+  }
 }
 .fcard-win.fcard-max #cardsHome,.fcard-win.fcard-max #cardsStudy,
 .fcard-win.fcard-max #cardsPaste,.fcard-win.fcard-max #cardsStats,
@@ -5320,8 +5752,9 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .fcard-win.fcard-max .fcard-head>b{font-size:13.5px;}
 .fcard-win.fcard-max .fcard-head .cards-x{width:30px;height:26px;font-size:16px;}
 
-/* ── 학습 화면: 가울 기둥. 너무 넓으면 눈이 내용을 따라가다 지친다 (책 줄 길이와 같은 이치) ── */
+/* ── 학습 화면: 가울 기둥 — .cd-stage(해달+카드 flex 컨테이너)는 꽉 채운다 ── */
 .fcard-win.fcard-max #cardsStudy>*{max-width:920px;margin-left:auto;margin-right:auto;}
+.fcard-win.fcard-max #cardsStudy>.cd-stage{max-width:100% !important;margin-left:0;margin-right:0;width:100%;}
 .fcard-win.fcard-max .cd-topbar{gap:12px;margin-bottom:17px;}
 .fcard-win.fcard-max .cd-prog{height:9px;}
 .fcard-win.fcard-max .cd-count{font-size:13px;}
@@ -5416,6 +5849,9 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 /* 움직임 줄이기를 켠 사람에게는 모핑도 생략 */
 @media (prefers-reduced-motion:reduce){
   .fcard-win.fcard-anim{transition:none !important;}
+  .fcard-win.fcard-max .cd-otter,
+  .otter-tail,.otter-hand-l,.otter-hand-r,.otter-water path{animation:none !important;}
+  .otter-fx .p{display:none !important;}
 }
 
 
@@ -5950,6 +6386,11 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   .fcard-win.fcard-max{left:0!important;top:0!important;
     width:100vw!important;max-width:100vw!important;
     height:100dvh!important;max-height:100dvh!important;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    padding-left:env(safe-area-inset-left,0px);
+    padding-right:env(safe-area-inset-right,0px);
+    box-sizing:border-box;
     border-radius:0!important;box-shadow:none!important;}
   .fcard-win.fcard-max #cardsHome,.fcard-win.fcard-max #cardsStudy,
   .fcard-win.fcard-max #cardsPaste,.fcard-win.fcard-max #cardsStats,

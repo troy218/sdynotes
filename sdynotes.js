@@ -9990,7 +9990,63 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.getElementById('cdTestReport').style.display='none';
         _fcardTitle((_isTest?'시험 · ':'')+((_deckCur&&_deckCur.title)||'암기 카드'));
         showCard();
+        otterSay(_isTest?'긴장되지? 나도 지켜볼게!':'시~작! 함께 해보자 해달~','love',1600);
     }
+
+    /* ── 해달 '해동이' 컨트롤 ───────────────────────── */
+    function _otterEl(){ return document.getElementById('cdOtter'); }
+    function otterSet(mood){
+        const o=_otterEl(); if(!o) return;
+        o.dataset.mood=mood||'idle';
+    }
+    let _otterBubTimer=null,_otterHideTimer=null;
+    function otterSay(text,mood,dur){
+        const o=_otterEl(), b=document.getElementById('otterBubble');
+        if(!o||!b) return;
+        otterSet(mood||'idle');
+        if(text){
+            b.textContent=text;
+            b.classList.add('show');
+            clearTimeout(_otterBubTimer);
+            _otterBubTimer=setTimeout(()=>b.classList.remove('show'), dur||2200);
+        }
+        if(mood==='happy'||mood==='love') otterBurst(mood==='love'?8:5,mood==='love'?'❤⭐💖':'⭐✨🎉');
+    }
+    function otterBurst(n,emojis){
+        const fx=document.getElementById('otterFx'); if(!fx) return;
+        const pool=(emojis||'⭐✨').split('');
+        for(let i=0;i<(n||5);i++){
+            const s=document.createElement('span'); s.className='p';
+            s.textContent=pool[i%pool.length];
+            const ang=Math.random()*Math.PI*2, dist=40+Math.random()*60;
+            s.style.setProperty('--px',(Math.cos(ang)*dist).toFixed(0)+'px');
+            s.style.setProperty('--py',(-Math.abs(Math.sin(ang))*dist-10).toFixed(0)+'px');
+            s.style.setProperty('--pr',(Math.random()*80-40).toFixed(0)+'deg');
+            s.style.animationDuration=(700+Math.random()*500)+'ms';
+            fx.appendChild(s);
+            setTimeout(()=>s.remove(),1300);
+        }
+    }
+    function otterThink(){ otterSay('음… 생각 좀 해보자 해달…','think',1500); }
+    function otterCheer(streak){
+        if(streak>=5)      otterSay('와! 연속 '+streak+'개! 천재 해달!','love',2400);
+        else if(streak>=3) otterSay('흐름이 좋아! 계속 가보자!','happy',1800);
+        else               otterSay('좋아! 기억 속에 쏙~','happy',1500);
+    }
+    function otterSad(){ otterSay('에이 괜찮아~ 한 번 더 보면 돼!','sad',2000); }
+    function otterHint(){ otterSay('힌트 살짝! 👀','think',1600); }
+    function otterFinish(pct){
+        if(pct>=90) otterSay('대박! 완벽 마스터! 🏆','love',3200);
+        else if(pct>=60) otterSay('수고했어! 해달이 칭찬해~','happy',2600);
+        else otterSay('다음에 또 같이 공부하자 해달!','happy',2200);
+    }
+    document.addEventListener('DOMContentLoaded',()=>{
+        // hint 버튼 이벤트 훅
+        const hbtn=document.getElementById('cdHintBtn');
+        if(hbtn){
+            hbtn.addEventListener('click',()=>{ otterHint(); },true);
+        }
+    });
     function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];} }
     // ══════════════════════════════════════════════════════════
     //  11.7 · 짝 맞추기 (Quizlet Match 식)
@@ -10157,6 +10213,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const c=_queue[_qi]; if(!c||!c.hint) return;
         document.getElementById('cdHint').textContent='힌트 · '+c.hint;
         document.getElementById('cdHintBtn').style.display='none';
+        otterHint();
     }
     function flipCard(){
         const c=_queue[_qi];
@@ -10165,6 +10222,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.getElementById('cdFlip').classList.toggle('flipped',_flipped);
         // 답을 본 뒤에만 '알아요 / 아직이에요' 를 묻는다
         if(_flipped&&!_answered) document.getElementById('cdFlipGrade').style.display='grid';
+        if(_flipped&&!_answered) otterSay('답이 기억나? 해달~','wow',1200);
+        else if(!_flipped) otterSet('think');
     }
     function flipGrade(g){
         if(_answered) return;
@@ -10189,6 +10248,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             streak.textContent='✨ '+_streak;
             streak.style.display=(_streak>=2&&!_isTest)?'':'none';
         }
+        if(right){ otterCheer(_streak); }
+        else { if(!_isTest) otterSad(); }
         if(!right||!quiz||_isTest) return;
         quiz.classList.remove('cd-cheer'); void quiz.offsetWidth; quiz.classList.add('cd-cheer');
         const pts=[[-72,-42],[-34,-64],[36,-62],[74,-38]];
@@ -10293,7 +10354,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(auto){ auto.textContent=''; auto.className='cd-typeres'; }
         const st=document.getElementById('cdStreak'); if(st) st.style.display='none';
         const acc=_studied?Math.round(_rightN/_studied*100):0;
-        if(_isTest){ renderTestReport(acc); }
+        if(_isTest){ renderTestReport(acc); otterFinish(acc); }
         else{
             document.getElementById('cdTestReport').style.display='none';
             document.getElementById('cdDone').style.display='';
@@ -10304,6 +10365,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 : (acc>=80?'오늘의 기억이 반짝여요 ✨':acc>=50?'좋아요, 오늘 몫을 해냈어요':'천천히 익숙해지는 중이에요 🌱');
             document.getElementById('cdDoneSub').textContent=
                 `${_studied}문제를 확인했어요 · 정답 ${_rightN}문제 (${acc}%)`;
+            otterFinish(acc);
         }
         flushCardGrades();
         if(_studied) fetch('/api/notifications/study',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -19379,7 +19441,7 @@ document.addEventListener('pointerdown',()=>{
 //   ③ 공격/낙하 봉투: 올라갈 땐 즉시, 낄땐 초당 일정 속도로 미끄러진다
 //   ④ 피크 홀드 캡: 정점이 잠깐 머물다 천천히 낙하 — 스펙트럼 바의 상징
 //   ⑤ 자동 이득(AGC): 조용히 마스터된 곡도 화면 가득 춤추게 (과증폭 방지 상한)
-let _eqVizRaf=0, _eqEnv=null, _eqPeak=null, _eqHold=null, _eqGain=1, _eqVizLast=0, _eqBuf=null;
+let _eqVizRaf=0, _eqEnv=null, _eqPeak=null, _eqHold=null, _eqBandMax=null, _eqVizLast=0, _eqBuf=null, _eqFBuf=null;
 function eqViz(){
   const cv=$('mpEqCv'); if(!cv) return;
   let ctx2=null;
@@ -19388,13 +19450,12 @@ function eqViz(){
   cancelAnimationFrame(_eqVizRaf);
   let grad=ctx2.createLinearGradient(0,cv.height,0,0);
   try{ grad.addColorStop(0,readAccent()); grad.addColorStop(1,'#8e5cf7'); }catch(e){}
-  const N=64;                                       // 막대 수 — 760폭 캔버스에 12픽셀 간격
+  const N=64;
   if(!_eqEnv||_eqEnv.length!==N){
     _eqEnv=new Float32Array(N); _eqPeak=new Float32Array(N); _eqHold=new Float32Array(N);
+    _eqBandMax=new Float32Array(N).fill(1);
   }
-  const FALL=1.55;                                  // 막대 낙하 속도 (초당 화면 높이의 1.55배 — 중력처럼)
-  const PEAK_FALL=.85;                              // 피크 캡은 막대보다 천천히 낙하
-  const HOLD=.28;                                   // 피크 캡이 정점에 머무는 시간(초)
+  const FALL=2.2, PEAK_FALL=.75, HOLD=.22, RANGE=80;
   const tick=(now)=>{
     const pop=$('mpEqPop');
     if(!pop||pop.hidden||document.hidden){ _eqVizRaf=0; _eqVizLast=0; return; }
@@ -19402,49 +19463,53 @@ function eqViz(){
     const dt=Math.min(.05,Math.max(.001,((now||0)-(_eqVizLast||(now||0)-16))/1000));
     _eqVizLast=now||0;
     ctx2.clearRect(0,0,cv.width,cv.height);
-    if(!_eqAnalyser){                                 // 그래프 전: 잔잔한 기준 파형
+    if(!_eqAnalyser){
       const n=48, w=cv.width/n;
       ctx2.fillStyle=grad; ctx2.globalAlpha=.3;
       for(let i=0;i<n;i++){ const h=3+Math.abs(Math.sin(i*.7))*4;
         ctx2.fillRect(i*w+2,cv.height/2-h,w-4,h*2); }
       ctx2.globalAlpha=1; return;
     }
-    if(!_eqBuf||_eqBuf.length!==_eqAnalyser.frequencyBinCount)
-      _eqBuf=new Uint8Array(_eqAnalyser.frequencyBinCount);
+    const binCount=_eqAnalyser.frequencyBinCount;
+    if(!_eqBuf||_eqBuf.length!==binCount){ _eqBuf=new Uint8Array(binCount); _eqFBuf=new Float32Array(binCount); }
     _eqAnalyser.getByteFrequencyData(_eqBuf);
+    for(let i=0;i<binCount;i++) _eqFBuf[i]=_eqBuf[i]/255;
     const sr=(_eqCtx&&_eqCtx.sampleRate)||44100;
     const nyq=Math.max(1000,sr/2);
-    const lo=Math.max(25,nyq/1200);                       // 44.1kHz → 약 37Hz
-    const hi=Math.min(19000,nyq*.95);
+    const lo=40, hi=Math.min(18000,nyq*.92);
     const n=N, w=cv.width/n;
-    let frameMax=0;
     ctx2.fillStyle=grad;
+    let envMax=0;
+    const aMin=_eqAnalyser.minDecibels, aMax=_eqAnalyser.maxDecibels, aRange=aMax-aMin||60;
     for(let i=0;i<n;i++){
-      const f=lo*Math.pow(hi/lo,i/(n-1));                 // 로그 주파수 축 (유지)
-      const c=Math.round(f/nyq*(_eqBuf.length-1));
-      const half=Math.max(0,Math.round(c*.10));           // 주변 빈을 평균해 한 줄로
-      let sum=0,cnt=0;
-      for(let j=Math.max(0,c-half);j<=Math.min(_eqBuf.length-1,c+half);j++){ sum+=_eqBuf[j]; cnt++; }
-      const raw=sum/cnt/255;
-      // 저역 물리 에너지 과잉은 '억제'가 아니라 살짝 누르는 틸트로만 — 저음이 죽으면
-      // 스펙트럼이 심심해진다. 대신 게인(.×1.55)과 감마(^.72)로 전체를 들어 올린다.
-      const tilt=Math.min(1.12,0.72+0.4*Math.sqrt(f/12000));
-      const v=Math.min(1,Math.pow(Math.min(1,raw*tilt*1.55),0.72)*_eqGain);
-      // ③ 공격/낙하 봉투 — 위로는 한 프레임 만족, 아래로는 중력 낙하
+      const f=lo*Math.pow(hi/lo,i/(n-1));
+      const c=Math.round(f/nyq*(binCount-1));
+      const half=Math.max(1,Math.round(c*.12+2));
+      let ss=0,cnt=0;
+      for(let j=Math.max(0,c-half);j<=Math.min(binCount-1,c+half);j++){ ss+=_eqFBuf[j]; cnt++; }
+      let raw=ss/cnt;
+      const db=aMin+raw*aRange;
+      let v=(db-(aMax-RANGE))/RANGE;
+      const bassTilt = f<80?0.78:(f<200?0.88:(f<600?0.94:1));
+      const trebTilt = f>10000?1.12:(f>5000?1.06:1);
+      v*=bassTilt*trebTilt;
+      if(v>_eqBandMax[i]) _eqBandMax[i]=v*0.95+_eqBandMax[i]*0.05;
+      else _eqBandMax[i]=Math.max(0.15,_eqBandMax[i]*0.9985+v*0.0015);
+      const norm=Math.max(0.25,_eqBandMax[i]);
+      v=Math.min(1, v/norm*0.85);
+      v=Math.pow(Math.max(0,v),0.82);
       if(v>_eqEnv[i]) _eqEnv[i]=v;
       else _eqEnv[i]=Math.max(v,_eqEnv[i]-FALL*dt);
       const e=_eqEnv[i];
-      if(e>frameMax) frameMax=e;
-      // ④ 피크 홀드 캡 — 정점에 잠깐 매달렸다가 막대보다 천천히 낙하
+      if(e>envMax) envMax=e;
       if(e>=_eqPeak[i]){ _eqPeak[i]=e; _eqHold[i]=HOLD; }
       else{ _eqHold[i]=Math.max(0,_eqHold[i]-dt);
             if(_eqHold[i]<=0) _eqPeak[i]=Math.max(e,_eqPeak[i]-PEAK_FALL*dt); }
-      const h=Math.max(2.5,e*(cv.height-8));
+      const h=Math.max(2,e*(cv.height-8));
       const y=cv.height-h-3;
       ctx2.globalAlpha=.42+e*.58;
       if(ctx2.roundRect){ ctx2.beginPath(); ctx2.roundRect(i*w+2,y,w-4,h,3); ctx2.fill(); }
       else ctx2.fillRect(i*w+2,y,w-4,h);
-      // 캡은 막대 꼭장 자리에 얇고 밝게 (정점이 0 이면 그리지 않는다)
       if(_eqPeak[i]>.02){
         const ph=Math.max(2.5,_eqPeak[i]*(cv.height-8));
         const py=cv.height-ph-3;
@@ -19452,17 +19517,18 @@ function eqViz(){
         ctx2.fillRect(i*w+2,py,w-4,3);
       }
     }
-    // ⑤ 자동 이득 — 프레임 최고점이 화면 92% 를 맴감싸도록 서서히 따라간다.
-    //   무음(일시정지 등)에선 부풀지 말고 기본값으로 서서히 돌아오게 한다 —
-    //   침묵을면 키웠던 이득이 다음 재생 첫 소절에 노이즈 번짐으로 나타난다.
-    if(frameMax>.03){
-      const target=Math.max(1,Math.min(2.4,0.92/(frameMax||1)));
-      _eqGain+=(target-_eqGain)*.028;
-    } else _eqGain+=(1-_eqGain)*.05;
+    if(envMax>0.02){
+      const desired=aMax+(0.6-envMax)*14;
+      _eqAnalyser.maxDecibels=aMax+(desired-aMax)*0.05;
+      _eqAnalyser.minDecibels=_eqAnalyser.maxDecibels-RANGE;
+      _eqAnalyser.maxDecibels=Math.max(-20,Math.min(-5,_eqAnalyser.maxDecibels));
+      _eqAnalyser.minDecibels=Math.max(-105,Math.min(-72,_eqAnalyser.minDecibels));
+    }
     ctx2.globalAlpha=1;
   };
   if(!_eqVizRaf) _eqVizRaf=requestAnimationFrame(tick);
 }
+
 // 첫 화면: 현재 곡 색으로 앰비언트 준비
 try{ mpbAmbience(); mpbSleepPaint(); }catch(e){}
 // ── 지금 재생 정보 ──
