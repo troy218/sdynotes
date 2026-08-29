@@ -9235,12 +9235,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     const CARD_PROMPT = `너는 학습용 객관식 문제 제작 도우미야. 아래 [사용자 요청]과 [본문]을 읽고 코드 블록 하나만 출력해.
 
 #DECK 묶음이름
-M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 보기 3 || 왜 그 답이 맞고 다른 보기는 틀린지 짧고 정확한 해설 #태그
+M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 보기 3 || 정답이 왜 정답인지 1~2문장. ① 오답 보기 1 — 이 보기가 왜 틀렸는지 한 문장. ② 정답 보기 — 이 보기가 왜 맞는지 한 문장. ③ 오답 보기 2 — 이 보기가 왜 틀렸는지 한 문장. ④ 오답 보기 3 — 이 보기가 왜 틀렸는지 한 문장. #태그
 
 규칙:
 - 모든 문제는 반드시 M 객관식 형식으로만 만든다. C 주관식은 만들지 않는다.
 - 정답 보기 하나의 앞이나 뒤에 별표(*)를 붙인다.
-- 모든 문제에 || 뒤 해설을 반드시 쓴다. 정답 근거와 핵심 오답 이유를 1~3문장으로 설명한다.
+- 모든 문제에 || 뒤 해설을 반드시 붙이고, 해설은 두 부분으로 쓴다.
+  1) 먼저 정답이 왜 정답인지 1~2문장으로 설명한다.
+  2) 이어서 ①②③④ 번호를 붙여 정답 보기를 포함한 '모든 보기'마다 개별 해설을 하나씩 쓴다.
+     · 보기가 몇 개든 보기 수만큼 번호 항목이 있어야 하고, 하나도 빠지면 안 된다.
+     · 각 항목에는 그 보기가 왜 맞거나(정답) 틀렸는지(오답) 한 문장 이상 근거를 쓴다.
+     · ①부터의 번호 순서는 | 로 나열한 보기 순서와 같게 맞춘다.
+- ①②③④ 기호는 예시와 같은 원문자를 그대로 쓰고, 해설 안에서 줄을 바꾸지 않는다 (문제 한 줄 유지).
 - 질문 앞에 [쉬움], [보통], [어려움] 중 하나를 표시한다.
 - 사용자가 문제 개수, 난이도, 범위·단원, 보기 개수, 출제 방식 등을 말하면 그 요청을 최우선으로 정확히 따른다.
 - 사용자가 개수를 말하지 않으면 본문 분량에 맞춰 10~20문제를 만든다.
@@ -9589,6 +9595,20 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const ds=document.getElementById('cdDeckSearch'); if(ds) ds.value='';
         }catch(e){ toast('만들기 실패',2400); }
         finally{ btn.disabled=false; }
+    }
+    // ── 18.0 · 해설 포맷터 — '정답 근거 + ①②③ 보기별 해설'을 예쁜 목록으로 ──
+    // AI 프롬프트가 ① 원문자 번호로 각 보기 해설을 붙여 주므로, 그 항목을 줄로 나눠 보여 준다.
+    // 원문자(①)는 글꼴에 따라 깨질 수 있어 숫자 배지(.ex-n)로 바꿔 그린다.
+    const _EX_CIRCLED='①②③④⑤⑥⑦⑧⑨⑩';
+    function fmtExplain(t){
+        t=(t||'').trim(); if(!t) return '';
+        const parts=t.split(new RegExp('(?=[①②③④⑤⑥⑦⑧⑨⑩])')).map(s=>s.trim()).filter(Boolean);
+        if(parts.length<2) return '<div class="ex-lead">'+esc(t)+'</div>';
+        return parts.map(p=>{
+            const idx=_EX_CIRCLED.indexOf(p[0]);
+            if(idx<0) return '<div class="ex-lead">'+esc(p)+'</div>';
+            return '<div class="ex-item"><span class="ex-n">'+(idx+1)+'</span>'+esc(p.slice(1))+'</div>';
+        }).join('');
     }
     function copyPrompt(){
         const t=CARD_PROMPT;
@@ -10238,7 +10258,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         hint.textContent='';
         hbtn.style.display=c.hint?'':'none';
         document.getElementById('cdBackTxt').textContent=c.back||'';
-        document.getElementById('cdNote').textContent=c.note||'';
+        document.getElementById('cdNote').innerHTML=fmtExplain(c.note);
     }
     function showHint(){
         const c=_queue[_qi]; if(!c||!c.hint) return;
@@ -10332,7 +10352,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         const ex=document.getElementById('cdExplain');
         if(ex){
-            ex.textContent=c.note||(`정답은 “${(c.opts||[])[c.answer]||c.back||''}”입니다. 핵심 개념을 한 번 더 확인해 보세요.`);
+            ex.innerHTML=fmtExplain(c.note)||('<div class="ex-lead">'+esc('정답은 “'+((c.opts||[])[c.answer]||c.back||'')+'”입니다. 핵심 개념을 한 번 더 확인해 보세요.')+'</div>');
+            // 18.0 · 보기별 해설(①②③…)은 보기 원래 순서 — 정답 보기는 민트, 오답은 로즈로 물들인다
+            ex.querySelectorAll('.ex-item').forEach((el,k)=>el.classList.add(k===c.answer?'ex-right':'ex-wrong'));
             ex.style.display='block';
         }
         document.getElementById('cdNextBtn').style.display='flex';
@@ -10415,7 +10437,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                    acc>=40?'절반은 잡았어요 · 오답 노트를 확인해 볼까요':'지금부터가 진짜 공부예요 🌱';
         el.innerHTML=`
           <div class="rep-top">
-            <div class="rep-score" style="background:conic-gradient(var(--accent) ${acc*3.6}deg,var(--bg2) 0)">
+            <div class="rep-score" style="--rep-deg:${acc*3.6}deg">
               <span>${acc}점</span></div>
             <div class="rep-sum"><b>${word}</b>
               <span>${_testLog.length}문제 중 <b style="color:var(--accent)">${_testLog.length-wrong.length}문제</b> 정답 ·
@@ -10426,7 +10448,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             <div class="rep-w"><b>${esc(w.front)}</b>
               <div class="a"><i class="mine">내 답 · ${esc(w.pick||'(선택 없음)')}</i><br>
                              <i class="real">정답 · ${esc(w.real)}</i></div>
-              ${w.note?`<div class="why">${esc(w.note)}</div>`:''}
+              ${w.note?`<div class="why">${fmtExplain(w.note)}</div>`:''}
             </div>`).join('')+`</div>`:''}
           <div class="cards-actions" style="justify-content:center;margin-top:4px;">
             ${wrong.length?'<button class="cd-btn primary" onclick="retryWrong()">오답만 다시 풀기</button>':''}

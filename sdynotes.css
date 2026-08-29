@@ -5714,7 +5714,7 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 }
 
 /* ═══════════════════════════════════════════════════════════
-   15.0 · 암기 카드 확장 모드 — '브라우저 전체화면'이 아니라 사이트 안에서만 꽉 차는 창 (이전 섹션 계속) */
+   15.0 · 암기 카드 확장 모드 — '브라우저 전체화면'이 아니라 사이트 안에서만 꽉 차는 창 (이전 섹션 계속)
    · 공부 중 다른 탭을 왔다 갔다 합니다. Fullscreen API 를 쓰면 그 흐름이 깨져서 쓰지 않는다.
    · 모양·전환은 음악플레이어 전체화면(16.0)과 같은 규칙 — 창이 그 자리에서 부드럽게 커지는
      모핑(.fcard-anim), 같은 펼침 아이콘(ri-fullscreen-line), Esc 로 한 단계씩 해제.
@@ -6669,3 +6669,267 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
     max-width:none;padding:8px;border-radius:18px;}
   .fcard-win.fcard-max .fc-modes{grid-template-columns:repeat(3,1fr);gap:8px;padding:8px;}
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   18.0 · 암기 카드 파스텔 리디자인
+   ─────────────────────────────────────────────────────────────────
+   · 듀오링고식 원색 3D 버튼을 전부 물러나게 하고, 노트 앱의 라벤더→바이올렛→로즈
+     그라데이션(--accent/#8e5cf7/#e0619b)과 어울리는 파스텔 톤으로 갈아입힌다.
+   · 전체화면 기본 화면(묶음 목록)이 빈 화면처럼 보이지 않게:
+     파스텔 오로라 배경 + '오늘은 무엇을 외워 볼까요?' 히어로 + 해동이 미니 등장.
+   · 학습 방식 타일은 6색 파스텔 타일(연한 면 + 진한 글씨), 버튼은 부드러운
+     그라데이션 알약 — 눌리는 3D 테두리는 절제.
+   · 해설은 '정답 근거 + ①②③④ 보기별 해설' 구조로 줄을 나눠 보여 준다 (JS fmtExplain).
+   ═══════════════════════════════════════════════════════════════════ */
+.fcard-win{
+  --pas-grad:linear-gradient(135deg,#7d94fa,#a488f6 55%,#c983e8);
+  --pas-ink:#44506e;
+}
+/* ── ① 전체화면 배경: 노트 앱 배경 오로라와 같은 파스텔 그라데이션 ── */
+.fcard-win.fcard-max {
+  background:linear-gradient(150deg,#f7f5ff 0%,#edf3ff 30%,#fdf1f7 62%,#ecf9f2 100%) !important;
+}
+.dark .fcard-win.fcard-max {
+  background:linear-gradient(150deg,#191b29 0%,#161926 35%,#1f1a2a 70%,#17211e 100%) !important;
+}
+.fcard-win.fcard-max::before{
+  content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(42% 50% at 12% 8%,rgba(125,148,250,.16),transparent 70%),
+    radial-gradient(36% 42% at 88% 14%,rgba(240,145,194,.12),transparent 70%),
+    radial-gradient(44% 46% at 80% 94%,rgba(112,205,172,.13),transparent 70%);
+}
+.fcard-win.fcard-max #cardsHome,.fcard-win.fcard-max #cardsStudy,
+.fcard-win.fcard-max #cardsPaste,.fcard-win.fcard-max #cardsStats,
+.fcard-win.fcard-max #cardsAnalytics,.fcard-win.fcard-max #cardsBrowse{
+  position:relative;z-index:1;
+}
+/* 학습 스테이지의 오로라도 파스텔로 */
+.fcard-win.fcard-max .cd-stage::before{
+  background:
+    radial-gradient(40% 55% at 18% 88%,rgba(125,148,250,.17),transparent 70%),
+    radial-gradient(42% 50% at 88% 20%,rgba(196,140,246,.15),transparent 70%),
+    radial-gradient(32% 40% at 65% 90%,rgba(240,145,194,.13),transparent 70%);
+}
+/* ── ② 상단 앱바: 반투명 파스텔 + 그라데이션 로고 글씨 ── */
+.fcard-win.fcard-max .fcard-head{
+  background:linear-gradient(90deg,color-mix(in srgb,#ffffff 74%,transparent),
+             color-mix(in srgb,#ece9ff 66%,transparent) 45%,
+             color-mix(in srgb,#ffeef6 70%,transparent)) !important;
+  border-bottom:1px solid color-mix(in srgb,var(--accent) 14%,transparent) !important;
+}
+.dark .fcard-win.fcard-max .fcard-head{
+  background:linear-gradient(90deg,rgba(26,28,44,.88),rgba(32,28,48,.84)) !important;
+  border-bottom-color:rgba(255,255,255,.07) !important;
+}
+.fcard-win.fcard-max .fcard-head>b{
+  background:linear-gradient(92deg,var(--accent),#8e5cf7 60%,#e0619b);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+/* ── ③ 홈 히어로 — 심심한 기본 화면을 채우는 환영 카드 ── */
+.fcard-win:not(.fcard-max) .cd-hero{display:none;}
+.cd-hero{position:relative;display:flex;align-items:center;gap:18px;
+  max-width:900px;margin:0 auto 14px;padding:16px 26px;border-radius:22px;
+  background:linear-gradient(115deg,rgba(255,255,255,.92),rgba(236,240,255,.88) 45%,rgba(255,236,246,.88));
+  border:1.5px solid color-mix(in srgb,var(--accent) 18%,transparent);
+  box-shadow:0 14px 34px -16px rgba(104,96,220,.35),inset 0 1px 0 rgba(255,255,255,.85);
+  overflow:hidden;
+}
+.dark .cd-hero{
+  background:linear-gradient(115deg,rgba(38,40,60,.92),rgba(36,32,54,.9) 45%,rgba(46,34,52,.9));
+  border-color:rgba(255,255,255,.08);
+  box-shadow:0 14px 34px -16px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);
+}
+.cd-hero-otter{flex:none;width:clamp(84px,8vw,110px);height:auto;
+  animation:otterBob2 4.2s ease-in-out infinite;
+  filter:drop-shadow(0 8px 14px rgba(90,70,120,.25));}
+.cd-hero-txt{position:relative;z-index:1;min-width:0;}
+.cd-hero-txt b{display:block;font-size:clamp(17px,1.7vw,21px);font-weight:800;letter-spacing:-.02em;
+  background:linear-gradient(92deg,var(--accent),#8e5cf7 60%,#e0619b);
+  -webkit-background-clip:text;background-clip:text;color:transparent;}
+.cd-hero-txt span{display:block;margin-top:4px;font-size:12.5px;font-weight:600;color:var(--text3);}
+.cd-hero-glow{position:absolute;right:-46px;top:-64px;width:200px;height:200px;border-radius:50%;
+  background:radial-gradient(circle,rgba(142,92,247,.18),transparent 65%);pointer-events:none;}
+@media (prefers-reduced-motion:reduce){
+  .cd-hero-otter{animation:none !important;}
+}
+/* 묶음이 없을 때의 안내도 파스텔 카드로 */
+.fcard-win.fcard-max .cd-empty{padding:46px 26px;font-size:13px;color:var(--text2);
+  border:2px dashed color-mix(in srgb,var(--accent) 28%,transparent);
+  border-radius:20px;background:color-mix(in srgb,var(--accent) 4%,transparent);}
+/* 홈 상단의 만들기 버튼들도 히어로와 같은 폭으로 가운데 정렬 */
+.fcard-win.fcard-max #cardsHome>.cards-actions{max-width:900px;margin:0 auto 12px;width:auto;justify-content:center;}
+.fcard-win.fcard-max #cardsHome>.cards-actions .cd-btn{padding:12px 22px;font-size:13.5px;}
+/* ── ④ 공통 버튼: 작위적 3D 대신 부드러운 파스텔 ── */
+.fcard-win .cd-btn{
+  border:1.5px solid color-mix(in srgb,var(--accent) 20%,var(--border));
+  border-bottom-width:3px;border-radius:14px;
+  background:linear-gradient(180deg,#ffffff,color-mix(in srgb,var(--accent) 6%,var(--card)));
+  color:var(--text2);font-weight:700;
+  box-shadow:0 1px 3px rgba(90,100,160,.08);
+}
+.dark .fcard-win .cd-btn{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 92%,transparent),
+                               color-mix(in srgb,var(--accent) 8%,var(--card)));
+}
+.fcard-win .cd-btn:hover{
+  border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);
+  background:linear-gradient(180deg,#ffffff,color-mix(in srgb,var(--accent) 10%,var(--card)));
+  box-shadow:0 8px 18px -8px color-mix(in srgb,var(--accent) 40%,transparent);
+}
+.dark .fcard-win .cd-btn:hover{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 12%,var(--card)),
+                               color-mix(in srgb,var(--accent) 16%,var(--card)));
+}
+.fcard-win .cd-btn:active{transform:translateY(1px);border-bottom-width:2px;}
+.fcard-win .cd-btn.primary{
+  background:var(--pas-grad);
+  border:none;border-bottom:3px solid #7a6fd8;color:#fff;
+  box-shadow:0 8px 20px -6px rgba(139,120,246,.5),inset 0 1px 0 rgba(255,255,255,.35);
+}
+.fcard-win .cd-btn.primary:hover{color:#fff;filter:brightness(1.06);transform:translateY(-1px);}
+/* ── ⑤ 학습 방식 타일: 6색 파스텔 (연한 면 + 진한 글씨 + 옅은 밑면) ── */
+.fcard-win .fc-mode{
+  border:none;border-bottom:3px solid var(--mode-d,#c9d2f8);
+  background:linear-gradient(180deg,#ffffff 8%,var(--mode,#eef1ff));
+  color:var(--mode-ink,#44506e);border-radius:18px;
+  box-shadow:0 3px 0 var(--mode-d,#c9d2f8),0 10px 22px -10px rgba(90,100,180,.35);
+  transition:transform .12s ease,box-shadow .15s,filter .2s;
+}
+.dark .fcard-win .fc-mode{background:linear-gradient(180deg,color-mix(in srgb,var(--mode,#eef1ff) 30%,var(--card)) 0%,color-mix(in srgb,var(--mode,#eef1ff) 55%,var(--card)) 100%);}
+.fcard-win .fc-mode:nth-child(1){--mode:#dcf6e8;--mode-d:#a7e3c4;--mode-ink:#257a52;}
+.fcard-win .fc-mode:nth-child(2){--mode:#d9ecff;--mode-d:#a5d3f6;--mode-ink:#1f6ea8;}
+.fcard-win .fc-mode:nth-child(3){--mode:#ecdcff;--mode-d:#cfb2f2;--mode-ink:#6b3fb8;}
+.fcard-win .fc-mode:nth-child(4){--mode:#ffdadf;--mode-d:#f5aebe;--mode-ink:#b03a58;}
+.fcard-win .fc-mode:nth-child(5){--mode:#ffe9d6;--mode-d:#f6c9a0;--mode-ink:#a05a20;}
+.fcard-win .fc-mode:nth-child(6){--mode:#fff3c7;--mode-d:#efd98e;--mode-ink:#7d621a;}
+.fcard-win .fc-mode i,
+.fcard-win.fcard-max .fc-mode i{
+  color:var(--mode-ink,#44506e);background:rgba(255,255,255,.8);
+  box-shadow:inset 0 0 0 1.5px var(--mode-d,#c9d2f8);
+}
+.fcard-win .fc-mode:nth-child(6) b{color:var(--mode-ink,#7d621a);}
+.fcard-win .fc-mode:nth-child(6) i{color:var(--mode-ink,#7d621a);background:rgba(255,255,255,.8);}
+.fcard-win .fc-mode b{color:var(--mode-ink,#44506e);}
+.fcard-win .fc-mode:hover{transform:translateY(-2px);filter:brightness(1.03);
+  box-shadow:0 5px 0 var(--mode-d,#c9d2f8),0 14px 26px -10px rgba(90,100,180,.4);}
+.fcard-win .fc-mode:active{transform:translateY(2px);
+  box-shadow:0 1px 0 var(--mode-d,#c9d2f8),0 4px 10px -6px rgba(90,100,180,.3);}
+/* ── ⑥ 객관식 보기: 파스텔 카드 + 상태 색도 부드럽게 ── */
+.fcard-win .cd-opt{
+  border:1.5px solid color-mix(in srgb,var(--border) 88%,transparent);
+  border-bottom-width:3px;border-radius:15px;
+  background:linear-gradient(180deg,#ffffff,color-mix(in srgb,#f0f3ff 65%,var(--card)));
+  font-weight:600;
+  box-shadow:0 1px 2px rgba(90,100,160,.06);
+}
+.dark .fcard-win .cd-opt{background:linear-gradient(180deg,color-mix(in srgb,var(--card) 94%,transparent),
+                               color-mix(in srgb,var(--accent) 7%,var(--card)));}
+.fcard-win .cd-opt:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));
+  transform:translateY(-1px);box-shadow:0 8px 18px -8px color-mix(in srgb,var(--accent) 35%,transparent);}
+.fcard-win .cd-opt:active{transform:translateY(1px);border-bottom-width:2px;}
+.fcard-win .cd-opt i.num{border:none;border-radius:9px !important;
+  background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);font-weight:800;}
+.fcard-win .cd-opt.ok,.fcard-win .cd-opt.no{color:var(--pas-ok-ink,#1e7a4e);}
+.fcard-win .cd-opt.ok{background:linear-gradient(180deg,#e2f9eb,#c9f2da);border-color:#8fdcb2;color:#1e7a4e;}
+.fcard-win .cd-opt.ok i.num{background:#5ecf95;color:#fff;}
+.fcard-win .cd-opt.no{background:linear-gradient(180deg,#ffe4e8,#ffd2d9);border-color:#f3a4b3;color:#bb3f5c;}
+.fcard-win .cd-opt.no i.num{background:#ef7d96;color:#fff;}
+.fcard-win .cd-opt.pick{background:linear-gradient(180deg,#e5edff,#d8e3ff);border-color:#9db4f8;color:#3d56c4;}
+.fcard-win .cd-opt.pick i.num{background:#7d94fa;color:#fff;}
+.dark .fcard-win .cd-opt.ok{background:linear-gradient(180deg,color-mix(in srgb,#5ecf95 30%,var(--card)),color-mix(in srgb,#5ecf95 18%,var(--card)));color:#b8f3d2;border-color:#5ecf95;}
+.dark .fcard-win .cd-opt.no{background:linear-gradient(180deg,color-mix(in srgb,#ef7d96 30%,var(--card)),color-mix(in srgb,#ef7d96 18%,var(--card)));color:#ffd4dd;border-color:#ef7d96;}
+.dark .fcard-win .cd-opt.pick{background:linear-gradient(180deg,color-mix(in srgb,#7d94fa 32%,var(--card)),color-mix(in srgb,#7d94fa 20%,var(--card)));color:#dce5ff;border-color:#7d94fa;}
+/* ── ⑦ 뒤집기 채점 버튼: 파스텔 로즈 · 민트 ── */
+.fcard-win .cd-grade2 button{border-bottom:2px solid rgba(0,0,0,.10);}
+.cd-grade2 .cd-ng{background:linear-gradient(135deg,#ffc2cd,#ff9db2);color:#8e2a48;}
+.cd-grade2 .cd-ok{background:linear-gradient(135deg,#b9efcf,#8fe3b4);color:#175f3d;}
+.fcard-win .cd-grade2 button:hover{filter:brightness(1.04);}
+/* ── ⑧ 진행바: 앱 로고와 같은 라벤더→바이올렛→로즈 ── */
+.fcard-win .cd-prog{height:12px;border-radius:99px;overflow:hidden;
+  background:color-mix(in srgb,var(--accent) 9%,var(--bg2));
+  border:1px solid color-mix(in srgb,var(--accent) 16%,transparent);
+  box-shadow:inset 0 1px 3px rgba(90,100,160,.12);}
+.fcard-win #cdProgFill{height:100%;border-radius:99px;
+  background:linear-gradient(90deg,#7d94fa,#a488f6 55%,#ef92c2);
+  box-shadow:0 0 10px rgba(164,136,246,.45);}
+/* ── ⑨ 묶음 카드 · 통계 칸 · 검색바: 파스텔 유리 ── */
+.fcard-win .cd-deck{
+  border:1.5px solid color-mix(in srgb,var(--border) 85%,transparent);
+  border-bottom-width:3px;border-radius:16px;
+  background:linear-gradient(180deg,color-mix(in srgb,#ffffff 86%,transparent),
+                               color-mix(in srgb,#eef1ff 62%,transparent));
+}
+.dark .fcard-win .cd-deck{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 94%,transparent),
+                               color-mix(in srgb,#232639 72%,transparent));
+}
+.fcard-win .cd-deck:hover{border-color:color-mix(in srgb,var(--accent) 40%,var(--border));}
+.fcard-win .cd-stat{border-radius:14px;
+  background:linear-gradient(180deg,#ffffff,color-mix(in srgb,var(--accent) 6%,#ffffff));
+  border:1.5px solid color-mix(in srgb,var(--accent) 15%,transparent);}
+.dark .fcard-win .cd-stat{background:linear-gradient(180deg,color-mix(in srgb,var(--card) 92%,transparent),
+                              color-mix(in srgb,var(--accent) 9%,var(--card)));
+  border-color:color-mix(in srgb,var(--accent) 22%,transparent);}
+.fcard-win .cd-listbar{border-radius:12px;}
+.fcard-win .cd-tile{border-radius:14px;}
+.fcard-win .cd-tile.bad{border-color:#f3a4b3;background:#ffe4e9;}
+.fcard-win .cd-testpick button{border-radius:10px;}
+/* ── ⑩ 해설: '정답 근거 + ①②③④ 보기별 해설' 구조 ── */
+.fcard-win .cd-explain,.fcard-win .cd-note{white-space:normal;}
+.fcard-win .ex-lead{font-weight:700;color:var(--text1);}
+.fcard-win .ex-item{margin-top:7px;padding:8px 12px;border-radius:12px;
+  display:flex;align-items:flex-start;gap:9px;
+  background:color-mix(in srgb,var(--card) 72%,transparent);
+  border:1px dashed color-mix(in srgb,var(--accent) 26%,transparent);
+  font-size:.95em;color:var(--text2);line-height:1.65;}
+.fcard-win .ex-n{flex:none;width:21px;height:21px;margin-top:1px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent);
+  font-size:11px;font-weight:800;font-style:normal;}
+.fcard-win .ex-item.ex-right{background:color-mix(in srgb,#5ecf95 14%,transparent);
+  border-color:color-mix(in srgb,#5ecf95 55%,transparent);}
+.fcard-win .ex-item.ex-right .ex-n{background:#5ecf95;color:#fff;}
+.fcard-win .ex-item.ex-wrong{border-color:color-mix(in srgb,#ef7d96 38%,transparent);}
+.fcard-win .ex-item.ex-wrong .ex-n{background:#ffe4ea;color:#bb3f5c;}
+.fcard-win .cd-explain .ex-lead:first-child{margin-top:2px;}
+/* 해동이 그림자도 부드럽게 */
+.cd-otter-svg{filter:drop-shadow(0 10px 16px rgba(90,70,50,.22));}
+
+/* ── 18.0 보완 · 짝 맞추기 타일: 원색 대신 파스텔 물들임 ── */
+.fcard-win .cd-tile.pick{border-color:color-mix(in srgb,var(--accent) 55%,transparent);
+  background:color-mix(in srgb,var(--accent) 14%,transparent);font-weight:700;}
+.fcard-win.fcard-max .cd-tile{background:linear-gradient(180deg,#ffffff,color-mix(in srgb,#eef1ff 70%,transparent));}
+.dark .fcard-win.fcard-max .cd-tile{background:linear-gradient(180deg,color-mix(in srgb,var(--card) 94%,transparent),
+                                color-mix(in srgb,var(--accent) 8%,var(--card)));}
+/* 연속 정답 배지도 부드러운 앰버 파스텔 */
+.fcard-win .cd-streak{background:color-mix(in srgb,#ffd9a8 55%,var(--bg2));color:#8a5a1d;}
+.dark .fcard-win .cd-streak{background:color-mix(in srgb,#f59e0b 22%,var(--bg2));color:#ffd9a8;}
+/* 상단바 뒤로가기 버튼을 파스텔 유리로 */
+.fcard-win .cd-back{border-radius:10px;background:color-mix(in srgb,var(--accent) 8%,var(--bg2));
+  color:var(--text2);transition:background .15s,color .15s;}
+.fcard-win .cd-back:hover{background:color-mix(in srgb,var(--accent) 16%,var(--bg2));color:var(--accent);}
+/* 홈 · 통계 · 방식 고르기 화면도 위아래 여백을 두른다 (전체화면에서 답답하지 않게) */
+.fcard-win.fcard-max #cardsHome>.cards-list{padding-bottom:6px;}
+.fcard-win.fcard-max #cardsStats>.fc-modes{background:linear-gradient(180deg,color-mix(in srgb,#ffffff 82%,transparent),
+                                color-mix(in srgb,#eef1ff 62%,transparent));
+  border:1.5px solid color-mix(in srgb,var(--accent) 12%,transparent);}
+.dark .fcard-win.fcard-max #cardsStats>.fc-modes{background:linear-gradient(180deg,color-mix(in srgb,var(--card) 92%,transparent),
+                                color-mix(in srgb,#232639 70%,transparent));
+  border-color:color-mix(in srgb,var(--accent) 20%,transparent);}
+/* 시험 성적표 점수 원형도 파스텔 그라데이션으로 */
+.fcard-win .rep-score{background:conic-gradient(#7d94fa 0deg,#a488f6 200deg,#ef92c2 var(--rep-deg,360deg),var(--bg2) 0) !important;}
+.fcard-win .rep-w .mine{color:#bb3f5c;}
+.fcard-win .rep-w .real{color:#1e7a4e;}
+/* 학습 상단바의 나머지 요소 — 파스텔 유리로 통일 */
+.fcard-win .cd-count{background:none;}
+.fcard-win .cd-chip{background:color-mix(in srgb,#ffffff 70%,transparent);
+  border-color:color-mix(in srgb,var(--accent) 20%,transparent);}
+.dark .fcard-win .cd-chip{background:color-mix(in srgb,var(--card) 70%,transparent);}
+/* ── 최종 보정 · 학습 상단바: 커다란 흰 알약(진행 노브)은 없던 일로 —
+   진행바가 스스로 채워지는 바이올렛 그라데이션으로 읽힌다 ── */
+.fcard-win .cd-topbar{--knob:none;}
+.fcard-win .cd-streak,.fcard-win .cd-count,.fcard-win .cd-sess{border:none;}
+/* 모드 선택 화면(기본 창)에서 6칸 그리드가 어긋나지 않게 정리 + 여백 */
+.fcard-win .fc-modes{margin-top:6px;}
+.fcard-win #cardsStats .cd-hard,.fcard-win #cardsStats #cdTagPick{margin-top:10px;}
