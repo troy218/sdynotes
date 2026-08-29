@@ -5336,6 +5336,11 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   left:0!important;top:0!important;
   width:var(--fcard-max-w,calc(100vw))!important;
   height:var(--fcard-max-h,calc(100dvh))!important;
+  /* 기본 .fcard-win 의 760px 폭 · 92vh 높이 캡이 살아 있으면 실측 --fcard-max-w/h 를
+     넣어도 렌더 크기가 760px×92vh 로 잘려 화면에 꽉 차지 않고 좌상단에 갇힌다.
+     창이 좌상단에 갇히면 학습 통계(statrow)도 화면 기준 왼쪽에 치우쳐 보인다.
+     아래 폰 블록과 같은 캡 해제 — 데스크톱 블록에만 빠져 있었다 */
+  max-width:none !important;max-height:none !important;transform:none !important;
   border-radius:0 !important;border:none !important;
   background:
     radial-gradient(circle at 8% 12%,rgba(99,102,241,.12),transparent 36%),
