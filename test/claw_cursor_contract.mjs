@@ -75,8 +75,11 @@ assert.match(js, /pr\.width\/Math\.max\(1,ps\.w\)/,
   '상대 커서는 pageScale 상수가 아니라 실제 종이 화면 크기로 환산');
 
 // 배포 중 반쪽 파일/구 캐시가 섞이지 않도록 에셋을 버전 고정하고 원자 교체한다.
-assert.match(html, /sdynotes\.css\?v=14\.13\.6/);
-assert.match(html, /sdynotes\.js\?v=14\.13\.6/);
+// 버전은 메타 태그에서 읽어 온다 — 올릴 때마다 테스트를 같이 고칠 필요는 없다.
+const APP_VER = (html.match(/application-version" content="([^"]+)"/) || [])[1];
+assert.ok(APP_VER, 'sdynotes.html 에 application-version meta 가 있어야 한다');
+assert.match(html, new RegExp('sdynotes\\.css\\?v=' + APP_VER.replace(/\./g, '\\.')));
+assert.match(html, new RegExp('sdynotes\\.js\\?v=' + APP_VER.replace(/\./g, '\\.')));
 assert.match(apply, /deploy_atomic/);
 assert.match(apply, /node --check "\$SRC\/sdynotes\.js"/);
 
