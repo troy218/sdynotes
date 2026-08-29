@@ -40,10 +40,22 @@ assert.match(js, /const p=_mpbPrePos\|\|_mpbSavedPos\(\)/,
 assert.match(js, /function _fcardPlace\(win\)\{[\s\S]{0,1400}const hasSaved=!!\(p&&isFinite\(p\.x\)&&isFinite\(p\.y\)\)/,
   '암기카드 첫 열기는 저장 위치가 없을 때 공용 실측으로 가운데를 잡아야 한다');
 
-assert.match(js, /const weight=Math\.min\(1\.15,0\.42\+0\.58\*Math\.sqrt\(f\/12000\)\)/,
-  '이퀄라이저는 저역 에너지를 눌러주는 라우드니스 가중치를 써야 한다');
+// 15.1 · 버츄얼라이저는 시중 플레이어와 같은 구동 매커니즘을 쓴다
+//   (dB 창 매핑 → 감마 → 공격 즉시/낙하 중력 봉투 → 피크 홀드 캡 → 자동 이득)
+assert.match(js, /_eqAnalyser\.minDecibels=-85;\s*_eqAnalyser\.maxDecibels=-25/,
+  '버츄얼라이저는 음악용 dB 창(-85~-25)으로 읽어 막대가 화면 전체를 써야 한다');
 assert.match(js, /const f=lo\*Math\.pow\(hi\/lo,i\/\(n-1\)\)/,
   '이퀄라이저는 선형 대신 로그 주파수 축으로 읽어야 한다');
+assert.match(js, /const tilt=Math\.min\(1\.12,0\.72\+0\.4\*Math\.sqrt\(f\/12000\)\)/,
+  '저역 과잉은 억제(0.4x)가 아니라 살짝 누르는 틸트여야 저음이 산다');
+assert.match(js, /if\(v>_eqEnv\[i\]\) _eqEnv\[i\]=v;\s*else _eqEnv\[i\]=Math\.max\(v,_eqEnv\[i\]-FALL\*dt\);/,
+  '막대는 올라갈 땐 즉시, 낄땐 중력처럼 일정 속도로 낙해야 한다 (공격/낙하 봉투)');
+assert.match(js, /if\(e>=_eqPeak\[i\]\)\{ _eqPeak\[i\]=e; _eqHold\[i\]=HOLD; \}/,
+  '정점 캡이 잠깐 머물다(HOLD) 천천히 낙해야 한다 (피크 홀드)');
+assert.match(js, /_eqGain\+=\(target-_eqGain\)\*\.028;/,
+  '조용한 곡도 화면 가득 춤추게 자동 이득(AGC)이 서서히 따라가야 한다');
+assert.match(js, /_eqAnalyser\.fftSize=1024; _eqAnalyser\.smoothingTimeConstant=\.5;/,
+  'FFT 는 대역 해상도(1024)와 타격 반응(0.5)을 확보해야 한다');
 
 /* ── 런타임 계약 ───────────────────────────────────────────────────────── */
 const fullHtml = html.includes('<script src="sdynotes.js')
