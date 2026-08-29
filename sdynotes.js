@@ -991,7 +991,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         (page.els||[]).forEach(el=>{
             if(el.type==='image'){
                 html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:2px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;">`+
-                      `<img src="${el.url}" style="width:100%;height:100%;object-fit:fill;display:block;border-radius:2px;"></div>`;
+                      `<img src="${el.localURL||el.url}" style="width:100%;height:100%;object-fit:fill;display:block;border-radius:2px;"></div>`;
             }else if(el.type==='legacyDraw'){
                 html+=`<img src="${el.url}" style="position:absolute;left:0;top:0;width:${size.w}px;height:${size.h}px;z-index:3;">`;
             }else if(el.type==='stroke'){ strokes.push(el); }
@@ -5636,6 +5636,34 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     // ============ 서버 동기화 ============
     let syncTimer=null, pendingNB=null;
+    // 14.15 · 동기화 직전 이미지 요소 정리: blob URL 은 다른 기기·새로고침 뒤에
+    //   깨지므로 url 에서 제거하고, 로컬 전용 임시 필드(localURL·pending·failed)는
+    //   서버로 보내지 않는다. (data: URL 은 스티커·PDF 배경 등 정상 데이터이므로 유지)
+    function sanitizeSyncPages(pages){
+        if(!Array.isArray(pages)) return pages;
+        let dirty=false;
+        for(const pg of pages){
+            if(!pg||!Array.isArray(pg.els)) continue;
+            for(const el of pg.els){
+                if(!el||el.type!=='image') continue;
+                const u=String(el.url||'');
+                if(('localURL' in el)||('pending' in el)||('failed' in el)||u.startsWith('blob:')){ dirty=true; break; }
+            }
+            if(dirty) break;
+        }
+        if(!dirty) return pages;
+        return pages.map(pg=>{
+            if(!pg||!Array.isArray(pg.els)) return pg;
+            return {...pg, els: pg.els.map(el=>{
+                if(!el||el.type!=='image') return el;
+                const clean={...el};
+                delete clean.localURL; delete clean.pending; delete clean.failed;
+                const u=String(clean.url||'');
+                if(u.startsWith('blob:')) clean.url='';
+                return clean;
+            })};
+        });
+    }
     function serializeDoc(d,nbId){
         const cfg=getCfg(nbId);
         // 가져온 문서(서버 보관본 참조)는 본문 없이 마커만 →
@@ -5655,7 +5683,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return JSON.stringify({version:3,locked:true,lock:{salt:cfg.lock.salt,escrow:cfg.lock.escrow||null},
                                    encBlob:cfg.encBlob,paper:d.paper,sizePreset:d.sizePreset,emoji:d.emoji,glossary:d.glossary||{}});
         }
-        return JSON.stringify({version:3,paper:d.paper,sizePreset:d.sizePreset,emoji:d.emoji,glossary:d.glossary||{},pages:d.pages});
+        return JSON.stringify({version:3,paper:d.paper,sizePreset:d.sizePreset,emoji:d.emoji,glossary:d.glossary||{},pages:sanitizeSyncPages(d.pages)});
     }
     // ===== 오프라인 아웃박스 =====
     // 서버 전송에 실패하면 여기에 쌓아 두고, 인터넷이 돌아오면 한꺼번에 올린다.
@@ -6939,13 +6967,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const img=document.createElement('img');
         img.draggable=false;
         img.loading='lazy'; img.decoding='async';
-        img.src=el.url;
+        img.src=el.localURL||el.url||'';
         if(el.pending) w.classList.add('pending');
         if(el.failed) w.classList.add('failed');
         if(el.isMath){ w.classList.add('math'); w.title='PDF 수식'; }
         if(el.isBg){ w.classList.add('pdf-bg'); w.title='PDF 원본 배경'; }
         if(el.locked) w.classList.add('el-lock');
-        img.ondblclick=(e)=>{ e.stopPropagation(); document.getElementById('vImg').src=el.url; document.getElementById('viewer').style.display='flex'; };
+        img.ondblclick=(e)=>{ e.stopPropagation(); document.getElementById('vImg').src=el.localURL||el.url||''; document.getElementById('viewer').style.display='flex'; };
         w.appendChild(img);
         // 테두리를 잡으면 이동 (손잡이는 이 위에 그려진다)
         ['top','bottom','left','right'].forEach(side=>{
@@ -10255,7 +10283,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 
         if(c.type==='choice'){
             quiz.style.display='';
-            document.getElementById('cdQuizQ').textContent=c.front||'';
+            // 15.4 · 문제는 위 cdQBar 에 이미 표시된다 — 객관식 패널 안에 또 보여주지 않는다.
+            const quizQ=document.getElementById('cdQuizQ');
+            quizQ.textContent=''; quizQ.style.display='none';
             const order=c.opts.map((o,i)=>i);
             shuffle(order);
             c.__order=order;
@@ -10266,7 +10296,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         // 뒤집기 카드 (예전 엑셀 카드도 그냥 넘기지 않고 제대로 풀 수 있게)
         flip.style.display='';
-        document.getElementById('cdFrontTxt').textContent=c.front||'';
+        // 15.4 · 문제는 위 cdQBar 에 이미 표시된다 — 앞면에 중복 출력하지 않는다.
+        const frontTxt=document.getElementById('cdFrontTxt');
+        frontTxt.textContent=''; frontTxt.style.display='none';
         const hint=document.getElementById('cdHint');
         const hbtn=document.getElementById('cdHintBtn');
         hint.textContent='';
@@ -13289,7 +13321,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function placeImgItem(item,pageIdx,cx,cy){
         pushHistory();
         const c=clampEl(cx-item.box.w/2,cy-item.box.h/2,item.box.w,item.box.h);
-        const el={type:'image',id:uid('i'),url:item.url,localURL:item.url,pending:true,
+        // 14.15 · blob 미리보기는 localURL 에만 두고, url 은 업로드가 끝난 뒤
+        //   실제 서버 주소(/api/img/…)로 채운다. blob URL 을 url 로 저장하면
+        //   다른 기기·새로고침 뒤에 깨진 '사진 아이콘'으로 남는다.
+        const el={type:'image',id:uid('i'),url:'',localURL:item.url,pending:true,
             x:Math.round(c.x),y:Math.round(c.y),w:item.box.w,h:item.box.h};
         doc.pages[pageIdx].els.push(el);
         renderPageEls(pageIdx);
