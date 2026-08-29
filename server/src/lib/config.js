@@ -1,7 +1,7 @@
 // Environment-derived configuration (mirrors sdynotes/common.py + per-module consts).
 import crypto from 'node:crypto';
 
-export const APP_VERSION = '14.15.3';
+export const APP_VERSION = '14.15.0';
 export const SETTINGS_SCHEMA = 3;
 
 // ── 저장소 모드 ────────────────────────────────────────────────────────
