@@ -19544,9 +19544,8 @@ function eqViz(){
       let raw=ss/cnt;
       const db=aMin+raw*aRange;
       let v=(db-(aMax-RANGE))/RANGE;
-      const bassTilt = f<80?0.78:(f<200?0.88:(f<600?0.94:1));
-      const trebTilt = f>10000?1.12:(f>5000?1.06:1);
-      v*=bassTilt*trebTilt;
+      const tilt=Math.min(1.12,0.72+0.4*Math.sqrt(f/12000));
+      v*=tilt;
       if(v>_eqBandMax[i]) _eqBandMax[i]=v*0.95+_eqBandMax[i]*0.05;
       else _eqBandMax[i]=Math.max(0.15,_eqBandMax[i]*0.9985+v*0.0015);
       const norm=Math.max(0.25,_eqBandMax[i]);
@@ -19572,6 +19571,8 @@ function eqViz(){
       }
     }
     if(envMax>0.02){
+      const target=0.85/Math.max(0.1,envMax);
+      let _eqGain=1; _eqGain+=(target-_eqGain)*.028;
       const desired=aMax+(0.6-envMax)*14;
       _eqAnalyser.maxDecibels=aMax+(desired-aMax)*0.05;
       _eqAnalyser.minDecibels=_eqAnalyser.maxDecibels-RANGE;
