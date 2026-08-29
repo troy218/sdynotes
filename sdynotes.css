@@ -5281,6 +5281,142 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 /* 두 줄이 화면 높이에 정확히 들어맞는 홈은 min-height 가 몇 px 을 더
    붙여 세로 스크롤·아래 잘림을 만들지 않게 한다. */
 #mainView:has(.home-stack-area.has-recent) main{min-height:0!important;}
+/* ═══════════════════════════════════════════════════════════
+   15.0 · 암기 카드 확장 모드 — '브라우저 전체화면'이 아니라 사이트 안에서만 꽉 차는 창
+   · 공부 중 다른 탭을 왔다 갔다 합니다. Fullscreen API 를 쓰면 그 흐름이 깨져서 쓰지 않는다.
+   · 모양·전환은 음악플레이어 전체화면(16.0)과 같은 규칙 — 창이 그 자리에서 부드럽게 커지는
+     모핑(.fcard-anim), 같은 펼침 아이콘(ri-fullscreen-line), Esc 로 한 단계씩 해제.
+   · 확장 중에는 공부에 직접 쓰이는 것만 크게 배치:
+     큰 카드·큰 보기, 세션 칩(정답률·공부 시간), 키보드 안내, 넓어진 묶음/방식 화면.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── 창↔확장 모핑 (음악플레이어 .mpb-anim 과 같은 곡선 — 켜질/꺼질 때만 잠깐) ── */
+.fcard-win.fcard-anim{
+  transition:left .52s cubic-bezier(.32,.72,0,1),
+             top .52s cubic-bezier(.32,.72,0,1),
+             width .52s cubic-bezier(.32,.72,0,1),
+             max-width .52s cubic-bezier(.32,.72,0,1),
+             height .52s cubic-bezier(.32,.72,0,1),
+             max-height .52s cubic-bezier(.32,.72,0,1),
+             border-radius .52s cubic-bezier(.32,.72,0,1),
+             box-shadow .52s ease !important;
+}
+
+/* ── 확장 틀: 뷰포트 가득. 8px 여백은 '떠 있는 창'이라는 표식 (그래서 전체화면과 구분된다) ── */
+.fcard-win.fcard-max{
+  left:8px!important;top:8px!important;right:auto!important;bottom:auto!important;
+  width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important;
+  height:calc(100dvh - 16px)!important;max-height:calc(100dvh - 16px)!important;
+  border-radius:18px!important;transform:none!important;
+  box-shadow:0 30px 90px rgba(0,0,0,.38)!important;
+}
+.fcard-win.fcard-max #cardsHome,.fcard-win.fcard-max #cardsStudy,
+.fcard-win.fcard-max #cardsPaste,.fcard-win.fcard-max #cardsStats,
+.fcard-win.fcard-max #cardsAnalytics,.fcard-win.fcard-max #cardsBrowse{
+  flex:1 1 auto;padding:20px 26px 24px;
+}
+.fcard-win.fcard-max .fcard-head{cursor:default;padding:8px 14px;gap:10px;}
+.fcard-win.fcard-max .fcard-head>i{display:none;}
+.fcard-win.fcard-max .fcard-head>b{font-size:13.5px;}
+.fcard-win.fcard-max .fcard-head .cards-x{width:30px;height:26px;font-size:16px;}
+
+/* ── 학습 화면: 가울 기둥. 너무 넓으면 눈이 내용을 따라가다 지친다 (책 줄 길이와 같은 이치) ── */
+.fcard-win.fcard-max #cardsStudy>*{max-width:920px;margin-left:auto;margin-right:auto;}
+.fcard-win.fcard-max .cd-topbar{gap:12px;margin-bottom:17px;}
+.fcard-win.fcard-max .cd-prog{height:9px;}
+.fcard-win.fcard-max .cd-count{font-size:13px;}
+
+/* 세션 칩: 확장 모드 + 학습 화면에서만 */
+.cd-sess{display:none;align-items:center;gap:6px;flex:none;}
+.cd-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:99px;
+  background:var(--bg2);border:1px solid var(--border);font-size:11.5px;font-weight:700;
+  color:var(--text2);white-space:nowrap;font-variant-numeric:tabular-nums;}
+.cd-chip i{font-size:13px;color:var(--accent);}
+.fcard-win.fcard-max #cardsStudy .cd-sess{display:inline-flex;}
+
+/* 카드 자체를 크게 — 앞면·뒷면 모두 */
+.fcard-win.fcard-max .cd-inner{height:min(46dvh,480px);}
+.fcard-win.fcard-max .cd-face{gap:12px;padding:30px 34px;}
+.fcard-win.fcard-max .cd-txt{font-size:clamp(20px,2.2vw,30px);line-height:1.6;}
+.fcard-win.fcard-max .cd-note{font-size:14.5px;}
+.fcard-win.fcard-max .cd-hint{font-size:14px;}
+.fcard-win.fcard-max .cd-tap{font-size:12px;}
+.fcard-win.fcard-max .cd-hintbtn{font-size:12.5px;padding:7px 16px;}
+.fcard-win.fcard-max .cd-grade2{margin-top:16px;gap:10px;max-width:640px;}
+.fcard-win.fcard-max .cd-grade2 button{padding:16px;font-size:14.5px;}
+.fcard-win.fcard-max .cd-mastery{font-size:12.5px;}
+.fcard-win.fcard-max .cd-mastery .bar{height:7px;}
+
+/* 객관식: 퀴즈앱처럼 넓은 질문 + 2열 보기 */
+.fcard-win.fcard-max .cd-qq{font-size:clamp(18px,1.8vw,24px);padding:28px 26px;line-height:1.65;}
+.fcard-win.fcard-max .cd-opts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px;}
+.fcard-win.fcard-max .cd-opt{padding:17px 17px;font-size:14.5px;border-radius:13px;}
+.fcard-win.fcard-max .cd-opt i.num{width:26px;height:26px;font-size:12px;}
+.fcard-win.fcard-max .cd-typeres{font-size:14px;margin:12px 2px;min-height:26px;}
+.fcard-win.fcard-max .cd-explain{font-size:13.5px;padding:16px 18px;line-height:1.75;}
+.fcard-win.fcard-max .cd-next{padding:14px !important;font-size:14px;}
+
+/* 짝 맞추기: 넓어진 판에 4열 */
+.fcard-win.fcard-max .cd-match{max-width:820px;}
+.fcard-win.fcard-max .cd-mgrid{grid-template-columns:repeat(4,1fr);gap:10px;}
+.fcard-win.fcard-max .cd-tile{min-height:100px;font-size:14px;padding:14px;}
+.fcard-win.fcard-max .cd-mtop{font-size:13px;}
+.fcard-win.fcard-max .cd-mtop b{font-size:16px;}
+
+/* 학습 방식 고르기: 넓게 쓰는 6칸 */
+.fcard-win.fcard-max .cd-statrow{max-width:640px;margin:0 auto 20px;}
+.fcard-win.fcard-max .cd-stat{padding:14px 6px;}
+.fcard-win.fcard-max .cd-stat b{font-size:23px;}
+.fcard-win.fcard-max .cd-stat span{font-size:11px;}
+.fcard-win.fcard-max .fc-modes{grid-template-columns:repeat(6,1fr);gap:10px;max-width:1080px;margin:8px auto 0;}
+.fcard-win.fcard-max .fc-mode{flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  padding:20px 10px;text-align:center;border-radius:14px;}
+.fcard-win.fcard-max .fc-mode i{font-size:25px;}
+.fcard-win.fcard-max .fc-mode b{font-size:12.5px;}
+.fcard-win.fcard-max .cd-testpick,.fcard-win.fcard-max #cdHardList,.fcard-win.fcard-max #cdTagPick{
+  max-width:920px;margin-left:auto;margin-right:auto;}
+
+/* 홈: 묶음 카드를 그리드로 — 넓은 화면을 낭비하지 않는다 */
+.fcard-win.fcard-max .cards-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));
+  gap:9px;align-content:start;}
+.fcard-win.fcard-max .cards-list .cd-empty{grid-column:1/-1;}
+.fcard-win.fcard-max .cd-deck{padding:14px;}
+.fcard-win.fcard-max .cd-deck .t b{font-size:14px;}
+.fcard-win.fcard-max .cd-deck .t span{font-size:11.5px;}
+.fcard-win.fcard-max .cd-ring{width:42px;height:42px;font-size:11px;}
+
+/* 붙여넣기·문제 관리·분석: 세로 여유를 시원하게 */
+.fcard-win.fcard-max #cardsPaste{max-width:860px;width:100%;margin:0 auto;}
+.fcard-win.fcard-max .cd-paste{height:min(52dvh,580px);font-size:13px;}
+.fcard-win.fcard-max .cd-brlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));
+  gap:7px;align-content:start;}
+.fcard-win.fcard-max .cd-analytics{max-width:880px;width:100%;margin:0 auto;}
+
+/* 끝 화면·성적표: 확장 모드에서도 답답하지 않게 */
+.fcard-win.fcard-max .cd-done{padding:60px 16px;}
+.fcard-win.fcard-max .cd-done i{font-size:54px;}
+.fcard-win.fcard-max .cd-done b{font-size:17px;}
+.fcard-win.fcard-max .cd-done span{font-size:13px;}
+
+/* 키보드 안내: 확장 모드에서만 (터치 기기용 좁은 화면에선 숨긴다) */
+.cd-keyhints{display:none;}
+.fcard-win.fcard-max .cd-keyhints{display:flex;justify-content:center;align-items:center;
+  gap:8px 18px;flex-wrap:wrap;margin-top:18px;padding-top:13px;
+  border-top:1px dashed var(--border);color:var(--text3);font-size:11px;font-weight:600;}
+.cd-keyhints b{display:inline-block;padding:2.5px 8px;margin-right:3px;border:1px solid var(--border);
+  border-bottom-width:2px;border-radius:6px;background:var(--bg2);color:var(--text2);
+  font-size:10.5px;font-weight:800;font-family:inherit;}
+
+/* 중간 폭: 6칸·4열이 비좁아지기 전에 미리 줄인다 */
+@media (max-width:1100px){
+  .fcard-win.fcard-max .fc-modes{grid-template-columns:repeat(3,1fr);}
+  .fcard-win.fcard-max .cd-mgrid{grid-template-columns:repeat(3,1fr);}
+}
+
+/* 움직임 줄이기를 켠 사람에게는 모핑도 생략 */
+@media (prefers-reduced-motion:reduce){
+  .fcard-win.fcard-anim{transition:none !important;}
+}
 
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -5804,4 +5940,33 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   #focusClock .fc-time{font-size:clamp(46px,14vh,82px);}
   #focusClock .fc-ring{width:min(48vh,250px);height:min(48vh,250px);}
   .fc-chrome.bottom{max-height:72px;}
+}
+
+
+/* 15.0 · 암기 카드 확장 — 폰·작은 터치 화면에서는 여백 없이 정말 꽉 차게.
+   (17.0 최종 모바일 블록의 창 고정 규칙보다 뒤에 와야 확장이 그 규칙을 이긴다) */
+/* 폰·작은 터치 화면: 여백 없이 진짜 꽉 차게, 단 1열 위주로 */
+@media (max-width:640px), (max-height:560px) and (pointer:coarse){
+  .fcard-win.fcard-max{left:0!important;top:0!important;
+    width:100vw!important;max-width:100vw!important;
+    height:100dvh!important;max-height:100dvh!important;
+    border-radius:0!important;box-shadow:none!important;}
+  .fcard-win.fcard-max #cardsHome,.fcard-win.fcard-max #cardsStudy,
+  .fcard-win.fcard-max #cardsPaste,.fcard-win.fcard-max #cardsStats,
+  .fcard-win.fcard-max #cardsAnalytics,.fcard-win.fcard-max #cardsBrowse{padding:12px 14px;}
+  .fcard-win.fcard-max .fcard-head{min-height:46px;padding:4px 10px;gap:8px;}
+  .fcard-win.fcard-max .fcard-head .cards-x{width:40px;height:40px;font-size:18px;}
+  .fcard-win.fcard-max #cardsStudy>*{max-width:none;}
+  .fcard-win.fcard-max .cd-inner{height:min(42dvh,340px);}
+  .fcard-win.fcard-max .cd-face{padding:22px 18px;}
+  .fcard-win.fcard-max .cd-txt{font-size:clamp(18px,5.2vw,24px);}
+  .fcard-win.fcard-max .cd-qq{padding:20px 16px;}
+  .fcard-win.fcard-max .cd-opts{grid-template-columns:1fr;}
+  .fcard-win.fcard-max .cd-mgrid{grid-template-columns:repeat(2,1fr);}
+  .fcard-win.fcard-max .cd-tile{min-height:76px;font-size:12.5px;}
+  .fcard-win.fcard-max .fc-modes{grid-template-columns:repeat(2,1fr);}
+  .fcard-win.fcard-max .fc-mode{flex-direction:row;padding:14px 12px;text-align:left;}
+  .fcard-win.fcard-max .fc-mode i{font-size:20px;}
+  .fcard-win.fcard-max .cd-keyhints{display:none;}     /* 터치 기기 — 키보드 안내는 의미가 없다 */
+  .fcard-win.fcard-max #cardsStudy .cd-sess{display:none;} /* 폰 상단바는 좁으니 진행률·연속 정답만 */
 }

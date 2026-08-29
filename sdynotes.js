@@ -9316,6 +9316,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.getElementById('cardsModal').style.display='flex';
         win.classList.remove('closing');
         _fcardPlace(win);                     // 10.7 · 위치 복원
+        // 15.0 · 확장 상태는 기억한다 — 닫았다 다시 열어도 그대로 확장된 모양
+        win.classList.toggle('fcard-max',_fcardMax);
+        if(_fcardMax) win.style.height='';
+        _fcardMaxIcon();
         flushCardGrades();
         showCardsHome();
         loadDecks();
@@ -9349,6 +9353,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!head||!win) return;
         head.addEventListener('pointerdown',e=>{
             if(e.target.closest('button')) return;
+            if(_fcardMax) return;          // 15.0 · 확장 중에는 드래그하지 않는다 (음악플레이어 전체화면과 동일)
             const r=win.getBoundingClientRect();
             const lx=window.sdyUiCss(r.left), ly=window.sdyUiCss(r.top);
             win.classList.add('moved');
@@ -9370,6 +9375,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         head.addEventListener('pointerup',endD); head.addEventListener('pointercancel',endD);
         addEventListener('resize',()=>{
             if(document.getElementById('cardsModal').style.display!=='flex') return;
+            if(_fcardMax) return;          // 15.0 · 확장 중에는 뷰포트 단위 css 가 스스로 맞춘다
             /* rect 는 화면 px, style.left 는 UI CSS px — 그냥 넣으면 창이 왼쪽으로
                배율만큼 밀려나고 그 만큼 오른쪽이 좁아진다. 반드시 환산해서 넘긴다. */
             const r=win.getBoundingClientRect(),
@@ -9377,6 +9383,93 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             win.classList.add('moved'); win.style.left=c.x+'px'; win.style.top=c.y+'px';
         },{passive:true});
     })();
+    // ── 15.0 · 확장 모드: 브라우저 전체화면이 아니라 '사이트 안에서만' 창이 화면 가득 커진다 ──
+    //   공부 중 다른 탭을 왔다 갔다 하는 흐름을 깨지 않기 위해 Fullscreen API 는 쓰지 않는다.
+    //   모양·동작은 음악플레이어 전체화면(16.0)과 같은 규칙: 같은 아이콘(ri-fullscreen-line),
+    //   같은 모핑 전환(창→가득), 같은 '돌아올 자리 기억' 방식. Esc 로 한 단계씩 빠져나온다.
+    //   (드래그 IIFE 의 pointerdown/resize 가 _fcardMax 를 참조하지만, 실행은 이벤트 시점이라
+    //    이 위치 선언과 TDZ 가 충돌하지 않는다 — 스크립트 평가가 끝난 뒤에만 발사되므로.)
+    let _fcardMax=false, _fcardMaxPre=null, _fcardPreH=null, _fcardAnimT=null;
+    function _fcardWinEl(){ return document.querySelector('#cardsModal .fcard-win'); }
+    function fcardIsMax(){ return _fcardMax; }
+    function _fcardMaxIcon(){
+        const b=document.getElementById('fcardMaxBtn'); if(!b) return;
+        b.innerHTML=_fcardMax?'<i class="ri-fullscreen-exit-line"></i>':'<i class="ri-fullscreen-line"></i>';
+        b.title=_fcardMax?'원래 크기로 (F · Esc)':'사이트 안에서 크게 보기 (F)';
+    }
+    function _fcardAnimKick(){            // 모핑 transition 은 켜질/꺼질 때만 잠깐 붙인다 (드래그 간섭 방지)
+        const win=_fcardWinEl(); if(!win) return;
+        win.classList.add('fcard-anim');
+        clearTimeout(_fcardAnimT);
+        _fcardAnimT=setTimeout(()=>win.classList.remove('fcard-anim'),560);
+    }
+    function fcardMaxSet(on){
+        const win=_fcardWinEl(); if(!win) return;
+        on=!!on;
+        if(on===_fcardMax) return;
+        const modal=document.getElementById('cardsModal');
+        if(on&&(!modal||modal.style.display!=='flex')) return;   // 창이 열어 있을 때만
+        _fcardMax=on;
+        _fcardAnimKick();
+        if(on){
+            // 돌아올 자리·원래 높이를 기억한다 (음악플레이어 mpbFakeFs 와 같은 순서).
+            //   위치는 인라인 style 을 우선 쓴다 — rect 가 없는 환경(테스트)에서도 안전하다.
+            const lx=parseFloat(win.style.left), ly=parseFloat(win.style.top);
+            if(isFinite(lx)&&isFinite(ly)) _fcardMaxPre={x:lx,y:ly};
+            else{ try{ const r=win.getBoundingClientRect();
+                _fcardMaxPre={x:window.sdyUiCss(r.left),y:window.sdyUiCss(r.top)}; }catch(e){ _fcardMaxPre=null; } }
+            const hpx=Math.round(win.offsetHeight||0)||Math.round((win.getBoundingClientRect&&win.getBoundingClientRect().height)||0);
+            if(hpx>0) win.style.height=hpx+'px';          // 높이가 auto 라 모핑이 끊기지 않게 고정
+            _fcardPreH=Math.round(win.offsetHeight||0)||null;
+            // 클래스 css(뷰포트 단위)가 인라인 크기를 덮으므로 한 박자 늦게 붙여
+            // 현재 창 자리에서 화면 가득 자라나는 모핑이 보이게 한다
+            requestAnimationFrame(()=>requestAnimationFrame(()=>{
+                if(!_fcardMax) return;    // 누르자마자 다시 접은 경합은 무시
+                win.classList.add('fcard-max');
+                setTimeout(()=>{ if(win.classList.contains('fcard-max')) win.style.height=''; },540);
+            }));
+        }else{
+            const hpx=Math.round(win.offsetHeight||0);
+            if(hpx>0) win.style.height=hpx+'px';
+            const p=_fcardMaxPre; _fcardMaxPre=null;
+            win.classList.remove('fcard-max');
+            // 창 크기를 되돌린 뒤 원래 자리로 — 브라우저가 뷰포트를 다시 잰 뒤 한 박자 늦게 clamp
+            if(p){ win.style.left=Math.round(p.x)+'px'; win.style.top=Math.round(p.y)+'px'; }
+            requestAnimationFrame(()=>{
+                if(_fcardMax) return;     // 접자마자 다시 펼친 경합은 무시
+                if(p){ win.style.left=Math.round(p.x)+'px'; win.style.top=Math.round(p.y)+'px'; }
+                if(_fcardPreH){ win.style.height=_fcardPreH+'px'; _fcardPreH=null; }
+                try{ const c=sdyClampFloatingRect(win,parseFloat(win.style.left)||8,parseFloat(win.style.top)||8);
+                     win.style.left=c.x+'px'; win.style.top=c.y+'px'; }catch(e){}
+                setTimeout(()=>{ if(!win.classList.contains('fcard-max')) win.style.height=''; },540);
+            });
+        }
+        _fcardMaxIcon();
+    }
+    function fcardToggleMax(e){ if(e&&e.stopPropagation) e.stopPropagation(); fcardMaxSet(!_fcardMax); }
+    // ── 15.0 · 세션 칩: 이번 공부의 정답 수·정답률·경과 시간 (확장 모드 머리말 오른쪽) ──
+    let _cdSessT=null, _cdSessT0=0;
+    function _cdSessFmt(ms){ const s=Math.max(0,Math.round(ms/1000));
+        return ((s/60)|0)+':'+(s%60<10?'0':'')+(s%60); }
+    function _cdSessPaint(){
+        const tEl=document.getElementById('cdSessTime');
+        if(tEl) tEl.innerHTML='<i class="ri-time-line"></i>'+_cdSessFmt(Date.now()-_cdSessT0);
+        const aEl=document.getElementById('cdSessAcc'); if(!aEl) return;
+        if(_isTest) aEl.innerHTML='<i class="ri-edit-line"></i>제출 '+_studied+'문항';        // 시험 중 정오를 알려 주면 안 된다
+        else if(_mode==='match') aEl.innerHTML='<i class="ri-drag-drop-line"></i>'+_studied+'쌍 완성';
+        else aEl.innerHTML='<i class="ri-checkbox-circle-line"></i>'+
+            (_studied? ('정답 '+_rightN+'/'+_studied+' · '+Math.round(_rightN/_studied*100)+'%') : '이제 막 시작');
+    }
+    function _cdSessStart(){
+        _cdSessT0=Date.now(); _cdSessPaint();
+        clearInterval(_cdSessT);
+        _cdSessT=setInterval(()=>{
+            const st=document.getElementById('cardsStudy'), m=document.getElementById('cardsModal');
+            if(!st||st.style.display==='none'||!m||m.style.display!=='flex'){
+                clearInterval(_cdSessT); _cdSessT=null; return; }
+            _cdSessPaint();
+        },1000);
+    }
     function _fcardTitle(t){ const el=document.getElementById('fcardTitle'); if(el) el.textContent=t; }
     function closeCards(){
         // 9.1 · 창을 닫아도 대기 중인 답을 먼저 저장하고 나간다
@@ -9384,6 +9477,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
               queueCardGrade(p.card,p.grade,null); } }catch(e){}
         // 10.8 · 닫힘 애니메이션 후 실제로 숨긴다
         const win=document.querySelector('#cardsModal .fcard-win');
+        if(win) win.style.height='';      // 15.0 · 확장 모핑용 고정 높이는 다음 열기 전에 지운다
         const hide=()=>{ document.getElementById('cardsModal').style.display='none';
                          flushCardGrades(); };
         if(win&&!win.classList.contains('closing')){
@@ -9398,6 +9492,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     document.addEventListener('pointerdown',e=>{
         const modal=document.getElementById('cardsModal');
         if(!modal||modal.style.display==='none'||!modal.style.display) return;
+        if(_fcardMax) return;              // 15.0 · 확장 중 바깥 좁은 틈을 눌러도 닫지 않는다 (Esc·버튼으로만)
         if(e.target.closest('#cardsModal')) return;
         // 11.1 · 카드 창이 띄운 작은 메뉴·토스트를 눌렀는데 창이 닫히던 문제
         if(e.target.closest('#plMiniMenu')||e.target.closest('.toast')) return;
@@ -9886,6 +9981,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         _queue=q.slice(); _qi=0; _studied=0; _rightN=0; _streak=0; _pendingAnswer=null;
         _testLog=[]; _testStart=Date.now();
         _studySession='cs_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+        _cdSessStart();                       // 15.0 · 세션 칩(정답률·시간) 시작
         _queue.forEach(c=>{ delete c.__roundRetry; });
         const streakEl=document.getElementById('cdStreak');
         if(streakEl){ streakEl.style.display='none'; streakEl.textContent='✨ 0'; }
@@ -9918,6 +10014,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         _mode='match'; _isTest=false; _queue=[]; _qi=0; _pendingAnswer=null;
         _studied=0; _rightN=0; _streak=0;
         _studySession='cs_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+        _cdSessStart();                       // 15.0 · 세션 칩(정답률·시간) 시작
         showPane('cardsStudy');
         _fcardTitle('짝 맞추기 · '+((_deckCur&&_deckCur.title)||'암기 카드'));
         ['cdFlip','cdQuiz','cdDone','cdTestReport','cdFlipGrade','cdMastery','cdNextBtn','cdExplain']
@@ -9967,6 +10064,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             document.getElementById('cdProgFill').style.width=
                 ((_match.total-_match.left)/_match.total*100)+'%';
             document.getElementById('cdCount').textContent=_match.left+'쌍 남음';
+            _cdSessPaint();                        // 15.0 · 세션 칩 갱신 (완성한 짝)
             if(_match.left<=0) matchFinish();
         }else{
             _match.miss[btn.dataset.cid]=1; _match.miss[prev.dataset.cid]=1;
@@ -10082,6 +10180,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(result){ result.className='cd-typeres '+(right?'ok':'no');
             result.textContent=right?'좋아요, 이 카드는 천천히 다시 만나요':'괜찮아요 · 곧 한 번 더 보여 드릴게요'; }
         document.getElementById('cdNextBtn').style.display='flex';
+        _cdSessPaint();                        // 15.0 · 세션 칩 갱신
     }
     function cardCheer(right){
         const quiz=document.getElementById('cdQuiz');
@@ -10122,6 +10221,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const st=document.getElementById('cdStreak');
             if(st){ st.style.display=''; st.textContent=(_qi+1)+'문항 제출'; }
             setTimeout(()=>{ if(_isTest) nextStudyCard(); },230);
+            _cdSessPaint();                        // 15.0 · 세션 칩 갱신 (제출 수)
             return;
         }
         document.querySelectorAll('#cdOpts .cd-opt').forEach(b=>{
@@ -10144,6 +10244,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             ex.style.display='block';
         }
         document.getElementById('cdNextBtn').style.display='flex';
+        _cdSessPaint();                        // 15.0 · 세션 칩 갱신
     }
     function nextStudyCard(){
         const p=_pendingAnswer; if(!p) return;
@@ -10297,6 +10398,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const studying=document.getElementById('cardsStudy').style.display!=='none';
         if(e.key==='Escape'){
             e.preventDefault(); e.stopPropagation();
+            // 15.0 · 확장 모드가 먼저 접힌다 (음악플레이어 가짜 전체화면과 같은 우선순위)
+            if(_fcardMax){ fcardMaxSet(false); return; }
             if(studying) exitStudy();
             else if(document.getElementById('cardsBrowse').style.display!=='none'
                  || document.getElementById('cardsAnalytics').style.display!=='none') backToPick();
@@ -10304,11 +10407,21 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             else closeCards();
             return;
         }
+        if(e.key==='f'||e.key==='F'){      // 15.0 · F = 사이트 안에서 크게 / 원래대로
+            e.preventDefault(); e.stopPropagation();
+            fcardToggleMax();
+            return;
+        }
         if(!studying) return;
         const c=_queue[_qi];
         if(c&&c.type==='choice'&&!_answered&&/^[1-9]$/.test(e.key)){
             const btn=document.querySelectorAll('#cdOpts .cd-opt')[+e.key-1];
             if(btn){ e.preventDefault(); btn.click(); }
+            return;
+        }
+        // 15.0 · 뒤집기 카드: 답을 본 뒤 1=아직이에요 · 2=알아요 (Anki 식 빠른 채점)
+        if(c&&c.type!=='choice'&&_flipped&&!_answered&&(e.key==='1'||e.key==='2')){
+            e.preventDefault(); flipGrade(e.key==='1'?0:3);
             return;
         }
         if(e.key===' '&&c&&c.type!=='choice'){ e.preventDefault(); e.stopPropagation(); flipCard(); return; }
@@ -19096,7 +19209,13 @@ async function eqBuild(){
     node.connect(q); node=q; return q;
   });
   _eqAnalyser=_eqCtx.createAnalyser();
-  _eqAnalyser.fftSize=256; _eqAnalyser.smoothingTimeConstant=.82;
+  // 15.1 · 버츄얼라이저 구동부 — 시중 스펙트럼 바처럼 '읽는 창'부터 잡는다.
+  //   fft 올려 대역 해상도를 확보하고, 스묭 량을 낮춰 타격음이 뭉개지지 않게
+  //   하며(눌림은 아래의 공격/낙하 봉투가 맡는다), dB 창을 음악용(-85~-25)으로
+  //   좁혀 막대가 화면 전체를 쓰게 한다. 기본 창(-100~-30)은 조용한 구간이
+  //   바닥 가까이 몰려 막대가 죽어 보였다.
+  _eqAnalyser.fftSize=1024; _eqAnalyser.smoothingTimeConstant=.5;
+  _eqAnalyser.minDecibels=-85; _eqAnalyser.maxDecibels=-25;
   node.connect(_eqAnalyser); _eqAnalyser.connect(_eqCtx.destination);
   _eqBuilt=true;
   eqApplyGains(true);
@@ -19254,20 +19373,34 @@ document.addEventListener('pointerdown',()=>{
 },true);
 
 // ── 실시간 스펙트럼 (팝오버가 열린 동안만 그린다) ──
-let _eqVizRaf=0;
+// 15.1 · 시중 플레이어 버츄얼라이저와 같은 구동 매커니즘:
+//   ① 읽는 창: 음악용 dB 범위(-85~-25)로 좁혀 신호가 0~1 전체를 쓰게 한다
+//   ② 감마 곡선으로 작은 차이도 크게 보이게 (역동성)
+//   ③ 공격/낙하 봉투: 올라갈 땐 즉시, 낄땐 초당 일정 속도로 미끄러진다
+//   ④ 피크 홀드 캡: 정점이 잠깐 머물다 천천히 낙하 — 스펙트럼 바의 상징
+//   ⑤ 자동 이득(AGC): 조용히 마스터된 곡도 화면 가득 춤추게 (과증폭 방지 상한)
+let _eqVizRaf=0, _eqEnv=null, _eqPeak=null, _eqHold=null, _eqGain=1, _eqVizLast=0, _eqBuf=null;
 function eqViz(){
   const cv=$('mpEqCv'); if(!cv) return;
   let ctx2=null;
   try{ ctx2=cv.getContext('2d'); }catch(e){}
   if(!ctx2) return;
   cancelAnimationFrame(_eqVizRaf);
-  const buf=new Uint8Array(128);
   let grad=ctx2.createLinearGradient(0,cv.height,0,0);
   try{ grad.addColorStop(0,readAccent()); grad.addColorStop(1,'#8e5cf7'); }catch(e){}
-  const tick=()=>{
+  const N=64;                                       // 막대 수 — 760폭 캔버스에 12픽셀 간격
+  if(!_eqEnv||_eqEnv.length!==N){
+    _eqEnv=new Float32Array(N); _eqPeak=new Float32Array(N); _eqHold=new Float32Array(N);
+  }
+  const FALL=1.55;                                  // 막대 낙하 속도 (초당 화면 높이의 1.55배 — 중력처럼)
+  const PEAK_FALL=.85;                              // 피크 캡은 막대보다 천천히 낙하
+  const HOLD=.28;                                   // 피크 캡이 정점에 머무는 시간(초)
+  const tick=(now)=>{
     const pop=$('mpEqPop');
-    if(!pop||pop.hidden||document.hidden){ _eqVizRaf=0; return; }
+    if(!pop||pop.hidden||document.hidden){ _eqVizRaf=0; _eqVizLast=0; return; }
     _eqVizRaf=requestAnimationFrame(tick);
+    const dt=Math.min(.05,Math.max(.001,((now||0)-(_eqVizLast||(now||0)-16))/1000));
+    _eqVizLast=now||0;
     ctx2.clearRect(0,0,cv.width,cv.height);
     if(!_eqAnalyser){                                 // 그래프 전: 잔잔한 기준 파형
       const n=48, w=cv.width/n;
@@ -19276,34 +19409,56 @@ function eqViz(){
         ctx2.fillRect(i*w+2,cv.height/2-h,w-4,h*2); }
       ctx2.globalAlpha=1; return;
     }
-    _eqAnalyser.getByteFrequencyData(buf);
-    // 17.4 · 낮은 주파수가 과하게 치솟지 않도록 로그 주파수 축으로 읽고,
-    //   사람이 실제로 느끼는 라우드니스에 가깝게 저역을 눌러준다.
-    //   예전엔 FFT 를 폭부터 선형으로 훑어 1kHz 아래 몇 개 빈이 통째로
-    //   화면을 덮어 '저음만 너무 큰' 모양이 됐다.
+    if(!_eqBuf||_eqBuf.length!==_eqAnalyser.frequencyBinCount)
+      _eqBuf=new Uint8Array(_eqAnalyser.frequencyBinCount);
+    _eqAnalyser.getByteFrequencyData(_eqBuf);
     const sr=(_eqCtx&&_eqCtx.sampleRate)||44100;
     const nyq=Math.max(1000,sr/2);
-    const lo=Math.max(30,nyq/700);                       // 44.1kHz → 약 63Hz
-    const hi=Math.min(18000,nyq*.92);
-    const n=56, w=cv.width/n;
+    const lo=Math.max(25,nyq/1200);                       // 44.1kHz → 약 37Hz
+    const hi=Math.min(19000,nyq*.95);
+    const n=N, w=cv.width/n;
+    let frameMax=0;
     ctx2.fillStyle=grad;
     for(let i=0;i<n;i++){
-      const f=lo*Math.pow(hi/lo,i/(n-1));                // 20Hz~20kHz 를 로그로 나눈다
-      const c=Math.round(f/nyq*(buf.length-1));
-      const half=Math.max(1,Math.round(c*.12)+1);        // 주변 빈을 평균해 한 줄로
+      const f=lo*Math.pow(hi/lo,i/(n-1));                 // 로그 주파수 축 (유지)
+      const c=Math.round(f/nyq*(_eqBuf.length-1));
+      const half=Math.max(0,Math.round(c*.10));           // 주변 빈을 평균해 한 줄로
       let sum=0,cnt=0;
-      for(let j=Math.max(0,c-half);j<=Math.min(buf.length-1,c+half);j++){ sum+=buf[j]; cnt++; }
+      for(let j=Math.max(0,c-half);j<=Math.min(_eqBuf.length-1,c+half);j++){ sum+=_eqBuf[j]; cnt++; }
       const raw=sum/cnt/255;
-      // 저역은 물리적 에너지가 커서 FFT 가 크게 나온다. 이 과잉을 눌러
-      // '실제 음량이 고른 곡' 은 시각적으로도 고르게 보이게 한다.
-      const weight=Math.min(1.15,0.42+0.58*Math.sqrt(f/12000));
-      const v=Math.pow(Math.min(1,raw*weight),0.86);
-      const h=Math.max(3,v*(cv.height-8));
+      // 저역 물리 에너지 과잉은 '억제'가 아니라 살짝 누르는 틸트로만 — 저음이 죽으면
+      // 스펙트럼이 심심해진다. 대신 게인(.×1.55)과 감마(^.72)로 전체를 들어 올린다.
+      const tilt=Math.min(1.12,0.72+0.4*Math.sqrt(f/12000));
+      const v=Math.min(1,Math.pow(Math.min(1,raw*tilt*1.55),0.72)*_eqGain);
+      // ③ 공격/낙하 봉투 — 위로는 한 프레임 만족, 아래로는 중력 낙하
+      if(v>_eqEnv[i]) _eqEnv[i]=v;
+      else _eqEnv[i]=Math.max(v,_eqEnv[i]-FALL*dt);
+      const e=_eqEnv[i];
+      if(e>frameMax) frameMax=e;
+      // ④ 피크 홀드 캡 — 정점에 잠깐 매달렸다가 막대보다 천천히 낙하
+      if(e>=_eqPeak[i]){ _eqPeak[i]=e; _eqHold[i]=HOLD; }
+      else{ _eqHold[i]=Math.max(0,_eqHold[i]-dt);
+            if(_eqHold[i]<=0) _eqPeak[i]=Math.max(e,_eqPeak[i]-PEAK_FALL*dt); }
+      const h=Math.max(2.5,e*(cv.height-8));
       const y=cv.height-h-3;
-      ctx2.globalAlpha=.32+v*.68;
+      ctx2.globalAlpha=.42+e*.58;
       if(ctx2.roundRect){ ctx2.beginPath(); ctx2.roundRect(i*w+2,y,w-4,h,3); ctx2.fill(); }
       else ctx2.fillRect(i*w+2,y,w-4,h);
+      // 캡은 막대 꼭장 자리에 얇고 밝게 (정점이 0 이면 그리지 않는다)
+      if(_eqPeak[i]>.02){
+        const ph=Math.max(2.5,_eqPeak[i]*(cv.height-8));
+        const py=cv.height-ph-3;
+        ctx2.globalAlpha=Math.min(1,.55+_eqPeak[i]*.55);
+        ctx2.fillRect(i*w+2,py,w-4,3);
+      }
     }
+    // ⑤ 자동 이득 — 프레임 최고점이 화면 92% 를 맴감싸도록 서서히 따라간다.
+    //   무음(일시정지 등)에선 부풀지 말고 기본값으로 서서히 돌아오게 한다 —
+    //   침묵을면 키웠던 이득이 다음 재생 첫 소절에 노이즈 번짐으로 나타난다.
+    if(frameMax>.03){
+      const target=Math.max(1,Math.min(2.4,0.92/(frameMax||1)));
+      _eqGain+=(target-_eqGain)*.028;
+    } else _eqGain+=(1-_eqGain)*.05;
     ctx2.globalAlpha=1;
   };
   if(!_eqVizRaf) _eqVizRaf=requestAnimationFrame(tick);
