@@ -57,7 +57,10 @@ function parseCodeCards(text) {
     if (!m) continue;
     const kind = m[1].toUpperCase();
     const [body, tag] = pullTag(m[2]);
-    let [main, sep, explanation] = body.split(/\|\|/, 3);
+    // 18.0 · split(/(\|\|)/) — 캡처 그룹으로 '||' 자체를 둘째 요소로 받아야
+    //       셋째 요소(explanation)에 해설이 들어온다. 캡처가 없으면 해설이
+    //       항상 버려지던 버그(해설이 빈 문자열로 저장됨)를 바로잡았다.
+    let [main, sep, explanation] = body.split(/(\|\|)/, 3);
     explanation = sep ? (explanation || '') : '';
     const cells = splitCells(main);
     if (cells.length < 2) continue;
