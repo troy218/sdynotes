@@ -31,6 +31,63 @@ async function deckSave(did, data) {
   await writeJsonAtomic(deckPath(did), data);
 }
 
+// ── 객관식 카드 치유: 보기 순서·답 인덱스가 어긋난 카드를 고친다 ──────────
+//   과거에 별표를 제대로 못 읽어 만들어진 카드, 혹은 AI 가 별표를 변형해
+//   (전각 ＊, 마크다운 **, 별표 뒤 문장부자 등) 엉뚱한 보기가 답으로 저장된
+//   카드를 열 때·채점할 때 정리한다. 화면에서 보기를 섞어도 항상 '답 보기
+//   텍스트'를 기준으로 판정하도록 만드는 것이 핵심이다.
+function normalizeChoiceCard(card) {
+  if (!card || card.type !== 'choice') return false;
+  if (!Array.isArray(card.opts)) { card.opts = []; }
+  let changed = false;
+  // 1) 보기 맨앞/맨뒤에 묻은 별표(반각·전각, 연속 별표 포함)를 벗기고,
+  //    별표가 붙어 있던 보기의 '텍스트'를 기억했다가 정리 후 인덱스를 다시 잰다.
+  const starIdx = [];
+  const clean = [];
+  for (const o of card.opts) {
+    const s = String(o == null ? '' : o);
+    const had = /^\s*[*＊]+\s*/.test(s) || /\s*[*＊]+[\s。.．,，、;；)）]?$/.test(s);
+    const t = s.replace(/^\s*[*＊]+\s*/, '').replace(/\s*[*＊]+([\s。.．,，、;；)）]?)$/, '$1').trim();
+    if (had && t) starIdx.push(t);
+    if (t !== s.trim()) changed = true;
+    if (t) clean.push(t);
+  }
+  card.opts = clean;
+  // 별표가 붙어 있던 보기들의 최종 인덱스 (여러 개면 마지막 것을 정답으로)
+  const starAt = starIdx.map(t => card.opts.indexOf(t)).filter(i => i >= 0);
+  const n = card.opts.length;
+  const valid = (i) => Number.isInteger(i) && i >= 0 && i < n;
+  // 2) 답 인덱스 확정 — 신뢰도 순서:
+  //   ① 별표가 붙어 있던 보기 (만들 때 사람/AI 가 직접 표시한 답)
+  //   ② back(답 텍스트)이 opts 안에 있으면 그 인덱스 (과거 호환)
+  //   ③ 기존 answer 인덱스가 유효하면 그대로
+  let ans = -1;
+  if (starAt.length) ans = starAt[starAt.length - 1];
+  if (ans < 0) {
+    const back = String(card.back == null ? '' : card.back).trim();
+    if (back) {
+      const bi = card.opts.findIndex(o => String(o).trim() === back);
+      if (bi >= 0) ans = bi;
+    }
+  }
+  if (ans < 0 && valid(card.answer)) ans = card.answer;
+  if (!valid(ans)) { card._badChoice = true; return changed; }
+  if (card.answer !== ans) { card.answer = ans; changed = true; }
+  if (card.back !== card.opts[ans]) { card.back = card.opts[ans]; changed = true; }
+  delete card._badChoice;
+  return changed;
+}
+
+function normalizeDeck(deck) {
+  if (!deck || !Array.isArray(deck.cards)) return false;
+  let changed = false;
+  for (const c of deck.cards) {
+    try { if (normalizeChoiceCard(c)) changed = true; } catch (e) { /* ignore */ }
+  }
+  if (changed) deck.updated_at = Date.now() / 1000;
+  return changed;
+}
+
 // ── 객관식(M) 코드 파서 (원본 _parse_code_cards 그대로) ──────────────
 function pullTag(line) {
   const m = line.match(/\s#([^\s#|]+)\s*$/);
@@ -82,12 +139,22 @@ function parseCodeCards(text) {
     const q = cells[0];
     const opts = [];
     let ans = -1;
-    for (let c of cells.slice(1)) {
-      if (!c) continue;
-      if (c.startsWith('*')) { ans = opts.length; c = c.slice(1).trim(); }
-      else if (c.endsWith('*')) { ans = opts.length; c = c.slice(0, -1).trim(); }
+    // 별표는 정답 보기의 '앞이나 뒤'에 붙는다. 반각 * 뿐 아니라 전각 ＊ 도
+    // 인정하고, 여러 보기에 별표가 있으면(AI 가 규칙을 어긴 경우) 마지막 것을
+    // 정답으로 친다. 별표가 보기 안쪽에 묻힌 경우(예: '정답* 입니다')도
+    // 놓치지 않도록 별표 위치를 따로 기억했다가 나중에 답 인덱스로 확정한다.
+    const starAt = [];
+    for (let c0 of cells.slice(1)) {
+      if (!c0) continue;
+      let c = c0;
+      // 별표 뒤에 문장부호(。. , , 등)가 조금 따라붙어도 별표로 인정한다.
+      const edgeStar = /^\s*[*＊]+\s*/.test(c) || /\s*[*＊]+[\s。.．,，、;；)）]?$/.test(c);
+      c = c.replace(/^\s*[*＊]+\s*/, '').replace(/\s*[*＊]+([\s。.．,，、;；)）]?)$/, '$1').trim();
+      const idx = opts.length;
+      if (edgeStar) starAt.push(idx);
       if (c) opts.push(c);
     }
+    if (starAt.length) ans = starAt[starAt.length - 1];
     if (!q || opts.length < 2 || ans < 0) continue;
     base.type = 'choice'; base.front = q; base.opts = opts;
     base.answer = ans; base.back = opts[ans]; base.hint = '';
@@ -108,6 +175,7 @@ export function registerCards(app) {
         error: '객관식 카드만 만들 수 있습니다. M 질문 | 보기1 | 정답* | 보기3 형식으로 입력해 주세요',
       });
     }
+    for (const c of cards) { try { normalizeChoiceCard(c); } catch (e) { /* ignore */ } }
     const did = crypto.randomBytes(6).toString('hex');
     const title = ((b.title || '').trim() || codeTitle || '').slice(0, 80)
       || `카드 ${new Date().toISOString().slice(5, 16).replace('T', ' ')}`;
@@ -186,7 +254,17 @@ export function registerCards(app) {
   });
 
   app.get('/api/cards/deck/:did', async (req, reply) => {
-    const d = await deckLoad(req.params.did);
+    const did = req.params.did;
+    // 열 때 한 번 치유하고(답 인덱스·별표 정리), 바뀐 게 있으면 저장해
+    // 다른 기기에서도 바로 고쳐진 카드를 받는다. withLock 으로 채점과 경합 방지.
+    const d = await withLock('cards:' + did, async () => {
+      const deck = await deckLoad(did);
+      if (!deck) return null;
+      try {
+        if (normalizeDeck(deck)) await deckSave(did, deck);
+      } catch (e) { /* 치유 실패는 응답을 막지 않는다 */ }
+      return deck;
+    });
     if (!d) return reply.code(404).send({ ok: false, error: '없는 묶음' });
     return reply.send({ ok: true, deck: d });
   });
@@ -203,6 +281,7 @@ export function registerCards(app) {
     return await withLock('cards:' + did, async () => {
       const d = await deckLoad(did);
       if (!d) return reply.code(404).send({ ok: false, error: '없는 묶음' });
+      try { normalizeDeck(d); } catch (e) { /* ignore */ }
       const events = d.grade_events || (d.grade_events = []);
       if (eid && events.includes(eid)) {
         const c = (d.cards || []).find((x) => x.id === cid);

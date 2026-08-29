@@ -9486,16 +9486,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(hpx>0) win.style.height=hpx+'px';
             const p=_fcardMaxPre; _fcardMaxPre=null;
             win.classList.remove('fcard-max');
-            // 창 크기를 되돌린 뒤 원래 자리로 — 브라우저가 뷰포트를 다시 잰 뒤 한 박자 늦게 clamp
+            // 원래 자리로 되돌린다. 클램프(화면 안 잡아두기)는 모핑(0.52s)이
+            // 끝난 뒤에만 실행한다 — 모핑 중엔 창이 아직 100vw 라 clamp 가
+            // 위치를 (0,0)으로 꽂아 버린다(음악 플레이어 복귀 버그와 동일한 원인).
             if(p){ win.style.left=Math.round(p.x)+'px'; win.style.top=Math.round(p.y)+'px'; }
-            requestAnimationFrame(()=>{
+            if(_fcardPreH){ win.style.height=_fcardPreH+'px'; _fcardPreH=null; }
+            setTimeout(()=>{
                 if(_fcardMax) return;     // 접자마자 다시 펼친 경합은 무시
                 if(p){ win.style.left=Math.round(p.x)+'px'; win.style.top=Math.round(p.y)+'px'; }
-                if(_fcardPreH){ win.style.height=_fcardPreH+'px'; _fcardPreH=null; }
                 try{ const c=sdyClampFloatingRect(win,parseFloat(win.style.left)||8,parseFloat(win.style.top)||8);
                      win.style.left=c.x+'px'; win.style.top=c.y+'px'; }catch(e){}
-                setTimeout(()=>{ if(!win.classList.contains('fcard-max')) win.style.height=''; },540);
-            });
+                if(!win.classList.contains('fcard-max')) win.style.height='';
+                // 확정된 자리를 저장해 드래그·리사이즈와 같은 자리를 쓴다
+                try{ localStorage.setItem('fcard_pos',JSON.stringify(
+                    {x:parseFloat(win.style.left),y:parseFloat(win.style.top)})); }catch(e){}
+                try{ if(window.pushSettings) window.pushSettings(); }catch(e){}
+            },560);
         }
         _fcardMaxIcon();
     }
@@ -9779,6 +9785,41 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         });
     }
 
+    // ── 객관식 카드 치유: 보기 순서·답 인덱스가 어긋난 카드를 고친다 ──
+    //   서버가 고쳐 주기 전에(혹은 서버가 옛 버전이어도) 클라이언트에서 한 번 더
+    //   정리한다. 보기를 섞어도 항상 '답 보기 텍스트' 기준으로 판정되게 하는 게 핵심.
+    function healChoiceCard(card){
+        if(!card||card.type!=='choice') return false;
+        if(!Array.isArray(card.opts)) card.opts=[];
+        let changed=false;
+        const starTexts=[];
+        const clean=[];
+        for(const o0 of card.opts){
+            const s=String(o0==null?'':o0);
+            const had=/^\s*[*＊]+\s*/.test(s)||/\s*[*＊]+[\s。.．,，、;；)）]?$/.test(s);
+            const t=s.replace(/^\s*[*＊]+\s*/,'').replace(/\s*[*＊]+([\s。.．,，、;；)）]?)$/,'$1').trim();
+            if(had&&t) starTexts.push(t);
+            if(t!==s.trim()) changed=true;
+            if(t) clean.push(t);
+        }
+        card.opts=clean;
+        const n=card.opts.length;
+        const valid=i=>Number.isInteger(i)&&i>=0&&i<n;
+        const starAt=starTexts.map(t=>card.opts.indexOf(t)).filter(i=>i>=0);
+        // 신뢰도 순서: ① 별표 보기 ② back 텍스트와 일치하는 보기 ③ 기존 answer
+        let ans=-1;
+        if(starAt.length) ans=starAt[starAt.length-1];
+        if(ans<0){
+            const back=String(card.back==null?'':card.back).trim();
+            if(back){ const bi=card.opts.findIndex(o=>String(o).trim()===back); if(bi>=0) ans=bi; }
+        }
+        if(ans<0&&valid(card.answer)) ans=card.answer;
+        if(!valid(ans)) return changed;   // 고칠 수 없는 카드(보기 1개 등)는 studyPool 에서 걸러진다
+        if(card.answer!==ans){ card.answer=ans; changed=true; }
+        if(card.back!==card.opts[ans]){ card.back=card.opts[ans]; changed=true; }
+        return changed;
+    }
+
     // ── 묶음을 열면 '학습 방식 고르기' 화면 ──────────────
     let _stats=null;
     async function startStudy(id){
@@ -9787,6 +9828,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const d=await r.json();
             if(!d||!d.ok){ toast('묶음을 열 수 없습니다',2200); return; }
             _deckCur=d.deck;
+            try{ (d.deck.cards||[]).forEach(healChoiceCard); }catch(e){}
             let st=null;
             try{ st=await (await fetch('/api/cards/stats/'+encodeURIComponent(id),{cache:'no-store'})).json(); }catch(e){}
             _stats=st&&st.ok?st:null;
@@ -10363,7 +10405,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(_answered) return;
         _answered=true;
         const c=_queue[_qi];
-        const right=(i===c.answer);
+        // 표시를 섞었을 때에도 '답 보기 텍스트'로 판정한다 — 인덱스만 비교하면
+        // 보기가 섞인 화면에서 엉뚱한 보기가 정답이 될 수 있다.
+        const opts=Array.isArray(c.opts)?c.opts:[];
+        const pickText=String(opts[i]||'');
+        const ansText=String(opts[c.answer]!=null?opts[c.answer]:(c.back||''));
+        const right=(i===c.answer)||(!!pickText&&pickText===ansText);
         if(right){ _rightN++; _streak++; } else _streak=0;
         _studied++;
         const grade=right?3:0;
@@ -10385,7 +10432,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.querySelectorAll('#cdOpts .cd-opt').forEach(b=>{
             b.disabled=true;
             const bi=+b.dataset.i;
-            if(bi===c.answer) b.classList.add('ok');
+            const txt=String((c.opts||[])[bi]||'');
+            // 답 표시도 인덱스 대신 '답 보기 텍스트'로 판정 (섞임·옛 데이터에도 정확)
+            if(bi===c.answer||(txt&&txt===ansText)) b.classList.add('ok');
             else if(bi===i) b.classList.add('no');
         });
         cardCheer(right);
@@ -16699,6 +16748,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             `<div class="key-sec">${sec}</div>`+
             rows.map(([k,d])=>`<div class="key-row"><span>${d}</span><kbd>${k}</kbd></div>`).join('')
         ).join('');
+        // 18.2 · 졸리는 해돌이는 설명을 가장 아래까지 스크롤했을 때만 보이도록
+        //   스크롤 영역(keyBody) 맨 끝에 붙인다. (모달 바깥에 있던 노드를 매번 옮긴다)
+        const ko=document.querySelector('#keyModal .keys-otter');
+        if(ko){ b.appendChild(ko); b.scrollTop=0; }
         document.getElementById('keyModal').style.display='flex';
         openNav(closeKeys);
     }
@@ -19177,13 +19230,20 @@ function mpbFakeFs(on){
     const p=_mpbPrePos||_mpbSavedPos();
     _mpbPrePos=null;
     if(p){ mpbEl.style.left=Math.round(p.x)+'px'; mpbEl.style.top=Math.round(p.y)+'px'; }
-    // clampMpb는 브라우저가 뷰포트 크기를 업데이트한 뒤에만 실행해야
-    // 축소 시 왼쪽 벽에 달라붙는 현상을 방지할 수 있다.
-    // 진짜 전체 화면에서 빠져나오는 경우 레이아웃이 한 박자 늦게 정리된다
-    requestAnimationFrame(()=>{
+    // 클램프(화면 안으로 잡아두기)는 모핑(0.52s)이 끝난 뒤에만 실행한다.
+    //   모핑 중에는 창이 아직 100vw 로 보여 clampMpb 가 '창이 화면보다 크다'고
+    //   판단해 위치를 (0,0)으로 꽂아 버린다 — 그래서 전체 화면에서 나오면
+    //   창이 과소 자리가 아니라 고정된 왼쪽 위로 줄어들던 버그가 생겼다.
+    //   드래그·리사이즈 경로의 clampMpb 는 그대로 두고 이 복귀 경로만 늦춘다.
+    setTimeout(()=>{
+      if(mpbEl.classList.contains('mpb-fs')||mpbFsEl()===mpbEl) return;  // 다시 전체화면이면 취소
       if(p){ mpbEl.style.left=Math.round(p.x)+'px'; mpbEl.style.top=Math.round(p.y)+'px'; }
-      clampMpb();
-    });
+      try{ clampMpb(); }catch(e){}
+      // clampMpb 로 확정된 자리를 저장해, 그 다음 열림·리사이즈가 이 자리를 쓴다
+      try{ localStorage.setItem('mp_big_pos',JSON.stringify({
+        x:parseFloat(mpbEl.style.left),y:parseFloat(mpbEl.style.top)})); }catch(e){}
+      try{ if(window.pushSettings) window.pushSettings(); }catch(e){}
+    },600);
   }
   mpbFullIcon();
 }
