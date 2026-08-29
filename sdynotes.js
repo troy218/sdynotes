@@ -991,7 +991,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         (page.els||[]).forEach(el=>{
             if(el.type==='image'){
                 html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:2px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;">`+
-                      `<img src="${el.url}" style="width:100%;height:100%;object-fit:fill;display:block;border-radius:2px;"></div>`;
+                      `<img src="${el.localURL||el.url}" style="width:100%;height:100%;object-fit:fill;display:block;border-radius:2px;"></div>`;
             }else if(el.type==='legacyDraw'){
                 html+=`<img src="${el.url}" style="position:absolute;left:0;top:0;width:${size.w}px;height:${size.h}px;z-index:3;">`;
             }else if(el.type==='stroke'){ strokes.push(el); }
@@ -5636,6 +5636,34 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     // ============ 서버 동기화 ============
     let syncTimer=null, pendingNB=null;
+    // 14.15 · 동기화 직전 이미지 요소 정리: blob URL 은 다른 기기·새로고침 뒤에
+    //   깨지므로 url 에서 제거하고, 로컬 전용 임시 필드(localURL·pending·failed)는
+    //   서버로 보내지 않는다. (data: URL 은 스티커·PDF 배경 등 정상 데이터이므로 유지)
+    function sanitizeSyncPages(pages){
+        if(!Array.isArray(pages)) return pages;
+        let dirty=false;
+        for(const pg of pages){
+            if(!pg||!Array.isArray(pg.els)) continue;
+            for(const el of pg.els){
+                if(!el||el.type!=='image') continue;
+                const u=String(el.url||'');
+                if(('localURL' in el)||('pending' in el)||('failed' in el)||u.startsWith('blob:')){ dirty=true; break; }
+            }
+            if(dirty) break;
+        }
+        if(!dirty) return pages;
+        return pages.map(pg=>{
+            if(!pg||!Array.isArray(pg.els)) return pg;
+            return {...pg, els: pg.els.map(el=>{
+                if(!el||el.type!=='image') return el;
+                const clean={...el};
+                delete clean.localURL; delete clean.pending; delete clean.failed;
+                const u=String(clean.url||'');
+                if(u.startsWith('blob:')) clean.url='';
+                return clean;
+            })};
+        });
+    }
     function serializeDoc(d,nbId){
         const cfg=getCfg(nbId);
         // 가져온 문서(서버 보관본 참조)는 본문 없이 마커만 →
@@ -5655,7 +5683,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return JSON.stringify({version:3,locked:true,lock:{salt:cfg.lock.salt,escrow:cfg.lock.escrow||null},
                                    encBlob:cfg.encBlob,paper:d.paper,sizePreset:d.sizePreset,emoji:d.emoji,glossary:d.glossary||{}});
         }
-        return JSON.stringify({version:3,paper:d.paper,sizePreset:d.sizePreset,emoji:d.emoji,glossary:d.glossary||{},pages:d.pages});
+        return JSON.stringify({version:3,paper:d.paper,sizePreset:d.sizePreset,emoji:d.emoji,glossary:d.glossary||{},pages:sanitizeSyncPages(d.pages)});
     }
     // ===== 오프라인 아웃박스 =====
     // 서버 전송에 실패하면 여기에 쌓아 두고, 인터넷이 돌아오면 한꺼번에 올린다.
@@ -6939,13 +6967,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const img=document.createElement('img');
         img.draggable=false;
         img.loading='lazy'; img.decoding='async';
-        img.src=el.url;
+        img.src=el.localURL||el.url||'';
         if(el.pending) w.classList.add('pending');
         if(el.failed) w.classList.add('failed');
         if(el.isMath){ w.classList.add('math'); w.title='PDF 수식'; }
         if(el.isBg){ w.classList.add('pdf-bg'); w.title='PDF 원본 배경'; }
         if(el.locked) w.classList.add('el-lock');
-        img.ondblclick=(e)=>{ e.stopPropagation(); document.getElementById('vImg').src=el.url; document.getElementById('viewer').style.display='flex'; };
+        img.ondblclick=(e)=>{ e.stopPropagation(); document.getElementById('vImg').src=el.localURL||el.url||''; document.getElementById('viewer').style.display='flex'; };
         w.appendChild(img);
         // 테두리를 잡으면 이동 (손잡이는 이 위에 그려진다)
         ['top','bottom','left','right'].forEach(side=>{
@@ -10029,7 +10057,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.getElementById('cdTestReport').style.display='none';
         _fcardTitle((_isTest?'시험 · ':'')+((_deckCur&&_deckCur.title)||'암기 카드'));
         showCard();
-        otterSay(_isTest?'긴장되지? 나도 지켜볼게!':'시~작! 함께 해보자 해달~','love',1600);
+        otterSay(_isTest?'긴장되지? 지켜볼게 해돌~':'시~작! 같이 해보자 해돌~','love',1600);
     }
 
     /* ── 해달 '해돌이' 컨트롤 ─────────────────────────
@@ -10080,18 +10108,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             setTimeout(()=>s.remove(),1300);
         }
     }
-    function otterThink(){ otterSay('음… 생각 좀 해보자 해달…','think',1500); }
+    function otterThink(){ otterSay('음… 생각 좀 해볼게 해돌~','think',1500); }
     function otterCheer(streak){
-        if(streak>=5)      otterSay('와! 연속 '+streak+'개! 천재 해달!','love',2400);
-        else if(streak>=3) otterSay('흐름이 좋아! 계속 가보자!','happy',1800);
-        else               otterSay('좋아! 기억 속에 쏙~','happy',1500);
+        if(streak>=5)      otterSay('와! 연속 '+streak+'개! 천재 해돌~!','love',2400);
+        else if(streak>=3) otterSay('흐름 좋아! 계속 가자 해돌~!','happy',1800);
+        else               otterSay('좋아! 기억 속에 쏙~ 해돌!','happy',1500);
     }
-    function otterSad(){ otterSay('에이 괜찮아~ 한 번 더 보면 돼!','sad',2000); }
-    function otterHint(){ otterSay('힌트 살짝! 👀','think',1600); }
+    function otterSad(){ otterSay('괜찮아~ 한 번 더 보면 돼 해돌~!','sad',2000); }
+    function otterHint(){ otterSay('힌트 살짝! 👀 해돌~','think',1600); }
     function otterFinish(pct){
-        if(pct>=90) otterSay('대박! 완벽 마스터! 🏆','love',3200);
-        else if(pct>=60) otterSay('수고했어! 해달이 칭찬해~','happy',2600);
-        else otterSay('다음에 또 같이 공부하자 해달!','happy',2200);
+        if(pct>=90) otterSay('대박! 완벽 마스터 해돌~! 🏆','love',3200);
+        else if(pct>=60) otterSay('수고했어! 해돌이 칭찬해~','happy',2600);
+        else otterSay('다음에 또 같이 공부하자 해돌~!','happy',2200);
     }
     document.addEventListener('DOMContentLoaded',()=>{
         // hint 버튼 이벤트 훅
@@ -10255,7 +10283,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 
         if(c.type==='choice'){
             quiz.style.display='';
-            document.getElementById('cdQuizQ').textContent=c.front||'';
+            // 15.4 · 문제는 위 cdQBar 에 이미 표시된다 — 객관식 패널 안에 또 보여주지 않는다.
+            const quizQ=document.getElementById('cdQuizQ');
+            quizQ.textContent=''; quizQ.style.display='none';
             const order=c.opts.map((o,i)=>i);
             shuffle(order);
             c.__order=order;
@@ -10266,7 +10296,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         // 뒤집기 카드 (예전 엑셀 카드도 그냥 넘기지 않고 제대로 풀 수 있게)
         flip.style.display='';
-        document.getElementById('cdFrontTxt').textContent=c.front||'';
+        // 15.4 · 문제는 위 cdQBar 에 이미 표시된다 — 앞면에 중복 출력하지 않는다.
+        const frontTxt=document.getElementById('cdFrontTxt');
+        frontTxt.textContent=''; frontTxt.style.display='none';
         const hint=document.getElementById('cdHint');
         const hbtn=document.getElementById('cdHintBtn');
         hint.textContent='';
@@ -10287,7 +10319,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.getElementById('cdFlip').classList.toggle('flipped',_flipped);
         // 답을 본 뒤에만 '알아요 / 아직이에요' 를 묻는다
         if(_flipped&&!_answered) document.getElementById('cdFlipGrade').style.display='grid';
-        if(_flipped&&!_answered) otterSay('답이 기억나? 해달~','wow',1200);
+        if(_flipped&&!_answered) otterSay('답 기억나? 해돌~','wow',1200);
         else if(!_flipped) otterSet('think');
     }
     function flipGrade(g){
@@ -13289,7 +13321,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function placeImgItem(item,pageIdx,cx,cy){
         pushHistory();
         const c=clampEl(cx-item.box.w/2,cy-item.box.h/2,item.box.w,item.box.h);
-        const el={type:'image',id:uid('i'),url:item.url,localURL:item.url,pending:true,
+        // 14.15 · blob 미리보기는 localURL 에만 두고, url 은 업로드가 끝난 뒤
+        //   실제 서버 주소(/api/img/…)로 채운다. blob URL 을 url 로 저장하면
+        //   다른 기기·새로고침 뒤에 깨진 '사진 아이콘'으로 남는다.
+        const el={type:'image',id:uid('i'),url:'',localURL:item.url,pending:true,
             x:Math.round(c.x),y:Math.round(c.y),w:item.box.w,h:item.box.h};
         doc.pages[pageIdx].els.push(el);
         renderPageEls(pageIdx);
@@ -23603,6 +23638,72 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       new MutationObserver(function(){
         note.classList.toggle('draw-on',dt.style.display==='flex');
       }).observe(dt,{attributes:true,attributeFilter:['style']});
+    }
+  })();
+
+  // ── 18.1 · 노트/노래 해돌이 말풍선 — 가만히 있으면 가끔씩 멘트를 바꿔가며 혼잣말한다 ──
+  (function(){
+    var note=$('noteOtter'), noteBub=$('noteOtterBubble');
+    var mp=$('mpOtterBubble'), mpRoot=document.querySelector('.mp-otter');
+    var pl=$('musicPlayer');
+
+    // 말풍선 보여주기 (show 클래스 + 타이머로 자동 숨김)
+    function speak(bubble,text,dur){
+      if(!bubble||!text) return;
+      bubble.textContent=text;
+      bubble.classList.add('show');
+      if(bubble._t) clearTimeout(bubble._t);
+      bubble._t=setTimeout(function(){ bubble.classList.remove('show'); }, dur||2400);
+    }
+    function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+    // ── 노트(문서) 해돌이 ──
+    var NOTE_IDLE=[
+      '오늘은 뭘 끄적일까 해돌~?',
+      '집중하면 뭐든 돼! 해돌~',
+      '아이디어 떠오르면 날 눌러봐 해돌!',
+      '끄적끄적~ 글 쓰는 거 재밌지? 해돌~',
+      '휴식도 중요해! 물 한 잔 어때 해돌~?',
+      '천천히 써도 괜찮아 해돌~'
+    ];
+    var NOTE_TAP=[
+      '굿 아이디어! 해돌~!',
+      '오! 멋진 생각이다 해돌~!',
+      '번쩍! 아이디어가 떠올랐해돌!',
+      '역시 너야! 해돌~'
+    ];
+    var editor=$('editorView');
+    if(note&&noteBub){
+      note.addEventListener('click',function(){ speak(noteBub,pick(NOTE_TAP),1800); });
+      setInterval(function(){
+        if(editor&&!editor.classList.contains('open')) return;  // 편집기가 닫혀 있으면 조용히
+        speak(noteBub,pick(NOTE_IDLE),2400);
+      }, 16000);
+    }
+
+    // ── 노래 해돌이 ──
+    var MP_IDLE=[
+      '둠칫둠칫~!',
+      '제 이름은 해돌이야. 만나서 반갑해돌!',
+      '이 노래 너무 좋다 해돌~',
+      '볼륨 한 번 올려볼까 해돌~?',
+      '어깨가 절로 들썩이네 해돌~',
+      '나도 같이 흔들고 싶어 해돌~'
+    ];
+    function mpSongPhrase(){
+      try{
+        var t=cur();
+        if(t&&t.title) return '지금 "'+t.title+'" 같이 들을래 해돌~?';
+      }catch(e){}
+      return null;
+    }
+    if(mp&&pl){
+      setInterval(function(){
+        if(!mpRoot||!mpRoot.offsetParent) return;      // 음악바가 안 보이면 조용히
+        if(!pl.classList.contains('mp-bar')) return;   // 플로팅 원형 모드면 말풍선 안 띄움
+        var song=mpSongPhrase();
+        speak(mp, (song&&Math.random()<0.4)?song:pick(MP_IDLE), 2600);
+      }, 13000);
     }
   })();
 
