@@ -6523,3 +6523,149 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   .fcard-win.fcard-max .cd-keyhints{display:none;}     /* 터치 기기 — 키보드 안내는 의미가 없다 */
   .fcard-win.fcard-max #cardsStudy .cd-sess{display:none;} /* 폰 상단바는 좁으니 진행률·연속 정답만 */
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   15.4 · 학습 화면 두 번째 개편 — '문제는 항상 위에' + 해달 귀여움 보정
+   ─────────────────────────────────────────────────────────────────
+   · 문제(질문)는 카드 안이 아니라 화면 위에 굵은 제목으로 — 듀오링고처럼
+   · 뒤집기 카드 앞면은 '답 보기' 패널(점선 + 아이콘), 뒷면은 정답
+   · 객관식은 보기 카드에서 질문을 빼고 1열로 깔끔하게
+   · 해달: 작게(최대 126px) · 큰 입·떠다니는 하트 제거 · 머리·귀 움직임 추가
+   · 표정(happy/sad) 반응이 끝나도 윙크가 멈추지 않게 (animation 분할 bug)
+   · 진행바: 듀오링고 그린 전체폭 바
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── ① 문제 상단 바 (뒤집기/객관식 공용) ── */
+.cd-qbar{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;}
+.cd-qchip{font-size:10.5px;font-weight:800;letter-spacing:.05em;color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 10%,transparent);
+  border:1px solid color-mix(in srgb,var(--accent) 28%,transparent);
+  padding:3px 11px;border-radius:99px;flex:none;}
+.cd-qtitle{margin:0;font-size:clamp(20px,1.9vw,26px);font-weight:800;letter-spacing:-.02em;
+  line-height:1.45;max-width:760px;color:var(--text1);white-space:pre-wrap;word-break:keep-all;}
+.fcard-win.fcard-max .cd-qbar{gap:11px;}
+.fcard-win.fcard-max .cd-qtitle{font-size:clamp(26px,2.4vw,38px);max-width:880px;}
+.cd-qbar.cd-qin .cd-qchip,.cd-qbar.cd-qin .cd-qtitle{
+  animation:cdQIn .32s cubic-bezier(.2,.8,.3,1.1);}
+@keyframes cdQIn{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:none;}}
+/* 예전의 '질문 카드'는 위에서 제목으로 옮김 */
+.cd-qq{display:none !important;}
+
+/* ── ② 뒤집기 카드 앞면 = '답 보기' 패널 ── */
+.cd-front .cd-fronttxt{display:none;}   /* 질문은 위에 — 카드 안에서는 중복하지 않는다 */
+.cd-front .cd-tap{display:none;}
+.cd-reveal{display:flex;flex-direction:column;align-items:center;gap:10px;padding:34px 44px;max-width:480px;width:100%;
+  border:2px dashed color-mix(in srgb,var(--accent) 38%,var(--border));
+  border-radius:18px;background:color-mix(in srgb,var(--accent) 5%,transparent);
+  animation:revealPulse 2.6s ease-in-out infinite;}
+.cd-reveal i{font-size:30px;color:var(--accent);}
+.cd-reveal b{font-size:15px;font-weight:800;color:var(--text1);}
+.cd-reveal span{font-size:11.5px;color:var(--text3);font-weight:600;}
+@keyframes revealPulse{0%,100%{transform:scale(1);opacity:.9;}50%{transform:scale(1.02);opacity:1;}}
+.fcard-win.fcard-max .cd-reveal i{font-size:46px;}
+.fcard-win.fcard-max .cd-reveal b{font-size:17px;}
+.cd-rearlabel{font-size:10.5px;font-weight:800;letter-spacing:.08em;color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+  padding:3px 10px;border-radius:99px;
+  border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);}
+/* 카드 자체는 낮추고(비어 보이는 큰 카드 제거), 정답 글자는 그대로 크게 */
+.fcard-win.fcard-max .cd-inner{height:clamp(230px,30dvh,360px);}
+.fcard-win.fcard-max .cd-face{padding:26px 30px;}
+
+/* ── ③ 객관식 보기: 1열·중앙·3D ── */
+.fcard-win.fcard-max .cd-opts{grid-template-columns:1fr;gap:11px;margin-top:16px;
+  max-width:620px;width:100%;margin-left:auto;margin-right:auto;}
+.fcard-win.fcard-max .cd-opt{padding:15px 16px;font-size:15px;border-radius:14px;}
+.fcard-win.fcard-max .cd-opt i.num{width:27px;height:27px;font-size:12.5px;
+  border-radius:9px !important;}
+
+/* ── ④ 진행바 = 듀오링고 그린 전체폭 ── */
+.fcard-win .cd-prog{flex:1 1 140px;min-width:70px;height:14px;border-radius:99px;overflow:hidden;
+  background:color-mix(in srgb,var(--duo-green) 15%,var(--bg2));
+  box-shadow:inset 0 1px 3px rgba(15,23,42,.10);}
+.fcard-win #cdProgFill{height:100%;border-radius:99px;
+  background:linear-gradient(90deg,var(--duo-green),#8ee000);
+  box-shadow:0 0 10px rgba(88,204,2,.5);}
+
+/* ── ⑤ 스테이지 · 카드 영역 ── */
+.fcard-win.fcard-max .cd-stage{gap:clamp(16px,2.4vw,48px);}
+.fcard-win.fcard-max .cd-cardzone{max-width:700px;}
+
+/* ── ⑥ 묶음 목록 · 학습 방식: 가운데 정렬, 휙 잡아 준다 ─
+   (기존 display:flex 에 grid-template-columns 는 무의미 — grid 로 명시) */
+.fcard-win.fcard-max .cards-list{width:100%;max-width:900px;margin:0 auto;}
+.fcard-win.fcard-max .fc-modes{display:grid;max-width:880px;margin:6px auto 0;padding:16px 18px;
+  border-radius:20px;box-shadow:0 8px 28px -10px rgba(15,23,42,.10);}
+@media (max-width:1100px){.fcard-win.fcard-max .fc-modes{display:grid;}}
+@media (max-width:640px),(max-height:560px) and (pointer:coarse){.fcard-win.fcard-max .fc-modes{display:grid;}}
+.fcard-win.fcard-max .cd-statrow{max-width:880px;margin:0 auto;}
+
+/* ── ⑦ 해달 v2 — 작고, 귀엽고, 살아 있다 ─────────────────────
+   · 크기: 126px 까지 (기존 최대 180px)
+   · 큰 입(검게 벌어진 D모양)은 작은 미소로, 배 위로 떠있던 큰 하트는
+     두 손 사이로 작게 — '징그러움'의 두 주범
+   · 머리·귀 움직임 추가: 윙크(otterBob)에 머리 기울임 + 가끔 귀 흔들림
+   · 표정 반응(happy/sad)이 끝나면 윙크가 영영 멈추던 bug —
+     반응 1회 + 윙크 무한을 같은 animation 리스트로 잇는다. */
+.fcard-win.fcard-max .cd-otter{flex:0 0 clamp(96px,9vw,126px);
+  animation:otterBob2 3.8s ease-in-out infinite;}
+@keyframes otterBob2{
+  0%,100%{transform:translateY(0) rotate(-1.4deg);}
+  50%{transform:translateY(-10px) rotate(1.8deg);}
+}
+.otter-head{transform-box:fill-box;transform-origin:50% 82%;
+  animation:otterHead 5.6s ease-in-out infinite;}
+@keyframes otterHead{
+  0%,100%{transform:rotate(0deg);}
+  28%{transform:rotate(-2.6deg);}
+  55%{transform:rotate(1.6deg);}
+  78%{transform:rotate(-1.2deg);}
+}
+.otter-ear-r{transform-box:fill-box;transform-origin:50% 92%;
+  animation:otterEar 6.5s ease-in-out infinite;}
+@keyframes otterEar{
+  0%,86%,100%{transform:rotate(0deg);}
+  90%{transform:rotate(-14deg);}
+  94%{transform:rotate(5deg);}
+}
+/* 표정 반응 → 끝나면 다시 윙크 (중복 transform 은 나중 animation 이 이어받음)
+   ※ .fcard-win.fcard-max .cd-otter (0,3,0) 보다 우선순위(0,4,0)를 줘야
+   확장 모드에서 표정 반응이 실제로 눌린다 */
+.fcard-win.fcard-max .cd-otter[data-mood="happy"]{
+  animation:otterHappy .6s cubic-bezier(.2,.9,.3,1.2),
+            otterBob2 3.8s ease-in-out .6s infinite;}
+.fcard-win.fcard-max .cd-otter[data-mood="sad"]{
+  animation:otterSad .5s ease,
+            otterBob2 3.8s ease-in-out .5s infinite;}
+/* 말풍신: 카드 위를 덜 덮고, 조금 더 작게 */
+.fcard-win.fcard-max .otter-bubble{left:14%;top:-42%;padding:9px 12px;
+  font-size:12.5px;max-width:165px;transform-origin:30% 100%;}
+.fcard-win.fcard-max .otter-bubble::after{left:58%;right:auto;bottom:-19px;top:auto;
+  border:10px solid transparent;border-top-color:#fff;border-bottom:0;
+  filter:drop-shadow(0 2px 1px color-mix(in srgb,var(--accent) 40%,var(--border)));}
+.dark .fcard-win.fcard-max .otter-bubble::after{border-top-color:#1d2028;
+  filter:drop-shadow(0 2px 1px rgba(107,127,247,.4));}
+/* 중간 폭(≤1100): 해달도 줄어든 규격 */
+@media (max-width:1100px){
+  .fcard-win.fcard-max .cd-otter{flex:0 0 auto;width:108px;
+    animation:otterBob2 3.8s ease-in-out infinite;}
+}
+/* 움직임 줄이기 설정 — 같은 마음으로 전부 쉬게 */
+@media (prefers-reduced-motion:reduce){
+  .fcard-win.fcard-max .cd-otter,.otter-head,.otter-ear-r{animation:none !important;}
+  .cd-reveal{animation:none !important;}
+  .cd-qbar.cd-qin .cd-qchip,.cd-qbar.cd-qin .cd-qtitle{animation:none !important;}
+}
+/* 폰: 문제 제목·답 보기 패널도 손에 맞게 */
+@media (max-width:640px),(max-height:560px) and (pointer:coarse){
+  .fcard-win.fcard-max .cd-qbar{gap:7px;padding:0 4px;}
+  .fcard-win.fcard-max .cd-qtitle{font-size:clamp(19px,5.4vw,24px);}
+  .fcard-win.fcard-max .cd-opts{gap:9px;}
+  .cd-reveal{padding:16px 20px;gap:7px;}
+  .fcard-win.fcard-max .cd-reveal i{font-size:30px;}
+  .fcard-win.fcard-max .cd-reveal b{font-size:14px;}
+  /* 학습 방식 타일: 6개짜리가 화면 밖으로 새어나가지 않게 3열 */
+  .fcard-win .fc-modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+    max-width:none;padding:8px;border-radius:18px;}
+  .fcard-win.fcard-max .fc-modes{grid-template-columns:repeat(3,1fr);gap:8px;padding:8px;}
+}
