@@ -180,6 +180,53 @@ try {
     content.querySelectorAll('span[style*="color"]').length >= 2);
   check('상자 전체를 칠해도 글꼴이 풀리지 않는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
 
+  // ── ⑤ 인라인 글꼴(부분) + 이후 색/형광펜 → 글꼴 보존 ───────────────────
+  //   상자 글꼴(Jua)뿐 아니라 '둘째 줄'에만 입힌 부분 글꼴(Gaegu)도
+  //   그 뒤 색/형광펜을 입혀도 유지되는지 확인한다.
+  window.clearTextSelection();
+  const tailSpan = [...content.querySelectorAll('span')].find(s => (s.textContent || '').includes('둘째 줄'));
+  const tailText = tailSpan && [...tailSpan.childNodes].find(n => n.nodeType === 3 && (n.nodeValue || '').includes('둘째 줄'));
+  check('색칠한 뒤에도 선택 밖 텍스트 노드가 남아 있다', !!tailText);
+  if (tailText) {
+    const rr = document.createRange();
+    const startOff = (tailText.nodeValue || '').indexOf('둘째 줄');
+    rr.setStart(tailText, startOff); rr.setEnd(tailText, startOff + 4);
+    sel.removeAllRanges(); sel.addRange(rr);
+    window.saveSel();
+    window.applyFont('gaegu');
+    await wait(120);
+    const gaeguSpans = [...content.querySelectorAll('span[style*="font-family"]')]
+      .filter(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄'));
+    check('부분 글꼴(Gaegu) 선택이 입혀진다', gaeguSpans.length >= 1);
+    check('부분 글꼴 적용 후에도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
+
+    // 부분 글꼴 구간을 다시 선택해 색을 입힌다
+    if (gaeguSpans.length) {
+      const rr2 = document.createRange();
+      rr2.selectNodeContents(gaeguSpans[0]);
+      sel.removeAllRanges(); sel.addRange(rr2);
+      window.saveSel();
+      window.applyTextColor('#3498db');
+      await wait(120);
+      const stillGaegu = [...content.querySelectorAll('span[style*="font-family"]')]
+        .some(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄'));
+      check('부분 글꼴에 색을 입혀도 Gaegu 가 남는다', stillGaegu);
+      check('부분 글꼴에 색을 입혀도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
+    }
+  }
+
+  // 상자 전체 형광펜을 입혀도 부분 글꼴 유지
+  window.clearTextSelection();
+  content.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, detail: 1, clientX: 60, clientY: 60 }));
+  window.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
+  await wait(80);
+  window.applyHighlight('#ffff00');
+  await wait(120);
+  check('상자 전체 형광펜 후에도 부분 글꼴(Gaegu)이 남는다',
+    [...content.querySelectorAll('span[style*="font-family"]')]
+      .some(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄')));
+  check('상자 전체 형광펜 후에도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
+
   // ── 서버(메모)에 el.font 가 그대로 남아 있는지 ─────────────────────────
   await wait(1400);
   const sel2 = await q({ table: 'memos', op: 'select', values: [], filters: [{ field: 'notebook_id', op: 'eq', value: String(id) }], limit: 1, single: true });
