@@ -10032,11 +10032,25 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         otterSay(_isTest?'긴장되지? 나도 지켜볼게!':'시~작! 함께 해보자 해달~','love',1600);
     }
 
-    /* ── 해달 '해동이' 컨트롤 ───────────────────────── */
+    /* ── 해달 '해돌이' 컨트롤 ─────────────────────────
+       18.1 · CodePen '초귀요미 해달 마스코트'로 교체.
+       기존 무드 이름(idle/think/happy/love/sad/wow)은 그대로 두고
+       새 마스코트의 상태 클래스(om-*)로 번역해 svg 에 건다.
+       · happy/love → om-correct (폴짝·반짝이·볼터치)
+       · sad       → om-wrong   (흐느적·눈물)
+       · think/wow → om-idea    (전구 번쩍·유레카)
+       · idle      → 기본 불가사리 안은 모습 (상태 클래스 없음) */
+    const OTTER_STATE={idle:'',sleep:'',think:'om-idea',happy:'om-correct',
+                       love:'om-correct',sad:'om-wrong',wow:'om-idea'};
     function _otterEl(){ return document.getElementById('cdOtter'); }
     function otterSet(mood){
         const o=_otterEl(); if(!o) return;
         o.dataset.mood=mood||'idle';
+        const svg=o.querySelector('svg'); if(!svg) return;
+        const st=OTTER_STATE[o.dataset.mood]||'';
+        svg.classList.remove('om-correct','om-wrong','om-music','om-doc','om-idea');
+        void svg.getBoundingClientRect();   // 같은 무드를 다시 걸어도 애니메이션이 재시작되게
+        if(st) svg.classList.add(st);
     }
     let _otterBubTimer=null,_otterHideTimer=null;
     function otterSay(text,mood,dur){
