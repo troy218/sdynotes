@@ -71,6 +71,101 @@
         <button onclick="adminLogout()">종료</button>
     </div>
 
+    <!-- ═══════════ 18.2 · 해돌이 스쿼드 공유 부품 (Notion '해돌이 스쿼드' — 한 번만) ═══════════ -->
+    <svg class="om-defs" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" focusable="false">
+        <defs>
+            <!-- 몸 (꼬리·발·몸통·배) -->
+            <g id="om-m-body">
+                <path d="M 40 145 C 20 160 10 175 30 185 C 50 195 70 175 60 155 Z" fill="#a88265" stroke="#3d2314" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M 45 130 C 30 145 35 165 50 170 C 65 175 75 155 75 145 Z" fill="#a88265" stroke="#3d2314" stroke-width="4" stroke-linejoin="round"/>
+                <ellipse cx="50" cy="158" rx="4" ry="6" fill="#ffaec0" transform="rotate(-30, 50, 158)"/>
+                <path d="M 85 150 C 85 170 100 180 115 175 C 130 170 125 150 120 140 Z" fill="#a88265" stroke="#3d2314" stroke-width="4" stroke-linejoin="round"/>
+                <ellipse cx="106" cy="165" rx="4" ry="6" fill="#ffaec0" transform="rotate(20, 106, 165)"/>
+                <path d="M 75 40 C 125 30, 155 45, 145 80 C 140 100, 140 110, 135 125 C 130 155, 105 175, 75 165 C 45 155, 40 135, 45 110 C 50 90, 50 70, 50 55 C 50 40, 55 35, 75 40 Z" fill="#a88265" stroke="#3d2314" stroke-width="4" stroke-linejoin="round"/>
+                <path d="M 60 125 C 55 105, 80 95, 100 95 C 120 95, 135 110, 130 130 C 125 150, 100 160, 80 155 C 60 150, 65 145, 60 125 Z" fill="#fffaf0" stroke="#3d2314" stroke-width="4" stroke-linejoin="round"/>
+            </g>
+            <!-- 머리 (귀는 단색 갈색, 안쪽 분홍 없음) -->
+            <g id="om-m-head">
+                <path d="M 60 50 C 55 30, 95 25, 125 30 C 150 35, 150 65, 145 75 C 140 85, 120 95, 95 90 C 65 85, 65 65, 60 50 Z" fill="#fffaf0" stroke="#3d2314" stroke-width="4" stroke-linejoin="round"/>
+                <path d="M 70 35 C 65 20, 50 25, 50 35 C 50 45, 60 45, 70 35 Z" fill="#a88265" stroke="#3d2314" stroke-width="4" stroke-linejoin="round"/>
+                <path d="M 135 38 C 145 25, 160 30, 155 40 C 150 50, 140 50, 135 38 Z" fill="#a88265" stroke="#3d2314" stroke-width="4" stroke-linejoin="round"/>
+                <ellipse cx="80" cy="65" rx="7" ry="5" fill="#ffaec0" opacity="0.8"/>
+                <ellipse cx="125" cy="67" rx="7" ry="5" fill="#ffaec0" opacity="0.8"/>
+                <line x1="68" y1="58" x2="58" y2="56" stroke="#3d2314" stroke-width="3" stroke-linecap="round"/>
+                <line x1="70" y1="65" x2="58" y2="65" stroke="#3d2314" stroke-width="3" stroke-linecap="round"/>
+                <line x1="135" y1="62" x2="145" y2="60" stroke="#3d2314" stroke-width="3" stroke-linecap="round"/>
+                <line x1="133" y1="68" x2="145" y2="70" stroke="#3d2314" stroke-width="3" stroke-linecap="round"/>
+                <path d="M 98 58 C 103 55, 107 55, 108 60 C 109 63, 100 65, 98 58 Z" fill="#ffaec0" stroke="#3d2314" stroke-width="3" stroke-linejoin="round"/>
+            </g>
+            <!-- 표정들 -->
+            <g id="om-m-f-idle">
+                <circle cx="85" cy="55" r="4" fill="#3d2314"/>
+                <circle cx="118" cy="58" r="4" fill="#3d2314"/>
+                <path d="M 97 66 C 99 69, 102 69, 103 66 C 104 69, 107 69, 109 66" fill="none" stroke="#3d2314" stroke-width="3" stroke-linecap="round"/>
+            </g>
+            <g id="om-m-f-happy">
+                <path d="M 80 53 L 86 56 L 80 59" fill="none" stroke="#3d2314" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M 123 56 L 117 59 L 123 62" fill="none" stroke="#3d2314" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M 95 66 C 98 76, 108 76, 111 66 Z" fill="#ffaec0" stroke="#3d2314" stroke-width="2.5" stroke-linejoin="round"/>
+            </g>
+            <g id="om-m-f-wink">
+                <circle cx="85" cy="55" r="4" fill="#3d2314"/>
+                <path d="M 112 58 C 115 53.5 121 53.5 124 58" fill="none" stroke="#3d2314" stroke-width="3" stroke-linecap="round"/>
+                <path d="M 97 66 C 99 71 107 71 109 66" fill="none" stroke="#3d2314" stroke-width="3" stroke-linecap="round"/>
+            </g>
+            <g id="om-m-f-excited">
+                <circle cx="84" cy="54" r="5" fill="#3d2314"/>
+                <circle cx="86" cy="52" r="1.8" fill="#fff"/>
+                <circle cx="117" cy="57" r="5" fill="#3d2314"/>
+                <circle cx="119" cy="55" r="1.8" fill="#fff"/>
+                <path d="M 94 66 C 96 78, 110 78, 112 66 Z" fill="#ffaec0" stroke="#3d2314" stroke-width="2.5" stroke-linejoin="round"/>
+            </g>
+            <g id="om-m-f-sleep">
+                <path d="M 79 55 C 82 59.5 88 59.5 91 55" fill="none" stroke="#3d2314" stroke-width="3" stroke-linecap="round"/>
+                <path d="M 112 58 C 115 62.5 121 62.5 124 58" fill="none" stroke="#3d2314" stroke-width="3" stroke-linecap="round"/>
+                <path d="M 98 67 C 100.5 70.5 104.5 70.5 107 67" fill="none" stroke="#3d2314" stroke-width="3" stroke-linecap="round"/>
+            </g>
+            <!-- 손 (0,0 중심) -->
+            <g id="om-m-paw">
+                <ellipse cx="0" cy="0" rx="10.5" ry="8" fill="#a88265" stroke="#3d2314" stroke-width="4"/>
+                <ellipse cx="2.5" cy="1.5" rx="3.2" ry="4.2" fill="#ffaec0"/>
+            </g>
+            <!-- 별 (0,0 중심) -->
+            <g id="om-m-star">
+                <path d="M 0 -9 L 2.2 -3.03 L 8.56 -2.78 L 3.56 1.16 L 5.29 7.28 L 0 3.75 L -5.29 7.28 L -3.56 1.16 L -8.56 -2.78 L -2.2 -3.03 Z" fill="#ffdd57" stroke="#3d2314" stroke-width="2.5" stroke-linejoin="round"/>
+            </g>
+            <!-- 불가사리 (0,0 중심) -->
+            <g id="om-m-starfish">
+                <g transform="translate(-95.5, -113.5)">
+                    <path d="M 93 98 C 103 93, 113 103, 108 113 C 118 123, 108 133, 98 128 C 88 138, 73 128, 83 118 C 73 108, 83 98, 93 98 Z" fill="#ffaec0" stroke="#3d2314" stroke-width="3" stroke-linejoin="round"/>
+                    <circle cx="91" cy="111" r="1.5" fill="#3d2314"/>
+                    <circle cx="101" cy="111" r="1.5" fill="#3d2314"/>
+                </g>
+            </g>
+        </defs>
+    </svg>
+    <!-- 18.2 · 비행기 해돌이 — 홈 화면에서 아주 가끔 왼쪽 위에서 날아간다 (드물게 · 장식) -->
+    <div id="planeOtter" class="om-mini om-w-flight plane-otter" aria-hidden="true">
+        <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+            <g class="om-px"><g class="om-anim">
+                <line class="om-wind" x1="8" y1="70" x2="32" y2="70" stroke="#b7d9ea" stroke-width="3.5" stroke-linecap="round"/>
+                <line class="om-wind om-wind2" x1="2" y1="105" x2="26" y2="105" stroke="#b7d9ea" stroke-width="3.5" stroke-linecap="round"/>
+                <line class="om-wind om-wind3" x1="10" y1="140" x2="34" y2="140" stroke="#b7d9ea" stroke-width="3.5" stroke-linecap="round"/>
+                <path d="M 42 84 L 14 42 L 56 74 Z" fill="#8fc7e8" stroke="#3d2314" stroke-width="4" stroke-linejoin="round"/>
+                <use href="#om-m-head" xlink:href="#om-m-head"/>
+                <use href="#om-m-f-happy" xlink:href="#om-m-f-happy"/>
+                <rect x="30" y="82" width="152" height="52" rx="26" fill="#a5d8f3" stroke="#3d2314" stroke-width="4"/>
+                <line x1="42" y1="112" x2="168" y2="112" stroke="#ff9f68" stroke-width="5"/>
+                <ellipse class="om-prop" cx="188" cy="108" rx="3" ry="17" fill="#3d2314" opacity="0.75"/>
+                <circle cx="188" cy="108" r="5" fill="#ff9f68" stroke="#3d2314" stroke-width="3.5"/>
+                <path d="M 72 128 L 138 128 L 124 162 L 92 162 Z" fill="#8fc7e8" stroke="#3d2314" stroke-width="4" stroke-linejoin="round"/>
+                <circle cx="105" cy="84" r="4" fill="#3d2314"/>
+                <use href="#om-m-paw" xlink:href="#om-m-paw" transform="translate(86,90) rotate(-20)"/>
+                <use href="#om-m-paw" xlink:href="#om-m-paw" transform="translate(124,90) rotate(15)"/>
+            </g></g>
+        </svg>
+    </div>
+
     <!-- MAIN VIEW -->
     <div id="mainView">
         <header class="header py-4 px-6">
@@ -560,6 +655,26 @@
             <button onclick="resetSettings()" style="margin-top:18px;width:100%;padding:11px;border-radius:4px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);font-size:13.5px;font-weight:600;cursor:pointer;">기본값으로 복원</button>
             <button onclick="closeSettings()" style="margin-top:8px;width:100%;padding:11px;border-radius:4px;background:var(--accent);color:#fff;border:none;font-size:14px;font-weight:600;cursor:pointer;">닫기</button>
         </div>
+        <!-- 18.2 · 커피 해돌이 — 설정 창 오른쪽 아래 (누르면 커피 선물) -->
+        <div class="om-mini om-w-coffee set-otter" data-gift="☕" data-word="에너지 하나 드릴게요!">
+        <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+            <g class="om-px"><g class="om-anim">
+            <g transform="rotate(-15 100 100)">
+                <use href="#om-m-body" xlink:href="#om-m-body"/>
+                <path d="M 116 106 C 128 106 128 124 116 124" fill="none" stroke="#3d2314" stroke-width="4"/>
+                <rect x="76" y="100" width="40" height="32" rx="5" fill="#ffffff" stroke="#3d2314" stroke-width="4"/>
+                <path d="M 96 124 C 88 115 92 106 96 111 C 100 106 104 115 96 124 Z" fill="#ff7da1"/>
+                <use href="#om-m-paw" xlink:href="#om-m-paw" transform="translate(70.5,111.5) rotate(35)"/>
+                <use href="#om-m-paw" xlink:href="#om-m-paw" transform="translate(119.5,111.5) rotate(-35)"/>
+                <use href="#om-m-head" xlink:href="#om-m-head"/>
+                <use href="#om-m-f-wink" xlink:href="#om-m-f-wink"/>
+                <path class="om-steam" d="M 87 98 C 85 92 89 89 87 83" fill="none" stroke="#c4ccd4" stroke-width="3" stroke-linecap="round"/>
+                <path class="om-steam om-steam2" d="M 104 96 C 102 90 106 87 104 81" fill="none" stroke="#c4ccd4" stroke-width="3" stroke-linecap="round"/>
+            </g>
+            </g></g>
+        </svg>
+        <span class="om-say"></span>
+        </div>
     </div>
     <input type="file" id="wallFile" accept="image/*,.heic,.heif,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" style="display:none"
            onchange="pickWallpaper(this.files[0]);this.value='';">
@@ -736,6 +851,26 @@
                 <button onclick="closeKeys()" class="tool-btn" title="닫기"><i class="ri-close-line"></i></button>
             </div>
             <div id="keyBody" style="max-height:60vh;overflow:auto;"></div>
+            <!-- 18.2 · 졸리는 해돌이 — 사용법·단축키 설명 가장 아래 (누르면 달 선물) -->
+            <div class="om-mini om-w-sleep keys-otter" data-gift="🌙" data-word="zzz… (게 꿈은?)">
+                <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                    <g class="om-px"><g class="om-anim">
+                        <g transform="rotate(-15 100 100)">
+                            <ellipse cx="102" cy="64" rx="64" ry="27" fill="#ffffff" stroke="#3d2314" stroke-width="3.5"/>
+                            <use href="#om-m-body" xlink:href="#om-m-body"/>
+                            <use href="#om-m-starfish" xlink:href="#om-m-starfish" transform="translate(95.5,113.5)"/>
+                            <use href="#om-m-paw" xlink:href="#om-m-paw" transform="translate(70.5,111.5) rotate(35)"/>
+                            <use href="#om-m-paw" xlink:href="#om-m-paw" transform="translate(119.5,111.5) rotate(-35)"/>
+                            <use href="#om-m-head" xlink:href="#om-m-head"/>
+                            <use href="#om-m-f-sleep" xlink:href="#om-m-f-sleep"/>
+                        </g>
+                        <text class="om-z" x="146" y="44" font-size="12" font-weight="bold" fill="#3d2314" font-family="sans-serif">z</text>
+                        <text class="om-z om-z2" x="158" y="28" font-size="15" font-weight="bold" fill="#3d2314" font-family="sans-serif">Z</text>
+                        <text class="om-z om-z3" x="170" y="12" font-size="18" font-weight="bold" fill="#3d2314" font-family="sans-serif">Z</text>
+                    </g></g>
+                </svg>
+                <span class="om-say"></span>
+            </div>
         </div>
     </div>
 
@@ -1927,6 +2062,31 @@
     <div class="fc-btns" id="fcBtns"></div>
   </div>
   <div class="fc-hint" id="fcHint"></div>
+  <!-- 18.2 · 독서 해돌이 — 타이머(집중) 화면 왼쪽 아래 (누르면 지식 선물) -->
+  <div class="om-mini om-w-read fc-otter" data-gift="📖" data-word="지식 한 스푼 드릴게요~">
+    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+      <g class="om-px"><g class="om-anim">
+        <g transform="rotate(-15 100 100)">
+          <use href="#om-m-body" xlink:href="#om-m-body"/>
+          <g class="om-book">
+            <path d="M 70 100 L 94 96 L 94 132 L 70 136 Z" fill="#ffffff" stroke="#3d2314" stroke-width="3.5" stroke-linejoin="round"/>
+            <path d="M 121 100 L 97 96 L 97 132 L 121 136 Z" fill="#ffffff" stroke="#3d2314" stroke-width="3.5" stroke-linejoin="round"/>
+            <line x1="76" y1="106" x2="88" y2="104" stroke="#a8b8c8" stroke-width="2" stroke-linecap="round"/>
+            <line x1="76" y1="113" x2="88" y2="111" stroke="#a8b8c8" stroke-width="2" stroke-linecap="round"/>
+            <line x1="76" y1="120" x2="88" y2="118" stroke="#a8b8c8" stroke-width="2" stroke-linecap="round"/>
+            <line x1="103" y1="104" x2="115" y2="106" stroke="#a8b8c8" stroke-width="2" stroke-linecap="round"/>
+            <line x1="103" y1="111" x2="115" y2="113" stroke="#a8b8c8" stroke-width="2" stroke-linecap="round"/>
+            <line x1="103" y1="118" x2="115" y2="120" stroke="#a8b8c8" stroke-width="2" stroke-linecap="round"/>
+          </g>
+          <use href="#om-m-paw" xlink:href="#om-m-paw" transform="translate(70.5,111.5) rotate(35)"/>
+          <use href="#om-m-paw" xlink:href="#om-m-paw" transform="translate(119.5,111.5) rotate(-35)"/>
+          <use href="#om-m-head" xlink:href="#om-m-head"/>
+          <use href="#om-m-f-wink" xlink:href="#om-m-f-wink"/>
+        </g>
+      </g></g>
+    </svg>
+    <span class="om-say"></span>
+  </div>
 </div>
 
 
@@ -2044,6 +2204,30 @@
     </div>
   </div>
   <input type="file" id="ypFileInp" style="display:none">
+  <!-- 18.2 · 편지 해돌이 — 엽스코드 안 왼쪽 아래 (누르면 편지 선물) -->
+  <div class="om-mini om-w-mail yp-otter" data-gift="✉️" data-word="당신에게 온 편지여!">
+    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+      <g class="om-px"><g class="om-anim">
+        <g transform="rotate(-15 100 100)">
+          <use href="#om-m-body" xlink:href="#om-m-body"/>
+          <path d="M 70 92 L 92 140" stroke="#8a5a33" stroke-width="5" stroke-linecap="round"/>
+          <g transform="translate(78,112) rotate(-8)">
+            <rect x="0" y="0" width="28" height="20" rx="2" fill="#ffffff" stroke="#3d2314" stroke-width="3"/>
+            <line x1="2" y1="2" x2="13" y2="11" stroke="#ff5a5a" stroke-width="2"/>
+            <line x1="26" y1="2" x2="15" y2="11" stroke="#5a7aff" stroke-width="2"/>
+          </g>
+          <rect x="64" y="126" width="50" height="42" rx="10" fill="#c98a4b" stroke="#3d2314" stroke-width="4"/>
+          <line x1="64" y1="138" x2="114" y2="138" stroke="#3d2314" stroke-width="3"/>
+          <circle cx="89" cy="141" r="3" fill="#ffdd57" stroke="#3d2314" stroke-width="2"/>
+          <use href="#om-m-paw" xlink:href="#om-m-paw" transform="translate(72,124) rotate(25)"/>
+          <g transform="translate(152,72) rotate(-35)"><use href="#om-m-paw" xlink:href="#om-m-paw" class="om-wavehand"/></g>
+          <use href="#om-m-head" xlink:href="#om-m-head"/>
+          <use href="#om-m-f-happy" xlink:href="#om-m-f-happy"/>
+        </g>
+      </g></g>
+    </svg>
+    <span class="om-say"></span>
+  </div>
 </div>
 
 

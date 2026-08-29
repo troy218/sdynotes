@@ -23879,6 +23879,79 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }
   })();
 
+  // ── 18.2 · 해돌이 스쿼드 인터랙션 (Notion '해돌이 스쿼드') ──────────────
+  //   편지(엽스코드) · 커피(설정) · 독서(타이머) 해돌이는 누르면
+  //   쭈뼛-뾰쪽 + 선물 파티클 + 말풍선(om-say).
+  //   비행기 해돌이는 홈 화면에서 아주 가끔(평균 10여 분에 한 번 꼴)
+  //   왼쪽 위에서 나타나 오른쪽으로 날아간다.
+  (function(){
+    var wps=document.querySelectorAll('.om-mini[data-word]');
+    for(var i=0;i<wps.length;i++){
+      (function(w){
+        if(w.getAttribute('data-ombound')==='1') return;
+        w.setAttribute('data-ombound','1');
+        var say=w.querySelector('.om-say'), hideT=null;
+        w.addEventListener('click',function(e){
+          // 1) 쭈뼛-뾰쪽 반응
+          w.classList.remove('om-got'); void w.offsetWidth;
+          w.classList.add('om-got');
+          setTimeout(function(){ w.classList.remove('om-got'); },600);
+          // 2) 누른 자리에서 선물 파티클
+          var gift=w.getAttribute('data-gift')||'⭐';
+          var r=w.getBoundingClientRect();
+          var g=document.createElement('span');
+          g.className='om-gift'; g.textContent=gift;
+          g.style.left=(e.clientX?(e.clientX-r.left):(r.width/2))+'px';
+          g.style.top=(e.clientY?(e.clientY-r.top):(r.height/2))+'px';
+          w.appendChild(g);
+          setTimeout(function(){ if(g.parentNode) g.parentNode.removeChild(g); },1250);
+          // 3) 말풍선
+          if(say){
+            say.textContent=w.getAttribute('data-word')||'';
+            say.classList.add('om-on');
+            if(hideT) clearTimeout(hideT);
+            hideT=setTimeout(function(){ say.classList.remove('om-on'); },2400);
+          }
+        });
+      })(wps[i]);
+    }
+
+    // ── 홈 화면 위에서만 (에디터·모달·집중시계·엽스코드 열림 = 홈 아님) ──
+    var plane=document.getElementById('planeOtter');
+    function homeVisible(){
+      var ed=document.getElementById('editorView');
+      if(ed&&ed.classList.contains('open')) return false;
+      var fc=document.getElementById('focusClock');
+      if(fc&&fc.classList.contains('show')) return false;
+      var yp=document.getElementById('ypApp');
+      if(yp&&yp.classList.contains('open')) return false;
+      var gate=document.getElementById('ypGate');
+      if(gate&&gate.style.display==='flex') return false;
+      var auth=document.getElementById('sdyAuthWrap');
+      if(auth&&auth.style.display==='flex') return false;
+      var mbs=document.querySelectorAll('.modal-bg');
+      for(var j=0;j<mbs.length;j++){
+        var mb=mbs[j];
+        if(mb.style.display==='flex'||mb.style.display==='block') return false;
+      }
+      return true;
+    }
+    function planeFly(){
+      if(!plane||plane._flying) return;
+      try{
+        if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      }catch(e){}
+      plane._flying=true;
+      plane.classList.remove('fly'); void plane.offsetWidth;
+      plane.classList.add('fly');
+      setTimeout(function(){ plane.classList.remove('fly'); plane._flying=false; },12500);
+    }
+    // 아주 가끔: 2분마다 15% 확률 → 평균 약 13분에 한 번
+    setInterval(function(){
+      if(Math.random()<0.15&&homeVisible()) planeFly();
+    },120000);
+  })();
+
   ypDrag();
 
   // ── 16.2 · 입장 게이트: '로그인' 또는 '비회원' ──
