@@ -1910,15 +1910,15 @@
         #cardsModal::before,#cardsModal::after{display:none !important;}
         .fcard-win{pointer-events:auto;width:min(760px,96vw) !important;max-width:min(760px,96vw) !important;
             max-height:92vh;display:flex;flex-direction:column;
-            padding:0 !important;overflow:hidden;position:fixed;left:50%;top:7%;
-            transform:translateX(-50%);
+            padding:0 !important;overflow:hidden;position:fixed;left:50%;top:50%;
+            transform:translate(-50%,-50%);
             box-shadow:0 22px 70px rgba(0,0,0,.30);
             animation:fcIn .32s cubic-bezier(.22,.9,.3,1.08);}
         .fcard-win.closing{animation:fcOut .26s cubic-bezier(.5,0,.8,.4) forwards;}
         .fcard-win.moved{left:var(--fx,top);transform:none;}
-        @keyframes fcIn{from{opacity:0;transform:translateX(-50%) translateY(30px) scale(.96);}
-                        to{opacity:1;transform:translateX(-50%) scale(1);}}
-        @keyframes fcOut{to{opacity:0;transform:translateX(-50%) translateY(40px) scale(.9);}}
+        @keyframes fcIn{from{opacity:0;transform:translate(-50%,-50%) translateY(30px) scale(.96);}
+                        to{opacity:1;transform:translate(-50%,-50%) scale(1);}}
+        @keyframes fcOut{to{opacity:0;transform:translate(-50%,-50%) translateY(40px) scale(.9);}}
         @keyframes fcInMove{from{opacity:0;transform:translateY(30px) scale(.96);}
                             to{opacity:1;transform:none;}}
         .fcard-win.moved{animation:fcInMove .32s cubic-bezier(.22,.9,.3,1.08);}
@@ -2806,8 +2806,13 @@ body.sdy-booting #musicListPop{z-index:10001;}
 #mpBKnob{position:absolute;top:50%;left:0;width:13px;height:13px;border-radius:50%;
     background:var(--accent);border:2px solid var(--card);box-shadow:0 1px 5px rgba(0,0,0,.3);
     transform:translate(-50%,-50%);pointer-events:none;}
-/* 시간 표시는 평소엔 숨기고, 재생 위치를 잡을 때만 잠깐 뜬다 (현재 | 전체) */
-.mpb-time{display:none;align-items:center;justify-content:center;font-size:11.5px;color:var(--text1);gap:7px;letter-spacing:.01em;margin-bottom:2px;
+/* 시간 표시는 평소엔 숨기고, 재생 위치를 잡을 때만 잠깐 뜬다 (현재 | 전체).
+   17.4 · 진행바 위에 오버레이로 띄운다 — 레이아웃에서 빠져 있어야(display:none)
+   시간이 나타날 때 막대가 아래로 밀리지 않는다.
+   (#mpBTime 은 #mpBProg 안에 있다: position:absolute + bottom:100% 로 막대를 안 밀고
+   그 위쪽 공간만 비친다.) */
+.mpb-time{position:absolute;left:0;right:0;bottom:calc(100% + 8px);
+  display:none;align-items:center;justify-content:center;font-size:11.5px;color:var(--text1);gap:7px;letter-spacing:.01em;
   opacity:0;visibility:hidden;transform:translateY(4px);pointer-events:none;
   transition:opacity .22s ease,transform .22s ease,visibility .22s;}
 .mpb-time.show{display:flex !important;opacity:1;visibility:visible;transform:translateY(0);}

@@ -9323,15 +9323,25 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // ── 10.7 · 플로팅 창: 위치·크기 저장/복원 + 드래그 + 리사이즈 ──
     let _fcardDrag=null, _fcardRs=null;
     function _fcardPlace(win){
-        // 10.8 · 완전 플로팅: 저장된 위치로. 없으면 화면 상단 중앙.
-        try{
-            const p=JSON.parse(localStorage.getItem('fcard_pos')||'null');
-            if(p&&isFinite(p.x)){
-                win.classList.add('moved');
-                const c=sdyClampFloatingRect(win,p.x,p.y);
-                win.style.left=c.x+'px'; win.style.top=c.y+'px';
-            }
-        }catch(e){}
+        // 10.8 · 완전 플로팅: 저장된 위치로. 없으면 화면 가운데.
+        //   첫 위치는 CSS 의 left:50%/top:7% 에 기대지 않고 공용 실측으로 잡는다 —
+        //   배율/브라우저/디바이스가 달라도 항상 화면(뷰포트) 중심이 된다.
+        let p=null;
+        try{ p=JSON.parse(localStorage.getItem('fcard_pos')||'null'); }catch(e){}
+        const hasSaved=!!(p&&isFinite(p.x)&&isFinite(p.y));
+        win.classList.add('moved');
+        win.style.position='fixed'; win.style.margin='0';
+        let x,y;
+        if(hasSaved){ x=p.x; y=p.y; }
+        else{
+            const vp=sdyViewportBox();
+            const w=parseFloat(win.style.width)||win.offsetWidth||Math.min(760,Math.max(280,(vp.w||innerWidth||1024)-16));
+            const h=parseFloat(win.style.height)||win.offsetHeight||Math.min(640,Math.max(240,(vp.h||innerHeight||768)-16));
+            x=Math.round((vp.w-w)/2);
+            y=Math.round((vp.h-h)/2);
+        }
+        const c=sdyClampFloatingRect(win,x,y);
+        win.style.left=c.x+'px'; win.style.top=c.y+'px';
     }
     (function(){
         const head=document.getElementById('fcardHead');
@@ -18581,12 +18591,14 @@ function clampMpb(){
   const h=parseFloat(mpbEl.style.height)||r.height;
   let x=parseFloat(mpbEl.style.left); let y=parseFloat(mpbEl.style.top);
   if(!isFinite(x)){
-    // 처음 열 때 화면 가운데. innerWidth 은 화면 px, style.left 는 UI CSS px 라
-    // 그대로 쓰면 90% 배율에서 창이 왼쪽으로 5% 어긋난다 — 공용 실측을 쓴다.
+    // 처음 열 때 공용 실측으로 화면 가운데 (배율·브라우저와 무관)
     const vp=sdyViewportBox();
     x=Math.round((((vp.w||window.innerWidth)||1024)-(w||0))/2);
   }
-  if(!isFinite(y)) y=72;
+  if(!isFinite(y)){
+    const vp=sdyViewportBox();
+    y=Math.max(8,Math.round((((vp.h||window.innerHeight)||768)-(h||0))/2));
+  }
   const c=sdyClampFloatingRect(mpbEl,x,y);
   mpbEl.style.left=Math.round(c.x)+'px'; mpbEl.style.top=Math.round(c.y)+'px';
 }
@@ -18689,9 +18701,16 @@ function _mpbSavedPos(){
 }
 function mpbFakeFs(on){
   if(on){
-    // 전체 화면으로 가기 전 '창 위치'를 기억해 둔다 (돌아올 자리)
+    // 전체 화면으로 가기 전 '창 위치'를 확실히 만들어 두고 기억한다 (돌아올 자리).
+    //   처음 열 때 가운데로 놓인 창도 style.left/top 이 아직 없을 수 있으므로
+    //   clampMpb() 를 먼저 돌려 위치를 확정한 뒤 저장해야 전체 화면에서 내려올 때
+    //   왼쪽 벽에 달라붙지 않는다.
+    try{ clampMpb(); }catch(e){}
     const x=parseFloat(mpbEl.style.left), y=parseFloat(mpbEl.style.top);
-    if(isFinite(x)&&isFinite(y)) _mpbPrePos={x,y};
+    if(isFinite(x)&&isFinite(y)){
+      _mpbPrePos={x,y};
+      try{ localStorage.setItem('mp_big_pos',JSON.stringify(_mpbPrePos)); }catch(e){}
+    }
     _mpbAnimKick();
     // 클래스 css(100vw/100vh)가 !important 로 인라인 크기를 덮으므로
     // 한 박자 늦게 붙여 현재 창 위치에서 화면 가득으로 자라나는 모핑이 보이게 한다
@@ -18706,6 +18725,7 @@ function mpbFakeFs(on){
     // 폭이 아직 100vw 라 왼쪽 벽에 달라붙는다.
     _applyBigSize();
     const p=_mpbPrePos||_mpbSavedPos();
+    _mpbPrePos=null;
     if(p){ mpbEl.style.left=Math.round(p.x)+'px'; mpbEl.style.top=Math.round(p.y)+'px'; }
     // clampMpb는 브라우저가 뷰포트 크기를 업데이트한 뒤에만 실행해야
     // 축소 시 왼쪽 벽에 달라붙는 현상을 방지할 수 있다.
@@ -19257,10 +19277,27 @@ function eqViz(){
       ctx2.globalAlpha=1; return;
     }
     _eqAnalyser.getByteFrequencyData(buf);
-    const n=56, w=cv.width/n, step=Math.max(1,Math.floor(buf.length/n));
+    // 17.4 · 낮은 주파수가 과하게 치솟지 않도록 로그 주파수 축으로 읽고,
+    //   사람이 실제로 느끼는 라우드니스에 가깝게 저역을 눌러준다.
+    //   예전엔 FFT 를 폭부터 선형으로 훑어 1kHz 아래 몇 개 빈이 통째로
+    //   화면을 덮어 '저음만 너무 큰' 모양이 됐다.
+    const sr=(_eqCtx&&_eqCtx.sampleRate)||44100;
+    const nyq=Math.max(1000,sr/2);
+    const lo=Math.max(30,nyq/700);                       // 44.1kHz → 약 63Hz
+    const hi=Math.min(18000,nyq*.92);
+    const n=56, w=cv.width/n;
     ctx2.fillStyle=grad;
     for(let i=0;i<n;i++){
-      const v=buf[i*step]/255;
+      const f=lo*Math.pow(hi/lo,i/(n-1));                // 20Hz~20kHz 를 로그로 나눈다
+      const c=Math.round(f/nyq*(buf.length-1));
+      const half=Math.max(1,Math.round(c*.12)+1);        // 주변 빈을 평균해 한 줄로
+      let sum=0,cnt=0;
+      for(let j=Math.max(0,c-half);j<=Math.min(buf.length-1,c+half);j++){ sum+=buf[j]; cnt++; }
+      const raw=sum/cnt/255;
+      // 저역은 물리적 에너지가 커서 FFT 가 크게 나온다. 이 과잉을 눌러
+      // '실제 음량이 고른 곡' 은 시각적으로도 고르게 보이게 한다.
+      const weight=Math.min(1.15,0.42+0.58*Math.sqrt(f/12000));
+      const v=Math.pow(Math.min(1,raw*weight),0.86);
       const h=Math.max(3,v*(cv.height-8));
       const y=cv.height-h-3;
       ctx2.globalAlpha=.32+v*.68;
