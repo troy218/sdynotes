@@ -632,6 +632,63 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 세션 키 없이 관리자 권한으로 열린 노트 (평문 잠금)
     const adminPlainUnlocked=new Set();
 
+    // 14.13.9 · '본문을 못 받았다'는 일시적인 실패도 영구 차단으로 만들지 않는다.
+    //   예전엔 __blockedNB 가 세션당 Set 이어서, 첫 3회 실패(순간 네트워크·서버
+    //   재시작·느린 응답)가 한 번이라도 나면 새로고침 전까지 저장/동기화가 막혔다.
+    //   → Map(nbId → 시각)으로 바꾸고, 성공 시 즉시 풀며, 온라인/재시도에서
+    //     자동으로 다시 받아온다.
+    function _nbBlocked(id){
+        try{
+            const b=window.__blockedNB;
+            if(!b) return false;
+            if(b instanceof Map) return b.has(String(id));
+            return b.has?b.has(String(id)):false;
+        }catch(e){ return false; }
+    }
+    function _nbMarkBlocked(id){
+        try{
+            window.__blockedNB=window.__blockedNB||new Map();
+            if(!(window.__blockedNB instanceof Map)) window.__blockedNB=new Map();
+            window.__blockedNB.set(String(id), Date.now());
+        }catch(e){}
+    }
+    function _nbClearBlocked(id){
+        try{
+            const b=window.__blockedNB;
+            if(!b) return;
+            if(b instanceof Map) b.delete(String(id));
+            else if(b.delete) b.delete(String(id));
+        }catch(e){}
+    }
+    function _docHasContent(d){
+        try{
+            if(!d||!Array.isArray(d.pages)) return false;
+            return d.pages.some(pg=>
+                ((pg&&pg.els)||[]).length>0 ||
+                ((pg&&pg.tables)||[]).length>0 ||
+                ((pg&&pg.notes)||[]).length>0
+            );
+        }catch(e){ return false; }
+    }
+    // 슬라이스가 실제로 채워지면 '본문 안 불림' 플래그를 해제한다.
+    function _importLoaded(d,nbId){
+        if(!_docHasContent(d)) return false;
+        _nbClearBlocked(nbId);
+        try{ if(d) d.__loadFailed=false; }catch(e){}
+        return true;
+    }
+    let _blockedRetryTimer=null;
+    function _armBlockedImportRetry(){
+        if(_blockedRetryTimer) return;
+        _blockedRetryTimer=setTimeout(()=>{
+            _blockedRetryTimer=null;
+            try{ retryBlockedImport(); }catch(e){}
+            // 현재 열어 둔 가져온 문서가 아직 막혀 있을 때만 이어서 재시도
+            if(curNB&&doc&&doc.__ref&&(_nbBlocked(curNB.id)||doc.__loadFailed))
+                _armBlockedImportRetry();
+        },4000);
+    }
+
     function loadDoc(nbId){
         const cfg=getCfg(nbId);
         if(cfg.lock&&cfg.lock.enc){
@@ -647,19 +704,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const cfg=getCfg(nbId);
         // 대용량 가져온 문서: 본문이 서버에 있으면 '첫 슬라이스만' 먼저 연다.
         // 나머지는 스크롤 시 슬라이스 단위로_lazy 로드 (한 번에 열다 뻗는 것 방지)
+        let firstSliceFailed=false;
         if(cfg.serverDoc&&!(Array.isArray(cfg.pages)&&cfg.pages.length&&cfg.pages.some(p=>(p.els||[]).length))){
             // 사용자가 마지막으로 보던 쪽이 담긴 슬라이스를 '먼저'
             let lastPg=0;
             try{ lastPg=parseInt(localStorage.getItem('sdy_lastpg_'+nbId)||'0')||0; }catch(e){}
             const firstSlice=Math.max(0,Math.floor(lastPg/LAZY_SLICE)*LAZY_SLICE);
             let dd=null;
-            for(let tryN=0;tryN<3&&!dd;tryN++){
+            for(let tryN=0;tryN<4&&!dd;tryN++){
                 try{
-                    dd=await fetchSlice(cfg.serverDoc,firstSlice,0);
-                    if(!dd) await new Promise(r=>setTimeout(r,700));
-                }catch(e){ await new Promise(r=>setTimeout(r,700)); }
+                    dd=await fetchSlice(9000,cfg.serverDoc,firstSlice,0);
+                    if(!dd) await new Promise(r=>setTimeout(r,[500,1000,2000,3500][tryN]||400));
+                }catch(e){ await new Promise(r=>setTimeout(r,[500,1000,2000,3500][tryN]||400)); }
             }
             if(dd){
+                _nbClearBlocked(nbId);
                 const total=dd.total||dd.pages.length;
                 const pages=dd.pages.slice();
                 for(let i=pages.length;i<total;i++)
@@ -670,10 +729,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 cfg.__loadedTo=dd.pages.length;
                 try{ setCfg(nbId,cfg); }catch(e){}   // 옛 빈화면 캐시 덮어쓰기
             }else{
-                // 본문을 못 받으면 이 기기의 저장/동기화를 차단(빈 화면 역저장 방지)
-                window.__blockedNB=window.__blockedNB||new Set();
-                window.__blockedNB.add(nbId);
-                if(window.toast)toast('본문을 받지 못했습니다 · 이 기기에서 저장/동기화 차단',3200);
+                // 본문을 못 받으면 빈 화면 역저장을 막되, 영구 차단 대신
+                // 백그라운드 재시도를 걸어 순간 장애가 끝나면 바로 복구한다.
+                firstSliceFailed=true;
+                _nbMarkBlocked(nbId);
+                _armBlockedImportRetry();
+                if(window.toast)toast('본문을 받지 못했습니다 · 잠시 후 자동으로 다시 시도합니다',3200);
             }
         }
         if(cfg.lock&&cfg.lock.enc){
@@ -696,9 +757,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return d;
         }
         const d=migrate(cfg,nbId);
-        // 서버 참조가 있는데 요소가 0이면 로드 실패 → 저장 차단(데이터 파괴 방지)
+        // 서버 참조가 있는데 '실제로 본문을 하나도 못 받은' 경우만 로드 실패로
+        // 저장을 차단한다. 첫 슬라이스가 성공했는데 앞쪽이 비어 보이는 것은
+        // lazy 문서의 정상적인 모습일 수 있으므로 차단하지 않는다.
         const elN0=(d.pages||[]).reduce((n,pg)=>n+((pg.els||[]).length),0);
-        if((cfg.serverDoc||d.__ref)&&elN0===0) d.__loadFailed=true;
+        if((cfg.serverDoc||d.__ref)&&elN0===0&&firstSliceFailed) d.__loadFailed=true;
         // lazy 스텁 마커 복원 (migrate 는 id/els 만 옮기므로)
         if(cfg.__ref||cfg.serverDoc){
             d.__ref=cfg.__ref||cfg.serverDoc;
@@ -719,14 +782,53 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     const LAZY_SLICE=8;   // 작은 배치: 첫 화면 즉시 + 스크롤 스트리밍
     // 서버 슬라이스 저장소에서 s0 부터 LAZY_SLICE 개 쪽을 받는다.
     // (대용량 가져온 문서 본문을 열 때/스크롤할 때 쓰는 공용 헬퍼)
-    async function fetchSlice(ref, s0, total){
+    // 이 요청은 '첫 슬라이스 심문'에 쓰이므로 서버가 느려도 무한정 매달리지
+    // 않게 타임아웃을 준다. (타임아웃은 실패로 처리해 다음 재시도로 넘어간다)
+    async function fetchSlice(ms, ref, s0, total){
         try{
-            const rr=await fetch('/api/import/docfile/'+encodeURIComponent(ref)
-                +'?from='+s0+'&to='+(s0+LAZY_SLICE),{cache:'no-store'});
+            const url='/api/import/docfile/'+encodeURIComponent(ref)
+                +'?from='+s0+'&to='+(s0+LAZY_SLICE);
+            let rr;
+            if(window.AbortController&&ms){
+                const ctl=new AbortController();
+                const timer=setTimeout(()=>{ try{ ctl.abort(); }catch(e){} }, ms);
+                try{ rr=await fetch(url,{cache:'no-store',signal:ctl.signal}); }
+                finally{ clearTimeout(timer); }
+            }else{
+                rr=await fetch(url,{cache:'no-store'});
+            }
             const dd=await rr.json().catch(()=>({}));
             if(rr.ok && dd && dd.ok!==false && Array.isArray(dd.pages)) return dd;
             return null;
         }catch(e){ return null; }
+    }
+    // 실패했던 가져온 문서를 백그라운드에서 다시 받는다.
+    // 온라인 복귀·화면 복귀·블록 직후 일정 시간 뒤에 호출된다.
+    async function retryBlockedImport(){
+        try{
+            const nbId=curNB&&curNB.id, d=doc;
+            if(!nbId||!d||!d.__ref) return;
+            if(!_nbBlocked(nbId)&&!d.__loadFailed) return;
+            const dbg=document.getElementById('saveState');
+            if(dbg) setSaveState('본문 다시 불러오는 중…');
+            const dd=await fetchSlice(9000,d.__ref,0,(d.pages||[]).length);
+            if(!dd||!Array.isArray(dd.pages)||!dd.pages.length) return;
+            if(doc!==d||!curNB||curNB.id!==nbId) return;
+            let filled=false;
+            dd.pages.forEach((p,j)=>{
+                const i=j; if(i>=(d.pages||[]).length) return;
+                const cur=d.pages[i];
+                if(cur&&(cur.__dirty||(cur.__lazy==null&&((cur.els||[]).length||(cur.tables||[]).length)))) return;
+                d.pages[i]=p; filled=true;
+            });
+            if(!filled) return;
+            if(_importLoaded(d,nbId)){
+                if(dbg) setSaveState('본문 불러옴 ✓',2400);
+                if(doc===d){ try{ ensureVisiblePagesRendered(); }catch(e){} }
+                try{ if(doc===d) startSlicePrefill(); }catch(e){}
+                try{ if(curNB&&curNB.id===nbId) queueSync(nbId); }catch(e){}
+            }
+        }catch(e){}
     }
     async function ensureLazyPage(idx){
         const d=doc;                    // 14.9 · 노트 전환 후 이어지는 로드를 차단
@@ -781,6 +883,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     }
                     d.pages[i]=p;
                 });
+                _importLoaded(d, curNB&&curNB.id);
             }
         }catch(e){ console.warn('배치 로드 실패',s0,e); }
         if(doc===d) d.__lazyLoading.delete(s0);
@@ -2602,6 +2705,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         updateOfflineUI();
         toast('인터넷 연결됨 · 동기화 중…',1800);
         setTimeout(()=>{ flushOutbox(false); pullSettings(); flushCardGrades(); },350);
+        setTimeout(()=>{ try{ retryBlockedImport(); }catch(e){} _armBlockedImportRetry(); },700);
     });
     window.addEventListener('offline',()=>{
         updateOfflineUI();
@@ -2619,6 +2723,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }else{
             flushOutbox(true);
             try{ refreshNBs(); }catch(e){}
+            setTimeout(()=>{ try{ retryBlockedImport(); }catch(e){} },400);
         }
     });
     window.addEventListener('pagehide',()=>{
@@ -2641,6 +2746,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(curNB&&doc&&document.getElementById('editorView').classList.contains('open')){
                 document.querySelectorAll('.tb.edit').forEach(w=>{ try{ syncTextEl(w); }catch(e){} });
                 if(pendingNB) flushSync();
+                // 가져온 문서 첫 슬라이스가 실패했던 경우: 주기 재시도로 복구
+                if(doc.__ref&&(_nbBlocked(curNB.id)||doc.__loadFailed)) _armBlockedImportRetry();
             }
         }catch(e){}
     }, 8000);
@@ -5448,7 +5555,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         //   저장을 예약하지 않는다. 예약하면 400ms 뒤 이전 본문을 새 노트에
         //   persistDoc 으로 덮어쓸 수 있다.
         if(_docId && _docId!==curNB.id) return;
-        if(doc.__loadFailed){ setSaveState('본문 안 불림 · 저장 건너뜀'); return; }
+        if(doc.__loadFailed){
+            setSaveState('본문 안 불림 · 저장 건너뜀',2500);
+            _armBlockedImportRetry();          // 순간 장애면 자동 복구
+            return;
+        }
         _saveNoteId=curNB.id;                 // 이 예약이 어느 노트 것인지 고정
         setSaveState('저장 중...');
         clearTimeout(_saveTimer);
@@ -5461,7 +5572,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(_saveNoteId && _saveNoteId!==curNB.id){ _saveNoteId=null; return; }
         if(_docId && _docId!==curNB.id){ _saveNoteId=null; return; }
         _saveNoteId=null;
-        if(doc.__loadFailed) return;
+        if(doc.__loadFailed){ _armBlockedImportRetry(); return; }
         try{ commitEditingText(); }catch(e){}
         // 14.14 · 본문이 비어 보이는데 디스크/서버에는 내용이 있는 상태면
         //   빈 문서로 덮어쓰지 않는다. (IO 미렌더·pages op 미스매치로 doc.pages 가
@@ -5660,8 +5771,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!p) return;
         if(!SB||String(p.id).startsWith('local_')){ setSaveState('저장됨 ✓',2000); return; }
         if(p.id===settingsNbId||p.title===SETTINGS_TITLE) return;                 // 설정 행 보호
-        if(window.__blockedNB&&window.__blockedNB.has(p.id)){
-            setSaveState('동기화 차단됨 · 본문 안 불림',2500); return; }
+        if(_nbBlocked(p.id)){
+            setSaveState('동기화 차단됨 · 본문 안 불림',2500);
+            _armBlockedImportRetry();          // 영구 차단 아님: 복구되면 풀린다
+            return;
+        }
         if(p.memo&&p.memo.id&&settingsMemoId&&p.memo.id===settingsMemoId) return;
 
         const jobs=[];
@@ -12347,7 +12461,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const host=restoreSel();
         const sel=window.getSelection();
         if(host&&sel&&!sel.isCollapsed){
-            document.execCommand('styleWithCSS',false,true);
+            if(document.execCommand) document.execCommand('styleWithCSS',false,true);
             try{
                 const r=sel.getRangeAt(0);
                 const span=document.createElement('span');
@@ -12515,6 +12629,20 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         while(n=tw.nextNode()){ if(r.intersectsNode(n)) out.push(n); }
         return out;
     }
+    // '글자 선택 구간'을 색/형광펜 으로 감쌀 때, 그 글자가 이미 부분 글꼴
+    // (상자 바깥의 span font-family) 안에 있으면 새 span 에 그 글꼴을 그대로
+    // 실어 준다. 예전엔 새 스타일 span 이 감싸면 브라우저가 상속을 풀어
+    // '기본 글꼴로 보이는' 회귀가 일부 환경에서 남았다.
+    function _nearestInlineFont(tn,c){
+        try{
+            let p=tn.parentElement, css='';
+            while(p&&p!==c){
+                if(p.style&&p.style.fontFamily){ css=p.style.fontFamily; break; }
+                p=p.parentElement;
+            }
+            return css;
+        }catch(e){ return ''; }
+    }
     // 현재 선택 범위 안의 텍스트 노드마다 스타일 span 으로 감싼다
     // (부분 선택된 텍스트 노드는 쪼개서 선택 구간만 감싼다)
     function wrapSelStyle(prop,value){
@@ -12527,8 +12655,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const start=(r.startContainer===tn)?r.startOffset:0;
                 const end=(r.endContainer===tn)?r.endOffset:tn.nodeValue.length;
                 if(start>=end) return;
+                const c=tn.parentElement&&tn.parentElement.closest?tn.parentElement.closest('.tb-content'):null;
+                const font=_nearestInlineFont(tn,c);
                 const span=document.createElement('span');
                 span.style[prop]=value;
+                if(font) span.style.fontFamily=font;  // 부분 글꼴을 span 에 고정
                 tn.splitText(end);            // 뒤쪽은 원래 자리에 남긴다
                 const mid=tn.splitText(start); // 선택 구간
                 tn.parentNode.insertBefore(span,mid);
@@ -12564,10 +12695,26 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     if(bg&&bg!=='transparent'&&bg!=='rgba(0, 0, 0, 0)'){
                         anc.style.removeProperty('background-color');
                         removed.add(anc);
+                        // 배경색만 남은 span (style="" 등)은 지워 글꼴 계층을
+                        // 단순하게 유지한다. 스타일/클래스 등이 더 있으면 유지.
+                        try{
+                            if(anc.style&&!anc.style.cssText.trim()){
+                                anc.removeAttribute('style');
+                            }
+                            if(!anc.getAttributeNames().length){
+                                const par=anc.parentNode;
+                                while(anc.firstChild) par.insertBefore(anc.firstChild,anc);
+                                par.normalize();
+                            }
+                        }catch(e){}
                         break;
                     }
                     anc=anc.parentElement;
                 }
+            });
+            // 배경만 지운 뒤 남는 빈 span(style="", <span></span>)을 걷어낸다
+            c.querySelectorAll('span').forEach(sp=>{
+                if(!sp.getAttributeNames().length && !sp.querySelector('*') && !sp.textContent.trim()) sp.remove();
             });
         }catch(e){}
     }
@@ -12588,8 +12735,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const nodes=[];
         let n; while(n=tw.nextNode()){ if(String(n.nodeValue||'').trim()) nodes.push(n); }
         nodes.forEach(tn=>{
+            const font=_nearestInlineFont(tn,c);
             const span=document.createElement('span');
             span.style[prop]=value;
+            // 상자 전체를 칠할 때도 '부분 글꼴 span'은 글꼴을 유지한다
+            if(font) span.style.fontFamily=font;
             tn.parentNode.insertBefore(span,tn);
             span.appendChild(tn);
         });
@@ -12641,7 +12791,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 return;
             }
         }
-        withSelection(()=>document.execCommand(cmd,false,null));
+        withSelection(()=>{ if(document.execCommand) document.execCommand(cmd,false,null); });
     }
 
     // 문단 정렬 — 선택 영역이 있으면 그 문단만, 없으면 선택한 상자 전체
@@ -12649,7 +12799,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const cmd={left:'justifyLeft',center:'justifyCenter',right:'justifyRight'}[dir];
         const sel=window.getSelection();
         const live=sel&&!sel.isCollapsed&&document.querySelector('.tb.edit');
-        if(live){ withSelection(()=>document.execCommand(cmd,false,null)); return; }
+        if(live){ withSelection(()=>{ if(document.execCommand) document.execCommand(cmd,false,null); }); return; }
         if(selectedTblCellEls().length){ tblCellAlign(dir); return; }
         let targets=multiSel.length
             ? multiSel.map(m=>m.node).filter(nd=>nd.classList.contains('tb'))
@@ -12673,9 +12823,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const host=restoreSel();
         const sel=window.getSelection();
         if(host && sel && !sel.isCollapsed){
-            document.execCommand('styleWithCSS',false,true);
-            document.execCommand('removeFormat',false,null);
-            document.execCommand('unlink',false,null);
+            if(document.execCommand){
+                document.execCommand('styleWithCSS',false,true);
+                document.execCommand('removeFormat',false,null);
+                document.execCommand('unlink',false,null);
+            }
             const w=host.closest('.tb'); if(w) syncTextEl(w);
             toast('선택 영역 서식 지움',1200);
             return;
@@ -12774,7 +12926,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         const host=restoreSel();
         if(host){
-            document.execCommand('styleWithCSS',false,true);
+            if(document.execCommand) document.execCommand('styleWithCSS',false,true);
             try{
                 const s=window.getSelection(), r=s.getRangeAt(0);
                 const span=document.createElement('span');
@@ -14372,7 +14524,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     if(doc!==d) return; // 14.9 · 그 사이 다른 노트를 열었으면 중단
                     const s=q[k++];
                     try{
-                        const dd=await fetchSlice(d.__ref,s,(d.pages||[]).length);
+                        const dd=await fetchSlice(9000,d.__ref,s,(d.pages||[]).length);
                         if(doc!==d) return;
                         if(dd&&Array.isArray(dd.pages)){
                             dd.pages.forEach((p,j)=>{
@@ -14382,6 +14534,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                                     if(doc===d&&renderedPages.has(i)) renderPageEls(i);
                                 }
                             });
+                            _importLoaded(d, curNB&&curNB.id);
                         }
                     }catch(e){}
                 }
@@ -14554,7 +14707,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(window._renderVersion !== (d&&d.__rv)) return;
         const s0=Math.floor(idx/LAZY_SLICE)*LAZY_SLICE;
         try{
-            const dd=await fetchSlice(d.__ref,s0,(d.pages||[]).length);
+            const dd=await fetchSlice(9000,d.__ref,s0,(d.pages||[]).length);
             if(doc!==d) return;
             if(window._renderVersion !== (d&&d.__rv)) return;
             if(dd&&Array.isArray(dd.pages)){
@@ -14563,6 +14716,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     const cur=d.pages[i];
                     if(cur&&(cur.__dirty||(cur.__lazy==null&&(cur.els||[]).length))) return;
                     d.pages[i]=p; });
+                _importLoaded(d, curNB&&curNB.id);
             }
         }catch(e){}
         // renderPageEls 에서도 검증하므로 여기서는 doc===d 만 확인

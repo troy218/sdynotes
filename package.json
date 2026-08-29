@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.13.8",
+  "version": "14.13.9",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -21,7 +21,7 @@
     "test:table": "node test/editor_table_contract.mjs && node test/editor_table_runtime.mjs",
     "test:place": "node test/editor_place_runtime.mjs",
     "test:polish": "node test/ui_polish_orientation_contract.mjs && python3 test/import_orientation_runtime.py",
-    "test:sync": "node test/note_sync_clock_contract.mjs && node test/collab_protocol.cjs && node test/merge3_unit.cjs && node test/empty_note_render_contract.mjs",
+    "test:sync": "node test/note_sync_clock_contract.mjs && node test/collab_protocol.cjs && node test/merge3_unit.cjs && node test/empty_note_render_contract.mjs && node test/import_retry_contract.mjs",
     "test:fastops": "node test/editor_fast_ops_contract.mjs && node test/editor_fast_switch_runtime.mjs",
     "test:font": "node test/editor_font_size_contract.mjs && node test/editor_font_size_runtime.mjs",
     "test:format": "node test/editor_format_runtime.mjs",
