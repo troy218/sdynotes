@@ -38,6 +38,12 @@ assert.match(css, /@media \(max-width:640px\)[^{]*\{[^}]*\.fcard-win\.fcard-max\
   '폰에서는 여백 없이 정말 꽉 차야 한다');
 assert.doesNotMatch(css, /\.fcard-win[^{,]*:fullscreen/,
   '암기 카드는 진짜 Fullscreen css 를 쓰면 안 된다 (사이트 안 확장이어야 한다)');
+assert.match(css, /\.fcard-win\.fcard-max \.cd-stage\{[\s\S]{0,220}gap:clamp\(14px,2vw,34px\)/,
+  '전체화면에서 해돌이는 카드와 같은 flex 줄(말해보카처럼 카드 왼쪽에 딱 붙은 간격)이어야 한다');
+assert.match(css, /\.fcard-win\.fcard-max \.cd-otter\{[\s\S]{0,240}position:relative[\s\S]{0,200}flex:0 0 auto[\s\S]{0,200}width:clamp\(118px,13vw,164px\)/,
+  '전체화면 해돌이는 화면 가장자리가 아니라 카드 존의 flex 아이템이어야 한다');
+assert.match(css, /\.fcard-win\.fcard-max \.cd-otter\{\s*position:absolute;left:clamp\(12px,3vw,56px\)/,
+  '폰·작은 화면에서는 해돌이가 카드 왼쪽 위로 되돌아가야 한다');
 assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{[^}]*\.fcard-win\.fcard-anim\{transition:none/,
   '움직임 줄이기에서는 모핑이 꺼져야 한다');
 

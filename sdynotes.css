@@ -2870,6 +2870,24 @@ body.sdy-booting #musicListPop{z-index:10001;}
 .mpb-li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .mpb-li em{color:var(--text3);font-style:normal;font-size:10.5px;flex:0 1 auto;max-width:42%;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* 18.3 · 대기열 관리: 위로/아래로/다음에 재생/빼기 + 전체 비우기 */
+.mpb-qhead{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:3px 8px 7px;font-size:11px;font-weight:700;color:var(--text3);}
+.mpb-qclear{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border);
+    background:var(--bg2);color:var(--text2);border-radius:7px;cursor:pointer;
+    padding:3px 9px;font-size:10.5px;font-weight:700;white-space:nowrap;}
+.mpb-qclear:hover{color:var(--accent);border-color:var(--accent);}
+.mpb-qops{display:flex;align-items:center;gap:1px;flex:none!important;margin-left:2px;}
+.mpb-qop{width:22px;height:22px;border:none;background:transparent;color:var(--text3);
+    border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    padding:0;flex:0 0 auto;font-size:12px;opacity:.55;transition:opacity .12s,color .12s,background .12s;}
+.mpb-li:hover .mpb-qop,.mpb-qop:focus-visible{opacity:1;}
+.mpb-qop:hover{background:var(--bg2);color:var(--text1);opacity:1;}
+.mpb-qop.del:hover{color:#ef4444;}
+/* 폰에서는 관리 버튼이 항상 보이도록 */
+@media(max-width:640px){
+  .mpb-qop{opacity:.85;width:26px;height:26px;font-size:13px;}
+}
 .mpb-artgrp{font-size:11px;font-weight:800;color:var(--text2);padding:7px 8px 3px;
     display:flex;align-items:center;gap:6px;white-space:nowrap;min-width:0;overflow:hidden;}
 .mpb-artgrp em{color:var(--text3);font-style:normal;font-weight:600;flex:none;}
@@ -4178,21 +4196,23 @@ body.sdy-booting #mpReopen{display:none !important;}
     display:flex;align-items:center;justify-content:center;transition:transform .15s ease,filter .15s ease;}
 .yp-send:hover{filter:brightness(1.1);transform:scale(1.05);}
 
-/* ── 이모지/반응/설정 팝 ── */
-.yp-emoji{position:absolute;bottom:48px;left:10px;display:none;grid-template-columns:repeat(8,1fr);gap:2px;
-    background:#171a21;border:1px solid #262b36;border-radius:12px;padding:6px;
+/* ── 이모지(해돌이 임티)/반응/설정 팝 ── */
+.yp-emoji{position:absolute;bottom:48px;left:10px;display:none;grid-template-columns:repeat(4,1fr);gap:4px;
+    background:#171a21;border:1px solid #262b36;border-radius:12px;padding:7px;
     box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:12;}
 .yp-emoji.open{display:grid;animation:ypPop .18s cubic-bezier(.22,.9,.3,1.2);}
-.yp-emoji button{border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:17px;
-    width:30px;height:30px;display:flex;align-items:center;justify-content:center;transition:transform .1s ease;}
-.yp-emoji button:hover{background:#262b36;transform:scale(1.2);}
+.yp-emoji button{border:none;background:transparent;border-radius:10px;cursor:pointer;font-size:0;
+    width:56px;height:56px;display:flex;align-items:center;justify-content:center;padding:5px;
+    transition:transform .1s ease,background .12s ease;}
+.yp-emoji button:hover{background:#262b36;transform:scale(1.12);}
 .yp-react-row{position:absolute;display:none;gap:2px;background:#171a21;border:1px solid #262b36;
     border-radius:999px;padding:4px 7px;box-shadow:0 8px 26px rgba(0,0,0,.45);z-index:12;}
 .yp-react-row.open{display:flex;animation:ypPop .16s cubic-bezier(.22,.9,.3,1.2);}
 @keyframes ypPop{from{opacity:0;transform:scale(.85);}to{opacity:1;transform:scale(1);}}
-.yp-react-row button{border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:16px;
-    width:28px;height:28px;display:flex;align-items:center;justify-content:center;transition:transform .12s ease;}
+.yp-react-row button{border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:0;
+    width:32px;height:32px;display:flex;align-items:center;justify-content:center;transition:transform .12s ease;}
 .yp-react-row button:hover{transform:scale(1.25);}
+.yp-react-row .yp-stk{width:22px;height:22px;}
 
 .yp-settings{position:absolute;top:46px;right:10px;width:min(250px,86%);display:none;flex-direction:column;gap:2px;
     background:#171a21;border:1px solid #262b36;border-radius:12px;padding:8px;
@@ -5502,7 +5522,7 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .cd-otter{display:none;}
 .fcard-win.fcard-max .cd-stage{
   flex:1 1 auto;display:flex;align-items:center;justify-content:center;
-  gap:clamp(28px,4vw,72px);
+  gap:clamp(14px,2vw,34px);
   min-height:0;width:100%;position:relative;
 }
 .fcard-win.fcard-max .cd-stage::before{
@@ -5519,11 +5539,11 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   position:relative;z-index:2;
 }
 .fcard-win.fcard-max .cd-otter{
-  /* 18.1 · 새 해돌이는 정사각형(200x200) — 문제 왼쪽에 나란히 (세로 가운데).
-     아래 왼쪽이 아니라 문제의 '진짜 왼쪽'에서 반응한다. */
-  display:block;position:absolute;
-  left:clamp(12px,3vw,56px);top:50%;bottom:auto;transform:translateY(-50%);
-  width:clamp(104px,12vw,150px);height:auto;
+  /* 18.3 · 말해보카 캐릭터처럼 문제 카드 왼쪽에 딱 붙어 나란히 (세로 가운데).
+     화면 가장자리가 아니라 카드 옆이라서 간격이 항상 일정하다. */
+  display:block;position:relative;top:auto;bottom:auto;transform:none;
+  flex:0 0 auto;
+  width:clamp(118px,13vw,164px);height:auto;
   z-index:3;pointer-events:none;
 }
 /* 확장(비-전체화면) 암기카드에서도 카드 아래쪽에 해돌이를 보여 준다. */
@@ -5856,6 +5876,9 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 @media (max-width:1100px){
   .fcard-win.fcard-max .fc-modes{grid-template-columns:repeat(3,1fr);}
   .fcard-win.fcard-max .cd-mgrid{grid-template-columns:repeat(3,1fr);}
+  /* 해돌이를 살짝 줄여 카드가 좁아지지 않게 */
+  .fcard-win.fcard-max .cd-stage{gap:clamp(10px,1.6vw,22px);}
+  .fcard-win.fcard-max .cd-otter{width:clamp(96px,11vw,128px);}
 }
 
 /* 움직임 줄이기 */
@@ -6109,8 +6132,9 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 }
 .om-wavehand{animation:om-wavehand 1.6s ease-in-out infinite;transform-box:fill-box;transform-origin:30% 85%;}
 
-/* ── ① 편지 해돌이 — 엽스코드 첫 입장(채팅 없을 때) 본문 정가운데 크게 ── */
-/*   빈 채팅 안내(.yp-empty)는 메시지가 생기면 display:none 이라 해돌이도 같이 사라진다 */
+/* ── ① 편지 해돌이 — 엽스코드 입장 게이트(로그인/비회원 선택) 카드 정가운데 크게 ── */
+/*   (빈 채팅 안내(.yp-empty)에는 해돌이를 두지 않는다 — 입장하면 시스템 메시지가
+     바로 생겨 보일 일이 없어서) */
 .yp-otter{display:block;width:160px;margin:0 auto 6px;cursor:pointer;}
 .yp-otter .om-say{font-size:11.5px;}
 
@@ -6128,8 +6152,10 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 
 /* ── ④ 독서 해돌이 — 타이머(집중) 화면 왼쪽 아래 (거의 바닥까지 내려앉힌다) ── */
 .fc-otter{position:absolute;left:clamp(10px,3vw,44px);bottom:clamp(14px,3.5vh,42px);
-  width:96px;height:96px;z-index:4;cursor:pointer;}
+  width:96px;height:96px;z-index:4;cursor:pointer;transition:opacity .45s ease;}
 .fc-otter .om-say{font-size:11.5px;}
+/* 가만히 있으면(집중 모드) 조작 버튼과 함께 해돌이도 부드럽게 사라진다 */
+#focusClock.idle .fc-otter{opacity:0;pointer-events:none;}
 
 /* ── ⑤ 졸리는 해돌이 — 사용법·단축키 설명을 가장 아래로 스크롤해야 보인다
       (keyBody 스크롤 영역 맨 끝에 들어 있어 평소엔 화면 밖에 있다) ── */
@@ -6154,6 +6180,23 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
   .yp-otter *,.set-otter *,.fc-otter *,.plane-otter *,.keys-otter *{animation:none!important;}
   .plane-otter{display:none!important;}
 }
+
+
+/* ── 18.3 · 해돌이 임티 (카톡 미모티콘식) ──
+   #ypStickerDefs 의 <template> 에서 복제된 om-mini 를 채팅·선택창·반응에서 쓴다.
+   (om-mini/om-w-flight 의 width 규칙보다 뒤에 있어야 크기가 적용된다) */
+.yp-stk{display:block;width:100%;height:auto;cursor:inherit;pointer-events:none;}
+.yp-stk svg{display:block;width:100%;height:auto;overflow:visible;}
+.yp-stk.yp-stk-pick{width:44px;}
+.yp-stk.yp-stk-inline{display:inline-block;width:42px;height:auto;vertical-align:-0.6em;margin:0 3px;}
+.yp-stk.yp-stk-big{width:116px;}
+.yp-stk.yp-stk-chip{width:24px;height:24px;}
+/* 임티 하나만 온 메시지 — 말풍선 없이 큰 스티커로 */
+.yp-stkmsg{display:inline-block;margin:2px 0 3px;line-height:0;}
+.yp-stkmsg .yp-stk{width:120px;}
+/* 반응 칩 속 임티 */
+.yp-reacts .yp-stk{display:inline-block;width:18px;height:18px;vertical-align:-0.3em;margin:0 1px;}
+.yp-reacts button .cnt{margin-left:1px;}
 
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -6567,7 +6610,8 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
   .yp-tools button,.yp-send{width:42px;height:42px;}
   .yp-input textarea{min-height:42px;font-size:16px!important;}
   .yp-emoji{left:8px;right:8px;bottom:58px;grid-template-columns:repeat(6,1fr);}
-  .yp-emoji button{width:42px;height:42px;justify-self:center;font-size:20px;}
+  .yp-emoji button{width:46px;height:46px;justify-self:center;font-size:0;}
+  .yp-emoji button .yp-stk{width:36px;}
   .yp-react-row button{width:40px;height:40px;}
   .yp-settings{left:8px;right:8px;top:54px;width:auto;max-height:62dvh;overflow-y:auto;}
   .yp-set-row{min-height:44px;}
@@ -6711,4 +6755,10 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
   .fcard-win.fcard-max .fc-mode i{font-size:20px;}
   .fcard-win.fcard-max .cd-keyhints{display:none;}     /* 터치 기기 — 키보드 안내는 의미가 없다 */
   .fcard-win.fcard-max #cardsStudy .cd-sess{display:none;} /* 폰 상단바는 좁으니 진행률·연속 정답만 */
+  /* 18.3 · 폰·작은 화면은 옆에 붙이면 카드가 너무 좁아지므로,
+     예전처럼 왼쪽 위에 얹힌 작은 해돌이로 되돌린다 */
+  .fcard-win.fcard-max .cd-otter{
+    position:absolute;left:clamp(12px,3vw,56px);top:50%;bottom:auto;
+    transform:translateY(-50%);width:clamp(104px,12vw,150px);
+  }
 }

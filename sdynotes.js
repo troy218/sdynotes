@@ -6034,6 +6034,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(ox<=0||oy<=0) return 0;
         return ox*oy;
     }
+    // 18.4 · 이 이미지 요소가 '진짜로 볼 수 있는 주소'를 물고 있는가.
+    //   업로드 전(pending) 상태는 url:'' + blob localURL 이라 여기서 거짓이 된다.
+    function _imgRealURL(el){
+        const u=String((el&&el.url)||'');
+        return !!(u && !/^blob:/i.test(u));
+    }
     function sanitizePageEls(els){
         if(!els||!els.length) return els||[];
         const seen=new Set();
@@ -7620,6 +7626,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     let textSel=null;
     let savedRange=null, savedHost=null;   // 선택 영역 기억 (툴바 클릭 시 복원용)
+    let savedCaret=null;                   // 편집 중 캐럿 기억 (글자 서식: 앞으로 입력될 글자용)
+    let _typingSpan=null;                  // 캐럿 서식용 span (계속 입력되는 글자가 들어감)
 
     // 테두리 8px 는 '이동 손잡이', 안쪽은 '글자 선택' 영역으로 구분
     function innerTextArea(c,x,y){
@@ -7633,7 +7641,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const sel=window.getSelection();
             if(sel&&sel.rangeCount) sel.removeAllRanges();
         }catch(e){}
-        savedRange=null; savedHost=null; textSel=null;
+        savedRange=null; savedHost=null; textSel=null; savedCaret=null; _typingSpan=null;
         document.querySelectorAll('#pagesStage .tb-content').forEach(c=>{
             if(!c.closest('.tb').classList.contains('edit')) disableTextSelect(c);
         });
@@ -12747,12 +12755,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 
     function saveSel(){
         const s=window.getSelection();
-        if(!s||!s.rangeCount||s.isCollapsed) return;
+        if(!s||!s.rangeCount) return;
         const r=s.getRangeAt(0);
         const host=r.commonAncestorContainer.nodeType===1
             ? r.commonAncestorContainer.closest?.('.tb-content')
             : r.commonAncestorContainer.parentElement?.closest('.tb-content');
         if(!host) return;
+        if(s.isCollapsed){
+            // 편집 중 캐럿(글자 선택 없음)도 기억한다 — 이때 바꾼 색/글꼴/크기는
+            // '상자 전체'가 아니라 '앞으로 입력될 글자'에만 적용하기 위함.
+            const w=host.closest('.tb');
+            if(w&&w.classList.contains('edit')){
+                savedCaret={c:host,r:r.cloneRange()};
+                savedRange=null; savedHost=null;   // 캐럿으로 접은 뒤엔 이전 선택은 무효
+            }
+            return;
+        }
         savedRange=r.cloneRange(); savedHost=host;
     }
     function restoreSel(){
@@ -12841,6 +12859,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         // ② 선택한 표 셀 범위 전체
         if(selectedTblCellEls().length){
             tblCellApply(el=>{ el.font=id; },`선택한 칸 글꼴: ${f.label}`);
+            return;
+        }
+        // 18.5 · 편집 중 캐럿(선택 없음) → 상자 전체가 아니라 앞으로 입력될 글자에만
+        if(_typingHost()){
+            caretWrapStyle({fontFamily:f.css});
+            toast(`앞으로 입력할 글꼴: ${f.label}`,1100);
             return;
         }
         // ③ 선택된 텍스트 상자(들)
@@ -13282,6 +13306,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(hasInlineTextSel()){
             withSelection(()=>wrapSelStyle('color',c)); return;
         }
+        // 18.5 · 편집 중 캐럿(선택 없음) → 상자 전체가 아니라 앞으로 입력될 글자에만
+        if(_typingHost()){ caretWrapStyle({color:c}); return; }
         const targets=_boxFmtTargets();
         if(targets.length){
             pushHistory();
@@ -13299,6 +13325,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             withSelection(()=>{ if(c) wrapSelStyle('background-color',c); else clearSelBg(); });
             return;
         }
+        // 18.5 · 캐럿(선택 없음) → 앞으로 입력될 글자에만 형광펜
+        if(_typingHost()){ caretWrapStyle({'background-color':c||'transparent'}); return; }
         const targets=_boxFmtTargets();
         if(targets.length){
             pushHistory();
@@ -13321,6 +13349,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         const spec={bold:['fontWeight','700'],italic:['fontStyle','italic'],underline:['textDecoration','underline']}[cmd];
         if(spec){
+            // 18.5 · 편집 중 캐럿(선택 없음) → 앞으로 입력될 글자만 토글
+            //   (execCommand 는 캐럿에서 브라우저 '다음 입력 서식'으로 동작하지만
+            //    jsdom/웹뷰 미지원이라 직접 span 토글로 통일한다)
+            if(_typingHost()){
+                const [key,val]=spec;
+                const off={fontWeight:'400',fontStyle:'normal',textDecoration:'none'}[key];
+                caretWrapStyle(_caretHasStyle(key,val)?{[key]:off}:{[key]:val});
+                return;
+            }
             // 14.16.2 · 글자 서식은 execCommand 대신 직접 span 으로 토글해
             //   부분 글꼴(font-family span)이 풀리지 않게 한다.
             withSelection(()=>toggleSelStyle(spec[0],spec[1]));
@@ -13351,6 +13388,94 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         saveDoc();
         toast(({left:'왼쪽',center:'가운데',right:'오른쪽'})[dir]+' 정렬',1000);
     }
+    // ── 편집 중 '캐럿' 서식 ─────────────────────────────────────────
+    // 글자 선택 없이 상자 안에서 입력 중일 때 색/글꼴/크기/볼드 등을 바꾸면
+    // '상자 전체'가 아니라 '앞으로 입력될 글자'에만 적용한다.
+    // 캐럿 자리에 빈 span 을 넣고 커서를 그 안에 두면 이후 입력이 span 안으로 들어간다.
+    function _typingHost(){
+        try{
+            const s=window.getSelection();
+            if(s&&s.rangeCount&&s.isCollapsed){
+                const r=s.getRangeAt(0);
+                const el=r.startContainer.nodeType===3?r.startContainer.parentElement:r.startContainer;
+                const c=el&&el.closest&&el.closest('.tb-content');
+                if(c&&c.closest('.tb').classList.contains('edit')) return {c,r};
+            }
+        }catch(e){}
+        if(savedCaret&&savedCaret.c&&document.body.contains(savedCaret.c)){
+            const w=savedCaret.c.closest('.tb');
+            if(w&&w.classList.contains('edit')) return savedCaret;
+        }
+        return null;
+    }
+    // 캐럿 위치가 '이미 그 스타일' 안인가 (토글 판정용)
+    function _caretHasStyle(prop,value){
+        try{
+            const t=_typingHost(); if(!t) return false;
+            const tn=t.r.startContainer;
+            let p=tn.nodeType===3?tn.parentElement:tn;
+            while(p&&p!==t.c){
+                const v=p.style&&p.style[prop];
+                if(v&&(String(v).toLowerCase()===String(value).toLowerCase()
+                    ||(prop==='fontWeight'&&(v==='bold'||Number(v)>=600)))) return true;
+                p=p.parentElement;
+            }
+        }catch(e){}
+        return false;
+    }
+    // 캐럿에 서식 span 삽입 (이미 같은 span 안이면 스타일만 갱신)
+    function caretWrapStyle(styles){
+        const t=_typingHost(); if(!t) return false;
+        const c=t.c;
+        try{
+            const s=window.getSelection();
+            const dot=tn=>tn&&(tn===_typingSpan||(_typingSpan&&_typingSpan.contains(tn)));
+            // 빈 span 만 재사용한다. 이미 글자가 들어간 span 을 뒤집으면
+            // '앞으로 입력될 글자'뿐 아니라 '이미 입력된 글자'까지 바뀌기 때문.
+            const spanEmpty=_typingSpan&&!_typingSpan.textContent&&!_typingSpan.childElementCount;
+            let span=null;
+            if(spanEmpty&&_typingSpan.isConnected&&c.contains(_typingSpan)){
+                const r0=s.rangeCount?s.getRangeAt(0):null;
+                if(dot(r0&&r0.startContainer)) span=_typingSpan;
+                else if(savedCaret&&savedCaret.c===c&&dot(savedCaret.r.startContainer)) span=_typingSpan;
+            }
+            if(!span){
+                span=document.createElement('span');
+                span.className='sdy-type';
+                const src=(s.rangeCount?s.getRangeAt(0):t.r).cloneRange();
+                // 부분 글꼴 보존: 캐럿 부모에 inline font-family 가 있으면 새 span 에 고정
+                let p=src.startContainer.nodeType===3?src.startContainer.parentElement:src.startContainer;
+                let font='';
+                while(p&&p!==c){ if(p.style&&p.style.fontFamily){ font=p.style.fontFamily; break; } p=p.parentElement; }
+                if(font) span.style.fontFamily=font;
+                src.insertNode(span);
+                const nr=document.createRange();
+                nr.selectNodeContents(span); nr.collapse(true);
+                if(s.rangeCount){ s.removeAllRanges(); s.addRange(nr); }
+                _typingSpan=span;
+                savedCaret={c,r:nr.cloneRange()};
+            }else{
+                // 캐럿을 서식 span 안으로 되돌린다 (툴바 입력창을 쓰다 돌아와도 이어짐)
+                const nr=document.createRange();
+                nr.selectNodeContents(span); nr.collapse(true);
+                if(s.rangeCount){ s.removeAllRanges(); s.addRange(nr); }
+                savedCaret={c,r:nr.cloneRange()};
+            }
+            for(const k in styles){
+                if(styles[k]===''||styles[k]==null) span.style.removeProperty(k);
+                else span.style[k]=styles[k];
+            }
+            // 서식을 전부 지우면 빈 span 은 남길 이유가 없다 → 풀어낸다
+            if(span.classList.contains('sdy-type')&&!span.style.cssText&&!span.textContent&&!span.childElementCount){
+                span.remove(); _typingSpan=null; savedCaret=null;
+                return true;
+            }
+            const w=c.closest('.tb');
+            if(w&&w.isConnected) syncTextEl(w);
+            return true;
+        }catch(e){ return false; }
+    }
+
     // 서식 지우기 (고도화)
     //  - 텍스트를 드래그해 선택했으면 그 부분만
     //  - 선택이 없으면 텍스트 상자 전체 (여러 개 선택 시 전부)
@@ -13373,6 +13498,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 delete el.textColor; delete el.font; delete el.fontWeight;
                 delete el.fontStyle; delete el.textDecoration;
             },'선택한 칸 글자 서식 지움');
+            return;
+        }
+        // 18.5 · 캐럿(선택 없음) → 앞으로 입력될 글자의 서식만 지운다
+        if(_typingHost()){
+            caretWrapStyle({fontWeight:'',fontStyle:'',textDecoration:'',color:'',
+                            backgroundColor:'',fontFamily:'',fontSize:''});
+            toast('앞으로 입력될 글자 서식 지움',1000);
             return;
         }
         // 상자 단위
@@ -13474,6 +13606,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const w=host.closest('.tb'); if(w) syncTextEl(w);
             return;
         }
+        // 18.5 · 편집 중 캐럿(선택 없음) → 상자 전체가 아니라 앞으로 입력될 글자에만
+        if(_typingHost()){ caretWrapStyle({fontSize:curFontSize+'px'}); return; }
         const sel=document.querySelector('.tb.sel,.tb.edit');
         if(sel){ sel.querySelector('.tb-content').style.fontSize=curFontSize+'px'; syncTextEl(sel); }
     }
@@ -13653,6 +13787,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }));
             return hit;
         };
+        let fixed=null;
         if(curNB&&curNB.id===job.nbId&&doc){
             if(patch(doc)){
                 const node=document.querySelector(`#pagesStage .paper-img[data-id="${job.id}"]`);
@@ -13662,10 +13797,28 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     if(im) im.src=url;
                 }
                 saveDoc();
+                fixed=doc;
             }
         }else{
             const d=loadDoc(job.nbId);
-            if(patch(d)){ persistDoc(job.nbId,d); queueSync(job.nbId); }
+            if(patch(d)){ persistDoc(job.nbId,d); queueSync(job.nbId); fixed=d; }
+        }
+        // 18.4 · 업로드가 끝난 이미지는 '그 노트가 열려 있지 않았던' 경우에도
+        //   요소 ops 스토어(/api/sync/push)에 바로 기록한다. 예전엔 memo(전체
+        //   스냅샷)만 고쳐지고 ops 에는 pending(url:'')이 남아서, 다시 접속해
+        //   pull 하면 업로드 완료된 사진이 '업로드 전 상태'로 되돌아가
+        //   '사진이 있었다는 표시'만 남았다.
+        if(fixed){
+            (fixed.pages||[]).forEach((pg,pi)=>(pg.els||[]).forEach(el=>{
+                if(el.id===job.id){
+                    try{
+                        // 중복으로 올라가도 서버 LWW(더 새 rev)라 안전하다.
+                        // (열려 있던 노트는 saveDoc→queueOps 가 같은 내용을 한 번 더
+                        //  올리므로 pushOpsFor 이 실패해도 사라지지 않는다)
+                        pushOpsFor(job.nbId,[{id:el.id,kind:'put',page:pi,rev:_nbNow(),data:{...el},dev:SYNC_DEV}]);
+                    }catch(e){}
+                }
+            }));
         }
     }
     function markUploadFailed(job){
@@ -15016,11 +15169,38 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         //   비우거나 엉뚱한 ops 를 푸시할 수 있다. 시작 시점 신원을 고정.
         const _d0=doc, _nb0=curNB.id;
         syncState();
+        // 18.4 · pull 전(메모·로컬이 아는) 이미지의 진짜 URL 을 기억한다.
+        //   ops 스토어에 업로드 전(pending·빈 url) 상태가 남아 있어도
+        //   이 URL 로 되돌려 "사진이 있었다는 표시"가 남지 않게 한다.
+        const imgUrls=new Map();
+        (doc.pages||[]).forEach(pg=>(pg.els||[]).forEach(el=>{
+            if(el&&el.type==='image'&&_imgRealURL(el)) imgUrls.set(el.id,el.url);
+        }));
         doc.__localRev.clear(); doc.__lastHash.clear();
         doc.__base.clear(); doc.__baseRev.clear();
         doc.__pagesRev=0; doc.__since=0;
         const pulled=await pullSync(false);
         if(doc!==_d0||!curNB||curNB.id!==_nb0) return;
+        // 18.4 · pull 이 이미지를 업로드 전 상태로 되돌렸어도 복원한다.
+        const healed=[];
+        (doc.pages||[]).forEach((pg,pi)=>(pg.els||[]).forEach(el=>{
+            if(el&&el.type==='image'&&!_imgRealURL(el)&&imgUrls.has(el.id)){
+                el.url=imgUrls.get(el.id);
+                delete el.pending; delete el.failed; delete el.localURL;
+                healed.push({el,pi});
+            }
+        }));
+        if(healed.length){
+            const hOps=healed.map(({el,pi})=>({id:el.id,kind:'put',page:pi,rev:_nbNow(),data:{...el},dev:SYNC_DEV}));
+            healed.forEach((h,i)=>{
+                doc.__lastHash.set(h.el.id,JSON.stringify(h.el));
+                doc.__localRev.set(h.el.id,hOps[i].rev);
+            });
+            if(!doc.__ref){ try{ pushOpsFor(_nb0,hOps); }catch(e){} }
+            try{
+                healed.forEach(h=>{ if(renderedPages.has(h.pi)) renderPageEls(h.pi); });
+            }catch(e){}
+        }
         // 원격에서 받은 요소는 해시 등록(재푸시 방지),
         // 서버에 없던 로컬 요소는 초기 상태로 푸시(양방향 기반 공유)
         const remoteIds=new Set((pulled||[]).map(o=>o.id));
@@ -15168,6 +15348,25 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         doc.__lastHash.delete(op.id);
                         doc.__base.delete(op.id); doc.__baseRev.delete(op.id); }
                 }else if(op.data){
+                    // 18.4 · '아직 업로드 전'(pending·빈 url·blob) 이미지 op 가 도착했는데
+                    //   이 기기가 이미 진짜 URL 을 알고 있으면 덮어쓰지 않는다.
+                    //   (memo·로컬에는 업로드 완료 상태가 있고 ops 스토어만 옛 pending
+                    //    상태로 남은 경우 — 노트가 닫힌 뒤 업로드가 끝난 타이밍)
+                    if(op.data.type==='image' && !_imgRealURL(op.data)){
+                        const loc=findElLoc(op.data.id);
+                        const curEl=loc?doc.pages[loc.i].els[loc.k]:null;
+                        if(curEl && _imgRealURL(curEl)){
+                            doc.__localRev.set(op.data.id, op.rev||0);
+                            doc.__lastHash.set(op.data.id, JSON.stringify(curEl));
+                            // 서버 스토어도 진짜 URL 로 되돌린다 (더 새 rev 로 푸시)
+                            if(!doc.__ref){
+                                try{
+                                    pushOpsFor(curNB.id,[{id:curEl.id,kind:'put',page:loc.i,rev:_nbNow(),data:{...curEl},dev:SYNC_DEV}]);
+                                }catch(e){}
+                            }
+                            continue;
+                        }
+                    }
                     if(isText&&(activeBox||hasLocal)&&_elById(op.data.id)){
                         // 14.9 · 협업 병합: 내/상대 편집을 모두 남긴다
                         if(_tbMergeRemote(op)){ changed=true; chPages.add(op.page||0); queueOps(); }
@@ -15355,6 +15554,23 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 ids:(doc.pages||[]).map(p=>p.id),dev:SYNC_DEV});
         }
         return ops;
+    }
+    // 18.4 · 지금 열려 있지 않은 노트에도 요소 ops 를 직접 올린다.
+    //   (이미지 업로드 완료처럼 doc/curNB 를 건드릴 수 없는 백그라운드 작업용)
+    async function pushOpsFor(nbId,ops){
+        const list=Array.isArray(ops)?ops.slice(0,40):[];
+        if(!nbId||!list.length) return false;
+        for(let attempt=0; attempt<3; attempt++){
+            try{
+                const r=await fetch('/api/sync/push',{method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({nb:String(nbId),ops:list})});
+                const d=await r.json().catch(()=>({}));
+                if(r.ok&&d.ok) return true;
+            }catch(e){}
+            await new Promise(res=>setTimeout(res,250*(attempt+1)));
+        }
+        return false;
     }
     let opsTimer=null;
     function queueOps(){
@@ -16420,7 +16636,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         else if(a==='tr-sel-en') translateSelectedText('en');
         else if(a==='tr-sel-ja') translateSelectedText('ja');
         else if(a==='tr-sel-zh') translateSelectedText('zh-CN');
-        else if(a==='strike'){ withSelection(()=>document.execCommand('strikeThrough',false,null)); }
+        else if(a==='strike'){
+            // 18.5 · 캐럿(선택 없음)이면 앞으로 입력될 글자에만 취소선 토글
+            if(_typingHost()){
+                caretWrapStyle(_caretHasStyle('textDecoration','line-through')
+                    ?{textDecoration:'none'}:{textDecoration:'line-through'});
+            }else withSelection(()=>document.execCommand('strikeThrough',false,null));
+        }
         else if(a==='sel-upper'||a==='sel-lower'){
             const up=(a==='sel-upper');
             withSelection(()=>{
@@ -18195,9 +18417,22 @@ function smoothPause(){
 // 16.x · 첫 진입 직후 재생을 누르면 아직 노래 목록을 서버에서 받는 중일 수 있다.
 //   예전엔 P.list 가 비어 있어 '곡을 선택해야만' 재생되던 버그가 있었다.
 //   목록을 기다렸다가 첫 곡부터 재생한다.
+// 18.4 · '소스 없음' 판정은 A.src 를 직접 보지 않는다. src='' 로 지우면 브라우저가
+//   페이지 URL 로 해석해 truthy 가 되어, 크로스바 X → 플로팅 버튼 → 재생을 눌러도
+//   그 페이지 URL 을 재생하려다 소리가 나지 않았다.
+function _audioSrcLive(){
+  const s=String(A&&A.src||'');
+  if(!s) return '';
+  try{
+    if(s===location.href) return '';
+    const o=(location&&location.origin)||'';
+    if(o&&(s===o+'/'||s===o)) return '';
+  }catch(e){}
+  return s;
+}
 let _ppWait=null;
 function pp(){
-  if(!A.src){
+  if(!_audioSrcLive()){
     const t=cur();
     if(t){
       const L=curList();
@@ -18418,7 +18653,10 @@ $('mpDel').onclick=async()=>{ const t=cur(); if(!t)return;
     body:JSON.stringify({id:t.id})});
     const d=await r.json();
     if(!r.ok||!d.ok){ if(window.toast)toast(d.error||'삭제 실패',2200); return; }
-    A.pause(); A.src='';
+    // 18.4 · src='' 는 페이지 URL 로 해석되므로 속성 자체를 지운다(진짜 '빈 src').
+    //   _trackId/currentId 도 비워 다음 재생이 남은 목록의 현재 자리부터 시작하게.
+    A.pause(); A.removeAttribute('src'); try{ A.load(); }catch(e){}
+    A._trackId=''; P.currentId='';
     await loadList(); P.idx=-1; renderTitle(); renderListPop();
     if(window.toast)toast('삭제됨',1400);
   }catch(e){ if(window.toast)toast('삭제 실패',2000); } };
@@ -18512,7 +18750,10 @@ $('musicFile').onchange=async e=>{
     }
   } finally { _mpUpBusy=false; }
 };
-$('mpX').onclick=()=>{ A.pause(); A.src='';
+// 18.4 · X 는 '바를 숨기고 일시정지'만 한다. A.src='' 로 지우면 브라우저가
+//   src 를 페이지 URL 로 해석해(truthy) 다시 열고 재생(pp)을 눌러도
+//   노래가 나오지 않았다. src 를 남기면 재생 시 바로 이어서 튼다.
+$('mpX').onclick=()=>{ A.pause();
   pl.style.display='none'; $('mpReopen').style.display='flex'; P.collapsed=true; };
 // ===== 목록 + 검색 + 페이지 =====
 const PER=10;
@@ -18742,8 +18983,10 @@ function renderPL(){
       playFrom(g?g.tracks:[t0],id,aName);
       renderListPop(); return; }
     if((el=hit('data-del'))){ delTrack(el.dataset.del); return; }
-    if((el=hit('data-rec'))){ playFrom(filtered(),el.dataset.rec,''); return; }
-    if((el=hit('data-i'))){ playFrom(filtered(),el.dataset.tid||((P.list[+el.dataset.i]||{}).id),''); renderListPop(); return; }
+    // 18.3 · 작은 목록에서 곡을 눌러도 '대기열에 담고 바로 재생'이다
+    //   (가수별 재생은 예전처럼 그 가수 회차를 대기열로 세운다 — data-artgo)
+    if((el=hit('data-rec'))){ queueAdd(el.dataset.rec); return; }
+    if((el=hit('data-i'))){ queueAdd(el.dataset.tid||((P.list[+el.dataset.i]||{}).id)); renderListPop(); return; }
   });
   // 드래그로 담기
   body.addEventListener('dragstart',e=>{
@@ -20307,7 +20550,20 @@ function renderBigList(){
     const pages=Math.max(1,Math.ceil(total/per));
     P.bigPage=Math.max(0,Math.min(P.bigPage||0,pages-1));
     start=P.bigPage*per;
-    html=L.slice(start,start+per).map((t,k)=>row(t,'data-bq="'+(start+k)+'"')).join('')
+    const curId2=cur()&&cur().id;
+    // 18.3 · 대기열 행에는 관리 버튼(위로·아래로·다음에 재생·빼기)을 붙인다
+    const qrow=(t,k,abs)=>`<div class="mpb-li mpb-li-q" data-tid="${t.id}" data-bq="${abs}">`+
+      `<span><span class="nowic mp-eqbars" style="display:none;margin-right:6px"><i></i><i></i><i></i></span>${esc2(t.title)}</span>`+
+      (t.artist?`<em>${esc2(t.artist)}</em>`:'')+
+      (t.album?`<em style="max-width:150px">${esc2(t.album)}</em>`:'')+
+      `<span class="mpb-qops">`+
+        `<button class="mpb-qop" data-qop="up" data-bqidx="${abs}" title="위로" aria-label="위로"><i class="ri-arrow-up-line"></i></button>`+
+        `<button class="mpb-qop" data-qop="down" data-bqidx="${abs}" title="아래로" aria-label="아래로"><i class="ri-arrow-down-line"></i></button>`+
+        `<button class="mpb-qop" data-qop="next" data-bqidx="${abs}" title="다음에 재생" aria-label="다음에 재생"><i class="ri-skip-forward-line"></i></button>`+
+        `<button class="mpb-qop del" data-qop="del" data-bqidx="${abs}" title="대기열에서 빼기" aria-label="대기열에서 빼기"><i class="ri-close-line"></i></button>`+
+      `</span></div>`;
+    html=(total?`<div class="mpb-qhead"><span>${total}곡 대기 중${curId2?' · '+esc2(curId2):''}</span><button class="mpb-qclear" data-qclear="1"><i class="ri-delete-bin-6-line"></i> 전체 비우기</button></div>`:'')
+      +L.slice(start,start+per).map((t,k)=>qrow(t,k,start+k)).join('')
       ||_emptyBox('q');
     if(pinfo) pinfo.textContent=total+'곡'+(pages>1?` · ${P.bigPage+1}/${pages}`:'');
   }else if(P.bigTab==='a'){
@@ -20388,13 +20644,30 @@ $('mpBBody').addEventListener('click',e=>{
     renderDiscoverBig();
     return;
   }
+  // 18.3 · 대기열 관리 버튼(위로/아래로/다음에 재생/빼기)과 전체 비우기가 먼저
+  const qop=e.target.closest('[data-qop]');
+  if(qop&&qop.dataset.bqidx!=null){
+    e.preventDefault(); e.stopPropagation();
+    const i=+qop.dataset.bqidx, op=qop.dataset.qop;
+    if(op==='up') queueMove(i,-1);
+    else if(op==='down') queueMove(i,1);
+    else if(op==='del') queueRemove(i);
+    else if(op==='next'){
+      const q=curList(); const t=q&&q[i];
+      if(t) queueNext(t.id);
+    }
+    return;
+  }
+  if(e.target.closest('[data-qclear]')){
+    queueClear(); return;
+  }
   const el=e.target.closest('[data-bq],[data-bl]'); if(!el) return;
   // 대기열 탭에서 고른 곡: 대기열은 그대로, 그 자리만 재생
   if(el.dataset.bq!=null){ playIdx(+el.dataset.bq); return; }
   const id=el.dataset.bl;
-  // 14.14 · 그 화면에 보이던 순서가 그대로 대기열이 된다
-  //   (검색 결과 · 가수별 · 전체 곡 정렬 순서)
-  playFrom(_bigVisibleTracks(id),id,'');
+  // 18.3 · 곡을 누르면 '보이는 순서'로 대기열을 갈아끼우지 않고
+  //   그 곡을 대기열에 담아 바로 재생한다 (다음 곡 = 진짜 대기열 순서)
+  queueAdd(id);
 });
 // 지금 확장 플레이어 목록에 '보이는' 곡들을 화면 순서 그대로 돌려준다
 function _bigVisibleTracks(id){
@@ -21730,6 +22003,66 @@ function queueNext(id){
   renderListPop(); saveMusicState(true);
   toast('다음에 재생합니다',1300);
 }
+// ── 18.3 · 곡을 누르면 '대기열에 담고 바로 재생' ──
+//   기존 대기열은 그대로 두고, 이 곡을 대기열 끝에 담아 재생한다.
+//   (이미 대기열에 있으면 중복 없이 그 자리로 이동해 재생한다)
+function queueAdd(id){
+  const t=P.list.find(x=>x.id===id); if(!t) return;
+  const q=Array.isArray(P.queue)?P.queue.slice():[];
+  let k=q.findIndex(x=>x.id===id);
+  let added=false;
+  if(k<0){ q.push(t); k=q.length-1; added=true; }
+  P.queue=q;
+  P._forceNext='';        // 수동 선택이므로 예약된 '다음에 재생'을 무시한다
+  playIdx(k);
+  saveMusicState(true);
+  try{ if(mpbEl&&mpbEl.classList.contains('open')) renderBigList(); }catch(e){}
+  try{ renderListPop(); }catch(e){}
+  if(added&&window.toast) toast('대기열에 담고 재생할게요',1100);
+}
+try{ window.sdyQueueAdd=queueAdd; }catch(e){}
+// 곡 목록(P.queue)이 바뀐 뒤 현재 곡 인덱스를 다시 맞춘다
+function _qSyncIdx(){
+  const L=_qTracks();
+  const cid=(A&&A._trackId)||P.currentId;
+  const k=cid?L.findIndex(t=>t.id===cid):-1;
+  P.idx=k>=0?k:Math.max(0,Math.min(L.length-1,P.idx||0));
+}
+// ── 18.3 · 대기열 관리 (위로 / 아래로 / 빼기) ──
+function queueMove(i,d){
+  const q=Array.isArray(P.queue)?P.queue.slice():[];
+  const at=Math.max(0,Math.min(q.length-1,+i||0));
+  const to=at+(+d||0);
+  if(!q.length||to<0||to>=q.length) return;
+  const t=q.splice(at,1)[0]; q.splice(to,0,t);
+  P.queue=q; _qSyncIdx();
+  saveMusicState(true);
+  try{ if(mpbEl&&mpbEl.classList.contains('open')) renderBigList(); }catch(e){}
+  try{ renderListPop(); }catch(e){}
+}
+function queueRemove(i){
+  const q=Array.isArray(P.queue)?P.queue.slice():[];
+  const at=+i||0;
+  if(!q.length||at<0||at>=q.length) return;
+  q.splice(at,1);
+  P.queue=q.length?q:null;
+  _qSyncIdx();
+  saveMusicState(true);
+  try{ if(mpbEl&&mpbEl.classList.contains('open')) renderBigList(); }catch(e){}
+  try{ renderListPop(); }catch(e){}
+}
+function queueClear(){
+  // 재생 중인 곡은 남기고 나머지를 비운다 → '다음 곡'이 라이브러리로 새지 않는다
+  const cid=(A&&A._trackId)||P.currentId;
+  const keep=(cid&&(P.list||[]).find(t=>t.id===cid))||null;
+  P.queue=keep?[keep]:null;
+  P.idx=0; _qResetCycle(keep&&keep.id);
+  saveMusicState(true);
+  try{ if(mpbEl&&mpbEl.classList.contains('open')) renderBigList(); }catch(e){}
+  try{ renderListPop(); }catch(e){}
+  if(window.toast) toast('대기열을 비웠어요 · 지금 곡은 계속 재생돼요',1600);
+}
+try{ window.sdyQueueMove=queueMove; window.sdyQueueRemove=queueRemove; window.sdyQueueClear=queueClear; }catch(e){}
 // ── 업로드 뒤 그 곡이 있는 페이지로 이동 ──
 function gotoTrackPage(id){
   const i=P.list.findIndex(t=>t.id===id); if(i<0) return;
@@ -22192,8 +22525,66 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
   var TTEK='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.2 V12.6"/><path d="M9.2 12.6 H14.8"/><path d="M9.2 12.6 V9.2"/><path d="M12 12.6 V8.6"/><path d="M14.8 12.6 V9.2"/><rect x="5.6" y="7.4" width="12.8" height="4.2" rx="2.1" fill="#ef4444"/><rect x="5.6" y="7.4" width="12.8" height="1.2" rx="0.6" fill="#fca5a5" opacity=".55"/></svg>';
   var REFRESH='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
-  var REACTIONS=['👍','❤️','😂','🔥','😮','🎉'];
-  var EMOJIS=['😀','😂','😅','😊','😍','🥰','😘','😎','🤔','😭','😤','😴','🥳','😇','🙃','😳','👍','👎','👏','🙌','🙏','💪','🤝','👀','🔥','❤️','💖','💔','✨','⭐','🎉','🎊','🎵','🎶','🌙','☀️','🌈','🍀','🌸','🌊','🍕','🍜','🌶️','🍢','🍡','🍭','🍰','🍿','☕','🍺','🐦','🐱','🐶','🦊','🐻','🐼','🦉','🚀','🎯','💡','📌','✅','❌','⚠️','💯'];
+  // ── 18.3 · 해돌이 임티 (카톡 미모티콘식) ──────────────────────────────
+  //   유니코드 이모지 대신 #ypStickerDefs 의 <template data-stk=…> 블록을 쓴다.
+  //   채팅에는 [hd:아이디] 코드로 저장·전송되고, 받는 쪽에서 해돌이 그림으로 바뀐다.
+  //   (새 임티를 추가하면 선택창·반응이 자동으로 따라간다 — server REACTIONS 는
+  //    hd: 접두사면 어떤 아이디든 받는다)
+  var REACTIONS=['hd:hello','hd:love','hd:idea','hd:read','hd:coffee','hd:sleep'];
+  var STK_CODE=/^hd:([a-z0-9_-]{1,24})$/;
+  var STK_TEXT=/\[hd:([a-z0-9_-]{1,24})\]/g;
+  var YP_STK=(function(){
+    var box=document.getElementById('ypStickerDefs');
+    function defs(){ return box?box.querySelectorAll('template[data-stk]'):[]; }
+    function list(){
+      var out=[]; defs().forEach(function(t){
+        out.push({id:t.getAttribute('data-stk'), label:t.getAttribute('data-label')||t.getAttribute('data-stk')});
+      }); return out;
+    }
+    function node(id){
+      if(!box) return null;
+      var t=null; defs().forEach(function(x){ if(x.getAttribute('data-stk')===id) t=x; });
+      if(!t) return null;
+      var el=t.content.cloneNode(true).firstElementChild;
+      return el||null;
+    }
+    function svg(id,cls){
+      var el=node(id); if(!el) return null;
+      // 템플릿에 붙어 있던 동작 클래스(om-w-mail · om-w-sleep …)는 꼭 지켜야
+      // 채팅에서도 실제로 움직이는 SVG 로 보인다. yp-stk/크기 클래스만 더한다.
+      el.classList.add('yp-stk');
+      if(cls) cls.split(/\s+/).forEach(function(c){ if(c) el.classList.add(c); });
+      return el;
+    }
+    return { list:list, node:node, svg:svg,
+             code:function(id){ return '[hd:'+id+']'; } };
+  })();
+  // 텍스트 안의 [hd:…] 코드를 임티 그림으로 바꾼다 (혼합 메시지용)
+  function ypStkRenderText(el,text){
+    el.textContent='';
+    var last=0, m;
+    STK_TEXT.lastIndex=0;
+    while((m=STK_TEXT.exec(text))){
+      if(m.index>last) el.appendChild(document.createTextNode(text.slice(last,m.index)));
+      var s=YP_STK.svg(m[1],'yp-stk-inline');
+      if(s) el.appendChild(s); else el.appendChild(document.createTextNode(m[0]));
+      last=m.index+m[0].length;
+    }
+    if(last<text.length) el.appendChild(document.createTextNode(text.slice(last)));
+  }
+  // 메시지 전체가 임티 하나면 큰 스티커로 보여 준다 (카톡 미모티콘처럼)
+  function ypStkOnly(text){
+    var m=(text||'').trim().match(/^\[hd:([a-z0-9_-]{1,24})\]$/);
+    return m?m[1]:null;
+  }
+  function ypStkReact(id){
+    var m=STK_CODE.exec(id); STK_CODE.lastIndex=0;
+    if(!m) return null;
+    var el=YP_STK.svg(m[1],'yp-stk-chip');
+    return el;
+  }
+  // 테스트·디버그용 훅 (기존 __ypReact/__ypEnter 와 같은 패턴)
+  window.__ypStk={list:YP_STK.list,svg:YP_STK.svg,code:YP_STK.code,only:ypStkOnly,render:ypStkRenderText};
   var LIVE_ADJ=['연보라','복숭아빛','민트색','하늘색','살구색','라벤더','코랄빛','레몬색','장미빛','청포도','피치','시나몬','솜사탕','아이보리','라일락','청옥','버터','멜론','구름빛','연분홍'];
   var LIVE_ANI=['까치','참새','박새','멧비둘기','직박구리','제비','백로','왜가리','뻐꾸기','물총새','두루미','기러기','청둥오리','저어새','꾀꼬리','동박새','오목눈이','수리부엉이','팔색조','호반새','파랑새','후투티','원앙','종달새'];
   var YP={
@@ -22349,7 +22740,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     keys.forEach(function(e){
       var n=(r[e]||[]).length; var on=(r[e]||[]).indexOf(YP.uid)>=0;
       var b=document.createElement('button'); b.className=on?'on':''; b.setAttribute('data-e',e); b.setAttribute('data-mid',m.id);
-      b.textContent=e;
+      var stk=ypStkReact(e);
+      if(stk) b.appendChild(stk); else b.textContent=e;   // 18.3 · 해돌이 임티는 그림으로
       var c=document.createElement('span'); c.className='cnt'; c.textContent=n; b.appendChild(c);
       d.appendChild(b);
     });
@@ -22373,7 +22765,17 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       inner.querySelector('.fn').textContent=m.file.name;
       inner.querySelector('.fs').textContent=ypSize(m.file.size);
     } else {
-      inner=document.createElement('div'); inner.className='yp-bub'; inner.textContent=m.text||'';
+      var stkOnly=ypStkOnly(m.text);
+      if(stkOnly){
+        // 18.3 · 임티 하나만 온 메시지 — 말풍선 없이 큰 해돌이 스티커로
+        inner=document.createElement('div'); inner.className='yp-stkmsg';
+        var stk=YP_STK.svg(stkOnly,'yp-stk-big');
+        if(stk) inner.appendChild(stk);
+        else { inner.className='yp-bub'; inner.textContent=m.text||''; }
+      }else{
+        inner=document.createElement('div'); inner.className='yp-bub';
+        ypStkRenderText(inner,m.text||'');
+      }
     }
     if(!YP.seen.has(m.id)){ YP.seen.add(m.id); inner.classList.add('anim'); }
     if(YP.seen.size>400) YP.seen.clear();
@@ -23211,7 +23613,13 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   function ypShowReactRow(mid,x,y){
     var app=$('ypApp'), row=$('ypReactRow');
     if(!app||!row) return;
-    row.innerHTML=REACTIONS.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join('');
+    row.innerHTML='';
+    REACTIONS.forEach(function(id){                       // 18.3 · 해돌이 임티 반응
+      var b=document.createElement('button'); b.setAttribute('data-e',id);
+      var s=ypStkReact(id);
+      if(s) b.appendChild(s);
+      row.appendChild(b);
+    });
     row.setAttribute('data-mid',mid);
     var r=app.getBoundingClientRect();
     row.style.left=Math.max(6,Math.min(x-r.left-60,r.width-96))+'px';
@@ -23546,7 +23954,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
               '<span class="fi"><i class="ri-file-3-line"></i></span><span class="fm"><span class="fn">'+yfEsc(mm.file.name)+'</span><span class="fs">'+yfSize(mm.file.size||0)+'</span></span>'+
               '<i class="ri-download-2-line" style="color:#8b93a5;font-size:14px"></i></a>';
         }else{
-          h+='<div class="yp-bub">'+yfEsc(mm.text||'')+'</div>';
+          // 18.3 · 1:1 대화도 해돌이 임티를 그림으로 보여 준다
+          var td=document.createElement('div');
+          var stkOnly=ypStkOnly(mm.text);
+          if(stkOnly){
+            td.className='yp-stkmsg';
+            var stk=YP_STK.svg(stkOnly,'yp-stk-big');
+            if(stk) td.appendChild(stk); else { td.className='yp-bub'; td.textContent=mm.text||''; }
+          }else{ td.className='yp-bub'; ypStkRenderText(td,mm.text||''); }
+          h+=td.outerHTML;
         }
         if(mine&&!mm.temp){
           h+='<button class="yp-del" title="메시지 삭제" data-dm-del="'+mm.id+'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12"/></svg></button>';
@@ -23799,10 +24215,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(t) ypBgmPick(t);
   });
   var emo=$('ypEmoji');
-  emo.innerHTML=EMOJIS.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join('');
+  emo.innerHTML='';
+  YP_STK.list().forEach(function(s){                      // 18.3 · 해돌이 임티 선택창
+    var b=document.createElement('button');
+    b.setAttribute('data-e',s.id); b.title=s.label; b.setAttribute('aria-label',s.label);
+    var el=YP_STK.svg(s.id,'yp-stk-pick');
+    if(el) b.appendChild(el); else b.textContent=s.id;
+    emo.appendChild(b);
+  });
   emo.addEventListener('click',function(e){
     var b=e.target.closest&&e.target.closest('button'); if(!b) return;
-    var t=$('ypTxt'); t.value+=b.getAttribute('data-e'); ypAutoGrow(t); t.focus();
+    var id=b.getAttribute('data-e'); if(!id) return;
+    var t=$('ypTxt');
+    t.value+=(t.value&&!/\s$/.test(t.value)?' ':'')+YP_STK.code(id);
+    ypAutoGrow(t); t.focus();
   });
   $('ypEmojiBtn').onclick=function(e){ e.stopPropagation(); emo.classList.toggle('open'); var row=$('ypReactRow'); if(row)row.classList.remove('open'); };
   $('ypReactRow').addEventListener('click',function(e){
@@ -24033,12 +24459,81 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       plane._flying=true;
       plane.classList.remove('fly'); void plane.offsetWidth;
       plane.classList.add('fly');
+      try{ if(plane._say) plane._say(); }catch(e){}
       setTimeout(function(){ plane.classList.remove('fly'); plane._flying=false; },12500);
     }
     // 아주 가끔: 2분마다 15% 확률 → 평균 약 13분에 한 번
     setInterval(function(){
       if(Math.random()<0.15&&homeVisible()) planeFly();
     },120000);
+  })();
+
+  // ── 18.3 · 엽스코드/집중(스톱워치·타이머)/비행기 해돌이 혼잣말 ──
+  //   음악 해돌이처럼 가만히 있어도 주기적으로 말풍선(om-say)을 바꿔가며 떠든다.
+  //   단, 사용법(졸리는) 해돌이는 건드려야만 말한다 — 여기서 건드리지 않는다.
+  (function(){
+    var gateOtter=document.querySelector('#ypGate .yp-otter');
+    var fcOtter=document.querySelector('#focusClock .fc-otter');
+    var plane=document.getElementById('planeOtter');
+
+    function say(root,text,dur){
+      var s=root&&root.querySelector('.om-say');
+      if(!s||!text) return;
+      s.textContent=text;
+      s.classList.add('om-on');
+      if(s._t) clearTimeout(s._t);
+      s._t=setTimeout(function(){ s.classList.remove('om-on'); }, dur||2600);
+    }
+    function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+    // ── 엽스코드 입장 게이트 (편지 해돌이) ──
+    var YP_IDLE=[
+      '편지 왔어요! 열어볼래? 해돌~',
+      '로그인해도 되고, 가볍게 들어와도 돼 해돌~',
+      '만나서 반가워요! 해돌~',
+      '이 카드에 편지가 숨어 있어요 해돌~',
+      '두근두근… 소포 배달 해돌~!'
+    ];
+    if(gateOtter){
+      setInterval(function(){
+        var g=document.getElementById('ypGate');
+        if(!g||g.style.display!=='flex') return;
+        say(gateOtter,pick(YP_IDLE),2600);
+      },14000);
+    }
+
+    // ── 집중 화면 (독서 해돌이 — 스톱워치·타이머·시계) ──
+    var FC_IDLE=[
+      '몇 분 집중할래? 해돌~',
+      '시작 버튼만 누르면 돼 해돌!',
+      '물 한 모금 마시고 오자 해돌~',
+      '25분 뽀모도로가 국룰이야 해돌~',
+      '천천히 가도 괜찮아 해돌~',
+      '책장 넘기는 소리가 좋다 해돌~'
+    ];
+    if(fcOtter){
+      setInterval(function(){
+        var fc=document.getElementById('focusClock');
+        if(!fc||!fc.classList.contains('show')||fc.classList.contains('idle')) return;
+        say(fcOtter,pick(FC_IDLE),2600);
+      },12000);
+    }
+
+    // ── 비행기 해돌이 — 비행 중에만 말한다 (출발할 때도 한마디) ──
+    var FLY_IDLE=[
+      '두둥~! 여행 가는 길이야 해돌~',
+      '가끔은 날아다니는 것도 필요하잖아 해돌~',
+      '구름 위는 역시 좋다 해돌~',
+      '잠깐! 나 지금 급해 해돌~!',
+      '비행기 모드 ON! 해돌~',
+      '창밖 구경 한번 할래? 해돌~'
+    ];
+    if(plane){
+      plane._say=function(){ say(plane,pick(FLY_IDLE),2800); };
+      setInterval(function(){
+        if(plane.classList.contains('fly')) say(plane,pick(FLY_IDLE),2800);
+      },7000);
+    }
   })();
 
   ypDrag();
