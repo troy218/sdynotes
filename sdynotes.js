@@ -22217,7 +22217,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }
     function svg(id,cls){
       var el=node(id); if(!el) return null;
-      el.setAttribute('class','om-mini yp-stk'+(cls?' '+cls:''));
+      // 템플릿에 붙어 있던 동작 클래스(om-w-mail · om-w-sleep …)는 꼭 지켜야
+      // 채팅에서도 실제로 움직이는 SVG 로 보인다. yp-stk/크기 클래스만 더한다.
+      el.classList.add('yp-stk');
+      if(cls) cls.split(/\s+/).forEach(function(c){ if(c) el.classList.add(c); });
       return el;
     }
     return { list:list, node:node, svg:svg,

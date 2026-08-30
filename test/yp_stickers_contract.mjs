@@ -91,6 +91,14 @@ const hello = stk.svg('hello', 'yp-stk-big');
 assert.ok(hello && hello.querySelector('svg use[href="#om-m-body"]'),
   '임티는 공용 부품(use)으로 그려져야 한다');
 assert.ok(hello.className.includes('yp-stk'), '임티에 yp-stk 클래스가 붙는다');
+assert.ok(hello.className.includes('om-w-mail'),
+  '임티는 그림이 아니라 움직이는 SVG — 동작 클래스(om-w-mail)가 유지돼야 한다');
+assert.ok(/\.om-w-mail \.om-anim\{animation:om-bob/.test(css),
+  '둥실(om-bob) 애니메이션 규칙이 CSS 에 남아 있어야 한다');
+assert.ok(/\.om-wavehand\{animation:om-wavehand/.test(css),
+  '손 흔들기(om-wavehand) 애니메이션 규칙이 있어야 한다');
+const sleepy = stk.svg('sleep', 'yp-stk-big');
+assert.ok(sleepy.className.includes('om-w-sleep'), '졸려 임티도 동작 클래스가 유지된다');
 
 // ② 선택창: 목록 수만큼 버튼, 누르면 [hd:아이디] 가 입력창에 들어간다
 const emo = document.getElementById('ypEmoji');
