@@ -28,7 +28,11 @@ const FILE_MAX = 20 * 1024 * 1024;
 // 파일 120개(최대 2.4GB)가 노려지므로 '총 바이트 예산'으로도 잠근다.
 // apply.sh 가 12GB 박스에서 512MB(SDY_CHAT_FILE_MB)를 주입한다.
 const FILE_BUDGET = Math.max(64, parseInt(process.env.SDY_CHAT_FILE_MB || '512', 10)) * 1024 * 1024;
-const REACTIONS = ['👍', '❤️', '😂', '🔥', '😮', '🎉'];
+// 18.3 · 반응은 유니코드 이모지 대신 '해돌이 임티'(hd:아이디)를 쓴다.
+//   옛 유니코드는 기존 반응 호환용으로 남기고, hd: 접두사는
+//   프론트에서 새 임티를 추가해도 서버를 고치지 않게 아무 아이디나 받는다.
+const REACTIONS = ['hd:hello', 'hd:love', 'hd:idea', 'hd:read', 'hd:coffee', 'hd:sleep'];
+const REACT_LEGACY = ['👍', '❤️', '😂', '🔥', '😮', '🎉'];
 
 // 14.13.4 · 파스텔 팔레트 + 이름 색 대응은 lib/pastel.js 에서 (라이브와 공유)
 
@@ -474,7 +478,9 @@ export function registerChat(app) {
     if (!me) return reply.code(400).send({ ok: false, error: '먼저 입장해 주세요' });
     const id = parseInt(d.id, 10);
     const emoji = String(d.emoji || '');
-    if (!REACTIONS.includes(emoji)) return reply.code(400).send({ ok: false, error: '지원하지 않는 이모지' });
+    const isSticker = /^hd:[a-z0-9_-]{1,24}$/.test(emoji);
+    if (!REACTIONS.includes(emoji) && !REACT_LEGACY.includes(emoji) && !isSticker)
+      return reply.code(400).send({ ok: false, error: '지원하지 않는 이모지' });
     const msg = state.msgs.find((m) => m.id === id);
     if (!msg) return reply.code(404).send({ ok: false, error: '메시지가 없습니다' });
     msg.reactions = msg.reactions || {};

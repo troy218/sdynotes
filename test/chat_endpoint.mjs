@@ -73,6 +73,12 @@ const jR = await post('/api/chat/join', { uid: 'B', name: '민트 제비' });
 const reacted = jR.msgs.find((x) => x.id === 1);
 ok('react: 반응 저장', r1.ok && reacted && (reacted.reactions['🔥'] || []).length === 1);
 
+// 18.3 · 해돌이 임티 반응 (hd: 접두사 — 서버 수정 없이 새 아이디도 허용)
+const rHd = await post('/api/chat/react', { uid: 'B', id: 1, emoji: 'hd:hello' });
+const jR2 = await post('/api/chat/join', { uid: 'C', name: '해돌' });
+const reacted2 = jR2.msgs.find((x) => x.id === 1);
+ok('react: 해돌이 임티(hd:) 반응', rHd.ok && reacted2 && (reacted2.reactions['hd:hello'] || []).length === 1);
+
 // 6) 노크 브로드캐스트 (접속자 전원에게)
 const sA = await openSse('A');
 const sB = await openSse('B');

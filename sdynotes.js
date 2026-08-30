@@ -22192,8 +22192,63 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
   var TTEK='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.2 V12.6"/><path d="M9.2 12.6 H14.8"/><path d="M9.2 12.6 V9.2"/><path d="M12 12.6 V8.6"/><path d="M14.8 12.6 V9.2"/><rect x="5.6" y="7.4" width="12.8" height="4.2" rx="2.1" fill="#ef4444"/><rect x="5.6" y="7.4" width="12.8" height="1.2" rx="0.6" fill="#fca5a5" opacity=".55"/></svg>';
   var REFRESH='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
-  var REACTIONS=['👍','❤️','😂','🔥','😮','🎉'];
-  var EMOJIS=['😀','😂','😅','😊','😍','🥰','😘','😎','🤔','😭','😤','😴','🥳','😇','🙃','😳','👍','👎','👏','🙌','🙏','💪','🤝','👀','🔥','❤️','💖','💔','✨','⭐','🎉','🎊','🎵','🎶','🌙','☀️','🌈','🍀','🌸','🌊','🍕','🍜','🌶️','🍢','🍡','🍭','🍰','🍿','☕','🍺','🐦','🐱','🐶','🦊','🐻','🐼','🦉','🚀','🎯','💡','📌','✅','❌','⚠️','💯'];
+  // ── 18.3 · 해돌이 임티 (카톡 미모티콘식) ──────────────────────────────
+  //   유니코드 이모지 대신 #ypStickerDefs 의 <template data-stk=…> 블록을 쓴다.
+  //   채팅에는 [hd:아이디] 코드로 저장·전송되고, 받는 쪽에서 해돌이 그림으로 바뀐다.
+  //   (새 임티를 추가하면 선택창·반응이 자동으로 따라간다 — server REACTIONS 는
+  //    hd: 접두사면 어떤 아이디든 받는다)
+  var REACTIONS=['hd:hello','hd:love','hd:idea','hd:read','hd:coffee','hd:sleep'];
+  var STK_CODE=/^hd:([a-z0-9_-]{1,24})$/;
+  var STK_TEXT=/\[hd:([a-z0-9_-]{1,24})\]/g;
+  var YP_STK=(function(){
+    var box=document.getElementById('ypStickerDefs');
+    function defs(){ return box?box.querySelectorAll('template[data-stk]'):[]; }
+    function list(){
+      var out=[]; defs().forEach(function(t){
+        out.push({id:t.getAttribute('data-stk'), label:t.getAttribute('data-label')||t.getAttribute('data-stk')});
+      }); return out;
+    }
+    function node(id){
+      if(!box) return null;
+      var t=null; defs().forEach(function(x){ if(x.getAttribute('data-stk')===id) t=x; });
+      if(!t) return null;
+      var el=t.content.cloneNode(true).firstElementChild;
+      return el||null;
+    }
+    function svg(id,cls){
+      var el=node(id); if(!el) return null;
+      el.setAttribute('class','om-mini yp-stk'+(cls?' '+cls:''));
+      return el;
+    }
+    return { list:list, node:node, svg:svg,
+             code:function(id){ return '[hd:'+id+']'; } };
+  })();
+  // 텍스트 안의 [hd:…] 코드를 임티 그림으로 바꾼다 (혼합 메시지용)
+  function ypStkRenderText(el,text){
+    el.textContent='';
+    var last=0, m;
+    STK_TEXT.lastIndex=0;
+    while((m=STK_TEXT.exec(text))){
+      if(m.index>last) el.appendChild(document.createTextNode(text.slice(last,m.index)));
+      var s=YP_STK.svg(m[1],'yp-stk-inline');
+      if(s) el.appendChild(s); else el.appendChild(document.createTextNode(m[0]));
+      last=m.index+m[0].length;
+    }
+    if(last<text.length) el.appendChild(document.createTextNode(text.slice(last)));
+  }
+  // 메시지 전체가 임티 하나면 큰 스티커로 보여 준다 (카톡 미모티콘처럼)
+  function ypStkOnly(text){
+    var m=(text||'').trim().match(/^\[hd:([a-z0-9_-]{1,24})\]$/);
+    return m?m[1]:null;
+  }
+  function ypStkReact(id){
+    var m=STK_CODE.exec(id); STK_CODE.lastIndex=0;
+    if(!m) return null;
+    var el=YP_STK.svg(m[1],'yp-stk-chip');
+    return el;
+  }
+  // 테스트·디버그용 훅 (기존 __ypReact/__ypEnter 와 같은 패턴)
+  window.__ypStk={list:YP_STK.list,svg:YP_STK.svg,code:YP_STK.code,only:ypStkOnly,render:ypStkRenderText};
   var LIVE_ADJ=['연보라','복숭아빛','민트색','하늘색','살구색','라벤더','코랄빛','레몬색','장미빛','청포도','피치','시나몬','솜사탕','아이보리','라일락','청옥','버터','멜론','구름빛','연분홍'];
   var LIVE_ANI=['까치','참새','박새','멧비둘기','직박구리','제비','백로','왜가리','뻐꾸기','물총새','두루미','기러기','청둥오리','저어새','꾀꼬리','동박새','오목눈이','수리부엉이','팔색조','호반새','파랑새','후투티','원앙','종달새'];
   var YP={
@@ -22349,7 +22404,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     keys.forEach(function(e){
       var n=(r[e]||[]).length; var on=(r[e]||[]).indexOf(YP.uid)>=0;
       var b=document.createElement('button'); b.className=on?'on':''; b.setAttribute('data-e',e); b.setAttribute('data-mid',m.id);
-      b.textContent=e;
+      var stk=ypStkReact(e);
+      if(stk) b.appendChild(stk); else b.textContent=e;   // 18.3 · 해돌이 임티는 그림으로
       var c=document.createElement('span'); c.className='cnt'; c.textContent=n; b.appendChild(c);
       d.appendChild(b);
     });
@@ -22373,7 +22429,17 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       inner.querySelector('.fn').textContent=m.file.name;
       inner.querySelector('.fs').textContent=ypSize(m.file.size);
     } else {
-      inner=document.createElement('div'); inner.className='yp-bub'; inner.textContent=m.text||'';
+      var stkOnly=ypStkOnly(m.text);
+      if(stkOnly){
+        // 18.3 · 임티 하나만 온 메시지 — 말풍선 없이 큰 해돌이 스티커로
+        inner=document.createElement('div'); inner.className='yp-stkmsg';
+        var stk=YP_STK.svg(stkOnly,'yp-stk-big');
+        if(stk) inner.appendChild(stk);
+        else { inner.className='yp-bub'; inner.textContent=m.text||''; }
+      }else{
+        inner=document.createElement('div'); inner.className='yp-bub';
+        ypStkRenderText(inner,m.text||'');
+      }
     }
     if(!YP.seen.has(m.id)){ YP.seen.add(m.id); inner.classList.add('anim'); }
     if(YP.seen.size>400) YP.seen.clear();
@@ -23211,7 +23277,13 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   function ypShowReactRow(mid,x,y){
     var app=$('ypApp'), row=$('ypReactRow');
     if(!app||!row) return;
-    row.innerHTML=REACTIONS.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join('');
+    row.innerHTML='';
+    REACTIONS.forEach(function(id){                       // 18.3 · 해돌이 임티 반응
+      var b=document.createElement('button'); b.setAttribute('data-e',id);
+      var s=ypStkReact(id);
+      if(s) b.appendChild(s);
+      row.appendChild(b);
+    });
     row.setAttribute('data-mid',mid);
     var r=app.getBoundingClientRect();
     row.style.left=Math.max(6,Math.min(x-r.left-60,r.width-96))+'px';
@@ -23546,7 +23618,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
               '<span class="fi"><i class="ri-file-3-line"></i></span><span class="fm"><span class="fn">'+yfEsc(mm.file.name)+'</span><span class="fs">'+yfSize(mm.file.size||0)+'</span></span>'+
               '<i class="ri-download-2-line" style="color:#8b93a5;font-size:14px"></i></a>';
         }else{
-          h+='<div class="yp-bub">'+yfEsc(mm.text||'')+'</div>';
+          // 18.3 · 1:1 대화도 해돌이 임티를 그림으로 보여 준다
+          var td=document.createElement('div');
+          var stkOnly=ypStkOnly(mm.text);
+          if(stkOnly){
+            td.className='yp-stkmsg';
+            var stk=YP_STK.svg(stkOnly,'yp-stk-big');
+            if(stk) td.appendChild(stk); else { td.className='yp-bub'; td.textContent=mm.text||''; }
+          }else{ td.className='yp-bub'; ypStkRenderText(td,mm.text||''); }
+          h+=td.outerHTML;
         }
         if(mine&&!mm.temp){
           h+='<button class="yp-del" title="메시지 삭제" data-dm-del="'+mm.id+'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12"/></svg></button>';
@@ -23799,10 +23879,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(t) ypBgmPick(t);
   });
   var emo=$('ypEmoji');
-  emo.innerHTML=EMOJIS.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join('');
+  emo.innerHTML='';
+  YP_STK.list().forEach(function(s){                      // 18.3 · 해돌이 임티 선택창
+    var b=document.createElement('button');
+    b.setAttribute('data-e',s.id); b.title=s.label; b.setAttribute('aria-label',s.label);
+    var el=YP_STK.svg(s.id,'yp-stk-pick');
+    if(el) b.appendChild(el); else b.textContent=s.id;
+    emo.appendChild(b);
+  });
   emo.addEventListener('click',function(e){
     var b=e.target.closest&&e.target.closest('button'); if(!b) return;
-    var t=$('ypTxt'); t.value+=b.getAttribute('data-e'); ypAutoGrow(t); t.focus();
+    var id=b.getAttribute('data-e'); if(!id) return;
+    var t=$('ypTxt');
+    t.value+=(t.value&&!/\s$/.test(t.value)?' ':'')+YP_STK.code(id);
+    ypAutoGrow(t); t.focus();
   });
   $('ypEmojiBtn').onclick=function(e){ e.stopPropagation(); emo.classList.toggle('open'); var row=$('ypReactRow'); if(row)row.classList.remove('open'); };
   $('ypReactRow').addEventListener('click',function(e){

@@ -16,6 +16,7 @@
     "test:auth": "node test/auth_contract.mjs",
     "test:friends": "node test/friends_dm_contract.mjs && node test/yf_dm_frontend_contract.cjs",
     "test:gate": "node test/yp_gate_contract.cjs",
+    "test:ypstk": "node test/yp_stickers_contract.mjs",
     "test:smtp": "node test/smtp_contract.mjs",
     "test:musicfs": "node test/music_fs_smoke.mjs",
     "test:phone": "node test/phone_layout_contract.mjs && node test/mobile_runtime_smoke.mjs",

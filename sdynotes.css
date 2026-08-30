@@ -4178,21 +4178,23 @@ body.sdy-booting #mpReopen{display:none !important;}
     display:flex;align-items:center;justify-content:center;transition:transform .15s ease,filter .15s ease;}
 .yp-send:hover{filter:brightness(1.1);transform:scale(1.05);}
 
-/* ── 이모지/반응/설정 팝 ── */
-.yp-emoji{position:absolute;bottom:48px;left:10px;display:none;grid-template-columns:repeat(8,1fr);gap:2px;
-    background:#171a21;border:1px solid #262b36;border-radius:12px;padding:6px;
+/* ── 이모지(해돌이 임티)/반응/설정 팝 ── */
+.yp-emoji{position:absolute;bottom:48px;left:10px;display:none;grid-template-columns:repeat(4,1fr);gap:4px;
+    background:#171a21;border:1px solid #262b36;border-radius:12px;padding:7px;
     box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:12;}
 .yp-emoji.open{display:grid;animation:ypPop .18s cubic-bezier(.22,.9,.3,1.2);}
-.yp-emoji button{border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:17px;
-    width:30px;height:30px;display:flex;align-items:center;justify-content:center;transition:transform .1s ease;}
-.yp-emoji button:hover{background:#262b36;transform:scale(1.2);}
+.yp-emoji button{border:none;background:transparent;border-radius:10px;cursor:pointer;font-size:0;
+    width:56px;height:56px;display:flex;align-items:center;justify-content:center;padding:5px;
+    transition:transform .1s ease,background .12s ease;}
+.yp-emoji button:hover{background:#262b36;transform:scale(1.12);}
 .yp-react-row{position:absolute;display:none;gap:2px;background:#171a21;border:1px solid #262b36;
     border-radius:999px;padding:4px 7px;box-shadow:0 8px 26px rgba(0,0,0,.45);z-index:12;}
 .yp-react-row.open{display:flex;animation:ypPop .16s cubic-bezier(.22,.9,.3,1.2);}
 @keyframes ypPop{from{opacity:0;transform:scale(.85);}to{opacity:1;transform:scale(1);}}
-.yp-react-row button{border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:16px;
-    width:28px;height:28px;display:flex;align-items:center;justify-content:center;transition:transform .12s ease;}
+.yp-react-row button{border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:0;
+    width:32px;height:32px;display:flex;align-items:center;justify-content:center;transition:transform .12s ease;}
 .yp-react-row button:hover{transform:scale(1.25);}
+.yp-react-row .yp-stk{width:22px;height:22px;}
 
 .yp-settings{position:absolute;top:46px;right:10px;width:min(250px,86%);display:none;flex-direction:column;gap:2px;
     background:#171a21;border:1px solid #262b36;border-radius:12px;padding:8px;
@@ -6162,6 +6164,23 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 }
 
 
+/* ── 18.3 · 해돌이 임티 (카톡 미모티콘식) ──
+   #ypStickerDefs 의 <template> 에서 복제된 om-mini 를 채팅·선택창·반응에서 쓴다.
+   (om-mini/om-w-flight 의 width 규칙보다 뒤에 있어야 크기가 적용된다) */
+.yp-stk{display:block;width:100%;height:auto;cursor:inherit;pointer-events:none;}
+.yp-stk svg{display:block;width:100%;height:auto;overflow:visible;}
+.yp-stk.yp-stk-pick{width:44px;}
+.yp-stk.yp-stk-inline{display:inline-block;width:42px;height:auto;vertical-align:-0.6em;margin:0 3px;}
+.yp-stk.yp-stk-big{width:116px;}
+.yp-stk.yp-stk-chip{width:24px;height:24px;}
+/* 임티 하나만 온 메시지 — 말풍선 없이 큰 스티커로 */
+.yp-stkmsg{display:inline-block;margin:2px 0 3px;line-height:0;}
+.yp-stkmsg .yp-stk{width:120px;}
+/* 반응 칩 속 임티 */
+.yp-reacts .yp-stk{display:inline-block;width:18px;height:18px;vertical-align:-0.3em;margin:0 1px;}
+.yp-reacts button .cnt{margin-left:1px;}
+
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 
@@ -6573,7 +6592,8 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
   .yp-tools button,.yp-send{width:42px;height:42px;}
   .yp-input textarea{min-height:42px;font-size:16px!important;}
   .yp-emoji{left:8px;right:8px;bottom:58px;grid-template-columns:repeat(6,1fr);}
-  .yp-emoji button{width:42px;height:42px;justify-self:center;font-size:20px;}
+  .yp-emoji button{width:46px;height:46px;justify-self:center;font-size:0;}
+  .yp-emoji button .yp-stk{width:36px;}
   .yp-react-row button{width:40px;height:40px;}
   .yp-settings{left:8px;right:8px;top:54px;width:auto;max-height:62dvh;overflow-y:auto;}
   .yp-set-row{min-height:44px;}
