@@ -12782,7 +12782,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         s.removeAllRanges(); s.addRange(savedRange);
         return savedHost;
     }
-    document.addEventListener('selectionchange',saveSel);
+    document.addEventListener('selectionchange',()=>{ saveSel(); syncCurSel(); });
     // 14.13.4 · 글상자 옆에 떠 있던 서식 막대(fmtBar)를 없앴다 — 상단 바와 항목이
     //   중복됐기 때문. 글자 서식(글꼴·크기·굵기·색·형광펜)은 전부 상단 바에서 한다.
 
@@ -12838,21 +12838,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.getElementById('fontLabel').textContent=f.label;
         document.getElementById('fontBtn').style.fontFamily=f.css;
 
-        // ① 글자 선택이 있으면 그 부분만
+        // ① 글자 선택이 있으면 그 부분만 (새 인라인 엔진 사용 — 다른 서식 풀림 없음)
         const host=restoreSel();
         const sel=window.getSelection();
         if(host&&sel&&!sel.isCollapsed){
             if(document.execCommand) document.execCommand('styleWithCSS',false,true);
+            pushHistory();
             try{
-                const r=sel.getRangeAt(0);
-                const span=document.createElement('span');
-                span.style.fontFamily=f.css;
-                span.appendChild(r.extractContents());
-                r.insertNode(span);
-                const nr=document.createRange(); nr.selectNodeContents(span);
-                sel.removeAllRanges(); sel.addRange(nr); savedRange=nr.cloneRange();
+                withSelection(()=>wrapSelStyle('fontFamily',f.css));
             }catch(e){}
-            const w=host.closest('.tb'); if(w) syncTextEl(w);
             toast(`글꼴: ${f.label}`,1100);
             return;
         }
@@ -12911,7 +12905,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         none.className='cp-none';
         none.innerHTML=kind==='text'?'<i class="ri-format-clear"></i> 자동(검정)':'<i class="ri-drop-line"></i> 색 없음';
         none.onmousedown=e=>e.preventDefault();
-        none.onclick=(e)=>{ e.stopPropagation(); if(kind==='text') applyTextColor('#000000'); else applyHighlight(null); closePops(); };
+        none.onclick=(e)=>{ e.stopPropagation(); if(kind==='text') clearTextColor(); else applyHighlight(null); closePops(); };
         pop.appendChild(none);
         pop.dataset.ready='1';
     }
@@ -13004,35 +12998,92 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             .filter(n=>!n.classList.contains('latex-box'));
         return t;
     }
-    // 14.13.7 · 글자색/형광펜은 execCommand 대신 직접 span 으로 입힌다.
-    //   execCommand(foreColor/hiliteColor) 는 브라우저가 선택 영역을 다시
-    //   짜면서 상자에 걸린 글꼴(font-family)을 떨어뜨려 '글꼴이 풀리는' 문제가
-    //   있었다. 직접 감싸면 기존 span(글꼴·굵기·크기 등)은 그대로 두고 새
-    //   스타일만 얹히므로 글꼴이 절대 풀리지 않는다.
-    // 선택 범위(또는 상자 전체)와 겹치는 텍스트 노드 목록
-    function textNodesInRange(r){
-        const out=[];
-        const root=r.commonAncestorContainer;
-        const tw=document.createTreeWalker(root.nodeType===3?root.parentNode:root, NodeFilter.SHOW_TEXT);
-        let n;
-        while(n=tw.nextNode()){ if(r.intersectsNode(n)) out.push(n); }
-        return out;
+    // 18.6 · 선택 영역 인라인 서식 (워드프로세서 방식)
+    //   execCommand 대신 직접 span 을 다룬다. 부분 글꼴·기타 인라인 스타일을
+    //   풀지 않고, 일부만 적용된 상태에서 토글하면 Word/구글독스처럼
+    //   "전체에 씌우기" 로 동작한다. 취소선·글자색·형광펜·글꼴·크기까지
+    //   같은 엔진으로 처리한다.
+    //
+    // 규칙:
+    //   1) 선택 범위와 교차하는 텍스트 노드를 경계에서 쪼개 범위가
+    //      텍스트 노드 단위로 딱 맞게 떨어지게 한다.
+    //   2) 각 선택된 텍스트 노드에 대해, 그 노드를 감싸는 스타일을 계산하고
+    //      가장 안쪽의 span 을 갱신하거나 새 span 을 감싸 스타일을 적용한다.
+    //   3) 제거는 해당 스타일을 가진 조상 span 들마다 그 프로퍼티만 지운다.
+    //      span 이 비면 풀어낸다.
+    //   4) <b>/<strong>/<i>/<em>/<u>/<s>/<strike> 같은 의미 태그도 인식한다.
+    const INLINE_TAGS = new Set(['SPAN','B','STRONG','I','EM','U','S','STRIKE','SUB','SUP','SMALL','BIG','MARK','FONT']);
+    const INLINE_STYLE_PROPS = ['fontWeight','fontStyle','textDecoration','color','backgroundColor',
+                                'fontFamily','fontSize','verticalAlign'];
+
+    // 의미 태그(b/i/u/s 등)가 표현하는 스타일 (canonical form)
+    function _tagStyle(tag){
+        tag = String(tag||'').toUpperCase();
+        if(tag==='B'||tag==='STRONG') return {fontWeight:'700'};
+        if(tag==='I'||tag==='EM')     return {fontStyle:'italic'};
+        if(tag==='U')                 return {textDecoration:'underline'};
+        if(tag==='S'||tag==='STRIKE') return {textDecoration:'line-through'};
+        if(tag==='MARK')              return {backgroundColor:'#ffff00'};
+        return null;
     }
-    // '글자 선택 구간'을 색/형광펜 으로 감쌀 때, 그 글자가 이미 부분 글꼴
-    // (상자 바깥의 span font-family) 안에 있으면 새 span 에 그 글꼴을 그대로
-    // 실어 준다. 예전엔 새 스타일 span 이 감싸면 브라우저가 상속을 풀어
-    // '기본 글꼴로 보이는' 회귀가 일부 환경에서 남았다.
-    function _nearestInlineFont(tn,c){
-        try{
-            let p=tn.parentElement, css='';
-            while(p&&p!==c){
-                if(p.style&&p.style.fontFamily){ css=p.style.fontFamily; break; }
-                p=p.parentElement;
+    // prop 에 대해 현재 요소에 적용된 "유효 값"(inline style 또는 의미 태그).
+    // 없으면 ''; 숫자/키워드 모두 정규화.
+    function _propOn(el, prop){
+        if(!el||el.nodeType!==1) return '';
+        const tag = el.tagName;
+        if(INLINE_TAGS.has(tag)){
+            const t = _tagStyle(tag);
+            if(t && Object.prototype.hasOwnProperty.call(t, prop) && !el.style[prop]){
+                return String(t[prop]);
             }
-            return css;
-        }catch(e){ return ''; }
+        }
+        const v = el.style && el.style[prop];
+        return v ? String(v) : '';
     }
-    // 선택 범위와 겹치는 텍스트 노드 + 범위 안 국소 오프셋({s,e})
+    function _fwVal(v){
+        v = String(v||'').toLowerCase();
+        if(v==='bold'||v==='bolder') return 700;
+        const n = parseInt(v,10);
+        if(!isNaN(n)) return n;
+        return 0;
+    }
+    function _propMatch(prop, actual, desired){
+        actual = String(actual||'').toLowerCase();
+        desired = String(desired||'').toLowerCase();
+        if(!actual) return false;
+        if(prop==='fontWeight'){
+            const a = _fwVal(actual), d = _fwVal(desired);
+            if(a>=600 && d>=600) return true;
+            return a === d && a>0;
+        }
+        if(prop==='textDecoration'){
+            // multi-value (underline line-through): desired 값이 토큰으로 들어 있으면 매치
+            const toks = actual.split(/\s+/);
+            return toks.indexOf(desired)>=0;
+        }
+        return actual === desired;
+    }
+    // 호스트(.tb-content)까지 올라가며 텍스트 노드에 상속되는 인라인 스타일을 모은다.
+    // (의미 태그의 효과도 포함한다)
+    function _inheritedStyles(tn, host){
+        const styles = {};
+        let p = tn.parentElement;
+        const chain = [];
+        while(p && p !== host){
+            if(p.nodeType===1 && INLINE_TAGS.has(p.tagName)){
+                const t = _tagStyle(p.tagName);
+                if(t){ for(const k in t){ if(!(k in styles)) styles[k] = t[k]; } }
+                for(const k of INLINE_STYLE_PROPS){
+                    const v = p.style && p.style[k];
+                    if(v && !(k in styles)) styles[k] = v;
+                }
+                chain.push(p);
+            }
+            p = p.parentElement;
+        }
+        return {styles, chain};
+    }
+    // 범위와 교차하는 텍스트 노드 목록 (시작/끝 오프셋 포함)
     function _selContacts(r){
         const out=[];
         if(!r) return out;
@@ -13053,11 +13104,216 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }catch(e){}
         return out;
     }
+    // 선택 범위의 경계에서 텍스트 노드를 쪼개, 이후 연산이 텍스트 노드 경계와
+    // 정확히 일치하게 한다. 반환: {host, nodes:[{node,s,e}], range: (재조정된 range)}
+    function _splitAtBoundaries(r){
+        if(!r) return null;
+        const root=r.commonAncestorContainer;
+        const hostEl = root.nodeType===1?root:root.parentElement;
+        const host = hostEl && hostEl.closest && hostEl.closest('.tb-content');
+        if(!host) return null;
+        const contacts = _selContacts(r);
+        if(!contacts.length) return null;
+        // 끝 → 시작 순서로 쪼개야 오프셋이 꼬이지 않는다.
+        for(let i=contacts.length-1;i>=0;i--){
+            const c=contacts[i];
+            const len=c.node.nodeValue.length;
+            if(c.e<len) c.node.splitText(c.e);
+            if(c.s>0){
+                const mid = c.node.splitText(c.s);
+                c.node = mid;
+            }
+        }
+        // 분할 후 선택을 다시 잡는다
+        const s=window.getSelection();
+        const first=contacts[0].node, last=contacts[contacts.length-1].node;
+        let firstNode = (contacts[0].s>0) ? first : first;
+        // contacts 갱신 (쪼갠 뒤의 node 참조가 c.node 에 들어 있다)
+        const nr=document.createRange();
+        nr.setStartBefore(contacts[0].node);
+        nr.setEndAfter(contacts[contacts.length-1].node);
+        try{ if(s.rangeCount){ s.removeAllRanges(); s.addRange(nr); } }catch(e){}
+        // 연속된 텍스트 노드만 선택 (splitText 후 바로 접근 가능)
+        const nodes = [];
+        const tw = document.createTreeWalker(nr.commonAncestorContainer, NodeFilter.SHOW_TEXT);
+        let n;
+        while(n=tw.nextNode()){
+            if(nr.intersectsNode(n) && n.nodeValue && n.nodeValue.length>0) nodes.push(n);
+        }
+        return {host, nodes, range:nr};
+    }
+    // 빈 span / 의미 없는 요소 정리
+    function _cleanupInline(host){
+        if(!host) return;
+        const toRemove=[];
+        host.querySelectorAll('span,b,strong,i,em,u,s,strike,mark,font').forEach(el=>{
+            // 자식도 없고 텍스트도 없으면 제거
+            if(!el.textContent && !el.querySelector('img')){ toRemove.push(el); return; }
+            // 스타일도 없고 속성도 없으며 의미 태그 효과가 가려졌다면 풀어낸다
+            if(el.tagName==='SPAN'){
+                const style = el.getAttribute('style')||'';
+                if(!style.trim() && el.attributes.length===0){
+                    // 빈 span — 풀기
+                    const p = el.parentNode;
+                    while(el.firstChild) p.insertBefore(el.firstChild, el);
+                    toRemove.push(el);
+                }
+            }
+        });
+        toRemove.forEach(el=>{ if(el.parentNode) el.parentNode.removeChild(el); });
+        try{ host.normalize(); }catch(e){}
+    }
+    // 노드 하나에 prop=value 스타일을 "적용"한다.
+    // 이미 모든 조상이 그 스타일을 가지면 아무것도 안 하고, 가장 안쪽 적절한 span 에 적는다.
+    function _applyOne(tn, host, prop, value){
+        // 이미 유효하게 적용돼 있는가? (가장 가까운 inline 조상)
+        const {styles, chain} = _inheritedStyles(tn, host);
+        if(_propMatch(prop, styles[prop]||'', value)) return;
+        // prop 을 가진 조상이 있되 다른 값이면, 거길 덮어쓴다(가장 안쪽 것 하나).
+        // 없으면 새 span 을 만든다.
+        let target = null;
+        for(const an of chain){
+            if(_propOn(an, prop)){ target = an; break; }
+        }
+        if(!target){
+            // 새 span 을 만들어 감싸되, 기존 상속 스타일을 전부 복사해 다른 서식이 풀리지 않게 한다.
+            target = document.createElement('span');
+            for(const k in styles){ if(k!==prop) target.style[k] = styles[k]; }
+            tn.parentNode.insertBefore(target, tn);
+            target.appendChild(tn);
+        }
+        // 의미 태그(b/i/u/s)라면 css style 로 canonical 을 덮어 씌워 일관성 유지
+        target.style[prop] = value;
+        // textDecoration 멀티밸류 유지 (underline + line-through 공존)
+        if(prop==='textDecoration'){
+            const toks = new Set((target.style.textDecoration||'').split(/\s+/).filter(Boolean));
+            toks.add(value);
+            // 'none' 토큰 제거
+            toks.delete('none');
+            target.style.textDecoration = [...toks].join(' ');
+        }
+    }
+    // 노드 하나에서 prop 스타일을 제거한다. (모든 기여 조상에서 지운다)
+    function _removeOne(tn, host, prop){
+        let p = tn.parentElement;
+        while(p && p !== host){
+            if(p.nodeType===1 && INLINE_TAGS.has(p.tagName)){
+                const v = _propOn(p, prop);
+                if(v){
+                    const isTag = ['B','STRONG','I','EM','U','S','STRIKE','MARK'].indexOf(p.tagName)>=0 && !(p.style && p.style[prop]);
+                    if(isTag){
+                        const span = document.createElement('span');
+                        if(p.getAttribute('style')) span.setAttribute('style', p.getAttribute('style'));
+                        const par = p.parentNode;
+                        while(p.firstChild) span.appendChild(p.firstChild);
+                        par.insertBefore(span, p);
+                        par.removeChild(p);
+                        p = span;
+                        // 의미 태그가 풀린 뒤에도 그 span 이 가질 수 있는 동일 prop(스타일에 명시된 경우)을 계속 제거
+                        // (의도: 토큰 하나만 지우기) — span 이 된 이후는 보통 style 이 없으니 빠져나간다
+                        break;
+                    }else{
+                        if(prop==='textDecoration'||prop==='text-decoration'){
+                            const toks = String(p.style.textDecoration||p.style.textDecoration||'').split(/\s+/).filter(t=>t && t!=='none');
+                            const want = String(v).toLowerCase();
+                            const next = toks.filter(t=>t.toLowerCase()!==want);
+                            if(next.length) p.style.textDecoration = next.join(' ');
+                            else p.style.removeProperty('text-decoration');
+                        }else{
+                            // 브라우저에 따라 camelCase/kebab-case 로만 제거되는 경우가 있어 둘 다 시도
+                            const kebab = prop.replace(/([A-Z])/g,'-$1').toLowerCase();
+                            if(p.style.getPropertyValue(kebab)) p.style.removeProperty(kebab);
+                            else p.style.removeProperty(prop);
+                        }
+                    }
+                    break;
+                }
+            }
+            p = p.parentElement;
+        }
+    }
+    // 선택 전체에 prop=value 적용
+    function _applyToSelection(prop, value){
+        const s = window.getSelection();
+        if(!s||s.isCollapsed||!s.rangeCount) return false;
+        const r = s.getRangeAt(0);
+        const split = _splitAtBoundaries(r);
+        if(!split) return false;
+        const {host, nodes} = split;
+        nodes.forEach(tn=>_applyOne(tn, host, prop, value));
+        _cleanupInline(host);
+        // 선택 영역 유지
+        try{
+            const nr=document.createRange();
+            if(nodes.length){
+                nr.setStartBefore(nodes[0]);
+                nr.setEndAfter(nodes[nodes.length-1]);
+                s.removeAllRanges(); s.addRange(nr);
+            }
+        }catch(e){}
+        return true;
+    }
+    // 선택 전체에서 prop 제거
+    function _removeFromSelection(prop){
+        const s = window.getSelection();
+        if(!s||s.isCollapsed||!s.rangeCount) return false;
+        const r = s.getRangeAt(0);
+        const split = _splitAtBoundaries(r);
+        if(!split) return false;
+        const {host, nodes} = split;
+        nodes.forEach(tn=>_removeOne(tn, host, prop));
+        _cleanupInline(host);
+        try{
+            const nr=document.createRange();
+            if(nodes.length){
+                nr.setStartBefore(nodes[0]);
+                nr.setEndAfter(nodes[nodes.length-1]);
+                s.removeAllRanges(); s.addRange(nr);
+            }
+        }catch(e){}
+        return true;
+    }
+    // 선택 영역이 전부 해당 스타일을 가지고 있는가? (토글 off 판정)
+    function _selHasAll(prop, value){
+        const s = window.getSelection();
+        if(!s||s.isCollapsed||!s.rangeCount) return false;
+        const r = s.getRangeAt(0);
+        const hostEl = r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement;
+        const host = hostEl && hostEl.closest && hostEl.closest('.tb-content');
+        if(!host) return false;
+        const contacts = _selContacts(r);
+        if(!contacts.length) return false;
+        for(const c of contacts){
+            const {styles} = _inheritedStyles(c.node, host);
+            if(!_propMatch(prop, styles[prop]||'', value)) return false;
+        }
+        return true;
+    }
+    // 선택 영역이 하나라도 해당 스타일을 가지고 있는가?
+    function _selHasAny(prop, value){
+        const s = window.getSelection();
+        if(!s||s.isCollapsed||!s.rangeCount) return false;
+        const r = s.getRangeAt(0);
+        const hostEl = r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement;
+        const host = hostEl && hostEl.closest && hostEl.closest('.tb-content');
+        if(!host) return false;
+        const contacts = _selContacts(r);
+        for(const c of contacts){
+            const {styles} = _inheritedStyles(c.node, host);
+            if(_propMatch(prop, styles[prop]||'', value)) return true;
+        }
+        return false;
+    }
+
+    // 하위 호환: 기존 이름 유지
+    function textNodesInRange(r){ return _selContacts(r).map(c=>c.node); }
+    function _nearestInlineFont(tn,c){ return _inheritedStyles(tn,c).styles.fontFamily||''; }
     function _selFontHost(r){
         const root=r.commonAncestorContainer;
         const el=root.nodeType===1?root:root.parentElement;
         return (el&&el.closest&&el.closest('.tb-content'))||null;
     }
+
     // execCommand(bold/italic 등)이 선택 영역을 다시 짜면서 상자 안의
     // '부분 글꼴 span'을 떨어뜨려 글꼴이 풀린다. 실행 전에 선택 구간의
     // 글꼴을 글자 오프셋으로 기억해 두고, 실행 뒤 같은 구간에 되살린다.
@@ -13134,140 +13390,56 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // 현재 선택 범위 안의 텍스트 노드마다 스타일 span 으로 감싼다
     // (부분 선택된 텍스트 노드는 쪼개서 선택 구간만 감싼다)
+    // 새 엔진으로 감싸는 래퍼들 (기존 호출부와 이름 맞춤)
     function wrapSelStyle(prop,value){
-        try{
-            const s=window.getSelection(); if(!s||s.isCollapsed||!s.rangeCount) return;
-            const r=s.getRangeAt(0);
-            const nodes=textNodesInRange(r);
-            const wrapped=[];
-            nodes.forEach(tn=>{
-                const start=(r.startContainer===tn)?r.startOffset:0;
-                const end=(r.endContainer===tn)?r.endOffset:tn.nodeValue.length;
-                if(start>=end) return;
-                const c=tn.parentElement&&tn.parentElement.closest?tn.parentElement.closest('.tb-content'):null;
-                const font=_nearestInlineFont(tn,c);
-                const span=document.createElement('span');
-                span.style[prop]=value;
-                if(font) span.style.fontFamily=font;  // 부분 글꼴을 span 에 고정
-                tn.splitText(end);            // 뒤쪽은 원래 자리에 남긴다
-                const mid=tn.splitText(start); // 선택 구간
-                tn.parentNode.insertBefore(span,mid);
-                span.appendChild(mid);
-                wrapped.push(span);
-            });
-            // 선택을 감싼 span 전체로 다시 잡아 연속 적용이 가능하게 한다
-            if(wrapped.length){
-                const nr=document.createRange();
-                nr.setStartBefore(wrapped[0]);
-                nr.setEndAfter(wrapped[wrapped.length-1]);
-                s.removeAllRanges(); s.addRange(nr);
-            }
-        }catch(e){}
+        try{ _applyToSelection(prop, value); }catch(e){}
+        syncCurSel();
     }
-    // 굵게/기울임/밑줄 토글 — execCommand 가 선택 영역을 다시 짜면서 부분
-    // 글꼴 span 을 떨어뜨리는 문제를 피하기 위해 색/형광펜처럼 직접 span 으로
-    // 입힌다. 토글 여부는 '선택 영역 전체가 이미 같은 값인가'로 판정한다.
-    function _selHasPropAll(prop,value){
-        try{
-            const s=window.getSelection();
-            if(!s||s.isCollapsed||!s.rangeCount) return false;
-            const r=s.getRangeAt(0), host=_selFontHost(r);
-            if(!host) return false;
-            const contacts=_selContacts(r);
-            if(!contacts.length) return false;
-            for(const ct of contacts){
-                let p=ct.node.parentElement, found=false;
-                while(p&&p!==host){
-                    const v=p.style&&p.style[prop];
-                    const same=!!v && (
-                        String(v).toLowerCase()===String(value).toLowerCase()
-                        || (prop==='fontWeight' && (v==='bold' || String(+v)>=600))
-                    );
-                    if(same){ found=true; break; }
-                    p=p.parentElement;
-                }
-                if(!found) return false;
-            }
-            return true;
-        }catch(e){ return false; }
-    }
+    function _selHasPropAll(prop,value){ return _selHasAll(prop, value); }
     function clearSelStyle(prop){
-        try{
-            const s=window.getSelection();
-            if(!s||s.isCollapsed||!s.rangeCount) return;
-            const r=s.getRangeAt(0), host=_selFontHost(r);
-            if(!host) return;
-            const contacts=_selContacts(r), done=new Set();
-            contacts.forEach(ct=>{
-                let anc=ct.node.parentElement;
-                while(anc&&anc!==host){
-                    if(done.has(anc)) break;
-                    if(anc.style&&anc.style[prop]!==''&&anc.style[prop]!=null){
-                        anc.style.removeProperty(prop);
-                        done.add(anc);
-                        if(!anc.style.cssText.trim()){
-                            anc.removeAttribute('style');
-                            if(!anc.getAttributeNames().length){
-                                const par=anc.parentNode;
-                                while(anc.firstChild) par.insertBefore(anc.firstChild,anc);
-                                par.normalize();
-                            }
-                        }
-                        break;
-                    }
-                    anc=anc.parentElement;
-                }
-            });
-            host.querySelectorAll('span').forEach(sp=>{
-                if(!sp.getAttributeNames().length&&!sp.querySelector('*')&&!sp.textContent.trim()) sp.remove();
-            });
-        }catch(e){}
+        try{ _removeFromSelection(prop); }catch(e){}
+        syncCurSel();
     }
     function toggleSelStyle(prop,value){
-        if(_selHasPropAll(prop,value)) clearSelStyle(prop);
-        else wrapSelStyle(prop,value);
+        // 워드/구글독스 동작: 전부 켜져 있으면 끄고, 아니면 (부분이든 전부든) 켠다
+        if(_selHasAll(prop,value)) _removeFromSelection(prop);
+        else _applyToSelection(prop,value);
+        syncCurSel();
     }
-    // 선택 영역의 형광펜 지우기 — 배경색을 가진 가장 가까운 span 의
-    // background-color 를 제거한다 (execCommand 'transparent' 와 같은 동작).
     function clearSelBg(){
+        try{ _removeFromSelection('backgroundColor'); }catch(e){}
+        syncCurSel();
+    }
+    // 선택 영역에서 글자색 제거 (상속으로 되돌리기)
+    function clearSelColor(){
+        try{ _removeFromSelection('color'); }catch(e){}
+        syncCurSel();
+    }
+    // 선택 영역의 현재 스타일 상태를 툴바 버튼에 반영
+    function syncCurSel(){
         try{
-            const s=window.getSelection(); if(!s||s.isCollapsed||!s.rangeCount) return;
+            const s=window.getSelection();
+            const live=s&&!s.isCollapsed&&s.rangeCount&&document.querySelector('.tb.edit');
+            if(!live) return;
             const r=s.getRangeAt(0);
-            const root=r.commonAncestorContainer;
-            const host=root.nodeType===3?root.parentElement:root;
-            const c=host&&host.closest?host.closest('.tb-content'):null;
-            if(!c) return;
-            const nodes=textNodesInRange(r);
-            const removed=new Set();          // 이미 지운 span 은 다시 건드리지 않는다
-            nodes.forEach(tn=>{
-                let anc=tn.parentElement;
-                while(anc&&anc!==c){
-                    if(removed.has(anc)) break;
-                    const bg=anc.style&&anc.style.backgroundColor;
-                    if(bg&&bg!=='transparent'&&bg!=='rgba(0, 0, 0, 0)'){
-                        anc.style.removeProperty('background-color');
-                        removed.add(anc);
-                        // 배경색만 남은 span (style="" 등)은 지워 글꼴 계층을
-                        // 단순하게 유지한다. 스타일/클래스 등이 더 있으면 유지.
-                        try{
-                            if(anc.style&&!anc.style.cssText.trim()){
-                                anc.removeAttribute('style');
-                            }
-                            if(!anc.getAttributeNames().length){
-                                const par=anc.parentNode;
-                                while(anc.firstChild) par.insertBefore(anc.firstChild,anc);
-                                par.normalize();
-                            }
-                        }catch(e){}
-                        break;
-                    }
-                    anc=anc.parentElement;
-                }
-            });
-            // 배경만 지운 뒤 남는 빈 span(style="", <span></span>)을 걷어낸다
-            c.querySelectorAll('span').forEach(sp=>{
-                if(!sp.getAttributeNames().length && !sp.querySelector('*') && !sp.textContent.trim()) sp.remove();
-            });
+            const hostEl=r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement;
+            const host=hostEl&&hostEl.closest&&hostEl.closest('.tb-content');
+            if(!host) return;
+            // 한 글자라도 스타일이 적용돼 있으면 버튼 on (토글 on 표시)
+            const states={
+                bold:_selHasAny('fontWeight','700'),
+                italic:_selHasAny('fontStyle','italic'),
+                underline:_selHasAny('textDecoration','underline'),
+                strike:_selHasAny('textDecoration','line-through'),
+            };
+            const btnOn=(sel,on)=>{
+                const b=document.querySelector(sel);
+                if(b) b.classList.toggle('active',!!on);
+            };
+            btnOn('.tb-bold',states.bold);
+            btnOn('.tb-italic',states.italic);
+            btnOn('.tb-under',states.underline);
+            btnOn('.tb-strike',states.strike);
         }catch(e){}
     }
     // 상자 안 내용 전체에 스타일을 입힌다 (prop=null 이면 형광펜 전체 지우기)
@@ -13304,9 +13476,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.getElementById('tcGlyph').style.color=c;
         if(selectedTblCellEls().length){ tblCellApply(el=>{ el.textColor=c; },'선택한 칸 글자색 적용'); return; }
         if(hasInlineTextSel()){
-            withSelection(()=>wrapSelStyle('color',c)); return;
+            pushHistory();
+            withSelection(()=>wrapSelStyle('color',c));
+            return;
         }
-        // 18.5 · 편집 중 캐럿(선택 없음) → 상자 전체가 아니라 앞으로 입력될 글자에만
+        // 18.6 · 캐럿(선택 없음) → 앞으로 입력될 글자에만
         if(_typingHost()){ caretWrapStyle({color:c}); return; }
         const targets=_boxFmtTargets();
         if(targets.length){
@@ -13322,48 +13496,96 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(c){ currentHlColor=c; document.getElementById('hlBar').style.background=c; }
         if(selectedTblCellEls().length){ tblCellFill(c||''); return; }
         if(hasInlineTextSel()){
-            withSelection(()=>{ if(c) wrapSelStyle('background-color',c); else clearSelBg(); });
+            pushHistory();
+            withSelection(()=>{ if(c) wrapSelStyle('backgroundColor',c); else clearSelBg(); });
             return;
         }
-        // 18.5 · 캐럿(선택 없음) → 앞으로 입력될 글자에만 형광펜
-        if(_typingHost()){ caretWrapStyle({'background-color':c||'transparent'}); return; }
+        // 18.6 · 캐럿 → 앞으로 입력될 글자에만
+        if(_typingHost()){ caretWrapStyle({backgroundColor:c||'transparent'}); return; }
         const targets=_boxFmtTargets();
         if(targets.length){
             pushHistory();
-            targets.forEach(w=>_paintBoxAll(w, c?'background-color':null, c||''));
+            targets.forEach(w=>_paintBoxAll(w, c?'backgroundColor':null, c||''));
             saveDoc();
             toast(targets.length>1?targets.length+'개 상자 형광펜 적용':'상자 전체 형광펜 적용',1000);
             return;
         }
         toast('텍스트를 드래그하거나 상자를 고르세요',1300);
     }
+    // 18.6 · 글자색 지우기 (부모 상속으로 되돌리기)
+    function clearTextColor(){
+        if(selectedTblCellEls().length){ tblCellApply(el=>{ delete el.textColor; },'선택한 칸 글자색 지움'); return; }
+        if(hasInlineTextSel()){
+            pushHistory();
+            withSelection(()=>clearSelColor());
+            return;
+        }
+        if(_typingHost()){ caretWrapStyle({color:''}); return; }
+        const targets=_boxFmtTargets();
+        if(targets.length){
+            pushHistory();
+            targets.forEach(w=>{
+                const c=w.querySelector('.tb-content'); if(!c) return;
+                c.querySelectorAll('*').forEach(n=>{ if(n.style) n.style.removeProperty('color'); });
+                syncTextEl(w);
+            });
+            saveDoc();
+            toast(targets.length>1?targets.length+'개 상자 글자색 지움':'상자 전체 글자색 지움',1000);
+        }
+    }
     function execFmt(cmd){
         const cells=selectedTblCellEls();
         if(cells.length){
-            const spec={bold:['fontWeight','700'],italic:['fontStyle','italic'],underline:['textDecoration','underline']}[cmd];
+            const spec={bold:['fontWeight','700'],italic:['fontStyle','italic'],underline:['textDecoration','underline'],
+                        strike:['textDecoration','line-through']}[cmd];
             if(spec){
                 const [key,val]=spec,remove=cells.every(el=>el[key]===val);
                 tblCellApply(el=>{ if(remove) delete el[key]; else el[key]=val; },'선택한 칸 글자 서식 적용');
                 return;
             }
         }
-        const spec={bold:['fontWeight','700'],italic:['fontStyle','italic'],underline:['textDecoration','underline']}[cmd];
+        const spec={bold:['fontWeight','700'],italic:['fontStyle','italic'],underline:['textDecoration','underline'],
+                    strike:['textDecoration','line-through']}[cmd];
         if(spec){
-            // 18.5 · 편집 중 캐럿(선택 없음) → 앞으로 입력될 글자만 토글
-            //   (execCommand 는 캐럿에서 브라우저 '다음 입력 서식'으로 동작하지만
-            //    jsdom/웹뷰 미지원이라 직접 span 토글로 통일한다)
+            // 18.6 · 캐럿(선택 없음) → 앞으로 입력될 글자만 토글
             if(_typingHost()){
                 const [key,val]=spec;
-                const off={fontWeight:'400',fontStyle:'normal',textDecoration:'none'}[key];
-                caretWrapStyle(_caretHasStyle(key,val)?{[key]:off}:{[key]:val});
+                const off={fontWeight:'',fontStyle:'',textDecoration:''}[key];
+                // textDecoration 에는 이미 다른 값(underline 등)이 있을 수 있으니
+                // 토글 off 시에만 해당 토큰을 빼는 식으로 처리
+                if(_caretHasStyle(key,val)){
+                    if(key==='textDecoration'){
+                        // 토큰 제거
+                        const span=_typingSpan;
+                        if(span){
+                            const toks=String(span.style.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none'&&t!==val);
+                            span.style.textDecoration=toks.join(' ')||'';
+                        }
+                    }else{
+                        caretWrapStyle({[key]:off});
+                    }
+                }else{
+                    // 켜기: 기존 textDecoration 에 추가
+                    if(key==='textDecoration'&&_typingSpan){
+                        const cur=String(_typingSpan.style.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none');
+                        if(cur.indexOf(val)<0) cur.push(val);
+                        _typingSpan.style.textDecoration=cur.join(' ');
+                    }else{
+                        caretWrapStyle({[key]:val});
+                    }
+                }
                 return;
             }
-            // 14.16.2 · 글자 서식은 execCommand 대신 직접 span 으로 토글해
-            //   부분 글꼴(font-family span)이 풀리지 않게 한다.
+            // 히스토리 저장하고 직접 토글 (부분 선택도 정확히 동작)
+            pushHistory();
             withSelection(()=>toggleSelStyle(spec[0],spec[1]));
+            setTimeout(syncCurSel,0);
             return;
         }
-        withSelection(()=>{ if(document.execCommand) document.execCommand(cmd,false,null); });
+        withSelection(()=>{
+            pushHistory();
+            if(document.execCommand) document.execCommand(cmd,false,null);
+        });
     }
 
     // 문단 정렬 — 선택 영역이 있으면 그 문단만, 없으면 선택한 상자 전체
@@ -13594,16 +13816,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const host=restoreSel();
         if(host){
             if(document.execCommand) document.execCommand('styleWithCSS',false,true);
+            pushHistory();
             try{
-                const s=window.getSelection(), r=s.getRangeAt(0);
-                const span=document.createElement('span');
-                span.style.fontSize=curFontSize+'px';
-                span.appendChild(r.extractContents());
-                r.insertNode(span);
-                const nr=document.createRange(); nr.selectNodeContents(span);
-                s.removeAllRanges(); s.addRange(nr); savedRange=nr.cloneRange();
+                withSelection(()=>wrapSelStyle('fontSize',curFontSize+'px'));
             }catch(e){}
-            const w=host.closest('.tb'); if(w) syncTextEl(w);
             return;
         }
         // 18.5 · 편집 중 캐럿(선택 없음) → 상자 전체가 아니라 앞으로 입력될 글자에만
@@ -16637,11 +16853,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         else if(a==='tr-sel-ja') translateSelectedText('ja');
         else if(a==='tr-sel-zh') translateSelectedText('zh-CN');
         else if(a==='strike'){
-            // 18.5 · 캐럿(선택 없음)이면 앞으로 입력될 글자에만 취소선 토글
-            if(_typingHost()){
-                caretWrapStyle(_caretHasStyle('textDecoration','line-through')
-                    ?{textDecoration:'none'}:{textDecoration:'line-through'});
-            }else withSelection(()=>document.execCommand('strikeThrough',false,null));
+            // 18.6 · 취소선 토글 — 굵게/기울임/밑줄과 같은 엔진으로
+            execFmt('strike');
         }
         else if(a==='sel-upper'||a==='sel-lower'){
             const up=(a==='sel-upper');
@@ -24458,6 +24671,18 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }catch(e){}
       plane._flying=true;
       plane.classList.remove('fly'); void plane.offsetWidth;
+      /* 18.3 · 비행기가 홈 화면 가장 오른쪽 끝까지 완전히 빠져나가도록
+         종료점을 창 이동 알고리즘(sdyViewportBox)이 쓰는 것과 똑같은
+         화면 폭으로 잡는다. left:-240px 에서 시작하므로, 오른쪽 바깥으로
+         사라질 때까지 가야 할 거리 = 240px(0점까지) + 화면폭 + 비행기 폭 + 여유 60px.
+         html{zoom:.9} 이든 폰이든 해상도가 다르든 화면이 잘리지 않는다. */
+      try{
+        var vp=window.sdyViewportBox?window.sdyViewportBox():null;
+        var vw=(vp&&vp.w>0)?vp.w:Math.max(window.innerWidth||0,document.documentElement.clientWidth||0);
+        var pw=plane.offsetWidth||150;
+        var dx=240+vw+pw+60;
+        plane.style.setProperty('--plane-fly-dx',dx+'px');
+      }catch(e){}
       plane.classList.add('fly');
       try{ if(plane._say) plane._say(); }catch(e){}
       setTimeout(function(){ plane.classList.remove('fly'); plane._flying=false; },12500);

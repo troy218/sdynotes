@@ -5549,7 +5549,7 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 /* 확장(비-전체화면) 암기카드에서도 카드 아래쪽에 해돌이를 보여 준다. */
 .fcard-win:not(.fcard-max) .cd-cardzone{order:1;width:100%;min-width:0;}
 .fcard-win:not(.fcard-max) .cd-otter{
-  order:2;display:block;flex:0 0 auto;margin-top:auto;
+  order:2;display:block;position:relative;flex:0 0 auto;margin-top:auto;
   width:clamp(84px,11vw,118px);height:auto;
   z-index:3;pointer-events:none;
 }
@@ -6140,11 +6140,16 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 
 /* ── ② 비행기 해돌이 — 홈에서 아주 가끔 왼쪽 위 → 오른쪽 횡단 ── */
 .plane-otter{position:fixed;left:-240px;top:clamp(64px,12vh,150px);
-  width:150px;z-index:1450;opacity:0;visibility:hidden;pointer-events:none;cursor:default;}
+  width:150px;z-index:1450;opacity:0;visibility:hidden;pointer-events:none;cursor:default;
+  /* 18.3 · 비행기가 화면 가장 오른쪽 끝까지 완전히 날아가게, 창 이동 알고리즘
+     (sdyViewportBox) 이 잰 정확한 화면 폭을 JS 가 --plane-fly-dx 로 꽂아준다.
+     폭/배율이 어떻든 상관없이 오른쪽 바깥으로 비행기 전체가 빠져나간다. */
+  --plane-fly-dx:calc(100vw + 560px);
+}
 .plane-otter.fly{opacity:1;visibility:visible;animation:planeFly 12s linear forwards;}
 @keyframes planeFly{
   0%{transform:translateX(0);}
-  100%{transform:translateX(calc(100vw + 560px));}
+  100%{transform:translateX(var(--plane-fly-dx));}
 }
 
 /* ── ③ 커피 해돌이 — 설정 창 오른쪽 아래 ── */
