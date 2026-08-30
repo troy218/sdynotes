@@ -451,6 +451,7 @@
                     <button onclick="execFmt('bold')" onmousedown="saveSel();event.preventDefault()" class="tool-btn sm tb-bold" title="굵게"><i class="ri-bold"></i></button>
                     <button onclick="execFmt('italic')" onmousedown="saveSel();event.preventDefault()" class="tool-btn sm tb-italic" title="기울임"><i class="ri-italic"></i></button>
                     <button onclick="execFmt('underline')" onmousedown="saveSel();event.preventDefault()" class="tool-btn sm tb-under" title="밑줄"><i class="ri-underline"></i></button>
+                    <button onclick="execFmt('strike')" onmousedown="saveSel();event.preventDefault()" class="tool-btn sm tb-strike tb-hide-sm" title="취소선"><i class="ri-strikethrough"></i></button>
 
                     <div class="split-btn" id="textColorWrap">
                         <button class="main" onmousedown="saveSel();event.preventDefault()" onclick="applyTextColor(currentTextColor)">
@@ -762,7 +763,8 @@
             <button onclick="toggleMarker()" id="markerBtn" class="tool-btn" style="width:32px;height:32px" title="형광펜 모드"><i class="ri-mark-pen-line"></i></button>
             <div class="tool-sep"></div>
             <button onclick="toggleEraser()" id="eraserBtn" class="tool-btn" style="width:32px;height:32px" title="지우개"><i class="ri-eraser-line"></i></button>
-            <button onclick="finishDrawing()" class="tool-btn" style="width:32px;height:32px" title="완료"><i class="ri-check-line"></i></button>
+            <button onclick="undo()" class="tool-btn" style="width:32px;height:32px" title="그리기 되돌리기"><i class="ri-arrow-go-back-line"></i></button>
+            <button onclick="finishDrawing()" class="tool-btn done" style="width:42px;height:32px" title="완료"><i class="ri-check-line"></i></button>
         </div>
     </div>
 

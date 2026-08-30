@@ -28,6 +28,8 @@
     "test:fastops": "node test/editor_fast_ops_contract.mjs && node test/editor_fast_switch_runtime.mjs",
     "test:font": "node test/editor_font_size_contract.mjs && node test/editor_font_size_runtime.mjs",
     "test:format": "node test/editor_format_runtime.mjs",
+    "test:draw": "node test/editor_draw_contract.mjs",
+    "test:editor": "node test/editor_format_runtime.mjs && node test/editor_draw_contract.mjs",
     "test:pages": "node test/editor_pages_sync_contract.mjs && node test/editor_pages_sync_runtime.mjs",
     "test:save": "node test/save_outbox_contract.mjs",
     "test:oracle": "node test/oracle_db_contract.mjs && node test/sdb_shim_contract.mjs && node test/migrate_oracle_sim.mjs",
