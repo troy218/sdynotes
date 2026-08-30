@@ -43,6 +43,12 @@ const vc = new VirtualConsole();
 const errors = [];
 vc.on('jsdomError', e => { if (!/Could not load/.test(e.message)) errors.push(e.message); });
 let posted = [];
+let chatEs = null;
+class FakeEventSource {
+  constructor(url) { this.url = url; this.listeners = {}; chatEs = this; }
+  addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); }
+  close() {}
+}
 const dom = new JSDOM(fullHtml, {
   url: 'http://sdynotes.test/',
   runScripts: 'dangerously',
@@ -52,10 +58,19 @@ const dom = new JSDOM(fullHtml, {
   beforeParse(window) {
     window.fetch = async (url, opt) => {
       if (opt && opt.method === 'POST') posted.push({ url, body: opt.body });
+      if (String(url).startsWith('/api/chat/join')) {
+        return new Response(JSON.stringify({
+          ok: true, ttl: 86400, bgm: null, voice: 'relay',
+          me: { uid: 'yp_a', name: '연보라 까치', color: '#a5b4fc' },
+          members: [{ uid: 'yp_a', name: '연보라 까치', color: '#a5b4fc', voice: false, mute: false }],
+          msgs: [],
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
       return new Response(JSON.stringify({ tracks: [], ok: true }), {
         status: 200, headers: { 'content-type': 'application/json' },
       });
     };
+    window.EventSource = FakeEventSource;
     window.confirm = () => false;
     window.prompt = () => null;
     window.alert = () => {};
@@ -126,6 +141,40 @@ await new Promise(r => setTimeout(r, 60));
 const reactPost = posted.find(p => String(p.url).includes('/api/chat/react'));
 assert.ok(reactPost && JSON.parse(reactPost.body).emoji === 'hd:love',
   '반응은 hd:아이디 로 서버에 간다');
+
+// ⑤ 받는 쪽: 비회원으로 입장(게이트 → join) → 상대가 보낸 임티 메시지가 SSE 로 오면
+//    같은 렌더러를 타서 '움직이는 SVG'(om-w-* 클래스 유지)로 보인다
+document.getElementById('ypReopen').click();
+await new Promise(r => setTimeout(r, 40));
+document.getElementById('ypgGuest').click();
+await new Promise(r => setTimeout(r, 120));
+assert.ok(chatEs && /\/api\/chat\/stream\?uid=/.test(chatEs.url), '입장하면 채팅 스트림(SSE)이 열린다');
+const fire = payload => {
+  (chatEs.listeners['yp'] || []).forEach(fn =>
+    fn({ data: JSON.stringify(payload) }));
+};
+fire({ type: 'msg', msg: { id: 501, kind: 'txt', uid: 'other', name: '민트 제비',
+  text: '[hd:hello]', ts: Date.now() / 1000 } });
+fire({ type: 'msg', msg: { id: 502, kind: 'txt', uid: 'other', name: '민트 제비',
+  text: '반가워 [hd:coffee]!', ts: Date.now() / 1000 + 1 } });
+fire({ type: 'msg', msg: { id: 503, kind: 'txt', uid: 'other', name: '민트 제비',
+  text: '졸리면 [hd:sleep]', ts: Date.now() / 1000 + 2 } });
+fire({ type: 'react', id: 501, reactions: { 'hd:love': ['other'] } });
+await new Promise(r => setTimeout(r, 80));
+const body = document.getElementById('ypBody');
+const big = body.querySelector('.yp-stkmsg .yp-stk');
+assert.ok(big && big.querySelector('svg use[href="#om-m-body"]'),
+  '받은 임티 메시지가 큰 스티커로 그려진다');
+assert.ok(big.classList.contains('om-w-mail'), '받아도 동작 클래스(om-w-mail)가 유지된다 = 움직인다');
+const inline = body.querySelectorAll('.yp-bub .yp-stk-inline');
+assert.equal(inline.length, 2, '받은 텍스트 속 임티도 인라인 SVG로 그려진다');
+assert.ok(inline[0].classList.contains('om-w-coffee') && inline[1].classList.contains('om-w-sleep'),
+  '받은 인라인 임티도 각자의 움직임 클래스가 유지된다');
+assert.ok(!body.textContent.includes('[hd:'), '받은 화면에 코드([hd:...])가 노출되지 않는다');
+const chip = body.querySelector('.yp-reacts .yp-stk');
+assert.ok(chip && chip.classList.contains('om-w-mail'),
+  '받은 반응 칩도 움직이는 해돌이 임티로 표시된다');
+
 assert.equal(errors.length, 0, '런타임 오류 없음: ' + errors.slice(0, 2).join(' | '));
 
 console.log('엽스코드 해돌이 임티 계약: PASS');
