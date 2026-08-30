@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.16.2">
+<link rel="stylesheet" href="sdynotes.css?v=14.16.4">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <!-- 버전 · 작업 끝나면 아래 5곳을 같은 번호로 함께 올려라 (z +1)
@@ -17,7 +17,7 @@
          · 이 파일·sdynotes.js·sdynotes.css 를 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.16.2">
+    <meta name="application-version" content="14.16.4">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -2159,6 +2159,30 @@
 <!-- 엽스코드 입장 선택 — 로그인 / 비회원 (16.2) -->
 <div id="ypGate" style="display:none" role="dialog" aria-label="엽스코드 입장">
   <div class="ypg-card">
+    <!-- 18.2 · 편지 해돌이 — 엽스코드 첫 입장(로그인/비회원 선택)에도 보이게 (누르면 편지 선물) -->
+    <div class="om-mini om-w-mail yp-otter" data-gift="✉️" data-word="당신에게 온 편지여!">
+      <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+        <g class="om-px"><g class="om-anim">
+          <g transform="rotate(-15 100 100)">
+            <use href="#om-m-body" xlink:href="#om-m-body"/>
+            <path d="M 70 92 L 92 140" stroke="#8a5a33" stroke-width="5" stroke-linecap="round"/>
+            <g transform="translate(78,112) rotate(-8)">
+              <rect x="0" y="0" width="28" height="20" rx="2" fill="#ffffff" stroke="#3d2314" stroke-width="3"/>
+              <line x1="2" y1="2" x2="13" y2="11" stroke="#ff5a5a" stroke-width="2"/>
+              <line x1="26" y1="2" x2="15" y2="11" stroke="#5a7aff" stroke-width="2"/>
+            </g>
+            <rect x="64" y="126" width="50" height="42" rx="10" fill="#c98a4b" stroke="#3d2314" stroke-width="4"/>
+            <line x1="64" y1="138" x2="114" y2="138" stroke="#3d2314" stroke-width="3"/>
+            <circle cx="89" cy="141" r="3" fill="#ffdd57" stroke="#3d2314" stroke-width="2"/>
+            <use href="#om-m-paw" xlink:href="#om-m-paw" transform="translate(72,124) rotate(25)"/>
+            <g transform="translate(152,72) rotate(-35)"><use href="#om-m-paw" xlink:href="#om-m-paw" class="om-wavehand"/></g>
+            <use href="#om-m-head" xlink:href="#om-m-head"/>
+            <use href="#om-m-f-happy" xlink:href="#om-m-f-happy"/>
+          </g>
+        </g></g>
+      </svg>
+      <span class="om-say"></span>
+    </div>
     <b class="ypg-ttl">엽스코드 입장</b>
     <span class="ypg-sub">로그인하지 않아도 모든 기능을 그대로 쓸 수 있어요</span>
     <button class="ypg-btn main" id="ypgLogin"><i class="ri-user-3-fill"></i><span><b>로그인하고 입장</b><em>고정 닉네임으로 대화해요</em></span></button>
@@ -2249,6 +2273,6 @@
      ═══════════════════════════════════════════════════════════════════ -->
 
 
-<script src="sdynotes.js?v=14.16.2" defer></script>
+<script src="sdynotes.js?v=14.16.4" defer></script>
 </body>
 </html>

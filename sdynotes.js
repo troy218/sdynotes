@@ -10448,8 +10448,37 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const ex=document.getElementById('cdExplain');
         if(ex){
             ex.innerHTML=fmtExplain(c.note)||('<div class="ex-lead">'+esc('정답은 “'+((c.opts||[])[c.answer]||c.back||'')+'”입니다. 핵심 개념을 한 번 더 확인해 보세요.')+'</div>');
-            // 18.0 · 보기별 해설(①②③…)은 보기 원래 순서 — 정답 보기는 민트, 오답은 로즈로 물들인다
-            ex.querySelectorAll('.ex-item').forEach((el,k)=>el.classList.add(k===c.answer?'ex-right':'ex-wrong'));
+            // 18.0 · 보기를 섞은 화면(위 ①②③…)과 해설의 번호가 어긋나 보이지 않게,
+            //   해설 항목을 '보이는 보기 순서'로 재정렬하고 번호를 다시 붙인다.
+            //   fmtExplain 은 보기 '원래' 순서로 ①.. 를 숫자 배지(.ex-n=원본 인덱스+1)로
+            //   바꾸는데, 화면 위 보기 번호는 섞인 c.__order 의 표시 위치(k+1)라
+            //   그대로 두면 위 문제번호와 해설 번호가 달라 보인다.
+            const ord=Array.isArray(c.__order)?c.__order:null;
+            const exItems=Array.prototype.slice.call(ex.querySelectorAll('.ex-item'));
+            if(ord&&exItems.length){
+                // 배지를 '원본 인덱스'의 키로 삼아 항목을 찾는다 (본문이 ①③ 처럼
+                //   건너뛰더라도 배열 위치가 아니라 실제 원문자 번호로 맞춘다.)
+                const byOrig=new Map();
+                exItems.forEach(el=>{
+                    const n=el.querySelector('.ex-n');
+                    const orig=parseInt((n&&n.textContent)||'0',10);
+                    if(orig>=1) byOrig.set(orig-1,el);
+                });
+                const leads=Array.prototype.slice.call(ex.children)
+                    .filter(el=>!el.classList.contains('ex-item'));
+                ex.textContent='';
+                leads.forEach(l=>ex.appendChild(l));
+                ord.forEach((origIdx,dispIdx)=>{
+                    const el=byOrig.get(origIdx);
+                    if(!el) return;
+                    const n=el.querySelector('.ex-n');
+                    if(n) n.textContent=String(dispIdx+1);
+                    el.classList.add(origIdx===c.answer?'ex-right':'ex-wrong');
+                    ex.appendChild(el);
+                });
+            }else{
+                exItems.forEach((el,k)=>el.classList.add(k===c.answer?'ex-right':'ex-wrong'));
+            }
             ex.style.display='block';
         }
         document.getElementById('cdNextBtn').style.display='flex';
