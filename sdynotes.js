@@ -6034,6 +6034,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(ox<=0||oy<=0) return 0;
         return ox*oy;
     }
+    // 18.4 · 이 이미지 요소가 '진짜로 볼 수 있는 주소'를 물고 있는가.
+    //   업로드 전(pending) 상태는 url:'' + blob localURL 이라 여기서 거짓이 된다.
+    function _imgRealURL(el){
+        const u=String((el&&el.url)||'');
+        return !!(u && !/^blob:/i.test(u));
+    }
     function sanitizePageEls(els){
         if(!els||!els.length) return els||[];
         const seen=new Set();
@@ -13653,6 +13659,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }));
             return hit;
         };
+        let fixed=null;
         if(curNB&&curNB.id===job.nbId&&doc){
             if(patch(doc)){
                 const node=document.querySelector(`#pagesStage .paper-img[data-id="${job.id}"]`);
@@ -13662,10 +13669,28 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     if(im) im.src=url;
                 }
                 saveDoc();
+                fixed=doc;
             }
         }else{
             const d=loadDoc(job.nbId);
-            if(patch(d)){ persistDoc(job.nbId,d); queueSync(job.nbId); }
+            if(patch(d)){ persistDoc(job.nbId,d); queueSync(job.nbId); fixed=d; }
+        }
+        // 18.4 · 업로드가 끝난 이미지는 '그 노트가 열려 있지 않았던' 경우에도
+        //   요소 ops 스토어(/api/sync/push)에 바로 기록한다. 예전엔 memo(전체
+        //   스냅샷)만 고쳐지고 ops 에는 pending(url:'')이 남아서, 다시 접속해
+        //   pull 하면 업로드 완료된 사진이 '업로드 전 상태'로 되돌아가
+        //   '사진이 있었다는 표시'만 남았다.
+        if(fixed){
+            (fixed.pages||[]).forEach((pg,pi)=>(pg.els||[]).forEach(el=>{
+                if(el.id===job.id){
+                    try{
+                        // 중복으로 올라가도 서버 LWW(더 새 rev)라 안전하다.
+                        // (열려 있던 노트는 saveDoc→queueOps 가 같은 내용을 한 번 더
+                        //  올리므로 pushOpsFor 이 실패해도 사라지지 않는다)
+                        pushOpsFor(job.nbId,[{id:el.id,kind:'put',page:pi,rev:_nbNow(),data:{...el},dev:SYNC_DEV}]);
+                    }catch(e){}
+                }
+            }));
         }
     }
     function markUploadFailed(job){
@@ -15016,11 +15041,38 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         //   비우거나 엉뚱한 ops 를 푸시할 수 있다. 시작 시점 신원을 고정.
         const _d0=doc, _nb0=curNB.id;
         syncState();
+        // 18.4 · pull 전(메모·로컬이 아는) 이미지의 진짜 URL 을 기억한다.
+        //   ops 스토어에 업로드 전(pending·빈 url) 상태가 남아 있어도
+        //   이 URL 로 되돌려 "사진이 있었다는 표시"가 남지 않게 한다.
+        const imgUrls=new Map();
+        (doc.pages||[]).forEach(pg=>(pg.els||[]).forEach(el=>{
+            if(el&&el.type==='image'&&_imgRealURL(el)) imgUrls.set(el.id,el.url);
+        }));
         doc.__localRev.clear(); doc.__lastHash.clear();
         doc.__base.clear(); doc.__baseRev.clear();
         doc.__pagesRev=0; doc.__since=0;
         const pulled=await pullSync(false);
         if(doc!==_d0||!curNB||curNB.id!==_nb0) return;
+        // 18.4 · pull 이 이미지를 업로드 전 상태로 되돌렸어도 복원한다.
+        const healed=[];
+        (doc.pages||[]).forEach((pg,pi)=>(pg.els||[]).forEach(el=>{
+            if(el&&el.type==='image'&&!_imgRealURL(el)&&imgUrls.has(el.id)){
+                el.url=imgUrls.get(el.id);
+                delete el.pending; delete el.failed; delete el.localURL;
+                healed.push({el,pi});
+            }
+        }));
+        if(healed.length){
+            const hOps=healed.map(({el,pi})=>({id:el.id,kind:'put',page:pi,rev:_nbNow(),data:{...el},dev:SYNC_DEV}));
+            healed.forEach((h,i)=>{
+                doc.__lastHash.set(h.el.id,JSON.stringify(h.el));
+                doc.__localRev.set(h.el.id,hOps[i].rev);
+            });
+            if(!doc.__ref){ try{ pushOpsFor(_nb0,hOps); }catch(e){} }
+            try{
+                healed.forEach(h=>{ if(renderedPages.has(h.pi)) renderPageEls(h.pi); });
+            }catch(e){}
+        }
         // 원격에서 받은 요소는 해시 등록(재푸시 방지),
         // 서버에 없던 로컬 요소는 초기 상태로 푸시(양방향 기반 공유)
         const remoteIds=new Set((pulled||[]).map(o=>o.id));
@@ -15168,6 +15220,25 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         doc.__lastHash.delete(op.id);
                         doc.__base.delete(op.id); doc.__baseRev.delete(op.id); }
                 }else if(op.data){
+                    // 18.4 · '아직 업로드 전'(pending·빈 url·blob) 이미지 op 가 도착했는데
+                    //   이 기기가 이미 진짜 URL 을 알고 있으면 덮어쓰지 않는다.
+                    //   (memo·로컬에는 업로드 완료 상태가 있고 ops 스토어만 옛 pending
+                    //    상태로 남은 경우 — 노트가 닫힌 뒤 업로드가 끝난 타이밍)
+                    if(op.data.type==='image' && !_imgRealURL(op.data)){
+                        const loc=findElLoc(op.data.id);
+                        const curEl=loc?doc.pages[loc.i].els[loc.k]:null;
+                        if(curEl && _imgRealURL(curEl)){
+                            doc.__localRev.set(op.data.id, op.rev||0);
+                            doc.__lastHash.set(op.data.id, JSON.stringify(curEl));
+                            // 서버 스토어도 진짜 URL 로 되돌린다 (더 새 rev 로 푸시)
+                            if(!doc.__ref){
+                                try{
+                                    pushOpsFor(curNB.id,[{id:curEl.id,kind:'put',page:loc.i,rev:_nbNow(),data:{...curEl},dev:SYNC_DEV}]);
+                                }catch(e){}
+                            }
+                            continue;
+                        }
+                    }
                     if(isText&&(activeBox||hasLocal)&&_elById(op.data.id)){
                         // 14.9 · 협업 병합: 내/상대 편집을 모두 남긴다
                         if(_tbMergeRemote(op)){ changed=true; chPages.add(op.page||0); queueOps(); }
@@ -15355,6 +15426,23 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 ids:(doc.pages||[]).map(p=>p.id),dev:SYNC_DEV});
         }
         return ops;
+    }
+    // 18.4 · 지금 열려 있지 않은 노트에도 요소 ops 를 직접 올린다.
+    //   (이미지 업로드 완료처럼 doc/curNB 를 건드릴 수 없는 백그라운드 작업용)
+    async function pushOpsFor(nbId,ops){
+        const list=Array.isArray(ops)?ops.slice(0,40):[];
+        if(!nbId||!list.length) return false;
+        for(let attempt=0; attempt<3; attempt++){
+            try{
+                const r=await fetch('/api/sync/push',{method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({nb:String(nbId),ops:list})});
+                const d=await r.json().catch(()=>({}));
+                if(r.ok&&d.ok) return true;
+            }catch(e){}
+            await new Promise(res=>setTimeout(res,250*(attempt+1)));
+        }
+        return false;
     }
     let opsTimer=null;
     function queueOps(){
@@ -18195,9 +18283,22 @@ function smoothPause(){
 // 16.x · 첫 진입 직후 재생을 누르면 아직 노래 목록을 서버에서 받는 중일 수 있다.
 //   예전엔 P.list 가 비어 있어 '곡을 선택해야만' 재생되던 버그가 있었다.
 //   목록을 기다렸다가 첫 곡부터 재생한다.
+// 18.4 · '소스 없음' 판정은 A.src 를 직접 보지 않는다. src='' 로 지우면 브라우저가
+//   페이지 URL 로 해석해 truthy 가 되어, 크로스바 X → 플로팅 버튼 → 재생을 눌러도
+//   그 페이지 URL 을 재생하려다 소리가 나지 않았다.
+function _audioSrcLive(){
+  const s=String(A&&A.src||'');
+  if(!s) return '';
+  try{
+    if(s===location.href) return '';
+    const o=(location&&location.origin)||'';
+    if(o&&(s===o+'/'||s===o)) return '';
+  }catch(e){}
+  return s;
+}
 let _ppWait=null;
 function pp(){
-  if(!A.src){
+  if(!_audioSrcLive()){
     const t=cur();
     if(t){
       const L=curList();
@@ -18418,7 +18519,10 @@ $('mpDel').onclick=async()=>{ const t=cur(); if(!t)return;
     body:JSON.stringify({id:t.id})});
     const d=await r.json();
     if(!r.ok||!d.ok){ if(window.toast)toast(d.error||'삭제 실패',2200); return; }
-    A.pause(); A.src='';
+    // 18.4 · src='' 는 페이지 URL 로 해석되므로 속성 자체를 지운다(진짜 '빈 src').
+    //   _trackId/currentId 도 비워 다음 재생이 남은 목록의 현재 자리부터 시작하게.
+    A.pause(); A.removeAttribute('src'); try{ A.load(); }catch(e){}
+    A._trackId=''; P.currentId='';
     await loadList(); P.idx=-1; renderTitle(); renderListPop();
     if(window.toast)toast('삭제됨',1400);
   }catch(e){ if(window.toast)toast('삭제 실패',2000); } };
@@ -18512,7 +18616,10 @@ $('musicFile').onchange=async e=>{
     }
   } finally { _mpUpBusy=false; }
 };
-$('mpX').onclick=()=>{ A.pause(); A.src='';
+// 18.4 · X 는 '바를 숨기고 일시정지'만 한다. A.src='' 로 지우면 브라우저가
+//   src 를 페이지 URL 로 해석해(truthy) 다시 열고 재생(pp)을 눌러도
+//   노래가 나오지 않았다. src 를 남기면 재생 시 바로 이어서 튼다.
+$('mpX').onclick=()=>{ A.pause();
   pl.style.display='none'; $('mpReopen').style.display='flex'; P.collapsed=true; };
 // ===== 목록 + 검색 + 페이지 =====
 const PER=10;
