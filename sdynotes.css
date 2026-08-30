@@ -2870,6 +2870,24 @@ body.sdy-booting #musicListPop{z-index:10001;}
 .mpb-li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .mpb-li em{color:var(--text3);font-style:normal;font-size:10.5px;flex:0 1 auto;max-width:42%;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* 18.3 · 대기열 관리: 위로/아래로/다음에 재생/빼기 + 전체 비우기 */
+.mpb-qhead{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:3px 8px 7px;font-size:11px;font-weight:700;color:var(--text3);}
+.mpb-qclear{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border);
+    background:var(--bg2);color:var(--text2);border-radius:7px;cursor:pointer;
+    padding:3px 9px;font-size:10.5px;font-weight:700;white-space:nowrap;}
+.mpb-qclear:hover{color:var(--accent);border-color:var(--accent);}
+.mpb-qops{display:flex;align-items:center;gap:1px;flex:none!important;margin-left:2px;}
+.mpb-qop{width:22px;height:22px;border:none;background:transparent;color:var(--text3);
+    border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    padding:0;flex:0 0 auto;font-size:12px;opacity:.55;transition:opacity .12s,color .12s,background .12s;}
+.mpb-li:hover .mpb-qop,.mpb-qop:focus-visible{opacity:1;}
+.mpb-qop:hover{background:var(--bg2);color:var(--text1);opacity:1;}
+.mpb-qop.del:hover{color:#ef4444;}
+/* 폰에서는 관리 버튼이 항상 보이도록 */
+@media(max-width:640px){
+  .mpb-qop{opacity:.85;width:26px;height:26px;font-size:13px;}
+}
 .mpb-artgrp{font-size:11px;font-weight:800;color:var(--text2);padding:7px 8px 3px;
     display:flex;align-items:center;gap:6px;white-space:nowrap;min-width:0;overflow:hidden;}
 .mpb-artgrp em{color:var(--text3);font-style:normal;font-weight:600;flex:none;}

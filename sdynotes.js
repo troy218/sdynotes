@@ -18742,8 +18742,10 @@ function renderPL(){
       playFrom(g?g.tracks:[t0],id,aName);
       renderListPop(); return; }
     if((el=hit('data-del'))){ delTrack(el.dataset.del); return; }
-    if((el=hit('data-rec'))){ playFrom(filtered(),el.dataset.rec,''); return; }
-    if((el=hit('data-i'))){ playFrom(filtered(),el.dataset.tid||((P.list[+el.dataset.i]||{}).id),''); renderListPop(); return; }
+    // 18.3 · 작은 목록에서 곡을 눌러도 '대기열에 담고 바로 재생'이다
+    //   (가수별 재생은 예전처럼 그 가수 회차를 대기열로 세운다 — data-artgo)
+    if((el=hit('data-rec'))){ queueAdd(el.dataset.rec); return; }
+    if((el=hit('data-i'))){ queueAdd(el.dataset.tid||((P.list[+el.dataset.i]||{}).id)); renderListPop(); return; }
   });
   // 드래그로 담기
   body.addEventListener('dragstart',e=>{
@@ -20307,7 +20309,20 @@ function renderBigList(){
     const pages=Math.max(1,Math.ceil(total/per));
     P.bigPage=Math.max(0,Math.min(P.bigPage||0,pages-1));
     start=P.bigPage*per;
-    html=L.slice(start,start+per).map((t,k)=>row(t,'data-bq="'+(start+k)+'"')).join('')
+    const curId2=cur()&&cur().id;
+    // 18.3 · 대기열 행에는 관리 버튼(위로·아래로·다음에 재생·빼기)을 붙인다
+    const qrow=(t,k,abs)=>`<div class="mpb-li mpb-li-q" data-tid="${t.id}" data-bq="${abs}">`+
+      `<span><span class="nowic mp-eqbars" style="display:none;margin-right:6px"><i></i><i></i><i></i></span>${esc2(t.title)}</span>`+
+      (t.artist?`<em>${esc2(t.artist)}</em>`:'')+
+      (t.album?`<em style="max-width:150px">${esc2(t.album)}</em>`:'')+
+      `<span class="mpb-qops">`+
+        `<button class="mpb-qop" data-qop="up" data-bqidx="${abs}" title="위로" aria-label="위로"><i class="ri-arrow-up-line"></i></button>`+
+        `<button class="mpb-qop" data-qop="down" data-bqidx="${abs}" title="아래로" aria-label="아래로"><i class="ri-arrow-down-line"></i></button>`+
+        `<button class="mpb-qop" data-qop="next" data-bqidx="${abs}" title="다음에 재생" aria-label="다음에 재생"><i class="ri-skip-forward-line"></i></button>`+
+        `<button class="mpb-qop del" data-qop="del" data-bqidx="${abs}" title="대기열에서 빼기" aria-label="대기열에서 빼기"><i class="ri-close-line"></i></button>`+
+      `</span></div>`;
+    html=(total?`<div class="mpb-qhead"><span>${total}곡 대기 중${curId2?' · '+esc2(curId2):''}</span><button class="mpb-qclear" data-qclear="1"><i class="ri-delete-bin-6-line"></i> 전체 비우기</button></div>`:'')
+      +L.slice(start,start+per).map((t,k)=>qrow(t,k,start+k)).join('')
       ||_emptyBox('q');
     if(pinfo) pinfo.textContent=total+'곡'+(pages>1?` · ${P.bigPage+1}/${pages}`:'');
   }else if(P.bigTab==='a'){
@@ -20388,13 +20403,30 @@ $('mpBBody').addEventListener('click',e=>{
     renderDiscoverBig();
     return;
   }
+  // 18.3 · 대기열 관리 버튼(위로/아래로/다음에 재생/빼기)과 전체 비우기가 먼저
+  const qop=e.target.closest('[data-qop]');
+  if(qop&&qop.dataset.bqidx!=null){
+    e.preventDefault(); e.stopPropagation();
+    const i=+qop.dataset.bqidx, op=qop.dataset.qop;
+    if(op==='up') queueMove(i,-1);
+    else if(op==='down') queueMove(i,1);
+    else if(op==='del') queueRemove(i);
+    else if(op==='next'){
+      const q=curList(); const t=q&&q[i];
+      if(t) queueNext(t.id);
+    }
+    return;
+  }
+  if(e.target.closest('[data-qclear]')){
+    queueClear(); return;
+  }
   const el=e.target.closest('[data-bq],[data-bl]'); if(!el) return;
   // 대기열 탭에서 고른 곡: 대기열은 그대로, 그 자리만 재생
   if(el.dataset.bq!=null){ playIdx(+el.dataset.bq); return; }
   const id=el.dataset.bl;
-  // 14.14 · 그 화면에 보이던 순서가 그대로 대기열이 된다
-  //   (검색 결과 · 가수별 · 전체 곡 정렬 순서)
-  playFrom(_bigVisibleTracks(id),id,'');
+  // 18.3 · 곡을 누르면 '보이는 순서'로 대기열을 갈아끼우지 않고
+  //   그 곡을 대기열에 담아 바로 재생한다 (다음 곡 = 진짜 대기열 순서)
+  queueAdd(id);
 });
 // 지금 확장 플레이어 목록에 '보이는' 곡들을 화면 순서 그대로 돌려준다
 function _bigVisibleTracks(id){
@@ -21730,6 +21762,66 @@ function queueNext(id){
   renderListPop(); saveMusicState(true);
   toast('다음에 재생합니다',1300);
 }
+// ── 18.3 · 곡을 누르면 '대기열에 담고 바로 재생' ──
+//   기존 대기열은 그대로 두고, 이 곡을 대기열 끝에 담아 재생한다.
+//   (이미 대기열에 있으면 중복 없이 그 자리로 이동해 재생한다)
+function queueAdd(id){
+  const t=P.list.find(x=>x.id===id); if(!t) return;
+  const q=Array.isArray(P.queue)?P.queue.slice():[];
+  let k=q.findIndex(x=>x.id===id);
+  let added=false;
+  if(k<0){ q.push(t); k=q.length-1; added=true; }
+  P.queue=q;
+  P._forceNext='';        // 수동 선택이므로 예약된 '다음에 재생'을 무시한다
+  playIdx(k);
+  saveMusicState(true);
+  try{ if(mpbEl&&mpbEl.classList.contains('open')) renderBigList(); }catch(e){}
+  try{ renderListPop(); }catch(e){}
+  if(added&&window.toast) toast('대기열에 담고 재생할게요',1100);
+}
+try{ window.sdyQueueAdd=queueAdd; }catch(e){}
+// 곡 목록(P.queue)이 바뀐 뒤 현재 곡 인덱스를 다시 맞춘다
+function _qSyncIdx(){
+  const L=_qTracks();
+  const cid=(A&&A._trackId)||P.currentId;
+  const k=cid?L.findIndex(t=>t.id===cid):-1;
+  P.idx=k>=0?k:Math.max(0,Math.min(L.length-1,P.idx||0));
+}
+// ── 18.3 · 대기열 관리 (위로 / 아래로 / 빼기) ──
+function queueMove(i,d){
+  const q=Array.isArray(P.queue)?P.queue.slice():[];
+  const at=Math.max(0,Math.min(q.length-1,+i||0));
+  const to=at+(+d||0);
+  if(!q.length||to<0||to>=q.length) return;
+  const t=q.splice(at,1)[0]; q.splice(to,0,t);
+  P.queue=q; _qSyncIdx();
+  saveMusicState(true);
+  try{ if(mpbEl&&mpbEl.classList.contains('open')) renderBigList(); }catch(e){}
+  try{ renderListPop(); }catch(e){}
+}
+function queueRemove(i){
+  const q=Array.isArray(P.queue)?P.queue.slice():[];
+  const at=+i||0;
+  if(!q.length||at<0||at>=q.length) return;
+  q.splice(at,1);
+  P.queue=q.length?q:null;
+  _qSyncIdx();
+  saveMusicState(true);
+  try{ if(mpbEl&&mpbEl.classList.contains('open')) renderBigList(); }catch(e){}
+  try{ renderListPop(); }catch(e){}
+}
+function queueClear(){
+  // 재생 중인 곡은 남기고 나머지를 비운다 → '다음 곡'이 라이브러리로 새지 않는다
+  const cid=(A&&A._trackId)||P.currentId;
+  const keep=(cid&&(P.list||[]).find(t=>t.id===cid))||null;
+  P.queue=keep?[keep]:null;
+  P.idx=0; _qResetCycle(keep&&keep.id);
+  saveMusicState(true);
+  try{ if(mpbEl&&mpbEl.classList.contains('open')) renderBigList(); }catch(e){}
+  try{ renderListPop(); }catch(e){}
+  if(window.toast) toast('대기열을 비웠어요 · 지금 곡은 계속 재생돼요',1600);
+}
+try{ window.sdyQueueMove=queueMove; window.sdyQueueRemove=queueRemove; window.sdyQueueClear=queueClear; }catch(e){}
 // ── 업로드 뒤 그 곡이 있는 페이지로 이동 ──
 function gotoTrackPage(id){
   const i=P.list.findIndex(t=>t.id===id); if(i<0) return;

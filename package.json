@@ -10,7 +10,7 @@
     "migrate:oracle:dry": "node scripts/migrate_to_oracle.mjs --dry",
     "test:motion": "node test/claw_cursor_contract.mjs && node test/home_stack_contract.mjs",
     "test:bounds": "node test/floating_window_bounds_contract.mjs && node test/floating_window_bounds_zoom_sim.mjs",
-    "test:music": "node test/music_controls.mjs && node test/music_queue_contract.mjs && node test/music_ui_position_contract.mjs",
+    "test:music": "node test/music_controls.mjs && node test/music_queue_contract.mjs && node test/music_enqueue_contract.mjs && node test/music_ui_position_contract.mjs",
     "test:cards": "node test/cards_expand_contract.mjs",
     "test:bgm": "node test/yp_bgm_sync.cjs",
     "test:auth": "node test/auth_contract.mjs",
