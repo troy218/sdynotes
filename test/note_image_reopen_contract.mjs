@@ -10,7 +10,11 @@
    ① 시나리오 A(버그 상태): memo=완료 / ops=옛 pending → 열면 진짜 사진이
      보여야 하고, 서버 ops 스토어도 스스로 완료 상태로 복구돼야 한다.
    ② 시나리오 B(정상 상태): memo=pending / ops=완료 → 열면 ops 가 이겨서
-     진짜 사진이 보여야 한다 (기존 회귀 방지). */
+     진짜 사진이 보여야 한다 (기존 회귀 방지).
+   ③ 시나리오 C(14.17, 다른 기기 복구): memo=data: 원본(pending) / ops=없음 →
+     노트를 연 기기가 서버(/api/img)에 자동 재업로드하고, 서버 memo·ops 모두
+     진짜 URL 로 복구돼야 한다. (원본 기기에서 업로드가 끝나지 않은 사진도
+     '어느 기기에서 열든 서버에서 불러오기'를 보장) */
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
@@ -112,6 +116,9 @@ try {
       window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/png;base64,';
       window.Audio = class { constructor() { this.paused = true; } play() { return Promise.resolve(); } pause() {} addEventListener() {} removeEventListener() {} };
       window.URL.createObjectURL = () => 'blob:test'; window.URL.revokeObjectURL = () => {};
+      // 14.17 · data URL 자동 재업로드 계약이 Node fetch 로 실제 multipart 를
+      //   보낼 수 있도록 jsdom 의 File/FormData 를 Node 쪽 것으로 맞춘다.
+      window.File = globalThis.File; window.FormData = globalThis.FormData; window.Blob = globalThis.Blob;
       window.confirm = () => true; window.alert = () => {}; window.prompt = () => null;
       window.fetch = (input, init) => {
         const target = typeof input === 'string' || input instanceof URL ? new URL(String(input), window.location.href) : input;
@@ -191,6 +198,44 @@ try {
   const boxB = dom.window.document.querySelector('.paper-img[data-id="imB"]');
   check('B: ops(완료)가 이겨서 진짜 URL 이 보인다', imgB && imgB.getAttribute('src') === '/api/img/img_cafebabe.webp');
   check('B: pending 클래스가 없다', boxB && !boxB.classList.contains('pending'));
+
+  /* ══ 시나리오 C(14.17): memo=업로드 전 data 원본 / ops=없음 →   ══
+     다른 기기에서 열어도 그 기기가 자동으로 /api/img 에 다시 올려,
+     서버 memo·ops 모두 진짜 URL 로 복구된다. (원본 기기에서 업로드가 끝나지
+     않은 채 저장된 사진도 '언제 어디서 열든 서버에서 불러오기'로 복구) */
+  const TINY_PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAE0lEQVR4nGP4z8DwnwGM/zMwAAAf7gP9NRsAMwAAAABJRU5ErkJggg==';
+  const C_DATA = { type:'image', id:'imC', url:'', localURL: TINY_PNG, pending:true, x: 48, y: 48, w: 60, h: 60 };
+  const nidC = await seedNote('사진 다른기기 복구 C', C_DATA, null);
+
+  await openNote(dom, nidC);
+  const untilC = Date.now() + 12_000;
+  let imgC=null, cBox=null;
+  while (Date.now() < untilC) {
+    imgC = dom.window.document.querySelector('.paper-img[data-id="imC"] img');
+    cBox = dom.window.document.querySelector('.paper-img[data-id="imC"]');
+    if (imgC && /^\/api\/img\//.test(imgC.getAttribute('src')||'')) break;
+    await wait(120);
+  }
+  check('C: 다른 기기에서도 사진 요소가 그려진다', !!imgC);
+  check('C: data 원본이 서버 URL(/api/img)로 바뀐다', imgC && /^\/api\/img\//.test(imgC.getAttribute('src')||''));
+  check('C: pending 클래스가 없다', cBox && !cBox.classList.contains('pending'));
+
+  // 서버 ops / memo 스냅샷도 진짜 URL 로 복구됐는지
+  let healedC=false;
+  const untilHealC = Date.now() + 10_000;
+  while (Date.now() < untilHealC && !healedC) {
+    const pr = await pull(nidC);
+    const op = (pr.ops || []).find((o) => o.id === 'imC');
+    healedC = !!(op && op.data && /^\/api\/img\//.test(op.data.url||'') && !op.data.pending && !op.data.localURL);
+    const memoRows = await q({ table: 'memos', op: 'select', columns: null, filters: [{op:'eq',field:'notebook_id',value:nidC}], order:{field:'created_at',asc:true}, limit:null, single:false });
+    const memoTxt = Array.isArray(memoRows.data) ? (memoRows.data[0]||{}).content : '';
+    const memoEl = memoTxt ? JSON.parse(memoTxt).pages?.[0]?.els?.find((e)=>e.id==='imC') : null;
+    healedC = healedC && !!memoEl && /^\/api\/img\//.test(memoEl.url||'') && !memoEl.pending && !memoEl.localURL;
+    if (!healedC) await wait(200);
+  }
+  check('C: 서버 ops 스토어도 진짜 URL 로 복구된다', healedC);
+  check('C: 서버 memo 스냅샷도 진짜 URL 로 복구된다', healedC);
+
   check('런타임 오류 없음', dom.__errors.length === 0);
 
   console.log(`노트 사진 재접속 계약: PASS ${pass}`);

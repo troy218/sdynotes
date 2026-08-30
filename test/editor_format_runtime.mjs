@@ -34,6 +34,9 @@ process.env.SDY_BASE_DIR = TMP;
 }
 let pass = 0;
 const check = (name, cond) => { assert.ok(cond, name); pass++; console.log('  ✓ ' + name); };
+// 서식을 '글자 단위'로 쪼개 적용하면 같은 문장이 여러 span 으로 나뉠 수 있어
+// 버튼 동작 검증은 해당 스타일 span 들의 텍스트를 합쳐 원래 문자열로 확인한다.
+const joinedText = arr => (arr||[]).map(x=>x.textContent||'').join('');
 async function freePort() {
   const s = net.createServer();
   await new Promise((res, rej) => s.once('error', rej).listen(0, '127.0.0.1', res));
@@ -115,6 +118,7 @@ try {
   card.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await wait(1600);
   check('에디터가 열린다', document.getElementById('editorView').classList.contains('open'));
+  check('상단 툴바에 취소선 버튼이 있다', !!document.querySelector('.tb-strike'));
 
   const paper = document.querySelector('#pagesStage .paper[data-page-idx="0"]');
   paper.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: 1100, width: 800, height: 1100, x: 0, y: 0 });
@@ -225,52 +229,64 @@ try {
       window.saveSel();
       window.execFmt('bold');
       await wait(120);
-      const ggB = [...content.querySelectorAll('span[style*="font-family"]')]
-        .find(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄'));
-      const boldSpan = [...content.querySelectorAll('span[style*="font-weight"]')]
-        .some(s => (s.style.fontWeight === '700' || s.style.fontWeight === 'bold') && (s.textContent || '').includes('둘째 줄'));
-      check('굵게 해도 부분 글꼴(Gaegu)이 남는다', !!ggB);
-      check('굵게가 선택 구간에 입혀진다', boldSpan);
+      const gaeguFont = s => (s.style.fontFamily || '').includes('Gaegu');
+      const gaeguAll = () => [...content.querySelectorAll('span[style*="font-family"]')].filter(gaeguFont);
+      const hasGaeguText = () => joinedText(gaeguAll()).includes('둘째 줄');
+      const boldAll = () => [...content.querySelectorAll('span[style*="font-weight"]')]
+        .filter(s => s.style.fontWeight === '700' || s.style.fontWeight === 'bold');
+      const italicAll = () => [...content.querySelectorAll('span[style*="font-style"]')]
+        .filter(s => s.style.fontStyle === 'italic' || s.style.fontStyle === 'oblique');
+      const underAll = () => [...content.querySelectorAll('span[style*="text-decoration"]')]
+        .filter(s => /underline/.test(s.style.textDecoration || ''));
+      const pickTextSel = () => {
+        const gg = gaeguAll().find(s => (s.textContent || '').includes('둘째')) || gaeguAll().find(s => (s.textContent || '').includes('줄'))
+          || [...content.querySelectorAll('span')].find(s => (s.textContent || '').includes('둘째') || (s.textContent || '').includes('줄'));
+        if (!gg) return null;
+        const r = document.createRange(); r.selectNodeContents(gg); return r;
+      };
+      check('굵게 해도 부분 글꼴(Gaegu)이 남는다', hasGaeguText());
+      check('굵게가 선택 구간에 입혀진다', joinedText(boldAll()).includes('둘째 줄'));
       check('굵게 후에도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
 
-      const rrI = document.createRange();
-      rrI.selectNodeContents(ggB);
+      const rrI = pickTextSel();
+      if (rrI) { sel.removeAllRanges(); sel.addRange(rrI); }
       window.saveSel();
       window.execFmt('italic');
       await wait(120);
-      check('기울임 후에도 부분 글꼴(Gaegu)이 남는다',
-        [...content.querySelectorAll('span[style*="font-family"]')]
-          .some(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄')));
+      check('기울임이 선택 구간에 입혀진다', joinedText(italicAll()).includes('둘째 줄'));
+      check('기울임 후에도 부분 글꼴(Gaegu)이 남는다', hasGaeguText());
       check('기울임 후에도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
 
-      const rrU = document.createRange();
-      const gg2 = [...content.querySelectorAll('span[style*="font-family"]')]
-        .find(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄'))
-        || [...content.querySelectorAll('span')].find(s => (s.textContent || '').includes('둘째 줄'));
-      rrU.selectNodeContents(gg2);
-      sel.removeAllRanges(); sel.addRange(rrU);
+      const rrU = pickTextSel();
+      if (rrU) { sel.removeAllRanges(); sel.addRange(rrU); }
       window.saveSel();
       window.execFmt('underline');
       await wait(120);
-      check('밑줄 후에도 부분 글꼴(Gaegu)이 남는다',
-        [...content.querySelectorAll('span[style*="font-family"]')]
-          .some(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄')));
+      check('밑줄 후에도 부분 글꼴(Gaegu)이 남는다', hasGaeguText());
       check('밑줄 후에도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
 
+      // ── 14.17 · 같은 글자에 '밑줄 + 형광펜'을 함께 걸어도 서로 지우지 않는다 ──
+      const rrH = pickTextSel();
+      if (rrH) { sel.removeAllRanges(); sel.addRange(rrH); }
+      window.saveSel();
+      window.applyHighlight('#ffff00');
+      await wait(120);
+      const hlAll = () => [...content.querySelectorAll('span[style*="background"]')]
+        .filter(s => (s.style.backgroundColor || '') !== 'transparent');
+      check('밑줄 위에 형광펜을 겹쳐도 밑줄이 남는다', joinedText(underAll()).includes('둘째 줄'));
+      check('밑줄 위에 형광펜을 겹쳐도 형광펜이 남는다', joinedText(hlAll()).includes('둘째 줄'));
+      check('밑줄+형광펜을 겹쳐도 부분 글꼴(Gaegu)이 남는다', hasGaeguText());
+      check('밑줄+형광펜을 겹쳐도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
+
       // 토글 해제도 부분 글꼴을 풀지 않아야 한다
-      const rrU2 = document.createRange();
-      const gg3 = [...content.querySelectorAll('span[style*="font-family"]')]
-        .find(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄'))
-        || [...content.querySelectorAll('span')].find(s => (s.textContent || '').includes('둘째 줄'));
-      rrU2.selectNodeContents(gg3);
-      sel.removeAllRanges(); sel.addRange(rrU2);
+      const rrU2 = pickTextSel();
+      if (rrU2) { sel.removeAllRanges(); sel.addRange(rrU2); }
       window.saveSel();
       window.execFmt('underline');
       await wait(120);
-      check('밑줄을 다시 눌러 지워도 부분 글꼴(Gaegu)이 남는다',
-        [...content.querySelectorAll('span[style*="font-family"]')]
-          .some(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄')));
+      check('밑줄을 다시 눌러 지워도 부분 글꼴(Gaegu)이 남는다', hasGaeguText());
       check('밑줄을 지워도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
+      check('밑줄을 다시 눌러 지우면 밑줄 span 이 사라진다', joinedText(underAll()).indexOf('둘째 줄') < 0);
     }
   }
 
@@ -285,6 +301,22 @@ try {
     [...content.querySelectorAll('span[style*="font-family"]')]
       .some(s => (s.style.fontFamily || '').includes('Gaegu') && (s.textContent || '').includes('둘째 줄')));
   check('상자 전체 형광펜 후에도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
+
+  // ── 상자만 고른 상태에서 굵게/기울임/밑줄 버튼도 동작 ─────────────────
+  window.clearTextSelection();
+  content.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, detail: 1, clientX: 60, clientY: 60 }));
+  window.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
+  await wait(80);
+  const boxItalicBefore = [...content.querySelectorAll('span[style*="font-style"]')].length;
+  window.execFmt('italic');
+  await wait(120);
+  const boxItalicAfter = [...content.querySelectorAll('span[style*="font-style"]')].length;
+  check('상자 전체를 고르고 기울임을 누르면 글자에 기울임이 생긴다', boxItalicAfter > boxItalicBefore);
+  window.execFmt('italic');
+  await wait(120);
+  const boxItalicAfter2 = [...content.querySelectorAll('span[style*="font-style"]')].length;
+  check('같은 버튼을 다시 누르면 상자 전체 기울임이 해제된다', boxItalicAfter2 < boxItalicAfter);
+  check('상자 전체 서식 토글 후에도 상자 글꼴(Jua)이 남는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
 
   // ── 서버(메모)에 el.font 가 그대로 남아 있는지 ─────────────────────────
   await wait(1400);

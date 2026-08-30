@@ -1295,7 +1295,8 @@
         .stroke-hit{fill:none;stroke:transparent;pointer-events:stroke;cursor:move;}
         .stroke-halo{fill:none;stroke:var(--accent);opacity:0;pointer-events:none;}
         .stroke-g.sel .stroke-halo{opacity:.32;}
-        .draw-surface{position:absolute;inset:0;z-index:20;cursor:none;display:none;}
+        .draw-surface{position:absolute;inset:0;z-index:20;cursor:none;display:none;
+            touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
 
         /* ===== 표 조절 (열/행 경계를 끌어서 크기 변경) ===== */
         .layer-tbl{position:absolute;inset:0;z-index:45;pointer-events:none;}
@@ -1726,10 +1727,13 @@
             padding:8px 16px;display:flex;gap:8px;align-items:center;
             box-shadow:0 4px 20px rgba(0,0,0,0.14);z-index:200;
         }
-        .color-pick{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;}
+        .color-pick{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;flex:none;}
         .color-pick:hover,.color-pick.sel{border-color:var(--text1);transform:scale(1.1);}
-        .size-opt{border-radius:50%;background:var(--text1);cursor:pointer;}
+        .size-opt{border-radius:50%;background:var(--text1);cursor:pointer;flex:none;}
         .size-opt.sel{outline:2px solid var(--accent);outline-offset:3px;}
+        .draw-toolbar .tool-btn{flex:none;}
+        .draw-toolbar .tool-btn.done{background:var(--accent);color:#fff;border-color:var(--accent);}
+        .draw-toolbar .tool-btn.done:hover{background:var(--accent);color:#fff;transform:translateY(-1px);}
 
         .toast{
             position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-80px);

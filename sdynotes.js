@@ -5639,17 +5639,31 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 14.15 · 동기화 직전 이미지 요소 정리: blob URL 은 다른 기기·새로고침 뒤에
     //   깨지므로 url 에서 제거하고, 로컬 전용 임시 필드(localURL·pending·failed)는
     //   서버로 보내지 않는다. (data: URL 은 스티커·PDF 배경 등 정상 데이터이므로 유지)
+    // 14.17 · 붙여넣기/파일로 넣은 이미지가 아직 서버에 못 올라갔으면 data: 로컬
+    //   소스를 '로컬 전용'이 아니라 메모 스냅샷에도 싣는다. 그래서 어느 기기에서
+    //   열어도 사진이 안 보이는 대신 원본이 보이고, 그 기기가 서버(/api/img)로
+    //   다시 올려 자동 복구한다. (blob: 은 새로고침 뒤엔 소용없으므로 보내지 않는다)
+    function serverImageElement(el){
+        if(!el||el.type!=='image') return el;
+        const c={...el};
+        const u=String(c.url||'');
+        delete c.localURL; delete c.pending; delete c.failed;
+        if(u.startsWith('blob:')) c.url='';
+        return c;
+    }
     function sanitizeSyncPages(pages){
         if(!Array.isArray(pages)) return pages;
         let dirty=false;
+        outer:
         for(const pg of pages){
             if(!pg||!Array.isArray(pg.els)) continue;
             for(const el of pg.els){
                 if(!el||el.type!=='image') continue;
                 const u=String(el.url||'');
-                if(('localURL' in el)||('pending' in el)||('failed' in el)||u.startsWith('blob:')){ dirty=true; break; }
+                const l=String(el.localURL||'');
+                if(('localURL' in el)&&!l.startsWith('data:')){ dirty=true; break outer; }
+                if(('pending' in el)||('failed' in el)||u.startsWith('blob:')){ dirty=true; break outer; }
             }
-            if(dirty) break;
         }
         if(!dirty) return pages;
         return pages.map(pg=>{
@@ -5657,8 +5671,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return {...pg, els: pg.els.map(el=>{
                 if(!el||el.type!=='image') return el;
                 const clean={...el};
-                delete clean.localURL; delete clean.pending; delete clean.failed;
+                const l=String(clean.localURL||'');
                 const u=String(clean.url||'');
+                if(l.startsWith('data:') && !u){
+                    // 아직 서버 업로드 전이지만 원본 data 를 보존 → 다른 기기에서
+                    // 표시 + 재업로드 가능. 필드는 pending·localURL 로 구분해 둔다.
+                    delete clean.failed;
+                    clean.pending=true;
+                    if(!clean.localURL) clean.localURL=l;
+                    return clean;
+                }
+                delete clean.localURL; delete clean.pending; delete clean.failed;
                 if(u.startsWith('blob:')) clean.url='';
                 return clean;
             })};
@@ -12397,11 +12420,44 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const map={free:'shpFree',line:'shpLine',arrow:'shpArrow',rect:'shpRect',ellipse:'shpEllipse'};
         const b=document.getElementById(map[m]); if(b) b.classList.add('active');
         updateToolCursor();
+        try{ saveDrawCfg(); }catch(e){}
+    }
+    // 14.17 · 펜 색·굵기·도형·형광펜을 브라우저에 기억해 두면 모바일/데스크톱
+    //   모두 '다음에 펜을 열 때도 같은 설정'으로 바로 그릴 수 있다.
+    const DRAW_CFG_KEY='sdy_draw_cfg';
+    function saveDrawCfg(){
+        try{ localStorage.setItem(DRAW_CFG_KEY, JSON.stringify({color:drawColor,size:drawSize,shape:shapeMode,marker:markerMode})); }catch(e){}
+    }
+    function restoreDrawCfg(){
+        try{
+            const c=JSON.parse(localStorage.getItem(DRAW_CFG_KEY)||'null');
+            if(!c) return;
+            if(c.color){
+                drawColor=c.color;
+                const pc=document.getElementById('penCustom'); if(pc) pc.value=c.color;
+                document.querySelectorAll('.color-pick').forEach(x=>x.classList.toggle('sel',String(x.dataset.c)===c.color));
+            }
+            if(c.size){
+                drawSize=+c.size||drawSize;
+                document.querySelectorAll('.size-opt').forEach(x=>x.classList.toggle('sel',+x.dataset.s===drawSize));
+            }
+            if(c.shape&&['free','line','arrow','rect','ellipse'].includes(c.shape)){
+                shapeMode=c.shape;
+                document.querySelectorAll('.shp').forEach(b=>b.classList.remove('active'));
+                const b=document.getElementById({free:'shpFree',line:'shpLine',arrow:'shpArrow',rect:'shpRect',ellipse:'shpEllipse'}[c.shape]);
+                if(b) b.classList.add('active');
+            }
+            if(typeof c.marker==='boolean'){
+                markerMode=c.marker;
+                document.getElementById('markerBtn').classList.toggle('active',markerMode);
+            }
+        }catch(e){}
     }
     function toggleMarker(){
         markerMode=!markerMode;
         document.getElementById('markerBtn').classList.toggle('active',markerMode);
         updateToolCursor();
+        saveDrawCfg();
         toast(markerMode?'형광펜 모드 (반투명·굵게)':'일반 펜',1200);
     }
     function setDrawColorVal(v){
@@ -12409,6 +12465,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         document.querySelectorAll('.color-pick').forEach(c=>c.classList.remove('sel'));
         document.getElementById('eraserBtn').classList.remove('active');
         updateToolCursor();
+        try{ saveDrawCfg(); }catch(e){}
     }
     function setDrawColor(el){
         drawColor=el.dataset.c; eraserActive=false;
@@ -12417,12 +12474,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         el.classList.add('sel');
         document.getElementById('eraserBtn').classList.remove('active');
         updateToolCursor();
+        try{ saveDrawCfg(); }catch(e){}
     }
     function setDrawSize(el){
         drawSize=+el.dataset.s;
         document.querySelectorAll('.size-opt').forEach(s=>s.classList.remove('sel'));
         el.classList.add('sel');
         updateToolCursor();
+        try{ saveDrawCfg(); }catch(e){}
     }
     function toggleEraser(){
         eraserActive=!eraserActive;
@@ -12449,6 +12508,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const n=parseInt(f,16);
         return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
     }
+    try{ restoreDrawCfg(); }catch(e){}
     const _toolCursorMove=('PointerEvent' in window)?'pointermove':'mousemove';
     document.addEventListener(_toolCursorMove,e=>{
         if(!penActive) return;
@@ -12508,6 +12568,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         curPathNode.setAttribute('d',strokePath(curPts));
     }
     function drawEnd(){
+        // rAF 대기 중에 mouseup/touchend 가 먼저 온 경우, 마지막 포인트를 놓치지 않고
+        // 미리 반영한다. (특히 지우개는 몇 ms 만에 끝날 수 있어 이 flush 가 없으면
+        //  빠른 스와이프가 안 지워진다)
+        if(drawing && (_drawEv || _drawEvT)){
+            try{ if(_drawEvT) drawMove(_drawEvT); else if(_drawEv) drawMove(_drawEv); }catch(e){}
+            _drawEv=null; _drawEvT=null;
+        }
         lastErase=null;
         if(!drawing) return;
         drawing=false;
@@ -12636,6 +12703,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(s&&penActive) drawStart(e,+s.closest('.paper').dataset.pageIdx);
     },true);
     let _drawRaf=0, _drawEv=null;
+    let _drawRafT=0, _drawEvT=null;
     document.addEventListener('mousemove',e=>{
         if(!drawing) return;
         _drawEv=e;
@@ -12650,9 +12718,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     },{passive:false});
     document.addEventListener('touchmove',e=>{
         if(e.touches&&e.touches.length>1){ if(drawing) drawEnd(); return; }
-        if(drawing) drawMove(e);
+        if(!drawing) return;
+        // 스크롤 차단은 이벤트 단계에서 미리 걸고, 실제 경로 계산은 rAF 로 묶어
+        // 고주사율 터치(모바일)에서도 프레임마다 부드럽게 그린다.
+        try{ if(e.cancelable!==false) e.preventDefault(); }catch(err){}
+        _drawEvT=e;
+        if(_drawRafT) return;
+        _drawRafT=requestAnimationFrame(()=>{ _drawRafT=0; if(drawing&&_drawEvT) drawMove(_drawEvT); });
     },{passive:false});
     document.addEventListener('touchend',()=>{ if(drawing) drawEnd(); });
+    document.addEventListener('touchcancel',()=>{ if(drawing) drawEnd(); });
 
     // ===== 두 손가락 확대/축소 (핀치 줌) =====
     // 예전엔 이 기능이 아예 없고 뷰포트도 user-scalable=no 라 모바일에서
@@ -13081,6 +13156,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
             p = p.parentElement;
         }
+        // 상자 자체(box-level) 서식도 '상속된 서식'으로 인식한다.
+        // 예) 상자 전체 기울임을 걸고 그 안 글자를 선택해도 툴바 active 표시가
+        //     정확해지고, span 을 새로 만들 때 상자 글꼴이 풀리지 않는다.
+        if(host && host.nodeType===1 && host.style){
+            for(const k of INLINE_STYLE_PROPS){
+                if(!(k in styles)){
+                    const v=host.style[k];
+                    if(v) styles[k]=v;
+                }
+            }
+        }
         return {styles, chain};
     }
     // 범위와 교차하는 텍스트 노드 목록 (시작/끝 오프셋 포함)
@@ -13183,18 +13269,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             target.appendChild(tn);
         }
         // 의미 태그(b/i/u/s)라면 css style 로 canonical 을 덮어 씌워 일관성 유지
-        target.style[prop] = value;
-        // textDecoration 멀티밸류 유지 (underline + line-through 공존)
         if(prop==='textDecoration'){
-            const toks = new Set((target.style.textDecoration||'').split(/\s+/).filter(Boolean));
-            toks.add(value);
-            // 'none' 토큰 제거
-            toks.delete('none');
-            target.style.textDecoration = [...toks].join(' ');
+            // 밑줄 + 취소선처럼 여러 토큰이 한 span 에 공존하도록 이전 값을 보존한다.
+            const base = new Set(String(styles[prop]||'').split(/\s+/).filter(Boolean));
+            const cur  = new Set(String(target.style.textDecoration||'').split(/\s+/).filter(Boolean));
+            cur.forEach(t=>base.add(t)); base.add(value); base.delete('none');
+            target.style.textDecoration=[...base].join(' ');
+        }else{
+            target.style[prop] = value;
         }
     }
     // 노드 하나에서 prop 스타일을 제거한다. (모든 기여 조상에서 지운다)
-    function _removeOne(tn, host, prop){
+    function _removeOne(tn, host, prop, value){
         let p = tn.parentElement;
         while(p && p !== host){
             if(p.nodeType===1 && INLINE_TAGS.has(p.tagName)){
@@ -13210,13 +13296,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         par.removeChild(p);
                         p = span;
                         // 의미 태그가 풀린 뒤에도 그 span 이 가질 수 있는 동일 prop(스타일에 명시된 경우)을 계속 제거
-                        // (의도: 토큰 하나만 지우기) — span 이 된 이후는 보통 style 이 없으니 빠져나간다
-                        break;
+                        continue;
                     }else{
                         if(prop==='textDecoration'||prop==='text-decoration'){
                             const toks = String(p.style.textDecoration||p.style.textDecoration||'').split(/\s+/).filter(t=>t && t!=='none');
-                            const want = String(v).toLowerCase();
-                            const next = toks.filter(t=>t.toLowerCase()!==want);
+                            const want = value ? String(value).toLowerCase() : '';
+                            let next;
+                            if(want) next = toks.filter(t=>t.toLowerCase()!==want);
+                            else next = [];
                             if(next.length) p.style.textDecoration = next.join(' ');
                             else p.style.removeProperty('text-decoration');
                         }else{
@@ -13226,7 +13313,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                             else p.style.removeProperty(prop);
                         }
                     }
-                    break;
                 }
             }
             p = p.parentElement;
@@ -13253,15 +13339,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }catch(e){}
         return true;
     }
-    // 선택 전체에서 prop 제거
-    function _removeFromSelection(prop){
+    // 선택 전체에서 prop 제거 (value 를 주면 textDecoration 토큰 하나만 제거)
+    function _removeFromSelection(prop, value){
         const s = window.getSelection();
         if(!s||s.isCollapsed||!s.rangeCount) return false;
         const r = s.getRangeAt(0);
         const split = _splitAtBoundaries(r);
         if(!split) return false;
         const {host, nodes} = split;
-        nodes.forEach(tn=>_removeOne(tn, host, prop));
+        nodes.forEach(tn=>_removeOne(tn, host, prop, value));
         _cleanupInline(host);
         try{
             const nr=document.createRange();
@@ -13402,7 +13488,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     function toggleSelStyle(prop,value){
         // 워드/구글독스 동작: 전부 켜져 있으면 끄고, 아니면 (부분이든 전부든) 켠다
-        if(_selHasAll(prop,value)) _removeFromSelection(prop);
+        const all=_selHasAll(prop,value);
+        if(all) _removeFromSelection(prop,value);
         else _applyToSelection(prop,value);
         syncCurSel();
     }
@@ -13444,6 +13531,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // 상자 안 내용 전체에 스타일을 입힌다 (prop=null 이면 형광펜 전체 지우기)
     // 편집 모드 여부와 무관하게 DOM 을 직접 고치므로 글꼴이 풀리지 않는다.
+    function _boxTextNodes(c){
+        const tw=document.createTreeWalker(c,NodeFilter.SHOW_TEXT);
+        const nodes=[]; let n;
+        while(n=tw.nextNode()){ if(String(n.nodeValue||'').trim()) nodes.push(n); }
+        return nodes;
+    }
+    // 상자 전체가 해당 스타일로 이미 덮여 있는가 (box-level + 부분 span 모두 고려)
+    function _boxHasAllStyle(w,prop,value){
+        const c=w&&w.querySelector('.tb-content'); if(!c) return false;
+        const nodes=_boxTextNodes(c); if(!nodes.length) return false;
+        return nodes.every(tn=>_propMatch(prop, _inheritedStyles(tn,c).styles[prop]||'', value));
+    }
+    // 상자 안 내용 전체에 스타일을 입힌다 (prop=null 이면 형광펜 전체 지우기)
+    // 편집 모드 여부와 무관하게 DOM 을 직접 고치므로 글꼴이 풀리지 않는다.
+    // 인라인 엔진(_applyOne)을 사용해 굵게+기울임+밑줄+취소선+형광펜이
+    // 한 글자 위에 겹쳐도 서로 지우지 않는다.
     function _paintBoxAll(w,prop,value){
         const c=w.querySelector('.tb-content'); if(!c) return;
         if(!prop){
@@ -13452,22 +13555,43 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(bg&&bg!=='transparent'&&bg!=='rgba(0, 0, 0, 0)')
                     n.style.removeProperty('background-color');
             });
+            if(c.style) c.style.removeProperty('background-color');
             syncTextEl(w);
             return;
         }
-        const tw=document.createTreeWalker(c,NodeFilter.SHOW_TEXT);
-        const nodes=[];
-        let n; while(n=tw.nextNode()){ if(String(n.nodeValue||'').trim()) nodes.push(n); }
-        nodes.forEach(tn=>{
-            const font=_nearestInlineFont(tn,c);
-            const span=document.createElement('span');
-            span.style[prop]=value;
-            // 상자 전체를 칠할 때도 '부분 글꼴 span'은 글꼴을 유지한다
-            if(font) span.style.fontFamily=font;
-            tn.parentNode.insertBefore(span,tn);
-            span.appendChild(tn);
-        });
+        _boxTextNodes(c).forEach(tn=>_applyOne(tn,c,prop,value));
+        _cleanupInline(c);
         syncTextEl(w);
+    }
+    // 상자 전체에서 스타일 제거 (box-level el.fontStyle 같은 옛 데이터도 치운다)
+    function _clearBoxStyleAll(w,prop,value){
+        const c=w&&w.querySelector('.tb-content'); if(!c) return;
+        if(c.style){
+            if(prop==='textDecoration'){
+                const toks=String(c.style.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none'&&t!==value);
+                if(toks.length) c.style.textDecoration=toks.join(' ');
+                else c.style.removeProperty('text-decoration');
+            }else c.style.removeProperty(prop);
+        }
+        const el=findEl(+w.dataset.pageIdx,w.dataset.id);
+        if(el){
+            if(prop==='textDecoration'){
+                const toks=String(el.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none'&&t!==value);
+                if(toks.length) el.textDecoration=toks.join(' ');
+                else delete el.textDecoration;
+            }else{
+                const key={fontWeight:'fontWeight',fontStyle:'fontStyle',color:'textColor',backgroundColor:'cellBg'}[prop];
+                if(key) delete el[key];
+            }
+        }
+        _boxTextNodes(c).forEach(tn=>_removeOne(tn,c,prop,value));
+        _cleanupInline(c);
+        syncTextEl(w);
+    }
+    // 상자 전체 토글: 전부 켜져 있으면 끄고, 아니면 전체 적용 (선택 서식과 동일 규칙)
+    function _toggleBoxAllStyle(w,prop,value){
+        if(_boxHasAllStyle(w,prop,value)) _clearBoxStyleAll(w,prop,value);
+        else _paintBoxAll(w,prop,value);
     }
     // 14.13.7 · 순서: ① 표 셀 → ② 글자 선택 범위(저장된 선택 포함) → ③ 상자만 고른 상태(상자 전체)
     function applyTextColor(c){
@@ -13576,11 +13700,24 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }
                 return;
             }
-            // 히스토리 저장하고 직접 토글 (부분 선택도 정확히 동작)
-            pushHistory();
-            withSelection(()=>toggleSelStyle(spec[0],spec[1]));
-            setTimeout(syncCurSel,0);
-            return;
+            // ② 글자 선택(드래그·저장된 범위) → 선택 구간만 토글
+            if(hasInlineTextSel()){
+                pushHistory();
+                withSelection(()=>toggleSelStyle(spec[0],spec[1]));
+                setTimeout(syncCurSel,0);
+                return;
+            }
+            // ③ 상자만 고른 상태 → 상자 전체에 덧씌우고, 이미 전체 적용 상태면 뺀다.
+            //    (이제 상자를 클릭한 뒤 굵게/기울임/밑줄 버튼이 '안 되는' 일이 없다)
+            const targets=_boxFmtTargets();
+            if(targets.length){
+                pushHistory();
+                targets.forEach(w=>_toggleBoxAllStyle(w,spec[0],spec[1]));
+                saveDoc();
+                toast(targets.length>1?targets.length+'개 상자에 서식 적용':'상자 전체에 서식 적용',1000);
+                setTimeout(syncCurSel,0);
+                return;
+            }
         }
         withSelection(()=>{
             pushHistory();
@@ -13641,6 +13778,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(v&&(String(v).toLowerCase()===String(value).toLowerCase()
                     ||(prop==='fontWeight'&&(v==='bold'||Number(v)>=600)))) return true;
                 p=p.parentElement;
+            }
+            // 상자 전체 서식(box-level)이 켜져 있으면 캐럿에서도 '켜진 상태'로 본다.
+            if(t.c&&t.c.style){
+                const v=t.c.style[prop];
+                if(v&&(String(v).toLowerCase()===String(value).toLowerCase()
+                    ||(prop==='fontWeight'&&(v==='bold'||Number(v)>=600)))) return true;
             }
         }catch(e){}
         return false;
@@ -13892,6 +14035,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 업로드 큐: 화면에는 즉시 붙이고, 전송은 백그라운드에서 순차 처리
     const uploadQueue=[];
     let uploadRunning=false, uploadDone=0, uploadTotal=0;
+    let uploadCurrentId=null;   // 현재 전송 중인 이미지 id (8초 주기 중복 큐잉 방지)
+    const uploadRetryCount=new Map();
+    const UPLOAD_MAX_RETRY=5;
 
     function updateUploadBadge(){
         const el=document.getElementById('uploadBadge');
@@ -13906,6 +14052,39 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
     }
 
+    // 붙여넣기/미리보기용 data URL 헬퍼.
+    // 14.17 · 업로드가 끝나기 전에 탭을 닫거나 재접속해도 사진이 사라지지 않도록,
+    //   깨지는 blob: 대신 data: 원본을 로컬 저장(및 서버 메모 스냅샷)에 남긴다.
+    //   업로드가 성공하면 applyUploadedURL 이 localURL 을 지워 서버 URL 만 남긴다.
+    function fileToDataURL(blob){
+        return new Promise((resolve,reject)=>{
+            const r=new FileReader();
+            r.onload=()=>resolve(r.result);
+            r.onerror=()=>reject(r.error||new Error('이미지 읽기 실패'));
+            r.readAsDataURL(blob);
+        });
+    }
+    function dataURLToFile(dataUrl,name){
+        try{
+            const [head,b64]=String(dataUrl||'').split(',');
+            if(!/^data:/.test(head||'')) return null;
+            const mime=(head.match(/^data:([^;]+)/)||[])[1]||'image/png';
+            const bin=atob(b64||'');
+            const bytes=new Uint8Array(bin.length);
+            for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+            return new File([bytes], name, {type:mime});
+        }catch(e){ return null; }
+    }
+    // 원본은 다소 커도 되지만, 메모와 함께 전달될 수 있으므로 브라우저 압축본을
+    // data URL 로 만들어 용량 폭주를 줄인다. 실패하면 빈 문자열(blob 미리보기 유지).
+    async function pendingDataURLForFile(file){
+        try{
+            const c=await compressImg(file);
+            const s=await fileToDataURL(c);
+            return String(s||'').startsWith('data:image/')?s:'';
+        }catch(e){ return ''; }
+    }
+
     // 파일 목록 → 배치 준비물 (로컬 미리보기 URL·자연 크기·맞춤 상자)을 만든다.
     async function filesToImgItems(files){
         const list=Array.from(files||[]).filter(f=>f&&f.type&&f.type.startsWith('image/'));
@@ -13913,7 +14092,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         for(const f of list){
             const url=URL.createObjectURL(f);
             const nat=await imageNaturalSize(url);   // 로컬이라 즉시 완료
-            items.push({file:f,url,box:fitBox(nat.w,nat.h)});
+            let local=url;
+            const data=await pendingDataURLForFile(f);
+            if(data){
+                local=data;
+                try{ URL.revokeObjectURL(url); }catch(e){}
+            }
+            items.push({file:f,url:local,box:fitBox(nat.w,nat.h)});
         }
         return items;
     }
@@ -13932,6 +14117,33 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         uploadTotal++; updateUploadBadge();
         return el;
     }
+
+    // 어느 기기에서든 '아직 서버 주소(/api/img)가 없는 이미지'를 자동 재업로드한다.
+    // 14.17 · 메모 스냅샷에 data: localURL 을 함께 보관하므로, 원래 기기가 아니라
+    //   다른 기기에서 노트를 열어도 소스를 다시 올릴 수 있어 '서버에서 불러오기'로
+    //   복구된다. blob: 만 있는 경우는 재접속 후엔 소용이 없어 건너뛴다.
+    function enqueuePendingImageUploads(){
+        if(!doc||!curNB) return;
+        const nbId=curNB.id;
+        (doc.pages||[]).forEach((pg,pi)=>((pg&&pg.els)||[]).forEach(el=>{
+            if(!el||el.type!=='image') return;
+            if(_imgRealURL(el)) return;
+            const l=String(el.localURL||'');
+            if(!l.startsWith('data:image/')) return;
+            if(uploadQueue.some(j=>j.id===el.id)) return;
+            if(uploadCurrentId===el.id) return;
+            const n=uploadRetryCount.get(el.id)||0;
+            if(n>=UPLOAD_MAX_RETRY) return;
+            const file=dataURLToFile(l,`repair-${el.id}.png`);
+            if(!file) return;
+            uploadQueue.push({file,id:el.id,pageIdx:pi,nbId});
+            uploadTotal++; updateUploadBadge();
+        }));
+        if(uploadQueue.length) runUploadQueue();
+    }
+    // 재업로드 트리거: 온라인 복귀, 주기, 탭 복귀, 열기 직후.
+    window.addEventListener('online',()=>{ setTimeout(()=>{ try{ enqueuePendingImageUploads(); }catch(e){} },300); });
+    setInterval(()=>{ try{ enqueuePendingImageUploads(); }catch(e){} },8000);
 
     async function uploadImgs(files,atPoint){
         if(!doc) return;
@@ -13960,11 +14172,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         uploadRunning=true;
         while(uploadQueue.length){
             const job=uploadQueue.shift();
+            uploadCurrentId=job.id;
             try{
                 const res=await uploadOne(job.file);
                 if(res&&res.url) applyUploadedURL(job,res.url,res.public_id);
                 else markUploadFailed(job);
             }catch(e){ console.warn('업로드 실패:',e); markUploadFailed(job); }
+            uploadCurrentId=null;
             uploadDone++; updateUploadBadge();
         }
         uploadRunning=false;
@@ -14001,6 +14215,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     delete el.pending; delete el.failed; delete el.localURL; hit=true;
                 }
             }));
+            if(hit){ try{ uploadRetryCount.delete(job.id); }catch(e){} }
             return hit;
         };
         let fixed=null;
@@ -14031,7 +14246,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         // 중복으로 올라가도 서버 LWW(더 새 rev)라 안전하다.
                         // (열려 있던 노트는 saveDoc→queueOps 가 같은 내용을 한 번 더
                         //  올리므로 pushOpsFor 이 실패해도 사라지지 않는다)
-                        pushOpsFor(job.nbId,[{id:el.id,kind:'put',page:pi,rev:_nbNow(),data:{...el},dev:SYNC_DEV}]);
+                        pushOpsFor(job.nbId,[{id:el.id,kind:'put',page:pi,rev:_nbNow(),data:serverImageElement(el),dev:SYNC_DEV}]);
                     }catch(e){}
                 }
             }));
@@ -14043,7 +14258,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(curNB&&curNB.id===job.nbId&&doc){
             (doc.pages||[]).forEach(pg=>(pg.els||[]).forEach(el=>{ if(el.id===job.id){ el.failed=true; } }));
         }
-        toast('일부 이미지 업로드 실패 (로컬에만 표시됨)',2600);
+        const n=(uploadRetryCount.get(job.id)||0)+1;
+        uploadRetryCount.set(job.id,n);
+        if(n===1) toast('일부 이미지 업로드 실패 · 자동으로 다시 시도합니다',2600);
+        // data: 원본이 남아 있으면 짧은 지연 후 재업로드 (영원히 로컬만 되는 것 방지)
+        if(n<UPLOAD_MAX_RETRY){
+            setTimeout(()=>{ try{ enqueuePendingImageUploads(); }catch(e){} }, Math.min(1600*n, 6000));
+        }
     }
 
     function compressImg(file){
@@ -15385,6 +15606,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         //   비우거나 엉뚱한 ops 를 푸시할 수 있다. 시작 시점 신원을 고정.
         const _d0=doc, _nb0=curNB.id;
         syncState();
+        // 14.17 · 메모에 data: 원본이 남아 있는 아직 서버 안 올라간 이미지를
+        //   어느 기기에서 열든 즉시 서버(/api/img)로 다시 올린다.
+        try{ enqueuePendingImageUploads(); }catch(e){}
         // 18.4 · pull 전(메모·로컬이 아는) 이미지의 진짜 URL 을 기억한다.
         //   ops 스토어에 업로드 전(pending·빈 url) 상태가 남아 있어도
         //   이 URL 로 되돌려 "사진이 있었다는 표시"가 남지 않게 한다.
@@ -15407,7 +15631,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
         }));
         if(healed.length){
-            const hOps=healed.map(({el,pi})=>({id:el.id,kind:'put',page:pi,rev:_nbNow(),data:{...el},dev:SYNC_DEV}));
+            const hOps=healed.map(({el,pi})=>({id:el.id,kind:'put',page:pi,rev:_nbNow(),data:serverImageElement(el),dev:SYNC_DEV}));
             healed.forEach((h,i)=>{
                 doc.__lastHash.set(h.el.id,JSON.stringify(h.el));
                 doc.__localRev.set(h.el.id,hOps[i].rev);
@@ -15430,7 +15654,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(!remoteIds.has(el.id)){
                 const rev=_nbNow();
                 doc.__localRev.set(el.id,rev);
-                ops.push({id:el.id,kind:'put',page:pi,rev,data:el,dev:SYNC_DEV});
+                ops.push({id:el.id,kind:'put',page:pi,rev,data:serverImageElement(el),dev:SYNC_DEV});
             }
         });});
         doc.__lastPages=(doc.pages||[]).map(p=>p.id).join(',');
@@ -15571,13 +15795,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     if(op.data.type==='image' && !_imgRealURL(op.data)){
                         const loc=findElLoc(op.data.id);
                         const curEl=loc?doc.pages[loc.i].els[loc.k]:null;
-                        if(curEl && _imgRealURL(curEl)){
+                        const curData=curEl&&String(curEl.localURL||'').startsWith('data:image/');
+                        if(curEl && (_imgRealURL(curEl) || curData)){
                             doc.__localRev.set(op.data.id, op.rev||0);
                             doc.__lastHash.set(op.data.id, JSON.stringify(curEl));
-                            // 서버 스토어도 진짜 URL 로 되돌린다 (더 새 rev 로 푸시)
-                            if(!doc.__ref){
+                            // 14.17 · 로컬에 data 원본이 있으면 옛 pending op 가 그 원본을
+                            //   덮어쓰지 않는다. (메모 스냅샷이 원본을 보관하고, 어느 기기든
+                            //   자동 재업로드로 /api/img 로 바꾼다)
+                            if(_imgRealURL(curEl) && !doc.__ref){
                                 try{
-                                    pushOpsFor(curNB.id,[{id:curEl.id,kind:'put',page:loc.i,rev:_nbNow(),data:{...curEl},dev:SYNC_DEV}]);
+                                    pushOpsFor(curNB.id,[{id:curEl.id,kind:'put',page:loc.i,rev:_nbNow(),data:serverImageElement(curEl),dev:SYNC_DEV}]);
                                 }catch(e){}
                             }
                             continue;
@@ -15748,7 +15975,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     doc.__lastHash.set(el.id,h);
                     const rev=_nbNow();
                     doc.__localRev.set(el.id,rev);
-                    ops.push({id:el.id,kind:'put',page:pi,rev,data:el,dev:SYNC_DEV,
+                    ops.push({id:el.id,kind:'put',page:pi,rev,data:serverImageElement(el),dev:SYNC_DEV,
                               prevRev:(doc.__baseRev&&doc.__baseRev.get(el.id))||0});
                 }
             });
