@@ -5522,8 +5522,8 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
   /* 18.1 · 새 해돌이는 정사각형(200x200) — 문제 왼쪽에 나란히 (세로 가운데).
      아래 왼쪽이 아니라 문제의 '진짜 왼쪽'에서 반응한다. */
   display:block;position:absolute;
-  left:clamp(12px,3vw,56px);top:50%;bottom:auto;transform:translateY(-50%);
-  width:clamp(104px,12vw,150px);height:auto;
+  left:clamp(24px,5vw,104px);top:50%;bottom:auto;transform:translateY(-50%);
+  width:clamp(118px,14vw,168px);height:auto;
   z-index:3;pointer-events:none;
 }
 /* 확장(비-전체화면) 암기카드에서도 카드 아래쪽에 해돌이를 보여 준다. */
@@ -6109,8 +6109,9 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 }
 .om-wavehand{animation:om-wavehand 1.6s ease-in-out infinite;transform-box:fill-box;transform-origin:30% 85%;}
 
-/* ── ① 편지 해돌이 — 엽스코드 첫 입장(채팅 없을 때) 본문 정가운데 크게 ── */
-/*   빈 채팅 안내(.yp-empty)는 메시지가 생기면 display:none 이라 해돌이도 같이 사라진다 */
+/* ── ① 편지 해돌이 — 엽스코드 입장 게이트(로그인/비회원 선택) 카드 정가운데 크게 ── */
+/*   (빈 채팅 안내(.yp-empty)에는 해돌이를 두지 않는다 — 입장하면 시스템 메시지가
+     바로 생겨 보일 일이 없어서) */
 .yp-otter{display:block;width:160px;margin:0 auto 6px;cursor:pointer;}
 .yp-otter .om-say{font-size:11.5px;}
 
@@ -6128,8 +6129,10 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 
 /* ── ④ 독서 해돌이 — 타이머(집중) 화면 왼쪽 아래 (거의 바닥까지 내려앉힌다) ── */
 .fc-otter{position:absolute;left:clamp(10px,3vw,44px);bottom:clamp(14px,3.5vh,42px);
-  width:96px;height:96px;z-index:4;cursor:pointer;}
+  width:96px;height:96px;z-index:4;cursor:pointer;transition:opacity .45s ease;}
 .fc-otter .om-say{font-size:11.5px;}
+/* 가만히 있으면(집중 모드) 조작 버튼과 함께 해돌이도 부드럽게 사라진다 */
+#focusClock.idle .fc-otter{opacity:0;pointer-events:none;}
 
 /* ── ⑤ 졸리는 해돌이 — 사용법·단축키 설명을 가장 아래로 스크롤해야 보인다
       (keyBody 스크롤 영역 맨 끝에 들어 있어 평소엔 화면 밖에 있다) ── */

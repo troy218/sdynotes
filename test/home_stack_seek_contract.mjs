@@ -150,12 +150,14 @@ assert.ok(verifyBtn.querySelector('i'), '확인하고 로그인 버튼에 아이
 const resend = document.getElementById('saResend');
 assert.ok(resend.querySelector('i'), '코드 다시 받기 버튼에 아이콘');
 
-// ── ⑥ 엽스코드 환영 그림이 SVG 로 ──
-const egg = document.querySelector('#ypEmpty .yp-egg');
-assert.ok(egg && egg.tagName.toLowerCase() === 'svg', '환영 그림은 svg.yp-egg');
-assert.ok(!/🌶️/.test(document.getElementById('ypEmpty').textContent), '고추 이모지는 없다');
+// ── ⑥ 엽스코드 빈 채팅 안내: 입장하면 누가 들어왔다는 시스템 메시지가 바로 생겨서
+//      빈 상태 해돌이는 보일 일이 없으므로 두지 않는다 (환영 문구만) ──
+const emptyEl = document.getElementById('ypEmpty');
+assert.ok(emptyEl && emptyEl.textContent.includes('엽스코드에 오신 걸 환영해요'), '빈 채팅 안내에 환영 문구가 있다');
+assert.ok(!emptyEl.querySelector('.yp-otter'), '빈 채팅 안내에 해돌이가 없다');
+assert.ok(!/🌶️/.test(emptyEl.textContent), '고추 이모지는 없다');
 
-console.log('홈 두 줄 계약: PASS (클래식 새 노트 버튼 · 자동 크기 · 큰 플레이어 시크 · 로그인 버튼 · 떡볶이 SVG)');
+console.log('홈 두 줄 계약: PASS (클래식 새 노트 버튼 · 자동 크기 · 큰 플레이어 시크 · 로그인 버튼 · 엽스코드 빈 채팅 안내)');
 dom.window.close();
 // jsdom 의 남은 rAF/타이머가 close() 뒤에 깨어나며 터지는 것을 막는다
 process.exit(0);
