@@ -7626,6 +7626,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     let textSel=null;
     let savedRange=null, savedHost=null;   // 선택 영역 기억 (툴바 클릭 시 복원용)
+    let savedCaret=null;                   // 편집 중 캐럿 기억 (글자 서식: 앞으로 입력될 글자용)
+    let _typingSpan=null;                  // 캐럿 서식용 span (계속 입력되는 글자가 들어감)
 
     // 테두리 8px 는 '이동 손잡이', 안쪽은 '글자 선택' 영역으로 구분
     function innerTextArea(c,x,y){
@@ -7639,7 +7641,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const sel=window.getSelection();
             if(sel&&sel.rangeCount) sel.removeAllRanges();
         }catch(e){}
-        savedRange=null; savedHost=null; textSel=null;
+        savedRange=null; savedHost=null; textSel=null; savedCaret=null; _typingSpan=null;
         document.querySelectorAll('#pagesStage .tb-content').forEach(c=>{
             if(!c.closest('.tb').classList.contains('edit')) disableTextSelect(c);
         });
@@ -12753,12 +12755,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 
     function saveSel(){
         const s=window.getSelection();
-        if(!s||!s.rangeCount||s.isCollapsed) return;
+        if(!s||!s.rangeCount) return;
         const r=s.getRangeAt(0);
         const host=r.commonAncestorContainer.nodeType===1
             ? r.commonAncestorContainer.closest?.('.tb-content')
             : r.commonAncestorContainer.parentElement?.closest('.tb-content');
         if(!host) return;
+        if(s.isCollapsed){
+            // 편집 중 캐럿(글자 선택 없음)도 기억한다 — 이때 바꾼 색/글꼴/크기는
+            // '상자 전체'가 아니라 '앞으로 입력될 글자'에만 적용하기 위함.
+            const w=host.closest('.tb');
+            if(w&&w.classList.contains('edit')){
+                savedCaret={c:host,r:r.cloneRange()};
+                savedRange=null; savedHost=null;   // 캐럿으로 접은 뒤엔 이전 선택은 무효
+            }
+            return;
+        }
         savedRange=r.cloneRange(); savedHost=host;
     }
     function restoreSel(){
@@ -12847,6 +12859,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         // ② 선택한 표 셀 범위 전체
         if(selectedTblCellEls().length){
             tblCellApply(el=>{ el.font=id; },`선택한 칸 글꼴: ${f.label}`);
+            return;
+        }
+        // 18.5 · 편집 중 캐럿(선택 없음) → 상자 전체가 아니라 앞으로 입력될 글자에만
+        if(_typingHost()){
+            caretWrapStyle({fontFamily:f.css});
+            toast(`앞으로 입력할 글꼴: ${f.label}`,1100);
             return;
         }
         // ③ 선택된 텍스트 상자(들)
@@ -13288,6 +13306,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(hasInlineTextSel()){
             withSelection(()=>wrapSelStyle('color',c)); return;
         }
+        // 18.5 · 편집 중 캐럿(선택 없음) → 상자 전체가 아니라 앞으로 입력될 글자에만
+        if(_typingHost()){ caretWrapStyle({color:c}); return; }
         const targets=_boxFmtTargets();
         if(targets.length){
             pushHistory();
@@ -13305,6 +13325,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             withSelection(()=>{ if(c) wrapSelStyle('background-color',c); else clearSelBg(); });
             return;
         }
+        // 18.5 · 캐럿(선택 없음) → 앞으로 입력될 글자에만 형광펜
+        if(_typingHost()){ caretWrapStyle({'background-color':c||'transparent'}); return; }
         const targets=_boxFmtTargets();
         if(targets.length){
             pushHistory();
@@ -13327,6 +13349,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         const spec={bold:['fontWeight','700'],italic:['fontStyle','italic'],underline:['textDecoration','underline']}[cmd];
         if(spec){
+            // 18.5 · 편집 중 캐럿(선택 없음) → 앞으로 입력될 글자만 토글
+            //   (execCommand 는 캐럿에서 브라우저 '다음 입력 서식'으로 동작하지만
+            //    jsdom/웹뷰 미지원이라 직접 span 토글로 통일한다)
+            if(_typingHost()){
+                const [key,val]=spec;
+                const off={fontWeight:'400',fontStyle:'normal',textDecoration:'none'}[key];
+                caretWrapStyle(_caretHasStyle(key,val)?{[key]:off}:{[key]:val});
+                return;
+            }
             // 14.16.2 · 글자 서식은 execCommand 대신 직접 span 으로 토글해
             //   부분 글꼴(font-family span)이 풀리지 않게 한다.
             withSelection(()=>toggleSelStyle(spec[0],spec[1]));
@@ -13357,6 +13388,94 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         saveDoc();
         toast(({left:'왼쪽',center:'가운데',right:'오른쪽'})[dir]+' 정렬',1000);
     }
+    // ── 편집 중 '캐럿' 서식 ─────────────────────────────────────────
+    // 글자 선택 없이 상자 안에서 입력 중일 때 색/글꼴/크기/볼드 등을 바꾸면
+    // '상자 전체'가 아니라 '앞으로 입력될 글자'에만 적용한다.
+    // 캐럿 자리에 빈 span 을 넣고 커서를 그 안에 두면 이후 입력이 span 안으로 들어간다.
+    function _typingHost(){
+        try{
+            const s=window.getSelection();
+            if(s&&s.rangeCount&&s.isCollapsed){
+                const r=s.getRangeAt(0);
+                const el=r.startContainer.nodeType===3?r.startContainer.parentElement:r.startContainer;
+                const c=el&&el.closest&&el.closest('.tb-content');
+                if(c&&c.closest('.tb').classList.contains('edit')) return {c,r};
+            }
+        }catch(e){}
+        if(savedCaret&&savedCaret.c&&document.body.contains(savedCaret.c)){
+            const w=savedCaret.c.closest('.tb');
+            if(w&&w.classList.contains('edit')) return savedCaret;
+        }
+        return null;
+    }
+    // 캐럿 위치가 '이미 그 스타일' 안인가 (토글 판정용)
+    function _caretHasStyle(prop,value){
+        try{
+            const t=_typingHost(); if(!t) return false;
+            const tn=t.r.startContainer;
+            let p=tn.nodeType===3?tn.parentElement:tn;
+            while(p&&p!==t.c){
+                const v=p.style&&p.style[prop];
+                if(v&&(String(v).toLowerCase()===String(value).toLowerCase()
+                    ||(prop==='fontWeight'&&(v==='bold'||Number(v)>=600)))) return true;
+                p=p.parentElement;
+            }
+        }catch(e){}
+        return false;
+    }
+    // 캐럿에 서식 span 삽입 (이미 같은 span 안이면 스타일만 갱신)
+    function caretWrapStyle(styles){
+        const t=_typingHost(); if(!t) return false;
+        const c=t.c;
+        try{
+            const s=window.getSelection();
+            const dot=tn=>tn&&(tn===_typingSpan||(_typingSpan&&_typingSpan.contains(tn)));
+            // 빈 span 만 재사용한다. 이미 글자가 들어간 span 을 뒤집으면
+            // '앞으로 입력될 글자'뿐 아니라 '이미 입력된 글자'까지 바뀌기 때문.
+            const spanEmpty=_typingSpan&&!_typingSpan.textContent&&!_typingSpan.childElementCount;
+            let span=null;
+            if(spanEmpty&&_typingSpan.isConnected&&c.contains(_typingSpan)){
+                const r0=s.rangeCount?s.getRangeAt(0):null;
+                if(dot(r0&&r0.startContainer)) span=_typingSpan;
+                else if(savedCaret&&savedCaret.c===c&&dot(savedCaret.r.startContainer)) span=_typingSpan;
+            }
+            if(!span){
+                span=document.createElement('span');
+                span.className='sdy-type';
+                const src=(s.rangeCount?s.getRangeAt(0):t.r).cloneRange();
+                // 부분 글꼴 보존: 캐럿 부모에 inline font-family 가 있으면 새 span 에 고정
+                let p=src.startContainer.nodeType===3?src.startContainer.parentElement:src.startContainer;
+                let font='';
+                while(p&&p!==c){ if(p.style&&p.style.fontFamily){ font=p.style.fontFamily; break; } p=p.parentElement; }
+                if(font) span.style.fontFamily=font;
+                src.insertNode(span);
+                const nr=document.createRange();
+                nr.selectNodeContents(span); nr.collapse(true);
+                if(s.rangeCount){ s.removeAllRanges(); s.addRange(nr); }
+                _typingSpan=span;
+                savedCaret={c,r:nr.cloneRange()};
+            }else{
+                // 캐럿을 서식 span 안으로 되돌린다 (툴바 입력창을 쓰다 돌아와도 이어짐)
+                const nr=document.createRange();
+                nr.selectNodeContents(span); nr.collapse(true);
+                if(s.rangeCount){ s.removeAllRanges(); s.addRange(nr); }
+                savedCaret={c,r:nr.cloneRange()};
+            }
+            for(const k in styles){
+                if(styles[k]===''||styles[k]==null) span.style.removeProperty(k);
+                else span.style[k]=styles[k];
+            }
+            // 서식을 전부 지우면 빈 span 은 남길 이유가 없다 → 풀어낸다
+            if(span.classList.contains('sdy-type')&&!span.style.cssText&&!span.textContent&&!span.childElementCount){
+                span.remove(); _typingSpan=null; savedCaret=null;
+                return true;
+            }
+            const w=c.closest('.tb');
+            if(w&&w.isConnected) syncTextEl(w);
+            return true;
+        }catch(e){ return false; }
+    }
+
     // 서식 지우기 (고도화)
     //  - 텍스트를 드래그해 선택했으면 그 부분만
     //  - 선택이 없으면 텍스트 상자 전체 (여러 개 선택 시 전부)
@@ -13379,6 +13498,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 delete el.textColor; delete el.font; delete el.fontWeight;
                 delete el.fontStyle; delete el.textDecoration;
             },'선택한 칸 글자 서식 지움');
+            return;
+        }
+        // 18.5 · 캐럿(선택 없음) → 앞으로 입력될 글자의 서식만 지운다
+        if(_typingHost()){
+            caretWrapStyle({fontWeight:'',fontStyle:'',textDecoration:'',color:'',
+                            backgroundColor:'',fontFamily:'',fontSize:''});
+            toast('앞으로 입력될 글자 서식 지움',1000);
             return;
         }
         // 상자 단위
@@ -13480,6 +13606,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const w=host.closest('.tb'); if(w) syncTextEl(w);
             return;
         }
+        // 18.5 · 편집 중 캐럿(선택 없음) → 상자 전체가 아니라 앞으로 입력될 글자에만
+        if(_typingHost()){ caretWrapStyle({fontSize:curFontSize+'px'}); return; }
         const sel=document.querySelector('.tb.sel,.tb.edit');
         if(sel){ sel.querySelector('.tb-content').style.fontSize=curFontSize+'px'; syncTextEl(sel); }
     }
@@ -16508,7 +16636,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         else if(a==='tr-sel-en') translateSelectedText('en');
         else if(a==='tr-sel-ja') translateSelectedText('ja');
         else if(a==='tr-sel-zh') translateSelectedText('zh-CN');
-        else if(a==='strike'){ withSelection(()=>document.execCommand('strikeThrough',false,null)); }
+        else if(a==='strike'){
+            // 18.5 · 캐럿(선택 없음)이면 앞으로 입력될 글자에만 취소선 토글
+            if(_typingHost()){
+                caretWrapStyle(_caretHasStyle('textDecoration','line-through')
+                    ?{textDecoration:'none'}:{textDecoration:'line-through'});
+            }else withSelection(()=>document.execCommand('strikeThrough',false,null));
+        }
         else if(a==='sel-upper'||a==='sel-lower'){
             const up=(a==='sel-upper');
             withSelection(()=>{
