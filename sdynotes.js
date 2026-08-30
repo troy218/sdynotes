@@ -24033,12 +24033,81 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       plane._flying=true;
       plane.classList.remove('fly'); void plane.offsetWidth;
       plane.classList.add('fly');
+      try{ if(plane._say) plane._say(); }catch(e){}
       setTimeout(function(){ plane.classList.remove('fly'); plane._flying=false; },12500);
     }
     // 아주 가끔: 2분마다 15% 확률 → 평균 약 13분에 한 번
     setInterval(function(){
       if(Math.random()<0.15&&homeVisible()) planeFly();
     },120000);
+  })();
+
+  // ── 18.3 · 엽스코드/집중(스톱워치·타이머)/비행기 해돌이 혼잣말 ──
+  //   음악 해돌이처럼 가만히 있어도 주기적으로 말풍선(om-say)을 바꿔가며 떠든다.
+  //   단, 사용법(졸리는) 해돌이는 건드려야만 말한다 — 여기서 건드리지 않는다.
+  (function(){
+    var gateOtter=document.querySelector('#ypGate .yp-otter');
+    var fcOtter=document.querySelector('#focusClock .fc-otter');
+    var plane=document.getElementById('planeOtter');
+
+    function say(root,text,dur){
+      var s=root&&root.querySelector('.om-say');
+      if(!s||!text) return;
+      s.textContent=text;
+      s.classList.add('om-on');
+      if(s._t) clearTimeout(s._t);
+      s._t=setTimeout(function(){ s.classList.remove('om-on'); }, dur||2600);
+    }
+    function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+    // ── 엽스코드 입장 게이트 (편지 해돌이) ──
+    var YP_IDLE=[
+      '편지 왔어요! 열어볼래? 해돌~',
+      '로그인해도 되고, 가볍게 들어와도 돼 해돌~',
+      '만나서 반가워요! 해돌~',
+      '이 카드에 편지가 숨어 있어요 해돌~',
+      '두근두근… 소포 배달 해돌~!'
+    ];
+    if(gateOtter){
+      setInterval(function(){
+        var g=document.getElementById('ypGate');
+        if(!g||g.style.display!=='flex') return;
+        say(gateOtter,pick(YP_IDLE),2600);
+      },14000);
+    }
+
+    // ── 집중 화면 (독서 해돌이 — 스톱워치·타이머·시계) ──
+    var FC_IDLE=[
+      '몇 분 집중할래? 해돌~',
+      '시작 버튼만 누르면 돼 해돌!',
+      '물 한 모금 마시고 오자 해돌~',
+      '25분 뽀모도로가 국룰이야 해돌~',
+      '천천히 가도 괜찮아 해돌~',
+      '책장 넘기는 소리가 좋다 해돌~'
+    ];
+    if(fcOtter){
+      setInterval(function(){
+        var fc=document.getElementById('focusClock');
+        if(!fc||!fc.classList.contains('show')||fc.classList.contains('idle')) return;
+        say(fcOtter,pick(FC_IDLE),2600);
+      },12000);
+    }
+
+    // ── 비행기 해돌이 — 비행 중에만 말한다 (출발할 때도 한마디) ──
+    var FLY_IDLE=[
+      '두둥~! 여행 가는 길이야 해돌~',
+      '가끔은 날아다니는 것도 필요하잖아 해돌~',
+      '구름 위는 역시 좋다 해돌~',
+      '잠깐! 나 지금 급해 해돌~!',
+      '비행기 모드 ON! 해돌~',
+      '창밖 구경 한번 할래? 해돌~'
+    ];
+    if(plane){
+      plane._say=function(){ say(plane,pick(FLY_IDLE),2800); };
+      setInterval(function(){
+        if(plane.classList.contains('fly')) say(plane,pick(FLY_IDLE),2800);
+      },7000);
+    }
   })();
 
   ypDrag();

@@ -98,6 +98,10 @@ function makeEnv({ presetAuth } = {}) {
   ok('소스: 목록 행에 올린 사람 마크(mp-upmark)가 있다', /t\.uploader\?`<span class="mp-upmark"/.test(jsAll));
   ok('소스: 로그인 모달·게이트·계정 버튼이 HTML에 있다', htmlAll.includes('id="sdyAuthWrap"') && htmlAll.includes('id="ypGate"') && htmlAll.includes('id="sdyAccBtn"') && htmlAll.includes('id="ypgLogin"') && htmlAll.includes('id="ypgGuest"'));
   ok('소스: 회원 배지·마크 CSS가 있다', cssAll.includes('.yp-verified') && cssAll.includes('.mp-upmark') && cssAll.includes('#ypGate'));
+  // 18.3 · 게이트 편지 해돌이 혼잣말: 말풍선 + 주기 멘트 배열이 들어 있어야 한다
+  ok('소스: 게이트 편지 해돌이 혼잣말(18.3)이 있다', jsAll.includes("18.3 · 엽스코드/집중(스톱워치·타이머)/비행기 해돌이 혼잣말") && jsAll.includes('#ypGate .yp-otter'));
+  ok('소스: 비행기 해돌이에 말풍선이 추가됐다', /id="planeOtter"[\s\S]{0,2000}<span class="om-say"><\/span>/.test(htmlAll));
+  ok('소스: 사용법(졸리는) 해돌이는 혼잣말 대상이 아니다', !/18\.3[\s\S]{0,1200}keys-otter/.test(jsAll));
 
   // ── 2부 · 비회원 흐름 ──
   {
