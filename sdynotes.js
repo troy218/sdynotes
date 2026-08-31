@@ -6256,9 +6256,26 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         body.style.scrollBehavior=wasSmooth;
         sizeTextGhost();
     },{passive:false});
-    function zoomIn(){ zoomPct=Math.min(400,zoomPct+10); layoutPages(); sizeTextGhost(); }
-    function zoomOut(){ zoomPct=Math.max(25,zoomPct-10); layoutPages(); sizeTextGhost(); }
-    function resetZoom(){ zoomPct=100; layoutPages(); sizeTextGhost(); toast('확대 100%',900); }
+    // ★ 확대/축소 시 보고 있는 화면 중심을 기준으로 줌 (모바일 포함)
+    function _zoomCentered(fn){
+        const body=document.getElementById('editorBody');
+        if(!body){ fn(); return; }
+        const centerX=body.scrollLeft+body.clientWidth/2;
+        const centerY=body.scrollTop +body.clientHeight/2;
+        const before=pageScale;
+        const wasSmooth=body.style.scrollBehavior;
+        body.style.scrollBehavior='auto';
+        fn();
+        if(before>0){
+            const k=pageScale/before;
+            body.scrollLeft=centerX*k-body.clientWidth/2;
+            body.scrollTop =centerY*k-body.clientHeight/2;
+        }
+        body.style.scrollBehavior=wasSmooth;
+    }
+    function zoomIn(){ _zoomCentered(()=>{ zoomPct=Math.min(400,zoomPct+10); layoutPages(); }); sizeTextGhost(); }
+    function zoomOut(){ _zoomCentered(()=>{ zoomPct=Math.max(25,zoomPct-10); layoutPages(); }); sizeTextGhost(); }
+    function resetZoom(){ _zoomCentered(()=>{ zoomPct=100; layoutPages(); }); sizeTextGhost(); toast('확대 100%',900); }
 
     function editorPapers(){ return Array.from(document.querySelectorAll('#pagesStage .paper')); }
     // 14.12 · paperAt 은 DOM 에서 찾되, 부모가 없으면 (이미 제거됨) null 반환
@@ -11185,8 +11202,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const size=paperSize();
         const cs=getComputedStyle(body);
         const availW=Math.max(120, body.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight));
-        zoomPct=Math.round(Math.max(25,Math.min(400,(availW/size.w)/Math.max(.05,fitScale)*100)));
-        layoutPages(); sizeTextGhost();
+        _zoomCentered(()=>{
+            zoomPct=Math.round(Math.max(25,Math.min(400,(availW/size.w)/Math.max(.05,fitScale)*100)));
+            layoutPages();
+        });
+        sizeTextGhost();
         toast('화면 폭에 맞췄습니다 · '+Math.round(pageScale*100)+'%',1500);
     }
     // ---------- ⑧ 눈금자(안내선) ----------
@@ -12795,13 +12815,20 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     },true);
     let _drawRaf=0, _drawEv=null;
     let _drawRafT=0, _drawEvT=null;
+    // ★ 펜 호버 필터: Apple Pencil 이 화면 위에 있지만 닿지 않았을 때
+    //   (pressure===0, buttons===0) 발생하는 pointermove 를 무시한다.
+    //   이렇게 하지 않으면 이전 필기 후 펜을 들어올린 채 움직이면
+    //   얇은 잔상 선이 그어진다.
     document.addEventListener('pointermove',e=>{
         if(!drawing) return;
+        if(e.pointerType==='pen' && e.pressure===0 && e.buttons===0) return;
         _drawEv=e;
         if(_drawRaf) return;
         _drawRaf=requestAnimationFrame(()=>{ _drawRaf=0; if(drawing&&_drawEv) drawMove(_drawEv); });
     },{passive:true});
+    // ★ pointercancel 추가 — 펜이 화면 밖으로 나가면 그리기 종료
     document.addEventListener('pointerup',()=>{ if(drawing) drawEnd(); });
+    document.addEventListener('pointercancel',()=>{ if(drawing) drawEnd(); });
     document.addEventListener('touchstart',e=>{
         if(e.touches&&e.touches.length>1) return;      // 두 손가락은 확대/축소용
         const s=e.target.closest&&e.target.closest('.draw-surface');
