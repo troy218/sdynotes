@@ -6664,6 +6664,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // Ctrl(⌘)+클릭: 요소를 다중 선택에 토글 (이미 있으면 빼고, 없으면 더한다)
     function toggleMultiSelect(pageIdx,node){
         if(!node) return;
+        // Ctrl+클릭으로 상자/이미지 다중 선택을 시작하는 순간, 이전에 드래그해
+        // 두었던 글자 선택(savedRange)은 더 이상 사용자 의도가 아니다. 남겨 두면
+        // 글자 크기/색 버튼이 보이는 다중 선택 대신 예전 글자 조각에 적용된다.
+        clearTextSelection();
         const idx=multiSel.findIndex(m=>m.node===node);
         if(idx>=0){                        // 이미 선택됨 → 해제
             node.classList.remove('msel');
@@ -7359,6 +7363,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         c.addEventListener('dblclick',e=>{ e.stopPropagation(); if(!w.classList.contains('edit')) enterEdit(w,true); });
         c.addEventListener('input',()=>{
             if(w.classList.contains('edit')) commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
+            _scriptEditUndoable=false;        // 실제 타이핑 뒤 Ctrl+Z 는 브라우저 기본 undo 를 우선
             const em=!_tbPlain().trim();
             if(em) c.setAttribute('data-empty','true'); else c.removeAttribute('data-empty');
             w.classList.toggle('empty',em);
@@ -7438,9 +7443,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         saveDoc();
     }
 
-    let _histT=0;
+    let _histT=0, _scriptEditUndoable=false;
     function pushHistory(){
         if(!doc) return;
+        // 편집 중 툴바/우클릭 메뉴가 스크립트로 DOM 을 바꾼 작업은 브라우저 기본
+        // contenteditable undo 스택에 안 들어가는 환경이 있다. 이 경우 바로 Ctrl+Z 를
+        // 누르면 앱 히스토리로 되돌릴 수 있게 표시해 둔다. 실제 타이핑 input 이 오면
+        // 위 input 리스너에서 다시 false 로 돌려 브라우저 기본 undo 를 우선한다.
+        try{ if(document.querySelector('.tb.edit')) _scriptEditUndoable=true; }catch(e){}
         const now=Date.now();
         // 잦은 변화는 한 덩어리로 묶는다 (큰 문서에서 JSON.stringify 폭주 방지)
         if(now-_histT<250){ redoStack=[]; return; }
@@ -12818,14 +12828,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             return;
         }
         if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){
-            if(document.querySelector('.tb.edit')&&document.activeElement.classList.contains('tb-content')) return;
+            const editContent=document.querySelector('.tb.edit')&&document.activeElement&&document.activeElement.classList&&document.activeElement.classList.contains('tb-content');
+            if(editContent&&!_scriptEditUndoable) return;
             e.preventDefault();
+            _scriptEditUndoable=false;
             if(e.shiftKey) redo(); else undo();
             return;
         }
         if((e.ctrlKey||e.metaKey)&&(e.key==='y'||e.key==='Y')){
-            if(document.querySelector('.tb.edit')&&document.activeElement.classList.contains('tb-content')) return;
-            e.preventDefault(); redo(); return;
+            const editContent=document.querySelector('.tb.edit')&&document.activeElement&&document.activeElement.classList&&document.activeElement.classList.contains('tb-content');
+            if(editContent&&!_scriptEditUndoable) return;
+            e.preventDefault(); _scriptEditUndoable=false; redo(); return;
         }
     });
 
@@ -13905,8 +13918,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             // 스타일도 없고 속성도 없으며 의미 태그 효과가 가려졌다면 풀어낸다
             if(el.tagName==='SPAN'){
                 const style = el.getAttribute('style')||'';
-                if(!style.trim() && el.attributes.length===0){
-                    // 빈 span — 풀기
+                const meaningfulAttrs=Array.from(el.attributes||[])
+                    .filter(a=>!(a.name==='style'&&!String(a.value||'').trim()));
+                if(!style.trim() && meaningfulAttrs.length===0){
+                    // 빈 span / style="" 만 남은 span — 풀기
                     const p = el.parentNode;
                     while(el.firstChild) p.insertBefore(el.firstChild, el);
                     toRemove.push(el);
@@ -14105,6 +14120,83 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }catch(e){
             try{ start.remove(); end.remove(); }catch(_e){}
         }
+    }
+    function _unwrapElementKeepChildren(el){
+        if(!el||!el.parentNode) return;
+        const p=el.parentNode;
+        while(el.firstChild) p.insertBefore(el.firstChild,el);
+        p.removeChild(el);
+    }
+    function _selectionBoundaryLink(range,host){
+        const linkOf=n=>{
+            let p=n&&(n.nodeType===1?n:n.parentElement);
+            while(p&&p!==host){ if(p.tagName==='A') return p; p=p.parentElement; }
+            return null;
+        };
+        const a=linkOf(range.startContainer), b=linkOf(range.endContainer);
+        return a&&a===b?a:null;
+    }
+    function _cloneLinkShell(a,frag){
+        const cp=a.cloneNode(false);
+        cp.appendChild(frag);
+        return cp;
+    }
+    function _unlinkSingleLinkSelection(ctx){
+        const {sel,range,host}=ctx;
+        const a=_selectionBoundaryLink(range,host);
+        if(!a||!a.parentNode) return false;
+        try{
+            const r=range.cloneRange();
+            const before=document.createRange(); before.setStart(a,0); before.setEnd(r.startContainer,r.startOffset);
+            const after=document.createRange(); after.setStart(r.endContainer,r.endOffset); after.setEnd(a,a.childNodes.length);
+            const beforeFrag=before.cloneContents();
+            const selFrag=r.cloneContents();
+            const afterFrag=after.cloneContents();
+            if(!_selectionHasContent(selFrag)) return false;
+            try{ selFrag.querySelectorAll&&selFrag.querySelectorAll('a').forEach(x=>_unwrapElementKeepChildren(x)); }catch(e){}
+            const p=a.parentNode;
+            const start=document.createComment('sdy-link-start'), end=document.createComment('sdy-link-end');
+            if(_selectionHasContent(beforeFrag)) p.insertBefore(_cloneLinkShell(a,beforeFrag),a);
+            p.insertBefore(start,a); p.insertBefore(selFrag,a); p.insertBefore(end,a);
+            if(_selectionHasContent(afterFrag)) p.insertBefore(_cloneLinkShell(a,afterFrag),a);
+            p.removeChild(a);
+            const nr=document.createRange(); nr.setStartAfter(start); nr.setEndBefore(end);
+            sel.removeAllRanges(); sel.addRange(nr);
+            savedRange=nr.cloneRange(); savedHost=host;
+            start.parentNode&&start.parentNode.removeChild(start);
+            end.parentNode&&end.parentNode.removeChild(end);
+            _cleanupInline(host);
+            return true;
+        }catch(e){ return false; }
+    }
+    function _expandLinkRange(r,host){
+        let out=r.cloneRange();
+        try{
+            let p=out.commonAncestorContainer.nodeType===1?out.commonAncestorContainer:out.commonAncestorContainer.parentElement;
+            while(p&&p!==host){
+                if(p.tagName==='A'&&_rangeCoversContents(out,p)){
+                    const nr=document.createRange(); nr.selectNode(p);
+                    out=nr;
+                    p=out.commonAncestorContainer.nodeType===1?out.commonAncestorContainer.parentElement:null;
+                    continue;
+                }
+                p=p.parentElement;
+            }
+        }catch(e){}
+        return out;
+    }
+    function _unlinkSelection(){
+        const ctx=_selectionCtx();
+        if(!ctx) return false;
+        if(_unlinkSingleLinkSelection(ctx)) return true;  // 링크의 일부만 선택해도 그 조각만 링크 해제
+        const {sel,range,host}=ctx;
+        const r=_expandLinkRange(range,host);
+        const frag=r.extractContents();
+        if(!_selectionHasContent(frag)) return false;
+        try{ frag.querySelectorAll&&frag.querySelectorAll('a').forEach(a=>_unwrapElementKeepChildren(a)); }catch(e){}
+        _insertFragmentKeepSelection(r,sel,frag,host);
+        _cleanupInline(host);
+        return true;
     }
     function _selectionHasContent(frag){
         if(!frag) return false;
@@ -14412,14 +14504,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(node&&node.classList&&node.classList.contains('tb')){
             const pageIdx=+node.dataset.pageIdx, id=node.dataset.id;
             const el=(!isNaN(pageIdx)&&id)?findEl(pageIdx,id):null;
-            const fw=el&&el.fontWeight?el.fontWeight:(node.style.fontWeight||'');
-            const fst=el&&el.fontStyle?el.fontStyle:(node.style.fontStyle||'');
-            const dec=el&&el.textDecoration?el.textDecoration:(node.style.textDecoration||'');
+            const c=node.querySelector('.tb-content');
+            // 상자 단위 서식은 wrapper(.tb)가 아니라 실제 글자가 있는 .tb-content
+            // 또는 글자별 span 에 남는다. 예전엔 node.style 만 봐서 상자 전체를
+            // 굵게/기울임/밑줄로 만든 뒤 다시 선택하면 툴바 불이 꺼져 보였다.
+            const fw=el&&el.fontWeight?el.fontWeight:(c&&c.style?c.style.fontWeight:'');
+            const fst=el&&el.fontStyle?el.fontStyle:(c&&c.style?c.style.fontStyle:'');
+            const dec=el&&el.textDecoration?el.textDecoration:(c&&c.style?c.style.textDecoration:'');
             return {
-                bold:_propMatch('fontWeight',fw,'700'),
-                italic:_propMatch('fontStyle',fst,'italic'),
-                underline:_propMatch('textDecoration',dec,'underline'),
-                strike:_propMatch('textDecoration',dec,'line-through'),
+                bold:_propMatch('fontWeight',fw,'700') || _boxHasAllStyle(node,'fontWeight','700'),
+                italic:_propMatch('fontStyle',fst,'italic') || _boxHasAllStyle(node,'fontStyle','italic'),
+                underline:_propMatch('textDecoration',dec,'underline') || _boxHasAllStyle(node,'textDecoration','underline'),
+                strike:_propMatch('textDecoration',dec,'line-through') || _boxHasAllStyle(node,'textDecoration','line-through'),
             };
         }
         return {bold:false,italic:false,underline:false,strike:false};
@@ -14562,6 +14658,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     n.style.removeProperty('background-color');
             });
             if(c.style) c.style.removeProperty('background-color');
+            // 구버전 문서/표 셀은 배경색이 el.cellBg 로 저장돼 있었다.
+            // 화면 DOM 만 지우면 다시 렌더링하거나 저장 후 열 때 배경이 되살아난다.
+            const el=findEl(+w.dataset.pageIdx,w.dataset.id);
+            if(el) delete el.cellBg;
             syncTextEl(w);
             return;
         }
@@ -14654,11 +14754,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const targets=_boxFmtTargets();
         if(targets.length){
             pushHistory();
-            targets.forEach(w=>{
-                const c=w.querySelector('.tb-content'); if(!c) return;
-                c.querySelectorAll('*').forEach(n=>{ if(n.style) n.style.removeProperty('color'); });
-                syncTextEl(w);
-            });
+            targets.forEach(w=>_clearBoxStyleAll(w,'color'));
             saveDoc();
             toast(targets.length>1?targets.length+'개 상자 글자색 지움':'상자 전체 글자색 지움',1000);
         }
@@ -14870,6 +14966,24 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }catch(e){ return false; }
     }
 
+    function clearBoxFormatting(w){
+        const c=w&&w.querySelector&&w.querySelector('.tb-content'); if(!c) return;
+        const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
+        const fs=Math.max(2,Math.min(200,Math.round(parseFloat(c.style.fontSize)||el.fontSize||curFontSize||16)));
+        c.innerHTML=stripFormatting(c.innerHTML);
+        c.style.fontSize=fs+'px';
+        c.style.fontFamily=fontCSS('noto');
+        ['color','background-color','font-weight','font-style','text-decoration'].forEach(p=>{
+            try{ c.style.removeProperty(p); }catch(e){}
+        });
+        el.html=c.innerHTML;
+        el.fontSize=fs;
+        delete el.textColor; delete el.cellBg; delete el.font;
+        delete el.fontWeight; delete el.fontStyle; delete el.textDecoration;
+        try{ if(doc&&doc.pages[+w.dataset.pageIdx]) doc.pages[+w.dataset.pageIdx].__dirty=true; }catch(e){}
+        syncTextEl(w);
+    }
+
     // 서식 지우기 (고도화)
     //  - 텍스트를 드래그해 선택했으면 그 부분만
     //  - 선택이 없으면 텍스트 상자 전체 (여러 개 선택 시 전부)
@@ -14885,6 +14999,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
              'fontFamily','fontSize','verticalAlign'].forEach(p=>{
                 try{ _removeFromSelection(p); }catch(e){}
             });
+            // 링크 해제도 직접 처리한다. execCommand('unlink') 가 없는 WebView/jsdom 에서도
+            // 선택한 링크 글자는 남기고 <a> 만 벗겨야 한다.
+            try{ _unlinkSelection(); }catch(e){}
             try{ if(document.execCommand) document.execCommand('unlink',false,null); }catch(e){}
             const w=host.closest('.tb'); if(w) syncTextEl(w);
             saveSel(); syncCurSel();
@@ -14895,7 +15012,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             tblCellApply(el=>{
                 el.html=stripFormatting(el.html||''); el.fontSize=curFontSize;
                 delete el.textColor; delete el.font; delete el.fontWeight;
-                delete el.fontStyle; delete el.textDecoration;
+                delete el.fontStyle; delete el.textDecoration; delete el.cellBg;
             },'선택한 칸 글자 서식 지움');
             return;
         }
@@ -14914,15 +15031,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         if(!targets.length){ toast('텍스트 상자를 선택하거나 글자를 드래그하세요',1800); return; }
         pushHistory();
-        targets.forEach(w=>{
-            const c=w.querySelector('.tb-content');
-            const el=findEl(+w.dataset.pageIdx,w.dataset.id);
-            if(!c||!el) return;
-            c.innerHTML=stripFormatting(c.innerHTML);
-            c.style.fontSize=(curFontSize)+'px';
-            el.fontSize=curFontSize;
-            el.html=c.innerHTML;
-        });
+        targets.forEach(w=>clearBoxFormatting(w));
         saveDoc();
         toast(`${targets.length}개 상자 서식 지움`,1400);
     }
@@ -15029,16 +15138,26 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         // 18.5 · 편집 중 캐럿(선택 없음) → 상자 전체가 아니라 앞으로 입력될 글자에만
         if(_typingHost()){ caretWrapStyle({fontSize:curFontSize+'px'}); return; }
-        const sel=document.querySelector('.tb.sel,.tb.edit');
-        if(sel){
-            const c=sel.querySelector('.tb-content');
-            if(c){
-                c.style.fontSize=curFontSize+'px';
-                // 18.8 · 상자 전체 크기는 안쪽 부분 크기보다 세다 —
-                //   서식 span 에 박제된 옛 크기를 걷어내야 실제로 커/작아진다.
-                try{ _stripInlineProp(c,'fontSize',null,{skipRoot:true}); _cleanupInline(c); }catch(_e){}
-            }
-            syncTextEl(sel);
+        const targets=multiSel.length
+            ? multiSel.map(m=>m.node).filter(n=>n&&n.classList&&n.classList.contains('tb'))
+            : [];
+        const single=document.querySelector('.tb.sel,.tb.edit');
+        if(!targets.length&&single) targets.push(single);
+        if(targets.length){
+            pushHistory();
+            targets.forEach(sel=>{
+                const c=sel.querySelector('.tb-content');
+                const el=findEl(+sel.dataset.pageIdx,sel.dataset.id);
+                if(c){
+                    c.style.fontSize=curFontSize+'px';
+                    // 18.8 · 상자 전체 크기는 안쪽 부분 크기보다 세다 —
+                    //   서식 span 에 박제된 옛 크기를 걷어내야 실제로 커/작아진다.
+                    try{ _stripInlineProp(c,'fontSize',null,{skipRoot:true}); _cleanupInline(c); }catch(_e){}
+                }
+                if(el) el.fontSize=curFontSize;
+                syncTextEl(sel);
+            });
+            saveDoc();
         }
     }
 
@@ -18172,6 +18291,59 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         ]);
     }
 
+    function inlineSelectionForAction(){
+        let host=restoreSel();
+        const s=window.getSelection();
+        if(!s||s.isCollapsed||!s.rangeCount) return null;
+        if(!host){
+            const n=s.anchorNode ? (s.anchorNode.nodeType===1?s.anchorNode:s.anchorNode.parentElement) : null;
+            host=n&&n.closest?n.closest('.tb-content'):null;
+        }
+        if(!host) return null;
+        return {sel:s,host,text:String(s)};
+    }
+    async function writeClipboardTextSafe(txt){
+        txt=String(txt||'');
+        if(!txt) return false;
+        try{
+            if(navigator.clipboard&&navigator.clipboard.writeText){
+                await navigator.clipboard.writeText(txt);
+                return true;
+            }
+        }catch(e){}
+        // 권한이 없거나 execCommand 가 사라진 환경에서도 메뉴 동작이 터지면 안 된다.
+        try{ fallbackCopyText(txt); return true; }catch(e){ return false; }
+    }
+    async function copyInlineSelectionForAction(){
+        const cur=inlineSelectionForAction();
+        if(!cur||!cur.text.trim()){
+            try{ if(document.execCommand) document.execCommand('copy'); }catch(e){}
+            return false;
+        }
+        await writeClipboardTextSafe(cur.text);
+        saveSel();
+        toast('텍스트 복사됨',1200);
+        return true;
+    }
+    async function cutInlineSelectionForAction(wHint){
+        const cur=inlineSelectionForAction();
+        if(!cur||!cur.text.trim()){
+            try{ if(document.execCommand) document.execCommand('cut'); }catch(e){}
+            return false;
+        }
+        await writeClipboardTextSafe(cur.text);
+        pushHistory();
+        const r=cur.sel.getRangeAt(0);
+        r.deleteContents();
+        r.collapse(true);
+        cur.sel.removeAllRanges(); cur.sel.addRange(r);
+        const w=cur.host.closest('.tb')||wHint;
+        if(w) syncTextEl(w);
+        saveSel();
+        toast('텍스트 잘라냄',1200);
+        return true;
+    }
+
     async function editorAction(a){
         const t=ctxTarget; if(!t) return;
         const pi=t.pageIdx;
@@ -18215,16 +18387,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         else if(a==='page-add'){ addPage(); }
         else if(a==='export'){ openExportModal(); }
         else if(a==='copy'){
-            const sel=window.getSelection();
-            const txt=sel?String(sel):'';
-            if(txt.trim()){
-                (navigator.clipboard&&navigator.clipboard.writeText
-                    ? navigator.clipboard.writeText(txt).catch(()=>document.execCommand('copy'))
-                    : Promise.resolve(document.execCommand('copy')))
-                .then(()=>toast('텍스트 복사됨',1200));
-            }else document.execCommand('copy');
+            await copyInlineSelectionForAction();
         }
-        else if(a==='cut'){ document.execCommand('cut'); const w=t.el; if(w) syncTextEl(w); }
+        else if(a==='cut'){
+            await cutInlineSelectionForAction(t.el);
+        }
         else if(a==='bold'){ execFmt('bold'); }
         else if(a==='italic'){ execFmt('italic'); }
         else if(a==='under'){ execFmt('underline'); }
@@ -18269,13 +18436,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         else if(a==='el-edit'){ enterEdit(t.el,false); }
         else if(a==='el-clearfmt'){
             pushHistory();
-            const c=t.el.querySelector('.tb-content');
-            const el=findEl(pi,t.el.dataset.id);
-            if(c&&el){
-                c.innerHTML=stripFormatting(c.innerHTML);
-                el.html=c.innerHTML;
-                saveDoc(); toast('서식 지움',1200);
-            }
+            clearBoxFormatting(t.el);
+            saveDoc(); toast('서식 지움',1200);
         }
         else if(a==='new-table'){
             const v=prompt('표 크기를 입력하세요 (행 x 열)','3 x 3');

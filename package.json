@@ -37,6 +37,8 @@
     "test:uflow": "node test/editor_user_flow_runtime.mjs",
     "test:typeflow": "node test/editor_typing_style_flow_runtime.mjs",
     "test:textbox": "node test/editor_textbox_whole_runtime.mjs",
+    "test:txtedge": "node test/editor_text_edit_edges_runtime.mjs",
+    "test:txtclip": "node test/editor_text_clipboard_runtime.mjs",
     "test:txtstyle": "node test/editor_text_style_contract.mjs",
     "test:stkentry": "node test/sticker_entry_contract.mjs && node test/sticker_entry_runtime.mjs",
     "test:stksvg": "node test/sticker_svg_contract.mjs && node test/sticker_svg_runtime.mjs",
