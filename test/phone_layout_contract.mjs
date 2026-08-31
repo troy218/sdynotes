@@ -113,6 +113,13 @@ ok('찾기·표·펜 도구가 화면 폭 안에서 스크롤된다',
 ok('텍스트/이미지 조절 손잡이를 모바일에서 확대한다',
   has(mobileSource, /\.tb-move\{width:34px;height:34px/) &&
   has(mobileSource, /\.el-del\{width:34px;height:34px/));
+ok('모바일 상자 이동/리사이즈는 rAF + transform preview로 깜박임을 줄인다',
+  has(js, /_queueEditorMove\('drag',e\)/) && has(js, /_queueEditorMove\('resize',e\)/) &&
+  has(js, /translate3d\(\$\{x\}px,\$\{y\}px,0\)/) && has(css, /\.tb\.sdy-dragging[\s\S]{0,160}will-change:transform/));
+ok('터치 조작 손잡이는 브라우저 스크롤 제스처와 분리된다',
+  has(css, /\.handle\{[\s\S]{0,360}touch-action:none/) &&
+  has(css, /\.tb-edge\{[\s\S]{0,220}touch-action:none/) &&
+  has(css, /\.tbl-edge,\.tbl-div,\.tbl-h,\.tbl-stretch\{[\s\S]{0,160}touch-action:none/));
 
 /* ── 5. 창/모달/부가 기능 ──────────────────────────────────── */
 console.log('\n[5] 모달·보관함·암기카드·발표');

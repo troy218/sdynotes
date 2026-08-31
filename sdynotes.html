@@ -485,7 +485,8 @@
                     <button onclick="triggerImgUpload()" class="tool-btn" title="사진 추가"><i class="ri-image-add-line"></i></button>
                     <button onclick="openTableModal()" class="tool-btn tb-hide-sm" title="표 삽입"><i class="ri-table-line"></i></button>
                     <button onclick="openLatexModal()" class="tool-btn tb-hide-sm" title="수식 삽입"><i class="ri-function-line"></i></button>
-                    <button onclick="togglePen()" id="penBtn" class="tool-btn" title="펜 쓰기"><i class="ri-pen-nib-line"></i></button>
+                    <button onclick="togglePen()" id="penBtn" class="tool-btn" title="펜 쓰기 / 종료"><i class="ri-pen-nib-line"></i></button>
+                    <button onclick="toggleHighlighter()" id="highlighterBtn" class="tool-btn" title="형광펜 쓰기 / 종료"><i class="ri-mark-pen-line"></i></button>
                 </div>
 
                 <span class="tool-sep"></span>
@@ -748,23 +749,22 @@
             <div class="color-pick" style="background:#27ae60" data-c="#27ae60" onclick="setDrawColor(this)"></div>
             <div class="color-pick" style="background:#f39c12" data-c="#f39c12" onclick="setDrawColor(this)"></div>
             <div class="color-pick" style="background:#9b59b6" data-c="#9b59b6" onclick="setDrawColor(this)"></div>
-            <input type="color" id="penCustom" value="#111111" oninput="setDrawColorVal(this.value)"
-                   title="사용자 색" style="width:26px;height:26px;border:none;background:none;padding:0;cursor:pointer;">
+            <input type="color" id="penCustom" class="color-pick custom" value="#111111" oninput="setDrawColorVal(this.value)"
+                   title="사용자 색">
             <div class="tool-sep"></div>
-            <div class="size-opt sel" data-s="2" style="width:8px;height:8px;" onclick="setDrawSize(this)"></div>
-            <div class="size-opt" data-s="4" style="width:12px;height:12px;" onclick="setDrawSize(this)"></div>
-            <div class="size-opt" data-s="8" style="width:18px;height:18px;" onclick="setDrawSize(this)"></div>
+            <div class="size-opt" data-s="1" style="width:5px;height:5px;" onclick="setDrawSize(this)" title="아주 얇게"></div>
+            <div class="size-opt sel" data-s="2" style="width:8px;height:8px;" onclick="setDrawSize(this)" title="얇게"></div>
+            <div class="size-opt" data-s="4" style="width:12px;height:12px;" onclick="setDrawSize(this)" title="보통"></div>
+            <div class="size-opt" data-s="8" style="width:18px;height:18px;" onclick="setDrawSize(this)" title="굵게"></div>
             <div class="tool-sep"></div>
-            <button onclick="setShape('free')" id="shpFree" class="tool-btn shp active" style="width:32px;height:32px" title="자유선"><i class="ri-pen-nib-line"></i></button>
+            <button onclick="setShape('free')" id="shpFree" class="tool-btn shp active" style="width:32px;height:32px" title="자유선 · 도형을 그리고 길게 누르면 자동 보정"><i class="ri-pen-nib-line"></i></button>
             <button onclick="setShape('line')" id="shpLine" class="tool-btn shp" style="width:32px;height:32px" title="직선"><i class="ri-subtract-line"></i></button>
             <button onclick="setShape('arrow')" id="shpArrow" class="tool-btn shp" style="width:32px;height:32px" title="화살표"><i class="ri-arrow-right-line"></i></button>
             <button onclick="setShape('rect')" id="shpRect" class="tool-btn shp" style="width:32px;height:32px" title="사각형"><i class="ri-square-line"></i></button>
-            <button onclick="setShape('ellipse')" id="shpEllipse" class="tool-btn shp" style="width:32px;height:32px" title="원"><i class="ri-circle-line"></i></button>
-            <button onclick="toggleMarker()" id="markerBtn" class="tool-btn" style="width:32px;height:32px" title="형광펜 모드"><i class="ri-mark-pen-line"></i></button>
+            <button onclick="setShape('ellipse')" id="shpEllipse" class="tool-btn shp" style="width:32px;height:32px" title="원/타원"><i class="ri-circle-line"></i></button>
             <div class="tool-sep"></div>
             <button onclick="toggleEraser()" id="eraserBtn" class="tool-btn" style="width:32px;height:32px" title="지우개"><i class="ri-eraser-line"></i></button>
             <button onclick="undo()" class="tool-btn" style="width:32px;height:32px" title="그리기 되돌리기"><i class="ri-arrow-go-back-line"></i></button>
-            <button onclick="finishDrawing()" class="tool-btn done" style="width:42px;height:32px" title="완료"><i class="ri-check-line"></i></button>
         </div>
     </div>
 
@@ -2291,44 +2291,64 @@
 
 
 
-<!-- ═══════════════ 16.2 · 로그인/회원 (이메일 OTP · 선택 사항) ═══════════════
+<!-- ═══════════════ 16.2/16.4 · 로그인/회원 (등록 OTP + 비밀번호 로그인) ═══════════════
   로그인하지 않아도 사이트 전부를 쓸 수 있다. 로그인하면:
     · 엽스코드에서 고정 닉네임(회원 배지) — 게스트는 흉내 낼 수 없다
     · 내가 올린 곡에 '올린 사람' 표시가 작게 붙는다
-  비밀번호 대신 이메일로 오는 6자리 인증 코드(OTP)로 로그인한다. -->
+  최초 등록만 이메일 인증 코드(OTP)를 쓰고, 이후에는 이메일과 비밀번호로 로그인한다. -->
 <div id="sdyAuthWrap" style="display:none" role="dialog" aria-label="로그인">
   <div class="sa-card">
     <button class="sa-x" onclick="sdyAuthClose()" title="닫기"><i class="ri-close-line"></i></button>
     <div class="sa-logo"><i class="ri-mail-lock-line"></i></div>
     <b class="sa-ttl" id="saTtl">로그인</b>
-    <span class="sa-sub">이메일로 오는 인증 코드(OTP)로 로그인해요 · 비밀번호 없음</span>
+    <span class="sa-sub" id="saSub">이메일과 비밀번호로 로그인해요</span>
+    <div class="sa-tabs" id="saTabs">
+      <button id="saLoginTab" class="on" onclick="sdyAuthMode('login')">로그인하기</button>
+      <button id="saRegisterTab" onclick="sdyAuthMode('register')">등록하기</button>
+    </div>
 
-    <!-- 1단계 · 이메일 -->
-    <div class="sa-step" id="saStepEmail">
+    <!-- 로그인 -->
+    <div class="sa-step" id="saStepLogin">
+      <input type="email" id="saEmail" placeholder="이메일 주소" autocomplete="email" spellcheck="false">
+      <input type="password" id="saPw" placeholder="비밀번호" autocomplete="current-password" spellcheck="false">
+      <button class="sa-btn" id="saLoginBtn" onclick="sdyAuthLogin()"><i class="ri-login-circle-line"></i>로그인하기</button>
+    </div>
+
+    <!-- 등록 1단계 · 이메일 -->
+    <div class="sa-step" id="saStepRegister" style="display:none">
       <div class="sa-emailrow">
-        <input type="email" id="saEmail" placeholder="이메일 주소" autocomplete="email" spellcheck="false">
+        <input type="email" id="saRegEmail" placeholder="이메일 주소" autocomplete="email" spellcheck="false">
         <button class="sa-sendbtn" id="saSendBtn" onclick="sdyAuthSend()">인증코드 받기</button>
       </div>
     </div>
 
-    <!-- 2단계 · 코드 입력 (+ 새 회원은 고정 닉네임) -->
+    <!-- 등록 2단계 · 코드/닉네임/비밀번호 -->
     <div class="sa-step" id="saStepCode" style="display:none">
       <div class="sa-sent" id="saSent"></div>
       <input type="text" id="saCode" placeholder="6자리 코드" inputmode="numeric" maxlength="6" autocomplete="one-time-code" spellcheck="false">
-      <div class="sa-nickrow" id="saNickRow" style="display:none">
+      <div class="sa-nickrow" id="saNickRow">
         <input type="text" id="saNick" placeholder="고정 닉네임 (최대 16자)" maxlength="16" spellcheck="false">
-        <span class="sa-nicksub">새 회원이에요! 엽스코드와 곡 올리기에 쓸 고정 닉네임을 정해 주세요</span>
+        <span class="sa-nicksub">엽스코드와 곡 올리기에 쓸 고정 닉네임을 정해 주세요</span>
       </div>
-      <button class="sa-btn" id="saVerifyBtn" onclick="sdyAuthVerify()"><i class="ri-check-line"></i>확인하고 로그인</button>
+      <input type="password" id="saRegPw" placeholder="비밀번호 (6자 이상)" autocomplete="new-password" spellcheck="false">
+      <input type="password" id="saRegPw2" placeholder="비밀번호 확인" autocomplete="new-password" spellcheck="false">
+      <button class="sa-btn" id="saVerifyBtn" onclick="sdyAuthVerify()"><i class="ri-check-line"></i>등록하기</button>
       <button class="sa-linkbtn" id="saResend" onclick="sdyAuthSend(true)"><i class="ri-mail-send-line"></i>코드 다시 받기</button>
     </div>
 
-    <!-- 3단계 · 로그인됨 -->
+    <!-- 로그인됨 -->
     <div class="sa-step" id="saStepDone" style="display:none">
       <div class="sa-me"><i class="ri-user-3-fill"></i><b id="saMeNick"></b><span class="yp-verified" title="회원 · 고정 닉네임"><i class="ri-verified-badge-fill"></i></span></div>
+      <div class="sa-pwneed" id="saPwNeed" style="display:none">비밀번호를 설정해 주세요</div>
       <div class="sa-row"><label>이메일</label><span id="saMeEmail"></span></div>
       <div class="sa-row"><label>고정 닉네임</label>
         <span class="sa-nickedit"><input type="text" id="saNickEdit" maxlength="16" spellcheck="false"><button class="sa-mini" onclick="sdyNickChange()">변경</button></span>
+      </div>
+      <div class="sa-pwbox">
+        <input type="password" id="saOldPw" placeholder="현재 비밀번호" autocomplete="current-password" spellcheck="false">
+        <input type="password" id="saNewPw" placeholder="새 비밀번호 (6자 이상)" autocomplete="new-password" spellcheck="false">
+        <input type="password" id="saNewPw2" placeholder="새 비밀번호 확인" autocomplete="new-password" spellcheck="false">
+        <button class="sa-mini wide" id="saPwChangeBtn" onclick="sdyPwChange()">비밀번호 변경</button>
       </div>
       <button class="sa-btn ghost" onclick="sdyAuthLogout()">로그아웃</button>
     </div>
@@ -2414,7 +2434,10 @@
         <button id="ypFileBtn" title="파일 보내기 (사진 포함)"><i class="ri-attachment-2"></i></button>
         <button id="ypEmojiBtn" title="해돌이 임티"><i class="ri-emotion-line"></i></button>
       </div>
-      <textarea id="ypTxt" rows="1" placeholder="메시지 보내기…" spellcheck="false"></textarea>
+      <div class="yp-compose-main">
+        <div class="yp-draft-stickers" id="ypDraftStickers" style="display:none"></div>
+        <textarea id="ypTxt" rows="1" placeholder="메시지 보내기…" spellcheck="false"></textarea>
+      </div>
       <button class="yp-send" id="ypSend" title="보내기"><i class="ri-send-plane-2-fill"></i></button>
     </div>
   </div>

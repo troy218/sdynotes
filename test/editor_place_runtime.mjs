@@ -174,6 +174,22 @@ try {
   check('만들어진 텍스트 상자는 커서를 중심으로 잡힌다',
     near(parseFloat(tb.style.left), docX(CLICK.x) - 100) && near(parseFloat(tb.style.top), docY(CLICK.y) - 24));
 
+  if (typeof window.deselectAll === 'function') window.deselectAll(true);
+  window.setFS(40);
+  window.setTextTool(true);
+  const BIG_CLICK = { x: 520, y: 300 };
+  document.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: BIG_CLICK.x, clientY: BIG_CLICK.y }));
+  const bigGW = parseFloat(tghost.style.width), bigGH = parseFloat(tghost.style.height);
+  check('현재 선택 글자 크기가 크면 텍스트 고스트도 한 줄 높이에 맞춰 커진다',
+    near(bigGW, 320 * PAGE_ZOOM) && near(bigGH, 80 * PAGE_ZOOM));
+  paper.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, detail: 1, clientX: BIG_CLICK.x, clientY: BIG_CLICK.y }));
+  await wait(80);
+  const bigTb = [...paper.querySelectorAll('.layer-text .tb')].filter(n => !n.classList.contains('in-tbl')).at(-1);
+  check('현재 글자 크기로 만든 새 텍스트 상자는 48px 고정 높이가 아니다',
+    near(parseFloat(bigTb.style.width), 320) && near(parseFloat(bigTb.style.height), 80));
+  if (typeof window.deselectAll === 'function') window.deselectAll(true);
+  window.setFS(16);
+
   // ── ② 표: 고스트 자리 == 실제로 생기는 자리 ──────────────────────────
   window.prompt = () => '3 x 3';
   window.openTableModal();

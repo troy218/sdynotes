@@ -21,6 +21,10 @@ assert.match(js, /function queueAdd\(id\)\{/, 'queueAdd(대기열에 담고 재�
 assert.match(js, /function queueMove\(i,d\)\{/, 'queueMove(위로/아래로)가 있어야 한다');
 assert.match(js, /function queueRemove\(i\)\{/, 'queueRemove(빼기)가 있어야 한다');
 assert.match(js, /function queueClear\(\)\{/, 'queueClear(전체 비우기)가 있어야 한다');
+assert.match(js, /data-reco-album=/, '추천 앨범 카드는 곡 1개가 아니라 앨범 묶음 키를 가진다');
+assert.match(js, /data-reco-playlist=/, '추천 플레이리스트 카드가 있다');
+assert.match(js, /function _queueRecoIds\(ids,name\)/, '추천 묶음은 대기열 교체 헬퍼로 재생한다');
+assert.match(js, /playFrom\(q,q\[0\]\.id,name\|\|'추천 플레이리스트'\)/, '추천 묶음 선택은 기존 대기열을 갈아끼운다');
 assert.match(js, /window\.sdyQueueAdd=queueAdd/, '테스트 훅 sdyQueueAdd 가 있다');
 assert.match(js, /queueAdd\(id\);[\s\S]{0,60}\}\);/, '큰 플레이어 목록 클릭이 queueAdd 를 부른다');
 assert.match(js, /if\(\(el=hit\('data-i'\)\)\)\{ queueAdd/, '작은 목록 클릭도 queueAdd 를 부른다');
@@ -105,6 +109,37 @@ body.querySelector('.mpb-li')
   .dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
 assert.equal(S.queue.map(t => t.id).join(','), 't2,t4,t1,t3', '행 클릭 = 대기열 끝에 담고 재생');
 assert.equal(M.cur().id, 't3', '행 클릭한 곡이 재생 중');
+
+/* 추천 앨범/플레이리스트 클릭 = 기존 대기열을 싹 비우고 그 묶음만 대기열 */
+const RECO_TRACKS = [
+  { id: 'old', title: 'Old queue', artist: 'Queue', album: 'Before', genre: 'rock', created_at: '20260101000000Z' },
+  { id: 'a1', title: 'Dream one', artist: 'Band A', album: 'Dream Album', genre: 'ballad', created_at: '20260102000000Z' },
+  { id: 'a2', title: 'Dream two', artist: 'Band A', album: 'Dream Album', genre: 'ballad', created_at: '20260103000000Z' },
+  { id: 'p1', title: 'Focus one', artist: 'Focus', album: 'Study', genre: 'lofi', created_at: '20260104000000Z' },
+  { id: 'p2', title: 'Focus two', artist: 'Focus', album: 'Study', genre: 'lofi', created_at: '20260105000000Z' },
+];
+S.list = RECO_TRACKS.slice();
+window.localStorage.setItem('sdy_playlists', JSON.stringify([{ id: 'mypl', name: 'My Focus Mix', tracks: ['p1', 'p2'] }]));
+window.sdyPlayFrom([RECO_TRACKS[0]], 'old', '기존 대기열');
+S.bigTab = 'd'; S.recoFilter = 'all';
+M.bigList();
+const albumCard = [...document.querySelectorAll('#mpBBody [data-reco-album]')]
+  .find(el => /Dream Album/.test(el.textContent));
+assert.ok(albumCard, '추천 앨범 카드가 렌더된다');
+albumCard.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+assert.equal(S.queue.map(t => t.id).join(','), 'a1,a2', '추천 앨범 선택 → 기존 대기열 제거 + 앨범 전체만 등록');
+assert.equal(M.cur().id, 'a1', '추천 앨범 첫 곡부터 재생');
+window.sdyPlayFrom([RECO_TRACKS[0]], 'old', '기존 대기열');
+M.bigList();
+const playlistCard = [...document.querySelectorAll('#mpBBody [data-reco-playlist]')]
+  .find(el => /My Focus Mix/.test(el.textContent));
+assert.ok(playlistCard, '저장/자동 추천 플레이리스트 카드가 렌더된다');
+playlistCard.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+assert.equal(S.queue.map(t => t.id).join(','), 'p1,p2', '추천 플레이리스트 선택 → 기존 대기열 제거 + 플레이리스트 전체만 등록');
+// 아래 대기열 관리 검사는 원래 4곡 상태로 되돌려 이어간다.
+S.list = TRACKS.slice();
+S.queue = ['t2', 't4', 't1', 't3'].map(id => S.list.find(t => t.id === id));
+S.idx = 3; S.currentId = 't3'; M.audio()._trackId = 't3';
 
 /* ③ 대기열 관리: 위로/아래로/빼기 */
 window.sdyQueueMove(3, -1);                      // t3 한 칸 위로

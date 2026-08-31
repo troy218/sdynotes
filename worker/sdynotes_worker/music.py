@@ -105,6 +105,8 @@ def _music_load():
 _SIDE_KEYS = ("id", "title", "artist", "album", "year", "genre", "ext", "bytes",
               "orig_title", "tag_state", "tag_src", "tag_algo", "cover",
               "lyrics", "lyrics_plain", "lyrics_src", "lyrics_tries", "created_at",
+              "recog_title", "recog_artist", "recog_album", "recog_mbid",
+              "recog_score", "recog_state", "recog_tried",
               "uploader", "uploader_uid")
 _last_saved = {}
 
@@ -713,7 +715,8 @@ def _acoustid_lookup(path):
             #   (사용자 보고: 다른 사람·다른 제목이 들어가던 문제)
             cand = {"title": title[:120], "artist": artist[:80],
                     "album": album[:120], "year": year,
-                    "score": round(sc, 3), "mbid": rec.get("id") or ""}
+                    "score": round(sc, 3), "mbid": rec.get("id") or "",
+                    "duration": int(round(float(rec.get("duration") or dur or 0))) if (rec.get("duration") or dur) else 0}
             if sc > cs:
                 cs, closest = sc, cand
             if sc >= 0.85 and sc > bs:
@@ -725,6 +728,134 @@ def _acoustid_lookup(path):
         return out
     best["ok"] = True
     return best
+
+
+def _recog_norm_text(s):
+    """음원 인식 중복 판정용 정규화 — 제목/가수/앨범이 완전히 같은지 비교."""
+    s = str(s or "")
+    try:
+        import unicodedata
+        s = unicodedata.normalize("NFKC", s)
+    except Exception:
+        pass
+    return re.sub(r"[^0-9a-z가-힣]+", "", s.lower())
+
+
+def _recog_dup_key(r):
+    """AcoustID로 확정(recog_state=done)된 곡만 중복 키를 만든다.
+
+    1순위는 MusicBrainz recording id(mbid)라 같은 녹음본만 같은 키가 된다.
+    mbid가 없을 때는 인식 결과의 제목+가수+앨범이 모두 같은 경우만 사용해
+    동명이곡/라이브/리마스터 오삭제를 피한다.
+    """
+    if not isinstance(r, dict) or r.get("recog_state") != "done":
+        return ""
+    try:
+        if r.get("recog_score") and float(r.get("recog_score") or 0) < 0.85:
+            return ""
+    except Exception:
+        return ""
+    mbid = _recog_norm_text(r.get("recog_mbid"))
+    if mbid:
+        return "mbid:" + mbid
+    title = _recog_norm_text(r.get("recog_title") or r.get("title"))
+    artist = _recog_norm_text(r.get("recog_artist") or r.get("artist"))
+    album = _recog_norm_text(r.get("recog_album") or r.get("album"))
+    if title and artist and album:
+        return "tag:%s|%s|%s" % (title, artist, album)
+    return ""
+
+
+def _recog_keep_sort(mid, r):
+    """동일 음원 중 남길 레코드 우선순위: 많이 들은/정보 많은/오래된 곡."""
+    try:
+        play = int(r.get("play_count") or 0)
+    except Exception:
+        play = 0
+    rich = 0
+    if r.get("lyrics") or r.get("lyrics_plain"):
+        rich += 2
+    if r.get("cover") or r.get("cover_url"):
+        rich += 1
+    if r.get("genre"):
+        rich += 1
+    return (-play, -rich, str(r.get("created_at") or ""), str(mid))
+
+
+def _music_delete_files(mid):
+    try:
+        for fn in os.listdir(MUSIC_DIR):
+            if fn.startswith(mid + "."):
+                try:
+                    os.remove(os.path.join(MUSIC_DIR, fn))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+def _music_merge_duplicate_record(keep, drop, keep_mid, drop_mid):
+    """삭제될 동일 음원의 유용한 정보는 남길 곡으로 흡수한다."""
+    keep = dict(keep or {})
+    drop = dict(drop or {})
+    for fld in ("artist", "album", "year", "genre", "tag_src", "recog_title", "recog_artist",
+                "recog_album", "recog_mbid", "recog_score", "recog_state", "recog_tried"):
+        if not keep.get(fld) and drop.get(fld):
+            keep[fld] = drop.get(fld)
+    for fld in ("lyrics", "lyrics_plain", "lyrics_src"):
+        if not keep.get(fld) and drop.get(fld):
+            keep[fld] = drop.get(fld)
+    try:
+        keep["play_count"] = int(keep.get("play_count") or 0) + int(drop.get("play_count") or 0)
+    except Exception:
+        pass
+    try:
+        keep["last_played"] = max(float(keep.get("last_played") or 0), float(drop.get("last_played") or 0))
+    except Exception:
+        pass
+    # 남길 곡에 표지가 없고 삭제될 곡에만 있으면 표지 파일을 옮긴 뒤 삭제한다.
+    try:
+        keep_cover = os.path.join(MUSIC_DIR, keep_mid + ".cover")
+        drop_cover = os.path.join(MUSIC_DIR, drop_mid + ".cover")
+        if not os.path.exists(keep_cover) and os.path.exists(drop_cover):
+            shutil.copy2(drop_cover, keep_cover)
+            keep["cover"] = True
+            keep["cover_v"] = int(time.time())
+    except Exception:
+        pass
+    keep["dedupe_updated"] = int(time.time())
+    return keep
+
+
+def _music_dedupe_recognized(mid):
+    """인식 완료 곡 중 완전히 같은 곡은 자동으로 하나만 남긴다."""
+    removed, kept = [], None
+    with _music_lock:
+        m = _music_load()
+        rec = m.get(mid)
+        key = _recog_dup_key(rec)
+        if not key:
+            return {"duplicate_removed": False, "removed": [], "kept": rec}
+        same = [k for k, v in m.items() if _recog_dup_key(v) == key]
+        if len(same) <= 1:
+            return {"duplicate_removed": False, "removed": [], "kept": rec}
+        keep_id = sorted(same, key=lambda k: _recog_keep_sort(k, m.get(k) or {}))[0]
+        keep_rec = dict(m.get(keep_id) or {})
+        for drop_id in same:
+            if drop_id == keep_id:
+                continue
+            keep_rec = _music_merge_duplicate_record(keep_rec, m.get(drop_id) or {}, keep_id, drop_id)
+            removed.append(drop_id)
+        for drop_id in removed:
+            m.pop(drop_id, None)
+        m[keep_id] = keep_rec
+        _music_save(m)
+        kept = dict(keep_rec)
+    for drop_id in removed:
+        _music_delete_files(drop_id)
+    if removed:
+        print("[recog] 동일 음원 자동 정리: keep=%s removed=%s" % (keep_id, ",".join(removed)))
+    return {"duplicate_removed": mid in removed, "removed": removed, "kept": kept}
 
 
 def _music_recognize(mid, apply_tags=True, force=False):
@@ -775,6 +906,8 @@ def _music_recognize(mid, apply_tags=True, force=False):
         m = _music_load()
         if m.get(mid):
             m[mid].update({"recog_title": res["title"], "recog_artist": res["artist"],
+                           "recog_album": res.get("album") or "",
+                           "recog_mbid": res.get("mbid") or "",
                            "recog_score": res["score"], "recog_state": "done",
                            "recog_tried": int(time.time())})
             _music_save(m)
@@ -802,9 +935,15 @@ def _music_recognize(mid, apply_tags=True, force=False):
                     r2["tag_src"] = "소리 인식(AcoustID)"
                 m[mid] = r2
                 _music_save(m)
+    dedupe = _music_dedupe_recognized(mid)
     with _music_lock:
-        out = _music_load().get(mid) or rec
-    return {"ok": True, "track": out, "recog": res}
+        out = _music_load().get(mid) or dedupe.get("kept") or rec
+    resp = {"ok": True, "track": out, "recog": res}
+    if dedupe.get("removed"):
+        resp.update({"duplicate_removed": bool(dedupe.get("duplicate_removed")),
+                     "removed": dedupe.get("removed") or [],
+                     "kept": dedupe.get("kept") or out})
+    return resp
 
 
 TAG_ALGO = "13.0"       # 상세 제목 분해·다중 질의 알고리즘 — 올리면 기존 곡을 재정리한다
@@ -1725,6 +1864,8 @@ def _music_upload_pipeline(mid):
     recog_ok = False
     try:
         res = _music_recognize(mid, apply_tags=True)
+        if (res or {}).get("duplicate_removed"):
+            return
         recog_ok = bool((res or {}).get("ok"))
     except Exception as e:
         print("[music] 업로드 소리 인식 오류:", e)
@@ -2510,8 +2651,10 @@ def music_recognize_api():
     r = _music_recognize(mid, apply_tags=True, force=True)
     if r.get("ok"):
         with _music_lock:
-            t = _music_load().get(mid) or {}
+            t = _music_load().get(mid) or r.get("kept") or r.get("track") or {}
         r["track"] = _music_public(t)
+        if r.get("kept"):
+            r["kept"] = _music_public(r.get("kept") or {})
     return jsonify(r)
 
 

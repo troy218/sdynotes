@@ -30,13 +30,6 @@ const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8')
 // flaky: true 는 간헐적으로 통과할 수 있는 그룹 — 통과해도 실패로 세지 않고
 //        경고만 한다 (타이밍 민감 테스트 때문에 CI가 무작위로 빨개지는 걸 막음).
 const KNOWN_FAILS = new Map([
-  ['table',  { why: 'editor_table_contract: 표 이동 중 매 프레임 rebuild 금지 계약이 소스와 어긋남' }],
-  ['place',  { why: 'editor_place_runtime: 텍스트 고스트가 사이트 배율 환산 CSS px 에 놓이지 않음' }],
-  ['font',   { why: 'editor_font_size_runtime: jsdom 런타임에서 "상자가 선택된다" 단계 실패' }],
-  ['format', { why: 'editor_format_runtime: jsdom 런타임에서 "상자가 선택된다" 단계 실패' }],
-  ['draw',   { why: 'editor_draw_contract: 그리기 시작해도 .stroke-g 획 요소가 생기지 않음 — 간헐적(타이밍 민감), 통과할 때도 있다', flaky: true }],
-  ['editor', { why: 'format+draw 재실행 그룹 — format 이 먼저 깨져 도달하지 못한다' }],
-  ['call',   { why: 'yp_smoke_v4.cjs 크래시(esInst null) — 채팅·음성 릴레이·nginx 패치는 모두 통과' }],
 ]);
 
 const argv = process.argv.slice(2);

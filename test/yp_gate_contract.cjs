@@ -1,13 +1,14 @@
-/* 16.2 · 엽스코드 입장 게이트 + 이메일 OTP 로그인 계약 테스트
+/* 16.4 · 엽스코드 입장 게이트 + 등록 OTP/비밀번호 로그인 계약 테스트
    (jsdom · yp 스크립트 블록과 로그인 블록만 갈라 넣는다 — yp_smoke_v4 방식)
 
    다루는 것:
      ① 페이지를 열자마자 자동 입장하지 않는다 (칩을 눌러야 시작)
      ② 칩 → 게이트(#ypGate): '로그인하고 입장' / '비회원으로 입장' 두 문
      ③ 비회원 입장 → 조인(fetch 에 토큰 없음) → 창 열림
-     ④ 로그인하고 입장 → OTP 모달 → 코드 확인 → 자동 입장(토큰 헤더)
-     ⑤ 이미 로그인한 상태 → 게이트 없이 바로 고정닉 입장
-     ⑥ 곡 올리기/목록 마크의 소스 계약 (sdyAuthHeaders · mp-upmark)
+     ④ 로그인하고 입장 → 이메일+비밀번호 로그인 → 자동 입장(토큰 헤더)
+     ⑤ 등록하기 탭 → OTP 코드 확인 + 비밀번호 포함 회원 등록
+     ⑥ 이미 로그인한 상태 → 게이트 없이 바로 고정닉 입장
+     ⑦ 곡 올리기/목록 마크의 소스 계약 (sdyAuthHeaders · mp-upmark)
 */
 const fs = require('fs');
 const path = require('path');
@@ -19,7 +20,7 @@ const jsAll = fs.readFileSync(path.join(ROOT, 'sdynotes.js'), 'utf8');
 const cssAll = fs.readFileSync(path.join(ROOT, 'sdynotes.css'), 'utf8');
 
 // ── HTML 조각: 로그인 모달 + 게이트 + 엽스코드 앱 ──
-const hs = htmlAll.indexOf('<!-- ═══════════════ 16.2 · 로그인/회원');
+const hs = htmlAll.indexOf('<!-- ═══════════════ 16.2/16.4 · 로그인/회원');
 const he = htmlAll.indexOf('</body>', hs);
 if (hs < 0 || he < 0) throw new Error('로그인/엽스코드 HTML 블록을 찾지 못했습니다');
 const htmlBlock = htmlAll.slice(hs, he);
@@ -36,7 +37,7 @@ const ok = (name, cond) => { cond ? pass++ : fail++; console.log((cond ? '✅ ' 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function makeEnv({ presetAuth } = {}) {
-  const calls = { join: [], otp: [], verify: [], me: [] };
+  const calls = { join: [], otp: [], verify: [], login: [], me: [] };
   const errors = [];
   const vc = new VirtualConsole();
   vc.on('jsdomError', (e) => { const m = String(e.message || e); if (!/not implemented|scrollTo/i.test(m)) errors.push(m.slice(0, 100)); });
@@ -56,8 +57,9 @@ function makeEnv({ presetAuth } = {}) {
     if (url.startsWith('/api/chat/join')) { calls.join.push({ body, header: h['x-sdy-auth'] || '' }); return Promise.resolve(json({ ok: true, ttl: 86400, bgm: null, voice: 'relay', me: { uid: body.uid, name: body.name, color: '#fda4af', verified: !!h['x-sdy-auth'] }, members: [], msgs: [] })); }
     if (url.startsWith('/api/chat/ping')) return Promise.resolve(json({ ok: true }));
     if (url.startsWith('/api/auth/otp')) { calls.otp.push(body); return Promise.resolve(json({ ok: true, registered: false, dev_code: '246810', expires_in: 600 })); }
-    if (url.startsWith('/api/auth/verify')) { calls.verify.push(body); return Promise.resolve(json({ ok: true, token: 'tok123', user: { uid: 'u_1', email: 'a@b.local', nick: '고정닉새' } })); }
-    if (url.startsWith('/api/auth/me')) { calls.me.push({}); return Promise.resolve(json({ ok: true, user: { uid: 'u_1', email: 'a@b.local', nick: '고정닉새' } })); }
+    if (url.startsWith('/api/auth/verify')) { calls.verify.push(body); return Promise.resolve(json({ ok: true, token: 'tok123', user: { uid: 'u_1', email: body.email || 'a@b.local', nick: body.nick || '고정닉새', needs_password: false } })); }
+    if (url.startsWith('/api/auth/login')) { calls.login.push(body); return Promise.resolve(json({ ok: true, token: 'tok123', user: { uid: 'u_1', email: body.email || 'a@b.local', nick: '고정닉새', needs_password: false } })); }
+    if (url.startsWith('/api/auth/me')) { calls.me.push({}); return Promise.resolve(json({ ok: true, user: { uid: 'u_1', email: 'a@b.local', nick: '고정닉새', needs_password: false } })); }
     return Promise.resolve(json({ ok: true }));
   };
 
@@ -96,7 +98,7 @@ function makeEnv({ presetAuth } = {}) {
   ok('소스: 곡 올리기가 로그인 토큰을 함께 보낸다', /fetch\('\/api\/music\/upload',\{method:'POST',body:fd,headers:auH\}\)/.test(jsAll));
   ok('소스: 유튜브 담기도 토큰을 함께 보낸다', /Object\.assign\(\{'Content-Type':'application\/json'\},window\.sdyAuthHeaders\?window\.sdyAuthHeaders\(\):\{\}\)/.test(jsAll));
   ok('소스: 목록 행에 올린 사람 마크(mp-upmark)가 있다', /t\.uploader\?`<span class="mp-upmark"/.test(jsAll));
-  ok('소스: 로그인 모달·게이트·계정 버튼이 HTML에 있다', htmlAll.includes('id="sdyAuthWrap"') && htmlAll.includes('id="ypGate"') && htmlAll.includes('id="sdyAccBtn"') && htmlAll.includes('id="ypgLogin"') && htmlAll.includes('id="ypgGuest"'));
+  ok('소스: 로그인/등록 탭·게이트·계정 버튼이 HTML에 있다', htmlAll.includes('id="sdyAuthWrap"') && htmlAll.includes('id="saLoginTab"') && htmlAll.includes('id="saRegisterTab"') && htmlAll.includes('id="ypGate"') && htmlAll.includes('id="sdyAccBtn"') && htmlAll.includes('id="ypgLogin"') && htmlAll.includes('id="ypgGuest"'));
   ok('소스: 회원 배지·마크 CSS가 있다', cssAll.includes('.yp-verified') && cssAll.includes('.mp-upmark') && cssAll.includes('#ypGate'));
   // 18.3 · 게이트 편지 해돌이 혼잣말: 말풍선 + 주기 멘트 배열이 들어 있어야 한다
   ok('소스: 게이트 편지 해돌이 혼잣말(18.3)이 있다', jsAll.includes("18.3 · 엽스코드/집중(스톱워치·타이머)/비행기 해돌이 혼잣말") && jsAll.includes('#ypGate .yp-otter'));
@@ -131,23 +133,44 @@ function makeEnv({ presetAuth } = {}) {
     await wait(120);
     $('ypReopen').click();
     $('ypgLogin').click();
-    ok('로그인 선택 → OTP 모달 열림 + 게이트 닫힘', $('sdyAuthWrap').style.display === 'flex' && $('ypGate').style.display === 'none');
+    ok('로그인 선택 → 로그인 모달 열림 + 게이트 닫힘', $('sdyAuthWrap').style.display === 'flex' && $('ypGate').style.display === 'none');
+    ok('로그인 모달은 로그인하기 탭으로 시작한다', $('saStepLogin').style.display !== 'none' && $('saLoginTab').classList.contains('on'));
     $('saEmail').value = 'bird@test.local';
-    w.sdyAuthSend();
-    await wait(40);
-    ok('OTP: 코드 단계 + 새 회원 닉네임 칸 노출', $('saStepCode').style.display === 'block' && $('saNickRow').style.display === 'block');
-    ok('OTP: 요청이 서버에 닿았다', e.calls.otp.length === 1 && e.calls.otp[0].email === 'bird@test.local');
-    $('saCode').value = '246810';
-    $('saNick').value = '고정닉새';
-    w.sdyAuthVerify();
+    $('saPw').value = 'pw0000';
+    w.sdyAuthLogin();
     await wait(80);
+    ok('로그인: 이메일+비밀번호 요청이 서버에 닿았다', e.calls.login.length === 1 && e.calls.login[0].email === 'bird@test.local' && e.calls.login[0].password === 'pw0000');
     ok('로그인 성공 → 모달 닫힘 + 엽스코드 자동 입장', $('sdyAuthWrap').style.display === 'none' && $('ypApp').classList.contains('open'));
     ok('로그인 입장 → 조인에 토큰 헤더', e.calls.join.length === 1 && e.calls.join[0].header === 'tok123');
     ok('sdyUser() 가 고정닉을 안다', w.sdyUser() && w.sdyUser().nick === '고정닉새');
     ok('계정 버튼에 on 표시', $('sdyAccBtn').classList.contains('on'));
   }
 
-  // ── 4부 · 이미 로그인한 상태 → 게이트 생략 ──
+  // ── 4부 · 등록하기 탭은 OTP + 비밀번호로 신규 회원을 만든다 ──
+  {
+    const e = makeEnv();
+    const { w } = e;
+    const $ = e.$;
+    await wait(120);
+    w.sdyAuthOpen();
+    $('saRegisterTab').click();
+    ok('등록 탭 → 등록 이메일 단계가 보인다', $('saStepRegister').style.display !== 'none' && $('saRegisterTab').classList.contains('on'));
+    $('saRegEmail').value = 'newbird@test.local';
+    w.sdyAuthSend();
+    await wait(40);
+    ok('등록 OTP: 코드 단계 + 닉네임/비밀번호 칸 노출', $('saStepCode').style.display !== 'none' && $('saNickRow').style.display !== 'none' && !!$('saRegPw'));
+    ok('등록 OTP: 요청이 서버에 닿았다', e.calls.otp.length === 1 && e.calls.otp[0].email === 'newbird@test.local');
+    $('saCode').value = '246810';
+    $('saNick').value = '새회원';
+    $('saRegPw').value = 'pw0000';
+    $('saRegPw2').value = 'pw0000';
+    w.sdyAuthVerify();
+    await wait(80);
+    ok('등록 확인: 비밀번호가 함께 전송된다', e.calls.verify.length === 1 && e.calls.verify[0].password === 'pw0000' && e.calls.verify[0].nick === '새회원');
+    ok('등록 성공 → 계정 버튼 on', $('sdyAccBtn').classList.contains('on'));
+  }
+
+  // ── 5부 · 이미 로그인한 상태 → 게이트 생략 ──
   {
     const e = makeEnv({ presetAuth: true });
     const $ = e.$;
