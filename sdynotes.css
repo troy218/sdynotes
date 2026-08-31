@@ -6756,6 +6756,31 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
   #focusClock .fc-time{font-size:clamp(46px,14vh,82px);}
   #focusClock .fc-ring{width:min(48vh,250px);height:min(48vh,250px);}
   .fc-chrome.bottom{max-height:72px;}
+
+  /* ── 터치 피드백 & UX 추가 개선 ────────────────────────────── */
+  /* 모든 클릭 가능 요소에 터치 시 시각 피드백 */
+  .note-card:active,.folder-card:active,.add-card:active{transform:scale(.97);opacity:.85;}
+  .tool-btn:active{transform:scale(.92);opacity:.8;}
+  .header .tool-btn:active{transform:scale(.9);opacity:.8;}
+  .ctx-item:active{background:var(--bg2);opacity:.8;}
+  .sp-item:active,.sp-sec:active{background:var(--bg2);}
+  .breadcrumb button:active{opacity:.75;}
+  /* 이미지 뷰어: 모바일에서 더 크게, 터치로 닫기 쉽게 */
+  .present-bar button{width:48px;height:48px;font-size:20px;}
+  /* 사이드 패널 스와이프 닫기 힌트 */
+  .side-panel.show{animation:panelSlideIn .2s ease;}
+  @keyframes panelSlideIn{from{transform:translateX(-20%);opacity:.6}to{transform:none;opacity:1}}
+  /* 텍스트 상자 편집 시 키보드 올라와도 잘 보이게 */
+  .tb.edit{z-index:100!important;}
+  /* 표 도구 막대 스크롤 힌트 */
+  .tbl-bar::after{
+    content:'';position:absolute;right:0;top:0;bottom:0;width:24px;
+    background:linear-gradient(to right,transparent,var(--card));
+    pointer-events:none;border-radius:0 14px 14px 0;
+  }
+  /* 설정 모달 내 스크롤 개선 */
+  .set-row{min-height:52px;}
+  .set-row label{min-height:44px;display:flex;align-items:center;}
 }
 
 

@@ -1957,9 +1957,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     }
                 },480);
             };
-            card.addEventListener('mousedown',startLP);
-            card.addEventListener('mouseup',()=>clearTimeout(longPressTimer));
-            card.addEventListener('mouseleave',()=>clearTimeout(longPressTimer));
+            card.addEventListener('pointerdown',startLP);
+            card.addEventListener('pointerup',()=>clearTimeout(longPressTimer));
+            card.addEventListener('pointerleave',()=>clearTimeout(longPressTimer));
             card.addEventListener('touchstart',startLP,{passive:true});
             card.addEventListener('touchend',()=>clearTimeout(longPressTimer));
             card.addEventListener('touchmove',()=>clearTimeout(longPressTimer),{passive:true});
@@ -3147,7 +3147,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             n.draggable=false;
             n.addEventListener('dragstart',e=>{ e.preventDefault(); try{ window.getSelection().removeAllRanges(); }catch(err){} });
             n.addEventListener('touchstart',e=>onLinkDown(e,i),{passive:true});
-            n.addEventListener('mousedown',e=>{ if(e.button===0) onLinkDown(e,i); });
+            n.addEventListener('pointerdown',e=>{ if(e.button===0) onLinkDown(e,i); });
         });
     }
 
@@ -5933,7 +5933,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     addTextBox(i,c.x,c.y); setTextTool(false);
                 }
             },true);
-            paper.addEventListener('mousedown',e=>onPaperDown(e,i));
+            // ★ pointerdown 로 변경 — 터치 장치에서 300ms 지연 제거
+            paper.addEventListener('pointerdown',e=>onPaperDown(e,i));
             wrap.appendChild(paper);
             stage.appendChild(wrap);
             // 내용은 화면에 들어올 때 렌더 (가상화) — 페이지가 많아도 가벼움
@@ -7004,6 +7005,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(el.isMath){ w.classList.add('math'); w.title='PDF 수식'; }
         if(el.isBg){ w.classList.add('pdf-bg'); w.title='PDF 원본 배경'; }
         if(el.locked) w.classList.add('el-lock');
+        // ★ 모바일: 더블클릭 대신 한 번 탭으로 이미지 확대 (dblclick은 터치에서 불안정)
         img.ondblclick=(e)=>{ e.stopPropagation(); document.getElementById('vImg').src=el.localURL||el.url||''; document.getElementById('viewer').style.display='flex'; };
         w.appendChild(img);
         // 테두리를 잡으면 이동 (손잡이는 이 위에 그려진다)
@@ -8078,6 +8080,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             if(!im.classList.contains('sel')){          // 1차 클릭 = 선택만
                 deselectAll(); im.classList.add('sel'); selected={type:'image',el:im};
+                drag=null;
+                return;
+            }
+            // ★ 모바일: 이미 선택된 이미지를 다시 탭하면 확대 보기 (dblclick 대체)
+            if(matchMedia('(pointer:coarse)').matches){
+                const el2=findEl(pageIdx,im.dataset.id);
+                document.getElementById('vImg').src=(el2&&el2.localURL)||el2&&el2.url||'';
+                document.getElementById('viewer').style.display='flex';
                 drag=null;
                 return;
             }
@@ -9295,7 +9305,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         pop.style.left=Math.max(8,Math.min(r.left-90,innerWidth-pop.offsetWidth-8))+'px';
         pop.style.top=(r.bottom+6)+'px';
     }
-    document.addEventListener('mousedown',e=>{
+    // ★ pointerdown 으로 변경 — 터치 장치에서 팝업 닫힘 즉시 반응
+    document.addEventListener('pointerdown',e=>{
         const pop=document.getElementById('favPop');
         if(pop&&pop.classList.contains('show')&&!e.target.closest('#favPop')&&!e.target.closest('#favListBtn'))
             pop.classList.remove('show');
@@ -11515,7 +11526,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             d.style.left=n.x+'px'; d.style.top=n.y+'px';
             d.title=n.text?n.text.slice(0,40):'메모 (비어 있음)';
             d.innerHTML='<i class="ri-chat-1-fill"></i>';
-            d.addEventListener('mousedown',e=>e.stopPropagation());
+            d.addEventListener('pointerdown',e=>e.stopPropagation());
             d.addEventListener('click',e=>{ e.stopPropagation(); openPin(pi,n.id); });
             layer.appendChild(d);
         });
@@ -12777,8 +12788,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(removed&&!eraseAt._h){ pushHistory(); eraseAt._h=true; setTimeout(()=>eraseAt._h=false,400); }
     }
 
-    // draw-surface 이벤트 위임
-    document.addEventListener('mousedown',e=>{
+    // draw-surface 이벤트 위임 — ★ pointerdown 으로 통합 (터치 300ms 지연 제거)
+    document.addEventListener('pointerdown',e=>{
         const s=e.target.closest('.draw-surface');
         if(s&&penActive) drawStart(e,+s.closest('.paper').dataset.pageIdx);
     },true);
@@ -17215,7 +17226,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
     }
     // 우클릭 직전에 현재 선택을 확보해 둔다 (브라우저가 지우기 전에)
-    document.addEventListener('mousedown',e=>{ if(e.button===2) saveSel(); },true);
+    document.addEventListener('pointerdown',e=>{ if(e.button===2) saveSel(); },true);
     document.addEventListener('contextmenu',onEditorContext);
 
     // ============ 카드 컨텍스트 메뉴 / 부가 기능 ============
@@ -17250,8 +17261,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return !!m && m.classList.contains('show');
     }
     // 메뉴 밖을 누르면(좌·우 버튼 모두) 닫는다.
-    // 우클릭은 mousedown 단계에서 먼저 닫아 두고, 새 메뉴는 contextmenu 에서 다시 열린다.
-    document.addEventListener('mousedown',e=>{
+    // ★ pointerdown 으로 변경 — 터치 장치에서 메뉴 닫힘 즉시 반응
+    document.addEventListener('pointerdown',e=>{
         if(e.target.closest('.ctx-menu')||e.target.closest('.card-menu')) return;
         closeCtxMenu();
     },true);
