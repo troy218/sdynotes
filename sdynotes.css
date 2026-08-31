@@ -1597,6 +1597,10 @@
         .tb-content[data-empty="true"]::before{
             content:"텍스트 입력";color:var(--text3);opacity:.55;font-style:italic;
         }
+        /* 편집 중에는 플레이스홀더를 숨겨 커서가 "텍스트 입력" 글자 뒤로 가는 현상 방지 */
+        .tb.edit .tb-content[data-empty="true"]::before{
+            content:none;
+        }
         /* 표 칸 글자는 칸 밖으로 나가지 않는다 */
         .tb.in-tbl .handle, .tb.in-tbl .tb-edge{display:none!important;}
         .tb.in-tbl .tb-content{
