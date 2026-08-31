@@ -2250,8 +2250,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         renderGrid();
     }
     // 어떤 경로로 끝나든 고스트가 남지 않도록 모든 종료 이벤트를 잡는다
-    document.addEventListener('mousemove',e=>{ if(lift) moveLift(e.clientX,e.clientY); });
-    document.addEventListener('mouseup',()=>{ if(lift) endLift(); });
+    // ★ pointermove/pointerup 로 통합 — 터치 장치에서 즉시 반응
+    document.addEventListener('pointermove',e=>{ if(lift) moveLift(e.clientX,e.clientY); });
+    document.addEventListener('pointerup',()=>{ if(lift) endLift(); });
     document.addEventListener('touchmove',e=>{
         if(lift){ e.preventDefault(); const t=e.touches[0]; moveLift(t.clientX,t.clientY); }
     },{passive:false});
@@ -3243,11 +3244,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     document.getElementById('linkBar').addEventListener('click',e=>{
         if(linkLPFired){ e.preventDefault(); e.stopPropagation(); linkLPFired=false; }
     },true);
-    document.addEventListener('mousemove',e=>{
+    // ★ pointermove/pointerup 로 통합 — 터치 장치에서 즉시 반응
+    document.addEventListener('pointermove',e=>{
         if(linkDrag) moveLinkDrag(e.clientX,e.clientY);
         else onLinkMove(e);
     });
-    document.addEventListener('mouseup',()=>{
+    document.addEventListener('pointerup',()=>{
         if(linkDrag){ endLinkDrag(true); }
         else if(linkLP){ clearTimeout(linkLP); linkLP=null; }
     });
@@ -7685,7 +7687,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     // 마지막 마우스 위치 (붙여넣기 기준점)
     let lastMouse={clientX:0,clientY:0,pageIdx:0,x:null,y:null};
-    document.addEventListener('mousemove',e=>{
+    // ★ pointermove 로 통합 — 터치 장치에서 커서 위치 추적 즉시 반응
+    document.addEventListener('pointermove',e=>{
         lastMouse.clientX=e.clientX; lastMouse.clientY=e.clientY;
         const paper=e.target.closest&&e.target.closest('#pagesStage .paper');
         if(paper){
@@ -8020,6 +8023,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 e.preventDefault();
                 if(e.ctrlKey||e.metaKey){
                     toggleMultiSelect(pageIdx,tb);
+                }else if(tb.classList.contains('sel')
+                         && matchMedia('(pointer:coarse)').matches){
+                    // ★ 모바일: 이미 선택된 상자를 다시 누르면 편집 모드 진입.
+                    //   더블탭은 브라우저 확대와 충돌해 인식이 불안정하다.
+                    enterEdit(tb,true);
                 }else{
                     deselectAll(true); clearMulti();
                     tb.classList.add('sel');
@@ -8164,7 +8172,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return null;
     }
 
-    document.addEventListener('mousemove',e=>{
+    // ★ pointermove 로 통합 — 터치 장치에서 mousedown→mousemove 사이300ms 지연 제거
+    document.addEventListener('pointermove',e=>{
         const ghost=document.getElementById('textGhost');
         if(textToolActive&&ghost) moveTextGhost(e.clientX,e.clientY);
         if(tablePlace) moveTableGhost(e.clientX,e.clientY);
@@ -8338,7 +8347,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
     });
 
-    document.addEventListener('mouseup',()=>{
+    // ★ pointerup 로 통합 — 터치 장치에서 즉시 반응
+    document.addEventListener('pointerup',()=>{
         clearSnapLines();
         if(tblCellPick) tblCellPick=null;
         if(marquee){ endMarquee(); }
@@ -8573,7 +8583,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 d.style.left='calc('+(colX(t,c)-t.x)+'px - var(--hs,12px)/2)';
                 d.style.height=size.h+'px';
                 d.title='끌어서 열 너비 조절';
-                d.addEventListener('mousedown',e=>startTblDrag(e,pi,t.id,'col',c-1));
+                d.addEventListener('pointerdown',e=>startTblDrag(e,pi,t.id,'col',c-1));
                 box.appendChild(d);
             }
             // ③ 행 경계 — 끌면 높이 조절
@@ -8583,7 +8593,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 d.style.top='calc('+(rowY(t,r)-t.y)+'px - var(--hs,12px)/2)';
                 d.style.width=size.w+'px';
                 d.title='끌어서 행 높이 조절';
-                d.addEventListener('mousedown',e=>startTblDrag(e,pi,t.id,'row',r-1));
+                d.addEventListener('pointerdown',e=>startTblDrag(e,pi,t.id,'row',r-1));
                 box.appendChild(d);
             }
             // ④ 꼭짓점 4개 — 표 전체를 비율 그대로 확대/축소
@@ -8593,7 +8603,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 h.style.left =(fx?size.w:0)+'px';
                 h.style.top  =(fy?size.h:0)+'px';
                 h.title='끌어서 표 크기 조절 (Shift = 비율 유지)';
-                h.addEventListener('mousedown',e=>startTblScale(e,pi,t.id,dir));
+                h.addEventListener('pointerdown',e=>startTblScale(e,pi,t.id,dir));
                 box.appendChild(h);
             });
             // ⑤ 변 중앙 손잡이 — 가로·세로 모두 늘리기 (꼭짓점과 같은 동작)
@@ -8603,7 +8613,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 h.className='tbl-stretch '+cls;
                 h.style.left=left+'px'; h.style.top=top+'px';
                 h.title='끌어서 표 크기 조절 (가로·세로)';
-                h.addEventListener('mousedown',e=>startTblScale(e,pi,t.id,dir));
+                h.addEventListener('pointerdown',e=>startTblScale(e,pi,t.id,dir));
                 box.appendChild(h);
             };
             edge('top',    size.w/2, 0,      'n');
@@ -8615,7 +8625,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             mv.className='tbl-move';
             mv.title='끌어서 표 이동 · 클릭하면 표 선택 (Delete 로 삭제)';
             mv.innerHTML='<i class="ri-drag-move-2-fill"></i>';
-            mv.addEventListener('mousedown',e=>startTblMove(e,pi,t.id));
+            mv.addEventListener('pointerdown',e=>startTblMove(e,pi,t.id));
             box.appendChild(mv);
         });
         paintTblCellSelection();
@@ -8642,8 +8652,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             box.classList.toggle('near',near);
         });
     }
+    // ★ pointermove 로 통합 — 터치 장치에서도 표 가까이 가면 손잡이가 나타남
     let _nearRaf=0;
-    document.addEventListener('mousemove',e=>{
+    document.addEventListener('pointermove',e=>{
         if(_nearRaf) return;
         const ev={target:e.target,clientX:e.clientX,clientY:e.clientY};
         _nearRaf=requestAnimationFrame(()=>{ _nearRaf=0; updateTblNear(ev); });
@@ -8729,7 +8740,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(m.box) m.box.style.transform=tr;
     }
 
-    document.addEventListener('mousemove',e=>{
+    // ★ pointermove 로 통합 — 터치 장치에서 표 핸들 즉시 반응
+    document.addEventListener('pointermove',e=>{
         // 경계 끌기
         if(tblDrag){
             e.preventDefault();
@@ -8827,7 +8839,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return;
         }
     });
-    document.addEventListener('mouseup',()=>{
+    // ★ pointerup 로 통합 — 터치 장치에서 표 핸들 놓기 즉시 반응
+    document.addEventListener('pointerup',()=>{
         let pi=null;
         if(tblDrag){ pi=tblDrag.pi; if(tblDrag.moved) saveDoc(); tblDrag=null; }
         if(tblScale){ pi=tblScale.pi; if(tblScale.moved) saveDoc(); tblScale=null; }
@@ -9270,9 +9283,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         clearTimeout(favLP); favLP=null;
         if(favDrag){ favDrag.item.style.opacity=''; favDrag.item.style.cursor=''; favDrag=null; }
     }
-    // 마우스로도 같은 동작: 꾹 누르고(0.38초) 움직여 놓기
-    document.addEventListener('mousemove',e=>{ if(favDrag||favLP) favMove(e); });
-    document.addEventListener('mouseup',()=>{ if(favDrag) favUp(); });
+    // ★ pointermove/pointerup 로 통합 — 터치 장치에서 즉시 반응
+    document.addEventListener('pointermove',e=>{ if(favDrag||favLP) favMove(e); });
+    document.addEventListener('pointerup',()=>{ if(favDrag) favUp(); });
     function toggleFavPop(e){
         const pop=document.getElementById('favPop');
         if(pop.classList.contains('show')){ pop.classList.remove('show'); return; }
@@ -12771,13 +12784,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     },true);
     let _drawRaf=0, _drawEv=null;
     let _drawRafT=0, _drawEvT=null;
-    document.addEventListener('mousemove',e=>{
+    document.addEventListener('pointermove',e=>{
         if(!drawing) return;
         _drawEv=e;
         if(_drawRaf) return;
         _drawRaf=requestAnimationFrame(()=>{ _drawRaf=0; if(drawing&&_drawEv) drawMove(_drawEv); });
     },{passive:true});
-    document.addEventListener('mouseup',()=>{ if(drawing) drawEnd(); });
+    document.addEventListener('pointerup',()=>{ if(drawing) drawEnd(); });
     document.addEventListener('touchstart',e=>{
         if(e.touches&&e.touches.length>1) return;      // 두 손가락은 확대/축소용
         const s=e.target.closest&&e.target.closest('.draw-surface');

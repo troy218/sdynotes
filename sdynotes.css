@@ -6431,6 +6431,16 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
     -webkit-overflow-scrolling:touch;border-radius:14px;
   }
   .tbl-bar button{min-width:40px;width:40px;height:40px;}
+  /* 모바일: 표 손잡이 크기 확대 + 선택(.on) 상태에서 항상 표시 */
+  .tbl-box.on .tbl-h{width:calc(18px / var(--pz,1));height:calc(18px / var(--pz,1));}
+  .tbl-box.on .tbl-stretch{width:calc(22px / var(--pz,1));height:calc(22px / var(--pz,1));}
+  .tbl-box.on .tbl-div.col{width:calc(20px / var(--pz,1));}
+  .tbl-box.on .tbl-div.row{height:calc(20px / var(--pz,1));}
+  .tbl-box.on .tbl-frame,
+  .tbl-box.on .tbl-h,
+  .tbl-box.on .tbl-stretch,
+  .tbl-box.on .tbl-move,
+  .tbl-box.on .tbl-div{opacity:1;pointer-events:auto;}
   .more-panel{
     left:0;right:0;top:calc(var(--ph-top) + 52px);bottom:auto;width:100%;
     max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - 54px);
