@@ -28,7 +28,8 @@ from .music import (MUSIC_EXTS, MUSIC_MAX_MB, TAG_ALGO, _TAG_UA, _aco_key,
                     _acoustid_lookup, _fetch_cover, _fetch_lyrics, _fp_bin,
                     _music_autotag, _music_cover_search, _music_load,
                     _music_lyrics, _music_public, _music_rebuild,
-                    _music_save, _parse_filename, _tag_collect, _tag_rank,
+                    _music_save, _parse_filename, _recog_dup_key,
+                    _recog_keep_sort, _tag_collect, _tag_rank,
                     _yt_fetch_audio, _yt_tools, _yt_url_id)
 
 # 로컬 구현 캡처 (music.py 가 먼저 import 되어 라우트가 등록된 상태여야 한다)
@@ -164,6 +165,83 @@ def _music_track_save(rec, publish=True):
     return rec
 
 
+def _cloud_music_delete_record(mid, publish=True, skip_cover=False):
+    rec = _remote_track(mid)
+    if not rec:
+        return None
+    if CLOUD_READY and rec.get("cloud_public_id"):
+        try:
+            cloudinary.uploader.destroy(rec["cloud_public_id"], resource_type="video", invalidate=True)
+        except Exception:
+            pass
+    if not skip_cover:
+        _cloud_cover_delete(rec)
+    _sb_delete(MUSIC_TABLE, _music_id(mid))
+    with _REMOTE_MUSIC_CACHE_LOCK:
+        _REMOTE_MUSIC_CACHE["items"] = [x for x in _REMOTE_MUSIC_CACHE["items"] if x.get("id") != _music_id(mid)]
+        _REMOTE_MUSIC_CACHE["at"] = time.time()
+    if publish:
+        _publish_live("music", _music_id(mid))
+    return rec
+
+
+def _cloud_merge_duplicate_record(keep, drop):
+    keep = dict(keep or {})
+    drop = dict(drop or {})
+    moved_cover = False
+    for fld in ("artist", "album", "year", "genre", "tag_src", "recog_title", "recog_artist",
+                "recog_album", "recog_mbid", "recog_score", "recog_state", "recog_tried"):
+        if not keep.get(fld) and drop.get(fld):
+            keep[fld] = drop.get(fld)
+    for fld in ("lyrics", "lyrics_plain", "lyrics_src"):
+        if not keep.get(fld) and drop.get(fld):
+            keep[fld] = drop.get(fld)
+    if not (keep.get("cover") or keep.get("cover_url")) and (drop.get("cover") or drop.get("cover_url")):
+        for fld in ("cover", "cover_url", "cover_public_id", "cover_v"):
+            if drop.get(fld):
+                keep[fld] = drop.get(fld)
+        moved_cover = True
+    try:
+        keep["play_count"] = int(keep.get("play_count") or 0) + int(drop.get("play_count") or 0)
+    except Exception:
+        pass
+    try:
+        keep["last_played"] = max(float(keep.get("last_played") or 0), float(drop.get("last_played") or 0))
+    except Exception:
+        pass
+    keep["dedupe_updated"] = int(time.time())
+    return keep, moved_cover
+
+
+def _cloud_dedupe_recognized(mid):
+    """클라우드 목록에서도 인식 완료된 완전 동일 음원은 한 곡만 남긴다."""
+    tracks = _remote_tracks()
+    by_id = {r.get("id"): dict(r) for r in tracks if r.get("id")}
+    rec = by_id.get(_music_id(mid))
+    key = _recog_dup_key(rec)
+    if not key:
+        return {"duplicate_removed": False, "removed": [], "kept": rec}
+    same = [k for k, v in by_id.items() if _recog_dup_key(v) == key]
+    if len(same) <= 1:
+        return {"duplicate_removed": False, "removed": [], "kept": rec}
+    keep_id = sorted(same, key=lambda k: _recog_keep_sort(k, by_id.get(k) or {}))[0]
+    keep_rec = dict(by_id.get(keep_id) or {})
+    removed, cover_moved = [], set()
+    for drop_id in same:
+        if drop_id == keep_id:
+            continue
+        keep_rec, moved = _cloud_merge_duplicate_record(keep_rec, by_id.get(drop_id) or {})
+        if moved:
+            cover_moved.add(drop_id)
+        removed.append(drop_id)
+    keep_rec = _music_track_save(keep_rec)
+    for drop_id in removed:
+        _cloud_music_delete_record(drop_id, skip_cover=drop_id in cover_moved)
+    if removed:
+        print("[recog] 클라우드 동일 음원 자동 정리: keep=%s removed=%s" % (keep_id, ",".join(removed)))
+    return {"duplicate_removed": _music_id(mid) in removed, "removed": removed, "kept": keep_rec}
+
+
 def _music_cloud_or_local_list():
     if not _sb_enabled():
         # 키를 아직 넣지 않은 구버전 서버는 로컬 곡을 계속 보여 준다.
@@ -288,11 +366,7 @@ def music_delete_cloud():
     if not rec:
         return jsonify({"ok": False, "error": "없는 곡입니다"}), 404
     try:
-        if CLOUD_READY and rec.get("cloud_public_id"):
-            cloudinary.uploader.destroy(rec["cloud_public_id"], resource_type="video", invalidate=True)
-        _cloud_cover_delete(rec)
-        _sb_delete(MUSIC_TABLE, mid)
-        _publish_live("music", mid)
+        _cloud_music_delete_record(mid)
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": "음악 삭제 실패: " + _sb_error_text(e)}), 502
@@ -795,10 +869,17 @@ def _recog_try(mid, local_path=None):
                     "artist": result.get("artist") or rec.get("artist"),
                     "album": result.get("album") or rec.get("album"),
                     "tag_state": "done", "tag_src": "AcoustID",
+                    "recog_title": result.get("title") or "",
+                    "recog_artist": result.get("artist") or "",
+                    "recog_album": result.get("album") or "",
+                    "recog_mbid": result.get("mbid") or "",
+                    "recog_state": "done",
                     "recog_score": result.get("score"), "recog_tried": int(time.time())})
         _music_track_save(rec)
+        dedupe = _cloud_dedupe_recognized(mid)
         print("[recog] 업로드 자동 인식 성공:", result.get("artist"), "-", result.get("title"))
-        return True
+        return {"ok": True, "duplicate_removed": bool(dedupe.get("duplicate_removed")),
+                "removed": dedupe.get("removed") or [], "kept": dedupe.get("kept") or rec}
     except Exception as e:
         print("[recog] 업로드 자동 인식 오류:", _sb_error_text(e))
         return False
@@ -816,7 +897,9 @@ def _cloud_music_pipeline(mid, tmp=None):
     recog_ok = False
     try:
         res = _recog_try(mid, tmp)
-        recog_ok = bool((res or {}).get("ok"))
+        if isinstance(res, dict) and res.get("duplicate_removed"):
+            return
+        recog_ok = bool((res or {}).get("ok")) if isinstance(res, dict) else bool(res)
     except Exception as e:
         print("[music_cloud] 업로드 음성 인식 오류:", e)
     finally:
@@ -889,11 +972,24 @@ def music_recognize_cloud():
                     "artist": result.get("artist") or rec.get("artist"),
                     "album": result.get("album") or rec.get("album"),
                     "tag_state": "done", "tag_src": "AcoustID",
+                    "recog_title": result.get("title") or "",
+                    "recog_artist": result.get("artist") or "",
+                    "recog_album": result.get("album") or "",
+                    "recog_mbid": result.get("mbid") or "",
+                    "recog_state": "done",
                     "recog_score": result.get("score"), "recog_tried": int(time.time())})
         rec = _music_track_save(rec)
+        dedupe = _cloud_dedupe_recognized(mid)
+        if dedupe.get("kept"):
+            rec = dedupe.get("kept")
         # 14.11 — '소리 인식' 클릭에 표지/가사 되찾기를 연쇄하지 않는다.
         # 그 뒤에 태깅이 덧붙는 것도 없앴다(각 기능은 전용 버튼).
-        return jsonify({"ok": True, "track": _music_public_cloud(rec), "recog": result})
+        resp = {"ok": True, "track": _music_public_cloud(rec), "recog": result}
+        if dedupe.get("removed"):
+            resp.update({"duplicate_removed": bool(dedupe.get("duplicate_removed")),
+                         "removed": dedupe.get("removed") or [],
+                         "kept": _music_public_cloud(dedupe.get("kept") or rec)})
+        return jsonify(resp)
     except Exception as e:
         return jsonify({"ok": False, "error": "인식 실패: " + _sb_error_text(e)}), 502
     finally:

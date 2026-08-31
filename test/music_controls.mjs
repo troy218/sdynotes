@@ -4,6 +4,12 @@ import { JSDOM, VirtualConsole } from 'jsdom';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
 const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const musicPy = fs.readFileSync(new URL('../worker/sdynotes_worker/music.py', import.meta.url), 'utf8');
+const musicCloudPy = fs.readFileSync(new URL('../worker/sdynotes_worker/music_cloud.py', import.meta.url), 'utf8');
+assert.match(musicPy, /def _music_dedupe_recognized\(mid\):/, '로컬 음원 인식 중복 자동 정리 시스템이 있어야 한다');
+assert.match(musicPy, /recog_mbid/, '인식된 곡은 MBID를 저장해 완전 동일곡 판정에 쓴다');
+assert.match(musicCloudPy, /def _cloud_dedupe_recognized\(mid\):/, '클라우드 음원도 인식 중복 자동 정리를 수행해야 한다');
+assert.match(js, /duplicate_removed[\s\S]{0,360}중복 음원을 자동으로 정리/, '프론트엔드는 중복 자동 삭제 응답을 사용자에게 알려야 한다');
 const fullHtml = html.includes('<script src="sdynotes.js')
   ? html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, '<script>' + js + '</script>')
   : html;

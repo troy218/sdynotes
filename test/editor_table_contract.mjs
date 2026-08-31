@@ -54,9 +54,9 @@ check('텍스트 상자·표 고스트는 사이트 배율(html{zoom})을 직접
   fn('uiCssZoom').includes('uiZoomProbe') && fn('uiCssZoom').includes('/100')
   && fn('moveTextGhost').includes('uiCssZoom()') && fn('moveTableGhost').includes('uiCssZoom()')
   && fn('positionTblBar').includes('uiCssZoom()'));
-check('텍스트 고스트는 삽입 경로와 같은 계산으로 실제 생성 자리를 미리 본다',
-  fn('moveTextGhost').includes('clampEl(p.x-TB_W/2,p.y-TB_H/2,TB_W,TB_H)')
-  && /if\(textToolActive\)\{[\s\S]{0,220}c=clampEl\(p\.x-TB_W\/2,p\.y-TB_H\/2,TB_W,TB_H\)/.test(js)
+check('텍스트 고스트는 현재 글자 크기 기반 기본 크기로 실제 생성 자리를 미리 본다',
+  fn('moveTextGhost').includes('textBoxDefaultSize()')
+  && /if\(textToolActive\)\{[\s\S]{0,260}dim=textBoxDefaultSize\(\)[\s\S]{0,180}c=clampEl\(p\.x-dim\.w\/2\s*,\s*p\.y-dim\.h\/2\s*,\s*dim\.w\s*,\s*dim\.h\)/.test(js)
   && /if\(textToolActive&&ghost\) moveTextGhost\(e\.clientX,e\.clientY\)/.test(js));
 check('배율을 바꾸면 고스트를 크기·위치 모두 다시 맞춘다',
   fn('sizeTextGhost').includes('moveTextGhost(lastMouse.clientX')
@@ -79,6 +79,10 @@ check('표 이동 미리보기는 칸·선·선택틀에 같은 델타를 적용
 check('표 이동 중 매 프레임 rebuild하지 않고 mouseup에서 한 번 재구성한다',
   /if\(tblMove\)\{[\s\S]*?previewTblMove\(tblMove,dx,dy\);[\s\S]*?return;/.test(js)
   && /document\.addEventListener\('mouseup',[\s\S]*?rebuildTable\(tblMove\.pi,tblMove\.tid,\{quiet:true\}\)/.test(js));
+check('표 이동은 별도 버튼 없이 테두리 영역에서 시작한다',
+  !js.includes("className='tbl-move'") && js.includes("eg.className='tbl-edge '+side") && css.includes('.tbl-edge.top'));
+check('표 선택 경계는 실제 표 상자와 같은 border-box 기준을 쓴다',
+  /\.tbl-box\{[^}]*box-sizing:border-box/.test(css) && /\.tbl-frame\{[^}]*box-sizing:border-box/.test(css));
 
 check('표 셀 선택은 앵커와 끝점으로 직사각형 범위를 계산한다',
   fn('selectedTblCellEls').includes('Math.min(s.r0,s.r1)')
@@ -101,6 +105,10 @@ check('표 미리보기와 실제 삽입이 같은 종이 좌표 경계를 쓴�
 check('표 전체 삭제가 셀·stroke·거터 메타데이터를 모두 제거한다',
   fn('tblDelAll').includes('tblOf(e) !== tid && e.group !== group')
   && fn('tblDelAll').includes("document.querySelectorAll('.layer-tbl .tbl-box')"));
+check('다중선택 삭제도 표 일부가 포함되면 표 테두리와 메타데이터를 함께 지운다',
+  fn('deleteMulti').includes('tableIds.add(tid)')
+  && fn('deleteMulti').includes('doc.pages[pi].tables=pageTables(pi).filter')
+  && fn('deleteMulti').includes('renderTblDivs(pi)'));
 check('표 도구막대에 셀 정렬과 배경색 조절이 노출된다',
   html.includes("tblCellAlign('center')") && html.includes("tblCellVAlign('middle')") && html.includes('tblCellFill(this.value)'));
 

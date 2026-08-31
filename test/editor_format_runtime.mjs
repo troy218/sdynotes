@@ -173,6 +173,37 @@ try {
     && !!content.querySelector('span[style*="color"]'));
   check('형광펜을 지워도 글꼴이 풀리지 않는다', (content.style.fontFamily || '').indexOf('Jua') >= 0);
 
+  // ── ③-1 캐럿 서식이 남아 있어도 실제 드래그 선택이 우선된다 ─────────────
+  const colorAfterClear = content.querySelector('span[style*="color"]');
+  const findTextNode = (root, needle) => {
+    if (!root) return null;
+    const tw = document.createTreeWalker(root, window.NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = tw.nextNode())) if ((n.nodeValue || '').includes(needle)) return n;
+    return null;
+  };
+  const colorText = findTextNode(colorAfterClear, '첫');
+  check('캐럿-선택 우선순위 검증용 색 글자가 남아 있다', !!colorText);
+  if (colorText) {
+    if (typeof window.enterEdit === 'function') window.enterEdit(tb, true);
+    const staleCaret = document.createRange();
+    staleCaret.setStart(content, content.childNodes.length); staleCaret.collapse(true);
+    sel.removeAllRanges(); sel.addRange(staleCaret);
+    window.saveSel();
+    const rBold = document.createRange();
+    rBold.setStart(colorText, 0); rBold.setEnd(colorText, 1); // '첫' 한 글자만
+    sel.removeAllRanges(); sel.addRange(rBold);
+    window.saveSel();
+    window.execFmt('bold');
+    await wait(120);
+    const boldSpans = [...content.querySelectorAll('span[style*="font-weight"],b,strong')];
+    check('편집 중 굵게는 남아 있던 캐럿이 아니라 선택한 한 글자에 적용된다',
+      joinedText(boldSpans).includes('첫') && !joinedText(boldSpans).includes('둘째'));
+    check('동일 서식 선택 시 툴바 굵게 표시가 켜진다', document.querySelector('.tb-bold').classList.contains('active'));
+    if (typeof window.exitEditKeepSel === 'function') window.exitEditKeepSel(tb);
+    else { tb.classList.remove('edit'); tb.classList.add('sel'); content.contentEditable = 'false'; }
+  }
+
   // ── ④ 선택 없이 상자만 고른 상태 → 상자 전체에만 칠해진다 ─────────────
   window.clearTextSelection();
   content.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, detail: 1, clientX: 60, clientY: 60 }));

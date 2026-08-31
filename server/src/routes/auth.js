@@ -1,18 +1,20 @@
-// 16.2 · 회원 인증 라우트 — 이메일 OTP 로그인 (비밀번호 없음).
+// 16.2/16.4 · 회원 인증 라우트 — 최초 등록은 이메일 OTP, 이후 로그인은 이메일+비밀번호.
 //
 // 흐름:
-//   ① POST /api/auth/otp    {email}          → 6자리 코드 발송(SMTP)
-//   ② POST /api/auth/verify {email,code,nick} → 세션 토큰 발급 (새 이메일이면 닉네임 등록)
-//   ③ GET  /api/auth/me     (Bearer 토큰)     → 내 정보 (세션 자동 연장)
+//   ① POST /api/auth/otp      {email}                 → 신규 등록용 6자리 코드 발송(SMTP)
+//   ② POST /api/auth/verify   {email,code,nick,password} → 신규 회원 등록 + 세션 토큰
+//   ③ POST /api/auth/login    {email,password}        → 등록 회원 로그인
+//   ④ POST /api/auth/password {old_password,password} → 비밀번호 변경
+//   ⑤ GET  /api/auth/me       (Bearer 토큰)           → 내 정보 (세션 자동 연장)
 //
 // SMTP(SDY_SMTP_*) 가 설정돼 있지 않으면 메일은 못 보내고 서버 콘솔에 코드를
 // 찍는다. SDY_AUTH_DEV_CODE=1 이면(개발/점검용) 응답에 코드를 실어 준다.
 import { clientIp } from '../lib/admin.js';
 import { smtpConfigured, sendMail } from '../lib/mailer.js';
 import {
-  otpIssue, otpVerifyAndLogin, otpRateStatus, otpRateHit,
+  otpIssue, otpVerifyAndLogin, otpRateStatus, otpRateHit, passwordLogin,
   emailValid, sanitizeEmail, sanitizeNick,
-  requireUser, extractUserToken, userLogout, userChangeNick, userByTokenSync,
+  requireUser, extractUserToken, userLogout, userChangeNick, userChangePassword, userByTokenSync,
 } from '../lib/userauth.js';
 import { notifyAddInternal } from '../lib/notifyAdd.js';
 
@@ -22,8 +24,24 @@ function bearerUser(req) {
   return requireUser(req);
 }
 
+async function notifyAuth(user, isNew) {
+  try {
+    const nick = (user && user.nick) || '누군가';
+    const bucket = Math.floor(Date.now() / 1000 / 900);   // 15분 바구니
+    if (isNew) {
+      await notifyAddInternal('login', `${nick} 님이 새로 가입했어요 🎉`,
+        '고정 닉네임 회원이 생겼어요 · 엽스코드에서 배지와 함께 대화해요',
+        `login-new:${user.uid}:${bucket}`);
+    } else {
+      await notifyAddInternal('login', `${nick} 님이 로그인했어요`,
+        '고정 아이디(회원) 로그인 · 엽스코드 고정 닉네임 계정',
+        `login:${user.uid}:${bucket}`);
+    }
+  } catch (e) { console.error('[auth] 로그인 알림 실패:', e?.message || e); }
+}
+
 export function registerAuth(app) {
-  // ── ① 인증 코드 요청 ──
+  // ── ① 신규 등록 인증 코드 요청 ──
   app.post('/api/auth/otp', async (req, reply) => {
     const d = req.body || {};
     const email = sanitizeEmail(d.email);
@@ -38,10 +56,13 @@ export function registerAuth(app) {
     otpRateHit(ip);
     const r = await otpIssue(email);
     if (!r.ok) {
+      if (r.registered) {
+        return reply.code(409).send({ ok: false, registered: true, error: r.error || '이미 등록된 이메일이에요' });
+      }
       return reply.code(429).send({ ok: false, error: `코드는 ${r.retry_after}초 뒤에 다시 받을 수 있어요`, retry_after: r.retry_after });
     }
     // 메일 본문
-    const subject = 'SDYnotes 로그인 인증 코드';
+    const subject = 'SDYnotes 회원 등록 인증 코드';
     const text = `인증 코드: ${r.code}\n\n` +
       `10분 안에 입력해 주세요. 코드는 한 번만 쓸 수 있어요.\n` +
       `본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다.\n\n— SDYnotes`;
@@ -54,55 +75,52 @@ export function registerAuth(app) {
         if (!DEV_CODE) {
           return reply.code(502).send({ ok: false, error: '메일을 보내지 못했어요. 잠시 후 다시 시도해 주세요' });
         }
-        console.log(`[auth] 개발 모드 · ${email} 인증 코드: ${r.code}`);
+        console.log(`[auth] 개발 모드 · ${email} 등록 코드: ${r.code}`);
       }
     } else {
       // SMTP 미설정 — 운영자가 서버 콘솔로 확인할 수 있게 찍는다.
-      console.log(`[auth] SMTP 미설정 · ${email} 인증 코드: ${r.code}`);
+      console.log(`[auth] SMTP 미설정 · ${email} 등록 코드: ${r.code}`);
     }
     return reply.send({
-      ok: true, delivered, registered: !!r.registered, expires_in: r.expires_in,
+      ok: true, delivered, registered: false, expires_in: r.expires_in,
       ...(DEV_CODE && !delivered ? { dev_code: r.code } : {}),
     });
   });
 
-  // ── ② 코드 확인 + 로그인(또는 회원가입) ──
-  //   nick 은 '새 이메일'일 때만 필요하다 — 등록된 회원은 빈 값으로 와도 통과.
-  //   (새 회원 닉네임 검증은 userauth.otpVerifyAndLogin 이 맡는다)
+  // ── ② 코드 확인 + 신규 회원 등록 ──
   app.post('/api/auth/verify', async (req, reply) => {
     const d = req.body || {};
     const email = sanitizeEmail(d.email);
     if (!email || !emailValid(email)) {
       return reply.code(400).send({ ok: false, error: '이메일 주소가 올바르지 않아요' });
     }
-    const r = await otpVerifyAndLogin(email, d.code, d.nick);
+    const r = await otpVerifyAndLogin(email, d.code, d.nick, d.password || d.new_password);
     if (!r.ok) {
-      const code = r.need_nick ? 400 : 401;
+      const code = r.need_nick || r.need_password || r.registered ? 400 : 401;
       return reply.code(code).send(r);
     }
-    // 17.4 · 고정 아이디(회원) 로그인을 전체 알림 센터에 알린다.
-    //   짧은 시간에 몰리는 재로그인은 dedupe(15분 단위)로 묶어 잡음을 줄인다.
-    try {
-      const nick = (r.user && r.user.nick) || '누군가';
-      const bucket = Math.floor(Date.now() / 1000 / 900);   // 15분 바구니
-      if (r.isNew) {
-        await notifyAddInternal('login', `${nick} 님이 새로 가입했어요 🎉`,
-          '고정 닉네임 회원이 생겼어요 · 엽스코드에서 배지와 함께 대화해요',
-          `login-new:${r.user.uid}:${bucket}`);
-      } else {
-        await notifyAddInternal('login', `${nick} 님이 로그인했어요`,
-          '고정 아이디(회원) 로그인 · 엽스코드 고정 닉네임 계정',
-          `login:${r.user.uid}:${bucket}`);
-      }
-    } catch (e) { console.error('[auth] 로그인 알림 실패:', e?.message || e); }
-    return reply.send({ ok: true, token: r.token, user: r.user });
+    await notifyAuth(r.user, true);
+    return reply.send({ ok: true, token: r.token, user: r.user, needs_password: !!r.needs_password });
   });
 
-  // ── ③ 내 정보 ──
+  // ── ③ 이메일 + 비밀번호 로그인 ──
+  app.post('/api/auth/login', async (req, reply) => {
+    const d = req.body || {};
+    const email = sanitizeEmail(d.email);
+    if (!email || !emailValid(email)) {
+      return reply.code(400).send({ ok: false, error: '이메일 주소가 올바르지 않아요' });
+    }
+    const r = await passwordLogin(email, d.password);
+    if (!r.ok) return reply.code(401).send(r);
+    await notifyAuth(r.user, false);
+    return reply.send({ ok: true, token: r.token, user: r.user, needs_password: !!r.needs_password });
+  });
+
+  // ── ④ 내 정보 ──
   app.get('/api/auth/me', async (req, reply) => {
     const u = bearerUser(req);
     if (!u) return reply.code(401).send({ ok: false, error: '로그인이 필요해요' });
-    return reply.send({ ok: true, user: { uid: u.uid, email: u.email, nick: u.nick } });
+    return reply.send({ ok: true, user: { uid: u.uid, email: u.email, nick: u.nick, needs_password: !!u.needs_password } });
   });
 
   // ── 고정 닉네임 변경 ──
@@ -111,6 +129,16 @@ export function registerAuth(app) {
     if (!u) return reply.code(401).send({ ok: false, error: '로그인이 필요해요' });
     const r = await userChangeNick(u, (req.body || {}).nick);
     if (!r.ok) return reply.code(409).send(r);
+    return reply.send(r);
+  });
+
+  // ── 비밀번호 변경 ──
+  app.post('/api/auth/password', async (req, reply) => {
+    const u = bearerUser(req);
+    if (!u) return reply.code(401).send({ ok: false, error: '로그인이 필요해요' });
+    const d = req.body || {};
+    const r = await userChangePassword(u, d.old_password || d.current_password || d.oldPassword, d.password || d.new_password || d.newPassword);
+    if (!r.ok) return reply.code(400).send(r);
     return reply.send(r);
   });
 

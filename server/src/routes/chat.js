@@ -307,6 +307,16 @@ function sanitizeText(s) {
   // eslint-disable-next-line no-control-regex
   return String(s || '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, 2000);
 }
+function sanitizeStickers(v) {
+  const arr = Array.isArray(v) ? v : (v ? [v] : []);
+  const out = [];
+  for (const raw of arr) {
+    const id = String(raw || '').trim().toLowerCase();
+    if (/^[a-z0-9_-]{1,24}$/.test(id) && !out.includes(id)) out.push(id);
+    if (out.length >= 6) break;
+  }
+  return out;
+}
 
 let gcTimer = null;
 function startGC() {
@@ -415,8 +425,9 @@ export function registerChat(app) {
     const me = state.members.get(uid);
     if (!me) return reply.code(400).send({ ok: false, error: '먼저 입장해 주세요' });
     const text = sanitizeText(d.text);
-    if (!text) return reply.code(400).send({ ok: false, error: '내용이 없습니다' });
-    const msg = pushMsg({ kind: 'txt', uid, name: me.name, color: me.color, verified: !!me.verified, text, reactions: {} });
+    const stickers = sanitizeStickers(d.stickers);
+    if (!text && !stickers.length) return reply.code(400).send({ ok: false, error: '내용이 없습니다' });
+    const msg = pushMsg({ kind: 'txt', uid, name: me.name, color: me.color, verified: !!me.verified, text, stickers, reactions: {} });
     return reply.send({ ok: true, msg });
   });
 

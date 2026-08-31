@@ -3373,18 +3373,25 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return {x,y};
     }
 
+    let _snapLineNodes=[], _snapLineSig='';
     function drawSnapLines(pageIdx,lines){
-        clearSnapLines();
         const paper=paperAt(pageIdx); if(!paper) return;
-        lines.forEach(l=>{
+        const sig=pageIdx+'|'+(lines||[]).map(l=>l.dir+':'+Math.round(l.pos*10)/10+':' +(l.center?1:0)).join('|');
+        if(sig===_snapLineSig) return;
+        clearSnapLines();
+        _snapLineSig=sig;
+        (lines||[]).forEach(l=>{
             const d=document.createElement('div');
             d.className='snap-line '+l.dir+(l.center?' center':'');
             if(l.dir==='v') d.style.left=l.pos+'px'; else d.style.top=l.pos+'px';
             paper.appendChild(d);
+            _snapLineNodes.push(d);
         });
     }
     function clearSnapLines(){
-        document.querySelectorAll('.snap-line').forEach(n=>n.remove());
+        if(!_snapLineNodes.length){ _snapLineSig=''; return; }
+        _snapLineNodes.forEach(n=>{ try{ n.remove(); }catch(e){} });
+        _snapLineNodes=[]; _snapLineSig='';
     }
 
     // 선택한 여러 요소를 서로 맞춰 정렬 / 균등 배치
@@ -5865,6 +5872,22 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!failed&&outboxCount()) flushOutbox(true);
     }
 
+    // 포인터 이벤트를 기본으로 쓰되, jsdom/구형 브라우저/마우스 전용 테스트에서는
+    // 같은 로직을 마우스 이벤트로도 받는다. 실제 브라우저의 pointer→mouse 호환
+    // 이중 이벤트는 짧은 시간창으로 눌러 한 동작이 두 번 실행되지 않게 한다.
+    const SDY_HAS_POINTER_EVENTS=('PointerEvent' in window);
+    let SDY_LAST_POINTER_EVENT_AT=0;
+    function sdyPointerFallbackType(type){
+        return type==='pointerdown'?'mousedown':type==='pointermove'?'mousemove':type==='pointerup'?'mouseup':null;
+    }
+    function sdyMarkPointerEvent(){ SDY_LAST_POINTER_EVENT_AT=Date.now(); }
+    function sdyIgnoreCompatMouse(){ return SDY_HAS_POINTER_EVENTS && Date.now()-SDY_LAST_POINTER_EVENT_AT<650; }
+    function sdyAddPointerCompat(target,type,handler,opts){
+        target.addEventListener(type,e=>{ sdyMarkPointerEvent(); handler(e); },opts);
+        const mt=sdyPointerFallbackType(type);
+        if(mt) target.addEventListener(mt,e=>{ if(sdyIgnoreCompatMouse()) return; handler(e); },opts);
+    }
+
     // ============ 페이지 렌더 ============
     function renderPages(){
         const stage=document.getElementById('pagesStage');
@@ -5914,7 +5937,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                              <div class="draw-surface"></div>`;
             // 메모 모드는 pointer 캡처 단계에서 먼저 받는다. 텍스트 상자·이미지
             // 위에서도 자식 선택/드래그 이벤트에 빼앗기지 않고 그 지점에 붙는다.
-            paper.addEventListener('pointerdown',e=>{
+            const onPaperPlacementDown=e=>{
                 // 요소 배치 모드(그림·수식)도 캡처 단계에서 받는다 — 자식 요소가
                 // 이벤트를 가로채도 누른 바로 그 지점(pageLocal 문서 좌표)에 놓인다.
                 if(placeMode){
@@ -5928,13 +5951,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 }
                 if(textToolActive){
                     e.preventDefault(); e.stopPropagation();
-                    const p=pageLocal(e,i), c=clampEl(p.x-TB_W/2,p.y-TB_H/2,TB_W,TB_H);
+                    const dim=textBoxDefaultSize();
+                    const p=pageLocal(e,i), c=clampEl(p.x-dim.w/2,p.y-dim.h/2,dim.w,dim.h);
                     _textPointerBlockUntil=Date.now()+500;
-                    addTextBox(i,c.x,c.y); setTextTool(false);
+                    addTextBox(i,c.x,c.y,dim); setTextTool(false);
                 }
-            },true);
+            };
+            sdyAddPointerCompat(paper,'pointerdown',onPaperPlacementDown,true);
             // ★ pointerdown 로 변경 — 터치 장치에서 300ms 지연 제거
-            paper.addEventListener('pointerdown',e=>onPaperDown(e,i));
+            sdyAddPointerCompat(paper,'pointerdown',e=>onPaperDown(e,i));
             wrap.appendChild(paper);
             stage.appendChild(wrap);
             // 내용은 화면에 들어올 때 렌더 (가상화) — 페이지가 많아도 가벼움
@@ -6679,10 +6704,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         multiDrag={sx:e.clientX,sy:e.clientY,pageIdx:pi,moved:false,
             items:multiSel.map(m=>{
                 const el=findEl(m.pageIdx,m.id);
+                if(!el) return null;
                 return {id:m.id,node:m.node,el,
                         ox:(el.type==='stroke')?(el.dx||0):el.x,
                         oy:(el.type==='stroke')?(el.dy||0):el.y};
-            })};
+            }).filter(Boolean)};
+        if(!multiDrag.items.length){ multiDrag=null; return; }
         // 묶음 전체의 바운딩 박스 (스냅 기준)
         let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
         multiDrag.items.forEach(it=>{
@@ -6691,6 +6718,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             x1=Math.max(x1,bb.x+bb.w); y1=Math.max(y1,bb.y+bb.h);
         });
         if(isFinite(x0)) multiDrag.bb={x:x0,y:y0,w:x1-x0,h:y1-y0};
+        _beginMultiPreview(multiDrag);
     }
     function hitMultiSel(e){
         let n=e.target.closest('.msel');
@@ -6833,14 +6861,25 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!multiSel.length) return;
         pushHistory();
         const pi=multiSel[0].pageIdx;
-        const ids=multiSel.map(m=>m.id);
-        const removed=(doc.pages[pi].els||[]).filter(x=>ids.includes(x.id));
-        doc.pages[pi].els=(doc.pages[pi].els||[]).filter(x=>!ids.includes(x.id));
-        multiSel.forEach(m=>m.node.remove());
+        const ids=new Set(multiSel.map(m=>m.id));
+        const all=doc.pages[pi].els||[];
+        const tableIds=new Set();
+        all.forEach(el=>{ if(ids.has(el.id)){ const tid=tblOf(el); if(tid) tableIds.add(tid); } });
+        // 표의 일부 칸/선만 다중 선택 후 삭제해도 표 메타데이터와 모든 테두리를 함께 제거한다.
+        const tableGroups=new Set(pageTables(pi).filter(t=>tableIds.has(t.id)).map(t=>t.group).filter(Boolean));
+        const shouldRemove=el=>ids.has(el.id)||tableIds.has(tblOf(el))||(el.group&&tableGroups.has(el.group));
+        const removed=all.filter(shouldRemove);
+        doc.pages[pi].els=all.filter(el=>!shouldRemove(el));
+        const activeTableRemoved=!!(activeTbl&&activeTbl.pageIdx===pi&&tableIds.has(activeTbl.tid));
+        if(tableIds.size) doc.pages[pi].tables=pageTables(pi).filter(t=>!tableIds.has(t.id));
         clearMulti();
+        if(activeTableRemoved) clearActiveTbl();
+        renderPageEls(pi);
+        renderTblDivs(pi);
+        positionTblBar();
         await purgeElements(removed);       // 서버 자원도 정리
         saveDoc();
-        toast(`${ids.length}개 삭제됨`,1400);
+        toast(`${removed.length}개 삭제됨`,1400);
     }
 
     // ============ 요소 빌더 ============
@@ -7707,7 +7746,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 마지막 마우스 위치 (붙여넣기 기준점)
     let lastMouse={clientX:0,clientY:0,pageIdx:0,x:null,y:null};
     // ★ pointermove 로 통합 — 터치 장치에서 커서 위치 추적 즉시 반응
-    document.addEventListener('pointermove',e=>{
+    function trackLastPointer(e){
         lastMouse.clientX=e.clientX; lastMouse.clientY=e.clientY;
         const paper=e.target.closest&&e.target.closest('#pagesStage .paper');
         if(paper){
@@ -7717,7 +7756,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             lastMouse.x=p.x;
             lastMouse.y=p.y;
         }
-    },true);
+    }
+    sdyAddPointerCompat(document,'pointermove',trackLastPointer,true);
 
     // 붙여넣기 지점: 마우스가 종이 위면 그 위치, 아니면 현재 페이지 중앙 상단
     function pastePoint(w,h){
@@ -7825,6 +7865,226 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const sc=pageScreenScale(pageIdx),k=uiCssZoom();
         return {x:sc.x/k,y:sc.y/k};
     }
+
+    // 모바일 터치에서 상자 이동/크기조절이 깜박이던 핵심 원인: pointermove마다
+    // left/top/width/height를 직접 바꿔 레이아웃을 강제로 다시 계산했다.
+    // 드래그 중에는 GPU transform으로만 미리보기하고(pointermove는 rAF로 1프레임 1회),
+    // 손을 떼는 순간 canonical 위치/크기를 한 번만 커밋한다.
+    let _editorMoveRaf=0, _editorMovePending=null;
+    function _eventLite(e,kind){
+        return {kind,clientX:e.clientX,clientY:e.clientY,altKey:!!e.altKey,shiftKey:!!e.shiftKey};
+    }
+    function _queueEditorMove(kind,e){
+        _editorMovePending=_eventLite(e,kind);
+        if(_editorMoveRaf) return;
+        _editorMoveRaf=requestAnimationFrame(()=>{
+            _editorMoveRaf=0;
+            const ev=_editorMovePending; _editorMovePending=null;
+            _applyEditorMove(ev);
+        });
+    }
+    function _flushEditorMove(){
+        if(_editorMoveRaf){ cancelAnimationFrame(_editorMoveRaf); _editorMoveRaf=0; }
+        const ev=_editorMovePending; _editorMovePending=null;
+        _applyEditorMove(ev);
+    }
+    function _previewBegin(node,cls){
+        if(!node||node._sdyPreview) return;
+        node._sdyPreview={
+            cls,
+            transform:node.style.transform||'',
+            transformOrigin:node.style.transformOrigin||'',
+            willChange:node.style.willChange||'',
+            touchAction:node.style.touchAction||''
+        };
+        node.classList.add(cls);
+        node.style.transformOrigin='0 0';
+        node.style.willChange='transform';
+        node.style.touchAction='none';
+        try{ document.body.classList.add('sdy-editor-gesturing'); }catch(e){}
+    }
+    function _previewSet(node,tx,ty,sx=1,sy=1){
+        if(!node) return;
+        const x=Math.round((tx||0)*100)/100, y=Math.round((ty||0)*100)/100;
+        const sc=(Math.abs(sx-1)>0.0005||Math.abs(sy-1)>0.0005)
+            ? ` scale(${(sx||1).toFixed(4)},${(sy||1).toFixed(4)})` : '';
+        node.style.transform=`translate3d(${x}px,${y}px,0)`+sc;
+    }
+    function _previewEnd(node){
+        if(!node||!node._sdyPreview) return;
+        const p=node._sdyPreview; delete node._sdyPreview;
+        node.classList.remove(p.cls);
+        node.style.transform=p.transform;
+        node.style.transformOrigin=p.transformOrigin;
+        node.style.willChange=p.willChange;
+        node.style.touchAction=p.touchAction;
+    }
+    function _clearGestureClass(){
+        if(drag||resize||multiDrag) return;
+        try{ document.body.classList.remove('sdy-editor-gesturing'); }catch(e){}
+    }
+    function _beginDragPreview(st){
+        if(!st) return st;
+        st.w=st.w||st.el.offsetWidth||30; st.h=st.h||st.el.offsetHeight||24;
+        st.nx=st.ox; st.ny=st.oy;
+        if(!st.isStroke) _previewBegin(st.el,'sdy-dragging');
+        else { try{ document.body.classList.add('sdy-editor-gesturing'); }catch(e){} }
+        return st;
+    }
+    function _beginResizePreview(st){
+        if(!st) return st;
+        st.nx=st.ox; st.ny=st.oy; st.nw=st.sw; st.nh=st.sh;
+        _previewBegin(st.el,'sdy-resizing');
+        return st;
+    }
+    function _finishDragPreview(st,commit){
+        if(!st) return;
+        if(!st.isStroke){
+            if(commit){
+                st.el.style.left=Math.round(st.nx!=null?st.nx:st.ox)+'px';
+                st.el.style.top =Math.round(st.ny!=null?st.ny:st.oy)+'px';
+            }
+            _previewEnd(st.el);
+        }
+    }
+    function _finishResizePreview(st,commit){
+        if(!st) return;
+        if(commit){
+            st.el.style.left=Math.round(st.nx!=null?st.nx:st.ox)+'px';
+            st.el.style.top =Math.round(st.ny!=null?st.ny:st.oy)+'px';
+            st.el.style.width =Math.round(Math.max(30,st.nw!=null?st.nw:st.sw))+'px';
+            st.el.style.height=Math.round(Math.max(24,st.nh!=null?st.nh:st.sh))+'px';
+        }
+        _previewEnd(st.el);
+    }
+    function _beginMultiPreview(st){
+        if(!st) return;
+        st.items.forEach(it=>{
+            if(!it||!it.el||it.el.type==='stroke') return;
+            it.w=it.el.w||it.node.offsetWidth||30; it.h=it.el.h||it.node.offsetHeight||24;
+            it.nx=it.ox; it.ny=it.oy;
+            _previewBegin(it.node,'sdy-dragging');
+        });
+    }
+    function _finishMultiPreview(st,commit){
+        if(!st) return;
+        st.items.forEach(it=>{
+            if(!it||!it.el||it.el.type==='stroke') return;
+            if(commit){
+                const nx=Math.round(it.nx!=null?it.nx:it.ox), ny=Math.round(it.ny!=null?it.ny:it.oy);
+                it.el.x=nx; it.el.y=ny;
+                it.node.style.left=nx+'px'; it.node.style.top=ny+'px';
+            }
+            _previewEnd(it.node);
+        });
+    }
+    function _applyEditorMove(ev){
+        if(!ev) return;
+        if(ev.kind==='multi'&&multiDrag) return _applyMultiDragMove(ev);
+        if(ev.kind==='drag'&&drag) return _applyDragMove(ev);
+        if(ev.kind==='resize'&&resize) return _applyResizeMove(ev);
+    }
+    function _applyMultiDragMove(e){
+        const dd=pageClientDelta(multiDrag.pageIdx,e.clientX-multiDrag.sx,e.clientY-multiDrag.sy);
+        const dx=dd.x,dy=dd.y;
+        if(!multiDrag.moved){
+            if(Math.abs(e.clientX-multiDrag.sx)<3&&Math.abs(e.clientY-multiDrag.sy)<3) return;
+            multiDrag.moved=true; pushHistory();
+        }
+        let sdx=dx, sdy=dy;
+        if(!e.altKey && multiDrag.bb){
+            const bb=multiDrag.bb;
+            const ids=multiDrag.items.map(it=>it.el&&it.el.id).filter(Boolean);
+            const sn=applySnap(multiDrag.pageIdx, bb.x+dx, bb.y+dy, bb.w, bb.h, ids);
+            sdx=sn.x-bb.x; sdy=sn.y-bb.y;
+        }else clearSnapLines();
+        multiDrag.items.forEach(it=>{
+            if(it.el.type==='stroke'){
+                it.el.dx=it.ox+sdx; it.el.dy=it.oy+sdy;
+                it.node.setAttribute('transform',`translate(${it.el.dx},${it.el.dy})`);
+            }else{
+                const c=clampEl(it.ox+sdx,it.oy+sdy,it.w||it.el.w,it.h||it.el.h);
+                it.nx=Math.round(c.x); it.ny=Math.round(c.y);
+                _previewSet(it.node,it.nx-it.ox,it.ny-it.oy);
+            }
+        });
+    }
+    function _applyDragMove(e){
+        const dd=pageClientDelta(drag.pageIdx,e.clientX-drag.sx,e.clientY-drag.sy);
+        const dx=dd.x,dy=dd.y;
+        if(drag.pending){
+            if(Math.abs(e.clientX-drag.sx)<3&&Math.abs(e.clientY-drag.sy)<3) return;
+            drag.pending=false; pushHistory();
+        }
+        drag.moved=true;
+        if(drag.isStroke){
+            const el=findEl(drag.pageIdx,drag.el.dataset.id); if(!el) return;
+            const bb=strokeBBox(el);
+            let nx=drag.ox+dx, ny=drag.oy+dy;
+            if(!e.altKey){
+                const sn=applySnap(drag.pageIdx, bb.x+nx, bb.y+ny, bb.w, bb.h, [el.id]);
+                nx=sn.x-bb.x; ny=sn.y-bb.y;
+            }else clearSnapLines();
+            el.dx=nx; el.dy=ny; drag.nx=nx; drag.ny=ny;
+            drag.el.setAttribute('transform',`translate(${el.dx},${el.dy})`);
+            return;
+        }
+        const w=drag.w||drag.el.offsetWidth, h=drag.h||drag.el.offsetHeight;
+        let c=clampEl(drag.ox+dx,drag.oy+dy,w,h);
+        if(!e.altKey){
+            const sn=applySnap(drag.pageIdx,c.x,c.y,w,h,[drag.el.dataset.id]);
+            c=clampEl(sn.x,sn.y,w,h);
+        }else clearSnapLines();
+        drag.nx=Math.round(c.x); drag.ny=Math.round(c.y);
+        _previewSet(drag.el,drag.nx-drag.ox,drag.ny-drag.oy);
+    }
+    function _applyResizeMove(e){
+        const dd=pageClientDelta(resize.pageIdx,e.clientX-resize.sx,e.clientY-resize.sy);
+        const dx=dd.x,dy=dd.y;
+        let nw=resize.sw, nh=resize.sh;
+        let nx=resize.ox, ny=resize.oy;
+        const dir=resize.dir;
+        const west =(dir==='h-w'||dir==='h-nw'||dir==='h-sw');
+        const east =(dir==='h-e'||dir==='h-ne'||dir==='h-se');
+        const north=(dir==='h-n'||dir==='h-nw'||dir==='h-ne');
+        const south=(dir==='h-s'||dir==='h-sw'||dir==='h-se');
+        if(east) nw=resize.sw+dx;
+        if(west){ nw=resize.sw-dx; nx=resize.ox+dx; }
+        if(south) nh=resize.sh+dy;
+        if(north){ nh=resize.sh-dy; ny=resize.oy+dy; }
+        if(nw<30){ if(west) nx=resize.ox+(resize.sw-30); nw=30; }
+        if(nh<24){ if(north) ny=resize.oy+(resize.sh-24); nh=24; }
+        if(resize.keepRatio && !e.shiftKey){
+            const ar=resize.sw/resize.sh;
+            if(Math.abs(nw-resize.sw) >= Math.abs(nh-resize.sh)) nh=nw/ar;
+            else nw=nh*ar;
+            if(nw<30){ nw=30; nh=nw/ar; }
+            if(nh<24){ nh=24; nw=nh*ar; }
+            nx = west  ? resize.ox+(resize.sw-nw) : resize.ox;
+            ny = north ? resize.oy+(resize.sh-nh) : resize.oy;
+        }
+        nw=Math.max(30,nw); nh=Math.max(24,nh);
+        if(!e.altKey&&snapEnabled){
+            const el0=findEl(resize.pageIdx,resize.el.dataset.id);
+            const bx=el0?el0.x:resize.ox;
+            const by=el0?el0.y:resize.oy;
+            const {V,H}=snapTargets(resize.pageIdx,[resize.el.dataset.id]);
+            const lines=[];
+            let best=null;
+            V.forEach(t=>{ const d=Math.abs(bx+nw-t.v);
+                if(d<=SNAP_TOL&&(!best||d<best.d)) best={d,v:t.v,center:!!t.center}; });
+            if(best&&east){ nw=best.v-bx; lines.push({dir:'v',pos:best.v,center:best.center}); }
+            let bh=null;
+            H.forEach(t=>{ const d=Math.abs(by+nh-t.v);
+                if(d<=SNAP_TOL&&(!bh||d<bh.d)) bh={d,v:t.v,center:!!t.center}; });
+            if(bh&&south){ nh=bh.v-by; lines.push({dir:'h',pos:bh.v,center:bh.center}); }
+            drawSnapLines(resize.pageIdx,lines);
+        }else clearSnapLines();
+        resize.nx=Math.round(nx); resize.ny=Math.round(ny);
+        resize.nw=Math.round(Math.max(30,nw)); resize.nh=Math.round(Math.max(24,nh));
+        _previewSet(resize.el,resize.nx-resize.ox,resize.ny-resize.oy,resize.nw/resize.sw,resize.nh/resize.sh);
+    }
+
     // 종이 밖으로 나가는 것도 허용한다 (내보낼 때 잘린다).
     // 완전히 사라져 되찾지 못하는 것만 막는다.
     function clampEl(x,y,w,h){
@@ -7835,7 +8095,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     function onPaperDown(e,pageIdx){
-        if(Date.now()<_pinPointerBlockUntil||Date.now()<_textPointerBlockUntil){
+        if(!tablePlace && (Date.now()<_pinPointerBlockUntil||Date.now()<_textPointerBlockUntil)){
             e.preventDefault(); e.stopPropagation(); return;
         }
         if(penActive) return;   // 그리기 모드는 draw-surface가 처리
@@ -7868,9 +8128,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 // ★ pageLocal → clampEl 로 문서 px 를 구한다. /uiCssZoom() 불필요.
                 //   addTextBox 가 종이 안에 문서 px 로 놓고, 종이의 scale 이 화면 배율 처리.
                 //   고스트(moveTextGhost)는 /k 로 CSS px 변환 — 둘 다 화면 위치는 같다.
+                const dim=textBoxDefaultSize();
                 const p=pageLocal(e,pageIdx);
-                const c=clampEl(p.x-TB_W/2, p.y-TB_H/2, TB_W, TB_H);
-                addTextBox(pageIdx,c.x,c.y);
+                const c=clampEl(p.x-dim.w/2, p.y-dim.h/2, dim.w, dim.h);
+                addTextBox(pageIdx,c.x,c.y,dim);
                 setTextTool(false);
                 return;
             }
@@ -7933,6 +8194,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     // 이미지: 꼭짓점이면 비율 유지(잠금 해제 시엔 자유),
                     //         변 중앙이면 언제나 자유
                     keepRatio: isImg && corner && !(mdl&&mdl.freeRatio)};
+            _beginResizePreview(resize);
             return;
         }
         // 테두리를 잡고 이동
@@ -7952,6 +8214,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             selected={type:w.classList.contains('paper-img')?'image':'text',el:w};
             drag={el:w,pageIdx,sx:e.clientX,sy:e.clientY,
                   ox:parseFloat(w.style.left)||0,oy:parseFloat(w.style.top)||0,pending:true};
+            _beginDragPreview(drag);
             return;
         }
         // 텍스트 이동 손잡이
@@ -7962,6 +8225,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             syncFSFromTarget();
             drag={el:w,pageIdx,sx:e.clientX,sy:e.clientY,
                   ox:parseFloat(w.style.left)||0,oy:parseFloat(w.style.top)||0,pending:true};
+            _beginDragPreview(drag);
             return;
         }
         // 표 칸은 한 번 눌러 셀 선택, 그대로 끌어 Word식 직사각형 범위 선택.
@@ -8013,6 +8277,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             drag={el:latexHost,pageIdx,sx:e.clientX,sy:e.clientY,
                   ox:parseFloat(latexHost.style.left)||0,
                   oy:parseFloat(latexHost.style.top)||0,pending:true};
+            _beginDragPreview(drag);
             return;
         }
         // 텍스트
@@ -8084,6 +8349,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             selected={type:'text',el:tb};
             syncFSFromTarget();
             drag={el:tb,pageIdx,sx:e.clientX,sy:e.clientY,ox:parseFloat(tb.style.left)||0,oy:parseFloat(tb.style.top)||0,pending:true};
+            _beginDragPreview(drag);
             return;
         }
         // 이미지
@@ -8110,6 +8376,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             selected={type:'image',el:im};              // 2차부터 이동
             drag={el:im,pageIdx,sx:e.clientX,sy:e.clientY,ox:parseFloat(im.style.left)||0,oy:parseFloat(im.style.top)||0,pending:true};
+            _beginDragPreview(drag);
             return;
         }
         // 펜 획 (얇은 hit 영역에 정확히 닿았을 때만)
@@ -8134,6 +8401,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             selected={type:'stroke',el:sg};
             const el=findEl(pageIdx,sg.dataset.id);
             drag={el:sg,pageIdx,sx:e.clientX,sy:e.clientY,ox:el.dx||0,oy:el.dy||0,pending:true,isStroke:true};
+            _beginDragPreview(drag);
             return;
         }
         // 표의 투명한 안쪽 여백에서 시작해도 가장 가까운 셀 범위를 고른다.
@@ -8200,7 +8468,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     // ★ pointermove 로 통합 — 터치 장치에서 mousedown→mousemove 사이300ms 지연 제거
-    document.addEventListener('pointermove',e=>{
+    sdyAddPointerCompat(document,'pointermove',e=>{
         const ghost=document.getElementById('textGhost');
         if(textToolActive&&ghost) moveTextGhost(e.clientX,e.clientY);
         if(tablePlace) moveTableGhost(e.clientX,e.clientY);
@@ -8261,130 +8529,27 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return;
         }
         if(marquee){ e.preventDefault(); updateMarquee(e); return; }
-        if(multiDrag){
-            e.preventDefault();
-            const dd=pageClientDelta(multiDrag.pageIdx,e.clientX-multiDrag.sx,e.clientY-multiDrag.sy);
-            const dx=dd.x,dy=dd.y;
-            if(!multiDrag.moved){
-                if(Math.abs(e.clientX-multiDrag.sx)<3&&Math.abs(e.clientY-multiDrag.sy)<3) return;
-                multiDrag.moved=true; pushHistory();
-            }
-            let sdx=dx, sdy=dy;
-            if(!e.altKey && multiDrag.bb){
-                const bb=multiDrag.bb;
-                const ids=multiDrag.items.map(it=>it.el.id);
-                const sn=applySnap(multiDrag.pageIdx, bb.x+dx, bb.y+dy, bb.w, bb.h, ids);
-                sdx=sn.x-bb.x; sdy=sn.y-bb.y;
-            }else clearSnapLines();
-            multiDrag.items.forEach(it=>{
-                if(it.el.type==='stroke'){
-                    it.el.dx=it.ox+sdx; it.el.dy=it.oy+sdy;
-                    it.node.setAttribute('transform',`translate(${it.el.dx},${it.el.dy})`);
-                }else{
-                    const c=clampEl(it.ox+sdx,it.oy+sdy,it.el.w,it.el.h);
-                    it.el.x=Math.round(c.x); it.el.y=Math.round(c.y);
-                    it.node.style.left=it.el.x+'px'; it.node.style.top=it.el.y+'px';
-                }
-            });
-            return;
-        }
-        if(drag){
-            const dd=pageClientDelta(drag.pageIdx,e.clientX-drag.sx,e.clientY-drag.sy);
-            const dx=dd.x,dy=dd.y;
-            if(drag.pending){
-                if(Math.abs(e.clientX-drag.sx)<3&&Math.abs(e.clientY-drag.sy)<3) return;
-                drag.pending=false; pushHistory();
-            }
-            e.preventDefault();
-            drag.moved=true;
-            if(drag.isStroke){
-                const el=findEl(drag.pageIdx,drag.el.dataset.id);
-                const bb=strokeBBox(el);
-                let nx=drag.ox+dx, ny=drag.oy+dy;
-                if(!e.altKey){       // Alt 를 누르면 스냅 일시 해제
-                    const sn=applySnap(drag.pageIdx, bb.x+nx, bb.y+ny, bb.w, bb.h, [el.id]);
-                    nx=sn.x-bb.x; ny=sn.y-bb.y;
-                }
-                el.dx=nx; el.dy=ny;
-                drag.el.setAttribute('transform',`translate(${el.dx},${el.dy})`);
-            }else{
-                const w=drag.el.offsetWidth, h=drag.el.offsetHeight;
-                let c=clampEl(drag.ox+dx,drag.oy+dy,w,h);
-                if(!e.altKey){
-                    const sn=applySnap(drag.pageIdx,c.x,c.y,w,h,[drag.el.dataset.id]);
-                    c=clampEl(sn.x,sn.y,w,h);
-                }else clearSnapLines();
-                drag.el.style.left=Math.round(c.x)+'px';
-                drag.el.style.top=Math.round(c.y)+'px';
-            }
-        }
-        if(resize){
-            e.preventDefault();
-            const dd=pageClientDelta(resize.pageIdx,e.clientX-resize.sx,e.clientY-resize.sy);
-            const dx=dd.x,dy=dd.y;
-            let nw=resize.sw, nh=resize.sh;
-            let nx=resize.ox, ny=resize.oy;
-            const dir=resize.dir;
-            const west =(dir==='h-w'||dir==='h-nw'||dir==='h-sw');
-            const east =(dir==='h-e'||dir==='h-ne'||dir==='h-se');
-            const north=(dir==='h-n'||dir==='h-nw'||dir==='h-ne');
-            const south=(dir==='h-s'||dir==='h-sw'||dir==='h-se');
-            if(east) nw=resize.sw+dx;
-            if(west){ nw=resize.sw-dx; nx=resize.ox+dx; }
-            if(south) nh=resize.sh+dy;
-            if(north){ nh=resize.sh-dy; ny=resize.oy+dy; }
-            // 최소 크기에 걸리면 좌표가 밀려나지 않게 보정
-            if(nw<30){ if(west) nx=resize.ox+(resize.sw-30); nw=30; }
-            if(nh<24){ if(north) ny=resize.oy+(resize.sh-24); nh=24; }
-
-            // 이미지 기본 = 비율 고정 (Shift 로 일시적으로 자유 조절)
-            // 비율 유지 (Shift 로 일시 해제). 꼭짓점에서만 적용된다.
-            if(resize.keepRatio && !e.shiftKey){
-                const ar=resize.sw/resize.sh;
-                // 가로·세로 중 더 많이 끈 쪽을 기준으로 맞춘다
-                if(Math.abs(nw-resize.sw) >= Math.abs(nh-resize.sh)) nh=nw/ar;
-                else nw=nh*ar;
-                if(nw<30){ nw=30; nh=nw/ar; }
-                if(nh<24){ nh=24; nw=nh*ar; }
-                // 잡지 않은 반대쪽 모서리가 제자리에 있도록 좌표 보정
-                nx = west  ? resize.ox+(resize.sw-nw) : resize.ox;
-                ny = north ? resize.oy+(resize.sh-nh) : resize.oy;
-            }
-            nw=Math.max(30,nw); nh=Math.max(24,nh);
-            if(!e.altKey&&snapEnabled){
-                const el0=findEl(resize.pageIdx,resize.el.dataset.id);
-                const bx=el0?el0.x:parseFloat(resize.el.style.left)||0;
-                const by=el0?el0.y:parseFloat(resize.el.style.top)||0;
-                const {V,H}=snapTargets(resize.pageIdx,[resize.el.dataset.id]);
-                const lines=[];
-                let best=null;
-                V.forEach(t=>{ const d=Math.abs(bx+nw-t.v);
-                    if(d<=SNAP_TOL&&(!best||d<best.d)) best={d,v:t.v,center:!!t.center}; });
-                if(best&&east){ nw=best.v-bx; lines.push({dir:'v',pos:best.v,center:best.center}); }
-                let bh=null;
-                H.forEach(t=>{ const d=Math.abs(by+nh-t.v);
-                    if(d<=SNAP_TOL&&(!bh||d<bh.d)) bh={d,v:t.v,center:!!t.center}; });
-                if(bh&&south){ nh=bh.v-by; lines.push({dir:'h',pos:bh.v,center:bh.center}); }
-                drawSnapLines(resize.pageIdx,lines);
-            }else clearSnapLines();
-            resize.el.style.width=Math.round(Math.max(30,nw))+'px';
-            resize.el.style.height=Math.round(Math.max(24,nh))+'px';
-            if(west)  resize.el.style.left=Math.round(nx)+'px';
-            if(north) resize.el.style.top =Math.round(ny)+'px';
-        }
+        if(multiDrag){ e.preventDefault(); _queueEditorMove('multi',e); return; }
+        if(drag){ e.preventDefault(); _queueEditorMove('drag',e); return; }
+        if(resize){ e.preventDefault(); _queueEditorMove('resize',e); return; }
     });
 
+
     // ★ pointerup 로 통합 — 터치 장치에서 즉시 반응
-    document.addEventListener('pointerup',()=>{
+    function finishEditorPointer(){
+        _flushEditorMove();
         clearSnapLines();
         if(tblCellPick) tblCellPick=null;
         if(marquee){ endMarquee(); }
         if(multiDrag){
             if(multiDrag.moved){
+                _finishMultiPreview(multiDrag,true);
                 try{ syncAllTables(multiDrag.pageIdx); renderTblDivs(multiDrag.pageIdx); positionTblBar(); }catch(e){}
                 saveDoc();
+            }else{
+                _finishMultiPreview(multiDrag,false);
             }
-            multiDrag=null;
+            multiDrag=null; _clearGestureClass();
         }
         if(textSel){
             saveSel();
@@ -8399,35 +8564,45 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(drag){
             if(drag.moved){
                 if(!drag.isStroke){
+                    _finishDragPreview(drag,true);
                     const el=findEl(drag.pageIdx,drag.el.dataset.id);
-                    if(el){ el.x=parseFloat(drag.el.style.left)||0; el.y=parseFloat(drag.el.style.top)||0; }
+                    if(el){ el.x=drag.nx!=null?drag.nx:(parseFloat(drag.el.style.left)||0);
+                            el.y=drag.ny!=null?drag.ny:(parseFloat(drag.el.style.top)||0); }
                 }
                 try{ syncAllTables(drag.pageIdx); renderTblDivs(drag.pageIdx); positionTblBar(); }catch(e){}
                 saveDoc();
+            }else{
+                _finishDragPreview(drag,false);
             }
-            drag=null;
+            drag=null; _clearGestureClass();
         }
         if(resize){
+            _finishResizePreview(resize,true);
             const el=findEl(resize.pageIdx,resize.el.dataset.id);
             if(el){
-                el.w=resize.el.offsetWidth; el.h=resize.el.offsetHeight;
-                el.x=parseFloat(resize.el.style.left)||0;
-                el.y=parseFloat(resize.el.style.top)||0;
+                el.w=resize.nw!=null?resize.nw:resize.sw;
+                el.h=resize.nh!=null?resize.nh:resize.sh;
+                el.x=resize.nx!=null?resize.nx:resize.ox;
+                el.y=resize.ny!=null?resize.ny:resize.oy;
             }
             const rpi=resize.pageIdx;
-            resize=null; saveDoc();
+            resize=null; _clearGestureClass(); saveDoc();
             try{ syncAllTables(rpi); renderTblDivs(rpi); positionTblBar(); }catch(e){}
         }
-    });
+    }
+    sdyAddPointerCompat(document,'pointerup',finishEditorPointer);
+    document.addEventListener('pointercancel',e=>{ sdyMarkPointerEvent(); finishEditorPointer(e); });
 
-    function addTextBox(pageIdx,x,y){
+
+    function addTextBox(pageIdx,x,y,dim){
         // ★ x,y 는 pageLocal → clampEl 로 구한 문서 px (종이 좌표).
         //   /uiCssZoom() 하지 않는다 — 종이 안의 style.left 는 문서 px 를 쓰고,
         //   종이의 CSS 변환(scale)이 화면 배율을 처리한다.
         //   고스트(moveTextGhost)는 position:fixed 이므로 /k 로 CSS px 로 변환하지만,
         //  둘 다 최종 화면 위치는 같다. (자세한 원리는 moveTextGhost 주석 참조)
         pushHistory();
-        const el={type:'text',id:uid('t'),x,y,w:TB_W,h:TB_H,html:'',fontSize:curFontSize,font:curFont};
+        const sz=dim||textBoxDefaultSize();
+        const el={type:'text',id:uid('t'),x,y,w:sz.w,h:sz.h,html:'',fontSize:curFontSize,font:curFont};
         doc.pages[pageIdx].els.push(el);
         const node=buildTextEl(el,pageIdx);
         paperAt(pageIdx).querySelector('.layer-text').appendChild(node);
@@ -8603,6 +8778,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             frame.className='tbl-frame';
             box.appendChild(frame);
 
+            // 테두리(손잡이가 아닌 얇은 가장자리)를 잡으면 텍스트 상자처럼 표 전체 이동.
+            // 보이는 이동 버튼은 두지 않는다.
+            ['top','bottom','left','right'].forEach(side=>{
+                const eg=document.createElement('div');
+                eg.className='tbl-edge '+side;
+                eg.title='표 테두리를 끌어서 이동';
+                sdyAddPointerCompat(eg,'pointerdown',e=>startTblMove(e,pi,t.id));
+                box.appendChild(eg);
+            });
+
             // ② 열 경계 — 끌면 너비 조절
             for(let c=1;c<t.cw.length;c++){
                 const d=document.createElement('div');
@@ -8610,7 +8795,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 d.style.left='calc('+(colX(t,c)-t.x)+'px - var(--hs,12px)/2)';
                 d.style.height=size.h+'px';
                 d.title='끌어서 열 너비 조절';
-                d.addEventListener('pointerdown',e=>startTblDrag(e,pi,t.id,'col',c-1));
+                sdyAddPointerCompat(d,'pointerdown',e=>startTblDrag(e,pi,t.id,'col',c-1));
                 box.appendChild(d);
             }
             // ③ 행 경계 — 끌면 높이 조절
@@ -8620,40 +8805,33 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 d.style.top='calc('+(rowY(t,r)-t.y)+'px - var(--hs,12px)/2)';
                 d.style.width=size.w+'px';
                 d.title='끌어서 행 높이 조절';
-                d.addEventListener('pointerdown',e=>startTblDrag(e,pi,t.id,'row',r-1));
+                sdyAddPointerCompat(d,'pointerdown',e=>startTblDrag(e,pi,t.id,'row',r-1));
                 box.appendChild(d);
             }
-            // ④ 꼭짓점 4개 — 표 전체를 비율 그대로 확대/축소
+            // ④ 꼭짓점 4개 — 가로·세로를 자유롭게 확대/축소 (Shift 때만 비율 유지)
             [['nw',0,0],['ne',1,0],['sw',0,1],['se',1,1]].forEach(([dir,fx,fy])=>{
                 const h=document.createElement('div');
                 h.className='tbl-h '+dir;
                 h.style.left =(fx?size.w:0)+'px';
                 h.style.top  =(fy?size.h:0)+'px';
                 h.title='끌어서 표 크기 조절 (Shift = 비율 유지)';
-                h.addEventListener('pointerdown',e=>startTblScale(e,pi,t.id,dir));
+                sdyAddPointerCompat(h,'pointerdown',e=>startTblScale(e,pi,t.id,dir));
                 box.appendChild(h);
             });
-            // ⑤ 변 중앙 손잡이 — 가로·세로 모두 늘리기 (꼭짓점과 같은 동작)
-            //    반대축은 중앙 기준으로 늘린다 (n/s → 너비 중앙 기준, w/e → 높이 중앙 기준)
+            // ⑤ 변 중앙 손잡이 — 한 축으로만 표 늘리기
+            //    위·아래 = 세로, 왼·오른쪽 = 가로. 행/열 추가 버튼은 쓰지 않는다.
             const edge=(cls,left,top,dir)=>{
                 const h=document.createElement('div');
                 h.className='tbl-stretch '+cls;
                 h.style.left=left+'px'; h.style.top=top+'px';
-                h.title='끌어서 표 크기 조절 (가로·세로)';
-                h.addEventListener('pointerdown',e=>startTblScale(e,pi,t.id,dir));
+                h.title='끌어서 표 크기 조절 (한 축)';
+                sdyAddPointerCompat(h,'pointerdown',e=>startTblStretch(e,pi,t.id,dir));
                 box.appendChild(h);
             };
-            edge('top',    size.w/2, 0,      'n');
-            edge('bottom', size.w/2, size.h, 's');
-            edge('left',   0,        size.h/2,'w');
-            edge('right',  size.w,   size.h/2,'e');
-            // ⑥ 왼쪽 위 이동 손잡이 — 표 전체를 잡아 옮긴다
-            const mv=document.createElement('div');
-            mv.className='tbl-move';
-            mv.title='끌어서 표 이동 · 클릭하면 표 선택 (Delete 로 삭제)';
-            mv.innerHTML='<i class="ri-drag-move-2-fill"></i>';
-            mv.addEventListener('pointerdown',e=>startTblMove(e,pi,t.id));
-            box.appendChild(mv);
+            edge('top',    size.w/2, 0,      'top');
+            edge('bottom', size.w/2, size.h, 'bottom');
+            edge('left',   0,        size.h/2,'left');
+            edge('right',  size.w,   size.h/2,'right');
         });
         paintTblCellSelection();
     }
@@ -8681,7 +8859,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     // ★ pointermove 로 통합 — 터치 장치에서도 표 가까이 가면 손잡이가 나타남
     let _nearRaf=0;
-    document.addEventListener('pointermove',e=>{
+    sdyAddPointerCompat(document,'pointermove',e=>{
         if(_nearRaf) return;
         const ev={target:e.target,clientX:e.clientX,clientY:e.clientY};
         _nearRaf=requestAnimationFrame(()=>{ _nearRaf=0; updateTblNear(ev); });
@@ -8768,10 +8946,33 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     // ★ pointermove 로 통합 — 터치 장치에서 표 핸들 즉시 반응
-    document.addEventListener('pointermove',e=>{
+    // 표 리사이즈는 칸/선 DOM을 다시 계산해야 하므로 pointermove 원시 빈도 대신
+    // requestAnimationFrame당 한 번만 반영한다. 손가락 이동은 놓치지 않되 화면 깜박임을 줄인다.
+    let _tblMoveRaf=0, _tblMovePending=null;
+    function _tblEventLite(e){ return {clientX:e.clientX,clientY:e.clientY,shiftKey:!!e.shiftKey,altKey:!!e.altKey}; }
+    function _queueTblPointerMove(e){
+        if(!(tblDrag||tblScale||tblMove)) return;
+        e.preventDefault();
+        const ev=_tblEventLite(e);
+        if(tblMove&&!tblDrag&&!tblScale){ onTblPointerMoveFrame(ev); return; }
+        _tblMovePending=ev;
+        if(_tblMoveRaf) return;
+        _tblMoveRaf=requestAnimationFrame(()=>{
+            _tblMoveRaf=0;
+            const ev=_tblMovePending; _tblMovePending=null;
+            onTblPointerMoveFrame(ev);
+        });
+    }
+    function _flushTblPointerMove(){
+        if(_tblMoveRaf){ cancelAnimationFrame(_tblMoveRaf); _tblMoveRaf=0; }
+        const ev=_tblMovePending; _tblMovePending=null;
+        onTblPointerMoveFrame(ev);
+    }
+    sdyAddPointerCompat(document,'pointermove',_queueTblPointerMove);
+    function onTblPointerMoveFrame(e){
+        if(!e) return;
         // 경계 끌기
         if(tblDrag){
-            e.preventDefault();
             const t=findTbl(tblDrag.pi,tblDrag.tid); if(!t) return;
             const dd=pageClientDelta(tblDrag.pi,e.clientX-tblDrag.sx,e.clientY-tblDrag.sy);
             const d=tblDrag.kind==='col'?dd.x:dd.y;
@@ -8792,7 +8993,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         // 꼭짓점 확대/축소 · 변 중앙 한 축 늘리기
         if(tblScale){
-            e.preventDefault();
             const t=findTbl(tblScale.pi,tblScale.tid); if(!t) return;
             const dd=pageClientDelta(tblScale.pi,e.clientX-tblScale.sx,e.clientY-tblScale.sy);
             const dx=dd.x,dy=dd.y;
@@ -8856,7 +9056,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         // 표 이동
         if(tblMove){
-            e.preventDefault();
             const t=findTbl(tblMove.pi,tblMove.tid); if(!t) return;
             const dd=pageClientDelta(tblMove.pi,e.clientX-tblMove.sx,e.clientY-tblMove.sy);
             const dx=Math.round(dd.x),dy=Math.round(dd.y);
@@ -8865,9 +9064,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             previewTblMove(tblMove,dx,dy);
             return;
         }
-    });
+    }
     // ★ pointerup 로 통합 — 터치 장치에서 표 핸들 놓기 즉시 반응
-    document.addEventListener('pointerup',()=>{
+    document.addEventListener('pointerup',e=>{ sdyMarkPointerEvent(); onTblPointerUp(e); });
+    document.addEventListener('pointercancel',e=>{ sdyMarkPointerEvent(); onTblPointerUp(e); });
+    document.addEventListener('mouseup',e=>{ if(sdyIgnoreCompatMouse()) return; onTblPointerUp(e); });
+    function onTblPointerUp(){
+        _flushTblPointerMove();
         let pi=null;
         if(tblDrag){ pi=tblDrag.pi; if(tblDrag.moved) saveDoc(); tblDrag=null; }
         if(tblScale){ pi=tblScale.pi; if(tblScale.moved) saveDoc(); tblScale=null; }
@@ -8882,7 +9085,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             tblMove=null;
         }
         if(pi!=null){ renderTblDivs(pi); positionTblBar(); }
-    });
+    }
 
     // ===== 표 도구 막대 =====
     function setActiveTbl(pi,tid,r,c){
@@ -8912,7 +9115,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!t||!paper){ clearActiveTbl(); return; }
         const r=paper.getBoundingClientRect(),sc=pageScreenScale(activeTbl.pageIdx),k=uiCssZoom();
         // 종이 기준 화면 px 로 자리를 구한 뒤, 막대가 쓰는 CSS px 로 한 번에 바꾼다.
-        let left=uiCss(r.left+t.x*sc.x+30);      // 이동 손잡이를 가리지 않도록
+        let left=uiCss(r.left+t.x*sc.x);         // 별도 이동 손잡이가 없어 표 왼쪽 기준에 맞춘다
         let top=uiCss(r.top+t.y*sc.y-48);
         if(top<uiCss(64)) top=uiCss(r.top+(t.y+tblSize(t).h)*sc.y+14);
         left=Math.max(uiCss(8),Math.min(left,uiCss(innerWidth-8)-(bar.offsetWidth||0)));
@@ -11461,7 +11664,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const pi=curPageIdx, size=paperSize();
         const x=Math.round(lastMouse.pageIdx===pi&&lastMouse.x?lastMouse.x:(size.w-300)/2);
         const y=Math.round(lastMouse.pageIdx===pi&&lastMouse.y?lastMouse.y:140);
-        const el={type:'text',id:uid('t'),x,y,w:300,h:TB_H,
+        const dim=textBoxDefaultSize();
+        const el={type:'text',id:uid('t'),x,y,w:Math.max(300,dim.w),h:dim.h,
                   html:'<span data-ck="0">☐</span>&nbsp;',
                   fontSize:curFontSize||16,font:curFont};
         doc.pages[pi].els.push(el);
@@ -12038,10 +12242,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const pi=+paper.dataset.pageIdx, s=paperSize();
         // 종이 밖(도구막대 위 등)에서는 지금 쪽 위쪽 중앙에 '준비' 미리보기를 둔다.
         const p=over?pageLocal({clientX,clientY},pi):{x:s.w/2,y:Math.min(s.h*.22,180)};
-        const o=clampEl(p.x-TB_W/2,p.y-TB_H/2,TB_W,TB_H);
+        const dim=textBoxDefaultSize();
+        const o=clampEl(p.x-dim.w/2,p.y-dim.h/2,dim.w,dim.h);
         const r=paper.getBoundingClientRect(),sc=uiPageScale(pi),k=uiCssZoom();
-        g.style.width=Math.round(TB_W*sc.x)+'px';
-        g.style.height=Math.round(TB_H*sc.y)+'px';
+        g.style.width=Math.round(dim.w*sc.x)+'px';
+        g.style.height=Math.round(dim.h*sc.y)+'px';
         const c=g.querySelector('.tg-caret');
         if(c) c.style.height=Math.round((curFontSize*1.4)*sc.y)+'px';
         g.style.left=Math.round(r.left/k+o.x*sc.x)+'px';
@@ -12203,6 +12408,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(placeMode) movePlaceGhost(lastMouse.clientX||0,lastMouse.clientY||0);
     }
     const TB_W=200, TB_H=48;
+    function textBoxDefaultSize(fontSize){
+        const fs=Math.max(2,Math.min(200,Math.round(fontSize||curFontSize||16)));
+        // 기본 글상자는 현재 툴바 글자 크기가 한 줄 들어갈 높이를 우선 보장한다.
+        // 큰 글씨를 고른 뒤 만들면 48px 고정 상자가 아니라 그 글씨에 맞춰 시작한다.
+        return {
+            w:Math.max(TB_W,Math.round(Math.min(420,fs*8))),
+            h:Math.max(TB_H,Math.round(fs*1.45+22))
+        };
+    }
 
     // ============ 뒤로가기(브라우저 히스토리) 처리 ============
     // 에디터·폴더·모달을 열 때 히스토리 항목을 쌓아, 뒤로가기를 누르면
@@ -12504,24 +12718,44 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 
     function eraserRadius(){ return (drawSize*ERASER_MULT)/2; }
 
-    function togglePen(){
-        if(penActive){ finishDrawing(); return; }
+    function syncDrawModeButtons(){
+        const p=document.getElementById('penBtn');
+        const h=document.getElementById('highlighterBtn');
+        if(p) p.classList.toggle('active',!!penActive&&!markerMode);
+        if(h) h.classList.toggle('active',!!penActive&&!!markerMode);
+        const legacy=document.getElementById('markerBtn');
+        if(legacy) legacy.classList.toggle('active',!!markerMode);
+    }
+    function startDrawMode(asMarker){
         setTextTool(false);
         cancelPlaceMode();
         deselectAll();
-        penActive=true;
-        document.getElementById('penBtn').classList.add('active');
-        document.getElementById('drawToolbar').style.display='flex';
+        penActive=true; eraserActive=false; drawing=false; markerMode=!!asMarker;
+        const er=document.getElementById('eraserBtn'); if(er) er.classList.remove('active');
+        const bar=document.getElementById('drawToolbar'); if(bar) bar.style.display='flex';
         editorPapers().forEach(p=>p.classList.add('drawing'));
+        syncDrawModeButtons();
         updateToolCursor();
+        try{ saveDrawCfg(); }catch(e){}
+    }
+    function togglePen(){
+        if(penActive&&!markerMode){ finishDrawing(); return; }
+        startDrawMode(false);
+        toast('펜 모드',900);
+    }
+    function toggleHighlighter(){
+        if(penActive&&markerMode){ finishDrawing(); return; }
+        startDrawMode(true);
+        toast('형광펜 모드 (반투명·굵게)',1100);
     }
     function finishDrawing(){
+        clearMorphTimer();
         penActive=false; eraserActive=false; drawing=false;
-        document.getElementById('penBtn').classList.remove('active');
-        document.getElementById('eraserBtn').classList.remove('active');
-        document.getElementById('drawToolbar').style.display='none';
+        syncDrawModeButtons();
+        const er=document.getElementById('eraserBtn'); if(er) er.classList.remove('active');
+        const bar=document.getElementById('drawToolbar'); if(bar) bar.style.display='none';
         editorPapers().forEach(p=>p.classList.remove('drawing'));
-        document.getElementById('toolCursor').style.display='none';
+        const tc=document.getElementById('toolCursor'); if(tc) tc.style.display='none';
         saveDoc();
     }
     function setShape(m){
@@ -12545,8 +12779,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(!c) return;
             if(c.color){
                 drawColor=c.color;
-                const pc=document.getElementById('penCustom'); if(pc) pc.value=c.color;
-                document.querySelectorAll('.color-pick').forEach(x=>x.classList.toggle('sel',String(x.dataset.c)===c.color));
+                const pc=document.getElementById('penCustom');
+                if(pc){ pc.value=c.color; pc.style.setProperty('--custom-color',c.color); }
+                let hit=false;
+                document.querySelectorAll('.color-pick[data-c]').forEach(x=>{
+                    const on=String(x.dataset.c).toLowerCase()===String(c.color).toLowerCase();
+                    x.classList.toggle('sel',on); if(on) hit=true;
+                });
+                if(pc) pc.classList.toggle('sel',!hit);
             }
             if(c.size){
                 drawSize=+c.size||drawSize;
@@ -12558,32 +12798,32 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const b=document.getElementById({free:'shpFree',line:'shpLine',arrow:'shpArrow',rect:'shpRect',ellipse:'shpEllipse'}[c.shape]);
                 if(b) b.classList.add('active');
             }
-            if(typeof c.marker==='boolean'){
-                markerMode=c.marker;
-                document.getElementById('markerBtn').classList.toggle('active',markerMode);
-            }
+            if(typeof c.marker==='boolean') markerMode=c.marker;
+            syncDrawModeButtons();
         }catch(e){}
     }
     function toggleMarker(){
-        markerMode=!markerMode;
-        document.getElementById('markerBtn').classList.toggle('active',markerMode);
-        updateToolCursor();
-        saveDrawCfg();
-        toast(markerMode?'형광펜 모드 (반투명·굵게)':'일반 펜',1200);
+        // 하위 호환용: 예전 툴바 안 형광펜 버튼이 호출하던 함수.
+        if(penActive&&markerMode) startDrawMode(false);
+        else startDrawMode(true);
+        toast(markerMode?'형광펜 모드 (반투명·굵게)':'펜 모드',1200);
     }
     function setDrawColorVal(v){
         drawColor=v; eraserActive=false;
         document.querySelectorAll('.color-pick').forEach(c=>c.classList.remove('sel'));
-        document.getElementById('eraserBtn').classList.remove('active');
+        const pc=document.getElementById('penCustom');
+        if(pc){ pc.classList.add('sel'); pc.style.setProperty('--custom-color',v); }
+        const er=document.getElementById('eraserBtn'); if(er) er.classList.remove('active');
         updateToolCursor();
         try{ saveDrawCfg(); }catch(e){}
     }
     function setDrawColor(el){
         drawColor=el.dataset.c; eraserActive=false;
-        const pc=document.getElementById('penCustom'); if(pc) pc.value=el.dataset.c;
+        const pc=document.getElementById('penCustom');
+        if(pc){ pc.value=el.dataset.c; pc.classList.remove('sel'); pc.style.setProperty('--custom-color',el.dataset.c); }
         document.querySelectorAll('.color-pick').forEach(c=>c.classList.remove('sel'));
         el.classList.add('sel');
-        document.getElementById('eraserBtn').classList.remove('active');
+        const er=document.getElementById('eraserBtn'); if(er) er.classList.remove('active');
         updateToolCursor();
         try{ saveDrawCfg(); }catch(e){}
     }
@@ -12604,10 +12844,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function updateToolCursor(){
         const tc=document.getElementById('toolCursor');
         if(!penActive){ tc.style.display='none'; return; }
-        const d=(eraserActive? eraserRadius()*2 : drawSize)*pageScale;
+        const d=(eraserActive? eraserRadius()*2 : effSize())*pageScale;
         const px=Math.max(eraserActive?10:4, d);
         tc.style.width=px+'px'; tc.style.height=px+'px';
-        tc.className='tool-cursor '+(eraserActive?'eraser':'pen');
+        tc.className='tool-cursor '+(eraserActive?'eraser':(markerMode?'marker':'pen'));
         // 펜에서 설정한 인라인 색이 지우개에 남지 않도록 매번 초기화
         if(eraserActive){ tc.style.background=''; tc.style.borderColor=''; }
         else { tc.style.background=hexA(drawColor,.35); tc.style.borderColor=drawColor; }
@@ -12637,9 +12877,160 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return pageLocal(t,pageIdx);
     }
 
-    let shapeStart=null;
+    let shapeStart=null, curShapeKind=null, drawMorphTimer=0, drawMorphAnim=0;
+    const DRAW_MORPH_HOLD_MS=620;
     function effSize(){ return markerMode? drawSize*4 : drawSize; }
     function effOpacity(){ return markerMode? 0.4 : 1; }
+    function clearMorphTimer(){
+        if(drawMorphTimer){ clearTimeout(drawMorphTimer); drawMorphTimer=0; }
+        if(drawMorphAnim){ cancelAnimationFrame(drawMorphAnim); drawMorphAnim=0; }
+    }
+    function scheduleMorphHold(){
+        if(shapeMode!=='free'||eraserActive||curShapeKind) return;
+        if(!curPts||curPts.length<4) return;
+        if(drawMorphTimer) clearTimeout(drawMorphTimer);
+        drawMorphTimer=setTimeout(()=>{ drawMorphTimer=0; morphCurrentStroke(); },DRAW_MORPH_HOLD_MS);
+    }
+    function drawPtsBBox(pts){
+        let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
+        (pts||[]).forEach(p=>{ const x=p[0],y=p[1]; if(x<x1)x1=x; if(y<y1)y1=y; if(x>x2)x2=x; if(y>y2)y2=y; });
+        return isFinite(x1)?{x1,y1,x2,y2,w:x2-x1,h:y2-y1,cx:(x1+x2)/2,cy:(y1+y2)/2}:null;
+    }
+    function ptDist(a,b){ return Math.hypot((a[0]||0)-(b[0]||0),(a[1]||0)-(b[1]||0)); }
+    function lineDist(p,a,b){
+        const vx=b[0]-a[0], vy=b[1]-a[1], wx=p[0]-a[0], wy=p[1]-a[1];
+        const l=vx*vx+vy*vy; let t=l?((wx*vx+wy*vy)/l):0; t=Math.max(0,Math.min(1,t));
+        return Math.hypot(p[0]-(a[0]+vx*t),p[1]-(a[1]+vy*t));
+    }
+    function rdpPts(pts,eps){
+        if(!pts||pts.length<=2) return (pts||[]).slice();
+        let best=0,idx=-1,a=pts[0],b=pts[pts.length-1];
+        for(let i=1;i<pts.length-1;i++){ const d=lineDist(pts[i],a,b); if(d>best){ best=d; idx=i; } }
+        if(best<=eps||idx<0) return [a,b];
+        const left=rdpPts(pts.slice(0,idx+1),eps), right=rdpPts(pts.slice(idx),eps);
+        return left.slice(0,-1).concat(right);
+    }
+    function pathLenPts(pts){
+        let L=0; for(let i=1;i<(pts||[]).length;i++) L+=ptDist(pts[i-1],pts[i]); return L;
+    }
+    function resamplePts(pts,n){
+        pts=(pts||[]).filter(Boolean);
+        if(!pts.length) return [];
+        if(pts.length===1||n<=1) return Array.from({length:Math.max(1,n)},()=>[pts[0][0],pts[0][1]]);
+        const total=pathLenPts(pts)||1, step=total/(n-1), out=[[pts[0][0],pts[0][1]]];
+        let seg=1, segStart=pts[0], segLen=ptDist(pts[0],pts[1]), walked=0;
+        for(let i=1;i<n-1;i++){
+            const target=step*i;
+            while(seg<pts.length-1 && walked+segLen<target){ walked+=segLen; segStart=pts[seg]; seg++; segLen=ptDist(pts[seg-1],pts[seg]); }
+            const prev=pts[seg-1], next=pts[seg];
+            const t=segLen?Math.max(0,Math.min(1,(target-walked)/segLen)):0;
+            out.push([prev[0]+(next[0]-prev[0])*t, prev[1]+(next[1]-prev[1])*t]);
+        }
+        const last=pts[pts.length-1]; out.push([last[0],last[1]]);
+        return out;
+    }
+    function canonicalShapePoints(kind,bb){
+        if(!bb) return null;
+        let x1=bb.x1,y1=bb.y1,x2=bb.x2,y2=bb.y2;
+        if(kind==='square'||kind==='circle'){
+            const d=Math.max(bb.w,bb.h), cx=bb.cx, cy=bb.cy;
+            x1=cx-d/2; x2=cx+d/2; y1=cy-d/2; y2=cy+d/2;
+        }
+        const a={x:round1(x1),y:round1(y1)}, b={x:round1(x2),y:round1(y2)};
+        if(kind==='rect'||kind==='square') return shapePoints(a,b,'rect',false);
+        if(kind==='ellipse'||kind==='circle') return shapePoints(a,b,'ellipse',false);
+        if(kind==='triangle'){
+            const cx=round1((x1+x2)/2);
+            return [[cx,round1(y1)],[round1(x2),round1(y2)],[round1(x1),round1(y2)],[cx,round1(y1)]];
+        }
+        if(kind==='diamond'){
+            const cx=round1((x1+x2)/2), cy=round1((y1+y2)/2);
+            return [[cx,round1(y1)],[round1(x2),cy],[cx,round1(y2)],[round1(x1),cy],[cx,round1(y1)]];
+        }
+        return null;
+    }
+    function recognizeMorphShape(pts){
+        pts=(pts||[]).filter(p=>p&&isFinite(p[0])&&isFinite(p[1]));
+        if(pts.length<4) return null;
+        const bb=drawPtsBBox(pts); if(!bb) return null;
+        const diag=Math.hypot(bb.w,bb.h); if(diag<18) return null;
+        const first=pts[0], last=pts[pts.length-1];
+        const closed=ptDist(first,last)<=Math.max(18,diag*.22);
+        if(!closed){
+            const end=ptDist(first,last);
+            if(end<18) return null;
+            let maxD=0; pts.forEach(p=>{ maxD=Math.max(maxD,lineDist(p,first,last)); });
+            if(maxD<=Math.max(5,end*.16)) return {shape:'line',pts:[[round1(first[0]),round1(first[1])],[round1(last[0]),round1(last[1])]]};
+            return null;
+        }
+        if(bb.w<12||bb.h<12) return null;
+        const body=pts.slice();
+        if(ptDist(body[0],body[body.length-1])<Math.max(8,diag*.08)) body.pop();
+        const nearEdge=body.filter(p=>Math.min(Math.abs(p[0]-bb.x1),Math.abs(p[0]-bb.x2),Math.abs(p[1]-bb.y1),Math.abs(p[1]-bb.y2))<=Math.max(4,diag*.075)).length/body.length;
+        const simp=rdpPts(body.concat([body[0]]),Math.max(5,diag*.075)).slice(0,-1)
+            .filter((p,i,a)=>i===0||ptDist(p,a[i-1])>Math.max(5,diag*.06));
+        const ratio=bb.w&&bb.h?Math.min(bb.w,bb.h)/Math.max(bb.w,bb.h):0;
+        if(nearEdge>.52){
+            const target=canonicalShapePoints(ratio>.82?'square':'rect',bb);
+            return target?{shape:ratio>.82?'square':'rect',pts:target}:null;
+        }
+        if(simp.length>=3&&simp.length<=4){
+            if(simp.length===3){
+                const target=canonicalShapePoints('triangle',bb);
+                return target?{shape:'triangle',pts:target}:null;
+            }
+            // 마름모는 꼭짓점이 위/오른쪽/아래/왼쪽 주변에 하나씩 있을 때만 잡는다.
+            const cx=bb.cx, cy=bb.cy;
+            const buckets={top:0,right:0,bottom:0,left:0};
+            simp.forEach(p=>{
+                const ax=Math.abs(p[0]-cx), ay=Math.abs(p[1]-cy);
+                if(ay>=ax && p[1]<cy) buckets.top++;
+                else if(ay>=ax && p[1]>=cy) buckets.bottom++;
+                else if(p[0]>=cx) buckets.right++;
+                else buckets.left++;
+            });
+            if(buckets.top&&buckets.right&&buckets.bottom&&buckets.left){
+                const target=canonicalShapePoints('diamond',bb);
+                return target?{shape:'diamond',pts:target}:null;
+            }
+        }
+        // 원/타원: 중심 기준 반지름 편차가 작으면 곡선 도형으로 다듬는다.
+        const rx=bb.w/2, ry=bb.h/2; if(rx<6||ry<6) return null;
+        let err=0,cnt=0;
+        body.forEach(p=>{ const q=Math.hypot((p[0]-bb.cx)/rx,(p[1]-bb.cy)/ry); if(isFinite(q)){ err+=Math.abs(q-1); cnt++; } });
+        err=cnt?err/cnt:9;
+        if(err<.32||simp.length>5){
+            const kind=ratio>.82?'circle':'ellipse';
+            const target=canonicalShapePoints(kind,bb);
+            return target?{shape:kind,pts:target}:null;
+        }
+        return null;
+    }
+    function morphCurrentStroke(){
+        if(!drawing||!penActive||eraserActive||shapeMode!=='free'||curShapeKind||!curPts||!curPathNode) return false;
+        const guess=recognizeMorphShape(curPts);
+        if(!guess||!guess.pts||guess.pts.length<2) return false;
+        const from=resamplePts(curPts,guess.pts.length).map(p=>[p[0],p[1]]);
+        const to=guess.pts.map(p=>[p[0],p[1]]);
+        curShapeKind=guess.shape;
+        curPts=to;
+        const sharp=!(guess.shape==='ellipse'||guess.shape==='circle');
+        const t0=performance.now?performance.now():Date.now();
+        const dur=170;
+        const step=now=>{
+            if(!curPathNode||!curPathNode.isConnected){ drawMorphAnim=0; return; }
+            const t=Math.min(1,((now||Date.now())-t0)/dur);
+            const ease=1-Math.pow(1-t,3);
+            const mix=to.map((p,i)=>[round1(from[i][0]+(p[0]-from[i][0])*ease),round1(from[i][1]+(p[1]-from[i][1])*ease)]);
+            curPathNode.setAttribute('d',strokePath(mix,sharp));
+            if(t<1) drawMorphAnim=requestAnimationFrame(step);
+            else { drawMorphAnim=0; curPathNode.setAttribute('d',strokePath(to,sharp)); }
+        };
+        if(drawMorphAnim) cancelAnimationFrame(drawMorphAnim);
+        drawMorphAnim=requestAnimationFrame(step);
+        try{ toast(({line:'직선',rect:'사각형',square:'정사각형',ellipse:'타원',circle:'원',triangle:'삼각형',diamond:'마름모'}[guess.shape]||'도형')+'으로 다듬었습니다',900); }catch(e){}
+        return true;
+    }
 
     function drawStart(e,pageIdx){
         if(!penActive) return;
@@ -12649,8 +13040,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const p=surfacePos(e,pageIdx);
         if(eraserActive){ drawing=true; lastErase=null; eraseSweep(p,pageIdx); return; }
         pushHistory();
+        clearMorphTimer();
         drawing=true;
         shapeStart={x:round1(p.x),y:round1(p.y)};
+        curShapeKind=shapeMode!=='free'?shapeMode:null;
         curPts=[[round1(p.x),round1(p.y)]];
         const svg=paperAt(pageIdx).querySelector('.layer-stroke');
         curPathNode=document.createElementNS('http://www.w3.org/2000/svg','path');
@@ -12669,14 +13062,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(eraserActive){ eraseSweep(p,drawPageIdx); return; }
         if(shapeMode!=='free'){
             // 도형: 시작점~현재점으로 매번 다시 계산
+            curShapeKind=shapeMode;
             curPts=shapePoints(shapeStart,{x:round1(p.x),y:round1(p.y)},shapeMode,e.shiftKey);
-            curPathNode.setAttribute('d',strokePath(curPts,shapeMode!=='ellipse'));
+            curPathNode.setAttribute('d',strokePath(curPts,!(shapeMode==='ellipse'||shapeMode==='circle')));
             return;
         }
+        // 길게 눌러 이미 도형으로 다듬어진 뒤에는 같은 포인터의 잔여 move 가
+        // 다시 자유선 점을 덧붙이지 않게 한다.
+        if(curShapeKind) return;
         const last=curPts[curPts.length-1];
         if(Math.abs(p.x-last[0])<0.7&&Math.abs(p.y-last[1])<0.7) return;
         curPts.push([round1(p.x),round1(p.y)]);
         curPathNode.setAttribute('d',strokePath(curPts));
+        scheduleMorphHold();
     }
     function drawEnd(){
         // rAF 대기 중에 mouseup/touchend 가 먼저 온 경우, 마지막 포인트를 놓치지 않고
@@ -12689,11 +13087,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         lastErase=null;
         if(!drawing) return;
         drawing=false;
+        clearMorphTimer();
         if(eraserActive){ saveDoc(); return; }
         if(!curPts||curPts.length<1){ if(curPathNode)curPathNode.remove(); return; }
+        const shape=curShapeKind||(shapeMode!=='free'?shapeMode:null);
         const el={type:'stroke',id:uid('s'),pts:curPts,color:drawColor,size:effSize(),dx:0,dy:0};
         if(markerMode) el.opacity=0.4;
-        if(shapeMode!=='free') el.sharp=1;
+        if(shape){
+            el.shape=shape;
+            if(shape!=='ellipse'&&shape!=='circle') el.sharp=1;
+            if(shape==='rect'||shape==='square'||shape==='ellipse'||shape==='circle'||shape==='triangle'||shape==='diamond') el.closed=1;
+        }
         doc.pages[drawPageIdx].els.push(el);
         if(curPathNode) curPathNode.remove();
         const svg=paperAt(drawPageIdx).querySelector('.layer-stroke');
@@ -12706,7 +13110,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 도형을 점 배열로 (스트로크 모델을 그대로 재사용 → 선택/이동/내보내기 전부 호환)
     function shapePoints(a,b,mode,shift){
         let x2=b.x, y2=b.y;
-        if(shift){
+        if(shift||mode==='circle'||mode==='square'){
             if(mode==='line'||mode==='arrow'){
                 const dx=x2-a.x, dy=y2-a.y;
                 if(Math.abs(dx)>Math.abs(dy)) y2=a.y; else x2=a.x;
@@ -12725,8 +13129,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const p2=[r(x2-L*Math.cos(ang+0.42)), r(y2-L*Math.sin(ang+0.42))];
             return [[a.x,a.y],[r(x2),r(y2)],p1,[r(x2),r(y2)],p2];
         }
-        if(mode==='rect') return [[a.x,a.y],[r(x2),a.y],[r(x2),r(y2)],[a.x,r(y2)],[a.x,a.y]];
-        if(mode==='ellipse'){
+        if(mode==='rect'||mode==='square') return [[a.x,a.y],[r(x2),a.y],[r(x2),r(y2)],[a.x,r(y2)],[a.x,a.y]];
+        if(mode==='triangle') return [[r((a.x+x2)/2),a.y],[r(x2),r(y2)],[a.x,r(y2)],[r((a.x+x2)/2),a.y]];
+        if(mode==='diamond') return [[r((a.x+x2)/2),a.y],[r(x2),r((a.y+y2)/2)],[r((a.x+x2)/2),r(y2)],[a.x,r((a.y+y2)/2)],[r((a.x+x2)/2),a.y]];
+        if(mode==='ellipse'||mode==='circle'){
             const cx=(a.x+x2)/2, cy=(a.y+y2)/2, rx=Math.abs(x2-a.x)/2, ry=Math.abs(y2-a.y)/2;
             const pts=[];
             for(let i=0;i<=36;i++){
@@ -12809,7 +13215,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
 
     // draw-surface 이벤트 위임 — ★ pointerdown 으로 통합 (터치 300ms 지연 제거)
-    document.addEventListener('pointerdown',e=>{
+    sdyAddPointerCompat(document,'pointerdown',e=>{
         const s=e.target.closest('.draw-surface');
         if(s&&penActive) drawStart(e,+s.closest('.paper').dataset.pageIdx);
     },true);
@@ -12819,7 +13225,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     //   (pressure===0, buttons===0) 발생하는 pointermove 를 무시한다.
     //   이렇게 하지 않으면 이전 필기 후 펜을 들어올린 채 움직이면
     //   얇은 잔상 선이 그어진다.
-    document.addEventListener('pointermove',e=>{
+    sdyAddPointerCompat(document,'pointermove',e=>{
         if(!drawing) return;
         if(e.pointerType==='pen' && e.pressure===0 && e.buttons===0) return;
         _drawEv=e;
@@ -12827,7 +13233,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         _drawRaf=requestAnimationFrame(()=>{ _drawRaf=0; if(drawing&&_drawEv) drawMove(_drawEv); });
     },{passive:true});
     // ★ pointercancel 추가 — 펜이 화면 밖으로 나가면 그리기 종료
-    document.addEventListener('pointerup',()=>{ if(drawing) drawEnd(); });
+    sdyAddPointerCompat(document,'pointerup',()=>{ if(drawing) drawEnd(); });
     document.addEventListener('pointercancel',()=>{ if(drawing) drawEnd(); });
     document.addEventListener('touchstart',e=>{
         if(e.touches&&e.touches.length>1) return;      // 두 손가락은 확대/축소용
@@ -12965,6 +13371,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             return;
         }
         savedRange=r.cloneRange(); savedHost=host;
+        savedCaret=null; _typingSpan=null;   // 글자 선택이 생기면 예전 캐럿 서식은 더 이상 우선하지 않는다.
     }
     function restoreSel(){
         if(!savedRange||!savedHost) return null;
@@ -13038,7 +13445,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(document.execCommand) document.execCommand('styleWithCSS',false,true);
             pushHistory();
             try{
-                withSelection(()=>wrapSelStyle('fontFamily',f.css));
+                wrapSelStyle('fontFamily',f.css);
+                const w=host.closest('.tb'); if(w) syncTextEl(w);
+                saveSel();
+                syncCurSel();
             }catch(e){}
             toast(`글꼴: ${f.label}`,1100);
             return;
@@ -13436,45 +13846,198 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             p = p.parentElement;
         }
     }
-    // 선택 전체에 prop=value 적용
-    function _applyToSelection(prop, value){
-        const s = window.getSelection();
-        if(!s||s.isCollapsed||!s.rangeCount) return false;
-        const r = s.getRangeAt(0);
-        const split = _splitAtBoundaries(r);
-        if(!split) return false;
-        const {host, nodes} = split;
-        nodes.forEach(tn=>_applyOne(tn, host, prop, value));
-        _cleanupInline(host);
-        // 선택 영역 유지
+    function _kebabProp(prop){ return String(prop||'').replace(/([A-Z])/g,'-$1').toLowerCase(); }
+    function _nodeDepth(el){ let d=0,p=el; while(p){ d++; p=p.parentNode; } return d; }
+    function _semanticPropMatch(el, prop, value){
+        if(!el||el.nodeType!==1) return false;
+        const tag=el.tagName;
+        if(prop==='fontWeight') return tag==='B'||tag==='STRONG';
+        if(prop==='fontStyle') return tag==='I'||tag==='EM';
+        if(prop==='backgroundColor') return tag==='MARK';
+        if(prop==='textDecoration'){
+            const want=String(value||'').toLowerCase();
+            if(tag==='U') return !want||want==='underline';
+            if(tag==='S'||tag==='STRIKE') return !want||want==='line-through';
+        }
+        return false;
+    }
+    function _replaceInlineWithSpan(el){
+        if(!el||!el.parentNode) return null;
+        const span=document.createElement('span');
+        try{
+            Array.from(el.attributes||[]).forEach(a=>{
+                if(a.name==='style') return;
+                span.setAttribute(a.name,a.value);
+            });
+            if(el.getAttribute('style')) span.setAttribute('style',el.getAttribute('style'));
+        }catch(e){}
+        while(el.firstChild) span.appendChild(el.firstChild);
+        el.parentNode.insertBefore(span,el); el.parentNode.removeChild(el);
+        return span;
+    }
+    function _removeStyleProp(el, prop, value){
+        if(!el||!el.style) return;
+        if(prop==='textDecoration'){
+            const want=String(value||'').toLowerCase();
+            const toks=String(el.style.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none');
+            const next=want ? toks.filter(t=>t.toLowerCase()!==want) : [];
+            if(next.length) el.style.textDecoration=next.join(' ');
+            else el.style.removeProperty('text-decoration');
+            return;
+        }
+        const kebab=_kebabProp(prop);
+        try{ el.style.removeProperty(kebab); }catch(e){}
+        try{ el.style[prop]=''; }catch(e){}
+        if(el.tagName==='FONT'){
+            if(prop==='color') el.removeAttribute('color');
+            if(prop==='fontFamily') el.removeAttribute('face');
+            if(prop==='fontSize') el.removeAttribute('size');
+        }
+    }
+    function _stripInlineProp(root, prop, value){
+        if(!root) return;
+        let els=[];
+        try{
+            if(root.nodeType===1) els.push(root);
+            if(root.querySelectorAll) els=els.concat(Array.from(root.querySelectorAll('*')));
+        }catch(e){}
+        // 의미 태그(<b>, <u> 등)는 안쪽부터 span 으로 바꿔야 선택 밖 조상이 바뀌지 않는다.
+        els.sort((a,b)=>_nodeDepth(b)-_nodeDepth(a));
+        els.forEach(el=>{
+            let node=el;
+            if(_semanticPropMatch(node,prop,value)) node=_replaceInlineWithSpan(node)||node;
+            _removeStyleProp(node,prop,value);
+        });
+    }
+    function _setInlineProp(el, prop, value){
+        if(!el||!el.style) return;
+        if(prop==='textDecoration'){
+            const toks=String(value||'').split(/\s+/).filter(t=>t&&t!=='none');
+            el.style.textDecoration=[...new Set(toks)].join(' ');
+        }else{
+            el.style[prop]=value;
+        }
+    }
+    function _selectionCtx(){
+        const s=window.getSelection();
+        if(!s||s.isCollapsed||!s.rangeCount) return null;
+        const r=s.getRangeAt(0);
+        const root=r.commonAncestorContainer;
+        const el=root.nodeType===1?root:root.parentElement;
+        const host=el&&el.closest&&el.closest('.tb-content');
+        if(!host) return null;
+        try{
+            const sc=r.startContainer.nodeType===1?r.startContainer:r.startContainer.parentElement;
+            const ec=r.endContainer.nodeType===1?r.endContainer:r.endContainer.parentElement;
+            if((sc&&!host.contains(sc)&&sc!==host)||(ec&&!host.contains(ec)&&ec!==host)) return null;
+        }catch(e){}
+        return {sel:s,range:r,host};
+    }
+    function _selectInsertedContents(sel, node, host){
         try{
             const nr=document.createRange();
-            if(nodes.length){
-                nr.setStartBefore(nodes[0]);
-                nr.setEndAfter(nodes[nodes.length-1]);
-                s.removeAllRanges(); s.addRange(nr);
+            if(node.nodeType===11){
+                // DocumentFragment 는 insert 후 비므로 쓰지 않는다.
+                return;
             }
+            if(node.nodeType===3){ nr.setStartBefore(node); nr.setEndAfter(node); }
+            else { nr.selectNodeContents(node); }
+            sel.removeAllRanges(); sel.addRange(nr);
+            savedRange=nr.cloneRange(); savedHost=host;
         }catch(e){}
+    }
+    function _insertFragmentKeepSelection(range, sel, frag, host){
+        const start=document.createComment('sdy-sel-start');
+        const end=document.createComment('sdy-sel-end');
+        const out=document.createDocumentFragment();
+        out.appendChild(start); out.appendChild(frag); out.appendChild(end);
+        range.insertNode(out);
+        try{
+            const nr=document.createRange();
+            nr.setStartAfter(start); nr.setEndBefore(end);
+            sel.removeAllRanges(); sel.addRange(nr);
+            savedRange=nr.cloneRange(); savedHost=host;
+            start.parentNode&&start.parentNode.removeChild(start);
+            end.parentNode&&end.parentNode.removeChild(end);
+        }catch(e){
+            try{ start.remove(); end.remove(); }catch(_e){}
+        }
+    }
+    function _selectionHasContent(frag){
+        if(!frag) return false;
+        if(String(frag.textContent||'').length) return true;
+        return !!(frag.querySelector&&frag.querySelector('img,br,svg,canvas,video,audio'));
+    }
+    // 선택 전체에 prop=value 적용. Range.extractContents() 로 경계를 DOM 문자 오프셋에
+    // 맞춰 쪼갠 뒤 새 span 을 넣으므로, 단어/공백 단위가 아니라 선택한 글자만 바뀐다.
+    function _applyToSelection(prop, value){
+        const ctx=_selectionCtx();
+        if(!ctx) return false;
+        const {sel,range,host}=ctx;
+        const r=range.cloneRange();
+        const frag=r.extractContents();
+        if(!_selectionHasContent(frag)) return false;
+        // 선택 내부에 같은 속성이 이미 있으면 새 값이 덮어쓸 수 있게 제거한다.
+        // 다른 속성은 그대로 두어 글꼴/색/굵기 등이 서로 풀리지 않게 한다.
+        _stripInlineProp(frag,prop,value);
+        const span=document.createElement('span');
+        _setInlineProp(span,prop,value);
+        span.appendChild(frag);
+        r.insertNode(span);
+        _cleanupInline(host);
+        _selectInsertedContents(sel,span,host);
         return true;
     }
-    // 선택 전체에서 prop 제거 (value 를 주면 textDecoration 토큰 하나만 제거)
-    function _removeFromSelection(prop, value){
-        const s = window.getSelection();
-        if(!s||s.isCollapsed||!s.rangeCount) return false;
-        const r = s.getRangeAt(0);
-        const split = _splitAtBoundaries(r);
-        if(!split) return false;
-        const {host, nodes} = split;
-        nodes.forEach(tn=>_removeOne(tn, host, prop, value));
-        _cleanupInline(host);
+    function _rangeCoversContents(r,el){
+        if(!r||!el) return false;
         try{
-            const nr=document.createRange();
-            if(nodes.length){
-                nr.setStartBefore(nodes[0]);
-                nr.setEndAfter(nodes[nodes.length-1]);
-                s.removeAllRanges(); s.addRange(nr);
+            const full=document.createRange();
+            full.selectNodeContents(el);
+            return r.compareBoundaryPoints(Range.START_TO_START,full)<=0
+                && r.compareBoundaryPoints(Range.END_TO_END,full)>=0;
+        }catch(e){ return false; }
+    }
+    function _expandRemovalRange(r,host,prop,value){
+        let out=r.cloneRange();
+        try{
+            let p=out.commonAncestorContainer.nodeType===1?out.commonAncestorContainer:out.commonAncestorContainer.parentElement;
+            while(p&&p!==host){
+                const has=_propMatch(prop,_propOn(p,prop)||'',value||_propOn(p,prop)) || _semanticPropMatch(p,prop,value);
+                if(has&&_rangeCoversContents(out,p)){
+                    const nr=document.createRange();
+                    nr.selectNode(p);
+                    out=nr;
+                    p=out.commonAncestorContainer.nodeType===1?out.commonAncestorContainer.parentElement:null;
+                    continue;
+                }
+                p=p.parentElement;
             }
         }catch(e){}
+        return out;
+    }
+    // 선택 전체에서 prop 제거 (value 를 주면 textDecoration 토큰 하나만 제거).
+    // 선택 조각만 꺼내서 처리하므로 같은 span 안의 선택 밖 글자는 건드리지 않는다.
+    function _removeFromSelection(prop, value){
+        const ctx=_selectionCtx();
+        if(!ctx) return false;
+        const {sel,range,host}=ctx;
+        const r=_expandRemovalRange(range,host,prop,value);
+        const frag=r.extractContents();
+        if(!_selectionHasContent(frag)) return false;
+        _stripInlineProp(frag,prop,value);
+        // 상자/바깥 조상에서 물려받은 굵기·기울임은 normal span 으로 선택 구간만 끈다.
+        // (글자색/배경/글꼴은 제거 시 상자 기본값을 따르도록 두고, 적용은 항상 override span 사용)
+        if(prop==='fontWeight'||prop==='fontStyle'){
+            const span=document.createElement('span');
+            span.style[prop]=(prop==='fontWeight')?'400':'normal';
+            span.appendChild(frag);
+            r.insertNode(span);
+            _cleanupInline(host);
+            _selectInsertedContents(sel,span,host);
+        }else{
+            _insertFragmentKeepSelection(r,sel,frag,host);
+            _cleanupInline(host);
+        }
         return true;
     }
     // 선택 영역이 전부 해당 스타일을 가지고 있는가? (토글 off 판정)
@@ -13507,6 +14070,61 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(_propMatch(prop, styles[prop]||'', value)) return true;
         }
         return false;
+    }
+
+    function _normFontCSS(v){
+        return String(v||'').toLowerCase().replace(/["']/g,'').replace(/\s*,\s*/g,',').replace(/\s+/g,' ').trim();
+    }
+    function _fontIdFromCSS(css){
+        const n=_normFontCSS(css);
+        if(!n) return '';
+        const f=FONTS.find(x=>_normFontCSS(x.css)===n || n.indexOf(_normFontCSS(x.css).split(',')[0])===0);
+        return f?f.id:'';
+    }
+    function _colorToHex(v){
+        v=String(v||'').trim().toLowerCase();
+        if(!v||v==='inherit'||v==='initial') return '';
+        if(v==='transparent'||v==='rgba(0, 0, 0, 0)'||v==='rgba(0,0,0,0)') return 'transparent';
+        if(/^#[0-9a-f]{3}$/i.test(v)) return '#'+v.slice(1).split('').map(ch=>ch+ch).join('').toLowerCase();
+        if(/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
+        const m=v.match(/^rgba?\(([^)]+)\)$/i);
+        if(m){
+            const parts=m[1].split(',').map(x=>x.trim());
+            if(parts.length>=4 && parseFloat(parts[3])===0) return 'transparent';
+            const nums=parts.slice(0,3).map(x=>Math.max(0,Math.min(255,parseInt(x,10)||0)));
+            return '#'+nums.map(n=>n.toString(16).padStart(2,'0')).join('');
+        }
+        return v;
+    }
+    function _normComparable(prop,v){
+        if(prop==='color'||prop==='backgroundColor') return _colorToHex(v);
+        if(prop==='fontFamily') return _normFontCSS(v);
+        if(prop==='fontSize'){
+            const n=parseFloat(v); return isNaN(n)?String(v||'').trim().toLowerCase():String(Math.round(n*100)/100)+'px';
+        }
+        if(prop==='fontWeight') return _fwVal(v)>=600?'700':String(v||'').trim().toLowerCase();
+        if(prop==='textDecoration'){
+            return String(v||'').toLowerCase().split(/\s+/).filter(t=>t&&t!=='none').sort().join(' ');
+        }
+        return String(v||'').trim().toLowerCase();
+    }
+    function _selUniformStyle(prop){
+        const ctx=_selectionCtx();
+        if(!ctx) return {ok:false};
+        const contacts=_selContacts(ctx.range);
+        if(!contacts.length) return {ok:false};
+        let firstNorm=null, firstVal='', any=false;
+        for(const c of contacts){
+            const seg=String(c.node.nodeValue||'').slice(c.s,c.e);
+            if(!seg.length) continue;
+            const {styles}=_inheritedStyles(c.node,ctx.host);
+            let v=styles[prop]||'';
+            if((prop==='fontFamily'||prop==='fontSize'||prop==='color') && !v && ctx.host.style) v=ctx.host.style[prop]||'';
+            const norm=_normComparable(prop,v);
+            if(!any){ firstNorm=norm; firstVal=v; any=true; }
+            else if(norm!==firstNorm) return {ok:false,mixed:true};
+        }
+        return any?{ok:true,value:firstVal,norm:firstNorm}:{ok:false};
     }
 
     // 하위 호환: 기존 이름 유지
@@ -13623,19 +14241,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 선택 영역의 현재 스타일 상태를 툴바 버튼에 반영
     function syncCurSel(){
         try{
-            const s=window.getSelection();
-            const live=s&&!s.isCollapsed&&s.rangeCount&&document.querySelector('.tb.edit');
-            if(!live) return;
-            const r=s.getRangeAt(0);
-            const hostEl=r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement;
-            const host=hostEl&&hostEl.closest&&hostEl.closest('.tb-content');
-            if(!host) return;
-            // 한 글자라도 스타일이 적용돼 있으면 버튼 on (토글 on 표시)
+            const ctx=_selectionCtx();
+            if(!ctx) return;
+            // 선택한 모든 글자가 같은 속성을 공유할 때만 툴바에 단일 값으로 표시한다.
+            // 섞여 있으면 기존 선택값을 그대로 두어 잘못된 단일 값 표시를 피한다.
             const states={
-                bold:_selHasAny('fontWeight','700'),
-                italic:_selHasAny('fontStyle','italic'),
-                underline:_selHasAny('textDecoration','underline'),
-                strike:_selHasAny('textDecoration','line-through'),
+                bold:_selHasAll('fontWeight','700'),
+                italic:_selHasAll('fontStyle','italic'),
+                underline:_selHasAll('textDecoration','underline'),
+                strike:_selHasAll('textDecoration','line-through'),
             };
             const btnOn=(sel,on)=>{
                 const b=document.querySelector(sel);
@@ -13645,6 +14259,50 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             btnOn('.tb-italic',states.italic);
             btnOn('.tb-under',states.underline);
             btnOn('.tb-strike',states.strike);
+
+            const fU=_selUniformStyle('fontFamily');
+            if(fU.ok && fU.norm){
+                const id=_fontIdFromCSS(fU.value||fU.norm);
+                if(id){
+                    const f=FONTS.find(x=>x.id===id)||FONTS[0];
+                    curFont=id;
+                    const lb=document.getElementById('fontLabel'), btn=document.getElementById('fontBtn');
+                    if(lb) lb.textContent=f.label;
+                    if(btn) btn.style.fontFamily=f.css;
+                    document.querySelectorAll('#fontMenu .font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===id));
+                }
+            }
+            const fsU=_selUniformStyle('fontSize');
+            if(fsU.ok && fsU.norm){
+                const n=parseFloat(fsU.value||fsU.norm);
+                if(!isNaN(n)){
+                    curFontSize=Math.round(n);
+                    const inp=document.getElementById('fsInput'); if(inp) inp.value=curFontSize;
+                }
+            }
+            const cU=_selUniformStyle('color');
+            if(cU.ok){
+                const hex=_colorToHex(cU.value||cU.norm)||'#000000';
+                if(hex&&hex!=='transparent'){
+                    currentTextColor=hex;
+                    const bar=document.getElementById('tcBar'), glyph=document.getElementById('tcGlyph');
+                    if(bar) bar.style.background=hex;
+                    if(glyph) glyph.style.color=hex;
+                    document.querySelectorAll('#textColorPop .color-swatch').forEach(n=>n.classList.toggle('sel',_colorToHex(n.dataset.c)===hex));
+                }
+            }
+            const hU=_selUniformStyle('backgroundColor');
+            if(hU.ok){
+                const hex=_colorToHex(hU.value||hU.norm);
+                const bar=document.getElementById('hlBar');
+                if(hex&&hex!=='transparent'){
+                    currentHlColor=hex;
+                    if(bar) bar.style.background=hex;
+                    document.querySelectorAll('#hlPop .color-swatch').forEach(n=>n.classList.toggle('sel',_colorToHex(n.dataset.c)===hex));
+                }else if(bar){
+                    bar.style.background='transparent';
+                }
+            }
         }catch(e){}
     }
     // 상자 안 내용 전체에 스타일을 입힌다 (prop=null 이면 형광펜 전체 지우기)
@@ -13789,7 +14447,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const spec={bold:['fontWeight','700'],italic:['fontStyle','italic'],underline:['textDecoration','underline'],
                     strike:['textDecoration','line-through']}[cmd];
         if(spec){
-            // 18.6 · 캐럿(선택 없음) → 앞으로 입력될 글자만 토글
+            // ① 글자 선택(드래그·저장된 범위) → 선택 구간만 토글한다.
+            //    예전 캐럿(savedCaret)이 남아 있어도 실제 선택이 있으면 항상 선택을 우선한다.
+            if(hasInlineTextSel()){
+                pushHistory();
+                withSelection(()=>toggleSelStyle(spec[0],spec[1]));
+                setTimeout(syncCurSel,0);
+                return;
+            }
+            // ② 캐럿(선택 없음) → 앞으로 입력될 글자만 토글
             if(_typingHost()){
                 const [key,val]=spec;
                 const off={fontWeight:'',fontStyle:'',textDecoration:''}[key];
@@ -13802,6 +14468,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         if(span){
                             const toks=String(span.style.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none'&&t!==val);
                             span.style.textDecoration=toks.join(' ')||'';
+                            const w=(span.closest&&span.closest('.tb'))||(_typingHost()&&_typingHost().w);
+                            if(w&&w.isConnected) syncTextEl(w);
                         }
                     }else{
                         caretWrapStyle({[key]:off});
@@ -13812,17 +14480,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         const cur=String(_typingSpan.style.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none');
                         if(cur.indexOf(val)<0) cur.push(val);
                         _typingSpan.style.textDecoration=cur.join(' ');
+                        const w=_typingSpan.closest&&_typingSpan.closest('.tb');
+                        if(w&&w.isConnected) syncTextEl(w);
                     }else{
                         caretWrapStyle({[key]:val});
                     }
                 }
-                return;
-            }
-            // ② 글자 선택(드래그·저장된 범위) → 선택 구간만 토글
-            if(hasInlineTextSel()){
-                pushHistory();
-                withSelection(()=>toggleSelStyle(spec[0],spec[1]));
-                setTimeout(syncCurSel,0);
                 return;
             }
             // ③ 상자만 고른 상태 → 상자 전체에 덧씌우고, 이미 전체 적용 상태면 뺀다.
@@ -17070,8 +17733,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const t=ctxTarget; if(!t) return;
         const pi=t.pageIdx;
         if(a==='new-text'){
-            const c=clampEl(t.x-TB_W/2,t.y-TB_H/2,TB_W,TB_H);
-            addTextBox(pi,c.x,c.y);
+            const dim=textBoxDefaultSize();
+            const c=clampEl(t.x-dim.w/2,t.y-dim.h/2,dim.w,dim.h);
+            addTextBox(pi,c.x,c.y,dim);
         }
         else if(a==='paste'){
             try{
@@ -20789,6 +21453,33 @@ function _trackFeatures(t){
   return {korean, foreign, tempo, moods, artistStyles};
 }
 
+function _recoFeatureSimilarity(a,b){
+  if(!a||!b) return 0;
+  const fa=_trackFeatures(a), fb=_trackFeatures(b);
+  let n=0;
+  if(fa.korean===fb.korean) n+=12;
+  if(fa.tempo===fb.tempo) n+=22;
+  const moods=fa.moods.filter(m=>fb.moods.includes(m));
+  n+=Math.min(36,moods.length*14);
+  const styles=fa.artistStyles.filter(x=>fb.artistStyles.includes(x));
+  n+=Math.min(24,styles.length*12);
+  const ga=String(a.genre||'').trim().toLowerCase(), gb=String(b.genre||'').trim().toLowerCase();
+  if(ga&&gb&&ga===gb) n+=18;
+  if(a.artist&&b.artist&&String(a.artist).trim()===String(b.artist).trim()) n+=16;
+  return n;
+}
+function _recoFeatureKey(t){
+  const ft=_trackFeatures(t);
+  const mood=(ft.moods||[])[0]||'calm';
+  return (ft.korean?'kr':'global')+'|'+ft.tempo+'|'+mood;
+}
+function _recoFeatureLabel(key){
+  const [loc,tempo,mood]=String(key||'').split('|');
+  const L={kr:'국내',global:'글로벌'}[loc]||'믹스';
+  const T={fast:'빠른 템포',mid:'미드 템포',slow:'느린 템포'}[tempo]||'비슷한 템포';
+  const M={calm:'잔잔한 감성',energy:'에너지',focus:'집중',night:'밤 감성',weather_wet:'비·눈 감성',weather_dry:'맑은 날',cinema:'OST·시네마'}[mood]||'비슷한 무드';
+  return `${L} · ${T} · ${M}`;
+}
 function _recoClass(t){
   return _trackFeatures(t).moods;
 }
@@ -20855,6 +21546,10 @@ function _recoScore(t,mode,seed,curT){
     if(tm.keys.some(k=>ft.moods.includes(k))) n+=35;
   }
 
+  // 현재 재생곡이 있으면 모든 추천 모드에서 곡의 자동 특징(템포·무드·보컬 스타일)을
+  // 살짝 반영한다. 그래서 같은 특성의 곡들이 한 묶음처럼 자연스럽게 모인다.
+  if(curT&&t.id!==curT.id) n+=_recoFeatureSimilarity(t,curT)*0.38;
+
   if((t.artist||'').trim()) n+=4;
   if((t.cover_url||t.cover)) n+=3;
   if(t.has_sync||(t.lyrics&&String(t.lyrics).includes('['))) n+=3;
@@ -20881,7 +21576,22 @@ function _recoTracks(list,mode,count,exclude){
   return out;
 }
 
-function _recoAlbums(list,count){
+function _recoAlbumScore(g,mode,seed,curT){
+  const tracks=g.tracks||[];
+  if(!tracks.length) return 0;
+  const base=tracks.reduce((s,t)=>s+_recoScore(t,mode||'time',seed,curT),0)/tracks.length;
+  let sim=0, pairs=0;
+  for(let i=0;i<tracks.length&&i<8;i++){
+    for(let j=i+1;j<tracks.length&&j<8;j++){
+      sim+=_recoFeatureSimilarity(tracks[i],tracks[j]); pairs++;
+    }
+  }
+  const cohesion=pairs?sim/pairs:0;
+  const curBoost=curT?Math.max(...tracks.map(t=>_recoFeatureSimilarity(t,curT)))*0.55:0;
+  const fullAlbum=Math.min(26,Math.log1p(tracks.length)*10);
+  return base+cohesion*0.42+curBoost+fullAlbum+Math.log1p(g.plays||0)*3+(_recoHash(seed+'|album|'+g.key)%1000)/1000*10;
+}
+function _recoAlbums(list,count,mode='time'){
   const groups=new Map();
   (list||[]).forEach(t=>{
     const artist=(t.artist||'미분류').trim()||'미분류';
@@ -20889,13 +21599,17 @@ function _recoAlbums(list,count){
     const key=artist+'|'+(album||'single:'+t.id);
     if(!groups.has(key)) groups.set(key,{key,artist,album:album||'싱글',tracks:[],plays:0,cover:t});
     const g=groups.get(key); g.tracks.push(t); g.plays+=_playCount(t);
-    if(!g.cover.cover_url&&!g.cover.cover&&t.cover_url||(!g.cover.cover&&t.cover)) g.cover=t;
+    if((!g.cover.cover_url&&!g.cover.cover&&t.cover_url)||(!g.cover.cover&&t.cover)) g.cover=t;
   });
+  const curT=cur();
+  const seed=new Date().toISOString().slice(0,10)+'|album|'+(mode||'time')+'|'+(P.recoSeed||0);
   return [...groups.values()].filter(g=>g.tracks.length>1||g.album!=='싱글')
-    .sort((a,b)=>(b.plays-a.plays)||(b.tracks.length-a.tracks.length)||a.album.localeCompare(b.album,'ko'))
+    .map(g=>({_score:_recoAlbumScore(g,mode,seed,curT),...g}))
+    .sort((a,b)=>(b._score-a._score)||(b.tracks.length-a.tracks.length)||a.album.localeCompare(b.album,'ko'))
     .slice(0,count);
 }
 function _recoImg(t){ return t&&t.cover?(t.cover_url||('/api/music/cover/'+t.id+'?v='+(t.cover_v||1))):''; }
+function _recoDataKey(s){ try{ return encodeURIComponent(String(s||'')); }catch(e){ return String(s||''); } }
 function _recoCard(t){
   const src=_recoImg(t);
   return `<button class="mpb-reco-card" data-bl="${esc2(t.id)}" title="${esc2(t.title||'')}" aria-label="${esc2(t.title||'')} 재생">`+
@@ -20904,15 +21618,79 @@ function _recoCard(t){
 }
 function _recoAlbumCard(g){
   const t=g.cover||g.tracks[0];
-  return `<button class="mpb-album-card" data-bl="${esc2(g.tracks[0].id)}" title="${esc2(g.album)}">`+
+  return `<button class="mpb-album-card" data-reco-album="${_recoDataKey(g.key)}" title="${esc2(g.album)} 전체 재생">`+
     `<span class="mpb-album-art">${_recoImg(t)?`<img src="${_recoImg(t)}" alt="" loading="lazy">`:'<i class="ri-album-fill"></i>'}<i class="mpb-reco-play ri-play-fill"></i></span>`+
-    `<b>${esc2(g.album)}</b><em>${esc2(g.artist)} · ${g.tracks.length}곡</em></button>`;
+    `<b>${esc2(g.album)}</b><em>${esc2(g.artist)} · ${g.tracks.length}곡</em><small>대기열 교체</small></button>`;
+}
+function _recoPlaylistCard(g){
+  const t=g.cover||g.tracks[0];
+  return `<button class="mpb-album-card mpb-playlist-card" data-reco-playlist="${_recoDataKey(g.id)}" title="${esc2(g.name)} 전체 재생">`+
+    `<span class="mpb-album-art">${_recoImg(t)?`<img src="${_recoImg(t)}" alt="" loading="lazy">`:'<i class="ri-play-list-2-fill"></i>'}<i class="mpb-reco-play ri-play-fill"></i></span>`+
+    `<b>${esc2(g.name)}</b><em>${esc2(g.sub||'플레이리스트')} · ${g.tracks.length}곡</em><small>대기열 교체</small></button>`;
 }
 function _recoRow(title,sub,tracks,kind='track'){
   if(!tracks||!tracks.length) return '';
-  const html=kind==='album'?tracks.map(_recoAlbumCard).join(''):tracks.map(_recoCard).join('');
+  const html=kind==='album'?tracks.map(_recoAlbumCard).join(''):
+    kind==='playlist'?tracks.map(_recoPlaylistCard).join(''):tracks.map(_recoCard).join('');
   return `<section class="mpb-reco-section"><div class="mpb-reco-head"><b>${title}</b><span>${sub||''}</span></div><div class="mpb-reco-row">${html}</div></section>`;
 }
+function _recoAutoMixes(list,count,mode='time'){
+  const groups=new Map();
+  (list||[]).forEach(t=>{
+    const key=_recoFeatureKey(t);
+    if(!groups.has(key)) groups.set(key,{id:'auto:'+key,name:_recoFeatureLabel(key),sub:'자동 특징 믹스',tracks:[],cover:t,plays:0});
+    const g=groups.get(key); g.tracks.push(t); g.plays+=_playCount(t);
+    if((!g.cover.cover_url&&!g.cover.cover&&t.cover_url)||(!g.cover.cover&&t.cover)) g.cover=t;
+  });
+  const curT=cur(), seed=new Date().toISOString().slice(0,10)+'|mix|'+mode+'|'+(P.recoSeed||0);
+  return [...groups.values()].filter(g=>g.tracks.length>=2)
+    .map(g=>{
+      const score=g.tracks.reduce((s,t)=>s+_recoScore(t,mode,seed,curT),0)/Math.max(1,g.tracks.length)
+        +Math.min(30,g.tracks.length*3)+(_recoHash(seed+'|'+g.id)%1000)/1000*8;
+      g.tracks=g.tracks.slice().sort((a,b)=>_recoScore(b,mode,seed,curT)-_recoScore(a,mode,seed,curT)).slice(0,36);
+      return {_score:score,...g};
+    })
+    .sort((a,b)=>b._score-a._score)
+    .slice(0,count);
+}
+function _recoPlaylists(list,count,mode='time'){
+  const byId=new Map((list||[]).map(t=>[t.id,t]));
+  const curT=cur(), seed=new Date().toISOString().slice(0,10)+'|playlist|'+mode+'|'+(P.recoSeed||0);
+  const saved=(getPL()||[]).map(p=>{
+    const tracks=(p.tracks||[]).map(id=>byId.get(id)).filter(Boolean);
+    if(!tracks.length) return null;
+    const score=tracks.reduce((s,t)=>s+_recoScore(t,mode,seed,curT),0)/tracks.length
+      +Math.min(26,tracks.length*2)+(_recoHash(seed+'|'+p.id)%1000)/1000*8;
+    return {id:'pl:'+p.id,name:p.name||'재생목록',sub:'저장한 재생목록',tracks,cover:tracks.find(_recoImg)||tracks[0],_score:score};
+  }).filter(Boolean);
+  return saved.concat(_recoAutoMixes(list,Math.max(1,count),mode))
+    .sort((a,b)=>b._score-a._score)
+    .slice(0,count);
+}
+function _rememberRecoCollections(albums,playlists){
+  P._recoAlbumMap={}; P._recoPlaylistMap={};
+  (albums||[]).forEach(g=>{ P._recoAlbumMap[_recoDataKey(g.key)]={name:g.album,tracks:(g.tracks||[]).map(t=>t.id)}; });
+  (playlists||[]).forEach(g=>{ P._recoPlaylistMap[_recoDataKey(g.id)]={name:g.name,tracks:(g.tracks||[]).map(t=>t.id)}; });
+}
+function _queueRecoIds(ids,name){
+  const seen=new Set();
+  const q=(ids||[]).map(id=>(P.list||[]).find(t=>t.id===id)).filter(t=>t&&!seen.has(t.id)&&seen.add(t.id));
+  if(!q.length){ toast('추천 목록의 곡을 찾을 수 없어요',1800); return; }
+  P._forceNext='';
+  playFrom(q,q[0].id,name||'추천 플레이리스트');
+  try{ renderListPop(); }catch(e){}
+  try{ if(mpbEl&&mpbEl.classList.contains('open')) renderBigList(); }catch(e){}
+  if(window.toast) toast('대기열을 비우고 ‘'+(name||'추천 플레이리스트')+'’만 담았어요',1900);
+}
+function _playRecoAlbum(key){
+  const g=P._recoAlbumMap&&P._recoAlbumMap[key];
+  if(g) _queueRecoIds(g.tracks,g.name);
+}
+function _playRecoPlaylist(key){
+  const g=P._recoPlaylistMap&&P._recoPlaylistMap[key];
+  if(g) _queueRecoIds(g.tracks,g.name);
+}
+try{ window.sdyQueueRecoAlbum=_playRecoAlbum; window.sdyQueueRecoPlaylist=_playRecoPlaylist; }catch(e){}
 function _recoMatch(t,mode){
   const ft=_trackFeatures(t), tm=_recoTime(), we=_recoWeather();
   if(mode==='korean') return ft.korean;
@@ -20967,6 +21745,7 @@ function renderDiscoverBig(){
   body.classList.add('discover-mode'); body._html=null;
   const list=P.list||[], tm=_recoTime(), we=_recoWeather(), curT=cur();
   const filter=P.recoFilter||'all';
+  P._recoAlbumMap={}; P._recoPlaylistMap={};
   let content='';
   if(!list.length){
     content='<div class="mpb-reco-empty"><i class="ri-music-2-line"></i><b>라이브러리가 비어 있어요</b><span>＋ 올리기에서 음악을 추가해 보세요</span></div>';
@@ -20984,7 +21763,9 @@ function renderDiscoverBig(){
     const weather=_recoTracks(list,'weather',10,seen);
     weather.forEach(t=>seen.add(t.id));
     const similar=curT?_recoTracks(list,'artist',10,new Set([curT.id])):null;
-    const albums=_recoAlbums(list,8);
+    const albums=_recoAlbums(list,8,'artist');
+    const playlists=_recoPlaylists(list,8,'artist');
+    _rememberRecoCollections(albums,playlists);
     const most=list.slice().sort((a,b)=>_playCount(b)-_playCount(a)).slice(0,10);
 
     content=_recoRow('오늘의 맞춤 믹스',_recoWeatherText(),top)
@@ -20994,7 +21775,8 @@ function renderDiscoverBig(){
       +(fast.length?_recoRow('신나는 비트 & 드라이브 ⚡','빠른 템포 · 에너지',fast):'')
       +(slow.length?_recoRow('잔잔한 감성 & 힐링 ☕','어쿠스틱 · 편안한 휴식',slow):'')
       +_recoRow('날씨에 맞춰 ⛅',we.label,weather)
-      +_recoRow('추천 앨범 💿','내 라이브러리',albums,'album')
+      +_recoRow('추천 앨범 💿','비슷한 특징으로 고른 앨범 · 누르면 대기열 교체',albums,'album')
+      +_recoRow('추천 플레이리스트 📚','저장 목록 + 자동 특징 믹스 · 누르면 대기열 교체',playlists,'playlist')
       +_recoRow('가장 많이 들은 곡 🏆','모든 기기 누적 재생',most);
   }else if(filter==='korean'){
     content=_recoRow('한국 노래 컬렉션 🇰🇷','K-Pop · 가요 · 국내 명곡',_recoTracks(list,'korean',30,new Set()));
@@ -21013,6 +21795,13 @@ function renderDiscoverBig(){
   }else if(filter==='artist'){
     const sub=curT?`‘${esc2(curT.artist||curT.title)}’ 기반 맞춤`:'유사 스타일 추천';
     content=_recoRow('비슷한 감성 & 아티스트 🎙️',sub,_recoTracks(list,'artist',30,new Set(curT?[curT.id]:[])));
+  }
+  if(list.length&&filter!=='all'){
+    const albums=_recoAlbums(list,6,filter);
+    const playlists=_recoPlaylists(list,6,filter);
+    _rememberRecoCollections(albums,playlists);
+    content+=_recoRow('이 추천에 맞는 앨범 💿','앨범 단위로 대기열 교체',albums,'album')
+      +_recoRow('이 추천에 맞는 플레이리스트 📚','저장 목록 + 자동 특징 믹스',playlists,'playlist');
   }
 
   const current=curT?`<div class="mpb-reco-current"><div class="mpb-reco-current-art">${_recoImg(curT)?`<img src="${_recoImg(curT)}" alt="">`:'<i class="ri-music-2-fill"></i>'}</div><div><small>지금 재생 중</small><b>${esc2(curT.title||'')}</b><span>${esc2(curT.artist||'')}</span></div><button data-bl="${esc2(curT.id)}" title="다시 재생"><i class="ri-play-fill"></i></button></div>`:'';
@@ -21202,6 +21991,12 @@ $('mpBBody').addEventListener('click',e=>{
     renderDiscoverBig();
     return;
   }
+  // 추천 앨범/플레이리스트는 한 곡이 아니라 묶음 전체를 재생한다.
+  // 사용자가 고른 추천 묶음이 '현재 대기열의 전부'가 되도록 기존 queue를 교체한다.
+  const recoAlbum=e.target.closest('[data-reco-album]');
+  if(recoAlbum){ e.preventDefault(); e.stopPropagation(); _playRecoAlbum(recoAlbum.dataset.recoAlbum); return; }
+  const recoPlaylist=e.target.closest('[data-reco-playlist]');
+  if(recoPlaylist){ e.preventDefault(); e.stopPropagation(); _playRecoPlaylist(recoPlaylist.dataset.recoPlaylist); return; }
   // 18.3 · 대기열 관리 버튼(위로/아래로/다음에 재생/빼기)과 전체 비우기가 먼저
   const qop=e.target.closest('[data-qop]');
   if(qop&&qop.dataset.bqidx!=null){
@@ -21930,6 +22725,13 @@ $('mpTagAuto').onclick=async()=>{
       const r=await musicApiFetch('/api/music/recognize',{method:'POST',
         headers:{'Content-Type':'application/json'},body:JSON.stringify({id,force:true})},180000);
       const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.ok&&d.duplicate_removed){
+        await loadList(); pruneQueue(); renderTitle(); renderListPop();
+        const kept=d.kept||d.track||{};
+        if(kept.id&&!fromTrackMenu){ TAG_EDIT=kept.id; _syncTagEditor(P.list.find(x=>x.id===kept.id)||kept); }
+        toast('완전히 같은 곡이라 중복 음원을 자동으로 정리했어요',3000);
+        return;
+      }
       if(r.ok&&d.ok&&d.recog&&(d.recog.title||d.recog.artist)){
         recogFound=true;
         // 음원 인식 결과는 정확하므로 제목·가수를 반영하고 이를 바탕으로 다음 단계를 이어간다
@@ -22087,6 +22889,13 @@ $('mpTagRecog').onclick=async()=>{
       headers:{'Content-Type':'application/json'},body:JSON.stringify({id})},180000);
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok){ toast(d.error||'소리로는 찾지 못했어요',2800); return; }
+    if(d.duplicate_removed){
+      await loadList(); pruneQueue(); renderTitle(); renderListPop();
+      const kept=d.kept||d.track||{};
+      if(kept.id){ TAG_EDIT=kept.id; _syncTagEditor(P.list.find(x=>x.id===kept.id)||kept); }
+      toast('완전히 같은 곡이라 중복 음원을 자동으로 정리했어요',3000);
+      return;
+    }
     P.coverV=Date.now();
     await loadList(); renderTitle(); renderListPop();
     _syncTagEditor(P.list.find(x=>x.id===id));
@@ -23085,11 +23894,13 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   var REFRESH='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
   // ── 18.3 · 해돌이 임티 (카톡 미모티콘식) ──────────────────────────────
   //   유니코드 이모지 대신 #ypStickerDefs 의 <template data-stk=…> 블록을 쓴다.
-  //   채팅에는 [hd:아이디] 코드로 저장·전송되고, 받는 쪽에서 해돌이 그림으로 바뀐다.
+  //   새 채팅은 텍스트와 별도 stickers 배열로 저장·전송해 입력창에 코드가 보이지 않는다.
+  //   예전 [hd:아이디] 텍스트도 계속 그림으로 렌더한다.
   //   (새 임티를 추가하면 선택창·반응이 자동으로 따라간다 — server REACTIONS 는
   //    hd: 접두사면 어떤 아이디든 받는다)
   var REACTIONS=['hd:hello','hd:love','hd:idea','hd:read','hd:coffee','hd:sleep'];
   var STK_CODE=/^hd:([a-z0-9_-]{1,24})$/;
+  var STK_ID=/^[a-z0-9_-]{1,24}$/;
   var STK_TEXT=/\[hd:([a-z0-9_-]{1,24})\]/g;
   var YP_STK=(function(){
     var box=document.getElementById('ypStickerDefs');
@@ -23117,9 +23928,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     return { list:list, node:node, svg:svg,
              code:function(id){ return '[hd:'+id+']'; } };
   })();
-  // 텍스트 안의 [hd:…] 코드를 임티 그림으로 바꾼다 (혼합 메시지용)
-  function ypStkRenderText(el,text){
+  // 텍스트 안의 예전 [hd:…] 코드와 새 stickers 배열을 임티 그림으로 바꾼다 (혼합 메시지용)
+  function ypStkRenderText(el,text,stickers){
     el.textContent='';
+    text=String(text||'');
     var last=0, m;
     STK_TEXT.lastIndex=0;
     while((m=STK_TEXT.exec(text))){
@@ -23129,10 +23941,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       last=m.index+m[0].length;
     }
     if(last<text.length) el.appendChild(document.createTextNode(text.slice(last)));
+    ypStkIds(stickers).forEach(function(id){
+      if(el.childNodes.length) el.appendChild(document.createTextNode(' '));
+      var s=YP_STK.svg(id,'yp-stk-inline');
+      if(s) el.appendChild(s); else el.appendChild(document.createTextNode('[임티]'));
+    });
   }
   // 메시지 전체가 임티 하나면 큰 스티커로 보여 준다 (카톡 미모티콘처럼)
-  function ypStkOnly(text){
-    var m=(text||'').trim().match(/^\[hd:([a-z0-9_-]{1,24})\]$/);
+  function ypStkOnly(msgOrText){
+    if(msgOrText && typeof msgOrText==='object'){
+      var ids=ypStkIds(msgOrText.stickers);
+      if(ids.length===1 && !String(msgOrText.text||'').trim()) return ids[0];
+      return null;
+    }
+    var m=(msgOrText||'').trim().match(/^\[hd:([a-z0-9_-]{1,24})\]$/);
     return m?m[1]:null;
   }
   function ypStkReact(id){
@@ -23141,8 +23963,23 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var el=YP_STK.svg(m[1],'yp-stk-chip');
     return el;
   }
+  function ypStkIds(v){
+    var src=Array.isArray(v)?v:(v?[v]:[]), out=[];
+    src.forEach(function(raw){
+      var id=String(raw||'').trim().toLowerCase();
+      if(STK_ID.test(id)&&out.indexOf(id)<0&&out.length<6) out.push(id);
+    });
+    return out;
+  }
+  function ypSameStickers(a,b){
+    a=ypStkIds(a); b=ypStkIds(b);
+    if(a.length!==b.length) return false;
+    for(var i=0;i<a.length;i++){ if(a[i]!==b[i]) return false; }
+    return true;
+  }
+  function ypMsgStickers(m){ return ypStkIds(m&&m.stickers); }
   // 테스트·디버그용 훅 (기존 __ypReact/__ypEnter 와 같은 패턴)
-  window.__ypStk={list:YP_STK.list,svg:YP_STK.svg,code:YP_STK.code,only:ypStkOnly,render:ypStkRenderText};
+  window.__ypStk={list:YP_STK.list,svg:YP_STK.svg,code:YP_STK.code,only:ypStkOnly,render:ypStkRenderText,ids:ypStkIds};
   var LIVE_ADJ=['연보라','복숭아빛','민트색','하늘색','살구색','라벤더','코랄빛','레몬색','장미빛','청포도','피치','시나몬','솜사탕','아이보리','라일락','청옥','버터','멜론','구름빛','연분홍'];
   var LIVE_ANI=['까치','참새','박새','멧비둘기','직박구리','제비','백로','왜가리','뻐꾸기','물총새','두루미','기러기','청둥오리','저어새','꾀꼬리','동박새','오목눈이','수리부엉이','팔색조','호반새','파랑새','후투티','원앙','종달새'];
   var YP={
@@ -23150,7 +23987,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     name:'', me:null, msgs:[], members:new Map(), ttl:86400, joined:false,
     es:null, ping:null, inVoice:false, joiningVoice:false, muted:false, localStream:null,
     conn:new Map(), speaking:new Map(), actx:null, open:false,
-    seen:new Set(), bgm:null, stick:true,
+    seen:new Set(), bgm:null, stick:true, draftStickers:[],
     // 서버 릴레이 음성 상태
     relayWs:null, relayNodes:null, relayRx:{}, relayOn:false, _relayStop:false, _relayRT:null,
     _relayUrl:null, _relayHb:null, _relayDest:null, _relayEl:null
@@ -23323,16 +24160,17 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       inner.querySelector('.fn').textContent=m.file.name;
       inner.querySelector('.fs').textContent=ypSize(m.file.size);
     } else {
-      var stkOnly=ypStkOnly(m.text);
+      var stkOnly=ypStkOnly(m);
+      if(!stkOnly) stkOnly=ypStkOnly(m.text);
       if(stkOnly){
-        // 18.3 · 임티 하나만 온 메시지 — 말풍선 없이 큰 해돌이 스티커로
+        // 18.3/16.4 · 임티 하나만 온 메시지 — 말풍선 없이 큰 해돌이 스티커로
         inner=document.createElement('div'); inner.className='yp-stkmsg';
         var stk=YP_STK.svg(stkOnly,'yp-stk-big');
         if(stk) inner.appendChild(stk);
         else { inner.className='yp-bub'; inner.textContent=m.text||''; }
       }else{
         inner=document.createElement('div'); inner.className='yp-bub';
-        ypStkRenderText(inner,m.text||'');
+        ypStkRenderText(inner,m.text||'',m.stickers);
       }
     }
     if(!YP.seen.has(m.id)){ YP.seen.add(m.id); inner.classList.add('anim'); }
@@ -23947,7 +24785,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!m) return -1;
     for(var i=0;i<YP.msgs.length;i++){
       var x=YP.msgs[i];
-      if(x.temp && x.uid===m.uid && x.text===m.text) return i;
+      if(x.temp && x.uid===m.uid && x.text===m.text && ypSameStickers(x.stickers,m.stickers)) return i;
     }
     return -1;
   }
@@ -23963,16 +24801,42 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       if(YP.msgs[i].id===m.id){ YP.msgs.splice(i,1); ypRender(true); return; }
     }
   }
+  function ypRenderDraftStickers(){
+    var box=$('ypDraftStickers'); if(!box) return;
+    var ids=ypStkIds(YP.draftStickers); YP.draftStickers=ids;
+    box.innerHTML='';
+    ids.forEach(function(id,i){
+      var chip=document.createElement('span'); chip.className='yp-draft-chip'; chip.setAttribute('data-i',String(i)); chip.title='보낼 임티 미리보기';
+      var s=YP_STK.svg(id,'yp-stk-draft');
+      if(s) chip.appendChild(s); else chip.textContent='임티';
+      var x=document.createElement('button'); x.type='button'; x.setAttribute('data-rm',String(i)); x.setAttribute('aria-label','임티 제거'); x.textContent='×';
+      chip.appendChild(x); box.appendChild(chip);
+    });
+    box.style.display=ids.length?'flex':'none';
+  }
+  function ypDraftAsLegacyText(text,stickers){
+    var t=String(text||'').trim();
+    ypStkIds(stickers).forEach(function(id){ t+=(t&&!/\s$/.test(t)?' ':'')+YP_STK.code(id); });
+    return t;
+  }
+  function ypClearDraft(ta){ YP.draftStickers=[]; ypRenderDraftStickers(); if(ta){ ta.value=''; ypAutoGrow(ta); ta.focus(); } }
   function ypSendText(){
-    var ta=$('ypTxt'); var t=ta.value.trim(); if(!t) return;
-    // 16.3 · 1:1 대화(DM) 화면에서는 친구에게로 간다
-    if(YF.view==='dm'){ yfSendText(t); return; }
-    ta.value=''; ypAutoGrow(ta); ta.focus();
+    var ta=$('ypTxt'); var t=ta.value.trim(); var stickers=ypStkIds(YP.draftStickers);
+    if(!t&&!stickers.length) return;
+    // 16.3 · 1:1 대화(DM) 화면에서는 친구에게로 간다. DM 서버는 텍스트 기반이라
+    // 미리보기 임티를 전송 직전에만 예전 코드로 바꾼다(입력창에는 보이지 않음).
+    if(YF.view==='dm'){
+      var dt=ypDraftAsLegacyText(t,stickers);
+      ypClearDraft(ta);
+      yfSendText(dt);
+      return;
+    }
+    ypClearDraft(ta);
     var local={id:ypTempId(),kind:'txt',uid:YP.uid,name:YP.name||'나',
-      color:(YP.me&&YP.me.color)||'#a5b4fc',text:t,reactions:{},ts:Date.now()/1000,temp:true};
+      color:(YP.me&&YP.me.color)||'#a5b4fc',text:t,stickers:stickers,reactions:{},ts:Date.now()/1000,temp:true};
     ypAddMsg(local);
     fetch('/api/chat/msg',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({uid:YP.uid,text:t})})
+      body:JSON.stringify({uid:YP.uid,text:t,stickers:stickers})})
       .then(function(r){return r.json();})
       .then(function(d){
         if(d&&d.ok&&d.msg){ ypResolveTemp(d.msg); ypAddMsg(d.msg); }
@@ -24012,7 +24876,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       ypAddMsg(m.msg);
       if(!mine){
         if(YPS.sound&&(!YP.open||!document.hasFocus())) ypBeep('msg');
-        if(YPS.desk&&(!YP.open||!document.hasFocus())) ypNotify('엽스코드', (m.msg.name||'')+': '+(m.msg.text||(m.msg.kind==='img'?'[사진]':'[파일]')));
+        if(YPS.desk&&(!YP.open||!document.hasFocus())) ypNotify('엽스코드', (m.msg.name||'')+': '+(m.msg.text||(ypMsgStickers(m.msg).length?'[임티]':(m.msg.kind==='img'?'[사진]':'[파일]'))));
       }
       return;
     }
@@ -24088,7 +24952,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       '<div class="yp-set-title">알림</div>'+
       '<div class="yp-set-row"><label>알림 소리<span class="sub">새 메시지가 오면 소리</span></label><span class="yp-switch '+(YPS.sound?'on':'')+'" data-k="sound"><i></i></span></div>'+
       '<div class="yp-set-row"><label>입장·퇴장 알림<span class="sub">들어오고 나가는 안내</span></label><span class="yp-switch '+(YPS.sys?'on':'')+'" data-k="sys"><i></i></span></div>'+
-      '<div class="yp-set-row"><label>데스크톱 알림<span class="sub">노크·새 메시지 창 알림</span></label><span class="yp-switch '+(YPS.desk?'on':'')+'" data-k="desk"><i></i></span></div>';
+      '<div class="yp-set-row"><label>데스크톱 알림<span class="sub">노크·새 메시지 창 알림</span></label><span class="yp-switch '+(YPS.desk?'on':'')+'" data-k="desk"><i></i></span></div>'+
+      '<div class="yp-set-row"><label>음성<span class="sub">서버 릴레이 방식으로 연결돼요</span></label><span class="sub">서버 릴레이</span></div>';
   }
   function ypSettingsClick(e){
     if(e.target.closest&&e.target.closest('#ypSetAcc')){ if(window.sdyAuthOpen) window.sdyAuthOpen(); return; }
@@ -24371,7 +25236,11 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     for(var k in YF.threads){ total+=YF.threads[k].unread||0; }
     var reqs=YF.reqIn.length;
     var chip=$('ypChipDm');
-    if(chip){ chip.style.display=total>0?'flex':'none'; chip.textContent=total>99?'99+':String(total); }
+    if(chip){
+      chip.classList.toggle('yp-badge', total>0);
+      chip.style.display=total>0?'flex':'none';
+      chip.textContent=total>99?'99+':String(total);
+    }
     var fd=$('ypFrDot');
     if(fd){ fd.style.display=(total+reqs)>0?'inline-block':'none'; fd.textContent=String(Math.min(99,total+reqs)); }
   }
@@ -24693,7 +25562,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   // ── 배선 ──
   var chip=document.createElement('button');
   chip.id='ypReopen'; chip.title='엽스코드 · 채팅';
-  chip.innerHTML=TTEK+'<span class="yp-badge yp-voice" id="ypChipVoice"></span><span class="yp-badge yp-dm" id="ypChipDm" style="display:none"></span>';
+  chip.innerHTML=TTEK+'<span class="yp-badge yp-voice" id="ypChipVoice"></span><span class="yp-dm" id="ypChipDm" style="display:none"></span>';
   chip.onclick=function(){ if(YP.open) ypClose(); else ypEnter(); };
   document.body.appendChild(chip);
   chip.style.display='flex';
@@ -24784,10 +25653,22 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   emo.addEventListener('click',function(e){
     var b=e.target.closest&&e.target.closest('button'); if(!b) return;
     var id=b.getAttribute('data-e'); if(!id) return;
-    var t=$('ypTxt');
-    t.value+=(t.value&&!/\s$/.test(t.value)?' ':'')+YP_STK.code(id);
-    ypAutoGrow(t); t.focus();
+    if(ypStkIds([id]).length){
+      YP.draftStickers.push(id);
+      if(YP.draftStickers.length>6) YP.draftStickers=YP.draftStickers.slice(-6);
+      ypRenderDraftStickers();
+    }
+    var t=$('ypTxt'); ypAutoGrow(t); t.focus();
   });
+  var draftBox=$('ypDraftStickers');
+  if(draftBox){
+    draftBox.addEventListener('click',function(e){
+      var rm=e.target.closest&&e.target.closest('button[data-rm]'); if(!rm) return;
+      var i=parseInt(rm.getAttribute('data-rm'),10);
+      if(!isNaN(i)){ YP.draftStickers.splice(i,1); ypRenderDraftStickers(); }
+      var t=$('ypTxt'); if(t) t.focus();
+    });
+  }
   $('ypEmojiBtn').onclick=function(e){ e.stopPropagation(); emo.classList.toggle('open'); var row=$('ypReactRow'); if(row)row.classList.remove('open'); };
   $('ypReactRow').addEventListener('click',function(e){
     var b=e.target.closest&&e.target.closest('button'); if(!b) return;
@@ -25244,11 +26125,11 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 /* === script block 12 === */
 
 /* ═══════════════════════════════════════════════════════════════════
-     16.2 · 로그인/회원 — 이메일 OTP (선택 사항)
+     16.2/16.4 · 로그인/회원 — 등록 OTP + 비밀번호 로그인
      로그인 없이도 사이트 전부를 쓸 수 있다. 로그인하면:
        · 엽스코드에서 고정 닉네임(회원 배지)
        · 내가 올린 곡에 작은 '올린 사람' 표시
-     비밀번호 없이 이메일로 오는 6자리 코드(OTP)로만 로그인한다.
+     최초 등록만 이메일 인증 코드(OTP)를 쓰고 이후에는 이메일+비밀번호로 로그인한다.
      ═══════════════════════════════════════════════════════════════════ */
 (function(){
   if(window.__sdyAuthInit) return; window.__sdyAuthInit=true;
@@ -25262,6 +26143,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 
   function save(){ try{ localStorage.setItem(KEY,JSON.stringify({token:SDYA.token,user:SDYA.user})); }catch(e){} }
   function emit(){ try{ window.dispatchEvent(new CustomEvent('sdy-auth',{detail:{user:SDYA.user}})); }catch(e){} }
+  function setUser(u){
+    SDYA.user=u||null;
+    if(SDYA.user && typeof SDYA.user.needs_password==='undefined') SDYA.user.needs_password=false;
+  }
 
   window.sdyUser=function(){ return SDYA.user||null; };
   window.sdyAuthToken=function(){ return SDYA.token||''; };
@@ -25287,27 +26172,65 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     fetch('/api/auth/me',{headers:{'x-sdy-auth':SDYA.token}})
       .then(function(r){ if(!r.ok) throw new Error('401'); return r.json(); })
       .then(function(d){
-        if(d&&d.ok&&d.user){ SDYA.user=d.user; save(); paintBtn(); emit(); }
+        if(d&&d.ok&&d.user){ setUser(d.user); save(); paintBtn(); emit(); }
         else throw new Error('bad');
       })
       .catch(function(){ SDYA.token=''; SDYA.user=null; save(); paintBtn(); emit(); });
   }
 
   // ── 모달 상태 ──
-  var SA_EMAIL='', SA_REGISTERED=false, SA_COOL=0;
+  var SA_EMAIL='', SA_COOL=0, SA_MODE='login';
   function saErr(msg){ var e=$('saErr'); if(!e) return; e.textContent=msg||''; e.style.display=msg?'block':'none'; }
+  function show(id,on){ var el=$(id); if(el) el.style.display=on?'flex':'none'; }
   function saStep(step){
-    $('saStepEmail').style.display=step==='email'?'block':'none';
-    $('saStepCode').style.display=step==='code'?'block':'none';
-    $('saStepDone').style.display=step==='done'?'block':'none';
+    show('saStepLogin',step==='login');
+    show('saStepRegister',step==='register');
+    show('saStepCode',step==='code');
+    show('saStepDone',step==='done');
+    var tabs=$('saTabs'); if(tabs) tabs.style.display=step==='done'?'none':'flex';
     saErr('');
+  }
+  function saPaintMode(){
+    var log=$('saLoginTab'), reg=$('saRegisterTab'), sub=$('saSub'), ttl=$('saTtl');
+    if(log) log.classList.toggle('on',SA_MODE==='login');
+    if(reg) reg.classList.toggle('on',SA_MODE==='register');
+    if(ttl) ttl.textContent=SA_MODE==='register'?'등록하기':'로그인';
+    if(sub) sub.textContent=SA_MODE==='register'?'이메일 인증 뒤 비밀번호를 정해요':'이메일과 비밀번호로 로그인해요';
+  }
+  function saMode(mode){
+    SA_MODE=mode==='register'?'register':'login';
+    saPaintMode();
+    saStep(SA_MODE==='register'?'register':'login');
+    setTimeout(function(){
+      try{ (SA_MODE==='register'?$('saRegEmail'):$('saEmail')).focus(); }catch(e){}
+    },60);
+  }
+  window.sdyAuthMode=saMode;
+  function clearPwFields(){
+    ['saPw','saRegPw','saRegPw2','saOldPw','saNewPw','saNewPw2'].forEach(function(id){ try{ var x=$(id); if(x) x.value=''; }catch(e){} });
   }
   function saShowDone(){
     saStep('done');
     $('saTtl').textContent='내 계정';
-    $('saMeNick').textContent=SDYA.user.nick;
-    $('saMeEmail').textContent=SDYA.user.email;
-    $('saNickEdit').value=SDYA.user.nick;
+    var sub=$('saSub'); if(sub) sub.textContent='계정 정보를 관리해요';
+    if($('saMeNick')) $('saMeNick').textContent=SDYA.user.nick;
+    if($('saMeEmail')) $('saMeEmail').textContent=SDYA.user.email;
+    if($('saNickEdit')) $('saNickEdit').value=SDYA.user.nick;
+    var need=$('saPwNeed'); if(need) need.style.display=SDYA.user.needs_password?'block':'none';
+    clearPwFields();
+  }
+  function afterAuthSuccess(d, fromGate){
+    SDYA.token=d.token;
+    setUser(d.user);
+    if(SDYA.user && (d.needs_password || SDYA.user.needs_password)) SDYA.user.needs_password=true;
+    save(); paintBtn(); emit();
+    if(window.toast) toast('로그인됐어요 · '+SDYA.user.nick,2000);
+    var f=window.__sdyAfterLogin;
+    if(f){ window.__sdyAfterLogin=null; try{ f(); }catch(e){} }
+    // 비밀번호 설정이 필요한 기존 회원은 계정 화면에 남겨 자연스럽게 변경하도록 한다.
+    if(SDYA.user.needs_password){ saShowDone(); return; }
+    if(f||fromGate){ window.sdyAuthClose(); return; }
+    saShowDone();
   }
 
   window.sdyAuthOpen=function(afterLogin){
@@ -25315,11 +26238,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(typeof afterLogin==='function') window.__sdyAfterLogin=afterLogin;
     w.style.display='flex';
     if(SDYA.user){ saShowDone(); }
-    else{
-      $('saTtl').textContent='로그인';
-      saStep('email');
-      setTimeout(function(){ try{ $('saEmail').focus(); }catch(e){} },60);
-    }
+    else saMode('login');
   };
   window.sdyAuthClose=function(){
     var w=$('sdyAuthWrap'); if(w) w.style.display='none';
@@ -25331,7 +26250,6 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var b=$('saResend'); if(!b) return;
     var left=Math.max(0,Math.ceil(SA_COOL-(Date.now()/1000)));
     b.disabled=left>0;
-    // 17.4 · 아이콘을 지우지 않고 글자만 갈아 끼운다
     b.innerHTML='<i class="'+(left>0?'ri-time-line':'ri-mail-send-line')+'"></i>'+
       (left>0?('다시 받기 · '+left+'초'):'코드 다시 받기');
   }
@@ -25342,10 +26260,31 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   },1000);
 
   var EMAIL_RE=/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/;
-  window.sdyAuthSend=function(again){
+  function validEmail(v){ return EMAIL_RE.test(String(v||'').trim().toLowerCase()); }
+  function pwVal(id){ return ($(id)&&$(id).value)||''; }
+
+  window.sdyAuthLogin=function(){
     saErr('');
     var email=($('saEmail').value||'').trim().toLowerCase();
-    if(!EMAIL_RE.test(email)){ saErr('이메일 주소를 바르게 입력해 주세요'); return; }
+    var pw=pwVal('saPw');
+    if(!validEmail(email)){ saErr('이메일 주소를 바르게 입력해 주세요'); return; }
+    if(!pw){ saErr('비밀번호를 입력해 주세요'); return; }
+    var b=$('saLoginBtn'); if(b) b.disabled=true;
+    fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:email,password:pw})})
+      .then(function(r){ return r.json().then(function(j){ return {s:r.status,d:j}; }); })
+      .then(function(res){
+        var d=res.d; if(b) b.disabled=false;
+        if(!d||!d.ok){ saErr((d&&d.error)||'로그인하지 못했어요'); return; }
+        afterAuthSuccess(d,!!window.__sdyAfterLogin);
+      })
+      .catch(function(){ if(b) b.disabled=false; saErr('서버에 연결하지 못했어요'); });
+  };
+
+  window.sdyAuthSend=function(again){
+    saErr('');
+    var email=($('saRegEmail').value||'').trim().toLowerCase();
+    if(!validEmail(email)){ saErr('이메일 주소를 바르게 입력해 주세요'); return; }
     SA_EMAIL=email;
     var btn=again?$('saResend'):$('saSendBtn'); if(btn) btn.disabled=true;
     fetch('/api/auth/otp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email})})
@@ -25354,9 +26293,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         var d=res.d;
         if(btn) btn.disabled=false;
         if(!d||!d.ok){ saErr((d&&d.error)||'코드를 보내지 못했어요'); coolPaint(); return; }
-        SA_REGISTERED=!!d.registered;
-        $('saNickRow').style.display=SA_REGISTERED?'none':'block';
         $('saSent').textContent=email+' 로 인증 코드를 보냈어요 · 10분 안에 입력해 주세요'+(d.dev_code?' · (개발 모드: 코드를 넣어뒀어요)':'');
+        saPaintMode();
         saStep('code');
         SA_COOL=Date.now()/1000+45; coolPaint();
         if(d.dev_code){ $('saCode').value=d.dev_code; }
@@ -25369,31 +26307,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     saErr('');
     var code=($('saCode').value||'').replace(/\D/g,'');
     if(code.length!==6){ saErr('이메일에서 받은 6자리 코드를 입력해 주세요'); return; }
-    // 등록된 회원은 닉네임 없이 로그인한다 (새 회원만 고정 닉네임)
-    var payload={email:SA_EMAIL,code:code};
-    if(!SA_REGISTERED){
-      var nick=($('saNick').value||'').trim();
-      if(!nick){ saErr('고정 닉네임을 정해 주세요 (최대 16자)'); return; }
-      payload.nick=nick;
-    }
+    var nick=($('saNick').value||'').trim();
+    if(!nick){ saErr('고정 닉네임을 정해 주세요 (최대 16자)'); return; }
+    var pw=pwVal('saRegPw'), pw2=pwVal('saRegPw2');
+    if(pw.length<6){ saErr('비밀번호는 6자 이상으로 입력해 주세요'); return; }
+    if(pw!==pw2){ saErr('비밀번호 확인이 맞지 않아요'); return; }
     var b=$('saVerifyBtn'); if(b) b.disabled=true;
     fetch('/api/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)})
+      body:JSON.stringify({email:SA_EMAIL,code:code,nick:nick,password:pw})})
       .then(function(r){ return r.json().then(function(j){ return {s:r.status,d:j}; }); })
       .then(function(res){
         var d=res.d;
         if(b) b.disabled=false;
-        if(!d||!d.ok){ saErr((d&&d.error)||'로그인하지 못했어요'); return; }
-        SDYA.token=d.token; SDYA.user=d.user; save(); paintBtn(); emit();
-        if(window.toast) toast('로그인됐어요 · '+d.user.nick,2000);
-        // 엽스코드 게이트에서 흘러온 로그인이면 자동으로 입장한다
-        if(window.__sdyAfterLogin){
-          var f=window.__sdyAfterLogin; window.__sdyAfterLogin=null;
-          window.sdyAuthClose();
-          try{ f(); }catch(e){}
-          return;
-        }
-        saShowDone();
+        if(!d||!d.ok){ saErr((d&&d.error)||'등록하지 못했어요'); return; }
+        afterAuthSuccess(d,!!window.__sdyAfterLogin);
       })
       .catch(function(){ if(b) b.disabled=false; saErr('서버에 연결하지 못했어요'); });
   };
@@ -25402,8 +26329,11 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     fetch('/api/auth/logout',{method:'POST',headers:{'x-sdy-auth':SDYA.token}}).catch(function(){});
     SDYA.token=''; SDYA.user=null; save(); paintBtn(); emit();
     $('saTtl').textContent='로그인';
-    saStep('email');
-    try{ $('saEmail').value=''; $('saCode').value=''; $('saNick').value=''; }catch(e){}
+    try{
+      ['saEmail','saRegEmail','saCode','saNick'].forEach(function(id){ var x=$(id); if(x) x.value=''; });
+      clearPwFields();
+    }catch(e){}
+    saMode('login');
     if(window.toast) toast('로그아웃했어요',1600);
   };
 
@@ -25423,12 +26353,34 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       .catch(function(){ saErr('서버에 연결하지 못했어요'); });
   };
 
+  window.sdyPwChange=function(){
+    saErr('');
+    var old=pwVal('saOldPw'), nw=pwVal('saNewPw'), nw2=pwVal('saNewPw2');
+    if(!old){ saErr('현재 비밀번호를 입력해 주세요'); return; }
+    if(nw.length<6){ saErr('새 비밀번호는 6자 이상으로 입력해 주세요'); return; }
+    if(nw!==nw2){ saErr('새 비밀번호 확인이 맞지 않아요'); return; }
+    var b=$('saPwChangeBtn'); if(b) b.disabled=true;
+    fetch('/api/auth/password',{method:'POST',headers:{'Content-Type':'application/json','x-sdy-auth':SDYA.token},
+      body:JSON.stringify({old_password:old,password:nw})})
+      .then(function(r){ return r.json().then(function(j){ return {s:r.status,d:j}; }); })
+      .then(function(res){
+        var d=res.d; if(b) b.disabled=false;
+        if(!d||!d.ok){ saErr((d&&d.error)||'변경하지 못했어요'); return; }
+        if(SDYA.user) SDYA.user.needs_password=false;
+        save(); paintBtn(); emit(); saShowDone();
+        if(window.toast) toast('비밀번호를 변경했어요',1700);
+      })
+      .catch(function(){ if(b) b.disabled=false; saErr('서버에 연결하지 못했어요'); });
+  };
+
   // Enter 로 다음 단계로, 오버레이 밖을 누르면 닫기
   document.addEventListener('keydown',function(e){
     if(e.key!=='Enter') return;
     var w=$('sdyAuthWrap'); if(!w||w.style.display!=='flex') return;
-    if($('saStepEmail').style.display!=='none'&&document.activeElement===$('saEmail')){ e.preventDefault(); window.sdyAuthSend(); }
-    else if($('saStepCode').style.display!=='none'&&(document.activeElement===$('saCode')||document.activeElement===$('saNick'))){ e.preventDefault(); window.sdyAuthVerify(); }
+    if($('saStepLogin')&&$('saStepLogin').style.display!=='none'&&($('saStepLogin').contains(document.activeElement))){ e.preventDefault(); window.sdyAuthLogin(); }
+    else if($('saStepRegister')&&$('saStepRegister').style.display!=='none'&&($('saStepRegister').contains(document.activeElement))){ e.preventDefault(); window.sdyAuthSend(); }
+    else if($('saStepCode')&&$('saStepCode').style.display!=='none'&&($('saStepCode').contains(document.activeElement))){ e.preventDefault(); window.sdyAuthVerify(); }
+    else if($('saStepDone')&&$('saStepDone').style.display!=='none'&&($('saStepDone').contains(document.activeElement))){ e.preventDefault(); window.sdyPwChange(); }
   });
   document.addEventListener('click',function(e){
     var w=$('sdyAuthWrap');

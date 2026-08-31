@@ -223,9 +223,9 @@ const ok = (name, cond) => { cond ? pass++ : fail++; console.log((cond ? '✅ ' 
   ok('비로그인: 친구 화면에 로그인 안내 카드', (() => { const c = $2('ypFrLoginBtn'); return !!c && $2('ypFriends').textContent.includes('로그인'); })());
   $2('ypFrLoginBtn').click();
   await wait(30);
-  // 인증 모달(진짜 sdyAuthOpen)이 열리는지로 확인 — 이메일 입력칸이 보여야 한다
+  // 인증 모달(진짜 sdyAuthOpen)이 열리는지로 확인 — 로그인 입력칸이 보여야 한다
   ok('비로그인: 안내 카드 버튼이 로그인 모달을 연다',
-    $2('sdyAuthWrap').style.display === 'flex' && $2('saStepEmail').style.display !== 'none');
+    $2('sdyAuthWrap').style.display === 'flex' && $2('saStepLogin').style.display !== 'none');
 
   console.log(`\n프런트 친구/DM 테스트: PASS ${pass} / FAIL ${fail}`);
   process.exit(fail ? 1 : 0);

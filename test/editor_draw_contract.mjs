@@ -128,16 +128,35 @@ try {
   window.togglePen();
   await wait(80);
   check('펜 버튼에 active 가 붙는다', document.getElementById('penBtn').classList.contains('active'));
+  check('형광펜 버튼은 펜과 별도 툴바 버튼이다', !!document.getElementById('highlighterBtn'));
   check('그리기 툴바가 보인다', document.getElementById('drawToolbar').style.display === 'flex');
   check('종이에 drawing 클래스가 붙는다', paper.classList.contains('drawing'));
+  check('그리기 툴바 안에는 형광펜 토글/저장 완료 버튼이 없다',
+    !document.getElementById('markerBtn') && !document.getElementById('drawToolbar').querySelector('.done'));
+
+  window.toggleHighlighter();
+  await wait(80);
+  check('형광펜 모드는 상단 형광펜 버튼만 active 로 켜진다',
+    document.getElementById('highlighterBtn').classList.contains('active') && !document.getElementById('penBtn').classList.contains('active'));
+  window.togglePen();
+  await wait(80);
+  check('펜 버튼을 누르면 일반 펜 모드로 돌아온다',
+    document.getElementById('penBtn').classList.contains('active') && !document.getElementById('highlighterBtn').classList.contains('active'));
 
   // ── 2) 설정 저장 ─────────────────────────────────────────
   const red = document.querySelector('.color-pick[data-c="#e74c3c"]');
   red.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  check('펜 굵기는 더 얇은 단계 포함 4단계다',
+    document.querySelectorAll('.size-opt').length === 4 && !!document.querySelector('.size-opt[data-s="1"]'));
   document.querySelector('.size-opt[data-s="4"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  const custom = document.getElementById('penCustom');
+  custom.value = '#123456';
+  custom.dispatchEvent(new window.Event('input', { bubbles: true }));
+  red.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await wait(60);
   const saved = JSON.parse(window.localStorage.getItem('sdy_draw_cfg') || '{}');
   check('색 설정이 저장된다', saved.color === '#e74c3c');
+  check('사용자 색 선택기도 원형 color-pick 으로 표시된다', custom.classList.contains('color-pick'));
   check('굵기 설정이 저장된다', saved.size === 4);
 
   // ── 3) 자유선을 그린다 ────────────────────────────────────
@@ -161,12 +180,32 @@ try {
   await wait(200);
   check('지우개가 그린 획을 지운다', document.querySelectorAll('#pagesStage .stroke-g').length < strokeCount);
 
-  // ── 5) 되돌리기 버튼 + 완료 ──────────────────────────────
+  // ── 5) 자유선으로 비슷하게 그린 도형을 길게 누르면 자동으로 다듬는다 ───
+  window.setShape('free');
+  if (document.getElementById('eraserBtn').classList.contains('active')) window.toggleEraser();
+  await wait(40);
+  draw.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 300, clientY: 300 }));
+  for (const [x, y] of [[360, 298], [410, 305], [408, 360], [398, 382], [335, 380], [300, 365], [298, 315], [300, 300]]) {
+    draw.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y }));
+    await wait(20);
+  }
+  await wait(760);
+  draw.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
+  await wait(1400);
+  const rows = await q({ table: 'memos', op: 'select', values: [], filters: [{ field: 'notebook_id', op: 'eq', value: String(id) }], limit: 1, single: true });
+  const row = Array.isArray(rows?.data) ? rows.data[0] : rows?.data;
+  const memo = row?.content ? JSON.parse(row.content) : null;
+  const lastStroke = (memo?.pages?.[0]?.els || []).filter((e) => e.type === 'stroke').at(-1);
+  check('길게 누른 자유선은 사각형/원/타원 같은 도형으로 모핑 저장된다',
+    !!lastStroke && ['rect', 'square', 'ellipse', 'circle', 'triangle', 'diamond', 'line'].includes(lastStroke.shape || ''));
+
+  // ── 6) 되돌리기 버튼 + 종료 ──────────────────────────────
   const undoBtn = document.getElementById('drawToolbar').querySelector('button[title*="되돌리기"], button[title*="실행 취소"]');
   check('툴바에 되돌리기 버튼이 존재한다', !!undoBtn);
   window.finishDrawing();
   await wait(80);
-  check('완료하면 펜 모드가 꺼진다', !document.getElementById('penBtn').classList.contains('active'));
+  check('완료하면 펜/형광펜 모드가 꺼진다',
+    !document.getElementById('penBtn').classList.contains('active') && !document.getElementById('highlighterBtn').classList.contains('active'));
   check('완료하면 툴바가 사라진다', document.getElementById('drawToolbar').style.display === 'none');
 
   check('런타임 오류 없음', errors.length === 0);
@@ -174,10 +213,11 @@ try {
 } catch (e) {
   console.error('FAIL:', e.message);
   console.error((e.stack || '').split('\n').slice(0, 4).join('\n'));
+  process.exitCode = 1;
 } finally {
   try { child.kill('SIGTERM'); } catch {}
   await wait(300);
   try { child.kill('SIGKILL'); } catch {}
   closeDoms(doms);
-  process.exit(0);
+  process.exit(process.exitCode || 0);
 }

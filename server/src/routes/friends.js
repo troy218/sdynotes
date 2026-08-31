@@ -1,4 +1,4 @@
-// 16.3 · 친구 라우트 — 회원 전용 (이메일 OTP 로그인, x-sdy-auth 토큰).
+// 16.3/16.4 · 친구 라우트 — 회원 전용 (비밀번호 로그인, x-sdy-auth 토큰).
 //
 //   GET  /api/friends/list      내 친구 목록 + 받은/보낸 요청
 //   GET  /api/friends/summary   뱃지용 경량 요약 {requests_in, unread_dm}

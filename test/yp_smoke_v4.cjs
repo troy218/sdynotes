@@ -3,18 +3,28 @@ const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('jsdom');
 
+const ROOT = path.join(__dirname, '..');
 let block;
-const candidates = ['/home/user/yp_block.html', path.join(__dirname, '..', 'yp_block.html')];
+const candidates = ['/home/user/yp_block.html', path.join(ROOT, 'yp_block.html')];
 const found = candidates.find((p) => fs.existsSync(p));
 if (found) {
   block = fs.readFileSync(found, 'utf8');
 } else {
-  const full = fs.readFileSync(path.join(__dirname, '..', 'sdynotes.html'), 'utf8');
+  const full = fs.readFileSync(path.join(ROOT, 'sdynotes.html'), 'utf8');
   const s = full.indexOf('<!-- ═══════════════ 엽스코드');
   const e = full.indexOf('</body>', s);
   if (s < 0 || e < 0) throw new Error('엽스코드 블록을 찾지 못했습니다');
   block = full.slice(s, e);
 }
+// JSDOM(string)은 외부 <script src="sdynotes.js"> 를 자동으로 가져오지 않는다.
+// 실제 앱의 엽스코드 코드와 CSS만 인라인으로 넣어 스모크가 현재 소스를 검증하게 한다.
+block = block.replace(/<script\b[^>]*src=["']sdynotes\.js[^>]*><\/script>\s*/i, '');
+const fullJs = fs.readFileSync(path.join(ROOT, 'sdynotes.js'), 'utf8');
+const yps = fullJs.indexOf('/* === script block 10 === */');
+const ype = fullJs.indexOf('/* === script block 11 === */', yps);
+if (yps < 0 || ype < 0) throw new Error('엽스코드 스크립트 블록을 찾지 못했습니다');
+const ypScript = fullJs.slice(yps, ype);
+const ypCss = fs.readFileSync(path.join(ROOT, 'sdynotes.css'), 'utf8').replace(/<\/style/gi, '<\/style');
 
 const errors = [];
 const vc = new VirtualConsole();
@@ -137,7 +147,9 @@ function makeFetch() {
 function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 (async () => {
-  const html = '<div id="musicPlayer" class="mp-bar" style="display:none"></div><button id="mpReopen" style="display:none"></button>' + block;
+  const html = '<style id="ypStyle">' + ypCss + '</style>'
+    + '<div id="musicPlayer" class="mp-bar" style="display:none"></div><button id="mpReopen" style="display:none"></button>'
+    + block + '<script>' + ypScript + '</script>';
   const dom = new JSDOM(html, {
     url: 'http://localhost:5000/',
     runScripts: 'dangerously',
@@ -154,13 +166,23 @@ function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
       w.toast = function () {};
       w.Element.prototype.scrollTo = function () {};
       w.navigator.mediaDevices = { getUserMedia: () => Promise.resolve(fakeStream) };
+      w.sdyUiCssZoom = () => 1;
+      w.sdyUiCss = (v) => Number(v) || 0;
+      w.sdyViewportBox = () => ({ w: 1280, h: 800 });
+      w.sdyClampFloatingRect = (el, x, y) => ({ x, y });
       if (!w.requestAnimationFrame) w.requestAnimationFrame = (fn) => setTimeout(fn, 16);
     },
   });
   const w = dom.window; const d = w.document;
   const $ = (id) => d.getElementById(String(id).replace(/^#/, ''));
 
-  await wait(60); // ypJoin fetch 처리
+  await wait(20);
+  // 실제 페이지에서는 사용자가 접힘 아이콘을 눌러 입장한다. 이 독립 스모크는
+  // 먼저 한 번 입장해 SSE/상태를 세운 뒤 다시 접어, 이후 케이스가 '닫힌 앱'에서 시작하게 한다.
+  $('#ypReopen').click();
+  await wait(90); // ypJoin fetch + EventSource 연결 처리
+  $('#ypFold').click();
+  await wait(280);
 
   let pass = 0, fail = 0;
   const ok = (name, cond) => { cond ? pass++ : fail++; console.log((cond ? '✅ ' : '❌ ') + name); };

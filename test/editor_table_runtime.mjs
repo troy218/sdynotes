@@ -124,7 +124,9 @@ try {
   check('선택한 셀 범위 전체에 세로 아래 정렬이 적용된다',
     [...paper.querySelectorAll('.tb.in-tbl .tb-content')].every(n => n.style.justifyContent === 'flex-end'));
 
-  const move = paper.querySelector('.tbl-move');
+  check('표 전용 이동 버튼은 없고 테두리 이동 영역만 렌더된다',
+    !paper.querySelector('.tbl-move') && paper.querySelectorAll('.tbl-edge').length === 4);
+  const move = paper.querySelector('.tbl-edge.left');
   move.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100, clientY: 120 }));
   document.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, buttons: 1, clientX: 180, clientY: 170 }));
   const previewCells = [...paper.querySelectorAll('.tb.in-tbl')];
@@ -159,6 +161,19 @@ try {
   await wait(120);
   check('셀을 고른 뒤 Delete를 누르면 표 안쪽과 거터가 함께 완전히 사라진다',
     paper.querySelectorAll('.tb.in-tbl').length===6 && paper.querySelectorAll('.tbl-box').length===1);
+
+  // 표의 일부 칸만 marquee 다중선택에 들어간 뒤 Delete 해도 표 테두리 stroke/거터가 남지 않아야 한다.
+  const leftBox = paper.querySelector('.tbl-box');
+  const bx = parseFloat(leftBox.style.left), by = parseFloat(leftBox.style.top);
+  const bw = parseFloat(leftBox.style.width), bh = parseFloat(leftBox.style.height);
+  paper.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, detail: 1, clientX: bx - 32, clientY: by - 32 }));
+  document.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, buttons: 1, clientX: bx + bw + 32, clientY: by + bh + 32 }));
+  document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0, clientX: bx + bw + 32, clientY: by + bh + 32 }));
+  await wait(120);
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true, key: 'Delete' }));
+  await wait(160);
+  check('다중선택으로 표를 지우면 칸·테두리·조절틀이 모두 사라진다',
+    paper.querySelectorAll('.tb.in-tbl').length === 0 && paper.querySelectorAll('.stroke-g').length === 0 && paper.querySelectorAll('.tbl-box').length === 0);
 
   const fatal = errors.filter(Boolean);
   check('표 배치·선택·정렬·이동 중 치명적 런타임 오류가 없다', fatal.length === 0);

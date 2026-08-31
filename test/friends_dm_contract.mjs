@@ -46,7 +46,7 @@ const auth = (tok, extra) => ({ 'Content-Type': 'application/json', 'x-sdy-auth'
 // ── 회원 셋 만들기 ──
 async function signup(email, nick) {
   const o = await j('/api/auth/otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
-  const v = await j('/api/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code: o.d.dev_code, nick }) });
+  const v = await j('/api/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code: o.d.dev_code, nick, password: 'pw0000' }) });
   if (!v.d.ok) throw new Error(`가입 실패 ${email}: ${JSON.stringify(v.d)}`);
   return { token: v.d.token, ...v.d.user };   // {token, uid, email, nick}
 }

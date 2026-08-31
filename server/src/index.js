@@ -86,7 +86,7 @@ for (const [method, url] of [
 }
 
 await sessionsLoad();
-await userAuthBoot();   // 16.2 · 회원(이메일 OTP) 사용자·세션 읽어 두기
+await userAuthBoot();   // 16.4 · 회원(등록 OTP + 비밀번호) 사용자·세션 읽어 두기
 await friendsBoot();    // 16.3 · 친구 관계 읽어 두기
 await dmBoot();         // 16.3 · 1:1 대화 저장소 읽어 두기
 
