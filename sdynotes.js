@@ -7717,12 +7717,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const s=paperSize();
         // 실제 화면 사각형을 기준으로 환산한다. 임시 핀치 확대나 브라우저 배율이
         // pageScale과 잠깐 달라도, 텍스트 상자 위를 누른 정확한 지점을 얻는다.
+        // ★ clientX 와 r.left 는 둘 다 viewport px 이므로 뺄셈이 정확하다.
+        //   결과는 문서 px (종이 좌표) — /uiCssZoom() 불필요.
+        //   종이 안의 실제 요소(el.x)는 이 문서 px 를 그대로 쓰고,
+        //   종이의 CSS 변환(scale)이 화면 배율을 처리한다.
         const sx=r.width? s.w/r.width : 1/Math.max(.001,pageScale);
         const sy=r.height? s.h/r.height : 1/Math.max(.001,pageScale);
         return {x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy};
     }
     // 브라우저/CSS 배율과 페이지 자체 배율을 모두 포함한 화면→문서 델타.
     // pageScale로만 나누면 사이트 기본 90%에서 포인터와 요소가 점점 어긋난다.
+    // ★ dx,dy 는 clientX 차이 = viewport px. r.width 도 viewport px.
+    //   dx * s.w / r.width = viewport px → 문서 px 변환. /uiCssZoom() 불필요.
     function pageClientDelta(pageIdx,dx,dy){
         const paper=paperAt(pageIdx), r=paper&&paper.getBoundingClientRect();
         const s=paperSize();
@@ -7736,7 +7742,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     // ── 화면 px ↔ 화면 UI 가 쓰는 CSS px ──────────────────────────────
     // 데스크톱은 html{zoom:.9} 로 그려진다. 이 배율 때문에 같은 'px' 가 두 가지다.
-    //   · clientX·getBoundingClientRect → 배율이 적용된 화면 px
+    //   · clientX·getBoundingClientRect → 배율이 적용된 화면 px (viewport px)
     //   · style.left·offsetWidth          → 배율 전 CSS px  (Element.currentCSSZoom)
     //   · innerWidth·clientWidth          → 엔진·배율에 따라 둘 중 어느 쪽도 될 수
     //     있다. 그래서 이 값으로 화면 범위를 '추정'하면 어떤 환경에서든 한쪽으로
@@ -7747,6 +7753,29 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // '미리보기는 여기, 결과는 저기' 가 되는 직접 원인이다. 배율은 고정 상수로
     // 두지 않고 100px 프로브로 그때그때 직접 잰다 (기본 90%·브라우저 배율·
     // currentCSSZoom 미지원 브라우저까지 같은 코드로 맞는다).
+    //
+    // ★ 좌표계 3종 — 이 구분을 어긋나게 섞으면 커서와 결과가 어긋난다 ★
+    //   1. viewport px (화면 px)
+    //      clientX, clientY, getBoundingClientRect() 가 반환하는 값.
+    //      html{zoom} 이 적용된 '눈에 보이는' 픽셀.
+    //   2. CSS px (UI px)
+    //      position:fixed 의 style.left/top, offsetWidth 등이 쓰는 값.
+    //      html{zoom} 이 적용되기 전의 레이아웃 픽셀.
+    //      변환: CSS px = viewport px / uiCssZoom()
+    //   3. 문서 px (종이 좌표)
+    //      종이의 width/height 단위. el.x, el.y 가 이 단위.
+    //      pageLocal() 이 viewport px → 문서 px 로 변환한다.
+    //
+    // ★ 고스트(텍스트·표·그림·수식 미리보기)는 position:fixed 이므로
+    //   style.left 에 CSS px 를 넣어야 한다. 따라서 viewport px 인
+    //   getBoundingClientRect().left 에 / uiCssZoom() 를 반드시 해야 한다.
+    //   이 나눗셈을 빼면 html{zoom:.9} 에서 고스트가 커서보다
+    //   (1/0.9 − 1) ≈ 11% 오른쪽(아래)으로 어긋난다.
+    //
+    // ★ 종이 안의 실제 요소(el.x, el.y)는 종이 좌표(문서 px)를 쓰므로
+    //   / uiCssZoom() 가 필요 없다. 종이 자체의 CSS 변환(scale)이
+    //   화면 배율을 이미 처리한다. pageLocal → clampEl → addTextBox 경로는
+    //   이 변환을 거치지 않는다 — 이것도 정확한 이유다.
     let _uiZoomProbe=null;
     function uiCssZoom(){
         if(!_uiZoomProbe||!_uiZoomProbe.isConnected){
@@ -7767,6 +7796,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 화면 px → 화면 UI CSS px (position:fixed 요소의 style.left/top 에 넣을 값)
     function uiCss(v){ return v/uiCssZoom(); }
     // 문서 px → 화면 UI CSS px (종이 배율과 사이트 배율을 함께 반영)
+    // ★ 고스트가 position:fixed 의 style.left 에 쓸 때 사용한다.
+    //   sc.x = (r.width/s.w)/k = 문서 px 당 CSS px.
+    //   o.x * sc.x = 문서 px → CSS px 변환.
     function uiPageScale(pageIdx){
         const sc=pageScreenScale(pageIdx),k=uiCssZoom();
         return {x:sc.x/k,y:sc.y/k};
@@ -7788,6 +7820,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         curPageIdx=pageIdx; updatePageInfo();
         const t=e.target;
         // 표 배치 모드: 미리보기와 실제 표가 똑같은 문서 좌표를 사용한다.
+        // ★ pageLocal 로 구한 문서 px 를 그대로 쓴다. /uiCssZoom() 불필요.
         if(tablePlace){
             e.preventDefault(); e.stopPropagation();
             const cfg=tablePlace, p=pageLocal(e,pageIdx);
@@ -7810,6 +7843,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(textToolActive){
             if(!t.closest('.paper-img')&&!t.closest('.tb')&&!t.closest('.stroke-g')){
                 e.preventDefault();
+                // ★ pageLocal → clampEl 로 문서 px 를 구한다. /uiCssZoom() 불필요.
+                //   addTextBox 가 종이 안에 문서 px 로 놓고, 종이의 scale 이 화면 배율 처리.
+                //   고스트(moveTextGhost)는 /k 로 CSS px 변환 — 둘 다 화면 위치는 같다.
                 const p=pageLocal(e,pageIdx);
                 const c=clampEl(p.x-TB_W/2, p.y-TB_H/2, TB_W, TB_H);
                 addTextBox(pageIdx,c.x,c.y);
@@ -8348,6 +8384,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     });
 
     function addTextBox(pageIdx,x,y){
+        // ★ x,y 는 pageLocal → clampEl 로 구한 문서 px (종이 좌표).
+        //   /uiCssZoom() 하지 않는다 — 종이 안의 style.left 는 문서 px 를 쓰고,
+        //   종이의 CSS 변환(scale)이 화면 배율을 처리한다.
+        //   고스트(moveTextGhost)는 position:fixed 이므로 /k 로 CSS px 로 변환하지만,
+        //  둘 다 최종 화면 위치는 같다. (자세한 원리는 moveTextGhost 주석 참조)
         pushHistory();
         const el={type:'text',id:uid('t'),x,y,w:TB_W,h:TB_H,html:'',fontSize:curFontSize,font:curFont};
         doc.pages[pageIdx].els.push(el);
@@ -11900,6 +11941,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const g=document.getElementById('tableGhost'); if(!g||!tablePlace) return;
         // 포인터 아래 종이의 실제 화면 배율을 사용한다. 브라우저 90% zoom이나
         // 사용자 확대 상태에서도 클릭 후 만들어지는 표와 픽셀 단위로 일치한다.
+        // ★ r.left/k 와 sc.x 의 /k 는 viewport px → CSS px 변환에 필수.
+        //   자세한 원리는 moveTextGhost 주석 참조.
         const hit=typeof document.elementFromPoint==='function'
             ?document.elementFromPoint(clientX,clientY):null;
         const paper=(hit&&hit.closest&&hit.closest('.paper'))||paperAt(curPageIdx);
@@ -11922,6 +11965,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     //  · 사이트 기본 배율(90%) 만큼 커서에서 어긋나고
     //  · 확대가 클수록 화면 끝에서 고스트만 안으로 밀려
     // 만들어진 상자와 고스트가 서로 다른 자리에 있었다.
+    //
+    // ★ 좌표 변환 원리 (moveTableGhost, movePlaceGhost 도 동일):
+    //   r.left          = 종이 좌상단의 viewport px
+    //   o.x             = 문서 px (pageLocal → clampEl 결과)
+    //   sc.x            = 문서 px → CSS px 배율 = (r.width/s.w) / k
+    //   r.left / k      = 종이 좌상단의 CSS px  ← ★ /k 필수!
+    //   o.x * sc.x      = 문서 px → CSS px 변환
+    //   합계             = 고스트의 style.left (CSS px)
+    //
+    //   /k 를 빼면 r.left 가 viewport px 채로 style.left 에 들어가서
+    //   html{zoom:.9} 에서 고스트가 커서보다 ≈11% 오른쪽으로 밀린다.
+    //   종이 안의 실제 요소는 종이 좌표를 쓰므로 /k 가 필요 없다 —
+    //  둘 다 최종 화면 위치는 같다.
     function moveTextGhost(clientX,clientY){
         const g=document.getElementById('textGhost'); if(!g||!textToolActive) return;
         const hit=typeof document.elementFromPoint==='function'
@@ -12012,6 +12068,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         // moveTextGhost 와 같은 변환: 포인터 아래 종이의 실제 화면 사각형을 기준으로
         // 문서 좌표를 구하고, 고스트는 화면 UI CSS px 로 놓는다. 배율이 몇 %이든
         // 고스트 = 만들어질 요소 다.
+        // ★ r.left/k 와 sc.x 의 /k 는 viewport px → CSS px 변환에 필수.
+        //   자세한 원리는 moveTextGhost 주석 참조.
         const hit=typeof document.elementFromPoint==='function'
             ?document.elementFromPoint(clientX,clientY):null;
         const over=hit&&hit.closest&&hit.closest('.paper');
@@ -12030,6 +12088,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(inner) inner.style.transform=`scale(${sc.x})`;
     }
     // 배치 모드에서 종이를 눌렀다 — 미리보기와 똑같은 문서 좌표에 넣는다.
+    // ★ x,y 는 pageLocal 로 구한 문서 px. /uiCssZoom() 하지 않는다.
+    //   고스트(movePlaceGhost)는 position:fixed 이므로 /k 로 CSS px 변환하지만,
+    //  둘 다 최종 화면 위치는 같다. (자세한 원리는 moveTextGhost 주석 참조)
     function commitPlaceAt(pi,x,y){
         const pm=placeMode; if(!pm) return;
         if(pm.kind==='image'){
