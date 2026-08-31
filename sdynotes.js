@@ -1335,7 +1335,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(Array.isArray(c.pages)&&c.pages.some(pg=>(pg&&pg.els||[]).length)) return;
                 applyServerState(nbId,content);
             });
-            renderGrid();
+            // 최초 목록 렌더 뒤에 미리보기 본문이 도착한다. _gridSig 는 의도적으로
+            // 카드 메타만 포함하므로 일반 renderGrid() 는 "변경 없음"으로 빠지고,
+            // 기존 카드의 _render 클로저는 로딩 전의 빈 d 를 계속 가리키게 된다.
+            // 데이터 의존성이 바뀐 이 지점에서는 반드시 카드를 다시 만들어 새 문서를
+            // 캡처한다 (React라면 preview data/revision을 effect 의존성에 넣는 것과 동일).
+            renderGrid(true);
             return;
         }catch(e){ console.warn('미리보기 일괄 로드 실패 → 개별 로드',e); }
         // 실패 시에만 예전 방식 (동시 6개씩)
@@ -1351,7 +1356,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
         };
         await Promise.all(Array.from({length:Math.min(6,need.length)},worker));
-        renderGrid();
+        // fallback 로드도 최초 카드가 캡처한 빈 문서 참조를 교체해야 한다.
+        renderGrid(true);
     }
 
     function applyServerState(nbId, raw){
@@ -2131,12 +2137,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }else{
                 _homeEnterScroll=false;
             }
-            setTimeout(()=>{
-                area.querySelectorAll('.note-card').forEach(c=>{
-                    const r=c.getBoundingClientRect();
-                    if(r.bottom>-300&&r.top<innerHeight+500&&c._render) c._render();
-                });
-            },120);
+            _schedulePreviewRender(area);
         }else{
             filtered.forEach(nb=>{ g.appendChild(_makeCard(nb)); });
             if(!selectMode){
@@ -2146,14 +2147,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 add.onclick=openCreateModal;
                 g.appendChild(add);
             }
-            requestAnimationFrame(rescalePreviews);
-            setTimeout(()=>{
-                document.querySelectorAll('#noteGrid .note-card').forEach(c=>{
-                    const r=c.getBoundingClientRect();
-                    if(r.bottom>-300&&r.top<innerHeight+500&&c._render) c._render();
-                });
-            },120);
+            _schedulePreviewRender(g);
         }
+    }
+
+    // IntersectionObserver는 초기에 컨테이너가 display:none 이거나 첫 layout 전이면
+    // 첫 콜백을 늦게/아예 주지 않는 WebView가 있다. 관찰자는 스크롤 lazy-load에
+    // 그대로 쓰되, mount 직후 RAF(레이아웃 뒤)와 짧은 fallback에서 화면 근처 카드를
+    // 명시적으로 깨운다. 같은 카드의 _render는 loading/done으로 멱등 보호된다.
+    function _schedulePreviewRender(root){
+        const run=()=>{
+            if(!root||!root.isConnected) return;
+            const vh=window.innerHeight||document.documentElement.clientHeight||800;
+            root.querySelectorAll('.note-card').forEach((c,i)=>{
+                if(!c._render) return;
+                let r=null;
+                try{ r=c.getBoundingClientRect(); }catch(e){}
+                const unmeasured=!r||(!r.width&&!r.height&&!r.top&&!r.bottom);
+                if((unmeasured&&i<12)||(r&&r.bottom>-300&&r.top<vh+500)) c._render();
+            });
+            rescalePreviews();
+        };
+        // 한 번은 DOM mount 직후, 한 번은 CSS/layout 확정 뒤 실행한다.
+        requestAnimationFrame(()=>{ run(); requestAnimationFrame(run); });
+        setTimeout(run,140);
     }
 
     const cardObserver=new IntersectionObserver((ents)=>{
@@ -7361,12 +7378,26 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!_tbPlain().trim()){ c.setAttribute('data-empty','true'); w.classList.add('empty'); }
         if(el.locked) w.classList.add('el-lock');
         c.addEventListener('dblclick',e=>{ e.stopPropagation(); if(!w.classList.contains('edit')) enterEdit(w,true); });
+        // 활성 캐럿 서식은 실제 입력 직전에 wrapper를 확인한다. 빈 span을 브라우저가
+        // 정리했더라도 beforeinput 단계에서 복구되므로 첫 글자부터 서식이 빠지지 않는다.
+        c.addEventListener('beforeinput',e=>{
+            if(w.classList.contains('edit') && (!e.inputType||e.inputType.indexOf('insert')===0))
+                _ensurePendingTypingSpan(c);
+        });
+        // beforeinput이 없는 구형 WebView용 선행 fallback (조합 중에는 keydown이 없어도
+        // 표준 beforeinput이 오며, 둘 다 없는 환경은 아래 input에서 다음 글자를 복구).
+        c.addEventListener('keydown',e=>{
+            if(w.classList.contains('edit')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&
+               (e.key.length===1||e.key==='Enter')) _ensurePendingTypingSpan(c);
+        });
         c.addEventListener('input',()=>{
             if(w.classList.contains('edit')) commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
             _scriptEditUndoable=false;        // 실제 타이핑 뒤 Ctrl+Z 는 브라우저 기본 undo 를 우선
             const em=!_tbPlain().trim();
             if(em) c.setAttribute('data-empty','true'); else c.removeAttribute('data-empty');
             w.classList.toggle('empty',em);
+            // 엔진이 입력 뒤 캐럿을 inline 밖으로 옮긴 경우 다음 입력 전에 다시 준비한다.
+            if(w.classList.contains('edit')) _ensurePendingTypingSpan(c);
             clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
         });
         // 편집 상자에서 포커스를 벗어나면 즉시 반영 (자동저장 신뢰성)
@@ -7783,6 +7814,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     let savedRange=null, savedHost=null;   // 선택 영역 기억 (툴바 클릭 시 복원용)
     let savedCaret=null;                   // 편집 중 캐럿 기억 (글자 서식: 앞으로 입력될 글자용)
     let _typingSpan=null;                  // 캐럿 서식용 span (계속 입력되는 글자가 들어감)
+    // 빈 inline span에만 의존하면 Safari/일부 WebView가 입력 직전에 span을 정리하거나
+    // 캐럿을 span 밖으로 밀어 다음 글자가 기본 서식으로 들어간다. 활성 입력 서식을
+    // DOM과 별도 상태로도 보관하고 beforeinput/keydown 때 캐럿 wrapper를 복구한다.
+    let _pendingTyping=null;               // {host, styles} — 현재 편집 세션의 이후 입력 서식
 
     // 테두리 8px 는 '이동 손잡이', 안쪽은 '글자 선택' 영역으로 구분
     function innerTextArea(c,x,y){
@@ -7796,7 +7831,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const sel=window.getSelection();
             if(sel&&sel.rangeCount) sel.removeAllRanges();
         }catch(e){}
-        savedRange=null; savedHost=null; textSel=null; savedCaret=null; _typingSpan=null;
+        savedRange=null; savedHost=null; textSel=null; savedCaret=null; _typingSpan=null; _pendingTyping=null;
         document.querySelectorAll('#pagesStage .tb-content').forEach(c=>{
             if(!c.closest('.tb').classList.contains('edit')) disableTextSelect(c);
         });
@@ -8688,7 +8723,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   (툴바 표시와 앞으로 입력될 글자 서식을 함께 초기화한다)
     function resetTypingFormat(){
         try{
-            _typingSpan=null; savedCaret=null; savedRange=null; savedHost=null; textSel=null;
+            _typingSpan=null; _pendingTyping=null; savedCaret=null; savedRange=null; savedHost=null; textSel=null;
             currentTextColor='#000000';
             const bar=document.getElementById('tcBar'), glyph=document.getElementById('tcGlyph');
             if(bar) bar.style.background=currentTextColor;
@@ -13483,6 +13518,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     const TEXT_COLORS=['#000000','#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c','#3498db','#9b59b6','#e84393','#7f8c8d'];
     const HL_COLORS=['#ffff00','#00ff00','#00ffff','#ff00ff','#ff9999','#99ccff','#ffcc99','#c0c0c0','#99ff99','#ffd700'];
     let currentTextColor='#000000', currentHlColor='#ffff00';
+    // 실제 브라우저(특히 iOS Safari)는 툴바 버튼 pointerdown 순간 편집기의
+    // Selection을 접어 버린다. jsdom 테스트에서 함수를 직접 호출할 때는 드러나지
+    // 않는 차이다. pointerdown 전에 저장한 Range를 click handler가 끝날 때까지 잠근다.
+    let _toolbarSelLockUntil=0;
 
     function saveSel(){
         const s=window.getSelection();
@@ -13493,6 +13532,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             : r.commonAncestorContainer.parentElement?.closest('.tb-content');
         if(!host) return;
         if(s.isCollapsed){
+            // 툴바가 포커스를 가져가며 생긴 일시적 collapse로 실제 드래그 범위를
+            // 덮어쓰지 않는다. 사용자가 종이에서 직접 캐럿을 옮긴 경우에는 lock이 없다.
+            if(savedRange&&savedHost&&Date.now()<_toolbarSelLockUntil) return;
             // 편집 중 캐럿(글자 선택 없음)도 기억한다 — 이때 바꾼 색/글꼴/크기는
             // '상자 전체'가 아니라 '앞으로 입력될 글자'에만 적용하기 위함.
             const w=host.closest('.tb');
@@ -13503,7 +13545,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             return;
         }
         savedRange=r.cloneRange(); savedHost=host;
-        savedCaret=null; _typingSpan=null;   // 글자 선택이 생기면 예전 캐럿 서식은 더 이상 우선하지 않는다.
+        savedCaret=null; _typingSpan=null; _pendingTyping=null; // 글자 선택이 생기면 예전 캐럿 서식은 더 이상 우선하지 않는다.
     }
     function restoreSel(){
         if(!savedRange||!savedHost) return null;
@@ -13515,6 +13557,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return savedHost;
     }
     document.addEventListener('selectionchange',()=>{ saveSel(); syncCurSel(); });
+    function _isFormatToolbarTarget(target){
+        return !!(target&&target.closest&&target.closest(
+            '#editorView .fmt-group,#fontMenu,#textColorPop,#hlPop'));
+    }
+    // mousedown만 사용하면 touch/pen에서 저장 시점이 늦다. capture pointerdown은
+    // 버튼 기본 포커스보다 먼저 실행되므로 실제 Range/caret를 확실히 보관한다.
+    document.addEventListener('pointerdown',e=>{
+        if(!_isFormatToolbarTarget(e.target)) return;
+        saveSel();
+        _toolbarSelLockUntil=Date.now()+1500;
+    },true);
+    document.addEventListener('click',e=>{
+        if(!_isFormatToolbarTarget(e.target)) return;
+        // target onclick(applyFont/execFmt 등)이 먼저 끝난 뒤 잠금을 푼다.
+        setTimeout(()=>{ _toolbarSelLockUntil=0; },0);
+    });
     // 14.13.4 · 글상자 옆에 떠 있던 서식 막대(fmtBar)를 없앴다 — 상단 바와 항목이
     //   중복됐기 때문. 글자 서식(글꼴·크기·굵기·색·형광펜)은 전부 상단 바에서 한다.
 
@@ -14603,7 +14661,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const n=parseFloat(fsU.value||fsU.norm);
                 if(!isNaN(n)){
                     curFontSize=Math.round(n);
-                    const inp=document.getElementById('fsInput'); if(inp) inp.value=curFontSize;
+                    const inp=document.getElementById('fsInput');
+                    if(inp){ inp.value=curFontSize; inp.classList.remove('mixed'); inp.removeAttribute('aria-label'); }
+                }
+            }else if(fsU.mixed){
+                // Word처럼 선택 범위에 서로 다른 크기가 있으면 임의의 한 값을
+                // 보여 주지 않고 '-'로 표시한다. curFontSize는 유지해 +/- 동작의
+                // 기준값을 잃지 않으며, 사용자가 숫자를 입력하면 즉시 단일 크기로 바뀐다.
+                const inp=document.getElementById('fsInput');
+                if(inp&&document.activeElement!==inp){
+                    inp.value='-'; inp.classList.add('mixed');
+                    inp.setAttribute('aria-label','여러 글자 크기가 선택됨');
                 }
             }
             const cU=_selUniformStyle('color');
@@ -14800,6 +14868,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         if(span){
                             const toks=String(span.style.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none'&&t!==val);
                             span.style.textDecoration=toks.join(' ')||'';
+                            const host=span.closest&&span.closest('.tb-content');
+                            if(host) _rememberTypingStyles(span,host);
                             const w=(span.closest&&span.closest('.tb'))||(_typingHost()&&_typingHost().w);
                             if(w&&w.isConnected) syncTextEl(w);
                         }
@@ -14812,6 +14882,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         const cur=String(_typingSpan.style.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none');
                         if(cur.indexOf(val)<0) cur.push(val);
                         _typingSpan.style.textDecoration=cur.join(' ');
+                        const host=_typingSpan.closest&&_typingSpan.closest('.tb-content');
+                        if(host) _rememberTypingStyles(_typingSpan,host);
                         const w=_typingSpan.closest&&_typingSpan.closest('.tb');
                         if(w&&w.isConnected) syncTextEl(w);
                     }else{
@@ -14902,6 +14974,55 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }catch(e){}
         return false;
     }
+    function _typingStylesAt(span,host){
+        const out={};
+        let p=span;
+        while(p&&p!==host){
+            if(p.nodeType===1){
+                const tag=_tagStyle(p.tagName);
+                if(tag) for(const k in tag){ if(!(k in out)) out[k]=tag[k]; }
+                for(const k of INLINE_STYLE_PROPS){
+                    const v=p.style&&p.style[k];
+                    if(v&&!(k in out)) out[k]=v;
+                }
+            }
+            p=p.parentElement;
+        }
+        return out;
+    }
+    function _rememberTypingStyles(span,host){
+        if(!span||!host){ _pendingTyping=null; return; }
+        const styles=_typingStylesAt(span,host);
+        _pendingTyping=Object.keys(styles).length?{host,styles}:null;
+    }
+    // 브라우저가 빈 span을 없애거나 입력 후 캐럿을 형제 위치로 옮겨도, 별도로 기억한
+    // active state를 사용해 입력 직전 같은 스타일 wrapper를 다시 만든다.
+    function _ensurePendingTypingSpan(host){
+        const p=_pendingTyping;
+        if(!p||p.host!==host||!host||!host.isConnected) return false;
+        const w=host.closest&&host.closest('.tb');
+        if(!w||!w.classList.contains('edit')) return false;
+        const s=window.getSelection();
+        if(!s||!s.rangeCount||!s.isCollapsed) return false;
+        const live=s.getRangeAt(0);
+        const point=live.startContainer;
+        const inHost=point===host||host.contains(point);
+        if(!inHost) return false;
+        if(_typingSpan&&_typingSpan.isConnected&&host.contains(_typingSpan)&&
+           (point===_typingSpan||_typingSpan.contains(point))) return true;
+        try{
+            const span=document.createElement('span');
+            span.className='sdy-type';
+            for(const k in p.styles) _setInlineProp(span,k,p.styles[k]);
+            const r=live.cloneRange();
+            r.insertNode(span);
+            const nr=document.createRange(); nr.selectNodeContents(span); nr.collapse(false);
+            s.removeAllRanges(); s.addRange(nr);
+            _typingSpan=span;
+            savedCaret={c:host,r:nr.cloneRange()};
+            return true;
+        }catch(e){ return false; }
+    }
     // 캐럿에 서식 span 삽입 (이미 같은 span 안이면 스타일만 갱신)
     function caretWrapStyle(styles){
         const t=_typingHost(); if(!t) return false;
@@ -14957,9 +15078,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             //   스타일' + '아직 입력 전'일 때만 지우고, '이전 서식 차단용'으로 쓴
             //   중립값(400/normal)이 남아 있으면(즉 cssText 가 있으면) 반드시 유지한다.
             if(span.classList.contains('sdy-type')&&!span.style.cssText&&!span.textContent&&!span.childElementCount){
-                span.remove(); _typingSpan=null; savedCaret=null;
+                span.remove(); _typingSpan=null; savedCaret=null; _pendingTyping=null;
                 return true;
             }
+            // DOM wrapper와 별도로 이후 입력 상태를 보관한다. 새 글꼴을 고르는 등
+            // wrapper가 중첩돼도 조상 bold/color까지 합쳐 다음 글자에 그대로 이어진다.
+            _rememberTypingStyles(span,c);
             const w=c.closest('.tb');
             if(w&&w.isConnected) syncTextEl(w);
             return true;
@@ -15055,10 +15179,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const n=Math.round(Number(v)||0);
         if(!n||n<1) return;
         v=Math.max(2,Math.min(200,n));
+        const inp=document.getElementById('fsInput');
+        // 같은 숫자여도 직전 상태가 mixed('-')였다면 표시를 반드시 복원한다.
+        if(inp){
+            inp.classList.remove('mixed'); inp.removeAttribute('aria-label');
+            if(document.activeElement!==inp) inp.value=v;
+        }
         if(v===curFontSize) return;
         curFontSize=v;
-        const inp=document.getElementById('fsInput');
-        if(inp&&document.activeElement!==inp) inp.value=v;
     }
     // 지금 글자 크기를 물어볼 대상: 표 칸 → 편집 중인 상자 → 선택한 상자
     function activeTextFS(){
@@ -15122,7 +15250,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     function setFS(v){
         curFontSize=Math.max(2,Math.min(200,Math.round(v)));
-        document.getElementById('fsInput').value=curFontSize;
+        const fsInput=document.getElementById('fsInput');
+        fsInput.value=curFontSize; fsInput.classList.remove('mixed'); fsInput.removeAttribute('aria-label');
         if(selectedTblCellEls().length){
             tblCellApply(el=>{ el.fontSize=curFontSize; },`선택한 칸 글자 ${curFontSize}px`);
             return;

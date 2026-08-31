@@ -28,8 +28,10 @@ assert.match(js, /function scaleInlineFS\(c,f\)\{[\s\S]{0,600}?sp\.style\.fontSi
   'scaleInlineFS must scale inline font-size styles by the same factor');
 
 // ── ① 툴바 동기화 장치 ───────────────────────────────────────────────────
-assert.match(js, /function setToolbarFS\(v\)\{[\s\S]{0,400}?if\(inp&&document\.activeElement!==inp\) inp\.value=v;/,
+assert.match(js, /function setToolbarFS\(v\)\{[\s\S]{0,700}?if\(document\.activeElement!==inp\) inp\.value=v;/,
   'setToolbarFS must update the toolbar number box (unless the user is typing in it)');
+assert.match(js, /else if\(fsU\.mixed\)\{[\s\S]{0,500}?inp\.value='-'/,
+  'mixed font sizes must be shown as a Word-style dash');
 
 const chFS = js.match(/function chFS\(d\)\{([\s\S]*?)\n    \}/);
 assert.ok(chFS, 'chFS should exist');

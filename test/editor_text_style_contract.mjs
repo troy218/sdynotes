@@ -110,6 +110,18 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   check('캐럿 부모의 부분 글꼴을 새 span 에 고정해 글꼴이 풀리지 않는다',
     b.includes('p.style.fontFamily') && b.includes('span.style.fontFamily=font'));
   check('서식 span 을 커밋(syncTextEl)해 저장 사슬을 잇는다', b.includes('syncTextEl(w)'));
+  check('활성 캐럿 서식을 DOM 밖 상태에도 기억한다', b.includes('_rememberTypingStyles(span,c)'));
+}
+{
+  const b = body('_ensurePendingTypingSpan');
+  check('브라우저가 빈 span 을 제거해도 pending style 로 wrapper를 복구한다',
+    b.includes('_pendingTyping') && b.includes("span.className='sdy-type'") && b.includes('_setInlineProp'));
+}
+{
+  const b = body('buildTextEl');
+  check('keydown/beforeinput/input에서 캐럿 wrapper를 입력 생명주기에 동기화한다',
+    b.includes("c.addEventListener('beforeinput'") && b.includes("c.addEventListener('keydown'")
+    && b.includes('_ensurePendingTypingSpan(c)'));
 }
 {
   const b = body('_typingHost');
@@ -136,6 +148,14 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   check('글자 선택이 생기면 남아 있던 캐럿 서식은 더 이상 우선하지 않는다',
     iInvalidate >= 0 && iInvalidate > iCollapsed && iStore >= 0);
   check('접힌 캐럿도 편집 중 상자 안이면 기억한다', b.includes("classList.contains('edit')"));
+  check('툴바 포커스로 생긴 일시적 collapse는 저장한 드래그 범위를 덮지 않는다',
+    b.includes('_toolbarSelLockUntil'));
+}
+{
+  check('touch/pen도 버튼 기본 포커스 전에 pointerdown capture로 선택을 저장한다',
+    js.includes("document.addEventListener('pointerdown',e=>{")
+    && js.includes('_isFormatToolbarTarget(e.target)')
+    && js.includes('_toolbarSelLockUntil=Date.now()+1500'));
 }
 {
   const b = body('enterEdit');
@@ -227,11 +247,15 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   const b = body('setToolbarFS');
   check('잴 대상이 없으면(0) 툴바 글자 크기를 건드리지 않는다 (2·3 만 오가던 버그)',
     b.includes('if(!n||n<1) return;'));
+  check("같은 숫자로 돌아와도 mixed '-' 표시를 정상 숫자로 복원한다",
+    b.indexOf("inp.classList.remove('mixed')") < b.indexOf('if(v===curFontSize) return;'));
 }
 {
   const b = body('syncCurSel');
   check('글자 선택이 없어도 툴바 글꼴·크기를 지금 입력 위치에 맞춘다',
     b.includes('syncToolbarFromCaret()'));
+  check("선택에 여러 글자 크기가 섞이면 Word처럼 '-'를 표시한다",
+    b.includes('else if(fsU.mixed)') && b.includes("inp.value='-'") && b.includes("classList.add('mixed')"));
   const b2 = body('syncToolbarFromCaret');
   check('툴바 동기화는 캐럿 → 고른 상자 순으로 기준을 잡는다',
     b2.indexOf('_typingHost()') >= 0 && b2.indexOf('_typingHost()') < b2.indexOf('syncFSFromTarget()'));

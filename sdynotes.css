@@ -767,6 +767,7 @@
         #fsInput::-webkit-outer-spin-button,#fsInput::-webkit-inner-spin-button{
             -webkit-appearance:none;margin:0;}
         #fsInput:focus{border-color:var(--accent);}
+        #fsInput.mixed{color:var(--text3);font-weight:800;letter-spacing:.08em;}
         /* 팝오버가 잘리지 않게 */
         .split-btn{position:relative;z-index:1300;}
 
