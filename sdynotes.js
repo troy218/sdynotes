@@ -8596,23 +8596,20 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 h.addEventListener('mousedown',e=>startTblScale(e,pi,t.id,dir));
                 box.appendChild(h);
             });
-            // ⑤ 변 중앙 손잡이 — ＋ 버튼 대신 '한 축으로만' 늘리기
-            //    행/열 추가는 이미 표 도구 막대(tblBar)에 있으므로, 이 자리는
-            //    위·아래 = 세로(높이)만, 왼·오른쪽 = 가로(너비)만 늘리는 손잡이다.
+            // ⑤ 변 중앙 손잡이 — 가로·세로 모두 늘리기 (꼭짓점과 같은 동작)
+            //    반대축은 중앙 기준으로 늘린다 (n/s → 너비 중앙 기준, w/e → 높이 중앙 기준)
             const edge=(cls,left,top,dir)=>{
                 const h=document.createElement('div');
                 h.className='tbl-stretch '+cls;
                 h.style.left=left+'px'; h.style.top=top+'px';
-                h.title=dir==='top'||dir==='bottom'
-                    ?'끌어서 세로(높이)로만 늘리기'
-                    :'끌어서 가로(너비)로만 늘리기';
-                h.addEventListener('mousedown',e=>startTblStretch(e,pi,t.id,dir));
+                h.title='끌어서 표 크기 조절 (가로·세로)';
+                h.addEventListener('mousedown',e=>startTblScale(e,pi,t.id,dir));
                 box.appendChild(h);
             };
-            edge('top',    size.w/2, 0,      'top');
-            edge('bottom', size.w/2, size.h, 'bottom');
-            edge('left',   0,        size.h/2,'left');
-            edge('right',  size.w,   size.h/2,'right');
+            edge('top',    size.w/2, 0,      'n');
+            edge('bottom', size.w/2, size.h, 's');
+            edge('left',   0,        size.h/2,'w');
+            edge('right',  size.w,   size.h/2,'e');
             // ⑥ 왼쪽 위 이동 손잡이 — 표 전체를 잡아 옮긴다
             const mv=document.createElement('div');
             mv.className='tbl-move';
@@ -8781,8 +8778,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 tblRepaint(tblScale.pi);
                 return;
             }
-            const west=(tblScale.dir==='nw'||tblScale.dir==='sw');
-            const north=(tblScale.dir==='nw'||tblScale.dir==='ne');
+            const west=(tblScale.dir==='nw'||tblScale.dir==='sw'||tblScale.dir==='w');
+            const north=(tblScale.dir==='nw'||tblScale.dir==='ne'||tblScale.dir==='n'||tblScale.dir==='w');
             // 꼭짓점은 끄는 대로 (가로·세로 따로) — 비율 고정 없음.
             // Shift 를 누르면 그때만 비율을 유지한다.
             let nw=Math.max(TBL_MINW*tblScale.cw.length, tblScale.ow+(west?-dx:dx));
@@ -8795,8 +8792,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             t.cw=tblScale.cw.map(v=>Math.max(TBL_MINW,Math.round(v*kx)));
             t.ch=tblScale.ch.map(v=>Math.max(TBL_MINH,Math.round(v*ky)));
             const s=tblSize(t);
-            t.x=Math.round(west ? tblScale.ox+tblScale.ow-s.w : tblScale.ox);
-            t.y=Math.round(north? tblScale.oy+tblScale.oh-s.h : tblScale.oy);
+            // 변 중앙 손잡이(n/s/w/e)는 반대축을 중앙 기준으로 늘린다
+            if(tblScale.dir==='n'||tblScale.dir==='s'){
+                t.x=Math.round(tblScale.ox+(tblScale.ow-s.w)/2);
+            }else{
+                t.x=Math.round(west ? tblScale.ox+tblScale.ow-s.w : tblScale.ox);
+            }
+            if(tblScale.dir==='w'||tblScale.dir==='e'){
+                t.y=Math.round(tblScale.oy+(tblScale.oh-s.h)/2);
+            }else{
+                t.y=Math.round(north? tblScale.oy+tblScale.oh-s.h : tblScale.oy);
+            }
             // 글자 크기는 비율을 유지할 때(Shift)만 함께 조절한다
             if(e.shiftKey){
                 const kf=Math.min(kx,ky);
