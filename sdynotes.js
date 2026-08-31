@@ -8082,7 +8082,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }else clearSnapLines();
         resize.nx=Math.round(nx); resize.ny=Math.round(ny);
         resize.nw=Math.round(Math.max(30,nw)); resize.nh=Math.round(Math.max(24,nh));
-        _previewSet(resize.el,resize.nx-resize.ox,resize.ny-resize.oy,resize.nw/resize.sw,resize.nh/resize.sh);
+        // 18.7 · 텍스트 상자는 '모눈 스케일' 미리보기 대신 실제 폭/높이로 즉시
+        //   리플로우한다. 스케일(scale)로는 내부 텍스트가 찌부됐다가 놓으면 돌아오는
+        //   현상이 있어서(보고 이슈⑤) 텍스트는 리플로우 방식을 쓴다. 이미지/도형은
+        //   계속 GPU scale 로 가볍게 그린다.
+        if(resize.el.classList&&resize.el.classList.contains('tb')){
+            resize.el.style.left=Math.round(resize.nx)+'px';
+            resize.el.style.top =Math.round(resize.ny)+'px';
+            resize.el.style.width=resize.nw+'px';
+            resize.el.style.height=resize.nh+'px';
+        }else{
+            _previewSet(resize.el,resize.nx-resize.ox,resize.ny-resize.oy,resize.nw/resize.sw,resize.nh/resize.sh);
+        }
     }
 
     // 종이 밖으로 나가는 것도 허용한다 (내보낼 때 잘린다).
@@ -14239,10 +14250,57 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         syncCurSel();
     }
     // 선택 영역의 현재 스타일 상태를 툴바 버튼에 반영
+    // 18.7 · '지금 서식'을 판단하는 대상: ① 실제 글자 선택 → 선택 전체가 같은가,
+    //   없으면 ② 편집 중 캐럿(앞으로 입력될 글자) ③ 선택된 텍스트 상자 전체.
+    //   아무것도 아니면 전부 꺼진 상태로 정리한다. (보고 이슈⑥)
+    function _activeToggleStates(){
+        // ② 캐럿(선택 없음) → 앞으로 입력될 글자 기준
+        if(_typingHost()){
+            return {
+                bold:_caretHasStyle('fontWeight','700'),
+                italic:_caretHasStyle('fontStyle','italic'),
+                underline:_caretHasStyle('textDecoration','underline'),
+                strike:_caretHasStyle('textDecoration','line-through'),
+            };
+        }
+        // ③ 선택된/편집 중 텍스트 상자 → 상자 전체 서식 기준
+        let node=null;
+        if(selected&&selected.type==='text'&&selected.el) node=selected.el;
+        if(!node&&multiSel.length===1) node=multiSel[0].node;
+        if(!node) node=document.querySelector('#pagesStage .tb.edit,#pagesStage .tb.sel,#pagesStage .tb.msel');
+        if(node&&node.classList&&node.classList.contains('tb')){
+            const pageIdx=+node.dataset.pageIdx, id=node.dataset.id;
+            const el=(!isNaN(pageIdx)&&id)?findEl(pageIdx,id):null;
+            const fw=el&&el.fontWeight?el.fontWeight:(node.style.fontWeight||'');
+            const fst=el&&el.fontStyle?el.fontStyle:(node.style.fontStyle||'');
+            const dec=el&&el.textDecoration?el.textDecoration:(node.style.textDecoration||'');
+            return {
+                bold:_propMatch('fontWeight',fw,'700'),
+                italic:_propMatch('fontStyle',fst,'italic'),
+                underline:_propMatch('textDecoration',dec,'underline'),
+                strike:_propMatch('textDecoration',dec,'line-through'),
+            };
+        }
+        return {bold:false,italic:false,underline:false,strike:false};
+    }
     function syncCurSel(){
         try{
             const ctx=_selectionCtx();
-            if(!ctx) return;
+            const btnOn=(sel,on)=>{
+                const b=document.querySelector(sel);
+                if(b) b.classList.toggle('active',!!on);
+            };
+            if(!ctx){
+                // 텍스트(글자) 선택이 없는 화면 → 눌려 있던 서식 버튼을 정리한다.
+                //   사용자 이전 설정(글꼴·크기·색·형광펜)은 유지하되, '켜짐' 상태만
+                //   실제 캐럿/상자 서식에 맞춘다. (보고 이슈⑥)
+                const st=_activeToggleStates();
+                btnOn('.tb-bold',st.bold);
+                btnOn('.tb-italic',st.italic);
+                btnOn('.tb-under',st.underline);
+                btnOn('.tb-strike',st.strike);
+                return;
+            }
             // 선택한 모든 글자가 같은 속성을 공유할 때만 툴바에 단일 값으로 표시한다.
             // 섞여 있으면 기존 선택값을 그대로 두어 잘못된 단일 값 표시를 피한다.
             const states={
@@ -14250,10 +14308,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 italic:_selHasAll('fontStyle','italic'),
                 underline:_selHasAll('textDecoration','underline'),
                 strike:_selHasAll('textDecoration','line-through'),
-            };
-            const btnOn=(sel,on)=>{
-                const b=document.querySelector(sel);
-                if(b) b.classList.toggle('active',!!on);
             };
             btnOn('.tb-bold',states.bold);
             btnOn('.tb-italic',states.italic);
@@ -14458,7 +14512,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             // ② 캐럿(선택 없음) → 앞으로 입력될 글자만 토글
             if(_typingHost()){
                 const [key,val]=spec;
-                const off={fontWeight:'',fontStyle:'',textDecoration:''}[key];
+                // 18.7 · 캐럿에서 '꺼짐' 상태는 '속성 제거'가 아니라 '중립값'으로 써야 한다.
+                //   - 중립값을 가진 빈 span 을 캐럿 자리에 남기면 이후 입력되는 글자가
+                //     바로 앞(부모) 서식에 물려(예: 볼드 span 안에 다시 글자를 입력) 같은
+                //     서식으로 계속 입력되는 문제를 막는다. (보고 이슈①)
+                //   - fontWeight:400 / fontStyle:normal 처럼 '명시적 중립'이 브라우저가
+                //     다음 입력 글자를 이전 서식으로 되돌리는 것까지 막아 준다.
+                const off={fontWeight:'400',fontStyle:'normal',textDecoration:''}[key];
                 // textDecoration 에는 이미 다른 값(underline 등)이 있을 수 있으니
                 // 토글 off 시에만 해당 토큰을 빼는 식으로 처리
                 if(_caretHasStyle(key,val)){
@@ -14607,11 +14667,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(s.rangeCount){ s.removeAllRanges(); s.addRange(nr); }
                 savedCaret={c,r:nr.cloneRange()};
             }
+            const _removeStyleSafe=(name)=>{
+                // jsdom·일부 WebView 는 camelCase removeProperty 를 무시한다.
+                // kebab-case 로 지우면 브라우저·테스트 모두에서 일관되게 동작한다.
+                const kebab=String(name||'').replace(/([A-Z])/g,'-$1').toLowerCase();
+                try{ span.style.removeProperty(kebab); }catch(_e){}
+                try{ span.style.removeProperty(name); }catch(_e){}
+            };
             for(const k in styles){
-                if(styles[k]===''||styles[k]==null) span.style.removeProperty(k);
+                if(styles[k]===''||styles[k]==null) _removeStyleSafe(k);
                 else span.style[k]=styles[k];
             }
-            // 서식을 전부 지우면 빈 span 은 남길 이유가 없다 → 풀어낸다
+            // 서식을 전부 지우면 빈 span 은 남길 이유가 없다 → 풀어낸다.
+            //   단, 캐럿이 '이전 서식에 물리지 않도록' 만들려면 스타일이 전부 없더라도
+            //   sdy-type 빈 span 을 하나 남겨 두는 편이 안전하다. 여기서는 '진짜 빈
+            //   스타일' + '아직 입력 전'일 때만 지우고, '이전 서식 차단용'으로 쓴
+            //   중립값(400/normal)이 남아 있으면(즉 cssText 가 있으면) 반드시 유지한다.
             if(span.classList.contains('sdy-type')&&!span.style.cssText&&!span.textContent&&!span.childElementCount){
                 span.remove(); _typingSpan=null; savedCaret=null;
                 return true;
@@ -17576,6 +17647,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 {a:'cut',    i:'ri-scissors-line',  t:'잘라내기',   k:'Ctrl+X'},
                 {a:'bold',   i:'ri-bold',           t:'굵게',      k:'Ctrl+B'},
                 {a:'hl',     i:'ri-mark-pen-line',  t:'형광펜'},
+                {a:'clear',  i:'ri-format-clear',   t:'서식제거'},
                 {a:'sel-find',  i:'ri-search-line', t:`'${esc(short)}' 찾기`},
                 '-',
                 {sub:'서식', i:'ri-font-color', items:[
@@ -17622,7 +17694,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 {a:'el-cut',   i:'ri-scissors-line',  t:'잘라내기', k:'Ctrl+X'},
                 {a:'el-dup',   i:'ri-file-copy-2-line', t:'복제', k:'Ctrl+J'},
             ];
-            if(kind==='text-el' && !multi) items.push({a:'el-edit', i:'ri-edit-line', t:'내용 편집'});
+            // 18.7 · 보고: 우클릭 메뉴에서 '내용 편집' 버튼을 없앤다.
+            //   텍스트 편집은 더블클릭/텍스트 도구로만 들어가는 것으로 충분하다.
+            //   (LaTeX 수식 편집 버튼은 유지 — 수식은 더블클릭이 없으므로)
             if(kind==='latex' && !multi) items.push({a:'latex-edit', i:'ri-function-line', t:'LaTeX 수식 편집'});
             items.push('-');
 
