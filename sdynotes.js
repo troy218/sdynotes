@@ -5962,6 +5962,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // 메모 모드는 pointer 캡처 단계에서 먼저 받는다. 텍스트 상자·이미지
             // 위에서도 자식 선택/드래그 이벤트에 빼앗기지 않고 그 지점에 붙는다.
             const onPaperPlacementDown=e=>{
+                if(e.button===2) return;   // 18.8 · 우클릭은 배치/메모 모드를 건드리지 않는다
                 // 요소 배치 모드(그림·수식)도 캡처 단계에서 받는다 — 자식 요소가
                 // 이벤트를 가로채도 누른 바로 그 지점(pageLocal 문서 좌표)에 놓인다.
                 if(placeMode){
@@ -6383,6 +6384,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     function deletePage(i){
+        // 18.9 · 인자 없이 불러도(단축키/메뉴 확장) 지금 보는 페이지를 지운다
+        if(i==null||isNaN(+i)) i=curPageIdx;
+        i=+i;
+        if(!doc||!doc.pages[i]) return;
         if(doc.pages.length<=1){ toast('마지막 페이지는 삭제할 수 없습니다'); return; }
         const n=(doc.pages[i].els||[]).length;
         if(n>0&&!confirm(`페이지 ${i+1} 에 ${n}개의 요소가 있습니다. 삭제할까요?`)) return;
@@ -6790,6 +6795,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function copySelectedTextAsText(els){
         const parts=els.map(el=>htmlToPlain(el.html,el.tight)).filter(t=>t.length);
         const text=parts.join('\n');
+        // 18.9 · OS 클립보드에는 '글자'를 주되, 앱 안에서 붙여넣을 때를 대비해
+        //   원본 상자(위치·크기·글꼴·서식)도 함께 기억한다. 같은 글자를 그대로
+        //   붙여넣으면 맹숭맹숭한 새 상자가 아니라 '상자 복제'가 되도록.
+        try{ clipboardEls=JSON.parse(JSON.stringify(els)); _lastCopyText=text; }catch(e){}
         if(!text){ toast('복사할 글자가 없습니다',1600); return; }
         const done=()=>toast(els.length>1?`${els.length}개 상자 복사됨`:'복사됨',1200);
         if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -6797,10 +6806,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 .then(done).catch(()=>{ fallbackCopyText(text); done(); });
         }else{ fallbackCopyText(text); done(); }
     }
+    let _lastCopyText='';           // 18.9 · 방금 우리가 OS 클립보드에 넣은 글자
     function copyElements(cut){
         const els=selectedElsData();
         if(!els.length) return;
         clipboardEls=JSON.parse(JSON.stringify(els));
+        _lastCopyText='';
         if(cut){
             pushHistory();
             const pi=multiSel.length?multiSel[0].pageIdx:+selected.el.dataset.pageIdx;
@@ -7347,6 +7358,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(el.locked) w.classList.add('el-lock');
         c.addEventListener('dblclick',e=>{ e.stopPropagation(); if(!w.classList.contains('edit')) enterEdit(w,true); });
         c.addEventListener('input',()=>{
+            if(w.classList.contains('edit')) commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
             const em=!_tbPlain().trim();
             if(em) c.setAttribute('data-empty','true'); else c.removeAttribute('data-empty');
             w.classList.toggle('empty',em);
@@ -7385,6 +7397,24 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             w.appendChild(h);
         });
         return w;
+    }
+
+    // 18.9 · 글자 입력도 '되돌리기(Ctrl+Z)' 로 되돌아가게 한다.
+    //   예전에는 타이핑이 pushHistory 를 전혀 부르지 않아서, 편집을 끝내고
+    //   Ctrl+Z 를 눌러도 방금 적은 글이 되돌아가지 않았다(브라우저 기본 undo 는
+    //   편집 중일 때만 듣는다). 편집을 시작할 때 '적기 전' 문서를 기억해 두고,
+    //   그 세션에서 처음 글자가 바뀌는 순간 한 번만 기록한다.
+    let _editSnap=null, _editSnapUsed=true;
+    function markEditSnapshot(){
+        try{ _editSnap=doc?JSON.stringify(doc):null; _editSnapUsed=false; }catch(e){ _editSnap=null; _editSnapUsed=true; }
+    }
+    function commitEditSnapshot(){
+        if(_editSnapUsed||!_editSnap) return;
+        _editSnapUsed=true;
+        history.push(_editSnap);
+        if(history.length>60) history.shift();
+        redoStack=[];
+        _histT=Date.now();
     }
 
     function syncTextEl(w){
@@ -7566,7 +7596,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.querySelectorAll('.tb.sel,.paper-img.sel,.stroke-g.sel').forEach(o=>{ if(o!==w) o.classList.remove('sel'); });
         w.classList.add('edit'); w.classList.remove('sel');
         selected={type:'text',el:w};
+        markEditSnapshot();          // 18.9 · 이 상자를 고치기 '직전' 상태를 기억
         syncFSFromTarget();          // 편집에 들어간 상자의 글자 크기를 툴바에
+        // 18.8 · 툴바 글꼴도 이 상자의 글꼴로 맞춘다 (툴바 = 지금 입력될 글꼴)
+        try{
+            const _el=findEl(+w.dataset.pageIdx,w.dataset.id);
+            const _c=w.querySelector('.tb-content');
+            const _fid=(_el&&_el.font)||(_c?_fontIdFromCSS(_c.style.fontFamily||''):'');
+            if(_fid) setToolbarFont(_fid);
+        }catch(e){}
         const c=w.querySelector('.tb-content');
         c.contentEditable='true';
         if(c.getAttribute('data-empty')==='true') c.innerHTML='';
@@ -8130,6 +8168,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     function onPaperDown(e,pageIdx){
+        // 18.8 · 오른쪽 버튼(우클릭)은 선택을 절대 건드리지 않는다.
+        //   예전에는 우클릭 pointerdown 이 캐럿을 눌린 자리로 옮겨서,
+        //   좌클릭으로 끌어 고른 글자가 그 순간 풀려 버렸다. 그래서
+        //   '선택한 글자' 우클릭 메뉴(복사/굵게/형광펜…)가 뜨지 않았다.
+        //   선택은 그대로 두고 contextmenu(onEditorContext)가 이어받는다.
+        if(e.button===2){ try{ saveSel(); }catch(_e){} return; }
         if(!tablePlace && (Date.now()<_pinPointerBlockUntil||Date.now()<_textPointerBlockUntil)){
             e.preventDefault(); e.stopPropagation(); return;
         }
@@ -8629,6 +8673,24 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     document.addEventListener('pointercancel',e=>{ sdyMarkPointerEvent(); finishEditorPointer(e); });
 
 
+    // 18.8 · 새 글상자를 만들 때: 글꼴·글자 크기는 쓰던 대로 이어가되,
+    //   굵게/기울임/밑줄/취소선·글자색·형광펜 같은 '글자 꾸밈'은 모두 푼다.
+    //   (툴바 표시와 앞으로 입력될 글자 서식을 함께 초기화한다)
+    function resetTypingFormat(){
+        try{
+            _typingSpan=null; savedCaret=null; savedRange=null; savedHost=null; textSel=null;
+            currentTextColor='#000000';
+            const bar=document.getElementById('tcBar'), glyph=document.getElementById('tcGlyph');
+            if(bar) bar.style.background=currentTextColor;
+            if(glyph) glyph.style.color=currentTextColor;
+            const hb=document.getElementById('hlBar');
+            if(hb) hb.style.background='transparent';
+            ['.tb-bold','.tb-italic','.tb-under','.tb-strike'].forEach(s=>{
+                const b=document.querySelector(s); if(b) b.classList.remove('active');
+            });
+        }catch(e){}
+    }
+
     function addTextBox(pageIdx,x,y,dim){
         // ★ x,y 는 pageLocal → clampEl 로 구한 문서 px (종이 좌표).
         //   /uiCssZoom() 하지 않는다 — 종이 안의 style.left 는 문서 px 를 쓰고,
@@ -8637,12 +8699,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         //  둘 다 최종 화면 위치는 같다. (자세한 원리는 moveTextGhost 주석 참조)
         pushHistory();
         const sz=dim||textBoxDefaultSize();
+        // 글꼴·크기만 물려주고 나머지 서식은 푼다 (보고 이슈②)
+        resetTypingFormat();
         const el={type:'text',id:uid('t'),x,y,w:sz.w,h:sz.h,html:'',fontSize:curFontSize,font:curFont};
         doc.pages[pageIdx].els.push(el);
         const node=buildTextEl(el,pageIdx);
         paperAt(pageIdx).querySelector('.layer-text').appendChild(node);
         enterEdit(node,false);
+        // 새 상자에서도 툴바가 '지금 입력될 글꼴·크기'를 그대로 보여 준다
+        try{ syncToolbarFromCaret(); syncCurSel(); }catch(e){}
         saveDoc();
+        return node;
     }
     // ===== 표 만들기 =====
     // 칸마다 텍스트 상자를 놓고 선을 둘러 표처럼 보이게 한다.
@@ -9259,7 +9326,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         doc.pages[pi].els = (doc.pages[pi].els || []).filter(e => tblOf(e) !== tid && e.group !== group);
         doc.pages[pi].tables = (pageTables(pi) || []).filter(x => x.id !== tid);
         document.querySelectorAll('.layer-tbl .tbl-box').forEach(n=>{ if(n.dataset.tid===String(tid)) n.remove(); });
-        if(selectedWasInTable) clearSel();
+        // 18.9 · 없는 함수(clearSel)를 부르는 바람에 '표 전체 삭제'가 도중에
+        //   ReferenceError 로 멈춰, 화면에는 표가 남고 저장도 안 되던 버그.
+        if(selectedWasInTable){ deselectAll(true); clearMulti(); selected=null; }
         clearActiveTbl();
         renderPageEls(pi); renderTblDivs(pi); saveDoc();
         toast('표를 삭제했습니다 (Ctrl+Z 로 되돌리기)', 1800);
@@ -9377,6 +9446,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         if(!started) return [];
         const pr=paper.getBoundingClientRect(),sc=pageScreenScale(hit.pageIdx);
+        if(typeof range.getClientRects!=='function') return [];   // 18.9 · 구형 웹뷰 방어
         return Array.from(range.getClientRects()).map(r=>({
             x:(r.left-pr.left)/sc.x, y:(r.top-pr.top)/sc.y,
             w:r.width/sc.x, h:r.height/sc.y }));
@@ -9401,9 +9471,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const size=paperSize();
         const el=findEl(hit.pageIdx,hit.id);
         const top=(hit.pageIdx*(size.h+PAGE_GAP)+((el&&el.y)||0))*pageScale;
-        body.scrollTo({top:Math.max(0,top-body.clientHeight*0.35),behavior:soft?'auto':'smooth'});
+        _scrollBodyTo(body,Math.max(0,top-body.clientHeight*0.35),soft?'auto':'smooth');
         curPageIdx=hit.pageIdx; updatePageInfo();
         setTimeout(paintFindHits,soft?60:320);
+    }
+
+    // 18.9 · scrollTo 가 없는 환경(구형 웹뷰·테스트 DOM)에서도 스크롤이 죽지 않게
+    function _scrollBodyTo(body,top,behavior){
+        if(!body) return;
+        try{
+            if(typeof body.scrollTo==='function'){ body.scrollTo({top,behavior}); return; }
+        }catch(e){}
+        try{ body.scrollTop=top; }catch(e){}
     }
 
     // ==========================================================
@@ -9416,7 +9495,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         i=Math.max(1,Math.min(doc.pages.length,i))-1;
         const body=document.getElementById('editorBody');
         const size=paperSize();
-        body.scrollTo({top:i*(size.h+PAGE_GAP)*pageScale,behavior:'smooth'});
+        _scrollBodyTo(body,i*(size.h+PAGE_GAP)*pageScale,'smooth');
         curPageIdx=i; updatePageInfo();
     }
     function favList(){
@@ -12536,14 +12615,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
         }
         // ===== 스프레드시트식: 편집 중 Enter/Tab/Escape (커밋 + 셀 이동) =====
-        if(document.querySelector('.tb.edit') && document.activeElement
-           && document.activeElement.classList
-           && document.activeElement.classList.contains('tb-content')){
-            const w=document.activeElement.closest('.tb');
+        {
+            const ae=document.activeElement;
+            const inContent=!!(ae&&ae.classList&&ae.classList.contains('tb-content'));
+            // 18.9 · Escape 는 '글상자 편집 중'이면 언제나 편집만 끝낸다.
+            //   예전엔 포커스가 정확히 .tb-content 에 있을 때만 그렇게 했고,
+            //   툴바 글자 크기칸을 만졌다가 Escape 를 누르면 편집 중인데도
+            //   아래의 closeTopOverlay() 가 걸려 **노트 자체가 닫혀** 버렸다.
+            const w=inContent?ae.closest('.tb'):document.querySelector('.tb.edit');
             // 한글 IME 조합 중에는 Enter(확정)를 가로채면 입력이 깨진다 → 그대로 둠
             const composing=e.isComposing||e.keyCode===229;
             if(w){
-                if(e.key==='Tab' && !composing){
+                if(e.key==='Tab' && inContent && !composing){
                     e.preventDefault();
                     exitEditKeepSel(w);
                     moveCellFrom(w, e.shiftKey?'prev':'next');
@@ -12551,6 +12634,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }
                 if(e.key==='Escape' && !composing){
                     e.preventDefault();
+                    if(!inContent && ae && ae.blur) ae.blur();   // 툴바 입력칸에서 빠져나온다
                     exitEditKeepSel(w);
                     return;
                 }
@@ -13467,11 +13551,23 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     function closeFontMenu(){ document.getElementById('fontMenu').classList.remove('show'); }
 
-    function applyFont(id){
-        curFont=id;
+    // 18.8 · 툴바(글꼴 이름·미리보기·메뉴 체크)를 한 곳에서 갱신한다.
+    //   "사용자가 보는 툴바 글꼴 = 지금 입력되는 글꼴" 을 항상 지키기 위한 창구.
+    function setToolbarFont(id){
         const f=FONTS.find(x=>x.id===id)||FONTS[0];
-        document.getElementById('fontLabel').textContent=f.label;
-        document.getElementById('fontBtn').style.fontFamily=f.css;
+        curFont=f.id;
+        const lb=document.getElementById('fontLabel');
+        const btn=document.getElementById('fontBtn');
+        if(lb) lb.textContent=f.label;
+        if(btn) btn.style.fontFamily=f.css;
+        document.querySelectorAll('#fontMenu .font-item')
+            .forEach(n=>n.classList.toggle('sel',n.dataset.f===f.id));
+        return f;
+    }
+
+    function applyFont(id){
+        const f=setToolbarFont(id);
+        id=f.id;
 
         // ① 글자 선택이 있으면 그 부분만 (새 인라인 엔진 사용 — 다른 서식 풀림 없음)
         const host=restoreSel();
@@ -13508,9 +13604,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             targets.forEach(w=>{
                 const el=findEl(+w.dataset.pageIdx,w.dataset.id);
                 const c=w.querySelector('.tb-content');
-                if(el&&c){ el.font=id; c.style.fontFamily=f.css; }
+                if(el&&c){
+                    el.font=id; c.style.fontFamily=f.css;
+                    // 18.8 · 상자 전체 글꼴은 '안쪽 부분 글꼴'보다 세다.
+                    //   굵게/색 등을 먼저 입히며 생긴 span 에 옛 글꼴이 박제돼 있어도
+                    //   상자 글꼴 변경이 화면에 그대로 보이도록 인라인 글꼴을 걷어낸다.
+                    try{ _stripInlineProp(c,'fontFamily',null,{skipRoot:true}); _cleanupInline(c); }catch(_e){}
+                    syncTextEl(w);
+                }
             });
             saveDoc();
+            setToolbarFont(id);
             toast(`${targets.length}개 상자 글꼴 변경`,1200);
             return;
         }
@@ -13825,9 +13929,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(_propOn(an, prop)){ target = an; break; }
         }
         if(!target){
-            // 새 span 을 만들어 감싸되, 기존 상속 스타일을 전부 복사해 다른 서식이 풀리지 않게 한다.
+            // 18.8 · 새 span 은 '그 자리에서' 텍스트 노드를 감싸므로 조상 서식은
+            //   그대로 상속된다. 예전에는 상속 스타일을 span 에 통째로 복사했는데,
+            //   그러면 상자 글꼴/크기가 글자마다 인라인으로 박제돼 그 뒤로
+            //   '상자 전체 글꼴·크기 바꾸기'가 먹지 않았다. (보고: 속성을 입힌 뒤
+            //   글꼴 변경 불가) 복사하지 않는 편이 상속상 항상 동일하다.
             target = document.createElement('span');
-            for(const k in styles){ if(k!==prop) target.style[k] = styles[k]; }
             tn.parentNode.insertBefore(target, tn);
             target.appendChild(tn);
         }
@@ -13929,11 +14036,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(prop==='fontSize') el.removeAttribute('size');
         }
     }
-    function _stripInlineProp(root, prop, value){
+    function _stripInlineProp(root, prop, value, opts){
         if(!root) return;
+        const skipRoot=!!(opts&&opts.skipRoot);
         let els=[];
         try{
-            if(root.nodeType===1) els.push(root);
+            if(root.nodeType===1&&!skipRoot) els.push(root);
             if(root.querySelectorAll) els=els.concat(Array.from(root.querySelectorAll('*')));
         }catch(e){}
         // 의미 태그(<b>, <u> 등)는 안쪽부터 span 으로 바꿔야 선택 밖 조상이 바뀌지 않는다.
@@ -14028,8 +14136,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         try{
             const full=document.createRange();
             full.selectNodeContents(el);
-            return r.compareBoundaryPoints(Range.START_TO_START,full)<=0
-                && r.compareBoundaryPoints(Range.END_TO_END,full)>=0;
+            if(r.compareBoundaryPoints(Range.START_TO_START,full)<=0
+               && r.compareBoundaryPoints(Range.END_TO_END,full)>=0) return true;
+            // 18.9 · 경계가 요소 '안쪽 텍스트 노드'에 잡혀 있어도(예: <b>글자</b> 를
+            //   드래그하면 경계는 텍스트 노드가 된다) 내용 전체를 덮었다면 같은 것으로
+            //   본다. 이걸 못 알아채면 굵게 해제·서식 지우기가 <b> 태그를 못 벗겨
+            //   안쪽에 font-weight:400 span 만 덧대는 어정쩡한 결과가 됐다.
+            const txt=String(el.textContent||'');
+            if(!txt) return false;
+            if(String(r.toString())!==txt) return false;
+            const sc=r.startContainer, ec=r.endContainer;
+            return (el===sc||el.contains(sc))&&(el===ec||el.contains(ec));
         }catch(e){ return false; }
     }
     function _expandRemovalRange(r,host,prop,value){
@@ -14307,6 +14424,46 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         return {bold:false,italic:false,underline:false,strike:false};
     }
+    // 18.8 · 캐럿(앞으로 입력될 글자) 자리에서 실제로 먹고 있는 인라인 스타일 값
+    function _caretStyleValue(prop){
+        try{
+            const t=_typingHost(); if(!t) return '';
+            let p=t.r.startContainer;
+            p=(p&&p.nodeType===3)?p.parentElement:p;
+            while(p&&p!==t.c){
+                if(p.style&&p.style[prop]) return p.style[prop];
+                if(prop==='fontFamily'&&p.tagName==='FONT'&&p.getAttribute('face')) return p.getAttribute('face');
+                p=p.parentElement;
+            }
+            if(t.c&&t.c.style&&t.c.style[prop]) return t.c.style[prop];
+        }catch(e){}
+        return '';
+    }
+    // 18.8 · "툴바에 보이는 글꼴·크기 = 지금 입력되는 글꼴·크기" 를 지킨다.
+    //   글자 선택이 없을 때(캐럿 / 상자 선택)의 툴바 동기화 담당.
+    function syncToolbarFromCaret(){
+        try{
+            const t=_typingHost();
+            if(t){
+                const fam=_caretStyleValue('fontFamily');
+                const fid=fam?_fontIdFromCSS(fam):'';
+                if(fid) setToolbarFont(fid);
+                else{
+                    // 상자 자체 글꼴(el.font)이 기준
+                    const w=t.c&&t.c.closest?t.c.closest('.tb'):null;
+                    const el=w?findEl(+w.dataset.pageIdx,w.dataset.id):null;
+                    if(el&&el.font) setToolbarFont(el.font);
+                }
+                const fs=parseFloat(_caretStyleValue('fontSize'));
+                if(fs) setToolbarFS(fs);
+                return true;
+            }
+            // 캐럿이 없으면 '고른 상자' 기준
+            syncFSFromTarget();
+            return true;
+        }catch(e){}
+        return false;
+    }
     function syncCurSel(){
         try{
             const ctx=_selectionCtx();
@@ -14323,6 +14480,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 btnOn('.tb-italic',st.italic);
                 btnOn('.tb-under',st.underline);
                 btnOn('.tb-strike',st.strike);
+                // 18.8 · 글꼴·크기는 '지금 입력될 자리' 기준으로 계속 맞춘다.
+                syncToolbarFromCaret();
                 return;
             }
             // 선택한 모든 글자가 같은 속성을 공유할 때만 툴바에 단일 값으로 표시한다.
@@ -14341,14 +14500,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const fU=_selUniformStyle('fontFamily');
             if(fU.ok && fU.norm){
                 const id=_fontIdFromCSS(fU.value||fU.norm);
-                if(id){
-                    const f=FONTS.find(x=>x.id===id)||FONTS[0];
-                    curFont=id;
-                    const lb=document.getElementById('fontLabel'), btn=document.getElementById('fontBtn');
-                    if(lb) lb.textContent=f.label;
-                    if(btn) btn.style.fontFamily=f.css;
-                    document.querySelectorAll('#fontMenu .font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===id));
-                }
+                if(id) setToolbarFont(id);
             }
             const fsU=_selUniformStyle('fontSize');
             if(fsU.ok && fsU.norm){
@@ -14595,7 +14747,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const cmd={left:'justifyLeft',center:'justifyCenter',right:'justifyRight'}[dir];
         const sel=window.getSelection();
         const live=sel&&!sel.isCollapsed&&document.querySelector('.tb.edit');
-        if(live){ withSelection(()=>{ if(document.execCommand) document.execCommand(cmd,false,null); }); return; }
+        if(live&&document.execCommand){ withSelection(()=>{ document.execCommand(cmd,false,null); }); return; }
+        // 18.9 · execCommand 가 없으면 편집 중인 상자 전체 정렬로 처리한다(무동작 방지)
         if(selectedTblCellEls().length){ tblCellAlign(dir); return; }
         let targets=multiSel.length
             ? multiSel.map(m=>m.node).filter(nd=>nd.classList.contains('tb'))
@@ -14724,12 +14877,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const host=restoreSel();
         const sel=window.getSelection();
         if(host && sel && !sel.isCollapsed){
-            if(document.execCommand){
-                document.execCommand('styleWithCSS',false,true);
-                document.execCommand('removeFormat',false,null);
-                document.execCommand('unlink',false,null);
-            }
+            pushHistory();
+            // 18.9 · execCommand('removeFormat') 은 브라우저/웹뷰마다 동작이 제각각이고
+            //   일부 환경(구형 WebView·테스트 DOM)에는 아예 없다. 인라인 엔진으로
+            //   선택 구간의 서식 속성을 하나씩 확실히 걷어낸다.
+            ['fontWeight','fontStyle','textDecoration','color','backgroundColor',
+             'fontFamily','fontSize','verticalAlign'].forEach(p=>{
+                try{ _removeFromSelection(p); }catch(e){}
+            });
+            try{ if(document.execCommand) document.execCommand('unlink',false,null); }catch(e){}
             const w=host.closest('.tb'); if(w) syncTextEl(w);
+            saveSel(); syncCurSel();
             toast('선택 영역 서식 지움',1200);
             return;
         }
@@ -14782,8 +14940,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     //  상자를 Alt+휠로 키우거나 다른 상자를 집었을 때 툴바 값이 낡은 채로 남아
     //  '+' 를 누르면 도로 작아지던 것을 막는다.
     function setToolbarFS(v){
-        v=Math.max(2,Math.min(200,Math.round(Number(v)||0)));
-        if(!v||v===curFontSize) return;
+        // 18.8 · 잴 대상이 없으면(0/빈 값) 툴바 값을 건드리지 않는다.
+        //   예전엔 0 이 들어와도 2 로 깎여 저장되는 바람에, 아무것도 고르지 않은
+        //   화면에서 '＋' 를 누르면 2 ↔ 3 만 오가는 버그가 있었다. (보고 이슈③)
+        const n=Math.round(Number(v)||0);
+        if(!n||n<1) return;
+        v=Math.max(2,Math.min(200,n));
+        if(v===curFontSize) return;
         curFontSize=v;
         const inp=document.getElementById('fsInput');
         if(inp&&document.activeElement!==inp) inp.value=v;
@@ -14806,7 +14969,30 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!v){ try{ const el=findEl(+node.dataset.pageIdx,node.dataset.id); v=el&&el.fontSize; }catch(e){} }
         return Math.round(Number(v)||0);
     }
-    function syncFSFromTarget(){ setToolbarFS(activeTextFS()); }
+    // 18.8 · 같은 기준으로 '지금 대상'의 글꼴 id 도 구한다 (툴바 글꼴 동기화)
+    function activeTextFont(){
+        try{
+            const cells=selectedTblCellEls();
+            if(cells.length&&cells[0]&&cells[0].font) return cells[0].font;
+        }catch(e){}
+        let node=null;
+        if(selected&&selected.type==='text'&&selected.el) node=selected.el;
+        if(!node&&multiSel.length===1) node=multiSel[0].node;
+        if(!node) node=document.querySelector('#pagesStage .tb.edit');
+        if(!node) node=document.querySelector('#pagesStage .tb.sel');
+        if(!node||!node.isConnected||!node.classList.contains('tb')) return '';
+        try{
+            const el=findEl(+node.dataset.pageIdx,node.dataset.id);
+            if(el&&el.font) return el.font;
+        }catch(e){}
+        const c=node.querySelector('.tb-content');
+        return c?_fontIdFromCSS(c.style.fontFamily||''):'';
+    }
+    function syncFSFromTarget(){
+        setToolbarFS(activeTextFS());
+        const fid=activeTextFont();
+        if(fid) setToolbarFont(fid);
+    }
     // 상자 안의 '일부 글자'를 드래그해 골라 둔 상태면 그쪽 크기를 기준으로 삼는다
     function hasInlineTextSel(){
         try{
@@ -14844,7 +15030,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         // 18.5 · 편집 중 캐럿(선택 없음) → 상자 전체가 아니라 앞으로 입력될 글자에만
         if(_typingHost()){ caretWrapStyle({fontSize:curFontSize+'px'}); return; }
         const sel=document.querySelector('.tb.sel,.tb.edit');
-        if(sel){ sel.querySelector('.tb-content').style.fontSize=curFontSize+'px'; syncTextEl(sel); }
+        if(sel){
+            const c=sel.querySelector('.tb-content');
+            if(c){
+                c.style.fontSize=curFontSize+'px';
+                // 18.8 · 상자 전체 크기는 안쪽 부분 크기보다 세다 —
+                //   서식 span 에 박제된 옛 크기를 걷어내야 실제로 커/작아진다.
+                try{ _stripInlineProp(c,'fontSize',null,{skipRoot:true}); _cleanupInline(c); }catch(_e){}
+            }
+            syncTextEl(sel);
+        }
     }
 
     // ============ 종이 / 크기 ============
@@ -15228,6 +15423,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         // 텍스트 붙여넣기 → 자동으로 텍스트 상자 생성
         const html=e.clipboardData?.getData('text/html');
         const plain=e.clipboardData?.getData('text/plain');
+        // 18.9 · 앱에서 복사한 상자를 그대로 붙여넣기 (글꼴·크기·서식·크기 유지)
+        if(clipboardEls.length&&plain&&_lastCopyText&&plain.trim()===_lastCopyText.trim()){
+            e.preventDefault(); pasteElements(); return;
+        }
         if(plain&&plain.trim()){
             e.preventDefault();
             let content;
@@ -16603,7 +16802,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         doc.__base.set(id,theirs);
         if(doc.__baseRev) doc.__baseRev.set(id, op.rev||0);
-        if(hasBase) doc.__lastHash.set(id,JSON.stringify(el));
+        // 18.9 · '이미 보낸 것' 표시(__lastHash)는 서버가 가진 내용(theirs)이
+        //   내 내용과 정말 같을 때만 한다. 예전에는 병합 결과가 내 것과 같다는
+        //   이유만으로(=서버에는 아직 옛 내용) 해시를 갱신해 버려서, 내 마지막
+        //   편집이 영영 push 되지 않았다. 그러면 노트를 닫았다 다시 열 때
+        //   옛 ops 가 그대로 적용돼 **방금 적은 글이 사라진 것처럼** 보였다.
+        if(hasBase && theirs===mine) doc.__lastHash.set(id,JSON.stringify(el));
+        else doc.__lastHash.delete(id);      // 아직 안 보낸 편집 → 다음 genOps 가 반드시 보낸다
         return false;
     }
     async function initSync(){
@@ -18106,12 +18311,23 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             execFmt('strike');
         }
         else if(a==='sel-upper'||a==='sel-lower'){
+            // 18.9 · execCommand('insertText') 는 환경에 따라 없거나(구형 웹뷰)
+            //   선택 구간의 서식(굵기·색·글꼴)을 통째로 날린다. 텍스트 노드의
+            //   글자만 바꾸면 서식은 그대로 두고 대소문자만 바뀐다.
             const up=(a==='sel-upper');
-            withSelection(()=>{
-                const s=window.getSelection(); if(!s||s.isCollapsed) return;
-                const txt=String(s);
-                document.execCommand('insertText',false, up?txt.toUpperCase():txt.toLowerCase());
+            const host=restoreSel();
+            const s=window.getSelection();
+            if(!host||!s||s.isCollapsed){ toast('텍스트를 드래그해 선택하세요',1300); return; }
+            pushHistory();
+            const r=s.getRangeAt(0);
+            const parts=_selContacts(r);
+            parts.forEach(ct=>{
+                const v=String(ct.node.nodeValue||'');
+                const seg=v.slice(ct.s,ct.e);
+                ct.node.nodeValue=v.slice(0,ct.s)+(up?seg.toUpperCase():seg.toLowerCase())+v.slice(ct.e);
             });
+            const w=host.closest('.tb'); if(w) syncTextEl(w);
+            saveSel();
             toast(up?'대문자로 바꿨습니다':'소문자로 바꿨습니다',1400);
         }
         else if(a==='sel-link'){
@@ -18119,7 +18335,35 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const cur=String(s||'').trim();
             const url=prompt('연결할 주소를 입력하세요', /^https?:\/\//i.test(cur)?cur:'https://');
             if(url&&url.trim()){
-                withSelection(()=>document.execCommand('createLink',false,url.trim()));
+                const host=restoreSel();
+                if(!host){ toast('텍스트를 드래그해 선택하세요',1300); return; }
+                pushHistory();
+                let done=false;
+                try{
+                    if(document.execCommand){
+                        document.execCommand('styleWithCSS',false,true);
+                        done=document.execCommand('createLink',false,url.trim());
+                    }
+                }catch(e){ done=false; }
+                if(!done){
+                    // 18.9 · execCommand 가 없는 환경에서도 링크가 걸리도록 직접 감싼다
+                    try{
+                        const sel2=window.getSelection();
+                        if(sel2&&!sel2.isCollapsed&&sel2.rangeCount){
+                            const r=sel2.getRangeAt(0);
+                            const a2=document.createElement('a');
+                            a2.setAttribute('href',url.trim());
+                            a2.setAttribute('target','_blank');
+                            a2.setAttribute('rel','noopener');
+                            a2.appendChild(r.extractContents());
+                            r.insertNode(a2);
+                            const nr=document.createRange(); nr.selectNodeContents(a2);
+                            sel2.removeAllRanges(); sel2.addRange(nr);
+                        }
+                    }catch(e){}
+                }
+                const w=host.closest('.tb'); if(w) syncTextEl(w);
+                saveSel();
                 toast('링크를 걸었습니다',1400);
             }
         }

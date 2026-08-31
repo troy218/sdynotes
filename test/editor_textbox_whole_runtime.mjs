@@ -443,9 +443,12 @@ try {
     const second = els.find(e => (e.html || '').includes('두 번째'));
     const empty = els.find(e => !(e.html || '').replace(/\u00a0/g, '').trim());
     check('서버에 세 상자가 모두 저장된다', els.filter(e => e.type === 'text').length === 3 && !!empty);
+    // 18.8 · 첫 상자는 ⑤ 다중 선택에서 주황(#d35400)으로 다시 칠해졌다.
+    //   예전에는 서식 span 이 겹겹이 쌓이며 옛 보라색이 바깥 span 에 남아 있었지만,
+    //   이제는 상자 전체 서식이 한 겹으로 정리돼 '마지막에 칠한 색'만 남는다.
     check('첫 상자의 색·정렬·글꼴·크기가 서버에 남는다',
-      (t1?.html || '').includes('142, 68, 173') && t1?.align === 'center'
-      && t1?.font === 'jua' && t1?.fontSize === 22);
+      (t1?.html || '').includes('211, 84, 0') && !(t1?.html || '').includes('142, 68, 173')
+      && t1?.align === 'center' && t1?.font === 'jua' && t1?.fontSize === 22);
     check('첫 상자의 이동·리사이즈 결과가 서버에 남는다', t1?.w === 320 && t1?.h === 110);
     check('두 번째 상자의 글자색도 서버에 남는다', (second?.html || '').includes('211, 84, 0'));
   }
