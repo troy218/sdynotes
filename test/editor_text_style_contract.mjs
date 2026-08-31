@@ -216,4 +216,48 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   check('편집에 들어가면 툴바 글꼴도 그 상자 글꼴로 맞춘다', b3.includes('setToolbarFont(_fid)'));
 }
 
+// ── ⑨ 18.9 · 편집 흐름/동기화 안전장치 ────────────────────────────────────
+{
+  const b = body('_tbMergeRemote');
+  check('아직 서버에 없는 내 편집을 \'보낸 것\'으로 표시하지 않는다 (마지막 편집 유실 방지)',
+    b.includes('if(hasBase && theirs===mine) doc.__lastHash.set(id,JSON.stringify(el));')
+    && b.includes('else doc.__lastHash.delete(id);'));
+}
+{
+  const b = body('tblDelAll');
+  check('표 전체 삭제가 없는 함수(clearSel)를 부르지 않는다',
+    !b.includes('clearSel()') && b.includes('deselectAll(true)'));
+}
+{
+  const b = body('clearFmt');
+  check('선택 서식 지우기는 execCommand 없이도 동작한다 (인라인 엔진)',
+    b.includes("_removeFromSelection(p)") && b.includes("'fontWeight','fontStyle','textDecoration'"));
+}
+{
+  const b = body('deletePage');
+  check('페이지 삭제는 인자가 없거나 잘못돼도 안전하다',
+    b.includes('if(i==null||isNaN(+i)) i=curPageIdx;') && b.includes('if(!doc||!doc.pages[i]) return;'));
+}
+{
+  check('타이핑도 되돌리기 지점을 남긴다 (편집 시작 스냅샷)',
+    js.includes('function markEditSnapshot()') && js.includes('function commitEditSnapshot()')
+    && js.includes('if(w.classList.contains(\'edit\')) commitEditSnapshot();'));
+}
+{
+  const b = body('copySelectedTextAsText');
+  check('상자를 복사하면 요소 자체도 함께 기억한다 (붙여넣기 = 상자 복제)',
+    b.includes('clipboardEls=JSON.parse(JSON.stringify(els))') && b.includes('_lastCopyText=text'));
+  check('같은 글자를 붙여넣으면 상자로 복원한다',
+    js.includes("if(clipboardEls.length&&plain&&_lastCopyText&&plain.trim()===_lastCopyText.trim())"));
+}
+{
+  check('편집 중 Escape 는 노트를 닫지 않고 편집만 끝낸다',
+    js.includes("const w=inContent?ae.closest('.tb'):document.querySelector('.tb.edit');"));
+}
+{
+  const b = body('_rangeCoversContents');
+  check('경계가 안쪽 텍스트 노드여도 \'내용 전체 선택\'을 알아본다 (<b> 벗기기)',
+    b.includes("String(r.toString())!==txt"));
+}
+
 console.log(`\n텍스트 서식 엔진 계약: PASS ${pass} / FAIL 0`);

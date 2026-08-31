@@ -6384,6 +6384,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     function deletePage(i){
+        // 18.9 · 인자 없이 불러도(단축키/메뉴 확장) 지금 보는 페이지를 지운다
+        if(i==null||isNaN(+i)) i=curPageIdx;
+        i=+i;
+        if(!doc||!doc.pages[i]) return;
         if(doc.pages.length<=1){ toast('마지막 페이지는 삭제할 수 없습니다'); return; }
         const n=(doc.pages[i].els||[]).length;
         if(n>0&&!confirm(`페이지 ${i+1} 에 ${n}개의 요소가 있습니다. 삭제할까요?`)) return;
@@ -6791,6 +6795,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function copySelectedTextAsText(els){
         const parts=els.map(el=>htmlToPlain(el.html,el.tight)).filter(t=>t.length);
         const text=parts.join('\n');
+        // 18.9 · OS 클립보드에는 '글자'를 주되, 앱 안에서 붙여넣을 때를 대비해
+        //   원본 상자(위치·크기·글꼴·서식)도 함께 기억한다. 같은 글자를 그대로
+        //   붙여넣으면 맹숭맹숭한 새 상자가 아니라 '상자 복제'가 되도록.
+        try{ clipboardEls=JSON.parse(JSON.stringify(els)); _lastCopyText=text; }catch(e){}
         if(!text){ toast('복사할 글자가 없습니다',1600); return; }
         const done=()=>toast(els.length>1?`${els.length}개 상자 복사됨`:'복사됨',1200);
         if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -6798,10 +6806,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 .then(done).catch(()=>{ fallbackCopyText(text); done(); });
         }else{ fallbackCopyText(text); done(); }
     }
+    let _lastCopyText='';           // 18.9 · 방금 우리가 OS 클립보드에 넣은 글자
     function copyElements(cut){
         const els=selectedElsData();
         if(!els.length) return;
         clipboardEls=JSON.parse(JSON.stringify(els));
+        _lastCopyText='';
         if(cut){
             pushHistory();
             const pi=multiSel.length?multiSel[0].pageIdx:+selected.el.dataset.pageIdx;
@@ -7348,6 +7358,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(el.locked) w.classList.add('el-lock');
         c.addEventListener('dblclick',e=>{ e.stopPropagation(); if(!w.classList.contains('edit')) enterEdit(w,true); });
         c.addEventListener('input',()=>{
+            if(w.classList.contains('edit')) commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
             const em=!_tbPlain().trim();
             if(em) c.setAttribute('data-empty','true'); else c.removeAttribute('data-empty');
             w.classList.toggle('empty',em);
@@ -7386,6 +7397,24 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             w.appendChild(h);
         });
         return w;
+    }
+
+    // 18.9 · 글자 입력도 '되돌리기(Ctrl+Z)' 로 되돌아가게 한다.
+    //   예전에는 타이핑이 pushHistory 를 전혀 부르지 않아서, 편집을 끝내고
+    //   Ctrl+Z 를 눌러도 방금 적은 글이 되돌아가지 않았다(브라우저 기본 undo 는
+    //   편집 중일 때만 듣는다). 편집을 시작할 때 '적기 전' 문서를 기억해 두고,
+    //   그 세션에서 처음 글자가 바뀌는 순간 한 번만 기록한다.
+    let _editSnap=null, _editSnapUsed=true;
+    function markEditSnapshot(){
+        try{ _editSnap=doc?JSON.stringify(doc):null; _editSnapUsed=false; }catch(e){ _editSnap=null; _editSnapUsed=true; }
+    }
+    function commitEditSnapshot(){
+        if(_editSnapUsed||!_editSnap) return;
+        _editSnapUsed=true;
+        history.push(_editSnap);
+        if(history.length>60) history.shift();
+        redoStack=[];
+        _histT=Date.now();
     }
 
     function syncTextEl(w){
@@ -7567,6 +7596,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.querySelectorAll('.tb.sel,.paper-img.sel,.stroke-g.sel').forEach(o=>{ if(o!==w) o.classList.remove('sel'); });
         w.classList.add('edit'); w.classList.remove('sel');
         selected={type:'text',el:w};
+        markEditSnapshot();          // 18.9 · 이 상자를 고치기 '직전' 상태를 기억
         syncFSFromTarget();          // 편집에 들어간 상자의 글자 크기를 툴바에
         // 18.8 · 툴바 글꼴도 이 상자의 글꼴로 맞춘다 (툴바 = 지금 입력될 글꼴)
         try{
@@ -9296,7 +9326,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         doc.pages[pi].els = (doc.pages[pi].els || []).filter(e => tblOf(e) !== tid && e.group !== group);
         doc.pages[pi].tables = (pageTables(pi) || []).filter(x => x.id !== tid);
         document.querySelectorAll('.layer-tbl .tbl-box').forEach(n=>{ if(n.dataset.tid===String(tid)) n.remove(); });
-        if(selectedWasInTable) clearSel();
+        // 18.9 · 없는 함수(clearSel)를 부르는 바람에 '표 전체 삭제'가 도중에
+        //   ReferenceError 로 멈춰, 화면에는 표가 남고 저장도 안 되던 버그.
+        if(selectedWasInTable){ deselectAll(true); clearMulti(); selected=null; }
         clearActiveTbl();
         renderPageEls(pi); renderTblDivs(pi); saveDoc();
         toast('표를 삭제했습니다 (Ctrl+Z 로 되돌리기)', 1800);
@@ -9414,6 +9446,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         if(!started) return [];
         const pr=paper.getBoundingClientRect(),sc=pageScreenScale(hit.pageIdx);
+        if(typeof range.getClientRects!=='function') return [];   // 18.9 · 구형 웹뷰 방어
         return Array.from(range.getClientRects()).map(r=>({
             x:(r.left-pr.left)/sc.x, y:(r.top-pr.top)/sc.y,
             w:r.width/sc.x, h:r.height/sc.y }));
@@ -9438,9 +9471,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const size=paperSize();
         const el=findEl(hit.pageIdx,hit.id);
         const top=(hit.pageIdx*(size.h+PAGE_GAP)+((el&&el.y)||0))*pageScale;
-        body.scrollTo({top:Math.max(0,top-body.clientHeight*0.35),behavior:soft?'auto':'smooth'});
+        _scrollBodyTo(body,Math.max(0,top-body.clientHeight*0.35),soft?'auto':'smooth');
         curPageIdx=hit.pageIdx; updatePageInfo();
         setTimeout(paintFindHits,soft?60:320);
+    }
+
+    // 18.9 · scrollTo 가 없는 환경(구형 웹뷰·테스트 DOM)에서도 스크롤이 죽지 않게
+    function _scrollBodyTo(body,top,behavior){
+        if(!body) return;
+        try{
+            if(typeof body.scrollTo==='function'){ body.scrollTo({top,behavior}); return; }
+        }catch(e){}
+        try{ body.scrollTop=top; }catch(e){}
     }
 
     // ==========================================================
@@ -9453,7 +9495,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         i=Math.max(1,Math.min(doc.pages.length,i))-1;
         const body=document.getElementById('editorBody');
         const size=paperSize();
-        body.scrollTo({top:i*(size.h+PAGE_GAP)*pageScale,behavior:'smooth'});
+        _scrollBodyTo(body,i*(size.h+PAGE_GAP)*pageScale,'smooth');
         curPageIdx=i; updatePageInfo();
     }
     function favList(){
@@ -12573,14 +12615,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
         }
         // ===== 스프레드시트식: 편집 중 Enter/Tab/Escape (커밋 + 셀 이동) =====
-        if(document.querySelector('.tb.edit') && document.activeElement
-           && document.activeElement.classList
-           && document.activeElement.classList.contains('tb-content')){
-            const w=document.activeElement.closest('.tb');
+        {
+            const ae=document.activeElement;
+            const inContent=!!(ae&&ae.classList&&ae.classList.contains('tb-content'));
+            // 18.9 · Escape 는 '글상자 편집 중'이면 언제나 편집만 끝낸다.
+            //   예전엔 포커스가 정확히 .tb-content 에 있을 때만 그렇게 했고,
+            //   툴바 글자 크기칸을 만졌다가 Escape 를 누르면 편집 중인데도
+            //   아래의 closeTopOverlay() 가 걸려 **노트 자체가 닫혀** 버렸다.
+            const w=inContent?ae.closest('.tb'):document.querySelector('.tb.edit');
             // 한글 IME 조합 중에는 Enter(확정)를 가로채면 입력이 깨진다 → 그대로 둠
             const composing=e.isComposing||e.keyCode===229;
             if(w){
-                if(e.key==='Tab' && !composing){
+                if(e.key==='Tab' && inContent && !composing){
                     e.preventDefault();
                     exitEditKeepSel(w);
                     moveCellFrom(w, e.shiftKey?'prev':'next');
@@ -12588,6 +12634,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }
                 if(e.key==='Escape' && !composing){
                     e.preventDefault();
+                    if(!inContent && ae && ae.blur) ae.blur();   // 툴바 입력칸에서 빠져나온다
                     exitEditKeepSel(w);
                     return;
                 }
@@ -14089,8 +14136,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         try{
             const full=document.createRange();
             full.selectNodeContents(el);
-            return r.compareBoundaryPoints(Range.START_TO_START,full)<=0
-                && r.compareBoundaryPoints(Range.END_TO_END,full)>=0;
+            if(r.compareBoundaryPoints(Range.START_TO_START,full)<=0
+               && r.compareBoundaryPoints(Range.END_TO_END,full)>=0) return true;
+            // 18.9 · 경계가 요소 '안쪽 텍스트 노드'에 잡혀 있어도(예: <b>글자</b> 를
+            //   드래그하면 경계는 텍스트 노드가 된다) 내용 전체를 덮었다면 같은 것으로
+            //   본다. 이걸 못 알아채면 굵게 해제·서식 지우기가 <b> 태그를 못 벗겨
+            //   안쪽에 font-weight:400 span 만 덧대는 어정쩡한 결과가 됐다.
+            const txt=String(el.textContent||'');
+            if(!txt) return false;
+            if(String(r.toString())!==txt) return false;
+            const sc=r.startContainer, ec=r.endContainer;
+            return (el===sc||el.contains(sc))&&(el===ec||el.contains(ec));
         }catch(e){ return false; }
     }
     function _expandRemovalRange(r,host,prop,value){
@@ -14691,7 +14747,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const cmd={left:'justifyLeft',center:'justifyCenter',right:'justifyRight'}[dir];
         const sel=window.getSelection();
         const live=sel&&!sel.isCollapsed&&document.querySelector('.tb.edit');
-        if(live){ withSelection(()=>{ if(document.execCommand) document.execCommand(cmd,false,null); }); return; }
+        if(live&&document.execCommand){ withSelection(()=>{ document.execCommand(cmd,false,null); }); return; }
+        // 18.9 · execCommand 가 없으면 편집 중인 상자 전체 정렬로 처리한다(무동작 방지)
         if(selectedTblCellEls().length){ tblCellAlign(dir); return; }
         let targets=multiSel.length
             ? multiSel.map(m=>m.node).filter(nd=>nd.classList.contains('tb'))
@@ -14820,12 +14877,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const host=restoreSel();
         const sel=window.getSelection();
         if(host && sel && !sel.isCollapsed){
-            if(document.execCommand){
-                document.execCommand('styleWithCSS',false,true);
-                document.execCommand('removeFormat',false,null);
-                document.execCommand('unlink',false,null);
-            }
+            pushHistory();
+            // 18.9 · execCommand('removeFormat') 은 브라우저/웹뷰마다 동작이 제각각이고
+            //   일부 환경(구형 WebView·테스트 DOM)에는 아예 없다. 인라인 엔진으로
+            //   선택 구간의 서식 속성을 하나씩 확실히 걷어낸다.
+            ['fontWeight','fontStyle','textDecoration','color','backgroundColor',
+             'fontFamily','fontSize','verticalAlign'].forEach(p=>{
+                try{ _removeFromSelection(p); }catch(e){}
+            });
+            try{ if(document.execCommand) document.execCommand('unlink',false,null); }catch(e){}
             const w=host.closest('.tb'); if(w) syncTextEl(w);
+            saveSel(); syncCurSel();
             toast('선택 영역 서식 지움',1200);
             return;
         }
@@ -15361,6 +15423,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         // 텍스트 붙여넣기 → 자동으로 텍스트 상자 생성
         const html=e.clipboardData?.getData('text/html');
         const plain=e.clipboardData?.getData('text/plain');
+        // 18.9 · 앱에서 복사한 상자를 그대로 붙여넣기 (글꼴·크기·서식·크기 유지)
+        if(clipboardEls.length&&plain&&_lastCopyText&&plain.trim()===_lastCopyText.trim()){
+            e.preventDefault(); pasteElements(); return;
+        }
         if(plain&&plain.trim()){
             e.preventDefault();
             let content;
@@ -16736,7 +16802,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         doc.__base.set(id,theirs);
         if(doc.__baseRev) doc.__baseRev.set(id, op.rev||0);
-        if(hasBase) doc.__lastHash.set(id,JSON.stringify(el));
+        // 18.9 · '이미 보낸 것' 표시(__lastHash)는 서버가 가진 내용(theirs)이
+        //   내 내용과 정말 같을 때만 한다. 예전에는 병합 결과가 내 것과 같다는
+        //   이유만으로(=서버에는 아직 옛 내용) 해시를 갱신해 버려서, 내 마지막
+        //   편집이 영영 push 되지 않았다. 그러면 노트를 닫았다 다시 열 때
+        //   옛 ops 가 그대로 적용돼 **방금 적은 글이 사라진 것처럼** 보였다.
+        if(hasBase && theirs===mine) doc.__lastHash.set(id,JSON.stringify(el));
+        else doc.__lastHash.delete(id);      // 아직 안 보낸 편집 → 다음 genOps 가 반드시 보낸다
         return false;
     }
     async function initSync(){
@@ -18239,12 +18311,23 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             execFmt('strike');
         }
         else if(a==='sel-upper'||a==='sel-lower'){
+            // 18.9 · execCommand('insertText') 는 환경에 따라 없거나(구형 웹뷰)
+            //   선택 구간의 서식(굵기·색·글꼴)을 통째로 날린다. 텍스트 노드의
+            //   글자만 바꾸면 서식은 그대로 두고 대소문자만 바뀐다.
             const up=(a==='sel-upper');
-            withSelection(()=>{
-                const s=window.getSelection(); if(!s||s.isCollapsed) return;
-                const txt=String(s);
-                document.execCommand('insertText',false, up?txt.toUpperCase():txt.toLowerCase());
+            const host=restoreSel();
+            const s=window.getSelection();
+            if(!host||!s||s.isCollapsed){ toast('텍스트를 드래그해 선택하세요',1300); return; }
+            pushHistory();
+            const r=s.getRangeAt(0);
+            const parts=_selContacts(r);
+            parts.forEach(ct=>{
+                const v=String(ct.node.nodeValue||'');
+                const seg=v.slice(ct.s,ct.e);
+                ct.node.nodeValue=v.slice(0,ct.s)+(up?seg.toUpperCase():seg.toLowerCase())+v.slice(ct.e);
             });
+            const w=host.closest('.tb'); if(w) syncTextEl(w);
+            saveSel();
             toast(up?'대문자로 바꿨습니다':'소문자로 바꿨습니다',1400);
         }
         else if(a==='sel-link'){
@@ -18252,7 +18335,35 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const cur=String(s||'').trim();
             const url=prompt('연결할 주소를 입력하세요', /^https?:\/\//i.test(cur)?cur:'https://');
             if(url&&url.trim()){
-                withSelection(()=>document.execCommand('createLink',false,url.trim()));
+                const host=restoreSel();
+                if(!host){ toast('텍스트를 드래그해 선택하세요',1300); return; }
+                pushHistory();
+                let done=false;
+                try{
+                    if(document.execCommand){
+                        document.execCommand('styleWithCSS',false,true);
+                        done=document.execCommand('createLink',false,url.trim());
+                    }
+                }catch(e){ done=false; }
+                if(!done){
+                    // 18.9 · execCommand 가 없는 환경에서도 링크가 걸리도록 직접 감싼다
+                    try{
+                        const sel2=window.getSelection();
+                        if(sel2&&!sel2.isCollapsed&&sel2.rangeCount){
+                            const r=sel2.getRangeAt(0);
+                            const a2=document.createElement('a');
+                            a2.setAttribute('href',url.trim());
+                            a2.setAttribute('target','_blank');
+                            a2.setAttribute('rel','noopener');
+                            a2.appendChild(r.extractContents());
+                            r.insertNode(a2);
+                            const nr=document.createRange(); nr.selectNodeContents(a2);
+                            sel2.removeAllRanges(); sel2.addRange(nr);
+                        }
+                    }catch(e){}
+                }
+                const w=host.closest('.tb'); if(w) syncTextEl(w);
+                saveSel();
                 toast('링크를 걸었습니다',1400);
             }
         }
