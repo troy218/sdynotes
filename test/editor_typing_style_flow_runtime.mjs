@@ -422,6 +422,46 @@ try {
     (el0?.html || '').includes('46, 204, 113') && (el0?.html || '').includes('Gaegu')
     && (el0?.html || '').includes('24px') && (el0?.html || '').includes('255, 245, 157'));
 
+  // ── ⑦ 실제 요청 문장: 쓰는 도중 글꼴·크기·굵기를 차례로 변경 ──────────
+  const liveTb = document.querySelector('#pagesStage .tb[data-id="t1"]');
+  const liveContent = liveTb.querySelector('.tb-content');
+  window.clearTextSelection();
+  window.resetTypingFormat();
+  window.enterEdit(liveTb, true);
+  liveContent.innerHTML = '';
+  caretEnd(window, liveContent);
+  typeAt(window, liveContent, '가나다라');
+  window.applyFont('jua'); await wait(40);
+
+  // Safari/WebView가 빈 span을 지운 상황을 재현한다. beforeinput이 pending state로
+  // wrapper를 복원해야 바로 다음 " 마바사"부터 주아 글꼴이 적용된다.
+  const emptyFontSpan = liveContent.querySelector('.sdy-type');
+  if (emptyFontSpan && !emptyFontSpan.textContent) emptyFontSpan.remove();
+  caretEnd(window, liveContent);
+  liveContent.dispatchEvent(new window.InputEvent('beforeinput', {
+    bubbles: true, cancelable: true, inputType: 'insertText', data: ' '
+  }));
+  typeAt(window, liveContent, ' 마바사');
+  window.setFS(24); await wait(40);
+  typeAt(window, liveContent, ' 아자차카');
+  window.execFmt('bold'); await wait(40);
+  typeAt(window, liveContent, ' 타파하.');
+  await wait(100);
+
+  check('도중 서식 변경 타이핑 결과 문장이 정확하다',
+    (liveContent.textContent || '').replace(/\u00a0/g, ' ') === '가나다라 마바사 아자차카 타파하.');
+  check('먼저 쓴 가나다라는 이후 선택한 주아 글꼴의 영향을 받지 않는다',
+    !(effStyle(window, liveContent, '가나다라').fontFamily || '').includes('Jua'));
+  check('글꼴 변경 뒤 쓴 마바사부터 주아가 즉시 적용된다',
+    (effStyle(window, liveContent, '마바사').fontFamily || '').includes('Jua'));
+  check('크기 변경 뒤 쓴 아자차카부터 24px이 적용된다',
+    effStyle(window, liveContent, '아자차카').fontSize === '24px'
+    && effStyle(window, liveContent, '마바사').fontSize == null);
+  check('굵게 변경 뒤 쓴 타파하만 굵고 앞 서식도 누적된다',
+    effStyle(window, liveContent, '타파하').fontWeight === '700'
+    && effStyle(window, liveContent, '타파하').fontSize === '24px'
+    && effStyle(window, liveContent, '아자차카').fontWeight == null);
+
   const fatal = errors.filter(Boolean);
   check('타이핑·중간 스타일 변경 중 치명적 런타임 오류가 없다', fatal.length === 0);
   if (fatal.length) console.log(fatal.slice(0, 5).join('\n---\n'));

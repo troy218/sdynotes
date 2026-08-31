@@ -41,6 +41,16 @@ ok('renderPages 끝에서 ensureVisiblePagesRendered 를 호출한다',
 ok('openNB 가 에디터 open 뒤 강제 페인트를 예약한다',
   /ensureVisiblePagesRendered/.test(js.slice(js.indexOf('async function openNB'), js.indexOf('function closeEditor'))));
 
+// 목록은 본문보다 먼저 mount된다. 뒤늦게 받은 preview data가 카드 생성 당시의
+// 빈 문서 클로저를 교체하고, IntersectionObserver가 첫 콜백을 누락해도 paint되어야 한다.
+const preloadSrc = js.slice(js.indexOf('async function preloadPreviews'), js.indexOf('function applyServerState'));
+ok('미리보기 데이터 로드 뒤 카드 트리를 강제로 다시 만든다',
+  (preloadSrc.match(/renderGrid\(true\)/g) || []).length >= 2);
+ok('초기 mount에 IntersectionObserver 외 RAF/fallback 미리보기 트리거가 있다',
+  /function _schedulePreviewRender\s*\(/.test(js)
+  && /requestAnimationFrame\(\(\)=>\{ run\(\); requestAnimationFrame\(run\); \}\)/.test(js)
+  && /setTimeout\(run,140\)/.test(js));
+
 // ── 2. applyPagesOp 본문 보존 ───────────────────────────────────
 const applySrc = js.slice(js.indexOf('function applyPagesOp'), js.indexOf('function genOps'));
 ok('applyPagesOp 이 id 미스 시 index 본문을 살린다',

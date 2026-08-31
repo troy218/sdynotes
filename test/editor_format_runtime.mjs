@@ -358,7 +358,106 @@ try {
   check('저장된 본문에도 상자 글꼴(el.font)이 남는다', el0 && el0.font === 'jua');
   check('저장된 본문에 색 span 이 남는다', (el0 && el0.html || '').includes('color'));
 
-  // ── ⑤ 표: ＋ 버튼 제거 + 변 중앙 손잡이(한 축 늘리기) ─────────────────
+  // ── ⑤ 실제 한글 문장: 중첩 선택·띄어쓰기·혼합 크기·상자 전체 ──────────
+  const phrase = '가나다라 마바사 아자차카 타파하.';
+  content.innerHTML = phrase;
+  window.syncTextEl(tb);
+  const selectOffsets = (from, to) => {
+    const nodes = [];
+    const tw = document.createTreeWalker(content, window.NodeFilter.SHOW_TEXT);
+    let n, at = 0, sn = null, so = 0, en = null, eo = 0;
+    while ((n = tw.nextNode())) nodes.push(n);
+    for (const node of nodes) {
+      const next = at + (node.nodeValue || '').length;
+      if (!sn && from >= at && from <= next) { sn = node; so = from - at; }
+      if (!en && to >= at && to <= next) { en = node; eo = to - at; break; }
+      at = next;
+    }
+    assert.ok(sn && en, `선택 오프셋 ${from}..${to}`);
+    const r = document.createRange(); r.setStart(sn, so); r.setEnd(en, eo);
+    sel.removeAllRanges(); sel.addRange(r); window.saveSel();
+  };
+  const styleOf = needle => {
+    const node = findTextNode(content, needle);
+    assert.ok(node, `${needle} 텍스트 노드`);
+    const out = {}; let p = node.parentElement;
+    while (p && p !== content) {
+      for (const k of ['backgroundColor', 'fontFamily', 'fontStyle', 'fontSize', 'fontWeight'])
+        if (!(k in out) && p.style && p.style[k]) out[k] = p.style[k];
+      p = p.parentElement;
+    }
+    return out;
+  };
+
+  const toolbarClick = el => {
+    el.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 }));
+    el.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+    el.click();
+  };
+  selectOffsets(0, 4);                         // 가나다라
+  toolbarClick(document.querySelector('#hlWrap .main')); await wait(80);
+  check('가나다라만 노랑 형광펜',
+    styleOf('가').backgroundColor === 'rgb(255, 255, 0)'
+    && styleOf('다라').backgroundColor === 'rgb(255, 255, 0)'
+    && styleOf('마바사').backgroundColor == null);
+
+  selectOffsets(1, 4);                         // 나다라 (형광펜 안쪽 부분 선택)
+  toolbarClick(document.getElementById('fontBtn'));
+  await wait(20);
+  const juaItem = document.querySelector('#fontMenu .font-item[data-f="jua"]');
+  assert.ok(juaItem, '주아 글꼴 메뉴 항목');
+  toolbarClick(juaItem); await wait(80);
+  check('나다라만 주아 글꼴이고 기존 노랑 형광펜은 유지',
+    (styleOf('나다라').fontFamily || '').includes('Jua')
+    && styleOf('나다라').backgroundColor === 'rgb(255, 255, 0)'
+    && styleOf('가').fontFamily == null);
+
+  selectOffsets(2, 8);                         // "다라 마바사" — 공백 포함
+  toolbarClick(document.querySelector('.tb-italic')); await wait(80);
+  const italicText = [...content.querySelectorAll('span')]
+    .filter(x => x.style.fontStyle === 'italic').map(x => x.textContent || '').join('');
+  check('공백을 포함한 "다라 마바사" 전체가 기울임',
+    styleOf('다라').fontStyle === 'italic' && styleOf('마바사').fontStyle === 'italic'
+    && italicText.includes('다라 마바사'));
+  check('겹친 다라는 노랑+주아+기울임을 모두 유지',
+    styleOf('다라').backgroundColor === 'rgb(255, 255, 0)'
+    && (styleOf('다라').fontFamily || '').includes('Jua')
+    && styleOf('다라').fontStyle === 'italic');
+
+  selectOffsets(5, 12);                        // "마바사 아자" — 공백 포함
+  window.setFS(24); await wait(80);
+  check('공백을 건너 선택한 마바사와 아자는 24px',
+    styleOf('마바사').fontSize === '24px' && styleOf('아자').fontSize === '24px');
+
+  selectOffsets(0, 8);                         // 16px + 24px 혼합
+  window.syncCurSel(); await wait(20);
+  check('여러 글자 크기가 섞인 선택은 크기 입력칸에 Word식 - 표시',
+    document.getElementById('fsInput').value === '-'
+    && document.getElementById('fsInput').classList.contains('mixed'));
+  selectOffsets(5, 8);                         // 마바사 = 24px 단일
+  window.syncCurSel(); await wait(20);
+  check('단일 크기 선택으로 돌아오면 24가 다시 표시',
+    document.getElementById('fsInput').value === '24'
+    && !document.getElementById('fsInput').classList.contains('mixed'));
+
+  // 텍스트가 아니라 상자 전체를 선택하면 하위 주아 override를 걷고 모두 Gaegu로 통일.
+  window.clearTextSelection();
+  content.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, detail: 1, clientX: 60, clientY: 60 }));
+  window.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
+  await wait(50); window.applyFont('gaegu'); await wait(80);
+  check('텍스트상자 전체 글꼴 변경은 중첩된 주아까지 Gaegu로 덮어쓴다',
+    (content.style.fontFamily || '').includes('Gaegu')
+    && ![...content.querySelectorAll('*')].some(x => (x.style.fontFamily || '').includes('Jua')));
+  check('상자 전체 글꼴을 바꿔도 노랑 형광펜·기울임·24px은 보존',
+    styleOf('가').backgroundColor === 'rgb(255, 255, 0)'
+    && styleOf('다라').fontStyle === 'italic' && styleOf('마바사').fontSize === '24px');
+
+  window.execFmt('bold'); await wait(80);
+  check('상자 전체 굵게는 모든 구간에 적용되고 기존 중첩 서식을 유지',
+    styleOf('가').fontWeight === '700' && styleOf('타파하').fontWeight === '700'
+    && styleOf('다라').fontStyle === 'italic' && styleOf('마바사').fontSize === '24px');
+
+  // ── ⑥ 표: ＋ 버튼 제거 + 변 중앙 손잡이(한 축 늘리기) ─────────────────
   window.insertTable(2, 3, 0, 100, 120);
   await wait(200);
   check('2×3 표가 만들어진다', paper.querySelectorAll('.tb.in-tbl').length === 6);

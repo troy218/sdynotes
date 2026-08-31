@@ -443,7 +443,7 @@
                     <span class="tool-sep tb-hide-sm"></span>
 
                     <button onclick="chFS(-2)" onmousedown="event.preventDefault()" class="tool-btn sm tb-hide-sm tb-hide-md" title="글씨 작게"><i class="ri-subtract-line"></i></button>
-                    <input id="fsInput" type="number" min="2" max="200" value="16" onmousedown="saveSel()" oninput="if(this.value)setFS(+this.value)" title="글자 크기">
+                    <input id="fsInput" type="text" inputmode="numeric" pattern="[0-9]*" value="16" onpointerdown="saveSel()" onfocus="this.select()" oninput="this.value=this.value.replace(/[^0-9]/g,'')" onchange="if(/^\d+$/.test(this.value))setFS(+this.value);else this.value=curFontSize" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}" title="글자 크기 (선택 영역에 여러 크기가 섞이면 -)">
                     <button onclick="chFS(2)" onmousedown="event.preventDefault()" class="tool-btn sm tb-hide-sm tb-hide-md" title="글씨 크게"><i class="ri-add-line"></i></button>
 
                     <span class="tool-sep tb-hide-sm"></span>
