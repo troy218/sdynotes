@@ -14,6 +14,37 @@ const stkSave = (m) => writeJsonAtomic(FILES.stickerMeta, m);
 
 const STICKER_MAX_BYTES = 8 * 1024 * 1024;
 
+// SVG 스티커를 문서로 바로 열었을 때 스크립트가 돌지 않게 기본적인 무력화만 한다.
+// (이미지로 쓸 때는 어차피 실행되지 않지만, 원본 파일 열기 대비)
+function sanitizeSvg(s) {
+  return String(s || '')
+    .replace(/<script[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<script\b[^>]*\/?>/gi, '')
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/\son\w+\s*=\s*[^\s"'>]+/gi, '')
+    .replace(/(href|xlink:href)\s*=\s*("|')\s*javascript:[^"']*\2/gi, '$1="#"');
+}
+
+// data: URL 디코드 — base64(PNG 등)와 URL 인코딩(SVG) 둘 다 받는다 (14.16.7)
+function decodeDataUrl(dataUrl) {
+  const comma = dataUrl.indexOf(',');
+  const head = comma >= 0 ? dataUrl.slice(0, comma) : '';
+  const body = comma >= 0 ? dataUrl.slice(comma + 1) : '';
+  let raw;
+  if (/;base64/i.test(head)) {
+    raw = Buffer.from(body, 'base64');
+  } else {
+    let text = body;
+    try { text = decodeURIComponent(body); } catch { /* 이미 디코딩된 문자열 */ }
+    raw = Buffer.from(text, 'utf8');
+  }
+  const m = head.match(/^data:image\/([a-z0-9.+-]+)/i);
+  const kind = (m && m[1] || 'png').toLowerCase();
+  const isSvg = kind === 'svg' || kind === 'svg+xml';
+  return { raw, kind, isSvg };
+}
+
 export function registerStickers(app) {
   app.post('/api/stickers/save', async (req, reply) => {
     const b = req.body || {};
@@ -21,11 +52,13 @@ export function registerStickers(app) {
     const name = String(b.name || '스티커').trim().slice(0, 60);
     if (!dataUrl.startsWith('data:image/')) return reply.code(400).send({ ok: false, error: '이미지가 아닙니다' });
     try {
-      const [head, b64] = dataUrl.split(',', 2);
-      const raw = Buffer.from(b64, 'base64');
+      const dec = decodeDataUrl(dataUrl);
+      let raw = dec.raw;
+      const isSvg = dec.isSvg;
+      if (isSvg) raw = Buffer.from(sanitizeSvg(raw.toString('utf8')), 'utf8');
       if (raw.length > STICKER_MAX_BYTES) return reply.code(400).send({ ok: false, error: '스티커가 너무 큽니다 (8MB)' });
       const sid = crypto.randomBytes(6).toString('hex');
-      const rec = { id: sid, name, bytes: raw.length, created_at: nowISO() };
+      const rec = { id: sid, name, bytes: raw.length, created_at: nowISO(), fmt: isSvg ? 'svg' : 'png' };
 
       // 클라우드 모드: Cloudinary 에 이미지, Supabase 에 메타데이터 (원본 sticker_save_cloud)
       if (sbEnabled() && CLOUD_READY) {
@@ -44,7 +77,7 @@ export function registerStickers(app) {
         rec.url = res.secure_url; rec.public_id = res.public_id; rec.storage = 'cloudinary';
       } else {
         await fs.mkdir(DIRS.stickers, { recursive: true });
-        const fn = `${sid}.png`;
+        const fn = `${sid}.${isSvg ? 'svg' : 'png'}`;
         await fs.writeFile(path.join(DIRS.stickers, fn), raw);
         rec.url = `/api/stickers/raw/${sid}`; rec.stored = fn; rec.storage = 'local';
       }
@@ -96,7 +129,14 @@ export function registerStickers(app) {
     if (!rec || !rec.stored) return reply.code(404).send({ error: '없는 스티커' });
     try {
       const buf = await fs.readFile(path.join(DIRS.stickers, rec.stored));
-      reply.type('image/png');
+      if (/\.svg$/i.test(rec.stored)) {
+        // SVG 를 원본 문서로 직접 열 때 스크립트가 돌지 않게 한다.
+        // <img src> 로 쓸 때는 이 헤더가 영향을 주지 않는다.
+        reply.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+        reply.type('image/svg+xml');
+      } else {
+        reply.type('image/png');
+      }
       return reply.send(buf);
     } catch {
       return reply.code(404).send({ error: '없는 스티커' });
