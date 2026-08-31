@@ -62,9 +62,22 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
     b.includes('_stripInlineProp(frag,prop,value)'));
 }
 {
+  // 18.8 · 새 span 은 텍스트 노드를 '그 자리에서' 감싸므로 조상 서식은 저절로
+  //   상속된다. 예전처럼 상속 서식을 span 에 복사하면 상자 글꼴·크기가 글자마다
+  //   인라인으로 박제돼, 그 뒤로 '상자 전체 글꼴/크기 바꾸기'가 먹지 않았다.
   const b = body('_applyOne');
-  check('새 span 을 만들 때 기존 상속 서식을 복사해 다른 서식이 풀리지 않는다',
-    b.includes('for(const k in styles){ if(k!==prop) target.style[k] = styles[k]; }'));
+  check('새 span 은 상속 서식을 복사하지 않는다 (상자 글꼴·크기 변경을 막지 않음)',
+    !b.includes('for(const k in styles){ if(k!==prop) target.style[k] = styles[k]; }'));
+  check('새 span 은 텍스트 노드를 제자리에서 감싼다 (조상 서식은 상속으로 유지)',
+    b.includes('tn.parentNode.insertBefore(target, tn)') && b.includes('target.appendChild(tn)'));
+}
+{
+  // 18.8 · 상자 전체 글꼴/크기는 안쪽 인라인 값을 걷어내고 적용해야 실제로 보인다.
+  const bf = body('applyFont'), bs = body('setFS');
+  check("applyFont: 상자 전체 글꼴은 안쪽 인라인 글꼴을 걷어낸다",
+    bf.includes("_stripInlineProp(c,'fontFamily',null,{skipRoot:true})"));
+  check("setFS: 상자 전체 크기는 안쪽 인라인 크기를 걷어낸다",
+    bs.includes("_stripInlineProp(c,'fontSize',null,{skipRoot:true})"));
 }
 {
   const b = body('_removeFromSelection');
@@ -166,6 +179,41 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   const bUndo = body('undo'), bRedo = body('redo');
   check('되돌리기/다시 실행이 문서 Map 을 되살려 동기화가 멈추지 않는다',
     bUndo.includes('reviveDocMaps(keep)') && bRedo.includes('reviveDocMaps(keep)'));
+}
+
+// ── ⑧ 18.8 · 선택/툴바 UX 규칙 ───────────────────────────────────────────
+{
+  const b = body('onPaperDown');
+  check('우클릭(pointerdown button=2)은 선택을 건드리지 않고 곧바로 빠져나온다',
+    /if\(e\.button===2\)\{[^}]*saveSel\(\);?[^}]*\}[^\n]*\n?[^\n]*return;|if\(e\.button===2\)\{ try\{ saveSel\(\); \}catch\(_e\)\{\} return; \}/.test(b));
+}
+{
+  const b = body('addTextBox');
+  check('새 글상자는 글꼴·크기만 물려받고 나머지 서식은 푼다',
+    b.includes('resetTypingFormat()') && b.includes('fontSize:curFontSize') && b.includes('font:curFont'));
+  check('새 글상자를 만들면 툴바를 지금 입력될 서식에 맞춘다',
+    b.includes('syncToolbarFromCaret()'));
+}
+{
+  const b = body('resetTypingFormat');
+  check('서식 풀기는 캐럿 span·저장 선택과 툴바 토글을 함께 비운다',
+    b.includes('_typingSpan=null') && b.includes('savedCaret=null')
+    && b.includes(".tb-bold") && b.includes("classList.remove('active')"));
+}
+{
+  const b = body('setToolbarFS');
+  check('잴 대상이 없으면(0) 툴바 글자 크기를 건드리지 않는다 (2·3 만 오가던 버그)',
+    b.includes('if(!n||n<1) return;'));
+}
+{
+  const b = body('syncCurSel');
+  check('글자 선택이 없어도 툴바 글꼴·크기를 지금 입력 위치에 맞춘다',
+    b.includes('syncToolbarFromCaret()'));
+  const b2 = body('syncToolbarFromCaret');
+  check('툴바 동기화는 캐럿 → 고른 상자 순으로 기준을 잡는다',
+    b2.indexOf('_typingHost()') >= 0 && b2.indexOf('_typingHost()') < b2.indexOf('syncFSFromTarget()'));
+  const b3 = body('enterEdit');
+  check('편집에 들어가면 툴바 글꼴도 그 상자 글꼴로 맞춘다', b3.includes('setToolbarFont(_fid)'));
 }
 
 console.log(`\n텍스트 서식 엔진 계약: PASS ${pass} / FAIL 0`);
