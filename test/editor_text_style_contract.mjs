@@ -78,6 +78,8 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
     bf.includes("_stripInlineProp(c,'fontFamily',null,{skipRoot:true})"));
   check("setFS: 상자 전체 크기는 안쪽 인라인 크기를 걷어낸다",
     bs.includes("_stripInlineProp(c,'fontSize',null,{skipRoot:true})"));
+  check('setFS: Ctrl+클릭 다중 선택한 모든 텍스트 상자의 크기를 바꾼다',
+    bs.includes('multiSel.length') && bs.includes('targets.forEach') && bs.includes('el.fontSize=curFontSize'));
 }
 {
   const b = body('_removeFromSelection');
@@ -149,12 +151,33 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   check('칠한 뒤 빈 span 을 정리한다', b.includes('_cleanupInline(c)'));
 }
 {
+  const b = body('_cleanupInline');
+  check('정리 단계는 style="" 만 남은 span 도 풀어낸다', b.includes('meaningfulAttrs') && b.includes("a.name==='style'"));
+}
+{
   const b = body('_boxFmtTargets');
   check('상자 전체 대상에 다중 선택(.tb.msel)도 포함된다', b.includes('.tb.msel'));
 }
 {
+  const b = body('toggleMultiSelect');
+  check('Ctrl+클릭 다중 선택은 이전 글자 선택(savedRange)을 먼저 비운다', b.includes('clearTextSelection()'));
+}
+{
   const b = body('clearTextColor');
-  check('글자색 지우기는 color 속성만 제거한다', b.includes("n.style.removeProperty('color')"));
+  check('글자색 지우기는 상자 내부 color 와 구버전 el.textColor 를 함께 제거한다',
+    b.includes("_clearBoxStyleAll(w,'color')"));
+}
+{
+  const b = body('_activeToggleStates');
+  check('상자 전체 서식 툴바 상태는 글자별 span 전체 적용도 읽는다',
+    b.includes("_boxHasAllStyle(node,'fontWeight','700')")
+    && b.includes("_boxHasAllStyle(node,'textDecoration','underline')"));
+}
+{
+  const b = body('clearBoxFormatting');
+  check('상자 서식 지우기는 구버전 box-level 스타일 필드를 모두 제거한다',
+    b.includes('delete el.textColor') && b.includes('delete el.cellBg') && b.includes('delete el.font')
+    && b.includes('delete el.fontWeight') && b.includes('delete el.fontStyle') && b.includes('delete el.textDecoration'));
 }
 
 // ── ⑦ 타이핑 → 저장 사슬 ────────────────────────────────────────────────
@@ -232,6 +255,27 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   const b = body('clearFmt');
   check('선택 서식 지우기는 execCommand 없이도 동작한다 (인라인 엔진)',
     b.includes("_removeFromSelection(p)") && b.includes("'fontWeight','fontStyle','textDecoration'"));
+  check('선택 서식 지우기는 execCommand 없이도 링크(<a>)를 벗긴다', b.includes('_unlinkSelection()'));
+}
+{
+  const bCopy = body('copyInlineSelectionForAction');
+  const bCut = body('cutInlineSelectionForAction');
+  const bAct = body('editorAction');
+  check('선택 글자 복사/잘라내기는 execCommand 없이도 안전한 helper 를 쓴다',
+    bCopy.includes('writeClipboardTextSafe') && bCut.includes('r.deleteContents()')
+    && bAct.includes('await copyInlineSelectionForAction()') && bAct.includes('await cutInlineSelectionForAction(t.el)'));
+  check('스크립트로 바꾼 편집 내용은 편집 중 Ctrl+Z 로 앱 히스토리 되돌리기를 탄다',
+    js.includes('_scriptEditUndoable=true') && js.includes('editContent&&!_scriptEditUndoable'));
+}
+{
+  const b = body('_expandLinkRange');
+  check('링크 전체를 선택했으면 <a> 바깥까지 범위를 넓혀 unlink 한다',
+    b.includes("p.tagName==='A'") && b.includes('_rangeCoversContents(out,p)'));
+}
+{
+  const b = body('_unlinkSingleLinkSelection');
+  check('링크 일부만 선택해도 선택 조각만 링크에서 빼낸다',
+    b.includes('beforeFrag') && b.includes('selFrag') && b.includes('afterFrag') && b.includes('_cloneLinkShell(a,beforeFrag)'));
 }
 {
   const b = body('deletePage');
