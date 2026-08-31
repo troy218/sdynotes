@@ -98,7 +98,11 @@ sdynotes-fast/
 ├── sdynotes.css          프런트 스타일시트 (HTML이 참조 — 배포 필수)
 ├── sdynotes.js           프런트 스크립트 (HTML이 참조 — 배포 필수)
 ├── apply.sh              배포 스크립트 (★서버에서 실행 — 최초 1회 데이터 자동 이전)
+├── docs/
+│   └── ci-workflow.yml              CI 워크플로 — .github/workflows/ 로 옮기면 활성화
 ├── scripts/
+│   ├── run-all-tests.mjs            npm test — test:* 그룹 전부 일괄 실행 (알려진 실패 관리)
+│   ├── bump-version.mjs             버전 5곳 한 번에 올리기 (--check 은 검사만)
 │   ├── migrate_to_oracle.mjs        Supabase/Cloudinary → Oracle 디스크 일괄 이전
 │   └── ensure_nginx_voice_ws.py     기존 nginx site 에 음성 WS Upgrade 경로 보강
 ├── server/               Node(Fastify) 메인 서버
@@ -108,6 +112,7 @@ sdynotes-fast/
 │       └── routes/       pages·sync·admin·vault·cards·stickers·wallpaper·
 │                         translate·notify·live·misc·music·db·friends·dm
 └── worker/               Python 워커 (127.0.0.1:5100)
+    ├── requirements.txt  파이썬 의존성 (버전 고정 — yt-dlp 만 매 배포 최신)
     ├── run.py            기동
     └── sdynotes_worker/
         ├── importer.py   가져오기 (원본 그대로 보존)
@@ -116,6 +121,29 @@ sdynotes-fast/
         ├── extra.py      /api/music/play 로컬 폴백
         └── core/common/cloud/admin/notify.py  지원 모듈
 ```
+
+## 개발 워크플로 (테스트 · 버전)
+
+| 하고 싶은 일 | 명령 |
+|---|---|
+| 전체 테스트 한 방 | `npm test` — `test:*` 그룹을 package.json 순서대로 전부 실행 |
+| 그룹 골라 실행 | `npm run test:only -- music,auth` |
+| 엄격 모드 | `npm run test:strict` — '알려진 깨진 그룹'도 실패로 처리 |
+| 버전 올리기 | `node scripts/bump-version.mjs 14.16.5` — 버전 5곳을 한 번에 |
+| 버전 동기화 검사 | `npm run bump:check` (CI 도 같은 검사를 돌린다) |
+
+- CI 워크플로는 `docs/ci-workflow.yml` 로 준비돼 있다. `.github/workflows/ci.yml`
+  로 옮겨 커밋하면 브랜치 push 마다 `npm ci` → worker `requirements.txt` 설치 →
+  파이썬 문법 검사 → 버전 동기화 검사 → `npm test` 가 돌아간다.
+- worker 파이썬 의존성은 `worker/requirements.txt` 로 고정돼 있고, yt-dlp 만
+  유튜브 대응상 매 배포 최신으로 갱신된다(apply.sh).
+- `scripts/run-all-tests.mjs` 의 `KNOWN_FAILS` 는 CI 가 없던 시절 깨진 채 남은
+  그룹 목록이다. 소스를 고쳐 통과하면 러너가 *unexpected pass* 로 알려 주므로
+  그때 목록에서 지우면 된다. 목록 밖에서 새로 깨지는 그룹은 곧바로 실패 처리된다.
+  `draw` 는 타이밍에 따라 통과/실패가 갈리는 flaky 테스트라 `flaky: true` 로
+  표시해 두었다 — 통과해도 CI 가 빨개지지 않고 요약에만 알려 준다.
+- 각 그룹은 자기만의 프로세스 그룹에서 돌리고 끝나면 그룹 전체를 정리한다 —
+  테스트가 띄운 서버가 고아로 남아 시스템을 메우는 사고를 막는다.
 
 ## 엔드포인트 (원본과 동일)
 

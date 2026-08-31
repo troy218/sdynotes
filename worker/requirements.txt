@@ -1,0 +1,22 @@
+# SDYnotes worker 파이썬 의존성 — apply.sh 가 이 파일로 venv 를 채운다.
+#
+# 예전에는 apply.sh 의 PKGS 변수로 "버전 미지정 설치"를 했는데, 그러면 서버를
+# 재구축한 시점에 따라 다른 버전이 깔려 "어제 됐는데 오늘 배포가 터진다" 가
+# 나올 수 있다. 위 버전은 그대로 고정하고, 올릴 때는 여기서 바꾸고 서버에서
+# apply.sh 를 다시 돌린다.
+#
+# yt-dlp 만 예외적으로 고정하지 않는다 — 유튜브 쪽은 항상 최신 유지가 답이라
+# apply.sh 가 매 배포마다 `pip install -U yt-dlp` 로 갱신한다.
+flask==3.1.3
+flask-cors==6.0.5
+beautifulsoup4==4.15.0
+cloudinary==1.46.2
+pillow-heif==1.5.0
+pymupdf==1.28.2
+python-docx==1.2.0
+deep-translator==1.11.4
+requests==2.34.2
+mutagen==1.48.1
+openpyxl==3.1.5
+bgutil-ytdlp-pot-provider==1.3.1   # yt-dlp YouTube PO Token provider — 1.3.1 검증값 고정
+yt-dlp
