@@ -15221,8 +15221,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
 
     // ===== 선택한 것들을 스티커(이미지)로 만들기 =====
-    // 글자·그림·펜 그림을 통째로 하나의 그림으로 구워서 새 요소로 넣는다.
-    async function makeSticker(replace){
+    // 글자·그림·펜 그림을 하나의 그림으로 구워 보관함에 저장한다.
+    // 원본 요소는 그대로 둔다 — 원본을 지우는 '합치기'는 객체 묶기와
+    // 겹쳐 14.16.6 에 뺐다.
+    async function makeSticker(){
         const items=selEntries();
         if(!items.length){ toast('먼저 요소를 선택해 주세요',1800); return; }
         const pi=items[0].pageIdx;
@@ -15248,11 +15250,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const url=out.toDataURL('image/png');
 
             pushHistory();
-            if(replace){
-                const rm=(doc.pages[pi].els||[]).filter(e=>ids.has(e.id));
-                doc.pages[pi].els=(doc.pages[pi].els||[]).filter(e=>!ids.has(e.id));
-                purgeElements(rm);
-            }
             const el={type:'image',id:uid('i'),url,
                       x:Math.round(rx),y:Math.round(ry),
                       w:Math.round(rw),h:Math.round(rh),sticker:true};
@@ -15264,7 +15261,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             fetch('/api/stickers/save',{method:'POST',
                 headers:{'Content-Type':'application/json'},
                 body:JSON.stringify({data:url,name:'스티커'})}).catch(()=>{});
-            toast(replace?'스티커로 바꿨습니다 🏷️':'스티커 저장됨 · 보관함에서 다시 쓸 수 있어요',2600);
+            toast('스티커 저장됨 · 보관함에서 다시 쓸 수 있어요',2600);
         }catch(e){
             console.error(e); toast('스티커 만들기 실패',2200);
         }
@@ -15305,6 +15302,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
 
     // ============ 스티커 보관함 ============
     let stickerList=[];
+    // 빈 종이 우클릭 → '스티커 넣기' 로 열었을 때 그 자리(pageIdx·문서 px).
+    // 툴바로 열면 null — 스티커를 기본 자리(80,100)에 붙인다.
+    let _stickerAnchor=null;
     async function openStickers(){
         document.getElementById('stickerModal').style.display='flex';
         openNav(closeStickers);
@@ -15317,7 +15317,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             renderStickers();
         }catch(e){ box.innerHTML='<div class="vault-empty">서버에 연결할 수 없습니다</div>'; }
     }
-    function closeStickers(){ document.getElementById('stickerModal').style.display='none'; navDrop(closeStickers); }
+    function closeStickers(){
+        document.getElementById('stickerModal').style.display='none';
+        _stickerAnchor=null;                 // 닫으면 기억한 자리도 버린다
+        navDrop(closeStickers);
+    }
     function renderStickers(){
         const box=document.querySelector('#stkList .vault-grid');
         document.getElementById('stkCount').textContent=
@@ -15343,9 +15347,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         im.onload=()=>{
             pushHistory();
             const sc=Math.min(1,300/Math.max(im.width,im.height));
-            doc.pages[curPageIdx].els.push({type:'image',id:uid('i'),url:s.url,
-                x:80,y:100,w:Math.round(im.width*sc),h:Math.round(im.height*sc),sticker:true});
-            renderPageEls(curPageIdx); saveDoc();
+            const w=Math.round(im.width*sc), h=Math.round(im.height*sc);
+            // 우클릭 자리를 기억한 상태(빈 종이 → 스티커 넣기)면 그 자리 중앙에 붙이고,
+            // 아니면(툴바) 기본 자리에 붙는다. 우클릭한 페이지에 붙는다.
+            let pi=curPageIdx, x=80, y=100;
+            if(_stickerAnchor&&doc.pages[_stickerAnchor.pageIdx]){
+                pi=_stickerAnchor.pageIdx;
+                const c=clampEl(_stickerAnchor.x-w/2,_stickerAnchor.y-h/2,w,h);
+                x=Math.round(c.x); y=Math.round(c.y);
+            }
+            doc.pages[pi].els.push({type:'image',id:uid('i'),url:s.url,
+                x,y,w,h,sticker:true});
+            renderPageEls(pi); saveDoc();
             closeStickers(); toast('스티커를 붙였습니다',1600);
         };
         im.onerror=()=>toast('스티커를 불러오지 못했습니다',2000);
@@ -17688,7 +17701,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 more.push({a:'el-lock', i:'ri-lock-2-line',
                     t:(findEl(pageIdx,host.dataset.id)||{}).locked?'잠금 풀기':'움직이지 않게 잠그기'});
             }else{
-                more.push({a:'el-sticker-rep', i:'ri-image-add-line', t:'스티커로 합치기'});
+                // 14.16.6 · '스티커로 합치기'(원본을 지우고 스티커로 갈아끼우기)는
+                //   객체 묶기와 겹치는 기능이라 뺐다 — 여러 개는 객체 묶기로 묶고,
+                //   스티커는 '스티커로 만들기'(원본 유지)로만 만든다.
                 more.push({a:'el-group', i:'ri-links-line', t:'객체 묶기'});
             }
             if(selectionHasGroup()) more.push({a:'el-ungroup', i:'ri-link-unlink', t:'묶음 해제'});
@@ -17710,6 +17725,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             {a:'new-text', i:'ri-text',           t:'텍스트 상자'},
             {a:'paste',    i:'ri-clipboard-line', t:'붙여넣기', k:'Ctrl+V'},
             {a:'img',      i:'ri-image-add-line', t:'이미지 넣기'},
+            {a:'sticker',  i:'ri-sticky-note-line', t:'스티커 넣기'},
             {a:'new-latex',i:'ri-function-line',  t:'LaTeX 수식 넣기'},
             {a:'new-table',i:'ri-table-line',     t:'표 넣기'},
             {a:'pen',      i:'ri-pen-nib-line',   t:'펜 / 도형'},
@@ -17762,6 +17778,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }catch(err){ toast('Ctrl+V 로 붙여넣어 주세요',1800); }
         }
         else if(a==='img'){ triggerImgUpload({pageIdx:pi,x:t.x,y:t.y}); }
+        // 빈 종이 우클릭 → 스티커 넣기 : 보관함을 열고, 우클릭한 자리를 기억한다.
+        // 보관함에서 스티커를 고르면 그 자리에 붙는다(툴바로 열면 기본 자리).
+        else if(a==='sticker'){ _stickerAnchor={pageIdx:pi,x:t.x,y:t.y}; openStickers(); }
         else if(a==='new-latex'){ openLatexModal(); _latexAnchor={pageIdx:pi,x:t.x,y:t.y}; }
         else if(a==='latex-edit'){ openLatexModal(t.el.dataset.id,pi); }
         else if(a==='pen'){ togglePen(); }
@@ -17846,8 +17865,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         else if(a==='tbl-fit'){ tblFit(); }
         else if(a==='tbl-del'){ tblDelAll(); }
         else if(a==='el-lock'){ toggleLockEl(); }
-        else if(a==='el-sticker'){ makeSticker(false); }
-        else if(a==='el-sticker-rep'){ makeSticker(true); }
+        else if(a==='el-sticker'){ makeSticker(); }
         else if(a==='el-group'){ groupSelection(); }
         else if(a==='el-ungroup'){ ungroupSelection(); }
             else if(a==='tr-ko'||a==='tr-en'){ translateElement(t.el,a==='tr-ko'?'ko':'en'); }
