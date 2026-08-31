@@ -15220,10 +15220,78 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return box.innerHTML;
     }
 
-    // ===== 선택한 것들을 스티커(이미지)로 만들기 =====
-    // 글자·그림·펜 그림을 하나의 그림으로 구워 보관함에 저장한다.
-    // 원본 요소는 그대로 둔다 — 원본을 지우는 '합치기'는 객체 묶기와
-    // 겹쳐 14.16.6 에 뺐다.
+    // ===== 선택한 것들을 스티커(SVG 벡터)로 만들기 =====
+    // 14.16.7 · PNG 래스터 대신 SVG 로 굽는다 — 아무리 확대해도 선·글자가 깨지지 않는다.
+    //   내보내기·화면 렌더가 검증된 조립을 그대로 쓴다:
+    //     · 펜 획  → <path>      (화면 렌더와 같은 strokePath 지오메트리)
+    //     · 글자   → <foreignObject> + htmlToXhtml (서식 유지)
+    //     · 이미지 → <image>     (가능하면 data: 로 인라인 — SVG 안에서는 외부 참조가 안 열린다)
+    //     · 수식   → KaTeX HTML (화면과 같은 마크업)
+    //   SVG 굽기가 실패하면 예전 캔버스 PNG 경로로 저장한다(폴백).
+    async function bakeStickerSVG(items,pi,rx,ry,rw,rh){
+        const ids=new Set(items.map(i=>i.id));
+        const list=(doc.pages[pi].els||[]).filter(e=>ids.has(e.id));
+        let drew=0, imgs='', paths='', body='';
+        for(const el of list){
+            if(el.type==='image'&&el.url){
+                // SVG 는 <img> 로 열면 외부 그림을 못 가져오므로 data: 로 인라인한다
+                const href=await toDataURL(el.url);
+                if(!href) continue;
+                imgs+=`<image x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}"`+
+                      ` href="${escXml(href)}" xlink:href="${escXml(href)}"/>`;
+                drew++;
+            }else if(el.type==='stroke'){
+                const d=strokePath(el.pts, el.sharp&&!isEllipsePts(el.pts));
+                if(!d) continue;
+                paths+=`<path d="${d}" fill="none" stroke="${escXml(el.color||'#111111')}"`+
+                       ` stroke-width="${el.size||2}" stroke-linecap="round" stroke-linejoin="round"`+
+                       ((el.dx||el.dy)?` transform="translate(${el.dx||0},${el.dy||0})"`:'')+
+                       (el.opacity!=null?` opacity="${el.opacity}"`:'')+`/>`;
+                drew++;
+            }
+        }
+        // 글자·수식 — 내보내기와 같은 foreignObject 조립 (좌표는 스티커 영역 기준)
+        const texts=list.filter(e=>e.type==='text'&&(e.html||'').trim());
+        const formulas=list.filter(e=>e.type==='latex'&&(e.latex||'').trim());
+        texts.forEach(el=>{
+            const inner=el.tight
+                ? `width:100%;height:100%;padding:0;box-sizing:border-box;`+
+                  `font-size:${el.fontSize||16}px;line-height:1;color:${el.__c||'#111111'};`+
+                  `overflow:visible;font-family:${fontCSS(el.font||'noto')};`+
+                  `text-align:${el.align||'left'};position:relative;`
+                : `width:100%;height:100%;padding:8px 12px;box-sizing:border-box;`+
+                  `font-size:${el.fontSize||16}px;line-height:1.5;color:${el.__c||'#111111'};white-space:pre-wrap;`+
+                  `word-break:break-word;overflow:hidden;font-family:${fontCSS(el.font||'noto')};`+
+                  `text-align:${el.align||'left'};`;
+            body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${el.w}px;height:${el.h}px;">`+
+                  `<div style="${inner}">`+
+                  htmlToXhtml(fixDarkColors(el.html))+`</div></div>`;
+            drew++;
+        });
+        formulas.forEach(el=>{
+            let mh;
+            try{ mh=window.katex?katex.renderToString(el.latex||'',{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
+            catch(e){ mh=esc(el.latex||''); }
+            const imp=!!el.imported;
+            const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;
+            const k=imp?Math.min(1,(latexFitScale(el)||1)):1;
+            const fs=Math.max(6,(el.fontSize||20)*k);
+            body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${bw}px;height:${bh}px;`+
+                  `display:flex;align-items:center;${el.displayMath?'justify-content:center;':''}font-size:${fs}px;`+
+                  `line-height:1.05;font-family:'Times New Roman',serif;color:#111;`+
+                  `overflow:${imp?'hidden':'visible'};">${htmlToXhtml(mh)}</div>`;
+            drew++;
+        });
+        if(!drew) throw new Error('스티커로 만들 내용이 없다');
+        const svg=`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"`+
+            ` width="${Math.max(1,Math.round(rw))}" height="${Math.max(1,Math.round(rh))}" viewBox="${rx} ${ry} ${rw} ${rh}">`+
+            imgs+paths+
+            (body?`<foreignObject x="${rx}" y="${ry}" width="${rw}" height="${rh}">`+
+                  `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${rw}px;height:${rh}px;position:relative;">${body}</div>`+
+                  `</foreignObject>`:'')+
+            `</svg>`;
+        return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+    }
     async function makeSticker(){
         const items=selEntries();
         if(!items.length){ toast('먼저 요소를 선택해 주세요',1800); return; }
@@ -15232,39 +15300,46 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!bb||bb.w<2||bb.h<2){ toast('선택 영역이 너무 작습니다',1800); return; }
 
         const pad=8;
-        const rx=Math.max(0,bb.x-pad), ry=Math.max(0,bb.y-pad);
-        const rw=bb.w+pad*2, rh=bb.h+pad*2;
+        const rx=Math.max(0,Math.round(bb.x-pad)), ry=Math.max(0,Math.round(bb.y-pad));
+        const rw=Math.round(bb.w+pad*2), rh=Math.round(bb.h+pad*2);
         toast('스티커를 만드는 중…',1200);
+        let url='', isSvg=true;
         try{
-            // 페이지 전체를 한 번 굽고 필요한 부분만 잘라낸다
-            const ids=new Set(items.map(i=>i.id));
-            const full=await renderPageCanvas(pi,{onlyIds:ids,transparent:true});
-            const sc=full.width/paperSize().w;
-            const out=document.createElement('canvas');
-            out.width=Math.max(1,Math.round(rw*sc));
-            out.height=Math.max(1,Math.round(rh*sc));
-            const octx=out.getContext('2d');
-            octx.drawImage(full, Math.round(rx*sc), Math.round(ry*sc),
-                                 out.width, out.height,
-                                 0,0, out.width, out.height);
-            const url=out.toDataURL('image/png');
-
-            pushHistory();
-            const el={type:'image',id:uid('i'),url,
-                      x:Math.round(rx),y:Math.round(ry),
-                      w:Math.round(rw),h:Math.round(rh),sticker:true};
-            doc.pages[pi].els.push(el);
-            clearMulti(); deselectAll(true);
-            renderPageEls(pi);
-            saveDoc();
-            // 보관함에도 넣어 다른 노트에서 재사용
-            fetch('/api/stickers/save',{method:'POST',
-                headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({data:url,name:'스티커'})}).catch(()=>{});
-            toast('스티커 저장됨 · 보관함에서 다시 쓸 수 있어요',2600);
-        }catch(e){
-            console.error(e); toast('스티커 만들기 실패',2200);
+            url=await bakeStickerSVG(items,pi,rx,ry,rw,rh);
+        }catch(e){ console.warn('SVG 스티커 굽기 실패 → PNG 폴백',e); }
+        if(!url){
+            // 폴백: 예전 캔버스 PNG 굽기 — SVG 를 못 만드는 환경에서도 스티커는 남는다
+            try{
+                const ids=new Set(items.map(i=>i.id));
+                const full=await renderPageCanvas(pi,{onlyIds:ids,transparent:true});
+                const sc=full.width/paperSize().w;
+                const out=document.createElement('canvas');
+                out.width=Math.max(1,Math.round(rw*sc));
+                out.height=Math.max(1,Math.round(rh*sc));
+                const octx=out.getContext('2d');
+                octx.drawImage(full, Math.round(rx*sc), Math.round(ry*sc),
+                                     out.width, out.height,
+                                     0,0, out.width, out.height);
+                url=out.toDataURL('image/png'); isSvg=false;
+            }catch(e){
+                console.error(e); toast('스티커 만들기 실패',2200); return;
+            }
         }
+
+        pushHistory();
+        const el={type:'image',id:uid('i'),url,
+                  x:rx,y:ry,
+                  w:rw,h:rh,sticker:true};
+        if(isSvg) el.svg=true;          // 벡터 스티커 표시
+        doc.pages[pi].els.push(el);
+        clearMulti(); deselectAll(true);
+        renderPageEls(pi);
+        saveDoc();
+        // 보관함에도 넣어 다른 노트에서 재사용
+        fetch('/api/stickers/save',{method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({data:url,name:'스티커'})}).catch(()=>{});
+        toast(isSvg?'스티커 저장됨 · 벡터라 확대해도 안 깨져요':'스티커 저장됨 · 보관함에서 다시 쓸 수 있어요',2600);
     }
 
     // 노트 정보 (용량·페이지·시간)
@@ -15346,8 +15421,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const im=new Image();
         im.onload=()=>{
             pushHistory();
-            const sc=Math.min(1,300/Math.max(im.width,im.height));
-            const w=Math.round(im.width*sc), h=Math.round(im.height*sc);
+            // SVG 스티커는 내부 크기(width/height 속성)가 곧 자연 크기다 —
+            // 못 구하면 기본 300px 폭으로 시작해도 벡터라 확대 시 깨지지 않는다
+            const iw=Math.max(1,im.width||0), ih=Math.max(1,im.height||0);
+            const sc=Math.min(1,300/Math.max(iw,ih));
+            const w=Math.round(iw*sc)||300, h=Math.round(ih*sc)||200;
             // 우클릭 자리를 기억한 상태(빈 종이 → 스티커 넣기)면 그 자리 중앙에 붙이고,
             // 아니면(툴바) 기본 자리에 붙는다. 우클릭한 페이지에 붙는다.
             let pi=curPageIdx, x=80, y=100;
