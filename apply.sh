@@ -204,8 +204,9 @@ fi
 node --check "$APP_DIR/sdynotes.js" >/dev/null || die "배포된 sdynotes.js 문법 오류"
 node --check "$APP_DIR/server/src/index.js" >/dev/null || die "배포된 서버 JS 문법 오류"
 
-# 파이썬 워커 라이브러리
-PKGS="flask flask-cors beautifulsoup4 cloudinary pillow-heif pymupdf python-docx deep-translator requests mutagen openpyxl yt-dlp bgutil-ytdlp-pot-provider==1.3.1"
+# 파이썬 워커 라이브러리 — worker/requirements.txt 로 버전 고정 (14.17).
+# yt-dlp 만 아래쪽에서 매 배포 -U 로 갱신한다 (유튜브 대응).
+REQ="$APP_DIR/worker/requirements.txt"
 
 if ! command -v fpcalc > /dev/null; then
     echo "  노래 인식용 fpcalc 설치 중..."
@@ -262,7 +263,7 @@ if [ ! -x "$APP_DIR/venv/bin/python" ]; then
     sudo apt-get install -y -qq python3-venv python3-pip
     python3 -m venv "$APP_DIR/venv"
     "$APP_DIR/venv/bin/pip" install -q --upgrade pip
-    "$APP_DIR/venv/bin/pip" install -q $PKGS
+    "$APP_DIR/venv/bin/pip" install -q -r "$REQ"
     ok "워커 파이썬 설치 완료"
 else
     # 기존 서버도 마이그레이션 후 음악 worker에 필요한 패키지를 빠짐없이
@@ -271,7 +272,7 @@ else
     # 조용히 실패할 수 있었다.
     if ! "$APP_DIR/venv/bin/python" -c "import flask, flask_cors, cloudinary, pillow_heif, fitz, docx, deep_translator, requests, mutagen, openpyxl" 2>/dev/null; then
         echo "  음악/worker 의존성 보강 설치 중..."
-        "$APP_DIR/venv/bin/pip" install -q $PKGS
+        "$APP_DIR/venv/bin/pip" install -q -r "$REQ"
         ok "worker 의존성 보강 완료"
     else
         "$APP_DIR/venv/bin/pip" install -q -U yt-dlp 2>/dev/null \
