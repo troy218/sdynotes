@@ -1235,8 +1235,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         delete cfg.textBoxes; delete cfg.previewImgs; delete cfg.drawing;
         try{ localStorage.removeItem('draw_'+nbId); }catch(e){}
         const saved=setCfg(nbId,cfg);
-        // 편집분은 '요소 단위 연산'으로 동기화 → 전체 덮어쓰기로 씹히는 일 없음
-        queueOps();
+        // 편집분은 '요소 단위 연산'으로 동기화 → 전체 덮어쓰기로 씹히는 일 없음.
+        // 18.8 · persistDoc 은 '열려 있지 않은 노트'에도 쓰인다(닫힌 노트 삭제/그림
+        //   업로드 완료 등). 이때 queueOps 는 '지금 열린 노트'의 op 를 만들어 이
+        //   노트(nbId)로 엉뚱하게 보낼 수 있으므로, '열려 있는 바로 그 노트'일 때만
+        //   실행한다. 닫힌 노트는 명시적 pushOpsFor/이미지 메타 outbox 가 담당한다.
+        if(curNB&&curNB.id===nbId&&doc) queueOps();
         // 노트 설정(종이·크기·배경색·즐겨찾는 쪽·사전)도 함께 공유
         try{ pushSettings(); }catch(e){}
         return saved;
@@ -2721,10 +2725,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             try{ if(pendingNB) flushSync(); }catch(e){}
             try{ clearTimeout(opsTimer); pushOps(); }catch(e){}
             try{ clearTimeout(pushTimer); pushSettingsNow(); }catch(e){}   // 설정(폴더 등)도 즉시 동기화
+            // 18.8 · 나가기 직전 업로드 완료 이미지의 진짜 URL 을 한 번 더 재전송
+            try{ flushImageMetaOutbox(); }catch(e){}
         }else{
             flushOutbox(true);
             try{ refreshNBs(); }catch(e){}
             setTimeout(()=>{ try{ retryBlockedImport(); }catch(e){} },400);
+            try{ flushImageMetaOutbox(); }catch(e){}
         }
     });
     window.addEventListener('pagehide',()=>{
@@ -2733,6 +2740,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{ if(pendingNB) flushSync(); }catch(e){}
         try{ clearTimeout(opsTimer); pushOps(); }catch(e){}
         try{ clearTimeout(pushTimer); pushSettingsNow(); }catch(e){}   // 설정(폴더 등)도 즉시 동기화
+        try{ flushImageMetaOutbox(); }catch(e){}
     });
     setInterval(()=>{ if(outboxCount()) flushOutbox(true); },20000);
     // ── 실시간 설정 동기화(구글독스처럼): 다른 기기의 북마크/폴더 변경을 주기적으로 반영 ──
@@ -5526,6 +5534,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         saveLastPos();
         // 밀린 요소 연산(요소 단위 동기화)도 지금 바로 보낸다 — 나가기 전 저장
         try{ clearTimeout(opsTimer); pushOps(); }catch(e){}
+        // 18.8 · 업로드 완료 이미지의 진짜 URL 내구성 outbox 재전송
+        try{ flushImageMetaOutbox(); }catch(e){}
         let _impFlush=null;
         try{ _impFlush=flushImportedSave(); }catch(e){}
         flushSync();                            // 서버(memo) 동기화
@@ -5656,8 +5666,22 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!el||el.type!=='image') return el;
         const c={...el};
         const u=String(c.url||'');
-        delete c.localURL; delete c.pending; delete c.failed;
+        const l=String(c.localURL||'');
+        const hasDataSrc=l.startsWith('data:image/');
+        delete c.pending; delete c.failed;
         if(u.startsWith('blob:')) c.url='';
+        // 18.8 · 서버로 보내는 이미지 op 는 '진짜 URL 이 있으면' 로컬 소스를 버린다.
+        //   url 이 아직 없는데 data: 원본을 물고 있으면 그 원본을 op 에 함께 실어 보낸다.
+        //   (예전엔 무조건 localURL 을 지워서, 업로드가 끝나기 전에 접속을 끊으면
+        //    다른 기기에서 '사진이 있었다는 표시'만 남았다. 이제 원본이 op 를 타고
+        //    가 어느 기기에서든 표시 + 서버로 재업로드가 가능하다. blob: 은 새로고침
+        //    뒤 소용없으므로 그대로 버린다.)
+        if(u){
+            delete c.localURL;
+            return c;
+        }
+        if(hasDataSrc){ if(!c.localURL) c.localURL=l; return c; }
+        delete c.localURL;
         return c;
     }
     function sanitizeSyncPages(pages){
@@ -8082,7 +8106,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }else clearSnapLines();
         resize.nx=Math.round(nx); resize.ny=Math.round(ny);
         resize.nw=Math.round(Math.max(30,nw)); resize.nh=Math.round(Math.max(24,nh));
-        _previewSet(resize.el,resize.nx-resize.ox,resize.ny-resize.oy,resize.nw/resize.sw,resize.nh/resize.sh);
+        // 18.7 · 텍스트 상자는 '모눈 스케일' 미리보기 대신 실제 폭/높이로 즉시
+        //   리플로우한다. 스케일(scale)로는 내부 텍스트가 찌부됐다가 놓으면 돌아오는
+        //   현상이 있어서(보고 이슈⑤) 텍스트는 리플로우 방식을 쓴다. 이미지/도형은
+        //   계속 GPU scale 로 가볍게 그린다.
+        if(resize.el.classList&&resize.el.classList.contains('tb')){
+            resize.el.style.left=Math.round(resize.nx)+'px';
+            resize.el.style.top =Math.round(resize.ny)+'px';
+            resize.el.style.width=resize.nw+'px';
+            resize.el.style.height=resize.nh+'px';
+        }else{
+            _previewSet(resize.el,resize.nx-resize.ox,resize.ny-resize.oy,resize.nw/resize.sw,resize.nh/resize.sh);
+        }
     }
 
     // 종이 밖으로 나가는 것도 허용한다 (내보낼 때 잘린다).
@@ -14239,10 +14274,57 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         syncCurSel();
     }
     // 선택 영역의 현재 스타일 상태를 툴바 버튼에 반영
+    // 18.7 · '지금 서식'을 판단하는 대상: ① 실제 글자 선택 → 선택 전체가 같은가,
+    //   없으면 ② 편집 중 캐럿(앞으로 입력될 글자) ③ 선택된 텍스트 상자 전체.
+    //   아무것도 아니면 전부 꺼진 상태로 정리한다. (보고 이슈⑥)
+    function _activeToggleStates(){
+        // ② 캐럿(선택 없음) → 앞으로 입력될 글자 기준
+        if(_typingHost()){
+            return {
+                bold:_caretHasStyle('fontWeight','700'),
+                italic:_caretHasStyle('fontStyle','italic'),
+                underline:_caretHasStyle('textDecoration','underline'),
+                strike:_caretHasStyle('textDecoration','line-through'),
+            };
+        }
+        // ③ 선택된/편집 중 텍스트 상자 → 상자 전체 서식 기준
+        let node=null;
+        if(selected&&selected.type==='text'&&selected.el) node=selected.el;
+        if(!node&&multiSel.length===1) node=multiSel[0].node;
+        if(!node) node=document.querySelector('#pagesStage .tb.edit,#pagesStage .tb.sel,#pagesStage .tb.msel');
+        if(node&&node.classList&&node.classList.contains('tb')){
+            const pageIdx=+node.dataset.pageIdx, id=node.dataset.id;
+            const el=(!isNaN(pageIdx)&&id)?findEl(pageIdx,id):null;
+            const fw=el&&el.fontWeight?el.fontWeight:(node.style.fontWeight||'');
+            const fst=el&&el.fontStyle?el.fontStyle:(node.style.fontStyle||'');
+            const dec=el&&el.textDecoration?el.textDecoration:(node.style.textDecoration||'');
+            return {
+                bold:_propMatch('fontWeight',fw,'700'),
+                italic:_propMatch('fontStyle',fst,'italic'),
+                underline:_propMatch('textDecoration',dec,'underline'),
+                strike:_propMatch('textDecoration',dec,'line-through'),
+            };
+        }
+        return {bold:false,italic:false,underline:false,strike:false};
+    }
     function syncCurSel(){
         try{
             const ctx=_selectionCtx();
-            if(!ctx) return;
+            const btnOn=(sel,on)=>{
+                const b=document.querySelector(sel);
+                if(b) b.classList.toggle('active',!!on);
+            };
+            if(!ctx){
+                // 텍스트(글자) 선택이 없는 화면 → 눌려 있던 서식 버튼을 정리한다.
+                //   사용자 이전 설정(글꼴·크기·색·형광펜)은 유지하되, '켜짐' 상태만
+                //   실제 캐럿/상자 서식에 맞춘다. (보고 이슈⑥)
+                const st=_activeToggleStates();
+                btnOn('.tb-bold',st.bold);
+                btnOn('.tb-italic',st.italic);
+                btnOn('.tb-under',st.underline);
+                btnOn('.tb-strike',st.strike);
+                return;
+            }
             // 선택한 모든 글자가 같은 속성을 공유할 때만 툴바에 단일 값으로 표시한다.
             // 섞여 있으면 기존 선택값을 그대로 두어 잘못된 단일 값 표시를 피한다.
             const states={
@@ -14250,10 +14332,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 italic:_selHasAll('fontStyle','italic'),
                 underline:_selHasAll('textDecoration','underline'),
                 strike:_selHasAll('textDecoration','line-through'),
-            };
-            const btnOn=(sel,on)=>{
-                const b=document.querySelector(sel);
-                if(b) b.classList.toggle('active',!!on);
             };
             btnOn('.tb-bold',states.bold);
             btnOn('.tb-italic',states.italic);
@@ -14458,7 +14536,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             // ② 캐럿(선택 없음) → 앞으로 입력될 글자만 토글
             if(_typingHost()){
                 const [key,val]=spec;
-                const off={fontWeight:'',fontStyle:'',textDecoration:''}[key];
+                // 18.7 · 캐럿에서 '꺼짐' 상태는 '속성 제거'가 아니라 '중립값'으로 써야 한다.
+                //   - 중립값을 가진 빈 span 을 캐럿 자리에 남기면 이후 입력되는 글자가
+                //     바로 앞(부모) 서식에 물려(예: 볼드 span 안에 다시 글자를 입력) 같은
+                //     서식으로 계속 입력되는 문제를 막는다. (보고 이슈①)
+                //   - fontWeight:400 / fontStyle:normal 처럼 '명시적 중립'이 브라우저가
+                //     다음 입력 글자를 이전 서식으로 되돌리는 것까지 막아 준다.
+                const off={fontWeight:'400',fontStyle:'normal',textDecoration:''}[key];
                 // textDecoration 에는 이미 다른 값(underline 등)이 있을 수 있으니
                 // 토글 off 시에만 해당 토큰을 빼는 식으로 처리
                 if(_caretHasStyle(key,val)){
@@ -14607,11 +14691,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(s.rangeCount){ s.removeAllRanges(); s.addRange(nr); }
                 savedCaret={c,r:nr.cloneRange()};
             }
+            const _removeStyleSafe=(name)=>{
+                // jsdom·일부 WebView 는 camelCase removeProperty 를 무시한다.
+                // kebab-case 로 지우면 브라우저·테스트 모두에서 일관되게 동작한다.
+                const kebab=String(name||'').replace(/([A-Z])/g,'-$1').toLowerCase();
+                try{ span.style.removeProperty(kebab); }catch(_e){}
+                try{ span.style.removeProperty(name); }catch(_e){}
+            };
             for(const k in styles){
-                if(styles[k]===''||styles[k]==null) span.style.removeProperty(k);
+                if(styles[k]===''||styles[k]==null) _removeStyleSafe(k);
                 else span.style[k]=styles[k];
             }
-            // 서식을 전부 지우면 빈 span 은 남길 이유가 없다 → 풀어낸다
+            // 서식을 전부 지우면 빈 span 은 남길 이유가 없다 → 풀어낸다.
+            //   단, 캐럿이 '이전 서식에 물리지 않도록' 만들려면 스타일이 전부 없더라도
+            //   sdy-type 빈 span 을 하나 남겨 두는 편이 안전하다. 여기서는 '진짜 빈
+            //   스타일' + '아직 입력 전'일 때만 지우고, '이전 서식 차단용'으로 쓴
+            //   중립값(400/normal)이 남아 있으면(즉 cssText 가 있으면) 반드시 유지한다.
             if(span.classList.contains('sdy-type')&&!span.style.cssText&&!span.textContent&&!span.childElementCount){
                 span.remove(); _typingSpan=null; savedCaret=null;
                 return true;
@@ -14923,8 +15018,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(uploadQueue.length) runUploadQueue();
     }
     // 재업로드 트리거: 온라인 복귀, 주기, 탭 복귀, 열기 직후.
-    window.addEventListener('online',()=>{ setTimeout(()=>{ try{ enqueuePendingImageUploads(); }catch(e){} },300); });
-    setInterval(()=>{ try{ enqueuePendingImageUploads(); }catch(e){} },8000);
+    window.addEventListener('online',()=>{ setTimeout(()=>{ try{ enqueuePendingImageUploads(); flushImageMetaOutbox(); }catch(e){} },300); });
+    setInterval(()=>{ try{ enqueuePendingImageUploads(); flushImageMetaOutbox(); }catch(e){} },8000);
 
     async function uploadImgs(files,atPoint){
         if(!doc) return;
@@ -14956,7 +15051,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             uploadCurrentId=job.id;
             try{
                 const res=await uploadOne(job.file);
-                if(res&&res.url) applyUploadedURL(job,res.url,res.public_id);
+                if(res&&res.url) await applyUploadedURL(job,res.url,res.public_id);
                 else markUploadFailed(job);
             }catch(e){ console.warn('업로드 실패:',e); markUploadFailed(job); }
             uploadCurrentId=null;
@@ -14986,7 +15081,43 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
 
     // 업로드 완료 → blob URL 을 실제 URL 로 교체 (열려있지 않은 노트도 반영)
-    function applyUploadedURL(job,url,publicId){
+    // 18.8 · 이미지 '진짜 URL'을 서버 ops 스토어에 반드시 도착시키는 내구성 outbox.
+    //   uploadOne(/api/upload) 은 파일을 서버에 이미 올렸지만 그 '메타데이터'(어느
+    //   노트·어느 요소에 이 URL 인지)를 ops 로 push 하는 fetch 가 접속 끊김과 함께
+    //   취소되면, 다른 기기는 사진 파일은 있어도 '어느 자리에 어떤 url 인지'를 모른다.
+    //   → url 확정 즉시 localStorage 에도 기록해 두고, 온라인/주기/열기/나가기 때
+    //     재전송한다. 이게 '그림 업로드 후 다른 기기에서 안 불러와지는' 고질 문제를
+    //     막는 핵심이다.
+    const IMG_META_KEY='sdy_imgmeta_outbox';
+    function getImageMetaOutbox(){ try{ return JSON.parse(localStorage.getItem(IMG_META_KEY)||'[]'); }catch(e){ return []; } }
+    function saveImageMetaOutbox(o){ try{ localStorage.setItem(IMG_META_KEY,JSON.stringify(o.slice(-120))); }catch(e){} }
+    function queueImageMetaPut(nbId, op){
+        const id=String((op&&op.id)||'');
+        if(!id||!nbId) return;
+        const o=getImageMetaOutbox();
+        const i=o.findIndex(x=>x.nbId===nbId&&x.op&&String(x.op.id)===id);
+        if(i>=0) o[i]={nbId,op,ts:Date.now()}; else o.push({nbId,op,ts:Date.now()});
+        saveImageMetaOutbox(o);
+    }
+    // 내구성 outbox 를 서버로 전송. 성공한 것만 지운다 (재접속 시 남은 것 재시도).
+    async function flushImageMetaOutbox(){
+        let o=getImageMetaOutbox();
+        if(!o.length) return;
+        const byNb={};
+        o.forEach(x=>{ (byNb[x.nbId]=byNb[x.nbId]||[]).push(x); });
+        for(const nbId of Object.keys(byNb)){
+            const ops=byNb[nbId].map(x=>x.op).slice(0,40);
+            try{
+                const ok=await pushOpsFor(nbId, ops);
+                if(ok){
+                    const ids=new Set(ops.map(p=>p.id));
+                    saveImageMetaOutbox(getImageMetaOutbox().filter(x=>!(x.nbId===nbId&&ids.has(String(x.op.id)))));
+                }
+            }catch(e){}
+        }
+    }
+
+    async function applyUploadedURL(job,url,publicId){
         const patch=(d)=>{
             let hit=false;
             (d.pages||[]).forEach(pg=>(pg.els||[]).forEach(el=>{
@@ -15008,30 +15139,33 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     const im=node.querySelector('img');
                     if(im) im.src=url;
                 }
-                saveDoc();
+                // 18.8 · 업로드가 끝난 이미지 url 은 400ms 디바운스를 기다리지 않고
+                //   즉시 로컬 저장 + 서버 ops/memo 에 반영한다. (탭을 빨리 닫아도
+                //   디바운스가 안 타서 url 이 날아가 '다른 기기에서 안 보이는' 버그)
+                try{ flushSaveDoc(); }catch(_e){ try{ saveDoc(); }catch(_e2){} }
+                try{ clearTimeout(opsTimer); pushOps(); }catch(_e){}
+                try{ if(pendingNB) flushSync(); }catch(_e){}
                 fixed=doc;
             }
         }else{
+            // 노트가 열려 있지 않은 경우: 로컬(저장소)에 확정하고, 요소 op 만 바로 올린다.
+            //  (memo 채널은 열려 있지 않은 노트의 memoId 를 여기서 정확히 알 수 없어
+            //   ops 를 신뢰한다 — 어느 기기든 pull 이 진짜 url 을 가져온다)
             const d=loadDoc(job.nbId);
-            if(patch(d)){ persistDoc(job.nbId,d); queueSync(job.nbId); fixed=d; }
+            if(patch(d)){ try{ persistDoc(job.nbId,d); }catch(_e){} fixed=d; }
         }
-        // 18.4 · 업로드가 끝난 이미지는 '그 노트가 열려 있지 않았던' 경우에도
-        //   요소 ops 스토어(/api/sync/push)에 바로 기록한다. 예전엔 memo(전체
-        //   스냅샷)만 고쳐지고 ops 에는 pending(url:'')이 남아서, 다시 접속해
-        //   pull 하면 업로드 완료된 사진이 '업로드 전 상태'로 되돌아가
-        //   '사진이 있었다는 표시'만 남았다.
+        // 18.8 · url 확정 op 를 내구성 outbox 에 남기고 즉시 서버로 보낸다.
+        //   실패해도 남아 있으므로 나중에 재전송된다.
         if(fixed){
             (fixed.pages||[]).forEach((pg,pi)=>(pg.els||[]).forEach(el=>{
                 if(el.id===job.id){
                     try{
-                        // 중복으로 올라가도 서버 LWW(더 새 rev)라 안전하다.
-                        // (열려 있던 노트는 saveDoc→queueOps 가 같은 내용을 한 번 더
-                        //  올리므로 pushOpsFor 이 실패해도 사라지지 않는다)
-                        pushOpsFor(job.nbId,[{id:el.id,kind:'put',page:pi,rev:_nbNow(),data:serverImageElement(el),dev:SYNC_DEV}]);
+                        queueImageMetaPut(job.nbId,{id:el.id,kind:'put',page:pi,rev:_nbNow(),data:serverImageElement(el),dev:SYNC_DEV});
                     }catch(e){}
                 }
             }));
         }
+        await flushImageMetaOutbox();
     }
     function markUploadFailed(job){
         const node=document.querySelector(`#pagesStage .paper-img[data-id="${job.id}"]`);
@@ -16390,6 +16524,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         // 14.17 · 메모에 data: 원본이 남아 있는 아직 서버 안 올라간 이미지를
         //   어느 기기에서 열든 즉시 서버(/api/img)로 다시 올린다.
         try{ enqueuePendingImageUploads(); }catch(e){}
+        // 18.8 · 업로드는 끝났는데 ops push 를 못 한(내구성 outbox 남은) 이미지의
+        //   진짜 URL 을 지금 보낸다. (다른 기기를 위해 즉시 반영)
+        try{ flushImageMetaOutbox(); }catch(e){}
         // 18.4 · pull 전(메모·로컬이 아는) 이미지의 진짜 URL 을 기억한다.
         //   ops 스토어에 업로드 전(pending·빈 url) 상태가 남아 있어도
         //   이 URL 로 되돌려 "사진이 있었다는 표시"가 남지 않게 한다.
@@ -16443,6 +16580,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(ops.length) await pushOps(ops);
         // pull 로 본문이 채워졌을 수 있으니 다시 한 번 강제 페인트
         if(doc===_d0) try{ ensureVisiblePagesRendered(); }catch(e){}
+        // 18.8 · pull 로 받은 이미지가 아직 업로드 전(data 원본만, url 없음)이면
+        //   지금 서버(/api/img)로 재업로드해 url 을 확정한다. (원본 기기에서 업로드가
+        //   끝나지 않았던 사진도 어느 기기에서든 자동 복구)
+        if(doc===_d0) try{ enqueuePendingImageUploads(); }catch(e){}
     }
     async function startSlicePrefill(){
         const d=doc;                    // 14.9 · 노트 전환 후 이어지는 프리필을 차단
@@ -17576,6 +17717,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 {a:'cut',    i:'ri-scissors-line',  t:'잘라내기',   k:'Ctrl+X'},
                 {a:'bold',   i:'ri-bold',           t:'굵게',      k:'Ctrl+B'},
                 {a:'hl',     i:'ri-mark-pen-line',  t:'형광펜'},
+                {a:'clear',  i:'ri-format-clear',   t:'서식제거'},
                 {a:'sel-find',  i:'ri-search-line', t:`'${esc(short)}' 찾기`},
                 '-',
                 {sub:'서식', i:'ri-font-color', items:[
@@ -17622,7 +17764,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 {a:'el-cut',   i:'ri-scissors-line',  t:'잘라내기', k:'Ctrl+X'},
                 {a:'el-dup',   i:'ri-file-copy-2-line', t:'복제', k:'Ctrl+J'},
             ];
-            if(kind==='text-el' && !multi) items.push({a:'el-edit', i:'ri-edit-line', t:'내용 편집'});
+            // 18.7 · 보고: 우클릭 메뉴에서 '내용 편집' 버튼을 없앤다.
+            //   텍스트 편집은 더블클릭/텍스트 도구로만 들어가는 것으로 충분하다.
+            //   (LaTeX 수식 편집 버튼은 유지 — 수식은 더블클릭이 없으므로)
             if(kind==='latex' && !multi) items.push({a:'latex-edit', i:'ri-function-line', t:'LaTeX 수식 편집'});
             items.push('-');
 
