@@ -7483,17 +7483,35 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 활성 캐럿 서식은 실제 입력 직전에 wrapper를 확인한다. 빈 span을 브라우저가
         // 정리했더라도 beforeinput 단계에서 복구되므로 첫 글자부터 서식이 빠지지 않는다.
         c.addEventListener('beforeinput',e=>{
-            if(w.classList.contains('edit') && (!e.inputType||e.inputType.indexOf('insert')===0))
+            if(!w.classList.contains('edit')) return;
+            const it=e.inputType||'';
+            if(it==='insertParagraph'||it==='insertLineBreak'){
+                // 18.11 · 줄바꿈: 캐럿 앞 글자의 서식을 '다음 줄'로 이어받는다(보고 이슈②)
+                _captureLineBreakInherit(c);
                 _ensurePendingTypingSpan(c);
+            }else if(!it||it.indexOf('insert')===0){
+                savedRange=null; savedHost=null;   // 실제 타이핑 = 이전 글자 선택은 무효
+                _ensurePendingTypingSpan(c);
+            }
         });
         // beforeinput이 없는 구형 WebView용 선행 fallback (조합 중에는 keydown이 없어도
         // 표준 beforeinput이 오며, 둘 다 없는 환경은 아래 input에서 다음 글자를 복구).
         c.addEventListener('keydown',e=>{
-            if(w.classList.contains('edit')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&
-               (e.key.length===1||e.key==='Enter')) _ensurePendingTypingSpan(c);
+            if(!w.classList.contains('edit')||e.ctrlKey||e.metaKey||e.altKey) return;
+            if(e.key==='Enter'){
+                // 18.11 · 줄바꿈: 캐럿 앞 글자의 서식을 '다음 줄'로 이어받는다(보고 이슈②)
+                _captureLineBreakInherit(c);
+                _ensurePendingTypingSpan(c);
+            }else if(e.key.length===1){
+                savedRange=null; savedHost=null;   // 실제 타이핑 = 이전 글자 선택은 무효
+                _ensurePendingTypingSpan(c);
+            }
         });
         c.addEventListener('input',()=>{
-            if(w.classList.contains('edit')) commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
+            if(w.classList.contains('edit')){
+                savedRange=null; savedHost=null;   // 18.11 · 실제 타이핑 = 이전 글자 선택은 무효
+                commitEditSnapshot();              // 18.9 · 첫 타이핑 = 되돌리기 지점
+            }
             _scriptEditUndoable=false;        // 실제 타이핑 뒤 Ctrl+Z 는 브라우저 기본 undo 를 우선
             const em=!_tbPlain().trim();
             if(em) c.setAttribute('data-empty','true'); else c.removeAttribute('data-empty');
@@ -7502,12 +7520,25 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(w.classList.contains('edit')) _ensurePendingTypingSpan(c);
             clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
         });
-        // 편집 상자에서 포커스를 벗어나면 즉시 반영 (자동저장 신뢰성)
+        // 18.11 · 포커스 손실 직후 '고스트 접힘' 감지용. 실제 브라우저(특히 iOS)는
+        //   툴바를 누는 순간 편집기 포커스를 빼고 Selection 을 임의 지점(대개 상자
+        //   시작)으로 접어 버린다. 그 접힘이 selectionchange 로 들어올 때 '사용자가
+        //   캐럿을 옮긴 것'으로 착각하면 저장돼 있던 선택·캐럿이 고스트 위치로
+        //   덮어써져서 그 뒤 서식이 엉뚱한 자리에 먹는다(보고 이슈①③).
+        //   blur 시점에 유효 창(2s)을 달아 두고, focus 로 복귀하거나 상자 안에서
+        //   직접 캐럿/단어를 찍는 순간(아래 pointerdown)에, 또는 진짜 글자 선택이
+        //   생긴 순간(saveSel)에 걷는다. 2s 는 느린 탭(터치→마우스 호환 이벤트가
+        //   touchend 에서야 나오는 iOS 의 특성)까지 덮기 위한 하한 안전장치일 뿐,
+        //   진짜 동작은 모두 이벤트로 먼저 걷힌다.
         c.addEventListener('blur',()=>{
+            try{ c.__sdyBlurGuard=Date.now()+2000; }catch(e){}
             if(w.classList.contains('edit')){
                 clearTimeout(w._t);
                 try{ syncTextEl(w); }catch(e){}
             }
+        });
+        c.addEventListener('focus',()=>{
+            try{ c.__sdyBlurGuard=0; }catch(e){}
         });
         if(el.tbl) w.classList.add('in-tbl');
         if(el.tight) w.classList.add('tight');
@@ -8514,6 +8545,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 const c=tb.querySelector('.tb-content');
                 const r=caretRangeAt(e.clientX,e.clientY,c);
                 if(r){
+                    // 18.11 · 사용자가 상자 안에서 직접 캐럿을 옮긴 것 —
+                    //   blur '고스트 창'이 아직 남아 있어도 여기서 걷는다.
+                    try{ c.__sdyBlurGuard=0; }catch(_e){}
                     const sel=window.getSelection();
                     sel.removeAllRanges(); sel.addRange(r);
                     textSel={host:c, anchor:{node:r.startContainer,off:r.startOffset}, focusEnd:null};
@@ -8554,6 +8588,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 // (편집 모드 진입과 동시에 일어나는 기본 동작은 브라우저마다 불안정)
                 const c=tb.querySelector('.tb-content');
                 enableTextSelect(c);
+                try{ c.__sdyBlurGuard=0; }catch(_e){}   // 18.11 · 직접 단어 선택 = 고스트 창 해제
                 const r=caretRangeAt(e.clientX,e.clientY,c);
                 if(r){
                     const wr=expandToWord(r,c);
@@ -13642,6 +13677,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             // '상자 전체'가 아니라 '앞으로 입력될 글자'에만 적용하기 위함.
             const w=host.closest('.tb');
             if(w&&w.classList.contains('edit')){
+                // 18.11 · 포커스 손실 직후(고스트 창)의 접힘은 '사용자가 캐럿을
+                //   옮긴 것'이 아니라 브라우저가 blur 와 함께 Selection 을 접어 만든
+                //   임의 위치다. 이때 저장돼 있던 실제 선택(savedRange)과 마지막
+                //   캐럿(savedCaret)을 고스트 위치로 덮어 쓰면, 툴바로 돌아와
+                //   서식을 누는 순간 ① 고른 글자 대신 엉뚱한 한 글자(또는 아무 데도
+                //   아닌) 서식이 되고 ② '앞으로 입력할 글자' 서식이 고스트 자리에
+                //   박히게 된다(보고 이슈①③). → 고스트 창 안이면 상태를 그대로 둔다.
+                const inGhost=Date.now()<(host.__sdyBlurGuard||0);
+                const keepSel=inGhost&&savedRange&&savedHost===host;
+                const keepCaret=inGhost&&savedCaret&&savedCaret.c===host;
+                if(keepSel||keepCaret) return;
                 savedCaret={c:host,r:r.cloneRange()};
                 savedRange=null; savedHost=null;   // 캐럿으로 접은 뒤엔 이전 선택은 무효
             }
@@ -13649,6 +13695,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         savedRange=r.cloneRange(); savedHost=host;
         savedCaret=null; _typingSpan=null; _pendingTyping=null; // 글자 선택이 생기면 예전 캐럿 서식은 더 이상 우선하지 않는다.
+        try{ host.__sdyBlurGuard=0; }catch(_e){}   // 18.11 · 진짜 글자 선택 = 고스트 창 종료
     }
     function restoreSel(){
         if(!savedRange||!savedHost) return null;
@@ -14991,7 +15038,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const r=s.getRangeAt(0);
                 const el=r.startContainer.nodeType===3?r.startContainer.parentElement:r.startContainer;
                 const c=el&&el.closest&&el.closest('.tb-content');
-                if(c&&c.closest('.tb').classList.contains('edit')) return {c,r};
+                if(c&&c.closest('.tb').classList.contains('edit')){
+                    // 18.11 · 포커스 손실 직후(고스트 창)에는 live 접힘이 blur 와 함께
+                    //   브라우저가 접어 둔 '고스트 위치'일 수 있다. 상자 안에서 실제로
+                    //   입력하던 마지막 캐럿(savedCaret)을 우선한다(보고 이슈③).
+                    if(Date.now()<(c.__sdyBlurGuard||0)&&savedCaret&&savedCaret.c===c
+                       &&document.body.contains(c)) return savedCaret;
+                    return {c,r};
+                }
             }
         }catch(e){}
         if(savedCaret&&savedCaret.c&&document.body.contains(savedCaret.c)){
@@ -15044,9 +15098,64 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // 브라우저가 빈 span을 없애거나 입력 후 캐럿을 형제 위치로 옮겨도, 별도로 기억한
     // active state를 사용해 입력 직전 같은 스타일 wrapper를 다시 만든다.
+    // 18.11 · Enter(줄바꿈) 시 '캐럿 바로 앞 글자' 의 인라인 서식을 다음 줄의
+    //   입력 서식으로 이어받는다 — 워드처럼, 같은 서식으로 쓰다 줄을 바꾸면
+    //   다음 줄도 같은 글꼴/굵기로 이어진다.
+    //   예전엔 툴바가 캐럿에 직접 입힌 서식(_pendingTyping)만 이어받았기 때문에,
+    //   선택에 입힌 글꼴로 쓰다가 줄을 바꾸면 다음 줄이 상자 기본 글꼴로
+    //   돌아가는 일이 있었다(보고 이슈②).
+    function _captureLineBreakInherit(host){
+        try{
+            if(!host) return;
+            if(_pendingTyping&&_pendingTyping.host===host) return;   // 명시적 입력 서식이 우선
+            const s=window.getSelection();
+            if(!s||!s.rangeCount||!s.isCollapsed) return;
+            const r=s.getRangeAt(0);
+            const el=r.startContainer.nodeType===3?r.startContainer.parentElement:r.startContainer;
+            if(el!==host&&!(el&&host.contains&&host.contains(el))) return;
+            const off=_fmtOffsetAt(host,r.startContainer,r.startOffset);
+            if(off<=0) return;
+            const pt=_fmtPointFromOffset(host,off-1);
+            if(!pt||pt.node.nodeType!==3) return;
+            // 상자(호스트) 레벨 스타일은 제외하고 '다시 선언할' 인라인 서식만 모은다.
+            const styles=_fmtChainStyle(pt.node,host);
+            if(Object.keys(styles).length) _pendingTyping={host,styles};
+        }catch(e){}
+    }
+    // 캐럿 지점 바로 옆(왼쪽/오른쪽 인접)에 있는 '빈 입력 대기 span' 을 찾는다.
+    //   빈 .sdy-type 은 화면에 0글자 폭으로 보이므로, 사용자가 줄 끝을 탭하면
+    //   캐럿은 이 span '앞'의 텍스트 끝 위치에 놓이는 경우가 일반적이다.
+    function _adjacentTypingMarker(host,container,offset){
+        const isMarker=n=>n&&n.nodeType===1&&n.classList&&n.classList.contains('sdy-type')
+            &&!n.textContent&&!n.childElementCount&&n.style&&!!n.style.cssText;
+        try{
+            if(container.nodeType===3){
+                if(offset>=container.nodeValue.length){
+                    const n=container.nextSibling;
+                    if(isMarker(n)) return n;
+                }else if(offset===0){
+                    const n=container.previousSibling;
+                    if(isMarker(n)) return n;
+                }
+                return null;
+            }
+            if(container.nodeType===1){
+                const n=container.childNodes[offset];
+                if(isMarker(n)) return n;
+                const m=container.childNodes[offset-1];
+                if(isMarker(m)) return m;
+            }
+        }catch(e){}
+        return null;
+    }
+    function _sameStyleAs(span,styles){
+        for(const k in styles){
+            if(!_propMatch(k, span.style?span.style[k]:'', styles[k])) return false;
+        }
+        return true;
+    }
     function _ensurePendingTypingSpan(host){
-        const p=_pendingTyping;
-        if(!p||p.host!==host||!host||!host.isConnected) return false;
+        if(!host||!host.isConnected) return false;
         const w=host.closest&&host.closest('.tb');
         if(!w||!w.classList.contains('edit')) return false;
         const s=window.getSelection();
@@ -15055,8 +15164,25 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const point=live.startContainer;
         const inHost=point===host||host.contains(point);
         if(!inHost) return false;
+        const p=(_pendingTyping&&_pendingTyping.host===host)?_pendingTyping:null;
         if(_typingSpan&&_typingSpan.isConnected&&host.contains(_typingSpan)&&
            (point===_typingSpan||_typingSpan.contains(point))) return true;
+        // 18.11 · 캐럿이 '빈 입력 대기 span' 바로 앞/옆에 놓여 있으면 캐럿을 그
+        //   span 안으로 끌고 간다 — 다음 입력이 그 span 의 글꼴/서식을 그대로
+        //   이어받는다. pending 상태가 이미 지워졌어도(상자 밖 탭·재진입 등으로)
+        //   '방금 고른 글꼴이 바로 다음 글자에 먹는다'를 이 지점이 지킨다(보고 이슈③).
+        try{
+            const mk=_adjacentTypingMarker(host,point,live.startOffset);
+            if(mk&&(!p||_sameStyleAs(mk,p.styles))){
+                _typingSpan=mk;
+                const nr=document.createRange(); nr.selectNodeContents(mk); nr.collapse(false);
+                s.removeAllRanges(); s.addRange(nr);
+                savedCaret={c:host,r:nr.cloneRange()};
+                if(!p) _rememberTypingStyles(mk,host);   // 다음 줄바꿈 계승 등 상태 복원
+                return true;
+            }
+        }catch(e){}
+        if(!p) return false;
         try{
             const span=document.createElement('span');
             span.className='sdy-type';
@@ -15077,19 +15203,23 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         try{
             const s=window.getSelection();
             const dot=tn=>tn&&(tn===_typingSpan||(_typingSpan&&_typingSpan.contains(tn)));
+            // 18.11 · blur '고스트 창' 안이면 live Selection 이 브라우저가 접어
+            //   둔 임의 위치다 — '마지막 실제 캐럿' (savedCaret) 을 기준으로 한다.
+            const inGhost=Date.now()<(c.__sdyBlurGuard||0);
+            const r0=inGhost?(savedCaret&&savedCaret.c===c?savedCaret.r:null)
+                            :(s.rangeCount?s.getRangeAt(0):null);
             // 빈 span 만 재사용한다. 이미 글자가 들어간 span 을 뒤집으면
             // '앞으로 입력될 글자'뿐 아니라 '이미 입력된 글자'까지 바뀌기 때문.
             const spanEmpty=_typingSpan&&!_typingSpan.textContent&&!_typingSpan.childElementCount;
             let span=null;
             if(spanEmpty&&_typingSpan.isConnected&&c.contains(_typingSpan)){
-                const r0=s.rangeCount?s.getRangeAt(0):null;
                 if(dot(r0&&r0.startContainer)) span=_typingSpan;
                 else if(savedCaret&&savedCaret.c===c&&dot(savedCaret.r.startContainer)) span=_typingSpan;
             }
             if(!span){
                 span=document.createElement('span');
                 span.className='sdy-type';
-                const src=(s.rangeCount?s.getRangeAt(0):t.r).cloneRange();
+                const src=(r0||t.r).cloneRange();
                 // 부분 글꼴 보존: 캐럿 부모에 inline font-family 가 있으면 새 span 에 고정
                 let p=src.startContainer.nodeType===3?src.startContainer.parentElement:src.startContainer;
                 let font='';
