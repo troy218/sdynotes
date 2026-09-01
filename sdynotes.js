@@ -6828,11 +6828,62 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }else{ fallbackCopyText(text); done(); }
     }
     let _lastCopyText='';           // 18.9 · 방금 우리가 OS 클립보드에 넣은 글자
+    // 18.12 · 사진을 복사/잘라내면 내부 클립보드(앱 안 붙여넣기)뿐 아니라
+    //   OS 클립보드에도 실제 이미지(PNG)를 올려 워드 등 외부 앱에 바로 붙여넣는다.
+    async function copyImageToClipboard(el){
+        try{
+            if(!el||el.type!=='image') return false;
+            // 소스: 확정 서버 URL → data:(레거시) → 업로드 전 object URL 순서
+            const src=_imgRealURL(el)
+                ? el.url
+                : (String(el.localURL||'').startsWith('data:')
+                    ? el.localURL
+                    : (pendingImgSrcs.get(el.id)||''));
+            if(!src) return false;
+            let blob=null;
+            if(String(src).startsWith('data:')){
+                blob=dataURLToFile(src,'copy.png');
+            }else{
+                const r=await fetch(src,{cache:'force-cache'});
+                if(!r.ok) return false;
+                blob=await r.blob();
+            }
+            if(!blob) return false;
+            // 브라우저 ClipboardItem 호환성(공통)을 위해 PNG 로 다시 그린다.
+            const url=URL.createObjectURL(blob);
+            const img=await new Promise((res,rej)=>{
+                const i=new Image();
+                i.onload=()=>res(i);
+                i.onerror=()=>rej(new Error('img load fail'));
+                i.src=url;
+            });
+            const c=document.createElement('canvas');
+            const w=img.naturalWidth||img.width||1, h=img.naturalHeight||img.height||1;
+            c.width=w; c.height=h;
+            c.getContext('2d').drawImage(img,0,0,w,h);
+            try{ URL.revokeObjectURL(url); }catch(e){}
+            const png=await canvasToBlob(c,'image/png');
+            if(!png) return false;
+            if(!(navigator.clipboard&&window.ClipboardItem)) return false;
+            await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);
+            return true;
+        }catch(e){ console.warn('[사진 복사] OS 클립보드에 넣지 못했습니다', e); return false; }
+    }
+    function osCopyImageToClipboard(el,cut){
+        try{
+            copyImageToClipboard(el).then(ok=>{
+                toast(ok
+                    ? (cut?'잘라내기 · 이미지를 클립보드에 복사했습니다':'이미지를 클립보드에 복사했습니다')
+                    : (cut?'잘라냄':'복사됨'), cut?1500:1400);
+            });
+        }catch(e){ toast(cut?'잘라냄':'복사됨',1200); }
+    }
     function copyElements(cut){
         const els=selectedElsData();
         if(!els.length) return;
         clipboardEls=JSON.parse(JSON.stringify(els));
         _lastCopyText='';
+        const singleImg=els.length===1&&els[0].type==='image';
         if(cut){
             pushHistory();
             const pi=multiSel.length?multiSel[0].pageIdx:+selected.el.dataset.pageIdx;
@@ -6840,9 +6891,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             doc.pages[pi].els=(doc.pages[pi].els||[]).filter(x=>!ids.includes(x.id));
             clearMulti(); deselectAll();
             renderPageEls(pi); saveDoc();
-            toast(`${els.length}개 잘라냄`,1200);
+            if(singleImg) osCopyImageToClipboard(els[0], true);
+            else toast(`${els.length}개 잘라냄`,1200);
         }else{
-            toast(`${els.length}개 복사됨`,1200);
+            if(singleImg) osCopyImageToClipboard(els[0], false);
+            else toast(`${els.length}개 복사됨`,1200);
         }
     }
     function pasteElements(){
