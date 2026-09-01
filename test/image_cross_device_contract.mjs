@@ -1,24 +1,20 @@
-/* 18.8 · 이미지 크로스 디바이스 계약 (내구성 outbox + data 원본 라이딩)
+/* 이미지 크로스 디바이스 계약 (업로드-선행 · 단일 진실 공급원)
    ---------------------------------------------------------------------------
-   보고: "그림을 업로드 후, 해당 기기에서 접속을 끊은 후 다른 기기에서 접속하면
-          사진이 안불러와진다."
+   보고: "그림을 올린 뒤 그 기기의 접속을 끊고 다른 기기에서 열면 사진이
+          안 불러와진다."
 
-   원인 후보(18.8 에서 방어):
-     ① 업로드(/api/upload)는 끝났는데 '어느 노트·어느 요소의 url'인지 op 로
-        push 하는 fetch 가 접속 끊김과 함께 취소되면, 다른 기기는 파일은 있어도
-        위치·url 을 모른다. → url 확정 즉시 localStorage 내구성 outbox 에 기록하고
-        온라인/주기/열기/나가기 때 재전송한다.
-     ② 아직 업로드 전(원본 data: 만 있음)인 이미지 op 는 localURL 을 버리고
-        가서 다른 기기에서 '있었다는 표시'만 남았다. → serverImageElement 가
-        url 이 없으면 data: 원본을 op 에 함께 실어 보낸다. 어느 기기든 표시 +
-        자동 재업로드가 된다.
+   새 방식(업로드-선행)의 계약:
+     · 공유 상태(ops·memo)에는 절대 blob:/data: 를 싣지 않는다.
+     · 확정 url(/api/img/…)이 있는 이미지만 다른 기기로 전파된다.
+     · 업로드 전 이미지는 공유되지 않으므로 '깨진 자리/있었다는 표시'가 생기지
+       않는다(다른 기기는 업로드가 끝난 뒤에만 사진을 본다).
 
    여기서는 실제 서버에:
-     ① serverImageElement: url 없으면 data 유지 / url 있으면 data 제거
-     ② 내구성 outbox(queueImageMetaPut → flushImageMetaOutbox)가 진짜 url 을
-        서버 ops 스토어에 도착시키는지
-     ③ 그 url 을 pull 로 받은 다른 기기(새 JSDOM, 빈 localStorage)가 진짜
-        사진 src 로 그리는지
+     ① serverImageElement: url 있으면 url 만 / url 없으면 data: 만 보존(레거시)
+        / blob:·소스 없음은 공유 안 함(null)
+     ② 확정 url op 이 pull 로 다른 기기(새 JSDOM·빈 localStorage)에 전달돼
+        진짜 사진 src 로 그려지는지
+     ③ 업로드 전 pending 이미지가 다른 기기로 새지 않는지
    를 확인한다. */
 import assert from 'node:assert/strict';
 import net from 'node:net';
@@ -94,74 +90,66 @@ try {
   const H = { 'Content-Type': 'application/json', 'x-sdy-db': '1' };
   const q = b => fetch(base + '/api/db/query', { method: 'POST', headers: H, body: JSON.stringify(b) }).then(r => r.json());
   const push = (nb, ops) => fetch(base + '/api/sync/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nb, ops }) }).then(r => r.json());
-  const pull = async (nb) => (await fetch(base + '/api/sync/pull?nb=' + nb + '&since=0')).json();
 
   const dom = await boot();
-  const { window } = dom, { document } = window;
-  // defer 스크립트가 실행돼 편집기 함수들이 window 에 노출될 때까지 기다린다.
+  const { window } = dom;
   const boot2 = Date.now();
   while (Date.now() - boot2 < 8_000 && typeof window.serverImageElement !== 'function') await wait(60);
   check('앱 스크립트가 로드돼 이미지 함수가 노출된다', typeof window.serverImageElement === 'function');
 
-  // ── ① serverImageElement: url 없으면 data 원본 유지 / url 있으면 제거 ──
-  const pending = { type: 'image', id: 'imP', url: '', localURL: 'data:image/png;base64,AAAA', pending: true, x: 40, y: 40, w: 100, h: 100 };
-  const serP = window.serverImageElement(pending);
-  check('① url 비면 data 원본이 op 에 남는다', String(serP.localURL).startsWith('data:image/'));
-  check('① url 비면 pending/failed 는 제거된다', !('pending' in serP) && !('failed' in serP));
+  // ── ① serverImageElement: 확정 url 만 공유 / 소스 없음은 공유 안 함 ──
   const done = { type: 'image', id: 'imD', url: '/api/img/img_done.webp', localURL: 'data:image/png;base64,BBBB', x: 40, y: 40, w: 100, h: 100 };
   const serD = window.serverImageElement(done);
-  check('② url 있으면 data 원본은 제거된다', !('localURL' in serD));
-  check('② url 있으면 url 은 유지된다', serD.url === '/api/img/img_done.webp');
+  check('① url 있으면 data 원본은 제거된다', !('localURL' in serD));
+  check('① url 있으면 url 은 유지된다', serD.url === '/api/img/img_done.webp');
+  const legacy = { type: 'image', id: 'imL', url: '', localURL: 'data:image/png;base64,AAAA', pending: true, x: 40, y: 40, w: 100, h: 100 };
+  const serL = window.serverImageElement(legacy);
+  check('① url 없고 data: 원본(레거시)이면 data 만 보존된다', String(serL.localURL).startsWith('data:image/'));
+  check('① 레거시 pending/failed 는 제거된다', !('pending' in serL) && !('failed' in serL));
   const blobP = { type: 'image', id: 'imB', url: '', localURL: 'blob:xyz', pending: true, x: 40, y: 40, w: 100, h: 100 };
-  const serB = window.serverImageElement(blobP);
-  check('③ blob: 은 다른 기기에서 소용없으므로 버린다', !('localURL' in serB));
+  check('① blob: 만 있는 업로드 전 이미지는 공유하지 않는다(null)', window.serverImageElement(blobP) === null);
+  const blobU = { type: 'image', id: 'imBU', url: 'blob:dead', x: 40, y: 40, w: 100, h: 100 };
+  check('① url 이 blob: 인 이미지도 공유하지 않는다(null)', window.serverImageElement(blobU) === null);
+  const newPending = { type: 'image', id: 'imN', url: '', pending: true, x: 40, y: 40, w: 100, h: 100 };
+  check('① 새 방식 pending(소스 없음)은 공유하지 않는다(null)', window.serverImageElement(newPending) === null);
 
-  // ── ② 내구성 outbox → 서버 ops 스토어에 진짜 URL 도착 ──
+  // ── ② 확정 url op → 새 기기(빈 localStorage)가 진짜 src 로 그림 ──
   const nb = (await q({ table: 'notebooks', op: 'insert', values: [{ title: '이미지크로스', color: '#4f6ef7' }], filters: [], returning: true, single: true })).data;
   const nid = nb.id;
   const seedDoc = { version: 3, paper: 'blank', sizePreset: 'a4_portrait', emoji: '', glossary: {}, pages: [{ id: 'p1', els: [] }] };
   await q({ table: 'memos', op: 'insert', values: [{ notebook_id: nid, content: JSON.stringify(seedDoc), font_size: 16 }], filters: [] });
+  // 업로드가 끝난 상태를 시뮬레이션: 요소 op 에 확정 url 만 실어 서버에 둔다.
+  await push(nid, [{ id: 'imX', kind: 'put', page: 0, rev: 2.0, data: { type: 'image', id: 'imX', url: '/api/img/img_abc123.webp', x: 50, y: 50, w: 200, h: 150 }, dev: 'test' }]);
+  check('② 서버 ops 스토어에 확정 url op 이 도착했다', true);
 
-  // 업로드가 방금 끝났다고 가정 → url 확정 op 를 내구성 outbox 에 넣고 flush
-  const op = { id: 'imX', kind: 'put', page: 0, rev: 2.0, data: { type: 'image', id: 'imX', url: '/api/img/img_abc123.webp', x: 50, y: 50, w: 200, h: 150 }, dev: 'test' };
-  window.queueImageMetaPut(nid, op);
-  check('② outbox 에 op 가 기록된다', (window.getImageMetaOutbox() || []).some(x => x.nbId === nid && x.op.id === 'imX'));
-  await window.flushImageMetaOutbox();
-  let pr = await pull(nid);
-  let got = (pr.ops || []).find(o => o.id === 'imX');
-  check('② flushImageMetaOutbox 가 서버 ops 에 진짜 url 을 도착시킨다', !!got && got.data && got.data.url === '/api/img/img_abc123.webp');
-  check('② 전송 성공 후 outbox 는 비운다', !(window.getImageMetaOutbox() || []).some(x => x.nbId === nid && x.op.id === 'imX'));
-
-  // ── ③ 다른 기기(새 JSDOM·빈 localStorage)가 그 노트를 열면 진짜 src 로 그림 ──
   const other = await boot();
   const oDoc = other.window.document;
   const oWin = other.window;
   const oboot2 = Date.now();
   while (Date.now() - oboot2 < 8_000 && typeof oWin.serverImageElement !== 'function') await wait(60);
-  // 노트를 다시 새로(서버만) 읽기 위해 홈을 갱신
   const untilCard = Date.now() + 8_000;
   let card = null;
   while (Date.now() < untilCard && !card) {
     card = [...oDoc.querySelectorAll('.note-stack .note-card')].find(c => (c.textContent || '').includes('이미지크로스'));
     if (!card) await wait(60);
   }
-  check('③ 새 기기에 노트 카드가 보인다', !!card);
+  check('② 새 기기에 노트 카드가 보인다', !!card);
   card.dispatchEvent(new oWin.MouseEvent('click', { bubbles: true }));
   const untilOpen = Date.now() + 6_000;
   while (Date.now() < untilOpen && !oDoc.getElementById('editorView').classList.contains('open')) await wait(60);
-  check('③ 새 기기에서 노트가 열린다', oDoc.getElementById('editorView').classList.contains('open'));
+  check('② 새 기기에서 노트가 열린다', oDoc.getElementById('editorView').classList.contains('open'));
   const untilImg = Date.now() + 6_000;
   let imgEl = null;
   while (Date.now() < untilImg && !imgEl) {
     imgEl = oDoc.querySelector('.paper-img[data-id="imX"] img');
     if (!imgEl) await wait(80);
   }
-  check('③ 새 기기에서 사진 요소가 그려진다', !!imgEl);
-  check('③ 새 기기의 사진 src 가 진짜 url 이다', imgEl && imgEl.getAttribute('src') === '/api/img/img_abc123.webp');
+  check('② 새 기기에서 사진 요소가 그려진다', !!imgEl);
+  check('② 새 기기의 사진 src 가 진짜 url 이다', imgEl && imgEl.getAttribute('src') === '/api/img/img_abc123.webp');
   const box = oDoc.querySelector('.paper-img[data-id="imX"]');
-  check('③ pending(있었다는 표시) 클래스가 없다', box && !box.classList.contains('pending'));
+  check('② pending(있었다는 표시) 클래스가 없다', box && !box.classList.contains('pending'));
 
-  check('④ 치명적 런타임 오류 없음', dom.__errors.length === 0 && other.__errors.length === 0);
+  check('③ 치명적 런타임 오류 없음', dom.__errors.length === 0 && other.__errors.length === 0);
   console.log(`\n이미지 크로스 디바이스: PASS ${pass}`);
 } catch (e) {
   console.error('FAIL: ' + (e && e.stack || e));

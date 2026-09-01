@@ -2742,13 +2742,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             try{ if(pendingNB) flushSync(); }catch(e){}
             try{ clearTimeout(opsTimer); pushOps(); }catch(e){}
             try{ clearTimeout(pushTimer); pushSettingsNow(); }catch(e){}   // 설정(폴더 등)도 즉시 동기화
-            // 18.8 · 나가기 직전 업로드 완료 이미지의 진짜 URL 을 한 번 더 재전송
-            try{ flushImageMetaOutbox(); }catch(e){}
         }else{
             flushOutbox(true);
             try{ refreshNBs(); }catch(e){}
             setTimeout(()=>{ try{ retryBlockedImport(); }catch(e){} },400);
-            try{ flushImageMetaOutbox(); }catch(e){}
         }
     });
     window.addEventListener('pagehide',()=>{
@@ -2757,7 +2754,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{ if(pendingNB) flushSync(); }catch(e){}
         try{ clearTimeout(opsTimer); pushOps(); }catch(e){}
         try{ clearTimeout(pushTimer); pushSettingsNow(); }catch(e){}   // 설정(폴더 등)도 즉시 동기화
-        try{ flushImageMetaOutbox(); }catch(e){}
     });
     setInterval(()=>{ if(outboxCount()) flushOutbox(true); },20000);
     // ── 실시간 설정 동기화(구글독스처럼): 다른 기기의 북마크/폴더 변경을 주기적으로 반영 ──
@@ -5551,8 +5547,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         saveLastPos();
         // 밀린 요소 연산(요소 단위 동기화)도 지금 바로 보낸다 — 나가기 전 저장
         try{ clearTimeout(opsTimer); pushOps(); }catch(e){}
-        // 18.8 · 업로드 완료 이미지의 진짜 URL 내구성 outbox 재전송
-        try{ flushImageMetaOutbox(); }catch(e){}
         let _impFlush=null;
         try{ _impFlush=flushImportedSave(); }catch(e){}
         flushSync();                            // 서버(memo) 동기화
@@ -5682,24 +5676,22 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function serverImageElement(el){
         if(!el||el.type!=='image') return el;
         const c={...el};
-        const u=String(c.url||'');
+        let u=String(c.url||'');
         const l=String(c.localURL||'');
-        const hasDataSrc=l.startsWith('data:image/');
         delete c.pending; delete c.failed;
-        if(u.startsWith('blob:')) c.url='';
-        // 18.8 · 서버로 보내는 이미지 op 는 '진짜 URL 이 있으면' 로컬 소스를 버린다.
-        //   url 이 아직 없는데 data: 원본을 물고 있으면 그 원본을 op 에 함께 실어 보낸다.
-        //   (예전엔 무조건 localURL 을 지워서, 업로드가 끝나기 전에 접속을 끊으면
-        //    다른 기기에서 '사진이 있었다는 표시'만 남았다. 이제 원본이 op 를 타고
-        //    가 어느 기기에서든 표시 + 서버로 재업로드가 가능하다. blob: 은 새로고침
-        //    뒤 소용없으므로 그대로 버린다.)
+        if(u.startsWith('blob:')) u='';     // blob: 은 그 문서에서만 유효 → 절대 공유하지 않는다
         if(u){
-            delete c.localURL;
+            // 확정 URL(/api/img/…)이 있으면 로컬 소스는 버리고 서버 주소만 싣는다.
+            c.url=u; delete c.localURL;
             return c;
         }
-        if(hasDataSrc){ if(!c.localURL) c.localURL=l; return c; }
-        delete c.localURL;
-        return c;
+        // url 이 아직 없는 이미지:
+        //  · 옛 방식으로 data: 원본을 물고 있으면 그것만 보존한다(레거시 자가복구용).
+        //  · 그 외(새 방식의 pending·blob 미리보기)는 공유 상태에 내보내지 않는다.
+        //    → 다른 기기에 '깨진 자리/있었다는 표시'를 만들지 않고, 업로드가 끝난
+        //      뒤에만 사진이 나타난다. (업로드-선행: 단일 진실 공급원)
+        if(l.startsWith('data:image/')){ c.localURL=l; return c; }
+        return null;
     }
     function sanitizeSyncPages(pages){
         if(!Array.isArray(pages)) return pages;
@@ -5711,6 +5703,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(!el||el.type!=='image') continue;
                 const u=String(el.url||'');
                 const l=String(el.localURL||'');
+                // 새 방식 pending(공유할 소스가 없는 이미지)은 스냅샷에서 뺀다.
+                if(!u && !l.startsWith('data:image/')){ dirty=true; break outer; }
                 if(('localURL' in el)&&!l.startsWith('data:')){ dirty=true; break outer; }
                 if(('pending' in el)||('failed' in el)||u.startsWith('blob:')){ dirty=true; break outer; }
             }
@@ -5718,23 +5712,29 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!dirty) return pages;
         return pages.map(pg=>{
             if(!pg||!Array.isArray(pg.els)) return pg;
-            return {...pg, els: pg.els.map(el=>{
-                if(!el||el.type!=='image') return el;
+            const els=[];
+            for(const el of pg.els){
+                if(!el||el.type!=='image'){ els.push(el); continue; }
                 const clean={...el};
                 const l=String(clean.localURL||'');
                 const u=String(clean.url||'');
+                if(!u && !l.startsWith('data:image/')){
+                    // 업로드 전(공유 소스 없음) → 공유 스냅샷에 아예 싣지 않는다.
+                    continue;
+                }
                 if(l.startsWith('data:') && !u){
-                    // 아직 서버 업로드 전이지만 원본 data 를 보존 → 다른 기기에서
-                    // 표시 + 재업로드 가능. 필드는 pending·localURL 로 구분해 둔다.
+                    // 옛 방식: 원본 data 보존(다른 기기에서 표시 + 재업로드).
                     delete clean.failed;
                     clean.pending=true;
                     if(!clean.localURL) clean.localURL=l;
-                    return clean;
+                    els.push(clean);
+                    continue;
                 }
                 delete clean.localURL; delete clean.pending; delete clean.failed;
                 if(u.startsWith('blob:')) clean.url='';
-                return clean;
-            })};
+                els.push(clean);
+            }
+            return {...pg, els};
         });
     }
     function serializeDoc(d,nbId){
@@ -7117,16 +7117,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 사용하게 된다. data:는 아직 서버 URL이 없는 경우에만 미리보기다.
         const remoteSrc=String(el.url||'');
         const localSrc=String(el.localURL||'');
+        const prevSrc=pendingImgSrcs.get(el.id)||'';
         img.src=(remoteSrc&&!/^blob:/i.test(remoteSrc))
             ? remoteSrc
-            : (localSrc&&!/^blob:/i.test(localSrc)?localSrc:'');
+            : (prevSrc?prevSrc:(localSrc&&!/^blob:/i.test(localSrc)?localSrc:''));
         if(el.pending && !remoteSrc) w.classList.add('pending');
         if(el.failed) w.classList.add('failed');
         if(el.isMath){ w.classList.add('math'); w.title='PDF 수식'; }
         if(el.isBg){ w.classList.add('pdf-bg'); w.title='PDF 원본 배경'; }
         if(el.locked) w.classList.add('el-lock');
         // ★ 모바일: 더블클릭 대신 한 번 탭으로 이미지 확대 (dblclick은 터치에서 불안정)
-        img.ondblclick=(e)=>{ e.stopPropagation(); document.getElementById('vImg').src=(remoteSrc&&!/^blob:/i.test(remoteSrc))?remoteSrc:(localSrc&&!/^blob:/i.test(localSrc)?localSrc:''); document.getElementById('viewer').style.display='flex'; };
+        img.ondblclick=(e)=>{ e.stopPropagation(); document.getElementById('vImg').src=(remoteSrc&&!/^blob:/i.test(remoteSrc))?remoteSrc:(prevSrc?prevSrc:(localSrc&&!/^blob:/i.test(localSrc)?localSrc:'')); document.getElementById('viewer').style.display='flex'; };
         w.appendChild(img);
         // 테두리를 잡으면 이동 (손잡이는 이 위에 그려진다)
         ['top','bottom','left','right'].forEach(side=>{
@@ -15419,18 +15420,62 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
     }
 
-    // 붙여넣기/미리보기용 data URL 헬퍼.
-    // 14.17 · 업로드가 끝나기 전에 탭을 닫거나 재접속해도 사진이 사라지지 않도록,
-    //   깨지는 blob: 대신 data: 원본을 로컬 저장(및 서버 메모 스냅샷)에 남긴다.
-    //   업로드가 성공하면 applyUploadedURL 이 localURL 을 지워 서버 URL 만 남긴다.
-    function fileToDataURL(blob){
-        return new Promise((resolve,reject)=>{
-            const r=new FileReader();
-            r.onload=()=>resolve(r.result);
-            r.onerror=()=>reject(r.error||new Error('이미지 읽기 실패'));
-            r.readAsDataURL(blob);
+    // ===== 새 이미지 저장 방식 (업로드-선행 · 단일 진실 공급원) =====
+    // 원칙: 공유 상태(ops·memo)에는 절대 blob:/data: 를 싣지 않는다.
+    //   · 내 화면 미리보기 = pendingImgSrcs 의 object URL (휘발성, 공유 안 됨)
+    //   · 탭을 닫아도 살아남는 원본 = IndexedDB (base64 가 아닌 바이너리)
+    //   · 업로드(/api/upload)가 끝나야 비로소 url(/api/img/…)을 확정하고
+    //     그때부터 요소 op/memo 로 공유된다 → 다른 기기에 '깨진 자리'가 생기지 않는다.
+    const pendingImgSrcs=new Map();        // el.id → objectURL (휘발성 미리보기)
+    const IMG_BLOB_DB='sdy_imgblobs', IMG_BLOB_STORE='blobs';
+    const _idbMem=new Map();               // IndexedDB 없는 환경(테스트)용 fallback
+    let _idbDbPromise=null;
+    function idbOpen(){
+        if(!window.indexedDB) return Promise.resolve(null);
+        if(_idbDbPromise) return _idbDbPromise;
+        _idbDbPromise=new Promise(resolve=>{
+            try{
+                const req=window.indexedDB.open(IMG_BLOB_DB,1);
+                req.onupgradeneeded=()=>{ try{ req.result.createObjectStore(IMG_BLOB_STORE); }catch(e){} };
+                req.onsuccess=()=>resolve(req.result);
+                req.onerror=()=>resolve(null);
+                req.onblocked=()=>resolve(null);
+            }catch(e){ resolve(null); }
+        });
+        return _idbDbPromise;
+    }
+    async function idbPutBlob(id,file){
+        const db=await idbOpen();
+        if(!db){ try{ _idbMem.set(id,file); return true; }catch(e){ return false; } }
+        return new Promise(res=>{
+            try{
+                const r=db.transaction(IMG_BLOB_STORE,'readwrite').objectStore(IMG_BLOB_STORE).put(file,id);
+                r.onsuccess=()=>res(true); r.onerror=()=>res(false);
+            }catch(e){ res(false); }
         });
     }
+    async function idbGetBlob(id){
+        const db=await idbOpen();
+        if(!db) return _idbMem.get(id)||null;
+        return new Promise(res=>{
+            try{
+                const r=db.transaction(IMG_BLOB_STORE,'readonly').objectStore(IMG_BLOB_STORE).get(id);
+                r.onsuccess=()=>res(r.result||null); r.onerror=()=>res(null);
+            }catch(e){ res(null); }
+        });
+    }
+    async function idbDelBlob(id){
+        const db=await idbOpen();
+        if(!db){ _idbMem.delete(id); return true; }
+        return new Promise(res=>{
+            try{
+                const r=db.transaction(IMG_BLOB_STORE,'readwrite').objectStore(IMG_BLOB_STORE).delete(id);
+                r.onsuccess=()=>res(true); r.onerror=()=>res(false);
+            }catch(e){ res(false); }
+        });
+    }
+
+    // 옛 방식 data: URL → File (레거시 pending 복구 전용)
     function dataURLToFile(dataUrl,name){
         try{
             const [head,b64]=String(dataUrl||'').split(',');
@@ -15442,42 +15487,28 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             return new File([bytes], name, {type:mime});
         }catch(e){ return null; }
     }
-    // 원본은 다소 커도 되지만, 메모와 함께 전달될 수 있으므로 브라우저 압축본을
-    // data URL 로 만들어 용량 폭주를 줄인다. 실패하면 빈 문자열(blob 미리보기 유지).
-    async function pendingDataURLForFile(file){
-        try{
-            const c=await compressImg(file);
-            const s=await fileToDataURL(c);
-            return String(s||'').startsWith('data:image/')?s:'';
-        }catch(e){ return ''; }
-    }
 
-    // 파일 목록 → 배치 준비물 (로컬 미리보기 URL·자연 크기·맞춤 상자)을 만든다.
+    // 파일 목록 → 배치 준비물 (휘발성 미리보기 URL·자연 크기·맞춤 상자)
     async function filesToImgItems(files){
         const list=Array.from(files||[]).filter(f=>f&&f.type&&f.type.startsWith('image/'));
         const items=[];
         for(const f of list){
-            const url=URL.createObjectURL(f);
-            const nat=await imageNaturalSize(url);   // 로컬이라 즉시 완료
-            let local=url;
-            const data=await pendingDataURLForFile(f);
-            if(data){
-                local=data;
-                try{ URL.revokeObjectURL(url); }catch(e){}
-            }
-            items.push({file:f,url:local,box:fitBox(nat.w,nat.h)});
+            const url=URL.createObjectURL(f);   // 배치/미리보기 전용 (공유 안 됨)
+            const nat=await imageNaturalSize(url);
+            items.push({file:f,url,box:fitBox(nat.w,nat.h)});
         }
         return items;
     }
-    // 그림 한 장을 문서 좌표 (cx,cy) 중심에 둔다. 업로드는 큐가 백그라운드로 이어서 처리.
+    // 그림 한 장을 문서 좌표 (cx,cy) 중심에 둔다. 업로드는 큐가 백그라운드로 처리.
+    // url 은 업로드가 끝난 뒤 서버 주소(/api/img/…)로 채운다. 그 전까지는
+    // 공유 상태에 아무것도 내보내지 않는다(serverImageElement 가 null 반환).
     function placeImgItem(item,pageIdx,cx,cy){
         pushHistory();
         const c=clampEl(cx-item.box.w/2,cy-item.box.h/2,item.box.w,item.box.h);
-        // 14.15 · blob 미리보기는 localURL 에만 두고, url 은 업로드가 끝난 뒤
-        //   실제 서버 주소(/api/img/…)로 채운다. blob URL 을 url 로 저장하면
-        //   다른 기기·새로고침 뒤에 깨진 '사진 아이콘'으로 남는다.
-        const el={type:'image',id:uid('i'),url:'',localURL:item.url,pending:true,
+        const el={type:'image',id:uid('i'),url:'',pending:true,
             x:Math.round(c.x),y:Math.round(c.y),w:item.box.w,h:item.box.h};
+        pendingImgSrcs.set(el.id,item.url);          // 내 화면 미리보기만
+        idbPutBlob(el.id,item.file);                 // 탭 꺼져도 살아남는 원본
         doc.pages[pageIdx].els.push(el);
         renderPageEls(pageIdx);
         uploadQueue.push({file:item.file,id:el.id,pageIdx,nbId:curNB.id});
@@ -15486,31 +15517,44 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
 
     // 어느 기기에서든 '아직 서버 주소(/api/img)가 없는 이미지'를 자동 재업로드한다.
-    // 14.17 · 메모 스냅샷에 data: localURL 을 함께 보관하므로, 원래 기기가 아니라
-    //   다른 기기에서 노트를 열어도 소스를 다시 올릴 수 있어 '서버에서 불러오기'로
-    //   복구된다. blob: 만 있는 경우는 재접속 후엔 소용이 없어 건너뛴다.
-    function enqueuePendingImageUploads(){
-        if(!doc||!curNB) return;
-        const nbId=curNB.id;
-        (doc.pages||[]).forEach((pg,pi)=>((pg&&pg.els)||[]).forEach(el=>{
-            if(!el||el.type!=='image') return;
-            if(_imgRealURL(el)) return;
-            const l=String(el.localURL||'');
-            if(!l.startsWith('data:image/')) return;
-            if(uploadQueue.some(j=>j.id===el.id)) return;
-            if(uploadCurrentId===el.id) return;
-            const n=uploadRetryCount.get(el.id)||0;
-            if(n>=UPLOAD_MAX_RETRY) return;
-            const file=dataURLToFile(l,`repair-${el.id}.png`);
-            if(!file) return;
-            uploadQueue.push({file,id:el.id,pageIdx:pi,nbId});
-            uploadTotal++; updateUploadBadge();
-        }));
-        if(uploadQueue.length) runUploadQueue();
+    //  · 새 방식: 이 기기 IndexedDB 에 원본이 남아 있는 pending 이미지.
+    //  · 옛 방식(레거시): 메모 스냅샷에 data: localURL 이 남아 있는 이미지.
+    async function enqueuePendingImageUploads(){
+        try{
+            if(!doc||!curNB) return;
+            const nbId=curNB.id;
+            let queued=false;
+            for(let pi=0;pi<(doc.pages||[]).length;pi++){
+                const els=(doc.pages[pi]&&doc.pages[pi].els)||[];
+                for(const el of els){
+                    if(!el||el.type!=='image') continue;
+                    if(_imgRealURL(el)) continue;
+                    if(uploadQueue.some(j=>j.id===el.id)) continue;
+                    if(uploadCurrentId===el.id) continue;
+                    const n=uploadRetryCount.get(el.id)||0;
+                    if(n>=UPLOAD_MAX_RETRY) continue;
+                    const l=String(el.localURL||'');
+                    let file=null;
+                    if(l.startsWith('data:image/')) file=dataURLToFile(l,`repair-${el.id}.png`);
+                    else file=await idbGetBlob(el.id);
+                    if(!file) continue;
+                    if(!pendingImgSrcs.has(el.id)){
+                        try{ pendingImgSrcs.set(el.id,URL.createObjectURL(file)); }catch(e){}
+                    }
+                    const src=pendingImgSrcs.get(el.id);
+                    const node=document.querySelector(`#pagesStage .paper-img[data-id="${el.id}"] img`);
+                    if(node&&src&&node.getAttribute('src')!==src) node.src=src;
+                    uploadQueue.push({file,id:el.id,pageIdx:pi,nbId});
+                    uploadTotal++; updateUploadBadge();
+                    queued=true;
+                }
+            }
+            if(queued) runUploadQueue();
+        }catch(e){}
     }
-    // 재업로드 트리거: 온라인 복귀, 주기, 탭 복귀, 열기 직후.
-    window.addEventListener('online',()=>{ setTimeout(()=>{ try{ enqueuePendingImageUploads(); flushImageMetaOutbox(); }catch(e){} },300); });
-    setInterval(()=>{ try{ enqueuePendingImageUploads(); flushImageMetaOutbox(); }catch(e){} },8000);
+    // 재업로드 트리거: 온라인 복귀, 주기, 열기 직후.
+    window.addEventListener('online',()=>{ setTimeout(()=>{ try{ enqueuePendingImageUploads(); }catch(e){} },300); });
+    setInterval(()=>{ try{ enqueuePendingImageUploads(); }catch(e){} },8000);
 
     async function uploadImgs(files,atPoint){
         if(!doc) return;
@@ -15553,8 +15597,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
 
     async function uploadOne(file){
-        // 14.12 · 이미지는 항상 이 서버(/api/upload → 오라클 디스크)에 올린다.
-        // 예전의 Cloudinary 직접 업로드 폴백은 삭제됐다 (쿼터 초과 방지).
+        // 이미지는 항상 이 서버(/api/upload → 오라클 디스크)에 올린다.
         try{
             const fd=new FormData();
             fd.append('file',file); fd.append('quality','78'); fd.append('max_width','1920');
@@ -15571,43 +15614,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return null;
     }
 
-    // 업로드 완료 → blob URL 을 실제 URL 로 교체 (열려있지 않은 노트도 반영)
-    // 18.8 · 이미지 '진짜 URL'을 서버 ops 스토어에 반드시 도착시키는 내구성 outbox.
-    //   uploadOne(/api/upload) 은 파일을 서버에 이미 올렸지만 그 '메타데이터'(어느
-    //   노트·어느 요소에 이 URL 인지)를 ops 로 push 하는 fetch 가 접속 끊김과 함께
-    //   취소되면, 다른 기기는 사진 파일은 있어도 '어느 자리에 어떤 url 인지'를 모른다.
-    //   → url 확정 즉시 localStorage 에도 기록해 두고, 온라인/주기/열기/나가기 때
-    //     재전송한다. 이게 '그림 업로드 후 다른 기기에서 안 불러와지는' 고질 문제를
-    //     막는 핵심이다.
-    const IMG_META_KEY='sdy_imgmeta_outbox';
-    function getImageMetaOutbox(){ try{ return JSON.parse(localStorage.getItem(IMG_META_KEY)||'[]'); }catch(e){ return []; } }
-    function saveImageMetaOutbox(o){ try{ localStorage.setItem(IMG_META_KEY,JSON.stringify(o.slice(-120))); }catch(e){} }
-    function queueImageMetaPut(nbId, op){
-        const id=String((op&&op.id)||'');
-        if(!id||!nbId) return;
-        const o=getImageMetaOutbox();
-        const i=o.findIndex(x=>x.nbId===nbId&&x.op&&String(x.op.id)===id);
-        if(i>=0) o[i]={nbId,op,ts:Date.now()}; else o.push({nbId,op,ts:Date.now()});
-        saveImageMetaOutbox(o);
-    }
-    // 내구성 outbox 를 서버로 전송. 성공한 것만 지운다 (재접속 시 남은 것 재시도).
-    async function flushImageMetaOutbox(){
-        let o=getImageMetaOutbox();
-        if(!o.length) return;
-        const byNb={};
-        o.forEach(x=>{ (byNb[x.nbId]=byNb[x.nbId]||[]).push(x); });
-        for(const nbId of Object.keys(byNb)){
-            const ops=byNb[nbId].map(x=>x.op).slice(0,40);
-            try{
-                const ok=await pushOpsFor(nbId, ops);
-                if(ok){
-                    const ids=new Set(ops.map(p=>p.id));
-                    saveImageMetaOutbox(getImageMetaOutbox().filter(x=>!(x.nbId===nbId&&ids.has(String(x.op.id)))));
-                }
-            }catch(e){}
-        }
-    }
-
+    // 업로드 완료 → 확정 URL 교체. (열려있지 않은 노트도 반영)
     async function applyUploadedURL(job,url,publicId){
         const patch=(d)=>{
             let hit=false;
@@ -15618,9 +15625,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     delete el.pending; delete el.failed; delete el.localURL; hit=true;
                 }
             }));
-            if(hit){ try{ uploadRetryCount.delete(job.id); }catch(e){} }
             return hit;
         };
+        // 확정됐으니 휘발성 미리보기·IndexedDB 원본은 더 이상 필요 없다.
+        try{
+            const prev=pendingImgSrcs.get(job.id);
+            if(prev){ URL.revokeObjectURL(prev); pendingImgSrcs.delete(job.id); }
+        }catch(e){}
+        try{ await idbDelBlob(job.id); }catch(e){}
+        try{ uploadRetryCount.delete(job.id); }catch(e){}
+
         let fixed=null;
         if(curNB&&curNB.id===job.nbId&&doc){
             if(patch(doc)){
@@ -15630,33 +15644,26 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     const im=node.querySelector('img');
                     if(im) im.src=url;
                 }
-                // 18.8 · 업로드가 끝난 이미지 url 은 400ms 디바운스를 기다리지 않고
-                //   즉시 로컬 저장 + 서버 ops/memo 에 반영한다. (탭을 빨리 닫아도
-                //   디바운스가 안 타서 url 이 날아가 '다른 기기에서 안 보이는' 버그)
+                // url 확정 즉시 로컬 저장 + 서버 ops 반영 (디바운스 대기 없이).
                 try{ flushSaveDoc(); }catch(_e){ try{ saveDoc(); }catch(_e2){} }
                 try{ clearTimeout(opsTimer); pushOps(); }catch(_e){}
                 try{ if(pendingNB) flushSync(); }catch(_e){}
                 fixed=doc;
             }
         }else{
-            // 노트가 열려 있지 않은 경우: 로컬(저장소)에 확정하고, 요소 op 만 바로 올린다.
-            //  (memo 채널은 열려 있지 않은 노트의 memoId 를 여기서 정확히 알 수 없어
-            //   ops 를 신뢰한다 — 어느 기기든 pull 이 진짜 url 을 가져온다)
+            // 노트가 닫혀 있는 동안 업로드가 끝난 경우: 로컬에 확정하고 요소 op 만
+            // 바로 올린다. (재접속 시 initSync 가 어차피 다시 밀어준다)
             const d=loadDoc(job.nbId);
-            if(patch(d)){ try{ persistDoc(job.nbId,d); }catch(_e){} fixed=d; }
+            if(patch(d)){
+                try{ persistDoc(job.nbId,d); }catch(_e){}
+                (d.pages||[]).forEach((pg,pi)=>(pg.els||[]).forEach(el=>{
+                    if(el.id===job.id){
+                        try{ pushOpsFor(job.nbId,[{id:el.id,kind:'put',page:pi,rev:_nbNow(),data:serverImageElement(el),dev:SYNC_DEV}]); }catch(_e){}
+                    }
+                }));
+                fixed=d;
+            }
         }
-        // 18.8 · url 확정 op 를 내구성 outbox 에 남기고 즉시 서버로 보낸다.
-        //   실패해도 남아 있으므로 나중에 재전송된다.
-        if(fixed){
-            (fixed.pages||[]).forEach((pg,pi)=>(pg.els||[]).forEach(el=>{
-                if(el.id===job.id){
-                    try{
-                        queueImageMetaPut(job.nbId,{id:el.id,kind:'put',page:pi,rev:_nbNow(),data:serverImageElement(el),dev:SYNC_DEV});
-                    }catch(e){}
-                }
-            }));
-        }
-        await flushImageMetaOutbox();
     }
     function markUploadFailed(job){
         const node=document.querySelector(`#pagesStage .paper-img[data-id="${job.id}"]`);
@@ -15667,7 +15674,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const n=(uploadRetryCount.get(job.id)||0)+1;
         uploadRetryCount.set(job.id,n);
         if(n===1) toast('일부 이미지 업로드 실패 · 자동으로 다시 시도합니다',2600);
-        // data: 원본이 남아 있으면 짧은 지연 후 재업로드 (영원히 로컬만 되는 것 방지)
+        // 원본(IndexedDB)이 남아 있으면 짧은 지연 후 재업로드 (영원히 로컬만 되는 것 방지)
         if(n<UPLOAD_MAX_RETRY){
             setTimeout(()=>{ try{ enqueuePendingImageUploads(); }catch(e){} }, Math.min(1600*n, 6000));
         }
@@ -17113,12 +17120,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         //   비우거나 엉뚱한 ops 를 푸시할 수 있다. 시작 시점 신원을 고정.
         const _d0=doc, _nb0=curNB.id;
         syncState();
-        // 14.17 · 메모에 data: 원본이 남아 있는 아직 서버 안 올라간 이미지를
+        // 14.17 · 메모에 data: 원본이 남아 있는 아직 서버 안 올라간 이미지와,
+        //   이 기기 IndexedDB 에 원본이 남아 있는 새 방식 pending 이미지를
         //   어느 기기에서 열든 즉시 서버(/api/img)로 다시 올린다.
         try{ enqueuePendingImageUploads(); }catch(e){}
-        // 18.8 · 업로드는 끝났는데 ops push 를 못 한(내구성 outbox 남은) 이미지의
-        //   진짜 URL 을 지금 보낸다. (다른 기기를 위해 즉시 반영)
-        try{ flushImageMetaOutbox(); }catch(e){}
         // 18.4 · pull 전(메모·로컬이 아는) 이미지의 진짜 URL 을 기억한다.
         //   ops 스토어에 업로드 전(pending·빈 url) 상태가 남아 있어도
         //   이 URL 로 되돌려 "사진이 있었다는 표시"가 남지 않게 한다.
@@ -17162,9 +17167,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             doc.__baseRev.set(el.id, doc.__localRev.get(el.id)||0);
             if(skipPush) return;
             if(!remoteIds.has(el.id)){
+                const data=serverImageElement(el);
+                if(!data) return;   // 업로드 전 이미지는 공유하지 않는다
                 const rev=_nbNow();
                 doc.__localRev.set(el.id,rev);
-                ops.push({id:el.id,kind:'put',page:pi,rev,data:serverImageElement(el),dev:SYNC_DEV});
+                ops.push({id:el.id,kind:'put',page:pi,rev,data,dev:SYNC_DEV});
             }
         });});
         doc.__lastPages=(doc.pages||[]).map(p=>p.id).join(',');
@@ -17379,7 +17386,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     const im=domEl.querySelector('img');
                     const remote=String(el.url||'');
                     const local=String(el.localURL||'');
-                    const src=(remote&&!/^blob:/i.test(remote))?remote:(local&&!/^blob:/i.test(local)?local:'');
+                    const prev=pendingImgSrcs.get(el.id)||'';
+                    const src=(remote&&!/^blob:/i.test(remote))?remote:(prev?prev:(local&&!/^blob:/i.test(local)?local:''));
                     if(im&&im.getAttribute('src')!==src) im.src=src;
                     domEl.classList.toggle('pending',!!el.pending&&!remote);
                     domEl.classList.toggle('failed',!!el.failed);
@@ -17492,12 +17500,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         (doc.pages||[]).forEach((pg,pi)=>{
             (pg.els||[]).forEach(el=>{
                 seen.add(el.id);
+                const data=serverImageElement(el);
+                if(!data) return;   // 업로드 전 이미지(공유 소스 없음)는 op 로 내보내지 않는다
                 const h=JSON.stringify(el);
                 if(doc.__lastHash.get(el.id)!==h){
                     doc.__lastHash.set(el.id,h);
                     const rev=_nbNow();
                     doc.__localRev.set(el.id,rev);
-                    ops.push({id:el.id,kind:'put',page:pi,rev,data:serverImageElement(el),dev:SYNC_DEV,
+                    ops.push({id:el.id,kind:'put',page:pi,rev,data,dev:SYNC_DEV,
                               prevRev:(doc.__baseRev&&doc.__baseRev.get(el.id))||0});
                 }
             });

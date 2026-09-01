@@ -1,5 +1,33 @@
 # Clipboard-Image Paste → Disconnection-Dependent Visibility Failure
 
+> **⚠️ 2026-09 재설계로 대체됨 (업로드-선행 · 단일 진실 공급원).**
+> 이 문서의 1~6절은 **옛 방식**(blob:/data: 를 공유 상태에 싣고 pending/failed
+> 플래그 + `IMG_META` 내구성 outbox 로 복구하던 구조)의 근본원인 분석이다.
+> 그 구조는 아래처럼 완전히 갈아엎었고, 옛 방어(①data: 원본 라이딩 ②outbox
+> ③자동 재업로드 치유)는 더 이상 신규 업로드에 쓰이지 않는다.
+>
+> **새 구조 요약**
+> - 공유 상태(ops·memo)에는 **절대 blob:/data: 를 싣지 않는다.** 확정 `url`
+>   (`/api/img/…`)이 있는 이미지만 전파된다.
+> - 붙여넣기/파일로 넣으면 내 화면에 즉시 표시(휘발성 object URL =
+>   `pendingImgSrcs`), 원본 바이너리는 **IndexedDB**(`sdy_imgblobs`)에 보관.
+> - `/api/upload`가 끝나 `url`이 확정된 뒤에야 요소 op/memo 로 공유된다
+>   (`serverImageElement` 가 소스 없는 이미지에 `null` 반환 → op 미전송).
+> - 따라서 '업로드 전에 보낸 기기가 꺼지면 다른 기기에 깨진 자리가 남는다'는
+>   원래 결함(FM-1~3)이 구조적으로 사라진다. 다른 기기는 업로드가 끝난 뒤에만
+>   사진을 본다.
+> - 옛 데이터(이미 저장된 `data:` pending)는 그대로 두고, 기존 `data:` 자가복구
+>   경로는 레거시 호환용으로 남겨 둔다(새 업로드에만 새 방식 적용).
+>
+> **관련 코드** — `sdynotes.js`: `pendingImgSrcs`/`idbPutBlob`·`idbGetBlob`·
+> `idbDelBlob`, `filesToImgItems`, `placeImgItem`, `enqueuePendingImageUploads`,
+> `applyUploadedURL`, `serverImageElement`, `sanitizeSyncPages`.
+> **계약 테스트** — `test/image_cross_device_contract.mjs`,
+> `test/image_paste_persistence_contract.mjs`, `test/note_image_reopen_contract.mjs`
+> (`npm run test:image`).
+
+---
+
 **QA deliverable:** root-cause analysis + test-case suite (unit / integration / E2E) + automated no-sleep test script
 **Automated suite:** `test/image_paste_persistence_contract.mjs` — `npm run test:pasteimg` (34 checks, ~17 s, 0 arbitrary sleeps)
 **Related existing coverage:** `test/image_cross_device_contract.mjs`, `test/note_image_reopen_contract.mjs` (`npm run test:image`)
