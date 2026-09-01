@@ -1,30 +1,37 @@
 # Clipboard-Image Paste → Disconnection-Dependent Visibility Failure
 
-> **⚠️ 2026-09 재설계로 대체됨 (업로드-선행 · 단일 진실 공급원).**
+> **⚠️ 2026-09 v3 재설계로 대체됨 (업로드-선행 · 단순·확실).**
 > 이 문서의 1~6절은 **옛 방식**(blob:/data: 를 공유 상태에 싣고 pending/failed
 > 플래그 + `IMG_META` 내구성 outbox 로 복구하던 구조)의 근본원인 분석이다.
-> 그 구조는 아래처럼 완전히 갈아엎었고, 옛 방어(①data: 원본 라이딩 ②outbox
-> ③자동 재업로드 치유)는 더 이상 신규 업로드에 쓰이지 않는다.
+> 그 구조와 그 뒤의 중간 단계(pendingImgSrcs 미리보기 + IndexedDB 원본 보관 +
+> 백그라운드 업로드 큐 + 8초 주기 자가복구)까지 전부 걷어내고, 성능을 조금
+> 양보하는 대신 실패 모드가 구조적으로 없는 단순한 알고리즘으로 갈아엎었다.
 >
-> **새 구조 요약**
-> - 공유 상태(ops·memo)에는 **절대 blob:/data: 를 싣지 않는다.** 확정 `url`
->   (`/api/img/…`)이 있는 이미지만 전파된다.
-> - 붙여넣기/파일로 넣으면 내 화면에 즉시 표시(휘발성 object URL =
->   `pendingImgSrcs`), 원본 바이너리는 **IndexedDB**(`sdy_imgblobs`)에 보관.
-> - `/api/upload`가 끝나 `url`이 확정된 뒤에야 요소 op/memo 로 공유된다
->   (`serverImageElement` 가 소스 없는 이미지에 `null` 반환 → op 미전송).
-> - 따라서 '업로드 전에 보낸 기기가 꺼지면 다른 기기에 깨진 자리가 남는다'는
->   원래 결함(FM-1~3)이 구조적으로 사라진다. 다른 기기는 업로드가 끝난 뒤에만
->   사진을 본다.
-> - 옛 데이터(이미 저장된 `data:` pending)는 그대로 두고, 기존 `data:` 자가복구
->   경로는 레거시 호환용으로 남겨 둔다(새 업로드에만 새 방식 적용).
+> **v3 구조 요약 (업로드-선행 · 단순·확실)**
+> - **업로드가 배치보다 먼저다.** 사진을 붙여넣거나 파일로 넣으면 먼저
+>   `/api/upload` 로 올리고(진행은 `#uploadBadge` 로 표시), 서버가 준 url
+>   (`/api/img/…`)을 **실제 GET 으로 다시 읽어 검증**한 뒤에야 요소를 만든다
+>   (`uploadImageStrict` — 3회 재시도, 2회째부터 압축본 폴백).
+> - 요소는 태어날 때부터 확정 url 만 갖는다 — **pending 상태, blob:/data:
+>   로컬 소스, IndexedDB 원본, 백그라운드 큐, URL-fix op, 주기적 자가복구가
+>   신규 업로드 경로에 아예 존재하지 않는다.**
+> - 배치 직후 `commitImagesNow()` 가 로컬 저장(flushSaveDoc)·서버 memo
+>   (flushSync)·요소 op(pushOps)를 **디바운스 없이 즉시** 확정한다.
+> - 업로드가 실패하면 **아무것도 놓지 않고** 실패를 알린다. 따라서 어떤
+>   기기에도 '깨진 자리/있었다는 표시'가 생길 수 없다 — 사진은 *없거나,
+>   어느 기기에서든 보이거나* 둘 중 하나다 (원래 결함 FM-1~4 가 구조적으로 소멸).
+> - 배치를 취소한(placement 모드 취소·노트 전환) 업로드는 `/api/delete` 로
+>   서버에서도 지운다 (`discardImgItems` — 고아 파일 방지).
+> - 옛 데이터(이미 저장된 `data:` pending)는 렌더 호환을 유지하고, 노트를 열
+>   때 `repairLegacyImages()` 가 같은 확실한 경로(`uploadImageStrict`)로 1회
+>   재업로드해 서버 url 로 복구한다.
 >
-> **관련 코드** — `sdynotes.js`: `pendingImgSrcs`/`idbPutBlob`·`idbGetBlob`·
-> `idbDelBlob`, `filesToImgItems`, `placeImgItem`, `enqueuePendingImageUploads`,
-> `applyUploadedURL`, `serverImageElement`, `sanitizeSyncPages`.
-> **계약 테스트** — `test/image_cross_device_contract.mjs`,
-> `test/image_paste_persistence_contract.mjs`, `test/note_image_reopen_contract.mjs`
-> (`npm run test:image`).
+> **관련 코드** — `sdynotes.js`: `uploadImageStrict`, `filesToImgItems`,
+> `placeImgItem`, `uploadImgs`, `commitImagesNow`, `discardImgItems`,
+> `repairLegacyImages`, `serverImageElement`, `sanitizeSyncPages`.
+> **계약 테스트** — `test/image_paste_persistence_contract.mjs`(업로드-선행
+> 계약, 19 검사), `test/image_cross_device_contract.mjs`,
+> `test/note_image_reopen_contract.mjs`(레거시 복구), `npm run test:image`..
 
 ---
 
