@@ -66,6 +66,17 @@ assert.ok(area, 'home-stack-area 있어야 한다');
 assert.ok(!area.classList.contains('has-recent'), '처음에는 has-recent 아니어야 한다');
 assert.ok(area.querySelector('.home-add-zone .home-add-note'), '클래식 새 노트 버튼이 있다');
 assert.equal(area.querySelectorAll('.note-stack .note-card').length, 2, '스택(덩어리)에 노트 2장');
+// 첫 화면(has-recent 없음)에서도 스택 폴더 썸은 노트 미리보기와 같은 높이를 쓴다.
+// 고정 260px 이 body.card-l(322) / body.card-s(200) 보다 특이도로 이기면
+// 폴더가 세로로 짧아지고 노트가 폴더 밖으로 튀어 보인다.
+assert.ok(!/\.note-stack\s+\.folder-card\s+\.folder-thumb\s*\{[^}]*height:\s*260px/.test(css),
+  '스택 폴더 썸을 260px 로 고정하지 않는다');
+assert.match(css, /body\.card-s\s+\.note-preview\s*,\s*body\.card-s\s+\.folder-thumb\s*\{[^}]*height:\s*200px/,
+  '작은 카드에서 노트 미리보기와 폴더 썸 높이가 같다');
+assert.match(css, /body\.card-l\s+\.note-preview\s*,\s*body\.card-l\s+\.folder-thumb\s*\{[^}]*height:\s*322px/,
+  '큰 카드에서 노트 미리보기와 폴더 썸 높이가 같다');
+assert.match(css, /\.home-stack-area\.has-recent\s+\.note-preview\s*,\s*\.home-stack-area\.has-recent\s+\.folder-thumb\s*\{[^}]*height:calc\(var\(--home-card-w,200px\)\s*\*\s*1\.3\)!important/,
+  '최근 줄이 생기면 노트·폴더 높이를 --home-card-w 로 같이 맞춘다');
 assert.ok(!css.includes('새 노트는 여기서 만들어요'), '불필요한 새 노트 안내 문구가 없다');
 assert.ok(!js.includes('home-scroll-hint'), '위로 올리라는 팝업 힌트가 없다');
 
