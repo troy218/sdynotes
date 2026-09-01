@@ -38,6 +38,7 @@
     "test:selux": "node test/editor_selection_ux_runtime.mjs",
     "test:uflow": "node test/editor_user_flow_runtime.mjs",
     "test:typeflow": "node test/editor_typing_style_flow_runtime.mjs",
+  "test:userflow": "node test/editor_fmt_userflow_repro.mjs",
     "test:textbox": "node test/editor_textbox_whole_runtime.mjs",
     "test:txtedge": "node test/editor_text_edit_edges_runtime.mjs",
     "test:txtclip": "node test/editor_text_clipboard_runtime.mjs",
