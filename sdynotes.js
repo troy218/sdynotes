@@ -7111,14 +7111,22 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const img=document.createElement('img');
         img.draggable=false;
         img.loading='lazy'; img.decoding='async';
-        img.src=el.localURL||el.url||'';
-        if(el.pending) w.classList.add('pending');
+        // 서버 URL이 확정된 이미지는 항상 서버를 우선한다. 예전 저장물에는
+        // 업로드 완료 후에도 localURL(blob:)이 함께 남아 있을 수 있는데,
+        // blob URL을 먼저 선택하면 다른 기기/재시작 뒤 죽은 로컬 참조를
+        // 사용하게 된다. data:는 아직 서버 URL이 없는 경우에만 미리보기다.
+        const remoteSrc=String(el.url||'');
+        const localSrc=String(el.localURL||'');
+        img.src=(remoteSrc&&!/^blob:/i.test(remoteSrc))
+            ? remoteSrc
+            : (localSrc&&!/^blob:/i.test(localSrc)?localSrc:'');
+        if(el.pending && !remoteSrc) w.classList.add('pending');
         if(el.failed) w.classList.add('failed');
         if(el.isMath){ w.classList.add('math'); w.title='PDF 수식'; }
         if(el.isBg){ w.classList.add('pdf-bg'); w.title='PDF 원본 배경'; }
         if(el.locked) w.classList.add('el-lock');
         // ★ 모바일: 더블클릭 대신 한 번 탭으로 이미지 확대 (dblclick은 터치에서 불안정)
-        img.ondblclick=(e)=>{ e.stopPropagation(); document.getElementById('vImg').src=el.localURL||el.url||''; document.getElementById('viewer').style.display='flex'; };
+        img.ondblclick=(e)=>{ e.stopPropagation(); document.getElementById('vImg').src=(remoteSrc&&!/^blob:/i.test(remoteSrc))?remoteSrc:(localSrc&&!/^blob:/i.test(localSrc)?localSrc:''); document.getElementById('viewer').style.display='flex'; };
         w.appendChild(img);
         // 테두리를 잡으면 이동 (손잡이는 이 위에 그려진다)
         ['top','bottom','left','right'].forEach(side=>{
@@ -7327,6 +7335,40 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(bar) bar.classList.remove('show');
     }
 
+    // 저장 포맷의 글자 단위 속성을 실제 브라우저 스타일로 디코드한다.
+    // data-* 포맷은 협업/구버전 저장물에서 들어올 수 있고, 기존 HTML style과
+    // 함께 있을 때는 명시적인 data 값이 우선한다. 문자열을 직접 치환하지 않고
+    // DOM에서 처리해 한 글자씩 나뉜 span, 링크, 줄바꿈을 훼손하지 않는다.
+    function decodeTextMarkup(html){
+        const box=document.createElement('div');
+        box.innerHTML=String(html||'');
+        const props={
+            'data-font-family':'fontFamily','data-font-size':'fontSize',
+            'data-font-weight':'fontWeight','data-font-style':'fontStyle',
+            'data-text-color':'color','data-color':'color',
+            'data-highlight':'backgroundColor','data-background-color':'backgroundColor',
+            'data-text-decoration':'textDecoration'
+        };
+        box.querySelectorAll('*').forEach(node=>{
+            for(const attr in props){
+                if(!node.hasAttribute(attr)) continue;
+                const value=node.getAttribute(attr);
+                if(value!=null&&value!=='') node.style[props[attr]]=value;
+                node.removeAttribute(attr);
+            }
+            // 구형 HTML의 <font>도 글자 단위 속성으로 승격한다.
+            if(node.tagName==='FONT'){
+                if(node.hasAttribute('face')) node.style.fontFamily=node.getAttribute('face');
+                if(node.hasAttribute('color')) node.style.color=node.getAttribute('color');
+                if(node.hasAttribute('size')){
+                    const n=parseFloat(node.getAttribute('size'));
+                    if(n) node.style.fontSize=(n<=7?Math.round(8+n*2):n)+'px';
+                }
+            }
+        });
+        return box.innerHTML;
+    }
+
     function buildTextEl(el,pageIdx){
         const w=document.createElement('div');
         w.className='tb'; w.dataset.id=el.id; w.dataset.pageIdx=pageIdx;
@@ -7349,7 +7391,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const va={top:'flex-start',middle:'center',bottom:'flex-end'}[el.vAlign||'middle'];
             c.style.justifyContent=va||'center';
         }
-        c.innerHTML=el.html||'';
+        // 18.10 · 텍스트는 상자 하나의 style 로 그리지 않고, 저장된 인라인
+        // 속성을 DOM 에 다시 풀어낸다. 예전 렌더러는 HTML 문자열을 그대로 꽂은
+        // 뒤 상자 style 을 먼저 적용해, 연속 서식 변경 뒤에도 화면이 마지막
+        // 값만 보이거나(특히 구형 <font> 데이터) 일부 글자가 기본값으로
+        // 돌아가는 경우가 있었다. decodeTextMarkup 은 각 요소의 속성을
+        // 독립적으로 복원하므로 저장/재렌더링이 반복돼도 글자별 값이 유지된다.
+        c.innerHTML=decodeTextMarkup(el.html||'');
         // 가져온(tight) 상자: 저장된 자간/띄어쓰기/줄간격 반영 + 자동 안겹침
         if(el.tight){
             if(el.ls) c.style.letterSpacing=el.ls+'px';
@@ -17327,7 +17375,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(el.id===activeId) return;
             let domEl=paper.querySelector(`[data-id="${el.id}"]`);
             if(domEl){
-                if(el.type==='text'){
+                if(el.type==='image'){
+                    const im=domEl.querySelector('img');
+                    const remote=String(el.url||'');
+                    const local=String(el.localURL||'');
+                    const src=(remote&&!/^blob:/i.test(remote))?remote:(local&&!/^blob:/i.test(local)?local:'');
+                    if(im&&im.getAttribute('src')!==src) im.src=src;
+                    domEl.classList.toggle('pending',!!el.pending&&!remote);
+                    domEl.classList.toggle('failed',!!el.failed);
+                }else if(el.type==='text'){
                     domEl.style.left=el.x+'px'; domEl.style.top=el.y+'px';
                     domEl.style.width=el.w+'px'; domEl.style.height=el.h+'px';
                     const c=domEl.querySelector('.tb-content');
