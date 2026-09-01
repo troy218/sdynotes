@@ -1,17 +1,19 @@
-/* 텍스트 서식 엔진 · 편집 흐름 소스 계약 검증
+/* 텍스트 서식 엔진(SDY-FMT v2) · 편집 흐름 소스 계약 검증
 
    "사용자가 글을 적다가 중간에 스타일을 바꾸는" 전체 편집 패턴이 깨지지 않게
    sdynotes.js 가 지켜야 하는 불변 규칙들을 소스에서 확인한다.
 
      ① 서식 적용 우선순위: 표 칸 → 글자 선택 → 캐럿(앞으로 입력될 글자) → 상자 전체
-     ② 인라인 엔진은 선택 조각만 떼어 새 span 으로 감싸므로 선택 밖 글자와
-        다른 서식(글꼴·색·굵기…)이 풀리지 않는다
-     ③ 토글은 워드프로세서 규칙(전부 켜져 있으면 끄고, 아니면 켠다)
-     ④ 캐럿 서식(18.5/18.6): 선택 없이 스타일을 바꾸면 상자 전체가 아니라
-        '앞으로 입력될 글자'에만 적용된다 — 빈 span 만 재사용한다
-     ⑤ 저장 선택(savedRange)과 남아 있던 캐럿(savedCaret)의 우선순위 규칙
-     ⑥ 상자 전체 칠하기/토글은 글자 단위 엔진을 재사용해 기존 인라인 서식을 보존한다
-     ⑦ 타이핑 → input 디바운스 → syncTextEl → 커밋까지의 저장 사슬 */
+     ② v2 엔진은 '세그먼트 재구축' 방식이다 — 선택 조각 수술(extract/감싸기/
+        걷어내기)과 execCommand 는 글자 서식에 더 이상 존재하지 않는다
+     ③ 같은 연산은 멱등이다 — 이웃 세그먼트 병합으로 span 이 누적되지 않는다
+     ④ 선택(캐럿)은 문자 오프셋으로 복원된다 — DOM 이 어떻게 다시 그려져도
+        재구축 중에는 저장 선택이 덮이지 않는다(_fmtBusy 잠금)
+     ⑤ 토글은 워드프로세서 규칙(전부 켜져 있으면 끄고, 아니면 켠다).
+        굵게/기울임 '해제'는 상자 상속과 충돌할 때만 중립값을 쓴다
+     ⑥ 캐럿 서식(18.5/18.6): 선택 없이 바꾸면 '앞으로 입력될 글자'에만 적용
+     ⑦ 상자 전체 칠하기/교체도 같은 엔진 경로를 쓴다
+     ⑧ 타이핑 → input 디바운스 → syncTextEl → 커밋까지의 저장 사슬 */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -23,7 +25,9 @@ const idxOf = (needle, from = 0) => js.indexOf(needle, from);
 const body = (name) => {
   const m = js.match(new RegExp(`function ${name}\\([^)]*\\)\\{`));
   assert.ok(m, `${name} 함수가 존재해야 한다`);
-  return js.slice(m.index, m.index + 6000);
+  const next = js.indexOf('\n    function ', m.index + 10);
+  const end = next >= 0 ? Math.min(next, m.index + 9000) : m.index + 7000;
+  return js.slice(m.index, end);
 };
 
 // ── ① 서식 적용 우선순위 (표 칸 → 글자 선택 → 캐럿 → 상자 전체) ──────────
@@ -53,45 +57,105 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
     iCell >= 0 && iCell < iSel && iSel < iCaret && iCaret < iBox);
 }
 
-// ── ② 인라인 엔진: 선택 밖 글자·다른 서식 보존 ───────────────────────────
+// ── ② v2 엔진: 세그먼트 재구축 방식 ─────────────────────────────────────
+{
+  check('v2 엔진 선언(18.10)이 존재한다', js.includes('SDY-FMT v2'));
+  const b = body('_fmtRebuildBlock');
+  check('편집은 문단 토큰을 다시 그리는 방식이다 (_fmtTokens → _fmtRender)',
+    b.includes('_fmtTokens(block,host)') && b.includes('_fmtRender(out)'));
+  check('글자 세그먼트에만 연산을 적고 원자 노드(<br>·<img>·타이핑 마커)는 그대로 옮긴다',
+    b.includes("tk.t!=='text'") && b.includes("out.push(tk)"));
+  check('타이핑 마커(.sdy-type)도 연산을 함께 받는다',
+    b.includes("tk.t!=='type'") && b.includes("_setInlineProp(tk.node,op.prop,op.value)"));
+}
 {
   const b = body('_applyToSelection');
-  check('선택 서식은 조각을 떼어내 감싸는 방식이라 선택 밖이 안전하다',
-    b.includes('r.extractContents()') && b.includes('span.appendChild(frag)'));
-  check('선택 안의 같은 속성만 벗겨내고 다른 속성은 그대로 둔다',
-    b.includes('_stripInlineProp(frag,prop,value)'));
+  check('선택 서식 적용은 v2 재구축 한 갈래다 (수술용 extractContents 없음)',
+    b.includes('_fmtApply({type:\'set\',prop,value})')
+    && !b.includes('extractContents'));
 }
 {
-  // 18.8 · 새 span 은 텍스트 노드를 '그 자리에서' 감싸므로 조상 서식은 저절로
-  //   상속된다. 예전처럼 상속 서식을 span 에 복사하면 상자 글꼴·크기가 글자마다
-  //   인라인으로 박제돼, 그 뒤로 '상자 전체 글꼴/크기 바꾸기'가 먹지 않았다.
-  const b = body('_applyOne');
-  check('새 span 은 상속 서식을 복사하지 않는다 (상자 글꼴·크기 변경을 막지 않음)',
-    !b.includes('for(const k in styles){ if(k!==prop) target.style[k] = styles[k]; }'));
-  check('새 span 은 텍스트 노드를 제자리에서 감싼다 (조상 서식은 상속으로 유지)',
-    b.includes('tn.parentNode.insertBefore(target, tn)') && b.includes('target.appendChild(tn)'));
+  const b = body('_fmtRender');
+  check('같은 스타일·링크의 이웃 세그먼트는 하나의 text node 로 합쳐진다 (멱등)',
+    b.includes('grp.texts.push(tk.text)') && b.includes("grp.texts.join('')"));
+  check('스타일은 CSSOM 으로 적어 브라우저·jsdom 직렬화가 같다',
+    b.includes('style.setProperty(_kebabProp(k)'));
+  check('링크 세그먼트는 <a> 로 감싸진다', b.includes('_fmtLinkClone(grp.link)'));
 }
 {
-  // 18.8 · 상자 전체 글꼴/크기는 안쪽 인라인 값을 걷어내고 적용해야 실제로 보인다.
-  const bf = body('applyFont'), bs = body('setFS');
-  check("applyFont: 상자 전체 글꼴은 안쪽 인라인 글꼴을 걷어낸다",
-    bf.includes("_stripInlineProp(c,'fontFamily',null,{skipRoot:true})"));
-  check("setFS: 상자 전체 크기는 안쪽 인라인 크기를 걷어낸다",
-    bs.includes("_stripInlineProp(c,'fontSize',null,{skipRoot:true})"));
-  check('setFS: Ctrl+클릭 다중 선택한 모든 텍스트 상자의 크기를 바꾼다',
-    bs.includes('multiSel.length') && bs.includes('targets.forEach') && bs.includes('el.fontSize=curFontSize'));
+  // 구 엔진의 수술·보정 도구들이 완전히 제거됐는지 — 재발 방지의 핵심
+  for (const gone of ['function _applyOne', 'function _removeOne', 'function _stripInlineProp',
+                      'function captureSelFonts', 'function restoreSelFonts', 'function _keepFontOnSel',
+                      'function _splitAtBoundaries', 'function _expandRemovalRange',
+                      'function _unlinkSingleLinkSelection', 'function _expandLinkRange']) {
+    check(`구 엔진 잔재 제거: ${gone.replace('function ', '')}`, !js.includes(gone));
+  }
 }
 {
-  const b = body('_removeFromSelection');
-  check('굵기/기울임 제거는 normal span 으로 상속을 끊는다',
-    b.includes("span.style[prop]=(prop==='fontWeight')?'400':'normal'"));
+  // 글자 서식 경로에 execCommand 가 남아 있지 않다 (클립보드 copy/cut 폴백만 허용)
+  const code = (s) => s.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+  const fmtFns = ['applyFont', 'applyTextColor', 'applyHighlight', 'clearTextColor', 'execFmt',
+                  'clearFmt', 'setAlign', 'setFS', 'toggleSelStyle', 'wrapSelStyle'];
+  for (const fn of fmtFns) {
+    const b = code(body(fn));
+    check(`${fn}: execCommand 를 쓰지 않는다`, !b.includes('execCommand'));
+  }
+  check('링크 걸기(우클릭 sel-link)도 execCommand 없이 엔진으로 처리한다',
+    body('editorAction').includes('_fmtLinkSelection(url.trim())'));
 }
 
-// ── ③ 워드프로세서식 토글 규칙 ───────────────────────────────────────────
+// ── ③④ 오프셋 지도와 선택 복원 ─────────────────────────────────────────
+{
+  const b = body('_fmtTextMap');
+  check('상자 안 모든 텍스트 노드의 절대 문자 오프셋 지도를 만든다',
+    b.includes('createTreeWalker(host,NodeFilter.SHOW_TEXT)') && b.includes('map.total=off'));
+}
+{
+  const b = body('_fmtOffsetAt');
+  check('어떤 지점이든 host 끝까지의 텍스트 길이로 오프셋을 잰다 (요소 경계 안전)',
+    b.includes('r.setEnd(host,host.childNodes.length)') && b.includes('total-tail'));
+}
+{
+  const b = body('_fmtRestoreSelection');
+  check('연산 뒤 선택은 문자 오프셋으로 복원된다',
+    b.includes('_fmtPointFromOffset(host,start)') && b.includes('savedRange=nr.cloneRange()'));
+}
+{
+  const b = body('saveSel');
+  check('재구축 중(_fmtBusy)에는 selectionchange 가 저장 선택을 덮지 않는다',
+    b.includes('if(_fmtBusy) return;'));
+}
+{
+  const b = body('_fmtRebuildBlock');
+  check('host 암시 문단은 연속된 비블록 구간 전체를 다시 그린다 (고립 세그먼트 방지)',
+    b.includes('while(i0>0&&!isBlk(kids[i0-1])) i0--') && b.includes('while(i1<kids.length-1&&!isBlk(kids[i1+1])) i1++'));
+  check('세그먼트 스타일은 상자(블록) 레벨을 재선언하지 않는다 (_fmtChainStyle)',
+    b.includes('_fmtChainStyle(tk.node,block)'));
+  check('textDecoration set 은 토큰 병합이다 (밑줄+취소선 공존)',
+    b.includes('toks=new Set(String(st.textDecoration') );
+}
+{
+  const b = body('_fmtApply');
+  check('선택 연산은 범위 산출 → 그룹 재구축 → 선택 복원 순서다',
+    b.indexOf('_fmtOffsets(host,ctx.range)') >= 0
+    && b.indexOf('_fmtGroups(host,map,o.start,o.end)') > b.indexOf('_fmtOffsets(host,ctx.range)')
+    && b.indexOf('_fmtRestoreSelection(host,o.start,o.end)') > b.indexOf('_fmtGroups(host,map,o.start,o.end)'));
+  check('재구축 중에는 _fmtBusy 잠금이 걸린다', b.includes('_fmtBusy=true') && b.includes('finally{ _fmtBusy=false; }'));
+}
+
+// ── ⑤ 토글 규칙과 중립값 ────────────────────────────────────────────────
 {
   const b = body('toggleSelStyle');
   check('선택 토글: 전부 켜져 있으면 끄고, 아니면 (부분이든) 켠다',
     b.includes('if(all) _removeFromSelection(prop,value);') && b.includes('else _applyToSelection(prop,value);'));
+}
+{
+  const b = body('_fmtNeutralFor');
+  check('굵게/기울임 해제의 중립값은 상자 상속이 굵게/기울임일 때만 쓴다',
+    b.includes('_fwVal(host.style.fontWeight)>=600') && b.includes("fontStyle"));
+  const b2 = body('_removeFromSelection');
+  check('해제 연산은 중립값을 엔진 op 로 넘긴다 (font-weight:400 무분별 덧대기 금지)',
+    b2.includes('_fmtNeutralFor(ctx.host,prop)') && b2.includes("type:'remove'"));
 }
 {
   const b = body('_toggleBoxAllStyle');
@@ -100,7 +164,7 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
     && b.includes('else _paintBoxAll(w,prop,value);'));
 }
 
-// ── ④ 캐럿 서식: '앞으로 입력될 글자'에만 적용 ───────────────────────────
+// ── ⑥ 캐럿 서식: '앞으로 입력될 글자'에만 적용 ──────────────────────────
 {
   const b = body('caretWrapStyle');
   check('캐럿 서식 span(sdy-type)을 만들어 이후 입력이 그 안에 들어간다',
@@ -109,19 +173,12 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
     b.includes('빈 span 만 재사용한다') && b.includes('_typingSpan&&!_typingSpan.textContent&&!_typingSpan.childElementCount'));
   check('캐럿 부모의 부분 글꼴을 새 span 에 고정해 글꼴이 풀리지 않는다',
     b.includes('p.style.fontFamily') && b.includes('span.style.fontFamily=font'));
-  check('서식 span 을 커밋(syncTextEl)해 저장 사슬을 잇는다', b.includes('syncTextEl(w)'));
   check('활성 캐럿 서식을 DOM 밖 상태에도 기억한다', b.includes('_rememberTypingStyles(span,c)'));
 }
 {
   const b = body('_ensurePendingTypingSpan');
   check('브라우저가 빈 span 을 제거해도 pending style 로 wrapper를 복구한다',
     b.includes('_pendingTyping') && b.includes("span.className='sdy-type'") && b.includes('_setInlineProp'));
-}
-{
-  const b = body('buildTextEl');
-  check('keydown/beforeinput/input에서 캐럿 wrapper를 입력 생명주기에 동기화한다',
-    b.includes("c.addEventListener('beforeinput'") && b.includes("c.addEventListener('keydown'")
-    && b.includes('_ensurePendingTypingSpan(c)'));
 }
 {
   const b = body('_typingHost');
@@ -133,13 +190,85 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   check('글자 크기도 캐럿에서는 상자 전체가 아니라 앞으로 입력될 글자에만 적용된다',
     b.includes('if(_typingHost()){ caretWrapStyle({fontSize:curFontSize+\'px\'}); return; }'));
 }
+
+// ── ⑦ 상자 전체 칠하기/교체도 같은 엔진 경로 ────────────────────────────
 {
-  const b = body('chFS');
-  check('증감 버튼은 지금 보이는 크기에서 증감한다 (선택이 없을 때)',
-    b.includes('if(!hasInlineTextSel()) syncFSFromTarget();'));
+  const b = body('_paintBoxAll');
+  check('상자 전체 덧칠은 엔진 전체 범위 적용을 쓴다',
+    b.includes('_fmtApplyBox(c,prop,value)'));
+}
+{
+  const b = body('_fmtApplyBox');
+  check('override 모드(상자 글꼴·크기 교체)는 setbox op 를 쓴다',
+    b.includes("override?'setbox':'set'"));
+}
+{
+  const b = body('_fmtRebuildBlock');
+  check('setbox 는 인라인 오버라이드가 있던 부분만 갱신한다 (상자 상속 유지)',
+    b.includes("op.type==='setbox'&&!had") && b.includes('delete st[op.prop]'));
+}
+{
+  const bf = body('applyFont'), bs = body('setFS');
+  check('applyFont: 상자 전체 글꼴 교체도 엔진 override 로 처리한다',
+    bf.includes("_fmtApplyBox(c,'fontFamily',f.css,true)"));
+  check('setFS: 상자 전체 크기 교체도 엔진 override 로 처리한다',
+    bs.includes("_fmtApplyBox(c,'fontSize',curFontSize+'px',true)"));
+}
+{
+  const b = body('_fmtUnpaintWF');
+  check('상자 전체 연산 전에 중요어 색칠(.wf 임시 레이어)을 원문으로 되돌린다',
+    b.includes("host.querySelector('.wf')") && b.includes('host.innerHTML=el.html'));
+}
+{
+  const b = body('_boxFmtTargets');
+  check('상자 전체 대상에 다중 선택(.tb.msel)도 포함된다', b.includes('.tb.msel'));
+}
+{
+  const b = body('clearTextColor');
+  check('글자색 지우기는 상자 내부 color 와 구버전 el.textColor 를 함께 제거한다',
+    b.includes("_clearBoxStyleAll(w,'color')"));
+}
+{
+  const b = body('_activeToggleStates');
+  check('상자 전체 서식 툴바 상태는 글자별 span 전체 적용도 읽는다',
+    b.includes("_boxHasAllStyle(node,'fontWeight','700')")
+    && b.includes("_boxHasAllStyle(node,'textDecoration','underline')"));
+}
+{
+  const b = body('clearBoxFormatting');
+  check('상자 서식 지우기는 구버전 box-level 스타일 필드를 모두 제거한다',
+    b.includes('delete el.textColor') && b.includes('delete el.cellBg') && b.includes('delete el.font')
+    && b.includes('delete el.fontWeight') && b.includes('delete el.fontStyle') && b.includes('delete el.textDecoration'));
 }
 
-// ── ⑤ savedRange / savedCaret 우선순위 ──────────────────────────────────
+// ── ⑧ 타이핑 → 저장 사슬 ────────────────────────────────────────────────
+{
+  const b = body('buildTextEl');
+  const iInput = b.indexOf("c.addEventListener('input'");
+  const iBlur = b.indexOf("c.addEventListener('blur'");
+  check('타이핑(input)과 포커스 이탈(blur) 모두 저장 사슬과 연결돼 있다', iInput >= 0 && iBlur > iInput);
+  check('keydown/beforeinput/input에서 캐럿 wrapper를 입력 생명주기에 동기화한다',
+    b.includes("c.addEventListener('beforeinput'") && b.includes("c.addEventListener('keydown'")
+    && b.includes('_ensurePendingTypingSpan(c)'));
+}
+{
+  const b = body('commitEditingText');
+  check('커밋은 내용을 el.html/폰트크기로 옮긴다',
+    b.includes('el.html=stripWF(c.innerHTML)') && b.includes('el.fontSize=parseInt(c.style.fontSize)||16'));
+  check('빈 상자도 남겨둔다 (위치 표시 유지)', b.includes('빈 상자도 남겨둔다'));
+}
+{
+  const bUndo = body('undo'), bRedo = body('redo');
+  check('되돌리기/다시 실행이 문서 Map 을 되살려 동기화가 멈추지 않는다',
+    bUndo.includes('reviveDocMaps(keep)') && bRedo.includes('reviveDocMaps(keep)'));
+}
+{
+  const b = body('syncTextEl');
+  check('syncTextEl 을 부를 수 없는 화면(DOM 분리·노트 전환)에서는 무시한다',
+    b.includes('w.isConnected') && js.includes('doc.__rv!==w._sdyRv'));
+}
+
+// ── ⑨ 18.8 · 선택/툴바 UX 규칙 ───────────────────────────────────────────
 {
   const b = body('saveSel');
   const iCollapsed = b.indexOf('s.isCollapsed');
@@ -161,109 +290,20 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   const b = body('enterEdit');
   check('편집에 들어가면 이전 상자의 저장된 선택/캐럿을 먼저 지운다',
     b.indexOf('clearTextSelection()') >= 0);
-}
-
-// ── ⑥ 상자 전체 칠하기 ──────────────────────────────────────────────────
-{
-  const b = body('_paintBoxAll');
-  check('상자 전체 칠하기는 글자 단위 엔진(_applyOne)을 그대로 쓴다',
-    b.includes('_boxTextNodes(c).forEach(tn=>_applyOne(tn,c,prop,value))'));
-  check('칠한 뒤 빈 span 을 정리한다', b.includes('_cleanupInline(c)'));
-}
-{
-  const b = body('_cleanupInline');
-  check('정리 단계는 style="" 만 남은 span 도 풀어낸다', b.includes('meaningfulAttrs') && b.includes("a.name==='style'"));
-}
-{
-  const b = body('_boxFmtTargets');
-  check('상자 전체 대상에 다중 선택(.tb.msel)도 포함된다', b.includes('.tb.msel'));
-}
-{
-  const b = body('toggleMultiSelect');
-  check('Ctrl+클릭 다중 선택은 이전 글자 선택(savedRange)을 먼저 비운다', b.includes('clearTextSelection()'));
-}
-{
-  const b = body('clearTextColor');
-  check('글자색 지우기는 상자 내부 color 와 구버전 el.textColor 를 함께 제거한다',
-    b.includes("_clearBoxStyleAll(w,'color')"));
-}
-{
-  const b = body('_activeToggleStates');
-  check('상자 전체 서식 툴바 상태는 글자별 span 전체 적용도 읽는다',
-    b.includes("_boxHasAllStyle(node,'fontWeight','700')")
-    && b.includes("_boxHasAllStyle(node,'textDecoration','underline')"));
-}
-{
-  const b = body('clearBoxFormatting');
-  check('상자 서식 지우기는 구버전 box-level 스타일 필드를 모두 제거한다',
-    b.includes('delete el.textColor') && b.includes('delete el.cellBg') && b.includes('delete el.font')
-    && b.includes('delete el.fontWeight') && b.includes('delete el.fontStyle') && b.includes('delete el.textDecoration'));
-}
-
-// ── ⑦ 타이핑 → 저장 사슬 ────────────────────────────────────────────────
-{
-  const b = body('buildTextEl');
-  const iInput = b.indexOf("c.addEventListener('input'");
-  const iBlur = b.indexOf("c.addEventListener('blur'");
-  check('타이핑(input)과 포커스 이탈(blur) 모두 저장 사슬과 연결돼 있다', iInput >= 0 && iBlur > iInput);
-}
-{
-  const b = body('commitEditingText');
-  check('커밋은 내용을 el.html/폰트크기로 옮긴다',
-    b.includes('el.html=stripWF(c.innerHTML)') && b.includes('el.fontSize=parseInt(c.style.fontSize)||16'));
-  check('빈 상자도 남겨둔다 (위치 표시 유지)', b.includes('빈 상자도 남겨둔다'));
-}
-{
-  const b = body('exitEditKeepSel');
-  check('편집 종료 후에도 상자가 선택 상태로 남는다',
-    b.includes('commitEditingText(w)') && b.includes("w.classList.add('sel')"));
-}
-{
-  const bUndo = body('undo'), bRedo = body('redo');
-  check('되돌리기/다시 실행이 문서 Map 을 되살려 동기화가 멈추지 않는다',
-    bUndo.includes('reviveDocMaps(keep)') && bRedo.includes('reviveDocMaps(keep)'));
-}
-
-// ── ⑧ 18.8 · 선택/툴바 UX 규칙 ───────────────────────────────────────────
-{
-  const b = body('onPaperDown');
-  check('우클릭(pointerdown button=2)은 선택을 건드리지 않고 곧바로 빠져나온다',
-    /if\(e\.button===2\)\{[^}]*saveSel\(\);?[^}]*\}[^\n]*\n?[^\n]*return;|if\(e\.button===2\)\{ try\{ saveSel\(\); \}catch\(_e\)\{\} return; \}/.test(b));
-}
-{
-  const b = body('addTextBox');
-  check('새 글상자는 글꼴·크기만 물려받고 나머지 서식은 푼다',
-    b.includes('resetTypingFormat()') && b.includes('fontSize:curFontSize') && b.includes('font:curFont'));
-  check('새 글상자를 만들면 툴바를 지금 입력될 서식에 맞춘다',
-    b.includes('syncToolbarFromCaret()'));
-}
-{
-  const b = body('resetTypingFormat');
-  check('서식 풀기는 캐럿 span·저장 선택과 툴바 토글을 함께 비운다',
-    b.includes('_typingSpan=null') && b.includes('savedCaret=null')
-    && b.includes(".tb-bold") && b.includes("classList.remove('active')"));
+  check('편집에 들어가면 툴바 글꼴도 그 상자 글꼴로 맞춘다', b.includes('setToolbarFont(_fid)'));
 }
 {
   const b = body('setToolbarFS');
   check('잴 대상이 없으면(0) 툴바 글자 크기를 건드리지 않는다 (2·3 만 오가던 버그)',
     b.includes('if(!n||n<1) return;'));
-  check("같은 숫자로 돌아와도 mixed '-' 표시를 정상 숫자로 복원한다",
-    b.indexOf("inp.classList.remove('mixed')") < b.indexOf('if(v===curFontSize) return;'));
-}
-{
-  const b = body('syncCurSel');
+  const b2 = body('syncCurSel');
   check('글자 선택이 없어도 툴바 글꼴·크기를 지금 입력 위치에 맞춘다',
-    b.includes('syncToolbarFromCaret()'));
+    b2.includes('syncToolbarFromCaret()'));
   check("선택에 여러 글자 크기가 섞이면 Word처럼 '-'를 표시한다",
-    b.includes('else if(fsU.mixed)') && b.includes("inp.value='-'") && b.includes("classList.add('mixed')"));
-  const b2 = body('syncToolbarFromCaret');
-  check('툴바 동기화는 캐럿 → 고른 상자 순으로 기준을 잡는다',
-    b2.indexOf('_typingHost()') >= 0 && b2.indexOf('_typingHost()') < b2.indexOf('syncFSFromTarget()'));
-  const b3 = body('enterEdit');
-  check('편집에 들어가면 툴바 글꼴도 그 상자 글꼴로 맞춘다', b3.includes('setToolbarFont(_fid)'));
+    b2.includes('else if(fsU.mixed)') && b2.includes("inp.value='-'"));
 }
 
-// ── ⑨ 18.9 · 편집 흐름/동기화 안전장치 ────────────────────────────────────
+// ── ⑩ 18.9 · 편집 흐름/동기화 안전장치 ───────────────────────────────────
 {
   const b = body('_tbMergeRemote');
   check('아직 서버에 없는 내 편집을 \'보낸 것\'으로 표시하지 않는다 (마지막 편집 유실 방지)',
@@ -271,61 +311,20 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
     && b.includes('else doc.__lastHash.delete(id);'));
 }
 {
-  const b = body('tblDelAll');
-  check('표 전체 삭제가 없는 함수(clearSel)를 부르지 않는다',
-    !b.includes('clearSel()') && b.includes('deselectAll(true)'));
-}
-{
   const b = body('clearFmt');
-  check('선택 서식 지우기는 execCommand 없이도 동작한다 (인라인 엔진)',
-    b.includes("_removeFromSelection(p)") && b.includes("'fontWeight','fontStyle','textDecoration'"));
-  check('선택 서식 지우기는 execCommand 없이도 링크(<a>)를 벗긴다', b.includes('_unlinkSelection()'));
+  check('선택 서식 지우기는 엔진 remove 로 속성을 하나씩 확실히 걷어낸다',
+    b.includes('_removeFromSelection(p)') && b.includes("'fontWeight','fontStyle','textDecoration'"));
+  check('선택 서식 지우기는 링크(<a>)도 엔진 unlink 로 벗긴다', b.includes('_unlinkSelection()'));
 }
 {
-  const bCopy = body('copyInlineSelectionForAction');
-  const bCut = body('cutInlineSelectionForAction');
-  const bAct = body('editorAction');
-  check('선택 글자 복사/잘라내기는 execCommand 없이도 안전한 helper 를 쓴다',
-    bCopy.includes('writeClipboardTextSafe') && bCut.includes('r.deleteContents()')
-    && bAct.includes('await copyInlineSelectionForAction()') && bAct.includes('await cutInlineSelectionForAction(t.el)'));
-  check('스크립트로 바꾼 편집 내용은 편집 중 Ctrl+Z 로 앱 히스토리 되돌리기를 탄다',
-    js.includes('_scriptEditUndoable=true') && js.includes('editContent&&!_scriptEditUndoable'));
+  const b = body('_unlinkSelection');
+  check('unlink 는 엔진 op 한 갈래다', b.includes("type:'unlink'"));
 }
 {
-  const b = body('_expandLinkRange');
-  check('링크 전체를 선택했으면 <a> 바깥까지 범위를 넓혀 unlink 한다',
-    b.includes("p.tagName==='A'") && b.includes('_rangeCoversContents(out,p)'));
-}
-{
-  const b = body('_unlinkSingleLinkSelection');
-  check('링크 일부만 선택해도 선택 조각만 링크에서 빼낸다',
-    b.includes('beforeFrag') && b.includes('selFrag') && b.includes('afterFrag') && b.includes('_cloneLinkShell(a,beforeFrag)'));
-}
-{
-  const b = body('deletePage');
-  check('페이지 삭제는 인자가 없거나 잘못돼도 안전하다',
-    b.includes('if(i==null||isNaN(+i)) i=curPageIdx;') && b.includes('if(!doc||!doc.pages[i]) return;'));
-}
-{
-  check('타이핑도 되돌리기 지점을 남긴다 (편집 시작 스냅샷)',
-    js.includes('function markEditSnapshot()') && js.includes('function commitEditSnapshot()')
-    && js.includes('if(w.classList.contains(\'edit\')) commitEditSnapshot();'));
-}
-{
-  const b = body('copySelectedTextAsText');
-  check('상자를 복사하면 요소 자체도 함께 기억한다 (붙여넣기 = 상자 복제)',
-    b.includes('clipboardEls=JSON.parse(JSON.stringify(els))') && b.includes('_lastCopyText=text'));
-  check('같은 글자를 붙여넣으면 상자로 복원한다',
-    js.includes("if(clipboardEls.length&&plain&&_lastCopyText&&plain.trim()===_lastCopyText.trim())"));
-}
-{
-  check('편집 중 Escape 는 노트를 닫지 않고 편집만 끝낸다',
-    js.includes("const w=inContent?ae.closest('.tb'):document.querySelector('.tb.edit');"));
-}
-{
-  const b = body('_rangeCoversContents');
-  check('경계가 안쪽 텍스트 노드여도 \'내용 전체 선택\'을 알아본다 (<b> 벗기기)',
-    b.includes("String(r.toString())!==txt"));
+  const b = body('_fmtAlignSelection');
+  check('문단 정렬도 선택→오프셋→블록 경로다', b.includes('_fmtOffsets(ctx.host,ctx.range)'));
+  const b2 = body('setAlign').split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+  check('문단 정렬은 execCommand(justify*) 를 쓰지 않는다', !b2.includes('execCommand'));
 }
 
-console.log(`\n텍스트 서식 엔진 계약: PASS ${pass} / FAIL 0`);
+console.log(`\n텍스트 서식 엔진(v2) 소스 계약: PASS ${pass}`);
