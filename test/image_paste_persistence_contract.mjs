@@ -6,19 +6,17 @@
       더 이상 그 이미지를 불러올 수 없다(깨진 참조/빈 자리)."
 
    근본 원인(요약 — docs/image_paste_persistence_bug.md 참조):
-     붙여넣기는 '즉시 렌더'를 위해 로컬 소스(localURL: blob:/data:)로 pending 요소를
-     먼저 만들고, 실제 저장(/api/upload → /api/img/…)은 백그라운드 큐가 나중에 확정한다.
-       · blob: Object URL 은 그 문서(보낸 기기의 탭)가 닫히는 순간 소멸한다 →
-         다른 기기에서는 절대 불러올 수 없다.
+     붙여넣기는 '즉시 렌더'를 위해 로컬 소스(blob:/data:)로 pending 요소를 먼저
+     만들고, 실제 저장(/api/upload → /api/img/…)은 백그라운드 큐가 나중에 확정했다.
+       · blob: Object URL 은 그 문서(보낸 기기의 탭)가 닫히는 순간 소멸한다.
        · 업로드가 끝나기 전에 A 가 끊기면 확정 URL op 이 서버에 못 온다 →
-         다른 기기에는 '있었다는 표시'(pending placeholder)만 남는다.
-       · 업로드는 끝났어도 '어느 요소가 이 URL 인지' op 전송이 끊기면 취소된다 →
-         서버엔 파일이 있어도 아무도 참조하지 못한다.
+         다른 기기에는 '있었다는 표시'(pending placeholder)만 남았다.
 
-   이 계약이 지키는 방어(회귀 방지):
-     ① op 직렬화(serverImageElement): url 이 없으면 data: 원본을 op 에 함께 싣는다.
-     ② url 확정 op 은 localStorage 내구성 outbox(queueImageMetaPut)를 탄다.
-     ③ data: 원본이 남은 pending 이미지는 '어느 기기에서 열든' 자동 재업로드된다.
+   새 방식(업로드-선행 · 단일 진실 공급원)이 지키는 계약:
+     ① 공유 상태(ops·memo)에는 절대 blob:/data: 를 싣지 않는다 — 확정 url 만 공유.
+     ② 업로드 전 pending 요소는 op/memo 로 내보내지 않는다(serverImageElement → null)
+        → 다른 기기에 '깨진 자리'가 애초에 생기지 않는다.
+     ③ 내 화면 미리보기 = pendingImgSrcs(object URL, 휘발성), 원본 = IndexedDB(바이너리).
      ④ 채팅 첨부는 업로더 세션이 아니라 서버 저장소에서 제공돼야 한다.
 
    실행 규칙(SLA) — 임의 고정 sleep 금지:
@@ -100,7 +98,7 @@ const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8B
 const PNG_BYTES = Buffer.from(PNG_B64, 'base64');
 const PNG_DATA_URL = `data:image/png;base64,${PNG_B64}`;
 // paste 파일은 '기기(window) 렬름'의 File 이어야 한다 — jsdom FileReader 가
-// jsdom-native Blob 만 받아들이기 때문(compressImg·fileToDataURL 경로).
+// jsdom-native Blob 만 받아들이기 때문(compressImg·uploadOne 경로).
 const pngFile = (win, name = 'paste-qa.png') =>
   new (win ? win.File : globalThis.File)([PNG_BYTES], name, { type: 'image/png' });
 
@@ -153,7 +151,10 @@ function common({ block = [] } = {}) {
       window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
       window.BroadcastChannel = class { postMessage() {} close() {} addEventListener() {} };
       window.EventSource = class { close() {} addEventListener() {} };
-      window.requestIdleCallback = (cb) => setTimeout(() => cb({ timeRemaining: () => 10, didTimeout: false }), 0);
+      // ★ guard 가 추적하도록 window.setTimeout 을 써야 closeDoms 가 남은
+      //   idle 콜백을 정리한다(bare setTimeout 은 Node 타이머라 window.close() 뒤
+      //   _layoutHomeStacks 가 죽은 document 를 만져 크래시하던 문제).
+      window.requestIdleCallback = (cb) => window.setTimeout(() => cb({ timeRemaining: () => 10, didTimeout: false }), 0);
       window.cancelIdleCallback = clearTimeout;
       window.requestAnimationFrame = (cb) => setTimeout(() => cb(Date.now()), 0);
       window.cancelAnimationFrame = clearTimeout;
@@ -185,8 +186,8 @@ function common({ block = [] } = {}) {
       window.URL.revokeObjectURL = () => {};
       window.confirm = () => true; window.alert = () => {}; window.prompt = () => null;
       // 주의: File/Blob/FormData 는 jsdom-native 그대로 둔다. 예전 테스트처럼
-      // globalThis 것으로 갈아끼우면 jsdom FileReader(compressImg·fileToDataURL)
-      // 가 'not of type Blob' 을 던져 data: 폴백이 조용히 죽는다 — 그러면 붙여넣은
+      // globalThis 것으로 갈아끼우면 jsdom FileReader(compressImg·dataURLToFile)
+      // 가 'not of type Blob' 을 던져 업로드가 조용히 죽는다 — 그러면 붙여넣은
       // 그림이 blob: 소스만 남아 '보낸 기기 종료 의존' 버그 상태 그 자체가 되어버린다.
       // (jsdom Blob ↔ Node Blob 경계는 아래 fetch 셈에서 다리를 놓는다.)
       const isJsdomBlobLike = (v) => !!v && typeof v === 'object'
@@ -313,17 +314,19 @@ try {
       n2.querySelector('img').getAttribute('src') === '/api/img/img_unit.webp' && !n2.classList.contains('pending'));
 
     const serP = W.serverImageElement({ type: 'image', id: 'u3', url: '', localURL: PNG_DATA_URL, pending: true, x: 0, y: 0, w: 1, h: 1 });
-    check('U-03 op keeps the data: original while url is unset (durable fallback for other devices)',
+    check('U-03 legacy op (data: source already present) keeps the data: original for self-repair',
       String(serP.localURL || '').startsWith('data:image/'));
     check('U-03 volatile flags (pending/failed) never leave the device', !('pending' in serP) && !('failed' in serP));
     const serD = W.serverImageElement({ type: 'image', id: 'u4', url: '/api/img/img_unit2.webp', localURL: PNG_DATA_URL, x: 0, y: 0, w: 1, h: 1 });
     check('U-04 once the durable url is set, the local source is dropped from the op',
       !('localURL' in serD) && serD.url === '/api/img/img_unit2.webp');
     const serB = W.serverImageElement({ type: 'image', id: 'u5', url: '', localURL: 'blob:http://device-a/dead-beef', pending: true, x: 0, y: 0, w: 1, h: 1 });
-    check('U-05 blob: object URLs never leave the device (unrecoverable by definition)',
-      !('localURL' in serB) && !('pending' in serB));
+    check('U-05 blob: object URLs never leave the device (element is not shared at all)',
+      serB === null);
     const serBU = W.serverImageElement({ type: 'image', id: 'u6', url: 'blob:http://device-a/dead-beef', x: 0, y: 0, w: 1, h: 1 });
-    check('U-05 a blob: value smuggled into url is sanitized to empty', String(serBU.url || '') === '');
+    check('U-05 a blob: value smuggled into url is not shared either (null)', serBU === null);
+    const serN = W.serverImageElement({ type: 'image', id: 'u7', url: '', pending: true, x: 0, y: 0, w: 1, h: 1 });
+    check('U-06 a new-style pending element (no durable source) is not shared until uploaded', serN === null);
   }
 
   // ── B · 버그 상태 재현(결정적): 접속 종료 의존 가시성 ─────────────
@@ -342,10 +345,10 @@ try {
     const nBlob = await waitForSelector(devU, '#pagesStage .paper-img[data-id="bug-blob"]');
     check('B-01 BUG STATE: op without url/localURL renders an empty src (broken reference, nothing to load)',
       (nEmpty.querySelector('img').getAttribute('src') || '') === '');
-    check('B-02 BUG STATE: blob: localURL survives into the receiving device as a dead reference',
-      (nBlob.querySelector('img').getAttribute('src') || '').startsWith('blob:'));
-    check('B-03 BUG STATE: neither broken element can ever be repaired (no data: source → auto-reupload skips them)',
-      !W.serverImageElement({ type: 'image', id: 'x', url: '', localURL: '' }).localURL);
+    check('B-02 BUG STATE: a blob: localURL reaching a receiver is sanitized to empty (dead ref never painted)',
+      (nBlob.querySelector('img').getAttribute('src') || '') === '');
+    check('B-03 BUG STATE: a source-less element is dropped from shared state (never re-created on other devices)',
+      W.serverImageElement({ type: 'image', id: 'x', url: '', localURL: '' }) === null);
   }
 
   // ── C · E2E 정상 경로: 붙여넣기 → 업로드 → 보낸 기기 종료 후에도 로드 ──
@@ -396,12 +399,11 @@ try {
     await killDevice(devB);
   }
 
-  // ── D · E2E 버그 조건: 업로드 완료 전 발신자 오프라인 → 다른 기기가 복구 ──
-  console.log('\n── D. E2E 버그 조건: 업로드 전 발신자 오프라인 → 수신 기기 자가 복구 ──');
+  // ── D · E2E: 업로드 완료 전 발신자 오프라인 → 다른 기기에 깨진 자리 없음 ──
+  console.log('\n── D. E2E: 업로드 전 발신자 오프라인 → 다른 기기에 깨진 자리 없음 ──');
   {
     const nbB = await seedNote('QA-Paste-B');
-    // /api/upload 만 끊는다: 작은 sync op 은 살아 있어 "B 에 실시간으로 보인다"는
-    // 전제를 유지하면서, 바이너리 업로드는 절대 끝나지 않는다(접속 종료 직전 상태).
+    // /api/upload 만 끊는다: 바이너리 업로드는 절대 끝나지 않는다.
     const devA2 = await boot({ block: ['/api/upload'] });
     await appReady(devA2);
     await openNoteByTitle(devA2, 'QA-Paste-B');
@@ -409,86 +411,29 @@ try {
 
     const nodeA2 = await waitForSelector(devA2, '#pagesStage .paper-img[data-id]');
     const imgId2 = nodeA2.dataset.id;
-    check('E-05 sender sees the pasted image instantly even though the upload can never finish',
-      nodeA2.classList.contains('pending') && /^(data:|blob:)/.test(nodeA2.querySelector('img').getAttribute('src') || ''));
+    check('E-05 sender sees the pasted image instantly (local blob preview) although upload cannot finish',
+      nodeA2.classList.contains('pending') && /^blob:/.test(nodeA2.querySelector('img').getAttribute('src') || ''));
 
-    // 접속이 끊기기 전, pending op 이 data: 원본을 싣고 서버에 도착해야 한다.
-    const pendOp = await waitFor(`pending op with data: fallback reaches server (${imgId2})`, async () => {
-      const op = await opFor(nbB, imgId2);
-      return op && op.data && String(op.data.url || '') === '' && String(op.data.localURL || '').startsWith('data:image/') ? op : null;
-    });
-    check('E-05 the op that reaches the server carries the data: original (this is what Device B sees in real time)',
-      String(pendOp.data.localURL || '').startsWith('data:image/'));
-    check('E-05 no premature durable url exists yet (upload really could not finish)',
-      String(pendOp.data.url || '') === '');
-
-    // ★ 발신자가 이 시점에 완전히 오프라인 — 수정 전이라면 여기서 자산이 죽는다.
+    // ★ 발신자가 이 시점에 완전히 오프라인. 수정 전이라면 여기서 자산/자리가 깨졌다.
     await killDevice(devA2);
+    check('E-05 the never-uploaded element left no op in the server ops store (upload-first)',
+      !(await opFor(nbB, imgId2)));
+
+    // 수신 기기의 '동기화 완료'를 알리는 센티널 op(진짜 url) 을 서버에 심는다.
+    await pushOps(nbB, [{ id: 'sentinel-d', kind: 'put', page: 0, rev: 5.0, dev: 'qa', data: { type: 'image', id: 'sentinel-d', url: '/api/img/img_sentinel.webp', x: 300, y: 40, w: 40, h: 40 } }]);
 
     const devB2 = await boot();
     await appReady(devB2);
     await openNoteByTitle(devB2, 'QA-Paste-B');
-    const nodeB2 = await waitForSelector(devB2, `#pagesStage .paper-img[data-id="${imgId2}"]`);
-    check('E-06 the receiving device still shows the image although the sender is offline for good',
-      /^(data:image\/|\/api\/img\/)/.test(nodeB2.querySelector('img').getAttribute('src') || ''));
-
-    // 수신 기기 자가 복구: data: 원본을 스스로 서버에 올리고 영속 URL 을 확정한다.
-    const repairedUrl = await waitFor(`receiving device repairs the asset (durable src, ${imgId2})`, () => {
-      const el = devB2.window.document.querySelector(`#pagesStage .paper-img[data-id="${imgId2}"] img`);
-      const s = (el && el.getAttribute('src')) || '';
-      return s.startsWith('/api/img/') ? s : null;
-    });
-    const opB2 = await waitFor(`repaired url persisted server-side (${imgId2})`, async () => {
-      const op = await opFor(nbB, imgId2);
-      return op && op.data && String(op.data.url || '').startsWith('/api/img/') ? op : null;
-    });
-    check('E-06 the repair is persisted to the server ops store (identical url on screen and in storage)',
-      opB2.data.url === repairedUrl);
-
-    // 세 번째 기기: 오직 서버 저장소만으로 이미지를 불러온다.
-    const devC = await boot();
-    await appReady(devC);
-    await openNoteByTitle(devC, 'QA-Paste-B');
-    const imgC = await waitForSelector(devC, `#pagesStage .paper-img[data-id="${imgId2}"] img`);
-    check('E-07 a brand-new device loads the image purely from server storage',
-      imgC.getAttribute('src') === opB2.data.url && !imgC.closest('.paper-img').classList.contains('pending'));
-    const rC = await fetch(base + opB2.data.url);
-    check('E-07 the repaired asset is fetchable over HTTP after the original sender is gone', rC.ok);
-    await killDevice(devC);
+    // 센티널이 그려지면 pull 이 끝났다는 뜻 → 그 시점에 깨진 자리가 없어야 한다.
+    await waitForSelector(devB2, '#pagesStage .paper-img[data-id="sentinel-d"]');
+    const ghosts = [...devB2.window.document.querySelectorAll('.paper-img')].filter((n) => n.dataset.id === imgId2);
+    check('E-06 the receiving device has no broken/placeholder element for the never-uploaded image',
+      ghosts.length === 0);
+    check('E-06 the receiving device has zero runtime errors', devB2.__errors.length === 0);
     await killDevice(devB2);
   }
 
-  // ── E · 통합: url 확정 op 내구성 아웃박스 ──────────────────────────
-  console.log('\n── E. 통합: url 확정 op 내구성 아웃박스 ──');
-  {
-    const nbD = await seedNote('QA-Outbox');
-    const opD = { id: 'qa-obx', kind: 'put', page: 0, rev: 2.5, dev: 'qa', data: { type: 'image', id: 'qa-obx', url: '/api/img/img_outbox_qa.webp', x: 1, y: 1, w: 5, h: 5 } };
-    W.queueImageMetaPut(nbD, opD);
-    check('I-01 url-fix op is recorded in the durable outbox (localStorage survives reload)',
-      (W.getImageMetaOutbox() || []).some((x) => x.nbId === nbD && x.op && x.op.id === 'qa-obx')
-        && String(W.localStorage.getItem('sdy_imgmeta_outbox') || '').includes('qa-obx'));
-    await W.flushImageMetaOutbox();
-    const opSrv = await opFor(nbD, 'qa-obx');
-    check('I-02 flush delivers the url-fix op to the server ops store',
-      !!opSrv && opSrv.data && opSrv.data.url === '/api/img/img_outbox_qa.webp');
-    check('I-03 delivered entries are cleared from the outbox (no duplicate retries)',
-      !(W.getImageMetaOutbox() || []).some((x) => x.op && x.op.id === 'qa-obx'));
-
-    // 접속 끊김(ops push 만 끊긴 상태) → outbox 항목은 살아남고, 복구되면 그대로 전달.
-    W.__severEndpoint('/api/sync/push');
-    const opR = { id: 'qa-obx-retry', kind: 'put', page: 0, rev: 3.5, dev: 'qa', data: { type: 'image', id: 'qa-obx-retry', url: '/api/img/img_retry_qa.webp', x: 2, y: 2, w: 5, h: 5 } };
-    W.queueImageMetaPut(nbD, opR);
-    await W.flushImageMetaOutbox();
-    check('I-03 a severed connection leaves the url-fix op in the durable outbox (no data loss)',
-      (W.getImageMetaOutbox() || []).some((x) => x.op && x.op.id === 'qa-obx-retry'));
-    check('I-03 the op did NOT reach the server while severed', !(await opFor(nbD, 'qa-obx-retry')));
-    W.__restoreEndpoint('/api/sync/push');
-    await W.flushImageMetaOutbox();
-    const opR2 = await opFor(nbD, 'qa-obx-retry');
-    check('I-03 after reconnection the surviving op is delivered and cleared',
-      !!opR2 && opR2.data && opR2.data.url === '/api/img/img_retry_qa.webp'
-        && !(W.getImageMetaOutbox() || []).some((x) => x.op && x.op.id === 'qa-obx-retry'));
-  }
 
   // ── F · 통합(채팅 첨부): 자산 수명은 업로더 세션과 무관해야 한다 ──
   console.log('\n── F. 통합(채팅): 자산 수명 ≠ 업로더 세션 ──');
