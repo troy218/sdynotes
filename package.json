@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.16.10",
+  "version": "14.17.0",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -34,7 +34,7 @@
     "test:imgclip": "node test/image_clipboard_contract.mjs",
     "test:fastops": "node test/editor_fast_ops_contract.mjs && node test/editor_fast_switch_runtime.mjs",
     "test:font": "node test/editor_font_size_contract.mjs && node test/editor_font_size_runtime.mjs",
-    "test:format": "node test/editor_format_runtime.mjs && node test/editor_caret_toggle_contract.mjs",
+    "test:format": "node test/editor_format_runtime.mjs && node test/editor_caret_toggle_contract.mjs && node test/editor_inline_fmt_v2_runtime.mjs",
     "test:selux": "node test/editor_selection_ux_runtime.mjs",
     "test:uflow": "node test/editor_user_flow_runtime.mjs",
     "test:typeflow": "node test/editor_typing_style_flow_runtime.mjs",
@@ -51,7 +51,8 @@
     "test:oracle": "node test/oracle_db_contract.mjs && node test/sdb_shim_contract.mjs && node test/migrate_oracle_sim.mjs",
     "test:call": "node test/call_relay_contract.mjs && node test/chat_endpoint.mjs && node test/voice_relay_contract.mjs && node test/yp_smoke_v4.cjs && python3 test/nginx_voice_ws_patch_test.py",
     "test:translate": "node test/translate_contract.mjs && node test/translate_flow_runtime.mjs",
-    "test:perf": "node test/perf_tuning_contract.mjs"
+    "test:perf": "node test/perf_tuning_contract.mjs",
+    "test:fmtv2": "node test/editor_inline_fmt_v2_runtime.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",

@@ -13628,6 +13628,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function saveSel(){
         const s=window.getSelection();
         if(!s||!s.rangeCount) return;
+        if(_fmtBusy) return;   // 서식 재구축 중의 선택 변화는 저장 상태를 덮지 않는다
         const r=s.getRangeAt(0);
         const host=r.commonAncestorContainer.nodeType===1
             ? r.commonAncestorContainer.closest?.('.tb-content')
@@ -13746,7 +13747,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const host=restoreSel();
         const sel=window.getSelection();
         if(host&&sel&&!sel.isCollapsed){
-            if(document.execCommand) document.execCommand('styleWithCSS',false,true);
             pushHistory();
             try{
                 wrapSelStyle('fontFamily',f.css);
@@ -13782,7 +13782,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     // 18.8 · 상자 전체 글꼴은 '안쪽 부분 글꼴'보다 세다.
                     //   굵게/색 등을 먼저 입히며 생긴 span 에 옛 글꼴이 박제돼 있어도
                     //   상자 글꼴 변경이 화면에 그대로 보이도록 인라인 글꼴을 걷어낸다.
-                    try{ _stripInlineProp(c,'fontFamily',null,{skipRoot:true}); _cleanupInline(c); }catch(_e){}
+                    // v2 엔진: 인라인으로 박제된 부분 글꼴만 새 값으로 갱신하고,
+                    //   나머지는 상자 값 상속을 유지한다 (글자마다 span 을 깔지 않는다).
+                    try{ _fmtApplyBox(c,'fontFamily',f.css,true); }catch(_e){}
                     syncTextEl(w);
                 }
             });
@@ -13850,58 +13852,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!e.target.closest('.font-wrap')) closeFontMenu();
     });
 
-    // 14.13.4 · execCommand(foreColor/hiliteColor) 가 선택지의 span 을 다시 짜면서
-    //   기존 인라인 font-family 을 떨어뜨려 글꼴이 '기본으로 초기화'되는 환경을 대비한다.
-    //   색/형광펜 적용 후 선택 영역 글꼴을 점검하고, 잃은 부분만 원본 글꼴로 다시 감싼다.
-    function _keepFontOnSel(host){
-        try{
-            const s=window.getSelection();
-            if(!s||s.isCollapsed||!s.rangeCount) return;
-            const r=s.getRangeAt(0);
-            const anc=r.commonAncestorContainer.nodeType===1
-                ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
-            const c=anc&&anc.closest?anc.closest('.tb-content'):null;
-            if(!c||!host||!host.contains(anc)) return;
-            // 선택 시작 지점에 걸린 글꼴 (노드 → 상자까지 위로 탐색)
-            let css='',n=anc;
-            while(n&&n!==c){ if(n.style&&n.style.fontFamily){ css=n.style.fontFamily; break; } n=n.parentElement; }
-            if(!css) return;                      // 상자에서 상속받은 글꼴이면 잃을 글꼴이 없음
-            // 선택 영역의 모든 글자가 이미 그 글꼴이면 그대로 둔다 (span 중복 방지)
-            const d=document.createElement('div');
-            d.appendChild(r.cloneContents());
-            const tw=document.createTreeWalker(d,NodeFilter.SHOW_TEXT);
-            let need=false,tn;
-            while(tn=tw.nextNode()){
-                if(!tn.nodeValue.trim()) continue;
-                let p=tn.parentElement,has=false;
-                while(p&&p!==d){ if(p.style&&p.style.fontFamily===css){ has=true; break; } p=p.parentElement; }
-                if(!has){ need=true; break; }
-            }
-            d.remove();
-            if(!need) return;
-            // 원본 글꼴로 다시 감싸기
-            const span=document.createElement('span');
-            span.style.fontFamily=css;
-            span.appendChild(r.extractContents());
-            r.insertNode(span);
-            const nr=document.createRange(); nr.selectNodeContents(span);
-            s.removeAllRanges(); s.addRange(nr);
-        }catch(e){}
-    }
+    // 서식 연산의 공통 진입 래퍼. 저장해 둔 선택을 살려 fn 에게 host 를 넘기고,
+    // 끝나면 저장 사슬(syncTextEl→saveDoc)과 선택·툴바 상태를 맞춘다.
+    // 구버전이 여기서 하던 execCommand 보정(captureSelFonts/restoreSelFonts/
+    // _keepFontOnSel)은 v2 엔진이 execCommand 를 아예 쓰지 않게 되어 필요 없어졌다.
     function withSelection(fn){
         const host=restoreSel();
         if(!host){ toast('텍스트를 드래그해 선택하세요',1300); return false; }
-        // execCommand 가 없는 환경(일부 웹뷰·jsdom)에서는 스킵 — 색/형광펜은
-        // execCommand 를 쓰지 않으므로 styleWithCSS 유무와 무관하다.
-        if(document.execCommand) document.execCommand('styleWithCSS',false,true);
-        const cap=captureSelFonts();              // 실행 전 부분 글꼴 기억
         fn(host);
-        restoreSelFonts(cap);                     // 잃은 부분 글꼴 되살리기
-        _keepFontOnSel(host);                     // 글꼴 초기화 방지
-        // 선택 유지 → 워드처럼 연속 적용 가능
-        saveSel();
         const w=host.closest('.tb');
         if(w) syncTextEl(w);
+        saveSel();
+        syncCurSel();
         return true;
     }
     // 14.13.4 · 글자 선택 없이 '상자'만 고른 상태 → 상자 전체에 서식을 칠할 대상
@@ -13913,103 +13875,141 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             .filter(n=>!n.classList.contains('latex-box'));
         return t;
     }
-    // 18.6 · 선택 영역 인라인 서식 (워드프로세서 방식)
-    //   execCommand 대신 직접 span 을 다룬다. 부분 글꼴·기타 인라인 스타일을
-    //   풀지 않고, 일부만 적용된 상태에서 토글하면 Word/구글독스처럼
-    //   "전체에 씌우기" 로 동작한다. 취소선·글자색·형광펜·글꼴·크기까지
-    //   같은 엔진으로 처리한다.
+    // ═══════════════════════════════════════════════════════════════════
+    // 18.10 · SDY-FMT v2 — 인라인 서식 엔진 (2026-09 전면 재설계)
     //
-    // 규칙:
-    //   1) 선택 범위와 교차하는 텍스트 노드를 경계에서 쪼개 범위가
-    //      텍스트 노드 단위로 딱 맞게 떨어지게 한다.
-    //   2) 각 선택된 텍스트 노드에 대해, 그 노드를 감싸는 스타일을 계산하고
-    //      가장 안쪽의 span 을 갱신하거나 새 span 을 감싸 스타일을 적용한다.
-    //   3) 제거는 해당 스타일을 가진 조상 span 들마다 그 프로퍼티만 지운다.
-    //      span 이 비면 풀어낸다.
-    //   4) <b>/<strong>/<i>/<em>/<u>/<s>/<strike> 같은 의미 태그도 인식한다.
-    const INLINE_TAGS = new Set(['SPAN','B','STRONG','I','EM','U','S','STRIKE','SUB','SUP','SMALL','BIG','MARK','FONT']);
-    const INLINE_STYLE_PROPS = ['fontWeight','fontStyle','textDecoration','color','backgroundColor',
-                                'fontFamily','fontSize','verticalAlign'];
+    //   [구조를 갈아엎은 이유]
+    //   구버전 엔진은 "선택 조각을 extractContents 로 떼어내고 → 새 span 으로
+    //   감싸고 → _stripInlineProp 로 걷어내고 → _cleanupInline 로 치운다" 는
+    //   수술형이었다. span 이 중첩될수록 '어느 조상이 어떤 속성을 담당하는지'
+    //   상태가 꼬여서, 일부 글꼴을 바꾼 뒤 굵게가 안 먹히는 식의
+    //   순서·환경 의존 버그가 계속 재발했다. execCommand 병행 경로와 그 오류를
+    //   감싸는 보정(captureSelFonts·restoreSelFonts·_keepFontOnSel)까지 얹혀
+    //   구조가 더 복잡해졌다.
+    //
+    //   [v2 · 선언형 재구축(rebuild)]
+    //     1) 상자(.tb-content) 안 글자를 '문자 오프셋 지도'로 잰다.
+    //     2) 편집 범위와 겹치는 문단(리프 블록)마다 토큰 스트림을 만든다.
+    //        토큰 = 글자 세그먼트{텍스트, 유효 스타일, 링크} / <br> / <img> 같은
+    //        원자 노드 / 빈 타이핑 마커 span(.sdy-type).
+    //     3) 편집은 토큰의 스타일 사전을 고치는 것뿐이다. DOM 수술이 없다.
+    //     4) 문단을 정규형으로 다시 그린다(_fmtRender): 유효 스타일이 같은 이웃
+    //        세그먼트는 하나의 <span style="..."> 로 합친다. 링크는 <a> 로 감싸고,
+    //        <br>·<img>·타이핑 마커는 원본 노드를 그대로 옮긴다.
+    //     5) 문자 오프셋으로 선택(캐럿)을 복원한다(_fmtRestoreSelection).
+    //
+    //   - 같은 연산을 여러 번 겹쳐도 항상 평탄한 정규형으로 수렴한다(멱등).
+    //     → "글꼴 바꾼 뒤 굵게가 안 먹힘" 같은 상태 누적 버그가 원천 차단된다.
+    //   - 글자 서식에 execCommand 를 전혀 쓰지 않는다(브라우저/웹뷰 편차 제거).
+    //   - 상자 전체 서식도 같은 경로(전체 범위 적용)라 특수 처리가 없다.
+    //   - 굵게 해제 시에도 '상자 자체가 굵게'인 경우에만 중립값(400)을 적는다.
+    //     평범한 글자는 속성을 삭제해 상속으로 되돌린다(font-weight:400 덧대기 제거).
+    // ═══════════════════════════════════════════════════════════════════
+    const FMT_PROPS=['fontWeight','fontStyle','textDecoration','color','backgroundColor','fontFamily','fontSize','verticalAlign'];
+    const INLINE_STYLE_PROPS=FMT_PROPS;          // 하위 호환 이름
+    const FMT_BLOCK_TAGS=new Set(['DIV','P','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','PRE','UL','OL','TABLE','TR','TD','TH','SECTION','ARTICLE']);
+    const FMT_ATOMIC_TAGS=new Set(['IMG','SVG','CANVAS','VIDEO','AUDIO','IFRAME','HR','INPUT','TEXTAREA','SELECT','BUTTON','OBJECT','EMBED']);
+    let _fmtBusy=false;    // 재구축 중 selectionchange 가 저장 선택을 덮지 않게 하는 잠금
 
-    // 의미 태그(b/i/u/s 등)가 표현하는 스타일 (canonical form)
+    // 의미 태그(b/i/u/s/mark)가 뜻하는 canonical 스타일
     function _tagStyle(tag){
-        tag = String(tag||'').toUpperCase();
+        tag=String(tag||'').toUpperCase();
         if(tag==='B'||tag==='STRONG') return {fontWeight:'700'};
         if(tag==='I'||tag==='EM')     return {fontStyle:'italic'};
         if(tag==='U')                 return {textDecoration:'underline'};
         if(tag==='S'||tag==='STRIKE') return {textDecoration:'line-through'};
         if(tag==='MARK')              return {backgroundColor:'#ffff00'};
+        if(tag==='SUB')               return {verticalAlign:'sub'};
+        if(tag==='SUP')               return {verticalAlign:'super'};
         return null;
     }
-    // prop 에 대해 현재 요소에 적용된 "유효 값"(inline style 또는 의미 태그).
-    // 없으면 ''; 숫자/키워드 모두 정규화.
-    function _propOn(el, prop){
-        if(!el||el.nodeType!==1) return '';
-        const tag = el.tagName;
-        if(INLINE_TAGS.has(tag)){
-            const t = _tagStyle(tag);
-            if(t && Object.prototype.hasOwnProperty.call(t, prop) && !el.style[prop]){
-                return String(t[prop]);
-            }
-        }
-        const v = el.style && el.style[prop];
-        return v ? String(v) : '';
-    }
     function _fwVal(v){
-        v = String(v||'').toLowerCase();
+        v=String(v||'').toLowerCase();
         if(v==='bold'||v==='bolder') return 700;
-        const n = parseInt(v,10);
+        const n=parseInt(v,10);
         if(!isNaN(n)) return n;
         return 0;
     }
-    function _propMatch(prop, actual, desired){
-        actual = String(actual||'').toLowerCase();
-        desired = String(desired||'').toLowerCase();
+    function _propMatch(prop,actual,desired){
+        actual=String(actual||'').toLowerCase();
+        desired=String(desired||'').toLowerCase();
         if(!actual) return false;
         if(prop==='fontWeight'){
-            const a = _fwVal(actual), d = _fwVal(desired);
-            if(a>=600 && d>=600) return true;
-            return a === d && a>0;
+            const a=_fwVal(actual),d=_fwVal(desired);
+            if(a>=600&&d>=600) return true;
+            return a===d&&a>0;
         }
         if(prop==='textDecoration'){
-            // multi-value (underline line-through): desired 값이 토큰으로 들어 있으면 매치
-            const toks = actual.split(/\s+/);
+            const toks=actual.split(/\s+/);
             return toks.indexOf(desired)>=0;
         }
-        return actual === desired;
+        return actual===desired;
     }
-    // 호스트(.tb-content)까지 올라가며 텍스트 노드에 상속되는 인라인 스타일을 모은다.
-    // (의미 태그의 효과도 포함한다)
-    function _inheritedStyles(tn, host){
-        const styles = {};
-        let p = tn.parentElement;
-        const chain = [];
-        while(p && p !== host){
-            if(p.nodeType===1 && INLINE_TAGS.has(p.tagName)){
-                const t = _tagStyle(p.tagName);
-                if(t){ for(const k in t){ if(!(k in styles)) styles[k] = t[k]; } }
-                for(const k of INLINE_STYLE_PROPS){
-                    const v = p.style && p.style[k];
-                    if(v && !(k in styles)) styles[k] = v;
-                }
-                chain.push(p);
-            }
-            p = p.parentElement;
+    function _kebabProp(prop){ return String(prop||'').replace(/([A-Z])/g,'-$1').toLowerCase(); }
+    // prop=value 를 요소 style 에 적는다 (textDecoration 은 토큰 병합)
+    function _setInlineProp(el,prop,value){
+        if(!el||!el.style) return;
+        if(prop==='textDecoration'){
+            const toks=String(value||'').split(/\s+/).filter(t=>t&&t!=='none');
+            el.style.textDecoration=[...new Set(toks)].join(' ');
+        }else{
+            el.style[prop]=value;
         }
-        // 상자 자체(box-level) 서식도 '상속된 서식'으로 인식한다.
-        // 예) 상자 전체 기울임을 걸고 그 안 글자를 선택해도 툴바 active 표시가
-        //     정확해지고, span 을 새로 만들 때 상자 글꼴이 풀리지 않는다.
-        if(host && host.nodeType===1 && host.style){
-            for(const k of INLINE_STYLE_PROPS){
+    }
+    // 요소 style 에서 prop 을 지운다 (textDecoration 토큰 제거 지원)
+    function _clearInlineProp(el,prop,value){
+        if(!el||!el.style) return;
+        if(prop==='textDecoration'&&value){
+            const toks=String(el.style.textDecoration||'').split(/\s+/).filter(t=>t&&t!==value);
+            if(toks.length) el.style.textDecoration=toks.join(' ');
+            else el.style.removeProperty('text-decoration');
+            return;
+        }
+        const kebab=_kebabProp(prop);
+        try{ el.style.removeProperty(kebab); }catch(e){}
+        try{ el.style[prop]=''; }catch(e){}
+    }
+
+    // ── 경계(boundary) 아래 인라인 조상들만의 유효 스타일 ──────────────
+    //   재구축 시 세그먼트에 '다시 선언할' 속성만 모은다. 상자(.tb-content)
+    //   레벨 스타일은 여기에 넣지 않는다 — 상자 글꼴/크기는 상속으로 그대로
+    //   흘러야 나중에 '상자 전체 글꼴 바꾸기'가 막히지 않는다. (18.8 규칙 유지)
+    function _fmtChainStyle(tn,boundary){
+        const styles={};
+        const chain=[];
+        let p=tn.parentElement;
+        while(p&&p!==boundary){ if(p.nodeType===1) chain.push(p); p=p.parentElement; }
+        for(let i=chain.length-1;i>=0;i--){
+            const el=chain[i];
+            const t=_tagStyle(el.tagName);
+            if(t) for(const k in t) if(!(k in styles)) styles[k]=t[k];
+            if(el.style) for(const k of FMT_PROPS){ const v=el.style[k]; if(v&&!(k in styles)) styles[k]=v; }
+            if(el.tagName==='FONT'&&el.getAttribute){
+                const face=el.getAttribute('face'); if(face&&!styles.fontFamily) styles.fontFamily=face;
+                const fc=el.getAttribute('color'); if(fc&&!styles.color) styles.color=fc;
+            }
+        }
+        return styles;
+    }
+    // 텍스트 노드에 상속되는 유효 스타일 (상자 레벨 포함) — 판정/표시용.
+    // 구버전과 같은 시맨틱을 유지해 툴바 상태·토글 판정이 그대로 동작한다.
+    function _inheritedStyles(tn,host){
+        const styles=_fmtChainStyle(tn,host);
+        let link=null;
+        let p=tn.parentElement;
+        while(p&&p!==host){ if(p.nodeType===1&&p.tagName==='A'&&!link) link=p; p=p.parentElement; }
+        if(host&&host.nodeType===1&&host.style){
+            for(const k of FMT_PROPS){
                 if(!(k in styles)){
                     const v=host.style[k];
                     if(v) styles[k]=v;
                 }
             }
         }
-        return {styles, chain};
+        return {styles,link};
     }
-    // 범위와 교차하는 텍스트 노드 목록 (시작/끝 오프셋 포함)
+
+    // ── 선택/범위 기본 도구 ─────────────────────────────────────────
     function _selContacts(r){
         const out=[];
         if(!r) return out;
@@ -14030,212 +14030,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }catch(e){}
         return out;
     }
-    // 선택 범위의 경계에서 텍스트 노드를 쪼개, 이후 연산이 텍스트 노드 경계와
-    // 정확히 일치하게 한다. 반환: {host, nodes:[{node,s,e}], range: (재조정된 range)}
-    function _splitAtBoundaries(r){
-        if(!r) return null;
-        const root=r.commonAncestorContainer;
-        const hostEl = root.nodeType===1?root:root.parentElement;
-        const host = hostEl && hostEl.closest && hostEl.closest('.tb-content');
-        if(!host) return null;
-        const contacts = _selContacts(r);
-        if(!contacts.length) return null;
-        // 끝 → 시작 순서로 쪼개야 오프셋이 꼬이지 않는다.
-        for(let i=contacts.length-1;i>=0;i--){
-            const c=contacts[i];
-            const len=c.node.nodeValue.length;
-            if(c.e<len) c.node.splitText(c.e);
-            if(c.s>0){
-                const mid = c.node.splitText(c.s);
-                c.node = mid;
-            }
-        }
-        // 분할 후 선택을 다시 잡는다
-        const s=window.getSelection();
-        const first=contacts[0].node, last=contacts[contacts.length-1].node;
-        let firstNode = (contacts[0].s>0) ? first : first;
-        // contacts 갱신 (쪼갠 뒤의 node 참조가 c.node 에 들어 있다)
-        const nr=document.createRange();
-        nr.setStartBefore(contacts[0].node);
-        nr.setEndAfter(contacts[contacts.length-1].node);
-        try{ if(s.rangeCount){ s.removeAllRanges(); s.addRange(nr); } }catch(e){}
-        // 연속된 텍스트 노드만 선택 (splitText 후 바로 접근 가능)
-        const nodes = [];
-        const tw = document.createTreeWalker(nr.commonAncestorContainer, NodeFilter.SHOW_TEXT);
-        let n;
-        while(n=tw.nextNode()){
-            if(nr.intersectsNode(n) && n.nodeValue && n.nodeValue.length>0) nodes.push(n);
-        }
-        return {host, nodes, range:nr};
-    }
-    // 빈 span / 의미 없는 요소 정리
-    function _cleanupInline(host){
-        if(!host) return;
-        const toRemove=[];
-        host.querySelectorAll('span,b,strong,i,em,u,s,strike,mark,font').forEach(el=>{
-            // 자식도 없고 텍스트도 없으면 제거
-            if(!el.textContent && !el.querySelector('img')){ toRemove.push(el); return; }
-            // 스타일도 없고 속성도 없으며 의미 태그 효과가 가려졌다면 풀어낸다
-            if(el.tagName==='SPAN'){
-                const style = el.getAttribute('style')||'';
-                const meaningfulAttrs=Array.from(el.attributes||[])
-                    .filter(a=>!(a.name==='style'&&!String(a.value||'').trim()));
-                if(!style.trim() && meaningfulAttrs.length===0){
-                    // 빈 span / style="" 만 남은 span — 풀기
-                    const p = el.parentNode;
-                    while(el.firstChild) p.insertBefore(el.firstChild, el);
-                    toRemove.push(el);
-                }
-            }
-        });
-        toRemove.forEach(el=>{ if(el.parentNode) el.parentNode.removeChild(el); });
-        try{ host.normalize(); }catch(e){}
-    }
-    // 노드 하나에 prop=value 스타일을 "적용"한다.
-    // 이미 모든 조상이 그 스타일을 가지면 아무것도 안 하고, 가장 안쪽 적절한 span 에 적는다.
-    function _applyOne(tn, host, prop, value){
-        // 이미 유효하게 적용돼 있는가? (가장 가까운 inline 조상)
-        const {styles, chain} = _inheritedStyles(tn, host);
-        if(_propMatch(prop, styles[prop]||'', value)) return;
-        // prop 을 가진 조상이 있되 다른 값이면, 거길 덮어쓴다(가장 안쪽 것 하나).
-        // 없으면 새 span 을 만든다.
-        let target = null;
-        for(const an of chain){
-            if(_propOn(an, prop)){ target = an; break; }
-        }
-        if(!target){
-            // 18.8 · 새 span 은 '그 자리에서' 텍스트 노드를 감싸므로 조상 서식은
-            //   그대로 상속된다. 예전에는 상속 스타일을 span 에 통째로 복사했는데,
-            //   그러면 상자 글꼴/크기가 글자마다 인라인으로 박제돼 그 뒤로
-            //   '상자 전체 글꼴·크기 바꾸기'가 먹지 않았다. (보고: 속성을 입힌 뒤
-            //   글꼴 변경 불가) 복사하지 않는 편이 상속상 항상 동일하다.
-            target = document.createElement('span');
-            tn.parentNode.insertBefore(target, tn);
-            target.appendChild(tn);
-        }
-        // 의미 태그(b/i/u/s)라면 css style 로 canonical 을 덮어 씌워 일관성 유지
-        if(prop==='textDecoration'){
-            // 밑줄 + 취소선처럼 여러 토큰이 한 span 에 공존하도록 이전 값을 보존한다.
-            const base = new Set(String(styles[prop]||'').split(/\s+/).filter(Boolean));
-            const cur  = new Set(String(target.style.textDecoration||'').split(/\s+/).filter(Boolean));
-            cur.forEach(t=>base.add(t)); base.add(value); base.delete('none');
-            target.style.textDecoration=[...base].join(' ');
-        }else{
-            target.style[prop] = value;
-        }
-    }
-    // 노드 하나에서 prop 스타일을 제거한다. (모든 기여 조상에서 지운다)
-    function _removeOne(tn, host, prop, value){
-        let p = tn.parentElement;
-        while(p && p !== host){
-            if(p.nodeType===1 && INLINE_TAGS.has(p.tagName)){
-                const v = _propOn(p, prop);
-                if(v){
-                    const isTag = ['B','STRONG','I','EM','U','S','STRIKE','MARK'].indexOf(p.tagName)>=0 && !(p.style && p.style[prop]);
-                    if(isTag){
-                        const span = document.createElement('span');
-                        if(p.getAttribute('style')) span.setAttribute('style', p.getAttribute('style'));
-                        const par = p.parentNode;
-                        while(p.firstChild) span.appendChild(p.firstChild);
-                        par.insertBefore(span, p);
-                        par.removeChild(p);
-                        p = span;
-                        // 의미 태그가 풀린 뒤에도 그 span 이 가질 수 있는 동일 prop(스타일에 명시된 경우)을 계속 제거
-                        continue;
-                    }else{
-                        if(prop==='textDecoration'||prop==='text-decoration'){
-                            const toks = String(p.style.textDecoration||p.style.textDecoration||'').split(/\s+/).filter(t=>t && t!=='none');
-                            const want = value ? String(value).toLowerCase() : '';
-                            let next;
-                            if(want) next = toks.filter(t=>t.toLowerCase()!==want);
-                            else next = [];
-                            if(next.length) p.style.textDecoration = next.join(' ');
-                            else p.style.removeProperty('text-decoration');
-                        }else{
-                            // 브라우저에 따라 camelCase/kebab-case 로만 제거되는 경우가 있어 둘 다 시도
-                            const kebab = prop.replace(/([A-Z])/g,'-$1').toLowerCase();
-                            if(p.style.getPropertyValue(kebab)) p.style.removeProperty(kebab);
-                            else p.style.removeProperty(prop);
-                        }
-                    }
-                }
-            }
-            p = p.parentElement;
-        }
-    }
-    function _kebabProp(prop){ return String(prop||'').replace(/([A-Z])/g,'-$1').toLowerCase(); }
-    function _nodeDepth(el){ let d=0,p=el; while(p){ d++; p=p.parentNode; } return d; }
-    function _semanticPropMatch(el, prop, value){
-        if(!el||el.nodeType!==1) return false;
-        const tag=el.tagName;
-        if(prop==='fontWeight') return tag==='B'||tag==='STRONG';
-        if(prop==='fontStyle') return tag==='I'||tag==='EM';
-        if(prop==='backgroundColor') return tag==='MARK';
-        if(prop==='textDecoration'){
-            const want=String(value||'').toLowerCase();
-            if(tag==='U') return !want||want==='underline';
-            if(tag==='S'||tag==='STRIKE') return !want||want==='line-through';
-        }
-        return false;
-    }
-    function _replaceInlineWithSpan(el){
-        if(!el||!el.parentNode) return null;
-        const span=document.createElement('span');
-        try{
-            Array.from(el.attributes||[]).forEach(a=>{
-                if(a.name==='style') return;
-                span.setAttribute(a.name,a.value);
-            });
-            if(el.getAttribute('style')) span.setAttribute('style',el.getAttribute('style'));
-        }catch(e){}
-        while(el.firstChild) span.appendChild(el.firstChild);
-        el.parentNode.insertBefore(span,el); el.parentNode.removeChild(el);
-        return span;
-    }
-    function _removeStyleProp(el, prop, value){
-        if(!el||!el.style) return;
-        if(prop==='textDecoration'){
-            const want=String(value||'').toLowerCase();
-            const toks=String(el.style.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none');
-            const next=want ? toks.filter(t=>t.toLowerCase()!==want) : [];
-            if(next.length) el.style.textDecoration=next.join(' ');
-            else el.style.removeProperty('text-decoration');
-            return;
-        }
-        const kebab=_kebabProp(prop);
-        try{ el.style.removeProperty(kebab); }catch(e){}
-        try{ el.style[prop]=''; }catch(e){}
-        if(el.tagName==='FONT'){
-            if(prop==='color') el.removeAttribute('color');
-            if(prop==='fontFamily') el.removeAttribute('face');
-            if(prop==='fontSize') el.removeAttribute('size');
-        }
-    }
-    function _stripInlineProp(root, prop, value, opts){
-        if(!root) return;
-        const skipRoot=!!(opts&&opts.skipRoot);
-        let els=[];
-        try{
-            if(root.nodeType===1&&!skipRoot) els.push(root);
-            if(root.querySelectorAll) els=els.concat(Array.from(root.querySelectorAll('*')));
-        }catch(e){}
-        // 의미 태그(<b>, <u> 등)는 안쪽부터 span 으로 바꿔야 선택 밖 조상이 바뀌지 않는다.
-        els.sort((a,b)=>_nodeDepth(b)-_nodeDepth(a));
-        els.forEach(el=>{
-            let node=el;
-            if(_semanticPropMatch(node,prop,value)) node=_replaceInlineWithSpan(node)||node;
-            _removeStyleProp(node,prop,value);
-        });
-    }
-    function _setInlineProp(el, prop, value){
-        if(!el||!el.style) return;
-        if(prop==='textDecoration'){
-            const toks=String(value||'').split(/\s+/).filter(t=>t&&t!=='none');
-            el.style.textDecoration=[...new Set(toks)].join(' ');
-        }else{
-            el.style[prop]=value;
-        }
-    }
     function _selectionCtx(){
         const s=window.getSelection();
         if(!s||s.isCollapsed||!s.rangeCount) return null;
@@ -14251,231 +14045,452 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }catch(e){}
         return {sel:s,range:r,host};
     }
-    function _selectInsertedContents(sel, node, host){
+
+    // ── ① 문자 오프셋 지도 ─────────────────────────────────────────
+    //   host 안 모든 텍스트 노드를 문서 순으로 [start,end) 절대 오프셋과 함께.
+    function _fmtTextMap(host){
+        const map=[]; let off=0;
         try{
-            const nr=document.createRange();
-            if(node.nodeType===11){
-                // DocumentFragment 는 insert 후 비므로 쓰지 않는다.
-                return;
+            const tw=document.createTreeWalker(host,NodeFilter.SHOW_TEXT);
+            let n;
+            while(n=tw.nextNode()){
+                const len=String(n.nodeValue||'').length;
+                if(len>0){ map.push({node:n,start:off,end:off+len}); off+=len; }
             }
-            if(node.nodeType===3){ nr.setStartBefore(node); nr.setEndAfter(node); }
-            else { nr.selectNodeContents(node); }
-            sel.removeAllRanges(); sel.addRange(nr);
+        }catch(e){}
+        map.total=off;
+        return map;
+    }
+    function _fmtTextLen(host){ return _fmtTextMap(host).total; }
+    // '어떤 지점(컨테이너,오프셋)' → host 기준 문자 오프셋.
+    //   지점~host 끝까지의 텍스트 길이를 재서 total 에서 빼는 방식이라
+    //   요소 경계/텍스트 중간 어디서 시작해도 정확하다.
+    function _fmtOffsetAt(host,container,offset){
+        try{
+            const total=_fmtTextLen(host);
+            const r=document.createRange();
+            r.setStart(container,offset);
+            r.setEnd(host,host.childNodes.length);
+            const tail=String(r.toString()).length;
+            return Math.max(0,total-tail);
+        }catch(e){ return 0; }
+    }
+    function _fmtOffsets(host,range){
+        const start=_fmtOffsetAt(host,range.startContainer,range.startOffset);
+        let end=_fmtOffsetAt(host,range.endContainer,range.endOffset);
+        if(end<start) end=start;
+        return {start,end};
+    }
+    // 문자 오프셋 → (노드,노드오프셋). 경계에서는 '다음 글자의 시작'을 택해
+    // 뒤이어 입력할 글자가 앞 서식 span 안으로 들어가지 않게 한다.
+    function _fmtPointFromOffset(host,offset){
+        const map=_fmtTextMap(host);
+        for(const t of map){
+            if(offset<t.end) return {node:t.node,offset:offset-t.start};
+        }
+        const last=map[map.length-1];
+        if(last) return {node:last.node,offset:last.node.nodeValue.length};
+        return {node:host,offset:host.childNodes.length};
+    }
+    function _fmtRestoreSelection(host,start,end){
+        try{
+            const a=_fmtPointFromOffset(host,start), b=_fmtPointFromOffset(host,end);
+            const nr=document.createRange();
+            nr.setStart(a.node,a.offset);
+            nr.setEnd(b.node,b.offset);
+            const s=window.getSelection();
+            s.removeAllRanges(); s.addRange(nr);
             savedRange=nr.cloneRange(); savedHost=host;
         }catch(e){}
     }
-    function _insertFragmentKeepSelection(range, sel, frag, host){
-        const start=document.createComment('sdy-sel-start');
-        const end=document.createComment('sdy-sel-end');
-        const out=document.createDocumentFragment();
-        out.appendChild(start); out.appendChild(frag); out.appendChild(end);
-        range.insertNode(out);
-        try{
-            const nr=document.createRange();
-            nr.setStartAfter(start); nr.setEndBefore(end);
-            sel.removeAllRanges(); sel.addRange(nr);
-            savedRange=nr.cloneRange(); savedHost=host;
-            start.parentNode&&start.parentNode.removeChild(start);
-            end.parentNode&&end.parentNode.removeChild(end);
-        }catch(e){
-            try{ start.remove(); end.remove(); }catch(_e){}
+
+    // ── ② 리프 블록(문단) 찾기 ─────────────────────────────────────
+    //   텍스트 노드가 속한 '가장 안쪽 블록'. 블록이 없으면 host 자체(암시 영역).
+    function _fmtLeafBlock(node,host){
+        let p=(node.nodeType===3)?node.parentElement:node;
+        while(p&&p!==host){
+            if(FMT_BLOCK_TAGS.has(p.tagName)) return p;
+            p=p.parentElement;
         }
+        return host;
     }
-    function _unwrapElementKeepChildren(el){
-        if(!el||!el.parentNode) return;
-        const p=el.parentNode;
-        while(el.firstChild) p.insertBefore(el.firstChild,el);
-        p.removeChild(el);
+    // [start,end) 와 글자가 겹치는 리프 블록들을 문서 순으로 그룹핑.
+    //   host 암시 영역은 블록 요소 사이의 '연속 구간'마다 별개 그룹이 된다.
+    function _fmtGroups(host,map,start,end){
+        const groups=[];
+        for(const t of map){
+            if(t.end<=start||t.start>=end) continue;
+            const blk=_fmtLeafBlock(t.node,host);
+            const g=groups[groups.length-1];
+            if(g&&g.el===blk) g.last=t.node;
+            else groups.push({el:blk,first:t.node,last:t.node});
+        }
+        return groups;
     }
-    function _selectionBoundaryLink(range,host){
-        const linkOf=n=>{
-            let p=n&&(n.nodeType===1?n:n.parentElement);
-            while(p&&p!==host){ if(p.tagName==='A') return p; p=p.parentElement; }
-            return null;
+
+    // ── ③ 문단 토큰화 ──────────────────────────────────────────────
+    //   block 하위를 문서 순으로 walk 해 토큰 스트림을 만든다.
+    //   block===host 이면 다른 블록 요소 안으로는 내려가지 않는다(암시 영역만).
+    function _fmtTokens(block,host){
+        const tokens=[];
+        (function walk(el,link){
+            for(let k=el.firstChild;k;k=k.nextSibling){
+                if(k.nodeType===3){ tokens.push({t:'text',node:k,link:link||null}); continue; }
+                if(k.nodeType!==1) continue;
+                const tag=k.tagName;
+                if(block===host&&FMT_BLOCK_TAGS.has(tag)) continue;
+                if(tag==='BR'){ tokens.push({t:'br',node:k}); continue; }
+                if(FMT_ATOMIC_TAGS.has(tag)){ tokens.push({t:'atom',node:k,link:link||null}); continue; }
+                const hasInner=!!(String(k.textContent||'').length
+                    ||(k.querySelector&&k.querySelector('img,br,svg,canvas,video,audio,iframe,hr')));
+                if(!hasInner){
+                    // 빈 span. 입력 대기 마커(.sdy-type)만 원자 토큰으로 살려 둔다.
+                    if(k.classList&&k.classList.contains('sdy-type')) tokens.push({t:'type',node:k});
+                    continue;
+                }
+                walk(k, tag==='A'?k:(link||null));
+            }
+        })(block,null);
+        return tokens;
+    }
+
+    // ── ④ 세그먼트 편집 + 정규형 렌더 ──────────────────────────────
+    function _fmtStyleKey(style){
+        const keys=Object.keys(style||{}).filter(k=>String(style[k]||'').trim()!=='');
+        keys.sort();
+        return keys.map(k=>k+'='+_normComparable(k,style[k])).join('|');
+    }
+    function _fmtLinkKey(l){
+        if(!l) return '';
+        return l.el
+            ? 'E|'+(l.el.getAttribute('href')||'')+'|'+(l.el.getAttribute('target')||'')
+            : 'N|'+(l.href||'')+'|'+(l.target||'');
+    }
+    function _fmtLinkClone(l){
+        let a;
+        if(l&&l.el&&l.el.cloneNode) a=l.el.cloneNode(false);
+        else{
+            a=document.createElement('a');
+            a.setAttribute('href',(l&&l.href)||'#');
+            a.setAttribute('target',(l&&l.target)||'_blank');
+            a.setAttribute('rel',(l&&l.rel)||'noopener');
+        }
+        return a;
+    }
+    // 토큰(이미 편집 완료된 세그먼트) → DOM. 같은 스타일+같은 링크의 이웃
+    // 세그먼트는 하나의 text node(+span)로 합쳐 span 이 누적되지 않는다.
+    function _fmtRender(tokens){
+        const frag=document.createDocumentFragment();
+        const flush=grp=>{
+            if(!grp) return;
+            let parent=frag;
+            if(grp.link){ const a=_fmtLinkClone(grp.link); frag.appendChild(a); parent=a; }
+            const style=grp.style||{};
+            const cssKeys=Object.keys(style).filter(k=>String(style[k]||'').trim()!=='');
+            const tn=document.createTextNode(grp.texts.join(''));
+            if(cssKeys.length){
+                const sp=document.createElement('span');
+                // CSSOM 으로 적는다 — setAttribute 문자열 대신 쓰면 브라우저·jsdom 이
+                // 같은 방식으로 값을 정규화·직렬화한다(#fff59d → rgb(255,245,157) 등).
+                for(const k of cssKeys){
+                    try{ sp.style.setProperty(_kebabProp(k),String(style[k]).trim()); }catch(_e){}
+                }
+                sp.appendChild(tn);
+                parent.appendChild(sp);
+            }else parent.appendChild(tn);
         };
-        const a=linkOf(range.startContainer), b=linkOf(range.endContainer);
-        return a&&a===b?a:null;
-    }
-    function _cloneLinkShell(a,frag){
-        const cp=a.cloneNode(false);
-        cp.appendChild(frag);
-        return cp;
-    }
-    function _unlinkSingleLinkSelection(ctx){
-        const {sel,range,host}=ctx;
-        const a=_selectionBoundaryLink(range,host);
-        if(!a||!a.parentNode) return false;
-        try{
-            const r=range.cloneRange();
-            const before=document.createRange(); before.setStart(a,0); before.setEnd(r.startContainer,r.startOffset);
-            const after=document.createRange(); after.setStart(r.endContainer,r.endOffset); after.setEnd(a,a.childNodes.length);
-            const beforeFrag=before.cloneContents();
-            const selFrag=r.cloneContents();
-            const afterFrag=after.cloneContents();
-            if(!_selectionHasContent(selFrag)) return false;
-            try{ selFrag.querySelectorAll&&selFrag.querySelectorAll('a').forEach(x=>_unwrapElementKeepChildren(x)); }catch(e){}
-            const p=a.parentNode;
-            const start=document.createComment('sdy-link-start'), end=document.createComment('sdy-link-end');
-            if(_selectionHasContent(beforeFrag)) p.insertBefore(_cloneLinkShell(a,beforeFrag),a);
-            p.insertBefore(start,a); p.insertBefore(selFrag,a); p.insertBefore(end,a);
-            if(_selectionHasContent(afterFrag)) p.insertBefore(_cloneLinkShell(a,afterFrag),a);
-            p.removeChild(a);
-            const nr=document.createRange(); nr.setStartAfter(start); nr.setEndBefore(end);
-            sel.removeAllRanges(); sel.addRange(nr);
-            savedRange=nr.cloneRange(); savedHost=host;
-            start.parentNode&&start.parentNode.removeChild(start);
-            end.parentNode&&end.parentNode.removeChild(end);
-            _cleanupInline(host);
-            return true;
-        }catch(e){ return false; }
-    }
-    function _expandLinkRange(r,host){
-        let out=r.cloneRange();
-        try{
-            let p=out.commonAncestorContainer.nodeType===1?out.commonAncestorContainer:out.commonAncestorContainer.parentElement;
-            while(p&&p!==host){
-                if(p.tagName==='A'&&_rangeCoversContents(out,p)){
-                    const nr=document.createRange(); nr.selectNode(p);
-                    out=nr;
-                    p=out.commonAncestorContainer.nodeType===1?out.commonAncestorContainer.parentElement:null;
-                    continue;
-                }
-                p=p.parentElement;
+        let grp=null;
+        for(const tk of tokens){
+            if(tk.t==='text'){
+                const key=_fmtStyleKey(tk.style)+'\u0000'+_fmtLinkKey(tk.link);
+                if(grp&&grp.key===key){ grp.texts.push(tk.text); continue; }
+                flush(grp);
+                grp={key,style:tk.style,link:tk.link,texts:[tk.text]};
+            }else{
+                flush(grp); grp=null;
+                const n=tk.node;
+                if(tk.link){ const a=_fmtLinkClone(tk.link); a.appendChild(n); frag.appendChild(a); }
+                else frag.appendChild(n);
             }
-        }catch(e){}
-        return out;
+        }
+        flush(grp);
+        return frag;
     }
-    function _unlinkSelection(){
-        const ctx=_selectionCtx();
-        if(!ctx) return false;
-        if(_unlinkSingleLinkSelection(ctx)) return true;  // 링크의 일부만 선택해도 그 조각만 링크 해제
-        const {sel,range,host}=ctx;
-        const r=_expandLinkRange(range,host);
-        const frag=r.extractContents();
-        if(!_selectionHasContent(frag)) return false;
-        try{ frag.querySelectorAll&&frag.querySelectorAll('a').forEach(a=>_unwrapElementKeepChildren(a)); }catch(e){}
-        _insertFragmentKeepSelection(r,sel,frag,host);
-        _cleanupInline(host);
-        return true;
-    }
-    function _selectionHasContent(frag){
-        if(!frag) return false;
-        if(String(frag.textContent||'').length) return true;
-        return !!(frag.querySelector&&frag.querySelector('img,br,svg,canvas,video,audio'));
-    }
-    // 선택 전체에 prop=value 적용. Range.extractContents() 로 경계를 DOM 문자 오프셋에
-    // 맞춰 쪼갠 뒤 새 span 을 넣으므로, 단어/공백 단위가 아니라 선택한 글자만 바뀐다.
-    function _applyToSelection(prop, value){
-        const ctx=_selectionCtx();
-        if(!ctx) return false;
-        const {sel,range,host}=ctx;
-        const r=range.cloneRange();
-        const frag=r.extractContents();
-        if(!_selectionHasContent(frag)) return false;
-        // 선택 내부에 같은 속성이 이미 있으면 새 값이 덮어쓸 수 있게 제거한다.
-        // 다른 속성은 그대로 두어 글꼴/색/굵기 등이 서로 풀리지 않게 한다.
-        _stripInlineProp(frag,prop,value);
-        const span=document.createElement('span');
-        _setInlineProp(span,prop,value);
-        span.appendChild(frag);
-        r.insertNode(span);
-        _cleanupInline(host);
-        _selectInsertedContents(sel,span,host);
-        return true;
-    }
-    function _rangeCoversContents(r,el){
-        if(!r||!el) return false;
-        try{
-            const full=document.createRange();
-            full.selectNodeContents(el);
-            if(r.compareBoundaryPoints(Range.START_TO_START,full)<=0
-               && r.compareBoundaryPoints(Range.END_TO_END,full)>=0) return true;
-            // 18.9 · 경계가 요소 '안쪽 텍스트 노드'에 잡혀 있어도(예: <b>글자</b> 를
-            //   드래그하면 경계는 텍스트 노드가 된다) 내용 전체를 덮었다면 같은 것으로
-            //   본다. 이걸 못 알아채면 굵게 해제·서식 지우기가 <b> 태그를 못 벗겨
-            //   안쪽에 font-weight:400 span 만 덧대는 어정쩡한 결과가 됐다.
-            const txt=String(el.textContent||'');
-            if(!txt) return false;
-            if(String(r.toString())!==txt) return false;
-            const sc=r.startContainer, ec=r.endContainer;
-            return (el===sc||el.contains(sc))&&(el===ec||el.contains(ec));
-        }catch(e){ return false; }
-    }
-    function _expandRemovalRange(r,host,prop,value){
-        let out=r.cloneRange();
-        try{
-            let p=out.commonAncestorContainer.nodeType===1?out.commonAncestorContainer:out.commonAncestorContainer.parentElement;
-            while(p&&p!==host){
-                const has=_propMatch(prop,_propOn(p,prop)||'',value||_propOn(p,prop)) || _semanticPropMatch(p,prop,value);
-                if(has&&_rangeCoversContents(out,p)){
-                    const nr=document.createRange();
-                    nr.selectNode(p);
-                    out=nr;
-                    p=out.commonAncestorContainer.nodeType===1?out.commonAncestorContainer.parentElement:null;
-                    continue;
-                }
-                p=p.parentElement;
+
+    // 문단 하나를 다시 그린다. op 는 {type:'set'|'remove'|'clear'|'link'|'unlink', ...}
+    function _fmtRebuildBlock(host,g,map,start,end,op){
+        const block=g.el;
+        const isHost=(block===host);
+        let tokens=_fmtTokens(block,host);
+        const byNode=new Map();
+        for(const t of map) byNode.set(t.node,t);
+        for(const tk of tokens){
+            if(tk.t!=='text') continue;
+            const m=byNode.get(tk.node);
+            tk.start=m?m.start:0;
+            tk.end=tk.start+String(tk.node.nodeValue||'').length;
+            tk.style=_fmtChainStyle(tk.node,block);   // 상자(블록) 레벨 스타일은 재선언하지 않는다
+        }
+        let kids=null,i0=0,i1=-1;
+        if(isHost){
+            // 암시 영역: 이 그룹이 속한 '연속된 비블록 구간(암시 문단)' 전체를
+            //   다시 그린다. 선택된 글자의 직계 범위만 바꾸면 문단 나머지 글자가
+            //   밖에 고립돼 이웃 세그먼트와 합쳐지지 않은 채 남는다.
+            kids=Array.from(host.childNodes);
+            const topIdx=n=>{
+                let p=n;
+                while(p&&p.parentNode!==host) p=p.parentNode;
+                return kids.indexOf(p);
+            };
+            const isBlk=n=>n.nodeType===1&&FMT_BLOCK_TAGS.has(n.tagName);
+            i0=topIdx(g.first); i1=topIdx(g.last);
+            if(i0<0||i1<0||i1<i0) return false;
+            while(i0>0&&!isBlk(kids[i0-1])) i0--;
+            while(i1<kids.length-1&&!isBlk(kids[i1+1])) i1++;
+            tokens=tokens.filter(tk=>{ const i=topIdx(tk.node); return i>=i0&&i<=i1; });
+        }
+        // 세그먼트 분할 + 연산 적용
+        const out=[];
+        for(const tk of tokens){
+            if(tk.t!=='text'){ out.push(tk); continue; }
+            const s=tk.start,e=tk.end,v=String(tk.node.nodeValue||'');
+            if(e<=s||!v) continue;
+            if(e<=start||s>=end){
+                out.push({t:'text',text:v,style:tk.style,link:tk.link});
+                continue;
             }
-        }catch(e){}
-        return out;
-    }
-    // 선택 전체에서 prop 제거 (value 를 주면 textDecoration 토큰 하나만 제거).
-    // 선택 조각만 꺼내서 처리하므로 같은 span 안의 선택 밖 글자는 건드리지 않는다.
-    function _removeFromSelection(prop, value){
-        const ctx=_selectionCtx();
-        if(!ctx) return false;
-        const {sel,range,host}=ctx;
-        const r=_expandRemovalRange(range,host,prop,value);
-        const frag=r.extractContents();
-        if(!_selectionHasContent(frag)) return false;
-        _stripInlineProp(frag,prop,value);
-        // 상자/바깥 조상에서 물려받은 굵기·기울임은 normal span 으로 선택 구간만 끈다.
-        // (글자색/배경/글꼴은 제거 시 상자 기본값을 따르도록 두고, 적용은 항상 override span 사용)
-        if(prop==='fontWeight'||prop==='fontStyle'){
-            const span=document.createElement('span');
-            span.style[prop]=(prop==='fontWeight')?'400':'normal';
-            span.appendChild(frag);
-            r.insertNode(span);
-            _cleanupInline(host);
-            _selectInsertedContents(sel,span,host);
+            const a=Math.max(s,start), b=Math.min(e,end);
+            if(a>s) out.push({t:'text',text:v.slice(0,a-s),style:tk.style,link:tk.link});
+            const st=Object.assign({},tk.style);
+            let lk=tk.link;
+            if(op.type==='set'||op.type==='setbox'){
+                const had=Object.prototype.hasOwnProperty.call(st,op.prop);
+                if(op.prop==='textDecoration'){
+                    // 밑줄+취소선처럼 여러 토큰이 한 세그먼트에 공존한다 (토큰 병합)
+                    const toks=new Set(String(st.textDecoration||'').split(/\s+/).filter(t=>t&&t!=='none'));
+                    String(op.value||'').split(/\s+/).filter(t=>t&&t!=='none').forEach(t=>toks.add(t));
+                    st.textDecoration=[...toks].join(' ');
+                }else{
+                    st[op.prop]=op.value;
+                }
+                if(op.type==='setbox'&&!had){
+                    // setbox(상자 전체 값 교체)는 인라인 오버라이드가 없던 글자를
+                    // 새로 만들지 않는다 — 상자 값 상속을 유지하기 위함.
+                    delete st[op.prop];
+                }
+            }
+            else if(op.type==='remove'){
+                if(op.prop==='textDecoration'&&op.value){
+                    const toks=String(st.textDecoration||'').split(/\s+/).filter(t=>t&&t!==op.value);
+                    if(toks.length) st.textDecoration=toks.join(' ');
+                    else delete st.textDecoration;
+                }
+                else if(op.neutral) st[op.prop]=op.neutral;   // 상자 상속을 끊는 명시적 중립값
+                else delete st[op.prop];
+            }
+            else if(op.type==='clear'){ FMT_PROPS.forEach(p=>{ delete st[p]; }); }
+            else if(op.type==='unlink') lk=null;
+            else if(op.type==='link') lk={href:op.href,target:'_blank',rel:'noopener'};
+            out.push({t:'text',text:v.slice(a-s,b-s),style:st,link:lk});
+            if(b<e) out.push({t:'text',text:v.slice(b-s),style:tk.style,link:tk.link});
+        }
+        // 타이핑 마커 span 도 연산을 함께 받는다 (다음 입력 글자의 서식 유지)
+        if(op&&op.type!=='unlink'&&op.type!=='link'){
+            out.forEach(tk=>{
+                if(tk.t!=='type') return;
+                if(op.type==='set') _setInlineProp(tk.node,op.prop,op.value);
+                else if(op.type==='remove') _clearInlineProp(tk.node,op.prop,op.value);
+                else if(op.type==='clear') FMT_PROPS.forEach(p=>_clearInlineProp(tk.node,p,''));
+            });
+        }
+        const frag=_fmtRender(out);
+        // 다시 끼우기
+        if(isHost){
+            const ref=kids[i1+1]||null;
+            for(let i=i0;i<=i1;i++){ if(kids[i].parentNode===host) host.removeChild(kids[i]); }
+            host.insertBefore(frag,ref);
         }else{
-            _insertFragmentKeepSelection(r,sel,frag,host);
-            _cleanupInline(host);
+            while(block.firstChild) block.removeChild(block.firstChild);
+            block.appendChild(frag);
         }
         return true;
     }
-    // 선택 영역이 전부 해당 스타일을 가지고 있는가? (토글 off 판정)
-    function _selHasAll(prop, value){
-        const s = window.getSelection();
+
+    // ── ⑤ 실행기 ───────────────────────────────────────────────────
+    //   범위 연산 (선택 복원 없음 — 상자 전체/맞춤 검사 등에서 사용)
+    function _fmtRunRange(host,start,end,op){
+        if(!host||end<=start) return false;
+        const map=_fmtTextMap(host);
+        if(!map.total) return false;
+        const groups=_fmtGroups(host,map,start,end);
+        if(!groups.length) return false;
+        _fmtBusy=true;
+        try{
+            groups.forEach(g=>_fmtRebuildBlock(host,g,map,start,end,op));
+        }finally{ _fmtBusy=false; }
+        return true;
+    }
+    //   현재 선택 구간 연산 + 선택 복원
+    function _fmtApply(op){
+        const ctx=_selectionCtx();
+        if(!ctx) return false;
+        const host=ctx.host;
+        const o=_fmtOffsets(host,ctx.range);
+        if(o.end<=o.start) return false;
+        const map=_fmtTextMap(host);
+        const groups=_fmtGroups(host,map,o.start,o.end);
+        if(!groups.length) return false;
+        _fmtBusy=true;
+        try{
+            groups.forEach(g=>_fmtRebuildBlock(host,g,map,o.start,o.end,op));
+            _fmtRestoreSelection(host,o.start,o.end);
+        }finally{ _fmtBusy=false; }
+        return true;
+    }
+    //   굵게/기울임 '해제'가 상자 레벨 상속과 충돌할 때만 중립값을 쓴다.
+    function _fmtNeutralFor(host,prop){
+        if(!host||!host.style) return '';
+        if(prop==='fontWeight'&&_fwVal(host.style.fontWeight)>=600) return '400';
+        if(prop==='fontStyle'&&String(host.style.fontStyle||'').toLowerCase()==='italic') return 'normal';
+        return '';
+    }
+
+    // ── ⑥ 선택 구간 공개 API (기존 호출부와 이름 호환) ─────────────
+    function _applyToSelection(prop,value){
+        return _fmtApply({type:'set',prop,value});
+    }
+    function _removeFromSelection(prop,value){
+        const ctx=_selectionCtx();
+        const neutral=ctx?_fmtNeutralFor(ctx.host,prop):'';
+        return _fmtApply({type:'remove',prop,value:String(value||''),neutral});
+    }
+    // 선택 영역이 전부 해당 스타일인가? (토글 off 판정)
+    function _selHasAll(prop,value){
+        const s=window.getSelection();
         if(!s||s.isCollapsed||!s.rangeCount) return false;
-        const r = s.getRangeAt(0);
-        const hostEl = r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement;
-        const host = hostEl && hostEl.closest && hostEl.closest('.tb-content');
+        const r=s.getRangeAt(0);
+        const hostEl=r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement;
+        const host=hostEl&&hostEl.closest&&hostEl.closest('.tb-content');
         if(!host) return false;
-        const contacts = _selContacts(r);
+        const contacts=_selContacts(r);
         if(!contacts.length) return false;
         for(const c of contacts){
-            const {styles} = _inheritedStyles(c.node, host);
-            if(!_propMatch(prop, styles[prop]||'', value)) return false;
+            const {styles}=_inheritedStyles(c.node,host);
+            if(!_propMatch(prop,styles[prop]||'',value)) return false;
         }
         return true;
     }
-    // 선택 영역이 하나라도 해당 스타일을 가지고 있는가?
-    function _selHasAny(prop, value){
-        const s = window.getSelection();
+    // 선택 영역이 하나라도 해당 스타일을 갖고 있는가?
+    function _selHasAny(prop,value){
+        const s=window.getSelection();
         if(!s||s.isCollapsed||!s.rangeCount) return false;
-        const r = s.getRangeAt(0);
-        const hostEl = r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement;
-        const host = hostEl && hostEl.closest && hostEl.closest('.tb-content');
+        const r=s.getRangeAt(0);
+        const hostEl=r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement;
+        const host=hostEl&&hostEl.closest&&hostEl.closest('.tb-content');
         if(!host) return false;
-        const contacts = _selContacts(r);
+        const contacts=_selContacts(r);
         for(const c of contacts){
-            const {styles} = _inheritedStyles(c.node, host);
-            if(_propMatch(prop, styles[prop]||'', value)) return true;
+            const {styles}=_inheritedStyles(c.node,host);
+            if(_propMatch(prop,styles[prop]||'',value)) return true;
         }
         return false;
     }
+    // 워드프로세서 규칙: 전부 켜져 있으면 끄고, 아니면 (부분이든) 켠다.
+    // v2 재구축이라 '일부만 적용된 상태에서 켜기'도 항상 통일된 결과를 낸다.
+    function toggleSelStyle(prop,value){
+        const all=_selHasAll(prop,value);
+        if(all) _removeFromSelection(prop,value);
+        else _applyToSelection(prop,value);
+        syncCurSel();
+    }
+    function wrapSelStyle(prop,value){
+        try{ _applyToSelection(prop,value); }catch(e){}
+        syncCurSel();
+    }
+    function clearSelStyle(prop){
+        try{ _removeFromSelection(prop); }catch(e){}
+        syncCurSel();
+    }
+    function clearSelBg(){
+        try{ _removeFromSelection('backgroundColor'); }catch(e){}
+        syncCurSel();
+    }
+    // 선택 영역에서 글자색 제거 (상속으로 되돌리기)
+    function clearSelColor(){
+        try{ _removeFromSelection('color'); }catch(e){}
+        syncCurSel();
+    }
 
+    // ── ⑦ 링크 ─────────────────────────────────────────────────────
+    //   execCommand(createLink/unlink) 없이 엔진 경로 하나로 처리한다.
+    //   링크 중간 일부만 골라 해제해도 그 조각만 벗겨진다.
+    function _fmtLinkSelection(href){
+        return _fmtApply({type:'link',href:String(href||'')});
+    }
+    function _unlinkSelection(){
+        return _fmtApply({type:'unlink'});
+    }
+
+    // ── ⑧ 문단 정렬 ────────────────────────────────────────────────
+    //   execCommand(justify*) 대신 대상 블록에 text-align 을 직접 적는다.
+    function _fmtAlignRange(host,start,end,dir){
+        if(!host) return false;
+        const map=_fmtTextMap(host);
+        const blocks=new Set();
+        for(const t of map){
+            if(t.end<=start||t.start>=end) continue;
+            blocks.add(_fmtLeafBlock(t.node,host));
+        }
+        if(!blocks.size) return false;
+        blocks.forEach(b=>{
+            b.style.textAlign=dir;
+            if(b===host){
+                // 암시 영역(블록 요소 없이 상자에 바로 든 글)은 상자 정렬로 기록
+                const w=b.closest&&b.closest('.tb');
+                const el=w?findEl(+w.dataset.pageIdx,w.dataset.id):null;
+                if(el) el.align=dir;
+            }
+        });
+        return true;
+    }
+    function _fmtAlignSelection(dir){
+        const ctx=_selectionCtx();
+        if(!ctx) return false;
+        const o=_fmtOffsets(ctx.host,ctx.range);
+        return _fmtAlignRange(ctx.host,o.start,o.end,dir);
+    }
+
+    // ── ⑨ 상자 전체 연산 (선택 없이 상자만 골랐을 때) ──────────────
+    //   구버전의 _applyOne/_removeOne 루프+걷어내기를 버리고, 엔진의 전체
+    //   범위 적용 하나로 통일했다. 부분 서식(span)이 있어도 문단 정규형으로
+    //   다시 그려지므로 덮어쓰기/보존이 항상 정확하다.
+    function _fmtUnpaintWF(host){
+        // 중요어 색칠(.wf)은 저장되지 않는 임시 레이어다. 서식 연산 전에 원문으로
+        // 되돌려 색칠 span 이 서식 결과에 섞이지 않게 한다(enterEdit 과 같은 규칙).
+        try{
+            if(host.querySelector&&host.querySelector('.wf')){
+                const w=host.closest&&host.closest('.tb');
+                const el=w?findEl(+w.dataset.pageIdx,w.dataset.id):null;
+                if(el) host.innerHTML=el.html||'';
+            }
+        }catch(e){}
+    }
+    function _fmtApplyBox(c,prop,value,override){
+        if(!c) return false;
+        _fmtUnpaintWF(c);
+        // override=true : 상자 전체 값(글꼴·크기) 변경 — 이미 인라인 오버라이드가
+        //   있는 부분만 갱신하고 나머지는 상자 값 상속을 유지한다.
+        // override=false : 상자 전체 덧칠(굵게·색 등) — 모든 글자에 값을 심는다.
+        const type=override?'setbox':'set';
+        return _fmtRunRange(c,0,_fmtTextLen(c),{type,prop,value});
+    }
+    function _fmtRemoveBox(c,prop,value){
+        if(!c) return false;
+        _fmtUnpaintWF(c);
+        return _fmtRunRange(c,0,_fmtTextLen(c),{type:'remove',prop,value:String(value||''),neutral:''});
+    }
+
+    // ── 값 정규화 비교 (툴바 표시·토글 판정이 쓰는 공용 도구) ──────
     function _normFontCSS(v){
         return String(v||'').toLowerCase().replace(/["']/g,'').replace(/\s*,\s*/g,',').replace(/\s+/g,' ').trim();
     }
@@ -14512,6 +14527,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         return String(v||'').trim().toLowerCase();
     }
+    // 선택한 모든 글자가 한 속성값을 공유하는가? (툴바에 단일 값으로 표시할지 판정)
     function _selUniformStyle(prop){
         const ctx=_selectionCtx();
         if(!ctx) return {ok:false};
@@ -14531,116 +14547,25 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return any?{ok:true,value:firstVal,norm:firstNorm}:{ok:false};
     }
 
-    // 하위 호환: 기존 이름 유지
-    function textNodesInRange(r){ return _selContacts(r).map(c=>c.node); }
-    function _nearestInlineFont(tn,c){ return _inheritedStyles(tn,c).styles.fontFamily||''; }
-    function _selFontHost(r){
-        const root=r.commonAncestorContainer;
-        const el=root.nodeType===1?root:root.parentElement;
-        return (el&&el.closest&&el.closest('.tb-content'))||null;
-    }
-
-    // execCommand(bold/italic 등)이 선택 영역을 다시 짜면서 상자 안의
-    // '부분 글꼴 span'을 떨어뜨려 글꼴이 풀린다. 실행 전에 선택 구간의
-    // 글꼴을 글자 오프셋으로 기억해 두고, 실행 뒤 같은 구간에 되살린다.
-    function captureSelFonts(){
-        try{
-            const s=window.getSelection();
-            if(!s||s.isCollapsed||!s.rangeCount) return null;
-            const r=s.getRangeAt(0), host=_selFontHost(r);
-            if(!host) return null;
-            const contacts=_selContacts(r);
-            if(!contacts.length) return null;
-            let text=''; const ranges=[];
-            contacts.forEach(ct=>{
-                const seg=ct.node.nodeValue.slice(ct.s,ct.e);
-                const font=_nearestInlineFont(ct.node,host);
-                if(font) ranges.push({s:text.length,e:text.length+seg.length,font});
-                text+=seg;
-            });
-            return ranges.length?{text,ranges,host}:null;
-        }catch(e){ return null; }
-    }
-    function _wrapTextSegment(node,st,ed,font){
-        if(!node||ed<=st) return;
-        const len=node.nodeValue.length;
-        const start=Math.max(0,Math.min(len,st)), end=Math.max(start,Math.min(len,ed));
-        if(end<=start) return;
-        try{
-            if(end<node.nodeValue.length) node.splitText(end);
-            const mid=node.splitText(start);
-            const span=document.createElement('span');
-            span.style.fontFamily=font;
-            node.parentNode.insertBefore(span,mid);
-            span.appendChild(mid);
-        }catch(e){}
-    }
-    function restoreSelFonts(cap){
-        if(!cap||!cap.ranges) return;
-        try{
-            const s=window.getSelection();
-            if(!s||s.isCollapsed||!s.rangeCount) return;
-            const r=s.getRangeAt(0), host=cap.host||_selFontHost(r);
-            if(!host) return;
-            const contacts=_selContacts(r);
-            if(!contacts.length) return;
-            let text=''; const items=[];
-            contacts.forEach(ct=>{
-                items.push({node:ct.node,s:ct.s,e:ct.e,start:text.length,len:ct.e-ct.s});
-                text+=ct.node.nodeValue.slice(ct.s,ct.e);
-            });
-            if(text!==cap.text) return;   // 서식 적용으로 글자 자체가 바뀌었으면 중단
-            for(let i=items.length-1;i>=0;i--){
-                const it=items[i];
-                const segs=[];
-                cap.ranges.forEach(fr=>{
-                    const from=Math.max(fr.s-it.start,0), to=Math.min(fr.e-it.start,it.len);
-                    if(to>from){
-                        // 이미 부분 글꼴 span 이 살아 있으면 되감지 않는다.
-                        const cur=_nearestInlineFont(it.node,host);
-                        if(cur!==fr.font) segs.push({from,to,font:fr.font});
-                    }
-                });
-                if(!segs.length) continue;
-                segs.sort((a,b)=>b.from-a.from);
-                let node=it.node;
-                segs.forEach(seg=>{
-                    // 위에서 오른쪽(큰 오프셋)부터 쪼개므로, 아래쪽 오프셋은
-                    // node 의 앞부분 그대로라 원본 오프셋을 그대로 쓸 수 있다.
-                    const len=node.nodeValue.length;
-                    if(seg.to>len) seg.to=len;
-                    _wrapTextSegment(node,seg.from,seg.to,seg.font);
-                });
+    // ── ⑩ 정규화 (기존 _cleanupInline 역할) ────────────────────────
+    //   스크립트가 만든 DOM(붙여넣기 등)의 빈 span/빈 서식 태그를 풀고
+    //   인접 텍스트 노드를 합친다. 본격적인 정규형 병합은 엔진 재구축이 한다.
+    function _cleanupInline(host){
+        if(!host||!host.querySelectorAll) return;
+        const toRemove=[];
+        host.querySelectorAll('span,b,strong,i,em,u,s,strike,mark,font').forEach(el=>{
+            if(!el.textContent&&!el.querySelector('img,br,svg,canvas')){ toRemove.push(el); return; }
+            if(el.tagName==='SPAN'){
+                const style=el.getAttribute('style')||'';
+                if(!style.trim()&&!el.getAttribute('class')){
+                    const p=el.parentNode;
+                    while(el.firstChild) p.insertBefore(el.firstChild,el);
+                    toRemove.push(el);
+                }
             }
-        }catch(e){}
-    }
-    // 현재 선택 범위 안의 텍스트 노드마다 스타일 span 으로 감싼다
-    // (부분 선택된 텍스트 노드는 쪼개서 선택 구간만 감싼다)
-    // 새 엔진으로 감싸는 래퍼들 (기존 호출부와 이름 맞춤)
-    function wrapSelStyle(prop,value){
-        try{ _applyToSelection(prop, value); }catch(e){}
-        syncCurSel();
-    }
-    function _selHasPropAll(prop,value){ return _selHasAll(prop, value); }
-    function clearSelStyle(prop){
-        try{ _removeFromSelection(prop); }catch(e){}
-        syncCurSel();
-    }
-    function toggleSelStyle(prop,value){
-        // 워드/구글독스 동작: 전부 켜져 있으면 끄고, 아니면 (부분이든 전부든) 켠다
-        const all=_selHasAll(prop,value);
-        if(all) _removeFromSelection(prop,value);
-        else _applyToSelection(prop,value);
-        syncCurSel();
-    }
-    function clearSelBg(){
-        try{ _removeFromSelection('backgroundColor'); }catch(e){}
-        syncCurSel();
-    }
-    // 선택 영역에서 글자색 제거 (상속으로 되돌리기)
-    function clearSelColor(){
-        try{ _removeFromSelection('color'); }catch(e){}
-        syncCurSel();
+        });
+        toRemove.forEach(el=>{ if(el.parentNode) el.parentNode.removeChild(el); });
+        try{ host.normalize(); }catch(e){}
     }
     // 선택 영역의 현재 스타일 상태를 툴바 버튼에 반영
     // 18.7 · '지금 서식'을 판단하는 대상: ① 실제 글자 선택 → 선택 전체가 같은가,
@@ -14809,16 +14734,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         while(n=tw.nextNode()){ if(String(n.nodeValue||'').trim()) nodes.push(n); }
         return nodes;
     }
-    // 상자 전체가 해당 스타일로 이미 덮여 있는가 (box-level + 부분 span 모두 고려)
+    // 상자 전체가 해당 스타일로 덮여 있는가 (상자 레벨 + 글자별 span 모두 고려)
     function _boxHasAllStyle(w,prop,value){
         const c=w&&w.querySelector('.tb-content'); if(!c) return false;
         const nodes=_boxTextNodes(c); if(!nodes.length) return false;
         return nodes.every(tn=>_propMatch(prop, _inheritedStyles(tn,c).styles[prop]||'', value));
     }
     // 상자 안 내용 전체에 스타일을 입힌다 (prop=null 이면 형광펜 전체 지우기)
-    // 편집 모드 여부와 무관하게 DOM 을 직접 고치므로 글꼴이 풀리지 않는다.
-    // 인라인 엔진(_applyOne)을 사용해 굵게+기울임+밑줄+취소선+형광펜이
-    // 한 글자 위에 겹쳐도 서로 지우지 않는다.
+    // v2 엔진의 전체 범위 적용을 쓴다 — 세그먼트 재구축이라 부분 서식(중첩 span)과
+    // 겹쳐도 덮어쓰기/보존이 항상 정확하다.
     function _paintBoxAll(w,prop,value){
         const c=w.querySelector('.tb-content'); if(!c) return;
         if(!prop){
@@ -14835,8 +14759,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             syncTextEl(w);
             return;
         }
-        _boxTextNodes(c).forEach(tn=>_applyOne(tn,c,prop,value));
-        _cleanupInline(c);
+        _fmtApplyBox(c,prop,value);
         syncTextEl(w);
     }
     // 상자 전체에서 스타일 제거 (box-level el.fontStyle 같은 옛 데이터도 치운다)
@@ -14860,8 +14783,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(key) delete el[key];
             }
         }
-        _boxTextNodes(c).forEach(tn=>_removeOne(tn,c,prop,value));
-        _cleanupInline(c);
+        _fmtRemoveBox(c,prop,value);
         syncTextEl(w);
     }
     // 상자 전체 토글: 전부 켜져 있으면 끄고, 아니면 전체 적용 (선택 서식과 동일 규칙)
@@ -15006,19 +14928,42 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 return;
             }
         }
-        withSelection(()=>{
+        // ④ 안전망 — 위 어느 경로로도 처리되지 않았는데 글자 선택이 있으면 토글한다.
+        //   구버전은 여기서 execCommand(bold/…) 을 썼는데, execCommand 는 환경마다
+        //   선택지의 span 을 제멋대로 다시 짜는 원인이었다. v2 엔진으로 통일한다.
+        if(spec&&hasInlineTextSel()){
             pushHistory();
-            if(document.execCommand) document.execCommand(cmd,false,null);
-        });
+            withSelection(()=>toggleSelStyle(spec[0],spec[1]));
+            setTimeout(syncCurSel,0);
+        }
     }
 
-    // 문단 정렬 — 선택 영역이 있으면 그 문단만, 없으면 선택한 상자 전체
+    // 문단 정렬 — execCommand(justify*) 없이 대상 블록에 text-align 을 직접 적는다.
+    //   (justify* 는 브라우저/웹뷰마다 동작 편차가 컸다. v2 엔진 경로로 통일.)
+    //   순서: ① 글자 선택 범위의 문단들 → ② 캐럿 문단 → ③ 표 칸 → ④ 선택한 상자 전체
     function setAlign(dir){
-        const cmd={left:'justifyLeft',center:'justifyCenter',right:'justifyRight'}[dir];
         const sel=window.getSelection();
         const live=sel&&!sel.isCollapsed&&document.querySelector('.tb.edit');
-        if(live&&document.execCommand){ withSelection(()=>{ document.execCommand(cmd,false,null); }); return; }
-        // 18.9 · execCommand 가 없으면 편집 중인 상자 전체 정렬로 처리한다(무동작 방지)
+        if(live&&hasInlineTextSel()){
+            pushHistory();
+            withSelection(()=>_fmtAlignSelection(dir));
+            toast(({left:'왼쪽',center:'가운데',right:'오른쪽'})[dir]+' 정렬',1000);
+            return;
+        }
+        const t=_typingHost();
+        if(t){
+            pushHistory();
+            const blk=_fmtLeafBlock(t.r.startContainer.nodeType===3?t.r.startContainer.parentElement:t.r.startContainer,t.c);
+            blk.style.textAlign=dir;
+            if(blk===t.c){
+                const w=blk.closest&&blk.closest('.tb');
+                const el=w?findEl(+w.dataset.pageIdx,w.dataset.id):null;
+                if(el) el.align=dir;
+            }
+            const w=t.c.closest('.tb'); if(w) syncTextEl(w);
+            toast(({left:'왼쪽',center:'가운데',right:'오른쪽'})[dir]+' 정렬',1000);
+            return;
+        }
         if(selectedTblCellEls().length){ tblCellAlign(dir); return; }
         let targets=multiSel.length
             ? multiSel.map(m=>m.node).filter(nd=>nd.classList.contains('tb'))
@@ -15227,8 +15172,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             });
             // 링크 해제도 직접 처리한다. execCommand('unlink') 가 없는 WebView/jsdom 에서도
             // 선택한 링크 글자는 남기고 <a> 만 벗겨야 한다.
-            try{ _unlinkSelection(); }catch(e){}
-            try{ if(document.execCommand) document.execCommand('unlink',false,null); }catch(e){}
+            try{ _unlinkSelection(); }catch(e){}   // v2 엔진: <a> 만 벗기고 글자는 남긴다
             const w=host.closest('.tb'); if(w) syncTextEl(w);
             saveSel(); syncCurSel();
             toast('선택 영역 서식 지움',1200);
@@ -15360,7 +15304,6 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         const host=restoreSel();
         if(host){
-            if(document.execCommand) document.execCommand('styleWithCSS',false,true);
             pushHistory();
             try{
                 withSelection(()=>wrapSelStyle('fontSize',curFontSize+'px'));
@@ -15383,7 +15326,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     c.style.fontSize=curFontSize+'px';
                     // 18.8 · 상자 전체 크기는 안쪽 부분 크기보다 세다 —
                     //   서식 span 에 박제된 옛 크기를 걷어내야 실제로 커/작아진다.
-                    try{ _stripInlineProp(c,'fontSize',null,{skipRoot:true}); _cleanupInline(c); }catch(_e){}
+                    // v2 엔진: 인라인으로 박제된 부분 크기만 새 값으로 갱신하고,
+                    //   나머지는 상자 값 상속을 유지한다.
+                    try{ _fmtApplyBox(c,'fontSize',curFontSize+'px',true); }catch(_e){}
                 }
                 if(el) el.fontSize=curFontSize;
                 syncTextEl(sel);
@@ -18748,32 +18693,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const host=restoreSel();
                 if(!host){ toast('텍스트를 드래그해 선택하세요',1300); return; }
                 pushHistory();
-                let done=false;
-                try{
-                    if(document.execCommand){
-                        document.execCommand('styleWithCSS',false,true);
-                        done=document.execCommand('createLink',false,url.trim());
-                    }
-                }catch(e){ done=false; }
-                if(!done){
-                    // 18.9 · execCommand 가 없는 환경에서도 링크가 걸리도록 직접 감싼다
-                    try{
-                        const sel2=window.getSelection();
-                        if(sel2&&!sel2.isCollapsed&&sel2.rangeCount){
-                            const r=sel2.getRangeAt(0);
-                            const a2=document.createElement('a');
-                            a2.setAttribute('href',url.trim());
-                            a2.setAttribute('target','_blank');
-                            a2.setAttribute('rel','noopener');
-                            a2.appendChild(r.extractContents());
-                            r.insertNode(a2);
-                            const nr=document.createRange(); nr.selectNodeContents(a2);
-                            sel2.removeAllRanges(); sel2.addRange(nr);
-                        }
-                    }catch(e){}
-                }
+                // v2 엔진: execCommand(createLink) 없이 선택 구간에 <a> 를 짓는다.
+                try{ _fmtLinkSelection(url.trim()); }catch(e){}
                 const w=host.closest('.tb'); if(w) syncTextEl(w);
-                saveSel();
+                saveSel(); syncCurSel();
                 toast('링크를 걸었습니다',1400);
             }
         }
