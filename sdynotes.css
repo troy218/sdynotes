@@ -3652,6 +3652,20 @@ body.lyrmode #mpBig .mpb-tabs button.mp-sortbtn{display:none;}
 .mpb-group-chip em{font-style:normal;font-size:9px;color:var(--text3);}
 .mpb-group-chip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--card));color:var(--accent);}
 .mpb-reco-section{margin:5px 0 12px;}
+/* 랜덤 믹스 히어로 — 추천 맨 위, 누르면 아무 곡이나 20곡으로 대기열 교체 */
+.mpb-random-hero{display:flex;align-items:center;gap:12px;width:100%;border:0;cursor:pointer;
+  padding:13px 15px;border-radius:16px;text-align:left;color:#fff;
+  background:linear-gradient(120deg,var(--accent),#8e5cf7);box-shadow:0 7px 18px rgba(0,0,0,.16);
+  transition:transform .12s ease,filter .12s ease;}
+.mpb-random-hero:hover{filter:brightness(1.06);}
+.mpb-random-hero:active{transform:scale(.985);}
+.mpb-random-hero .mrh-ic{flex:0 0 auto;width:40px;height:40px;border-radius:12px;display:flex;
+  align-items:center;justify-content:center;font-size:22px;background:rgba(255,255,255,.22);}
+.mpb-random-hero .mrh-tx{flex:1;min-width:0;display:flex;flex-direction:column;}
+.mpb-random-hero .mrh-tx b{font-size:14px;font-weight:900;letter-spacing:-.03em;}
+.mpb-random-hero .mrh-tx em{font-size:10.5px;font-style:normal;opacity:.88;margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mpb-random-hero .mrh-play{flex:0 0 auto;font-size:27px;opacity:.95;}
 .mpb-reco-head{display:flex;align-items:baseline;gap:7px;padding:0 3px 6px;}
 .mpb-reco-head b{font-size:13px;letter-spacing:-.03em;}
 .mpb-reco-head span{font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -6013,6 +6027,13 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .mp-otter:focus-visible{outline:2px dashed var(--accent);outline-offset:4px;border-radius:16px;}
 .mp-otter:hover svg{transform:translateY(-2px) scale(1.04);}
 .mp-otter:active svg{transform:scale(.94);}
+/* 18.5 · 따라 부르기 켜짐(클릭 토글) — 흥얼흥얼 들썩인다 */
+.mp-otter.singing svg{animation:mpOtterSing 1.1s ease-in-out infinite;}
+@keyframes mpOtterSing{
+  0%,100%{transform:translateY(0) rotate(-2deg);}
+  50%{transform:translateY(-3px) rotate(2.5deg);}
+}
+@media (prefers-reduced-motion: reduce){ .mp-otter.singing svg{animation:none;} }
 .note-otter{position:absolute;left:30px;bottom:10px;width:98px;height:98px;z-index:6;
   cursor:pointer;filter:drop-shadow(0 3px 8px rgba(0,0,0,.14));
   transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}

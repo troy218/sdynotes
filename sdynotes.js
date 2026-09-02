@@ -20545,6 +20545,25 @@ function playFrom(tracks,id,plName){
   playIdx(at);
 }
 try{ window.sdyPlayFrom=playFrom; }catch(e){}
+// 새로 올린 곡은 '그 곡'이 바로 틀려야 한다. 예전엔 전체 목록(P.list) 인덱스로
+// playIdx 를 불렀는데, 대기열(P.queue)이 있으면 그 인덱스가 대기열의 엉뚱한
+// 자리(보통 첫 곡)를 가리켜 대기열 첫 노래가 재생됐다. 이제 대기열이 있으면
+// 현재 곡 바로 뒤에 끼워 넣고 정확히 그 자리를 튼다.
+function playNewTrack(id){
+  const t=(P.list||[]).find(x=>x.id===id);
+  if(!t) return false;
+  if(P.queue){
+    if(!P.queue.some(x=>x.id===id)){
+      const at=Math.max(0,Math.min((P.idx|0)+1,P.queue.length));
+      P.queue.splice(at,0,t);
+    }
+    const k=P.queue.findIndex(x=>x.id===id);
+    if(k>=0){ playIdx(k); return true; }
+  }
+  const i=(P.list||[]).findIndex(x=>x.id===id);
+  if(i>=0){ playIdx(i); return true; }
+  return false;
+}
 function pruneQueue(){
   const alive=new Set((P.list||[]).map(t=>t.id));
   if(P.queue){
@@ -21153,8 +21172,8 @@ $('musicFile').onchange=async e=>{
     await loadList();
     startTagPolling();
     if(firstId){
-      const i=P.list.findIndex(t=>t.id===firstId);
-      if(i>=0){ playIdx(i); gotoTrackPage(firstId); }
+      // 방금 올린 그 곡을 바로 튼다 (대기열이 있어도 첫 곡이 아니라 이 곡)
+      if(playNewTrack(firstId)) gotoTrackPage(firstId);
     }
     if(window.toast){
       if(done&&!fail)      toast(`${done}곡 업로드 완료 🎵`,2200);
@@ -21656,6 +21675,22 @@ updateRep();
 loadList().then(()=>{
   restoreMusicState();
   if(P.mode!=='bar') P.mode='bar';  // 노트 안이어도 진입 시엔 접힌 상태 유지
+  // 처음 접속(저장된 대기열 없음) — 랜덤 20곡을 대기열에 미리 꽂아 둔다.
+  //   듣던 곡이 있으면 그 곡을 맨 앞에 두고 나머지 19곡을 무작위로 채운다.
+  if(!P.queue&&(P.list||[]).length){
+    try{
+      const cur0=cur();
+      const pool=P.list.filter(t=>!cur0||t.id!==cur0.id);
+      for(let i=pool.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; const tmp=pool[i]; pool[i]=pool[j]; pool[j]=tmp; }
+      const mix=(cur0?[cur0]:[]).concat(pool).slice(0,20);
+      if(mix.length){
+        setQueue(mix,'랜덤 믹스');
+        P.idx=0; P.currentId=mix[0].id;
+        if(A) A._trackId=mix[0].id;
+        saveMusicState(false);
+      }
+    }catch(e){}
+  }
   const t=cur();
   if(t&&!A.src){
     A.src=t.stream_url||('/api/music/file/'+t.id);
@@ -22882,6 +22917,56 @@ function _playRecoPlaylist(key){
   if(g) _queueRecoIds(g.tracks,g.name);
 }
 try{ window.sdyQueueRecoAlbum=_playRecoAlbum; window.sdyQueueRecoPlaylist=_playRecoPlaylist; }catch(e){}
+// ── 랜덤 믹스: 아무 곡이나 n곡을 뽑아 대기열을 통째로 갈아 끼우고 튼다 ──
+function playRandomMix(n){
+  const pool=(P.list||[]).slice();
+  if(!pool.length){ toast('라이브러리가 비어 있어요',1600); return; }
+  for(let i=pool.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; const tmp=pool[i]; pool[i]=pool[j]; pool[j]=tmp; }
+  const q=pool.slice(0,Math.max(1,+n||20));
+  P._forceNext='';
+  playFrom(q,q[0].id,'랜덤 믹스');
+  try{ renderListPop(); }catch(e){}
+  try{ if(mpbEl&&mpbEl.classList.contains('open')) renderBigList(); }catch(e){}
+  if(window.toast) toast('랜덤으로 '+q.length+'곡을 대기열에 담았어요 🎲',1900);
+}
+try{ window.sdyPlayRandomMix=playRandomMix; }catch(e){}
+// ── 서버 태그 추천 — 백엔드가 태그를 왕창 뽑아 묶어 준 결과(sims/groups)를 받아 온다.
+//    태그 자체는 서버가 노출하지 않으므로 여기서도 묶음 이름·곡 목록만 쓴다.
+let _recoFetchAt=0,_recoFetchBusy=false;
+async function loadServerReco(force){
+  if(_recoFetchBusy) return;
+  const n=(P.list||[]).length;
+  if(!n) return;
+  if(!force&&P.reco&&P.reco._n===n&&Date.now()-_recoFetchAt<5*60*1000) return;
+  _recoFetchBusy=true;
+  try{
+    const r=await fetch('/api/music/reco',{cache:'no-store'});
+    const d=await r.json();
+    if(r.ok&&d&&d.ok){
+      P.reco={sims:d.sims||{},groups:d.groups||[],_n:n};
+      _recoFetchAt=Date.now();
+      try{ if(mpbEl&&mpbEl.classList.contains('open')&&P.bigTab==='d') renderDiscoverBig(); }catch(e){}
+    }
+  }catch(e){}
+  _recoFetchBusy=false;
+}
+// 서버 그룹(id 목록) → 지금 목록의 곡 객체 묶음
+function _serverRecoGroups(list){
+  const byId=new Map((list||[]).map(t=>[t.id,t]));
+  return ((P.reco&&P.reco.groups)||[]).map(g=>{
+    const tracks=(g.ids||[]).map(id=>byId.get(id)).filter(Boolean);
+    if(tracks.length<3) return null;
+    return {id:'srv:'+g.id,name:g.name||'추천 믹스',sub:'태그 매칭 자동 믹스',tracks,
+            cover:tracks.find(_recoImg)||tracks[0]};
+  }).filter(Boolean);
+}
+// 현재 곡의 서버 유사곡 (없으면 빈 배열)
+function _serverSimilar(curT,list,count){
+  if(!curT||!P.reco||!P.reco.sims) return [];
+  const ids=P.reco.sims[curT.id]||[];
+  const byId=new Map((list||[]).map(t=>[t.id,t]));
+  return ids.map(id=>byId.get(id)).filter(Boolean).slice(0,count||10);
+}
 function _recoMatch(t,mode){
   const ft=_trackFeatures(t), tm=_recoTime(), we=_recoWeather();
   if(mode==='korean') return ft.korean;
@@ -22937,10 +23022,16 @@ function renderDiscoverBig(){
   const list=P.list||[], tm=_recoTime(), we=_recoWeather(), curT=cur();
   const filter=P.recoFilter||'all';
   P._recoAlbumMap={}; P._recoPlaylistMap={};
+  try{ loadServerReco(); }catch(e){}            // 백엔드 태그 추천은 뒤에서 채워진다
   let content='';
   if(!list.length){
     content='<div class="mpb-reco-empty"><i class="ri-music-2-line"></i><b>라이브러리가 비어 있어요</b><span>＋ 올리기에서 음악을 추가해 보세요</span></div>';
   }else if(filter==='all'){
+    // 맨 처음: 랜덤 20곡 믹스 — 누를 때마다 새로운 조합으로 대기열을 채운다
+    const rndHero='<section class="mpb-reco-section"><button class="mpb-random-hero" data-reco-random="20">'
+      +'<span class="mrh-ic"><i class="ri-dice-5-line"></i></span>'
+      +'<span class="mrh-tx"><b>랜덤 믹스 🎲</b><em>아무 곡이나 20곡 · 누르면 대기열 교체 후 바로 재생</em></span>'
+      +'<i class="ri-play-circle-fill mrh-play"></i></button></section>';
     const top=_recoTracks(list,'time',10,new Set());
     const seen=new Set(top.map(t=>t.id));
     const korean=_recoTracks(list,'korean',10,seen);
@@ -22953,13 +23044,23 @@ function renderDiscoverBig(){
     slow.forEach(t=>seen.add(t.id));
     const weather=_recoTracks(list,'weather',10,seen);
     weather.forEach(t=>seen.add(t.id));
-    const similar=curT?_recoTracks(list,'artist',10,new Set([curT.id])):null;
+    // 현재 곡과 비슷한 곡 — 서버 태그 매칭이 있으면 그걸 먼저 쓴다
+    let similar=null;
+    if(curT){
+      similar=_serverSimilar(curT,list,10);
+      if(!similar.length) similar=_recoTracks(list,'artist',10,new Set([curT.id]));
+    }
     const albums=_recoAlbums(list,8,'artist');
     const playlists=_recoPlaylists(list,8,'artist');
     _rememberRecoCollections(albums,playlists);
+    // 백엔드가 태그로 묶어 준 '나를 위한 믹스' — 누르면 묶음 전체로 대기열 교체
+    const srvGroups=_serverRecoGroups(list).slice(0,8);
+    srvGroups.forEach(g=>{ P._recoPlaylistMap[_recoDataKey(g.id)]={name:g.name,tracks:g.tracks.map(t=>t.id)}; });
     const most=list.slice().sort((a,b)=>_playCount(b)-_playCount(a)).slice(0,10);
 
-    content=_recoRow('오늘의 맞춤 믹스',_recoWeatherText(),top)
+    content=rndHero
+      +_recoRow('오늘의 맞춤 믹스',_recoWeatherText(),top)
+      +_recoRow('나를 위한 추천 믹스 🎯','비슷한 곡끼리 자동으로 묶었어요 · 누르면 대기열 교체',srvGroups,'playlist')
       +(similar&&similar.length?_recoRow(`‘${esc2(curT.artist||curT.title)}’ 비슷한 감성`,'현재 재생 기반 큐레이션',similar):'')
       +(korean.length?_recoRow('한국 노래 베스트 🇰🇷','K-Pop · 발라드 · 인디',korean):'')
       +(foreign.length?_recoRow('해외 팝 & 글로벌 믹스 🌍','Billboard · Pop · Rock',foreign):'')
@@ -22985,7 +23086,11 @@ function renderDiscoverBig(){
     content=_recoRow('실시간 날씨 큐레이션 ⛅',we.label,_recoTracks(list,'weather',30,new Set()));
   }else if(filter==='artist'){
     const sub=curT?`‘${esc2(curT.artist||curT.title)}’ 기반 맞춤`:'유사 스타일 추천';
-    content=_recoRow('비슷한 감성 & 아티스트 🎙️',sub,_recoTracks(list,'artist',30,new Set(curT?[curT.id]:[])));
+    // 서버 태그 매칭 유사곡을 먼저 깔고, 모자라면 로컬 특징 추천으로 채운다
+    const srvSim=_serverSimilar(curT,list,30);
+    const ex=new Set((curT?[curT.id]:[]).concat(srvSim.map(t=>t.id)));
+    const rest=_recoTracks(list,'artist',Math.max(0,30-srvSim.length),ex);
+    content=_recoRow('비슷한 감성 & 아티스트 🎙️',sub,srvSim.concat(rest).slice(0,30));
   }
   if(list.length&&filter!=='all'){
     const albums=_recoAlbums(list,6,filter);
@@ -23184,6 +23289,8 @@ $('mpBBody').addEventListener('click',e=>{
   }
   // 추천 앨범/플레이리스트는 한 곡이 아니라 묶음 전체를 재생한다.
   // 사용자가 고른 추천 묶음이 '현재 대기열의 전부'가 되도록 기존 queue를 교체한다.
+  const recoRandom=e.target.closest('[data-reco-random]');
+  if(recoRandom){ e.preventDefault(); e.stopPropagation(); playRandomMix(+recoRandom.dataset.recoRandom||20); return; }
   const recoAlbum=e.target.closest('[data-reco-album]');
   if(recoAlbum){ e.preventDefault(); e.stopPropagation(); _playRecoAlbum(recoAlbum.dataset.recoAlbum); return; }
   const recoPlaylist=e.target.closest('[data-reco-playlist]');
@@ -23453,7 +23560,9 @@ async function _ytPump(){
       if(firstOk){
         const i=P.list.findIndex(t=>t.id===firstOk.id);
         if(i>=0){ if(!P.plMode&&!P.artMode)P.lpage=Math.max(0,Math.floor(i/PER));
-          renderTitle();renderListPop(); playIdx(i); gotoTrackPage(firstOk.id); }
+          renderTitle();renderListPop();
+          // 방금 받은 그 곡을 바로 튼다 (대기열이 있어도 첫 곡이 아니라 이 곡)
+          if(playNewTrack(firstOk.id)) gotoTrackPage(firstOk.id); }
       }
       const errs=_ytJobs.filter(x=>x.status==='fail').map(x=>x.error);
       if(ok&&!fail) toast(ok+'곡 추가 완료 🎵',2200);
@@ -26979,7 +27088,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var note=$('noteOtter'), noteBub=$('noteOtterBubble');
     var mp=$('mpOtterBubble'), mpRoot=document.querySelector('.mp-otter');
     var pl=$('musicPlayer');
-    var mpSingHover=false, mpSingUntil=0;
+    // 18.5 · 싱크 가사 따라 부르기는 '호버'가 아니라 '클릭 토글'이다.
+    //   한 번 누르면 다시 누를 때까지 계속 부른다.
+    var mpSingOn=false;
 
     // 말풍선 보여주기 (show 클래스 + 타이머로 자동 숨김)
     function speak(bubble,text,dur){
@@ -27004,7 +27115,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         return window.sdyMusic&&window.sdyMusic.syncLine ? window.sdyMusic.syncLine() : null;
       }catch(e){ return null; }
     }
-    function mpSinging(){ return mpSingHover || Date.now()<mpSingUntil; }
+    function mpSinging(){ return mpSingOn; }
     function singCurrentLyric(){
       if(!mpVisible()||!mpSinging()) return;
       var t=null;
@@ -27042,10 +27153,22 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         speak(mp,'이 곡은 아직 싱크 가사가 없해돌~',1800);
       }
     }
-    function armMpSing(ms){
-      ms=Math.max(1200,+ms||9000);
-      mpSingUntil=Math.max(mpSingUntil,Date.now()+ms);
-      singCurrentLyric();
+    // 켜기/끄기 — 켜면 즉시 지금 가사부터 부르고, 끌 때까지 계속 부른다.
+    function setMpSing(on){
+      mpSingOn=!!on;
+      if(mpRoot){
+        mpRoot.classList.toggle('singing',mpSingOn);
+        try{ mpRoot.setAttribute('aria-pressed',mpSingOn?'true':'false'); }catch(e){}
+      }
+      if(!mp) return;
+      mp._singKey='';
+      if(mpSingOn){
+        singCurrentLyric();
+        if(!mp.classList.contains('show')) speak(mp,'따라 부를게 해돌~ 🎤',1400);
+      }else{
+        if(mp._t) clearTimeout(mp._t);
+        mp.classList.remove('show');
+      }
     }
 
     // ── 노트(문서) 해돌이 ──
@@ -27089,17 +27212,11 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       return null;
     }
     if(mpRoot){
-      var mpEnter=function(){ mpSingHover=true; armMpSing(10000); };
-      var mpLeave=function(){ mpSingHover=false; armMpSing(1500); };
-      mpRoot.addEventListener('pointerenter',mpEnter);
-      mpRoot.addEventListener('mouseenter',mpEnter);
-      mpRoot.addEventListener('mouseover',mpEnter);
-      mpRoot.addEventListener('pointerleave',mpLeave);
-      mpRoot.addEventListener('mouseleave',mpLeave);
-      mpRoot.addEventListener('pointerdown',function(){ armMpSing(12000); });
-      mpRoot.addEventListener('click',function(){ armMpSing(12000); });
+      // 클릭(또는 Enter/Space)으로 켜고 끈다 — 재클릭 전까지 계속 부른다.
+      var mpToggleSing=function(){ setMpSing(!mpSingOn); };
+      mpRoot.addEventListener('click',mpToggleSing);
       mpRoot.addEventListener('keydown',function(e){
-        if(e.key==='Enter'||e.key===' '){ e.preventDefault(); armMpSing(12000); }
+        if(e.key==='Enter'||e.key===' '){ e.preventDefault(); mpToggleSing(); }
       });
     }
     if(mp&&pl){
@@ -27110,7 +27227,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         speak(mp, (song&&Math.random()<0.4)?song:pick(MP_IDLE), 2600);
       }, 13000);
       setInterval(function(){
-        if(mpSinging()) singCurrentLyric();
+        if(!mpSinging()) return;
+        singCurrentLyric();
+        // 부르는 동안에는 말풍선이 꺼지지 않게 계속 붙잡아 둔다
+        if(mp.textContent&&!mp.classList.contains('show')) mp.classList.add('show');
       }, 120);
     }
   })();
