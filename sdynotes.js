@@ -24774,8 +24774,23 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                      for(let i=0;i<lrc.length;i++){
                        if(tt>=+(lrc[i].t||0)) idx=i; else break;
                      }
-                     if(idx<0) idx=0;
-                     return {track:t, idx, line:lrc[idx], lines:lrc};
+                     // 18.6 · '말 안 하는 구간' 판정 —
+                     //   ① 첫 줄 전(전주) ② 빈 줄(간주) ③ 그 줄을 다 부르고도
+                     //   다음 줄까지 한참 남은 사이(간주). 이때 gap:true 를 주면
+                     //   말풍선이 사라졌다가 다음 가사에 다시 뜬다.
+                     let gap=false;
+                     if(idx<0){ idx=0; gap=true; }
+                     else{
+                       const st=+(lrc[idx].t||0);
+                       const txt=String(lrc[idx].s||'').replace(/\s+/g,' ').trim();
+                       const nx=lrc[idx+1]?+(lrc[idx+1].t||0):Infinity;
+                       // 그 줄을 부르는 데 걸릴 법한 시간 (글자 수 기준, 1.2~6초)
+                       const need=Math.max(1.2,Math.min(6,0.9+txt.length*0.22));
+                       const sungTill=Math.min(st+need,nx);
+                       if(!txt) gap=true;                       // 빈 줄 = 간주
+                       else if(tt>sungTill+0.35) gap=true;      // 다 부르고 남은 사이
+                     }
+                     return {track:t, idx, line:lrc[idx], lines:lrc, gap:gap};
                    },
                    queueNext:queueNext, gotoPage:gotoTrackPage, toggle:pp,
                    state:()=>({tab:P.bigTab,page:P.bigPage}), tagEditor:openTagEditor,
@@ -27138,6 +27153,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         return;
       }
       var hit=mpActiveLine();
+      // 18.6 · 가사가 없는(말 안 하는) 구간 — 말풍선을 접었다가 다음 가사에 다시 띄운다
+      if(hit&&hit.gap){
+        if(mp._singKey!=='gap'){
+          mp._singKey='gap';
+          if(mp._t) clearTimeout(mp._t);
+          mp.classList.remove('show');
+        }
+        return;
+      }
       if(hit&&hit.line){
         var line=singText(hit.line.s);
         var key=(hit.track&&hit.track.id||'')+'|'+hit.idx+'|'+line;
@@ -27230,7 +27254,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         if(!mpSinging()) return;
         singCurrentLyric();
         // 부르는 동안에는 말풍선이 꺼지지 않게 계속 붙잡아 둔다
-        if(mp.textContent&&!mp.classList.contains('show')) mp.classList.add('show');
+        // 단, 간주(gap) 구간에서는 접어둔 말풍선을 다시 띄우지 않는다
+        if(mp._singKey!=='gap'&&mp.textContent&&!mp.classList.contains('show')) mp.classList.add('show');
       }, 120);
     }
   })();
