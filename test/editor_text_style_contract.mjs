@@ -171,8 +171,10 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
     b.includes("span.className='sdy-type'"));
   check('서식 span 은 빈 span 만 재사용한다 (이미 입력된 글자까지 바꾸지 않는다)',
     b.includes('빈 span 만 재사용한다') && b.includes('_typingSpan&&!_typingSpan.textContent&&!_typingSpan.childElementCount'));
-  check('캐럿 부모의 부분 글꼴을 새 span 에 고정해 글꼴이 풀리지 않는다',
-    b.includes('p.style.fontFamily') && b.includes('span.style.fontFamily=font'));
+  check('새 span 은 직전 캐럿 서식(부분 글꼴·크기·색 등)을 seed 로 복사해 도중 변경이 끊기지 않는다',
+    b.includes('_pendingTyping&&_pendingTyping.host===c&&_pendingTyping.styles')
+    && b.includes('_typingStylesFromNode(src.startContainer,c)')
+    && b.includes('_setInlineProp(span,k,seed[k])'));
   check('활성 캐럿 서식을 DOM 밖 상태에도 기억한다', b.includes('_rememberTypingStyles(span,c)'));
 }
 {

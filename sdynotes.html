@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.18.4">
+<link rel="stylesheet" href="sdynotes.css?v=14.18.5">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <!-- 버전 · 작업 끝나면 아래 5곳을 같은 번호로 함께 올려라 (z +1)
@@ -17,7 +17,7 @@
          · 이 파일·sdynotes.js·sdynotes.css 를 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.18.4">
+    <meta name="application-version" content="14.18.5">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -464,7 +464,7 @@
                     <div class="split-btn" id="hlWrap">
                         <button class="main" onmousedown="saveSel();event.preventDefault()" onclick="applyHighlight(currentHlColor)" title="형광펜 적용">
                             <span class="glyph"><i class="ri-mark-pen-line"></i></span>
-                            <span class="bar" id="hlBar" style="background:#ffff80;"></span>
+                            <span class="bar" id="hlBar" style="background:#efd36a;"></span>
                         </button>
                         <button class="caret" onmousedown="saveSel();event.preventDefault()" onclick="togglePop('hlPop')" title="형광펜 색 선택"><i class="ri-arrow-down-s-fill"></i></button>
                         <div class="color-popover" id="hlPop"></div>
@@ -521,7 +521,7 @@
                 </div>
 
                 <button onclick="openMore('note')" class="tool-btn" title="노트 설정"><i class="ri-settings-3-line"></i></button>
-                <button onclick="openExportModal()" class="tool-btn accent" title="내보내기"><i class="ri-download-2-line"></i></button>
+                <button onclick="openExportModal()" class="tool-btn accent" title="내보내기"><i class="ri-share-box-line"></i></button>
             </div>
 
 
@@ -587,7 +587,7 @@
                     <div class="more-sec" data-ms="note" hidden>
                         <div class="more-grid">
                             <button onclick="mi(()=>document.getElementById('importInput').click())"><i class="ri-file-upload-line"></i><span>문서 가져오기</span></button>
-                            <button onclick="mi(()=>openExportModal())"><i class="ri-download-2-line"></i><span>내보내기</span></button>
+                            <button onclick="mi(()=>openExportModal())"><i class="ri-share-box-line"></i><span>내보내기</span></button>
                             <button onclick="mi(()=>lockCurrentNote())" id="lockBtn"><i class="ri-lock-unlock-line"></i><span>노트 잠금</span></button>
                             <button onclick="makeCheckpoint()"><i class="ri-save-3-line"></i><span>지점 저장</span></button>
                             <button onclick="mi(()=>showDelModal())" class="danger"><i class="ri-delete-bin-6-line"></i><span>노트 삭제</span></button>
@@ -750,13 +750,13 @@
         </div>
 
         <div id="drawToolbar" class="draw-toolbar" style="display:none">
-            <div class="color-pick sel" style="background:#888888" data-c="#888888" onclick="setDrawColor(this)"></div>
-            <div class="color-pick" style="background:#f3a69e" data-c="#f3a69e" onclick="setDrawColor(this)"></div>
-            <div class="color-pick" style="background:#9acced" data-c="#9acced" onclick="setDrawColor(this)"></div>
-            <div class="color-pick" style="background:#93d7b0" data-c="#93d7b0" onclick="setDrawColor(this)"></div>
-            <div class="color-pick" style="background:#f9ce89" data-c="#f9ce89" onclick="setDrawColor(this)"></div>
-            <div class="color-pick" style="background:#cdacdb" data-c="#cdacdb" onclick="setDrawColor(this)"></div>
-            <input type="color" id="penCustom" class="color-pick custom" value="#888888" oninput="setDrawColorVal(this.value)"
+            <div class="color-pick sel" style="background:#111111" data-c="#111111" onclick="setDrawColor(this)"></div>
+            <div class="color-pick" style="background:#a63f47" data-c="#a63f47" onclick="setDrawColor(this)"></div>
+            <div class="color-pick" style="background:#3d6ea8" data-c="#3d6ea8" onclick="setDrawColor(this)"></div>
+            <div class="color-pick" style="background:#2f7a5d" data-c="#2f7a5d" onclick="setDrawColor(this)"></div>
+            <div class="color-pick" style="background:#b7792b" data-c="#b7792b" onclick="setDrawColor(this)"></div>
+            <div class="color-pick" style="background:#7550a6" data-c="#7550a6" onclick="setDrawColor(this)"></div>
+            <input type="color" id="penCustom" class="color-pick custom" value="#111111" oninput="setDrawColorVal(this.value)"
                    title="사용자 색">
             <div class="tool-sep"></div>
             <div class="size-opt" data-s="1" style="width:5px;height:5px;" onclick="setDrawSize(this)" title="아주 얇게"></div>
@@ -1148,7 +1148,7 @@
          z-index:700;background:var(--card);border:1px solid var(--border);border-radius:5px;
          padding:20px 26px;box-shadow:0 12px 40px rgba(0,0,0,.22);flex-direction:column;gap:12px;min-width:250px;">
         <div style="display:flex;align-items:center;gap:10px;">
-            <i class="ri-download-2-line" style="color:var(--accent);font-size:19px;"></i>
+            <i class="ri-share-box-line" style="color:var(--accent);font-size:19px;"></i>
             <span class="ep-txt" style="font-size:13px;color:var(--text1);">내보내는 중...</span>
         </div>
         <div style="height:5px;background:var(--bg2);border-radius:2px;overflow:hidden;">
@@ -2046,7 +2046,7 @@
     <input id="mpVolSlider" type="range" min="0" max="100" value="100">
   </div></div>
   <!-- 18.0 · 해돌이(노래 해달) — 하단 음악 컨트롤바 위 (CodePen '초귀요미 해달 마스코트' om-music 포즈) -->
-  <div class="mp-otter" aria-hidden="true">
+  <div class="mp-otter" role="button" tabindex="0" aria-label="해돌이 · 건드리면 싱크 가사를 따라 불러요" title="건드리면 싱크 가사를 따라 불러요">
     <div class="otter-bubble otter-bubble-mini" id="mpOtterBubble"></div>
     <svg class="om-svg om-music" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
       <g class="om-outer">
@@ -2460,6 +2460,6 @@
      ═══════════════════════════════════════════════════════════════════ -->
 
 
-<script src="sdynotes.js?v=14.18.4" defer></script>
+<script src="sdynotes.js?v=14.18.5" defer></script>
 </body>
 </html>

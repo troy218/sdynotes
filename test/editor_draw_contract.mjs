@@ -153,7 +153,7 @@ try {
     document.getElementById('penBtn').classList.contains('active') && !document.getElementById('highlighterBtn').classList.contains('active'));
 
   // ── 2) 설정 저장 ─────────────────────────────────────────
-  const red = document.querySelector('.color-pick[data-c="#f3a69e"]');
+  const red = document.querySelector('.color-pick[data-c="#a63f47"]');
   red.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   check('펜 굵기는 더 얇은 단계 포함 4단계다',
     document.querySelectorAll('.size-opt').length === 4 && !!document.querySelector('.size-opt[data-s="1"]'));
@@ -164,7 +164,7 @@ try {
   red.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await wait(60);
   const saved = JSON.parse(window.localStorage.getItem('sdy_draw_cfg') || '{}');
-  check('색 설정이 저장된다', saved.color === '#f3a69e');
+  check('색 설정이 저장된다', saved.color === '#a63f47');
   check('사용자 색 선택기도 원형 color-pick 으로 표시된다', custom.classList.contains('color-pick'));
   check('굵기 설정이 저장된다', saved.size === 4);
 

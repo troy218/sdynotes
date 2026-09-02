@@ -30,8 +30,10 @@ check("토스트 문구 '스티커로 바꿨습니다'도 사라졌다", !js.inc
   const b = js.slice(m.index, m.index + 2600);
   check('makeSticker 안에 원본을 지우는 replace 분기가 없다',
     !b.includes('if(replace)') && !b.includes('purgeElements(rm)'));
-  check('makeSticker 은 원본을 그대로 두고 보관함에 저장한다',
-    b.includes('purgeElements') === false || !/filter\(e=>!ids\.has/.test(b));
+  const keepsOriginal = !b.includes('purgeElements(rm)')
+    && !b.includes('doc.pages[pi].els.push')
+    && !b.includes('renderPageEls(pi)');
+  check('makeSticker 은 원본을 그대로 두고 보관함에 저장한다', keepsOriginal);
 }
 
 // ── ②③ 객체 묶기 · 스티커로 만들기는 남아 있다 ──────────────────────────

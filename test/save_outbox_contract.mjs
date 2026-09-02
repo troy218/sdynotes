@@ -12,6 +12,13 @@ assert.ok(ctrlSave[1].indexOf('commitEditingText()') < ctrlSave[1].indexOf('flus
   'Ctrl+S must commit active contenteditable text before serializing the document');
 assert.equal(ctrlSave[1].includes("toast('저장됨 ✓'"), false,
   'Ctrl+S must not claim success before the server write result');
+assert.ok(ctrlSave[1].includes('flushSync({manual:true})'),
+  'Ctrl+S should request explicit save feedback, while autosave stays quiet');
+
+const saveDoc = html.match(/function saveDoc\(\)\{([\s\S]{0,1200}?)\n    \}/);
+assert.ok(saveDoc, 'saveDoc should exist');
+assert.equal(saveDoc[1].includes("setSaveState('저장 중...')"), false,
+  'autosave should not flash a saving banner on every change');
 
 const sync = html.match(/async function flushSync\(\)\{([\s\S]*?)\n    \}\n\n    \/\/ ============ 페이지 렌더/);
 assert.ok(sync, 'flushSync should exist');
