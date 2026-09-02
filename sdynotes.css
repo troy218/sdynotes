@@ -6272,6 +6272,14 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 .yp-reacts button .cnt{margin-left:1px;}
 
 
+
+/* 14.18.2 · 부드러운 형광펜 — 저장 span 배경은 그대로 두고, 화면 표시만
+   .tb 아래의 절대 레이어(svg .sdy-hl-layer)로 줄 단위 연속 띠 + 둥근 끝을
+   그린다. z-index:-1 로 글자 아래에 깔리며(.tb 는 position:absolute + z-index
+   라 이미 스택 컨텍스트), pointer-events:none 으로 편집·선택을 방해하지 않는다.
+   레이아웃을 못 재는 환경에서는 레이어가 없어 기존 span 배경이 폴백이 된다. */
+.tb .sdy-hl-layer{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:-1;}
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 
