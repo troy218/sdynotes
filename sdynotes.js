@@ -6285,6 +6285,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(_zl) _zl.textContent=Math.round(pageScale*100)+'%';
         try{ positionTblBar(); }catch(e){}
         try{ if(findOpen) paintFindHits(); }catch(e){}
+        // 14.18.2 · 확대/축소 후 형광펜 띠 좌표를 새 배율로 다시 맞춘다
+        try{ _hlRepaintAll(); }catch(_e){}
     }
 
     let fitScale=1, pageScale=1, zoomPct=100;
@@ -7422,6 +7424,157 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return box.innerHTML;
     }
 
+
+    // ── 14.18.2 · 부드러운 형광펜(하이라이트) 표시 레이어 ──────────────────
+    // 저장 데이터·편집 엔진은 글자 span 의 background-color 를 그대로 쓴다
+    // (동기화·되돌리기·툴바 판정·계약 테스트 불변). 대신 '화면 표시'만 실제
+    // 레이아웃(Range.getClientRects)을 재서, 글자 크기가 섞여도 줄 단위로
+    // 끊긴 연속 띠 + 둥근 끝으로 한 겹 더 그린다. 레이어는 .tb-content 바깥
+    // (.tb 아래)에 두므로 el.html·서버 저장에는 절대 섞이지 않는다.
+    // 레이아웃을 못 재는 환경(구형 웹뷰·테스트 DOM)에서는 레이어가 생기지
+    // 않고 기존 span 배경이 그대로 폴백으로 남는다.
+    const _HL_NS='http://www.w3.org/2000/svg';
+
+    function _hlLayer(w){
+        let lyr=w&&w.querySelector(':scope > .sdy-hl-layer');
+        if(!lyr&&w){
+            try{
+                lyr=document.createElementNS(_HL_NS,'svg');
+                lyr.setAttribute('class','sdy-hl-layer');
+                lyr.style.cssText='position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:-1;';
+                w.appendChild(lyr);
+            }catch(e){ lyr=null; }
+        }
+        return lyr||null;
+    }
+    // 글자에서 가장 가까운 span 의 배경색을 따른다. '투명' span 은 차단.
+    function _hlColorOf(node,c,baseHex){
+        let el=node&&(node.nodeType===3?node.parentNode:node);
+        while(el&&el!==c&&el.nodeType===1){
+            const v=el.style&&el.style.backgroundColor;
+            if(v&&String(v).trim()){
+                const h=_colorToHex(v);
+                return (h&&h!=='transparent')?h:null;
+            }
+            el=el.parentNode;
+        }
+        return baseHex||null;
+    }
+    // 같은 색으로 연속된 텍스트 노드 묶음
+    function _hlRuns(c,baseHex){
+        const runs=[]; let cur=null;
+        const walker=document.createTreeWalker(c,NodeFilter.SHOW_TEXT);
+        for(let n;(n=walker.nextNode());){
+            const color=_hlColorOf(n,c,baseHex);
+            if(color){
+                if(cur&&cur.color===color) cur.nodes.push(n);
+                else { cur={color:color,nodes:[n]}; runs.push(cur); }
+            }else cur=null;
+        }
+        return runs;
+    }
+    // 텍스트 노드를 실제 화면 선 조각(뷰 좌표)으로 잰다
+    function _hlFragRects(run){
+        const out=[], range=document.createRange();
+        for(const n of run.nodes){
+            try{ range.selectNodeContents(n); }catch(e){ continue; }
+            let rs=[];
+            try{ rs=Array.from(range.getClientRects()); }catch(e){ rs=[]; }
+            for(const r of rs){
+                if(r&&r.width>0.3&&r.height>0.3)
+                    out.push({l:r.left,t:r.top,rr:r.right,b:r.bottom,color:run.color});
+            }
+        }
+        return out;
+    }
+    // 같은 줄 조각을 세로 겹침으로 묶고, 가로로 닿은 조각은 한 띠로 합친다
+    function _hlBands(frags){
+        const rows=[];
+        for(const f of frags){
+            let row=null;
+            for(const r of rows){ if(f.t<r.maxT+2&&f.b>r.minT-2){ row=r; break; } }
+            if(!row){ row={minT:f.t,maxT:f.b,items:[]}; rows.push(row); }
+            if(f.t<row.minT) row.minT=f.t;
+            if(f.b>row.maxT) row.maxT=f.b;
+            row.items.push(f);
+        }
+        const bands=[];
+        for(const row of rows){
+            const items=row.items.slice().sort((a,b)=>a.l-b.l);
+            let band=null;
+            for(const f of items){
+                if(band&&f.l-band.rr<=2.5){
+                    if(f.rr>band.rr) band.rr=f.rr;
+                    if(f.t<band.t) band.t=f.t;
+                    if(f.b>band.b) band.b=f.b;
+                }else{ band={l:f.l,t:f.t,rr:f.rr,b:f.b,color:f.color}; bands.push(band); }
+            }
+        }
+        return bands;
+    }
+    function _hlSchedule(c,w){
+        if(!c||!w||!c.isConnected) return;
+        if(c._sdyHlT) return;
+        c._sdyHlT=setTimeout(()=>{ c._sdyHlT=0; try{ _hlPaint(c,w); }catch(_e){} },60);
+    }
+    function _hlWatch(c,w){
+        if(typeof MutationObserver==='undefined'||c._sdyHlMO) return;
+        const mo=new MutationObserver(()=>_hlSchedule(c,w));
+        try{
+            mo.observe(c,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['style','class']});
+            c._sdyHlMO=mo;
+        }catch(e){}
+    }
+    function _hlRepaintAll(){
+        try{
+            document.querySelectorAll('#pagesStage .tb').forEach(w=>{
+                const c=w&&w.querySelector('.tb-content');
+                if(c&&w.dataset&&w.dataset.id!=null) _hlSchedule(c,w);
+            });
+        }catch(_e){}
+    }
+    function _hlPaint(c,w){
+        if(!c||!w) return;
+        let baseHex='';
+        try{ baseHex=_colorToHex((c.style&&c.style.backgroundColor)||''); }catch(_e){}
+        let frags=[];
+        try{
+            for(const run of _hlRuns(c,baseHex)) frags=frags.concat(_hlFragRects(run));
+        }catch(e){ frags=[]; }
+        if(!frags.length){
+            const old=w.querySelector(':scope > .sdy-hl-layer');
+            if(old){ try{ old.remove(); }catch(_e){} }
+            return;
+        }
+        // 레이아웃을 아직 못 재는 순간(숨김·폰트 로딩 전)에는 다음 사이클에서
+        const crect=c.getBoundingClientRect();
+        if(!crect||(!crect.width&&!crect.height)) return;
+        const wrect=w.getBoundingClientRect();
+        const sc=pageScreenScale(parseInt(w.dataset&&w.dataset.pageIdx,10));
+        const sx=(sc&&sc.x>0)?sc.x:1, sy=(sc&&sc.y>0)?sc.y:1;
+        const ox=(crect.left-wrect.left)/sx-(w.clientLeft||0);
+        const oy=(crect.top-wrect.top)/sy-(w.clientTop||0);
+        const lyr=_hlLayer(w);
+        if(!lyr) return;
+        lyr.style.cssText='position:absolute;left:'+ox+'px;top:'+oy+'px;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:-1;';
+        while(lyr.firstChild) lyr.removeChild(lyr.firstChild);
+        const bands=_hlBands(frags);
+        for(const b of bands){
+            const x=(b.l-crect.left)/sx, y=(b.t-crect.top)/sy;
+            const wd=(b.rr-b.l)/sx, h=(b.b-b.t)/sy;
+            if(wd<=0.2||h<=0.2) continue;
+            const rr=document.createElementNS(_HL_NS,'rect');
+            rr.setAttribute('x',x.toFixed(2));
+            rr.setAttribute('y',y.toFixed(2));
+            rr.setAttribute('width',wd.toFixed(2));
+            rr.setAttribute('height',h.toFixed(2));
+            const rad=Math.max(1.2,Math.min(5,h*0.5));
+            rr.setAttribute('rx',rad.toFixed(2));
+            rr.setAttribute('ry',rad.toFixed(2));
+            rr.setAttribute('fill',b.color);
+            lyr.appendChild(rr);
+        }
+    }
     function buildTextEl(el,pageIdx){
         const w=document.createElement('div');
         w.className='tb'; w.dataset.id=el.id; w.dataset.pageIdx=pageIdx;
@@ -7533,6 +7686,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             h.className='handle '+cls; h.dataset.dir=cls;
             w.appendChild(h);
         });
+        // 14.18.2 · 부드러운 형광펜 표시 레이어 — 입력/서식 변경은 MutationObserver
+        // 가 받아서 다시 그린다. 웹폰트가 늦게 뜨는 경우에도 한 번 더 그린다.
+        try{ _hlWatch(c,w); _hlSchedule(c,w); }catch(_e){}
+        try{
+            if(document.fonts&&document.fonts.ready)
+                document.fonts.ready.then(()=>{ if(w.isConnected) _hlSchedule(c,w); }).catch(()=>{});
+        }catch(_e){}
         return w;
     }
 
@@ -8154,6 +8314,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             _previewEnd(st.el);
         }
+        // 14.18.2 · 이동 확정 → 형광펜 띠를 새 위치에 다시 그린다
+        if(commit){ try{ _hlRepaintAll(); }catch(_e){} }
     }
     function _finishResizePreview(st,commit){
         if(!st) return;
@@ -8164,6 +8326,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             st.el.style.height=Math.round(Math.max(24,st.nh!=null?st.nh:st.sh))+'px';
         }
         _previewEnd(st.el);
+        // 14.18.2 · 리사이즈 확정 → 형광펜 띠를 새 크기/위치에 다시 그린다
+        if(commit){ try{ _hlRepaintAll(); }catch(_e){} }
     }
     function _beginMultiPreview(st){
         if(!st) return;
@@ -8185,6 +8349,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             _previewEnd(it.node);
         });
+        // 14.18.2 · 다중 이동 확정 → 형광펜 띠 재배치
+        if(commit){ try{ _hlRepaintAll(); }catch(_e){} }
     }
     function _applyEditorMove(ev){
         if(!ev) return;

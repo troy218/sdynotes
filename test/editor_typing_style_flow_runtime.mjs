@@ -25,6 +25,21 @@ const { JSDOM, VirtualConsole } = jsdom;
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
+// CI/저부하 환경 차이로 고정 대기(ms)는 불안정하다 — 서버·DOM 이 원하는
+// 상태가 될 때까지 폴링한다(한도 안에서). fn 은 (async 가능) truthy 를
+// 돌려줘야 성공.
+const pollUntil = async (fn, timeout = 8000, step = 80) => {
+  const t0 = Date.now();
+  for (;;) {
+    let v = null;
+    try { v = await Promise.resolve(fn()); } catch { /* 상태가 아직 준비 안 됨 */ }
+    if (v) return v;
+    if (Date.now() - t0 > timeout) return null;
+    await wait(step);
+  }
+};
+
+
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-type-'));
 process.env.SDY_BASE_DIR = TMP;
 {
@@ -391,36 +406,47 @@ try {
   window.clearTextSelection();
   await wait(400);                        // 히스토리 묶음(250ms) 분리용
   window.applyHighlight('#fff59d');       // 선택 없음 + 상자 선택 → 상자 전체
-  await wait(200);
-  check('상자 전체에 형광펜이 칠해진다',
+  // 전체-상자 페인트는 즉시지만, 직전 입력의 저장 디바운스(300ms)가 겹치면
+  // DOM 이 잠시 뒤 다시 그려질 수 있다 — 배경이 실제로 보일 때까지 기다린다.
+  const hlPainted = await pollUntil(() =>
     effStyle(window, content, '오늘').backgroundColor === 'rgb(255, 245, 157)'
     && effStyle(window, content, '맛있').backgroundColor === 'rgb(255, 245, 157)');
+  check('상자 전체에 형광펜이 칠해진다', !!hlPainted);
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }));
-  await wait(250);
   // 되돌리기는 문서를 통째로 복원하며 DOM 을 다시 그린다 → 참조를 새로 얻는다
-  const tbU = document.querySelector('#pagesStage .tb[data-id="t1"]');
-  const contentU = tbU && tbU.querySelector('.tb-content');
-  check('Ctrl+Z 로 상자 전체 형광펜이 되돌려진다',
-    !!contentU && effStyle(window, contentU, '오늘').backgroundColor == null);
-  check('되돌려도 글자 내용은 그대로다', (contentU.textContent || '').includes('오늘 아침'));
+  const contentU = await pollUntil(() => {
+    const tbU = document.querySelector('#pagesStage .tb[data-id="t1"]');
+    const cu = tbU && tbU.querySelector('.tb-content');
+    if (!cu) return null;
+    return effStyle(window, cu, '오늘').backgroundColor == null ? cu : null;
+  });
+  check('Ctrl+Z 로 상자 전체 형광펜이 되돌려진다', !!contentU);
+  check('되돌려도 글자 내용은 그대로다', !!contentU && (contentU.textContent || '').includes('오늘 아침'));
   document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'y', ctrlKey: true, bubbles: true, cancelable: true }));
-  await wait(250);
-  const tbR = document.querySelector('#pagesStage .tb[data-id="t1"]');
-  const contentR = tbR && tbR.querySelector('.tb-content');
-  check('Ctrl+Y 로 형광펜이 다시 살아난다',
-    !!contentR && effStyle(window, contentR, '오늘').backgroundColor === 'rgb(255, 245, 157)');
+  const contentR = await pollUntil(() => {
+    const tbR = document.querySelector('#pagesStage .tb[data-id="t1"]');
+    const cr = tbR && tbR.querySelector('.tb-content');
+    if (!cr) return null;
+    return effStyle(window, cr, '오늘').backgroundColor === 'rgb(255, 245, 157)' ? cr : null;
+  });
+  check('Ctrl+Y 로 형광펜이 다시 살아난다', !!contentR);
 
   // ── ⑥ 서버(메모)까지 저장 ─────────────────────────────────────────────
-  await wait(2000);
-  const sel2 = await q({ table: 'memos', op: 'select', values: [], filters: [{ field: 'notebook_id', op: 'eq', value: String(id) }], limit: 1, single: true });
-  const row = Array.isArray(sel2?.data) ? sel2.data[0] : sel2?.data;
-  const memo = row?.content ? JSON.parse(row.content) : null;
-  const el0 = memo?.pages?.[0]?.els?.[0];
-  check('서버에도 문장이 저장된다', (el0?.html || '').includes('오늘 아침'));
-  check('서버에도 중간에 바꾼 스타일이 남는다',
-    (el0?.html || '').includes('46, 204, 113') && (el0?.html || '').includes('Gaegu')
-    && (el0?.html || '').includes('24px') && (el0?.html || '').includes('255, 245, 157'));
+  // 저장은 디바운스 + flushSaveDoc 를 거치므로 부하가 걸리면 지연될 수 있다.
+  // 고정 대기 대신 서버 메모에 문장+중간 스타일이 전부 남을 때까지 폴링한다.
+  const saved = await pollUntil(async () => {
+    const sel2 = await q({ table: 'memos', op: 'select', values: [], filters: [{ field: 'notebook_id', op: 'eq', value: String(id) }], limit: 1, single: true }).catch(() => null);
+    const row = sel2 && (Array.isArray(sel2.data) ? sel2.data[0] : sel2.data);
+    const memo = row?.content ? JSON.parse(row.content) : null;
+    const el0 = memo?.pages?.[0]?.els?.[0];
+    const h = el0?.html || '';
+    return h.includes('오늘 아침')
+      && h.includes('46, 204, 113') && h.includes('Gaegu')
+      && h.includes('24px') && h.includes('255, 245, 157');
+  }, 30000, 250);
+  check('서버에도 문장이 저장된다', !!saved);
+  check('서버에도 중간에 바꾼 스타일이 남는다', !!saved);
 
   // ── ⑦ 실제 요청 문장: 쓰는 도중 글꼴·크기·굵기를 차례로 변경 ──────────
   const liveTb = document.querySelector('#pagesStage .tb[data-id="t1"]');

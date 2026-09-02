@@ -1,4 +1,4 @@
-# SDYnotes 14.18.0 — Fastify + Python worker + Oracle 자체 저장소
+# SDYnotes 14.18.1 — Fastify + Python worker + Oracle 자체 저장소
 
 기존 단일 `app.py`(약 11,000줄)를 **"빠른 부분은 Node, 무거운 부분만 Python"** 으로
 재설계한 백엔드입니다. **14.12 부터 모든 데이터(상태·파일)는 이 Oracle VM 디스크에
@@ -9,6 +9,19 @@
 
 프런트(`sdynotes.html`)의 주요 변화:
 
+- **14.18.1 "노트 사진이 1시간쯤 뒤 사라지는" 진짜 원인 수정 (서버/워커)**:
+  사진이 *올린 직후엔 모든 기기에서 보이다가 잠시 뒤 404*가 되는 증상은
+  프런트 문제가 아니라 **워커 임시파일 정리 버그**였다. 음악 백필 스레드가
+  15분마다 부르는 `_cleanup_old_temp_files()`(worker/sdynotes_worker/common.py)가
+  `imported/`·`imported_docs/` 를 "mtime 1시간 넘음 = 임시"로 보고 **통째로**
+  지웠는데, oracle 자체 저장소 전환(14.12) 이후 그 폴더는 노트 이미지
+  (`img_*.webp` → `/api/img/…`)·가져오기 배경·대용량 문서 본문의 **영구
+  저장소**이기 때문이다. 이제 영구 데이터는 절대 건드리지 않고, 이름으로
+  확실히 임시인 파일(`chunk_*.json`·`*.tmp`·`*.part`, 24시간 넘은 업로드
+  `*.bin`)만 정리한다. 회귀 방지 계약 테스트:
+  `npm run test:imgstore` (`python3 test/worker_img_cleanup_contract.py`,
+  `test:image` 그룹에도 포함). 자세한 분석은
+  `docs/image_paste_persistence_bug.md` 머리글.
 - **14.18.0 이미지 저장 방식 v3 — 업로드-선행(단순·확실)으로 전면 교체**:
   "그림을 올린 뒤 나중에 다른 기기에서 열면 사진이 안 불러와진다"가 여러 차례의
   부분 개선(pending 플래그 → data: 라이딩 → outbox → IndexedDB+큐+자가복구)

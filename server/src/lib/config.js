@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 // ⑤의 ?v= 를 안 올리면 → nginx 가 sdynotes.js/css 를 1년 immutable 로 캐싱하므로
 //   이미 접속한 브라우저가 옛 JS/CSS 를 1년 동안 계속 쓴다(조용히 깨진다).
 //   그래서 내리는 쪽이 아니라 '올리는' 쪽으로 맞춘다.
-export const APP_VERSION = '14.18.0';
+export const APP_VERSION = '14.18.2';
 export const SETTINGS_SCHEMA = 3;
 
 // ── 저장소 모드 ────────────────────────────────────────────────────────
