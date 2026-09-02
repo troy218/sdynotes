@@ -3656,20 +3656,22 @@ body.lyrmode #mpBig .mpb-tabs button.mp-sortbtn{display:none;}
 .mpb-group-chip em{font-style:normal;font-size:9px;color:var(--text3);}
 .mpb-group-chip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--card));color:var(--accent);}
 .mpb-reco-section{margin:5px 0 12px;}
-/* 랜덤 믹스 히어로 — 추천 맨 위, 누르면 아무 곡이나 20곡으로 대기열 교체 */
-.mpb-random-hero{display:flex;align-items:center;gap:12px;width:100%;border:0;cursor:pointer;
-  padding:13px 15px;border-radius:16px;text-align:left;color:#fff;
-  background:linear-gradient(120deg,var(--accent),#8e5cf7);box-shadow:0 7px 18px rgba(0,0,0,.16);
-  transition:transform .12s ease,filter .12s ease;}
-.mpb-random-hero:hover{filter:brightness(1.06);}
-.mpb-random-hero:active{transform:scale(.985);}
-.mpb-random-hero .mrh-ic{flex:0 0 auto;width:40px;height:40px;border-radius:12px;display:flex;
-  align-items:center;justify-content:center;font-size:22px;background:rgba(255,255,255,.22);}
+/* 랜덤 믹스 히어로 — '지금 재생 중' 상자와 같은 결(테두리+연한 배경, 그라데이션 없음) */
+.mpb-random-hero{display:flex;align-items:center;gap:9px;width:100%;cursor:pointer;text-align:left;
+  padding:7px 9px;border:1px solid var(--border);border-radius:12px;
+  background:color-mix(in srgb,var(--bg2) 72%,transparent);color:var(--text1);
+  transition:border-color .12s ease,transform .12s ease;}
+.mpb-random-hero:hover{border-color:var(--accent);}
+.mpb-random-hero:active{transform:scale(.99);}
+.mpb-random-hero .mrh-ic{flex:0 0 auto;width:34px;height:34px;border-radius:8px;display:flex;
+  align-items:center;justify-content:center;font-size:17px;background:var(--accent);color:#fff;}
 .mpb-random-hero .mrh-tx{flex:1;min-width:0;display:flex;flex-direction:column;}
-.mpb-random-hero .mrh-tx b{font-size:14px;font-weight:900;letter-spacing:-.03em;}
-.mpb-random-hero .mrh-tx em{font-size:10.5px;font-style:normal;opacity:.88;margin-top:2px;
+.mpb-random-hero .mrh-tx b{font-size:11.5px;font-weight:800;color:var(--text1);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.mpb-random-hero .mrh-play{flex:0 0 auto;font-size:27px;opacity:.95;}
+.mpb-random-hero .mrh-tx em{font-size:10px;font-style:normal;color:var(--text3);margin-top:1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mpb-random-hero .mrh-play{flex:0 0 auto;width:28px;height:28px;border-radius:50%;display:flex;
+  align-items:center;justify-content:center;font-size:16px;background:var(--accent);color:#fff;}
 .mpb-reco-head{display:flex;align-items:baseline;gap:7px;padding:0 3px 6px;}
 .mpb-reco-head b{font-size:13px;letter-spacing:-.03em;}
 .mpb-reco-head span{font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}

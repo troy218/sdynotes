@@ -23030,7 +23030,7 @@ function renderDiscoverBig(){
     // 맨 처음: 랜덤 20곡 믹스 — 누를 때마다 새로운 조합으로 대기열을 채운다
     const rndHero='<section class="mpb-reco-section"><button class="mpb-random-hero" data-reco-random="20">'
       +'<span class="mrh-ic"><i class="ri-dice-5-line"></i></span>'
-      +'<span class="mrh-tx"><b>랜덤 믹스 🎲</b><em>아무 곡이나 20곡 · 누르면 대기열 교체 후 바로 재생</em></span>'
+      +'<span class="mrh-tx"><b>랜덤 믹스</b><em>아무 곡이나 20곡 · 누르면 대기열 교체 후 바로 재생</em></span>'
       +'<i class="ri-play-circle-fill mrh-play"></i></button></section>';
     const top=_recoTracks(list,'time',10,new Set());
     const seen=new Set(top.map(t=>t.id));
