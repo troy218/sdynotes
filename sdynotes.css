@@ -727,6 +727,10 @@
             width:200px;flex:0 0 200px;
             border:2px dashed var(--border);background:transparent;border-radius:4px;
             display:flex;flex-direction:column;align-items:center;justify-content:center;
+            /* 같은 줄 노트 카드 높이(미리보기+이름칸)에 정확히 맞춘다 —
+               그리드가 align-items:flex-start 라 스스로 stretch 를 선언해야 한다.
+               min-height 는 빈 폴더처럼 혼자 있을 때의 기본 높이. */
+            align-self:stretch;
             min-height:300px;cursor:pointer;transition:all .3s;color:var(--text3);
         }
         /* 14.14 · .add-card 폰 크기는 문서 끝 v1414-phone 에서 정한다 */
