@@ -192,8 +192,11 @@ ok(`모바일 최종 블록이 기능 표면 ${surfaceTokens.length}종을 모�
 // 14.13.4 · 떠 있던 서식 막대(fmtBar)는 상단 바와 중복이라 없앴다 — 의도적 제거를 잠근다.
 ok('14.13.4 fmtBar(떠 있는 서식 막대)가 HTML에서 제거됐다', !/id=["']fmtBar["']/.test(html));
 ok('14.13.4 글자 크기/형광펜이 상단 바(.editor-toolbar) 안에 있다',
+  // 14.18.1 · 툴바 크기칸은 '글자를 입력할 때마다'가 아니라 Enter/포커스
+  // 이탈(change)로 크기를 확정하는 UI 로 바뀌었다. 예전 oninput-setFS 계약은
+  // 이제 실제 동작과 어긋나므로(키 입력 중간값이 서식에 반영됨) onchange 로 고친다.
   has(html, /class="tb-group fmt-group"/) &&
-  has(html, /id="fsInput"[^>]*oninput="[^"]*setFS/) &&
+  has(html, /id="fsInput"[^>]*onchange="[^"]*setFS/) &&
   has(html, /id="hlWrap"/));
 
 /* ── 8. 회전/리사이즈/데스크톱 보존 ───────────────────────── */

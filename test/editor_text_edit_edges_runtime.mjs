@@ -207,6 +207,9 @@ try {
   const fsInput = document.getElementById('fsInput');
   fsInput.value = '28';
   fsInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+  // 실제 UI 는 Enter/포커스 이탈(change)로 크기를 확정한다 — 사용자가
+  // 숫자를 적고 툴바 밖을 클릭하는 동작과 같은 의미로 change 를 보낸다.
+  fsInput.dispatchEvent(new window.Event('change', { bubbles: true }));
   check('A2 글자 크기 입력칸 변경이 첫 상자 데이터에 반영된다', el('t1').fontSize === 28, String(el('t1').fontSize));
   check('A3 글자 크기 입력칸 변경이 둘째 상자 데이터에도 반영된다', el('t2').fontSize === 28, String(el('t2').fontSize));
   check('A4 두 상자의 DOM 글자 크기도 28px 이다', parseInt(content('t1').style.fontSize, 10) === 28 && parseInt(content('t2').style.fontSize, 10) === 28);

@@ -264,6 +264,9 @@ try {
   const fsInput = document.getElementById('fsInput');
   fsInput.value = '36';
   fsInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+  // 실제 UI 는 Enter/포커스 이탈(change)로 크기를 확정한다 — 입력 후
+  // 툴바 밖을 클릭하는 사용자 동작과 같은 의미로 change 를 보낸다.
+  fsInput.dispatchEvent(new window.Event('change', { bubbles: true }));
   await wait(300);
   check('G1 크기칸에 36 입력 → 상자 글자 크기 36', window.findEl(0, 't1').fontSize === 36,
     String(window.findEl(0, 't1').fontSize));
