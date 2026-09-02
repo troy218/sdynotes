@@ -6,7 +6,9 @@
    3) 자유선을 그리면 문서(stroke element)·화면(.stroke-g)에 실제 획이 생긴다
    4) 지우개가 그 획을 지운다
    5) 완료하면 펜 모드가 종료된다
-   6) 툴바의 되돌리기 버튼이 존재한다 (실행 취소 가능한 UI) */
+   6) 툴바의 되돌리기 버튼이 존재한다 (실행 취소 가능한 UI)
+   7) 14.18.3 되돌리기 재설계 — 빠른 연속 획도 1획씩 되돌아가고, 지우개의
+      '첫 획'도 되돌아오며, 되돌린 뒤에도 펜 모드가 살아 있다 */
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
@@ -123,6 +125,13 @@ try {
   paper.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: 1100, width: 800, height: 1100, x: 0, y: 0 });
   const draw = paper.querySelector('.draw-surface');
   check('펜 전용 드로잉 레이어가 있다', !!draw);
+  // undo/redo 는 종이를 다시 그리므로, 그때마다 paper/draw 를 새로 잡는 헬퍼
+  const refit = () => {
+    const pp = document.querySelector('#pagesStage .paper[data-page-idx="0"]');
+    pp.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: 1100, width: 800, height: 1100, x: 0, y: 0 });
+    return { paper: pp, draw: pp.querySelector('.draw-surface') };
+  };
+  const strokeN = () => document.querySelectorAll('#pagesStage .stroke-g').length;
 
   // ── 1) 펜 켜기 ─────────────────────────────────────────
   window.togglePen();
@@ -144,7 +153,7 @@ try {
     document.getElementById('penBtn').classList.contains('active') && !document.getElementById('highlighterBtn').classList.contains('active'));
 
   // ── 2) 설정 저장 ─────────────────────────────────────────
-  const red = document.querySelector('.color-pick[data-c="#e74c3c"]');
+  const red = document.querySelector('.color-pick[data-c="#f3a69e"]');
   red.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   check('펜 굵기는 더 얇은 단계 포함 4단계다',
     document.querySelectorAll('.size-opt').length === 4 && !!document.querySelector('.size-opt[data-s="1"]'));
@@ -155,7 +164,7 @@ try {
   red.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await wait(60);
   const saved = JSON.parse(window.localStorage.getItem('sdy_draw_cfg') || '{}');
-  check('색 설정이 저장된다', saved.color === '#e74c3c');
+  check('색 설정이 저장된다', saved.color === '#f3a69e');
   check('사용자 색 선택기도 원형 color-pick 으로 표시된다', custom.classList.contains('color-pick'));
   check('굵기 설정이 저장된다', saved.size === 4);
 
@@ -167,30 +176,64 @@ try {
   await wait(150);
   const strokeG = document.querySelector('#pagesStage .stroke-g');
   check('화면에 획 요소(.stroke-g)가 생긴다', !!strokeG);
-  const strokeCount = document.querySelectorAll('#pagesStage .stroke-g').length;
-  check('획 데이터가 문서에 저장된다', strokeCount >= 1);
+  check('획 데이터가 문서에 저장된다', strokeN() >= 1);
+
+  // ── 3.5) 되돌리기: 빠르게 연속으로 그린 획도 한 획씩 되돌아간다 ─────────
+  // (undo/redo 는 종이를 다시 그리므로 매 동작 뒤 paper/draw 를 새로 잡는다)
+  {
+    const before = strokeN();
+    let d = refit().draw;
+    for (let k = 0; k < 3; k++) {
+      d.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 60 + k * 40, clientY: 500 }));
+      d.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: 90 + k * 40, clientY: 520 }));
+      d.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
+      await wait(30);   // 250ms 묶음에 걸릴 만큼 빠른 연속 그리기
+    }
+    check('빠르게 연속으로 그린 3획이 모두 남는다', strokeN() === before + 3);
+    window.undo(); await wait(150);
+    check('되돌리기 한 번에 마지막 1획만 사라진다', strokeN() === before + 2);
+    check('되돌린 뒤에도 펜 모드(종이 .drawing)가 살아 있다', refit().paper.classList.contains('drawing'));
+    window.undo(); await wait(150);
+    window.undo(); await wait(150);
+    check('되돌리기를 세 번 누르면 연속 획이 전부 사라진다', strokeN() === before);
+    window.redo(); await wait(150);
+    check('다시 실행으로 마지막 획이 하나 돌아온다', strokeN() === before + 1);
+  }
 
   // ── 4) 지우개 ────────────────────────────────────────────
   window.toggleEraser();
   await wait(40);
   check('지우개가 active 가 된다', document.getElementById('eraserBtn').classList.contains('active'));
-  draw.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 120, clientY: 110 }));
-  draw.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: 180, clientY: 145 }));
-  draw.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
+  const drawE = refit().draw;   // 3.5 의 undo/redo 로 종이가 다시 그려졌으므로 새로 잡는다
+  const beforeErase = strokeN();
+  drawE.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 120, clientY: 110 }));
+  drawE.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: 180, clientY: 145 }));
+  drawE.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
   await wait(200);
-  check('지우개가 그린 획을 지운다', document.querySelectorAll('#pagesStage .stroke-g').length < strokeCount);
+  check('지우개가 그린 획을 지운다', strokeN() < beforeErase);
+  // 지우개로 지운 '첫 획'도 되돌리기로 살아나야 한다 (예전엔 스냅샷을 지운 뒤에
+  // 남겨 첫 획이 영영 돌아오지 않았다)
+  {
+    const afterErase = strokeN();
+    window.undo(); await wait(200);
+    check('지우개로 지운 첫 획도 되돌리기로 살아난다', strokeN() > afterErase);
+    check('지우개 되돌리기 뒤에도 펜 모드가 유지된다', refit().paper.classList.contains('drawing'));
+    if (document.getElementById('eraserBtn').classList.contains('active')) window.toggleEraser();
+    await wait(40);
+  }
 
   // ── 5) 자유선으로 비슷하게 그린 도형을 길게 누르면 자동으로 다듬는다 ───
   window.setShape('free');
   if (document.getElementById('eraserBtn').classList.contains('active')) window.toggleEraser();
   await wait(40);
-  draw.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 300, clientY: 300 }));
+  const draw2 = refit().draw;
+  draw2.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 300, clientY: 300 }));
   for (const [x, y] of [[360, 298], [410, 305], [408, 360], [398, 382], [335, 380], [300, 365], [298, 315], [300, 300]]) {
-    draw.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y }));
+    draw2.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y }));
     await wait(20);
   }
   await wait(760);
-  draw.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
+  draw2.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
   await wait(1400);
   const rows = await q({ table: 'memos', op: 'select', values: [], filters: [{ field: 'notebook_id', op: 'eq', value: String(id) }], limit: 1, single: true });
   const row = Array.isArray(rows?.data) ? rows.data[0] : rows?.data;

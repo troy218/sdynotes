@@ -5,12 +5,16 @@
         /* 본문에 바로 쓰이는 글꼴만 여기서 받는다.
            나머지 장식 글꼴 12종은 첫 화면을 그린 뒤에 뒤에서 받는다
            (@import 는 CSS 파싱을 막아, 예전엔 이것 때문에 시작이 느렸다) */
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
+        /* 14.18.3 · 기본 글꼴을 프리텐다드(변수형·한글 서브셋)로 바꿨다. */
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
+        /* 옛 노트에 인라인으로 박혀 있는 'Noto Sans KR' 지정이 흐트러지지 않게
+           같은 글꼴(프리텐다드)을 가리키는 별칭만 남긴다 (설치 안 됐으면 다음 폴백 폰트로). */
+        @font-face{font-family:'Noto Sans KR';src:local('Pretendard Variable'),local('Pretendard');}
         /* 데스크톱은 사용자가 늘 브라우저 90% 배율에서 보던 정보 밀도로 시작한다.
            루트 zoom은 고정 레이어까지 한 번에 축소해 개별 화면마다 크기가 달라지지
            않게 하며, 폰은 가독성과 기존 터치 배치를 위해 100%를 유지한다. */
         @media (min-width:641px) and (pointer:fine){ html{zoom:.9;} }
-        *{font-family:'Noto Sans KR',sans-serif;margin:0;padding:0;box-sizing:border-box;}
+        *{font-family:'Pretendard Variable','Pretendard',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;margin:0;padding:0;box-sizing:border-box;}
 
         /* 16.24 · 유틸리티 클래스 복구 — HTML이 쓰는 레이아웃 유틸(flex·w-full·py-4 등)이
            어디에도 정의돼 있지 않아 데스크톱 헤더가 세로로 쌓이는 등 화면이 깨졌다.
@@ -127,7 +131,7 @@
         }
         @keyframes spPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.07);}}
         #splash .sp-title{
-            font-family:'Gaegu','Noto Sans KR',cursive;font-weight:700;font-size:24px;
+            font-family:'Gaegu','Pretendard Variable',cursive;font-weight:700;font-size:24px;
             background:linear-gradient(92deg,var(--accent),#8e5cf7 60%,#e0619b);
             -webkit-background-clip:text;background-clip:text;color:transparent;
         }
@@ -202,7 +206,7 @@
             padding:9px 18px !important;}
         .header #searchInput{height:32px !important;}
         .app-brand h1{
-            font-family:'Gaegu','Noto Sans KR',cursive;
+            font-family:'Gaegu','Pretendard Variable',cursive;
             font-weight:700;letter-spacing:.01em;font-size:26px;line-height:1.1;
             background:linear-gradient(92deg,var(--accent),#8e5cf7 60%,#e0619b);
             -webkit-background-clip:text;background-clip:text;color:transparent;
@@ -890,7 +894,7 @@
         .font-item .fi-sample{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
             font-size:15px;line-height:1.35;color:var(--text1);}
         .font-item .fi-name{flex:none;font-size:11px;color:var(--text3);
-            font-family:'Noto Sans KR',sans-serif;white-space:nowrap;}
+            font-family:'Pretendard Variable','Pretendard',sans-serif;white-space:nowrap;}
         .font-item .fi-check{flex:none;display:none;font-size:15px;color:var(--accent);line-height:1;}
         .font-item:hover{background:var(--bg2);}
         .font-item.sel{background:color-mix(in srgb, var(--accent) 12%, transparent);}
