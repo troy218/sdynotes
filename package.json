@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.18.0",
+  "version": "14.18.1",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -29,7 +29,8 @@
     "test:place": "node test/editor_place_runtime.mjs",
     "test:polish": "node test/ui_polish_orientation_contract.mjs && python3 test/import_orientation_runtime.py",
     "test:sync": "node test/note_sync_clock_contract.mjs && node test/collab_protocol.cjs && node test/merge3_unit.cjs && node test/empty_note_render_contract.mjs && node test/import_retry_contract.mjs",
-    "test:image": "node test/note_image_reopen_contract.mjs && node test/image_cross_device_contract.mjs && node test/image_paste_persistence_contract.mjs && node test/image_clipboard_contract.mjs",
+    "test:image": "node test/note_image_reopen_contract.mjs && node test/image_cross_device_contract.mjs && node test/image_paste_persistence_contract.mjs && node test/image_clipboard_contract.mjs && python3 test/worker_img_cleanup_contract.py",
+    "test:imgstore": "python3 test/worker_img_cleanup_contract.py",
     "test:pasteimg": "node test/image_paste_persistence_contract.mjs",
     "test:imgclip": "node test/image_clipboard_contract.mjs",
     "test:fastops": "node test/editor_fast_ops_contract.mjs && node test/editor_fast_switch_runtime.mjs",

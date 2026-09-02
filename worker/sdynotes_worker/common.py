@@ -56,7 +56,7 @@ for _d in (IMG_DIR, DOCS_DIR, UPLOAD_DIR, JOBS_DIR, MUSIC_DIR, SYNC_DIR):
 # server/src/lib/config.js 의 APP_VERSION 과 항상 같은 값이어야 한다.
 # 작업마다 같이 올려라 — 함께 바꿔야 하는 5곳 전체 목록은
 # server/src/lib/config.js 상단 주석에 있다.
-APP_VERSION = "14.18.0"
+APP_VERSION = "14.18.1"
 SETTINGS_SCHEMA = 3
 
 _STORAGE_MODE = (os.environ.get("SDY_STORAGE") or "oracle").strip().lower()
@@ -77,17 +77,62 @@ def is_server_idle(idle_sec=10.0):
     return (time.time() - _last_user_activity) > idle_sec
 
 
-def _cleanup_old_temp_files():
+# ── 임시 파일 정리 ─────────────────────────────────────────────
+# 주의(14.18.1): 이 함수는 '진짜 임시 파일'만 지워야 한다. oracle 전환(14.12)
+# 이후 IMG_DIR(imported/) 은 ① 노트에 붙인 사진(img_*.webp, /api/img/)과
+# ② 문서 가져오기가 만든 배경(<hex>.png|jpg|svg, /api/import/img/)의
+# **영구 저장소**이고, DOCS_DIR(imported_docs/) 도 대용량 문서 본문
+# ({jid}.*)의 영구 저장소다. 예전처럼 "디렉터리 안 파일을 mtime 으로 통째로
+# 지우면" 올린 지 한 시간쯤 지난 노트 사진이 서버 디스크에서 사라져 모든
+# 기기에서 깨지는 치명적 버그가 된다(음악 백필 스레드가 15분마다 이 함수를
+# 호출하므로 사실상 매번 재발). 그래서 여기서는 이름으로 확실히 임시인
+# 파일만 정리한다 — 영구 데이터는 절대 건드리지 않는다.
+#
+#   UPLOAD_DIR(import_uploads/)  : 클라이언트 청크 업로드 조립소. *.part 는
+#                                  미완성 찌꺼기, *.bin 은 완성 후 변환에 쓰인
+#                                  원본. 1시간 안에 변환으로 넘어가므로 그보다
+#                                  오래 남은 것은 죽은 업로드다.
+#   IMG_DIR(imported/)           : chunk_*.json(문서 변환 자식 프로세스 결과,
+#                                  정상 종료 시 곧바로 삭제됨 — 비정상 종료
+#                                  찌꺼기만 남는다) + *.tmp(원자 저장 찌꺼기)
+#                                  만 정리. img_*.webp / <hex>.png|jpg|svg 는
+#                                  영구 데이터 → 절대 삭제 금지.
+#   DOCS_DIR(imported_docs/)     : *.tmp(원자 저장 중단 찌꺼기) 만 정리.
+#                                  {jid}.* 은 영구 문서 데이터 → 절대 삭제 금지.
+#                                  ({jid}.src 는 가져오기 완료 시점에 자체 GC 로
+#                                   하루 지난 것만 정리된다.)
+def _cleanup_old_temp_files(upload_older_than=3600.0, bin_older_than=24 * 3600.0):
     try:
         now = time.time()
-        for d in (IMG_DIR, DOCS_DIR, UPLOAD_DIR):
-            if os.path.exists(d):
-                for fn in os.listdir(d):
-                    fp = os.path.join(d, fn)
-                    if os.path.isfile(fp) and (now - os.path.getmtime(fp) > 3600):
-                        try:
-                            os.unlink(fp)
-                        except Exception:
-                            pass
+        # 영구 저장 디렉터리: 이름 패턴으로 확실한 임시 파일만 정리
+        patterns = {
+            IMG_DIR: lambda fn: (fn.startswith("chunk_") and fn.endswith(".json")) or fn.endswith(".tmp"),
+            DOCS_DIR: lambda fn: fn.endswith(".tmp"),
+        }
+        for d, is_tmp in patterns.items():
+            if not os.path.isdir(d):
+                continue
+            for fn in os.listdir(d):
+                if not is_tmp(fn):
+                    continue
+                fp = os.path.join(d, fn)
+                try:
+                    if os.path.isfile(fp) and now - os.path.getmtime(fp) > upload_older_than:
+                        os.unlink(fp)
+                except Exception:
+                    pass
+        # 업로드 조립 디렉터리: 전부 임시 데이터라 전체 mtime 스윕이 안전하다.
+        #   .bin 은 변환이 끝나면 moved 되므로 더 넉넉한 임계값을 준다.
+        if os.path.isdir(UPLOAD_DIR):
+            for fn in os.listdir(UPLOAD_DIR):
+                fp = os.path.join(UPLOAD_DIR, fn)
+                try:
+                    if not os.path.isfile(fp):
+                        continue
+                    threshold = bin_older_than if fn.endswith(".bin") else upload_older_than
+                    if now - os.path.getmtime(fp) > threshold:
+                        os.unlink(fp)
+                except Exception:
+                    pass
     except Exception:
         pass
