@@ -8,7 +8,7 @@
      ② strokeToPathD 는 drawStrokeOnCanvas 와 같은 지오메트리(sharp → 직선 L,
         부드럽게 → 2차 곡선 Q)를 만든다 — 화면과 스티커 모양이 같아야 한다
      ③ SVG 굽기가 실패하면 예전 캔버스 PNG 경로로 폴백한다
-     ④ 굽은 스티커는 sticker:true + svg:true 로 붙고 보관함에도 저장된다
+     ④ 굽은 스티커는 종이에 자동으로 붙지 않고, 보관함에만 저장된다
      ⑤ 서버는 base64(PNG)와 URL 인코딩(SVG) data: URL 을 모두 디코드하고,
         SVG 는 .svg 로 저장해 image/svg+xml 로 돌려준다
      ⑥ 서버는 SVG 를 저장할 때 스크립트를 무력화하고(sanitize), 원본 열기 차단
@@ -48,16 +48,19 @@ const fnBody = (src, name) => {
     && b.includes("stroke-linecap=\"round\"") && b.includes("stroke-linejoin=\"round\""));
 }
 
-// ── ③④ 폴백 · 요소 플래그 ──────────────────────────────────────────────
+// ── ③④ 폴백 · 보관함 저장 ──────────────────────────────────────────────
 {
   const b = fnBody(js, 'makeSticker');
   check('SVG 굽기 실패 시 예전 캔버스 PNG 경로로 폴백한다',
     b.includes('await bakeStickerSVG(items,pi,rx,ry,rw,rh)')
     && b.includes("renderPageCanvas(pi,{onlyIds:ids,transparent:true})")
     && b.includes("out.toDataURL('image/png')"));
-  check('붙은 스티커는 sticker 표시와 svg 표시를 가진다',
-    b.includes('sticker:true') && b.includes('el.svg=true'));
-  check('보관함에도 저장해 다른 노트에서 재사용한다', b.includes("'/api/stickers/save'"));
+  check('보관함에만 저장하고 종이에는 자동으로 붙이지 않는다',
+    b.includes("await fetch('/api/stickers/save'")
+    && !b.includes('sticker:true')
+    && !b.includes('doc.pages[pi].els.push')
+    && !b.includes('renderPageEls(pi)'));
+  check('보관함에 저장해 다른 노트에서 재사용한다', b.includes("'/api/stickers/save'"));
   check('SVG 로 구웠다는 안내를 준다', b.includes('벡터라 확대해도 안 깨져요'));
 }
 

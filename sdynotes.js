@@ -303,6 +303,101 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     function paperSize(d){ const p=SIZE_PRESETS[(d||doc).sizePreset]||SIZE_PRESETS.a4_portrait; return {w:p.w,h:p.h}; }
 
+    const CLASSIC_DRAW_COLORS=['#111111','#a63f47','#3d6ea8','#2f7a5d','#b7792b','#7550a6'];
+    const CLASSIC_TEXT_COLORS=['#111111','#a63f47','#c06e34','#9a8527','#2f7a5d','#1c8a7a','#3d6ea8','#7550a6','#b44f7a','#5f6772'];
+    const CLASSIC_HL_COLORS=['#efd36a','#b7d97a','#83d7de','#d8ade8','#f2bcc5','#b7cdf7','#f2c796','#cfd4dd','#c5e1a5','#e6c15d'];
+    const DRAW_COLOR_ALIASES={
+        '#111':'#111111','#111111':'#111111','#888888':'#111111',
+        '#e74c3c':'#a63f47','#f3a69e':'#a63f47',
+        '#3498db':'#3d6ea8','#9acced':'#3d6ea8',
+        '#27ae60':'#2f7a5d','#93d7b0':'#2f7a5d',
+        '#f39c12':'#b7792b','#f9ce89':'#b7792b',
+        '#9b59b6':'#7550a6','#cdacdb':'#7550a6'
+    };
+    const TEXT_COLOR_ALIASES={
+        '#000':'#111111','#000000':'#111111','#111':'#111111','#111111':'#111111','#808080':'#111111',
+        '#e74c3c':'#a63f47','#f3a69e':'#a63f47',
+        '#e67e22':'#c06e34','#f3bf91':'#c06e34',
+        '#f1c40f':'#9a8527','#f8e287':'#9a8527',
+        '#2ecc71':'#2f7a5d','#97e6b8':'#2f7a5d',
+        '#1abc9c':'#1c8a7a','#8ddece':'#1c8a7a',
+        '#3498db':'#3d6ea8','#9acced':'#3d6ea8',
+        '#9b59b6':'#7550a6','#cdacdb':'#7550a6',
+        '#e84393':'#b44f7a','#f4a1c9':'#b44f7a',
+        '#7f8c8d':'#5f6772','#bfc6c6':'#5f6772'
+    };
+    const HL_COLOR_ALIASES={
+        '#ffff00':'#efd36a','#ffff80':'#efd36a',
+        '#00ff00':'#b7d97a','#80ff80':'#b7d97a',
+        '#00ffff':'#83d7de','#80ffff':'#83d7de',
+        '#ff00ff':'#d8ade8','#ff80ff':'#d8ade8',
+        '#ff9999':'#f2bcc5','#ffcccc':'#f2bcc5',
+        '#99ccff':'#b7cdf7','#cce6ff':'#b7cdf7',
+        '#ffcc99':'#f2c796','#ffe6cc':'#f2c796',
+        '#c0c0c0':'#cfd4dd','#e0e0e0':'#cfd4dd',
+        '#99ff99':'#c5e1a5','#ccffcc':'#c5e1a5',
+        '#ffd700':'#e6c15d','#ffeb80':'#e6c15d'
+    };
+    function _paletteColorKey(v){
+        v=String(v||'').trim().toLowerCase();
+        if(!v||v==='inherit'||v==='initial') return '';
+        if(v==='transparent'||v==='rgba(0, 0, 0, 0)'||v==='rgba(0,0,0,0)') return 'transparent';
+        if(/^#[0-9a-f]{3}$/i.test(v)) return '#'+v.slice(1).split('').map(ch=>ch+ch).join('').toLowerCase();
+        if(/^#[0-9a-f]{6}$/i.test(v)) return v;
+        const m=v.match(/^rgba?\(([^)]+)\)$/i);
+        if(m){
+            const parts=m[1].split(',').map(x=>x.trim());
+            if(parts.length>=4 && parseFloat(parts[3])===0) return 'transparent';
+            const nums=parts.slice(0,3).map(x=>Math.max(0,Math.min(255,parseInt(x,10)||0)));
+            return '#'+nums.map(n=>n.toString(16).padStart(2,'0')).join('');
+        }
+        return v;
+    }
+    function _classicPaletteColor(kind,v){
+        const key=_paletteColorKey(v);
+        const map=kind==='draw'?DRAW_COLOR_ALIASES:(kind==='text'?TEXT_COLOR_ALIASES:HL_COLOR_ALIASES);
+        return key&&map[key]?map[key]:v;
+    }
+    function _normalizePaletteHtml(html){
+        if(!html||typeof document==='undefined') return html;
+        const box=document.createElement('div');
+        box.innerHTML=String(html||'');
+        box.querySelectorAll('*').forEach(node=>{
+            if(node.style){
+                const tc=_classicPaletteColor('text',node.style.color||'');
+                const bg=_classicPaletteColor('hl',node.style.backgroundColor||'');
+                if(tc&&tc!==node.style.color) node.style.color=tc;
+                if(bg&&bg!=='transparent'&&bg!==node.style.backgroundColor) node.style.backgroundColor=bg;
+            }
+            if(node.getAttribute){
+                ['data-text-color','data-color'].forEach(attr=>{
+                    if(node.hasAttribute(attr)) node.setAttribute(attr,_classicPaletteColor('text',node.getAttribute(attr)));
+                });
+                ['data-highlight','data-background-color'].forEach(attr=>{
+                    if(node.hasAttribute(attr)) node.setAttribute(attr,_classicPaletteColor('hl',node.getAttribute(attr)));
+                });
+                if(node.tagName==='FONT'&&node.hasAttribute('color'))
+                    node.setAttribute('color',_classicPaletteColor('text',node.getAttribute('color')));
+            }
+        });
+        return box.innerHTML;
+    }
+    function _normalizeDocPalette(d){
+        if(!d||!Array.isArray(d.pages)) return d;
+        d.pages.forEach(pg=>{
+            (pg&&pg.els||[]).forEach(el=>{
+                if(!el||typeof el!=='object') return;
+                if(el.type==='stroke'&&el.color) el.color=_classicPaletteColor('draw',el.color);
+                if(el.type==='text'){
+                    if(el.textColor) el.textColor=_classicPaletteColor('text',el.textColor);
+                    if(el.cellBg) el.cellBg=_classicPaletteColor('hl',el.cellBg);
+                    if(el.html) el.html=_normalizePaletteHtml(el.html);
+                }
+            });
+        });
+        return d;
+    }
+
     // 구버전(단일 페이지 + 비트맵 그림) → 신버전 자동 마이그레이션
     function migrate(cfg, nbId){
         const d=blankDoc(cfg.sizePreset||(cfg.orient==='landscape'?'a4_landscape':'a4_portrait'));
@@ -323,7 +418,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             });
             d.tint=cfg.tint||'';
             d.favPages=Array.isArray(cfg.favPages)?cfg.favPages:[];
-            return d;
+            return _normalizeDocPalette(d);
         }
         const els=[];
         (cfg.textBoxes||[]).forEach(tb=>{
@@ -341,7 +436,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const legacy=cfg.drawing||localStorage.getItem('draw_'+nbId);
         if(legacy) els.push({type:'legacyDraw',id:uid('d'),url:legacy});
         d.pages=[{id:blankPage().id, els}];
-        return d;
+        return _normalizeDocPalette(d);
     }
 
     function uid(p){ return p+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
@@ -620,8 +715,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 const r=await fetch('/api/import/docfile/'+encodeURIComponent(ref)+'?from=0&to=1',{cache:'no-store'});
                 const d=await r.json();
                 if(!r.ok||!d||!Array.isArray(d.pages)||!d.pages[0]) return null;
-                return {paper:cfg.paper||'blank',sizePreset:d.sizePreset||cfg.sizePreset||'a4_portrait',
-                        pages:[d.pages[0]]};
+                return _normalizeDocPalette({paper:cfg.paper||'blank',sizePreset:d.sizePreset||cfg.sizePreset||'a4_portrait',
+                        pages:[d.pages[0]]});
             }catch(e){ return null; }
         })();
         previewDocCache.set(nbId,task);
@@ -746,8 +841,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(cfg.encBlob){
                 try{
                     const plain=await decryptDoc(cfg.encBlob,key);
-                    const d={paper:plain.paper||cfg.paper||'blank', sizePreset:plain.sizePreset||cfg.sizePreset||'a4_portrait',
-                             emoji:plain.emoji||'', glossary:plain.glossary||{}, pages:Array.isArray(plain.pages)&&plain.pages.length?plain.pages:[blankPage()]};
+                    const d=_normalizeDocPalette({paper:plain.paper||cfg.paper||'blank', sizePreset:plain.sizePreset||cfg.sizePreset||'a4_portrait',
+                             emoji:plain.emoji||'', glossary:plain.glossary||{}, pages:Array.isArray(plain.pages)&&plain.pages.length?plain.pages:[blankPage()]});
                     decCache.set(nbId,d);
                     return d;
                 }catch(e){ console.warn('복호화 실패',e); }
@@ -999,7 +1094,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(strokes.length){
             html+=`<svg viewBox="0 0 ${size.w} ${size.h}" width="${size.w}" height="${size.h}" `+
                   `style="position:absolute;left:0;top:0;z-index:3;overflow:visible;pointer-events:none;">`+
-                  strokes.map(s=>`<path d="${strokePath(s.pts,s.sharp&&!isEllipsePts(s.pts))}" fill="none" stroke="${s.color}" stroke-width="${s.size}" `+
+                  strokes.map(s=>`<path d="${strokePath(s.pts,s.sharp&&!isEllipsePts(s.pts))}" fill="none" stroke="${_classicPaletteColor('draw',s.color)}" stroke-width="${s.size}" `+
                   `${s.opacity!=null?`stroke-opacity="${s.opacity}" `:''}`+
                   `stroke-linecap="round" stroke-linejoin="round" transform="translate(${s.dx||0},${s.dy||0})"/>`).join('')+
                   `</svg>`;
@@ -5581,6 +5676,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     let _saveTimer=null;
     function saveDoc(){
         if(!curNB||!doc) return;
+        // 14.18.4 · 자동 저장은 너무 자주 일어나므로 '저장 중/저장됨'을 매번 띄우지 않는다.
+        //   대신 문제 상황(불러오기 실패·오프라인·동기화 대기)만 조용히 알려 준다.
         // 14.15 · 현재 doc 가 열려 있는 노트의 것과 다르면 (노트 교체 로딩 중)
         //   저장을 예약하지 않는다. 예약하면 400ms 뒤 이전 본문을 새 노트에
         //   persistDoc 으로 덮어쓸 수 있다.
@@ -5591,7 +5688,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return;
         }
         _saveNoteId=curNB.id;                 // 이 예약이 어느 노트 것인지 고정
-        setSaveState('저장 중...');
         clearTimeout(_saveTimer);
         _saveTimer=setTimeout(flushSaveDoc,400);
     }
@@ -5867,10 +5963,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         syncTimer=setTimeout(flushSync,250);
     }
     async function flushSync(){
+        const opt=arguments[0]||{};
+        const manual=!!opt.manual;
         clearTimeout(syncTimer);
         const p=pendingNB; pendingNB=null;
         if(!p) return;
-        if(!SB||String(p.id).startsWith('local_')){ setSaveState('저장됨 ✓',2000); return; }
+        if(!SB||String(p.id).startsWith('local_')){
+            if(manual) setSaveState('저장됨 ✓',2000);
+            return;
+        }
         if(p.id===settingsNbId||p.title===SETTINGS_TITLE) return;                 // 설정 행 보호
         if(_nbBlocked(p.id)){
             setSaveState('동기화 차단됨 · 본문 안 불림',2500);
@@ -5884,7 +5985,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(p.memo&&p.memo.id&&!String(p.memo.id).startsWith('local_')){
             jobs.push({kind:'memo',nbId:p.id,memoId:p.memo.id,content:serializeDoc(p.d,p.id)});
         }
-        if(!jobs.length) return;
+        if(!jobs.length){
+            if(manual) setSaveState('저장됨 ✓',1400);
+            return;
+        }
 
         // 네트워크 전송보다 먼저 브라우저 저장소에 기록한다. 탭을 바로 닫거나
         // 앱이 백그라운드에서 중단돼도 다음 실행에서 재전송할 수 있다.
@@ -5893,6 +5997,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             setSaveState('오프라인 · 기기에 저장됨',3000);
             return;
         }
+        if(manual) setSaveState('저장 중...',1500);
         syncStart();
         let failed=false;
         try{
@@ -5903,8 +6008,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // 전송 도중 새 입력이 같은 outbox 항목을 교체했다면 아직 '저장됨'이
             // 아니다. 최신 입력이 다음 동기화에서 확인될 때까지 대기로 표시한다.
             const waiting=outboxCount()>0;
-            setSaveState((failed||waiting)?'동기화 대기 · 기기에 저장됨':'저장됨 ✓',
-                         (failed||waiting)?3000:2000);
+            if(failed||waiting){
+                setSaveState('동기화 대기 · 기기에 저장됨',3000);
+            }else if(manual){
+                setSaveState('저장됨 ✓',2000);
+            }
         }catch(e){
             console.warn('동기화 실패:',e);
             setSaveState('동기화 대기 · 기기에 저장됨',3000);
@@ -7210,7 +7318,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         halo.setAttribute('stroke-linecap','round'); halo.setAttribute('stroke-linejoin','round');
         const vis=document.createElementNS('http://www.w3.org/2000/svg','path');
         vis.setAttribute('class','stroke-vis'); vis.setAttribute('d',d);
-        vis.setAttribute('fill','none'); vis.setAttribute('stroke',el.color);
+        vis.setAttribute('fill','none'); vis.setAttribute('stroke',_classicPaletteColor('draw',el.color));
         vis.setAttribute('stroke-width',el.size);
         if(el.opacity!=null) vis.setAttribute('stroke-opacity',el.opacity);
         vis.setAttribute('stroke-linecap','round'); vis.setAttribute('stroke-linejoin','round');
@@ -7453,7 +7561,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         while(el&&el!==c&&el.nodeType===1){
             const v=el.style&&el.style.backgroundColor;
             if(v&&String(v).trim()){
-                const h=_colorToHex(v);
+                const h=_colorToHex(_classicPaletteColor('hl',v));
                 return (h&&h!=='transparent')?h:null;
             }
             el=el.parentNode;
@@ -7536,12 +7644,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function _hlPaint(c,w){
         if(!c||!w) return;
         let baseHex='';
-        try{ baseHex=_colorToHex((c.style&&c.style.backgroundColor)||''); }catch(_e){}
+        try{ baseHex=_colorToHex(_classicPaletteColor('hl',(c.style&&c.style.backgroundColor)||'')); }catch(_e){}
         let frags=[];
         try{
             for(const run of _hlRuns(c,baseHex)) frags=frags.concat(_hlFragRects(run));
         }catch(e){ frags=[]; }
         if(!frags.length){
+            w.classList.remove('sdy-hl-band-on');
             const old=w.querySelector(':scope > .sdy-hl-layer');
             if(old){ try{ old.remove(); }catch(_e){} }
             return;
@@ -7556,6 +7665,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const oy=(crect.top-wrect.top)/sy-(w.clientTop||0);
         const lyr=_hlLayer(w);
         if(!lyr) return;
+        w.classList.add('sdy-hl-band-on');
         lyr.style.cssText='position:absolute;left:'+ox+'px;top:'+oy+'px;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:-1;';
         while(lyr.firstChild) lyr.removeChild(lyr.firstChild);
         const bands=_hlBands(frags);
@@ -7571,7 +7681,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const rad=Math.max(1.2,Math.min(5,h*0.5));
             rr.setAttribute('rx',rad.toFixed(2));
             rr.setAttribute('ry',rad.toFixed(2));
-            rr.setAttribute('fill',b.color);
+            rr.setAttribute('fill',_classicPaletteColor('hl',b.color));
             lyr.appendChild(rr);
         }
     }
@@ -7588,8 +7698,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         c.style.fontSize=(el.fontSize||16)+'px';
         c.style.fontFamily=fontCSS(el.font||'pretendard');
         if(el.align) c.style.textAlign=el.align;
-        if(el.textColor) c.style.color=el.textColor;
-        if(el.cellBg) c.style.backgroundColor=el.cellBg;
+        if(el.textColor) c.style.color=_classicPaletteColor('text',el.textColor);
+        if(el.cellBg) c.style.backgroundColor=_classicPaletteColor('hl',el.cellBg);
         if(el.fontWeight) c.style.fontWeight=el.fontWeight;
         if(el.fontStyle) c.style.fontStyle=el.fontStyle;
         if(el.textDecoration) c.style.textDecoration=el.textDecoration;
@@ -7603,7 +7713,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 값만 보이거나(특히 구형 <font> 데이터) 일부 글자가 기본값으로
         // 돌아가는 경우가 있었다. decodeTextMarkup 은 각 요소의 속성을
         // 독립적으로 복원하므로 저장/재렌더링이 반복돼도 글자별 값이 유지된다.
-        c.innerHTML=decodeTextMarkup(el.html||'');
+        c.innerHTML=decodeTextMarkup(_normalizePaletteHtml(el.html||''));
         // 가져온(tight) 상자: 저장된 자간/띄어쓰기/줄간격 반영 + 자동 안겹침
         if(el.tight){
             if(el.ls) c.style.letterSpacing=el.ls+'px';
@@ -13119,11 +13229,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             e.preventDefault();
             // input 디바운스(300ms)가 아직 끝나기 전에도 Ctrl+S는 현재
             // contenteditable 내용을 먼저 문서에 반영해야 한다.
-            // 완료 전 '저장됨' 토스트를 띄우지 않고 flushSync의 실제 결과를 쓴다.
+            // 자동 저장은 조용히, 수동 저장(Ctrl+S)만 결과를 저장 상태 글자로 보여 준다.
             if(doc){
                 commitEditingText();
                 flushSaveDoc();
-                flushSync().catch(()=>{});
+                flushSync({manual:true}).catch(()=>{});
             }
             return;
         }
@@ -13159,7 +13269,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     });
 
     // ============ 펜 / 지우개 ============
-    let penActive=false, eraserActive=false, drawColor='#888888', drawSize=2;
+    let penActive=false, eraserActive=false, drawColor=CLASSIC_DRAW_COLORS[0], drawSize=2;
     let shapeMode='free', markerMode=false;
     let drawing=false, curPts=null, curPathNode=null, drawPageIdx=0;
     const ERASER_MULT=6;   // 지우개 반경 = drawSize * ERASER_MULT
@@ -13218,10 +13328,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 14.17 · 펜 색·굵기·도형·형광펜을 브라우저에 기억해 두면 모바일/데스크톱
     //   모두 '다음에 펜을 열 때도 같은 설정'으로 바로 그릴 수 있다.
     const DRAW_CFG_KEY='sdy_draw_cfg';
-    // 14.18.3 · 펜 팔레트를 파스텔로 바꾸며, 브라우저에 남아 있던 옛 색도
-    //   같은 색조의 새 파스텔 색으로 자동 옮긴다 (사용자가 직접 고른 색은 그대로).
-    const LEGACY_DRAW_COLORS={'#111':'#888888','#111111':'#888888','#e74c3c':'#f3a69e','#3498db':'#9acced',
-                              '#27ae60':'#93d7b0','#f39c12':'#f9ce89','#9b59b6':'#cdacdb'};
+    // 14.18.4 · localStorage 에 남아 있던 예전 기본색/파스텔 펜 색도 지금의
+    //   세련된 진한 팔레트로 맞춘다. 사용자가 임의로 고른 다른 색은 그대로 둔다.
     function saveDrawCfg(){
         try{ localStorage.setItem(DRAW_CFG_KEY, JSON.stringify({color:drawColor,size:drawSize,shape:shapeMode,marker:markerMode})); }catch(e){}
     }
@@ -13230,7 +13338,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const c=JSON.parse(localStorage.getItem(DRAW_CFG_KEY)||'null');
             if(!c) return;
             if(c.color){
-                if(LEGACY_DRAW_COLORS[String(c.color).toLowerCase()]) c.color=LEGACY_DRAW_COLORS[String(c.color).toLowerCase()];
+                c.color=_classicPaletteColor('draw',c.color);
                 drawColor=c.color;
                 const pc=document.getElementById('penCustom');
                 if(pc){ pc.value=c.color; pc.style.setProperty('--custom-color',c.color); }
@@ -13822,10 +13930,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     })();
 
     // ============ 워드식 글자색 / 형광펜 ============
-    // 14.18.3 · 파스텔톤 팔레트 — 예전 색을 같은 자리·같은 색조에서 흰색 50% 만 섞어
-    //   부드럽게 바꿨다 (검정→연회색, 빨강→코랄, ...). 형광펜(글자 배경)도 같은 규칙.
-    const TEXT_COLORS=['#808080','#f3a69e','#f3bf91','#f8e287','#97e6b8','#8ddece','#9acced','#cdacdb','#f4a1c9','#bfc6c6'];
-    const HL_COLORS=['#ffff80','#80ff80','#80ffff','#ff80ff','#ffcccc','#cce6ff','#ffe6cc','#e0e0e0','#ccffcc','#ffeb80'];
+    // 14.18.4 · 글자색/형광펜 팔레트는 파스텔보다 조금 더 세련된 진한 톤으로 맞춘다.
+    //   예전 기본색/파스텔값이 저장돼 있어도 렌더링 때 아래 팔레트 계열로 자연스럽게 맞춘다.
+    const TEXT_COLORS=CLASSIC_TEXT_COLORS.slice();
+    const HL_COLORS=CLASSIC_HL_COLORS.slice();
     let currentTextColor=TEXT_COLORS[0], currentHlColor=HL_COLORS[0];
     // 실제 브라우저(특히 iOS Safari)는 툴바 버튼 pointerdown 순간 편집기의
     // Selection을 접어 버린다. jsdom 테스트에서 함수를 직접 호출할 때는 드러나지
@@ -15228,9 +15336,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }catch(e){}
         return false;
     }
-    function _typingStylesAt(span,host){
+    function _typingStylesFromNode(node,host){
         const out={};
-        let p=span;
+        let p=node&&(node.nodeType===3?node.parentElement:node);
         while(p&&p!==host){
             if(p.nodeType===1){
                 const tag=_tagStyle(p.tagName);
@@ -15244,10 +15352,26 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         return out;
     }
+    function _typingStylesAt(span,host){
+        return _typingStylesFromNode(span,host);
+    }
     function _rememberTypingStyles(span,host){
         if(!span||!host){ _pendingTyping=null; return; }
         const styles=_typingStylesAt(span,host);
         _pendingTyping=Object.keys(styles).length?{host,styles}:null;
+    }
+    function _restoreTypingRange(host,range){
+        if(!host||!range) return false;
+        try{ host.contentEditable='true'; }catch(e){}
+        try{ if(document.activeElement!==host&&host.focus) host.focus({preventScroll:true}); }catch(e){}
+        try{
+            const s=window.getSelection();
+            if(!s) return false;
+            s.removeAllRanges();
+            s.addRange(range);
+            savedCaret={c:host,r:range.cloneRange()};
+            return true;
+        }catch(e){ return false; }
     }
     // 브라우저가 빈 span을 없애거나 입력 후 캐럿을 형제 위치로 옮겨도, 별도로 기억한
     // active state를 사용해 입력 직전 같은 스타일 wrapper를 다시 만든다.
@@ -15263,7 +15387,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const inHost=point===host||host.contains(point);
         if(!inHost) return false;
         if(_typingSpan&&_typingSpan.isConnected&&host.contains(_typingSpan)&&
-           (point===_typingSpan||_typingSpan.contains(point))) return true;
+           (point===_typingSpan||_typingSpan.contains(point))){
+            savedCaret={c:host,r:live.cloneRange()};
+            return true;
+        }
         try{
             const span=document.createElement('span');
             span.className='sdy-type';
@@ -15271,9 +15398,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const r=live.cloneRange();
             r.insertNode(span);
             const nr=document.createRange(); nr.selectNodeContents(span); nr.collapse(false);
-            s.removeAllRanges(); s.addRange(nr);
             _typingSpan=span;
-            savedCaret={c:host,r:nr.cloneRange()};
+            _restoreTypingRange(host,nr);
             return true;
         }catch(e){ return false; }
     }
@@ -15297,23 +15423,24 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 span=document.createElement('span');
                 span.className='sdy-type';
                 const src=(s.rangeCount?s.getRangeAt(0):t.r).cloneRange();
-                // 부분 글꼴 보존: 캐럿 부모에 inline font-family 가 있으면 새 span 에 고정
-                let p=src.startContainer.nodeType===3?src.startContainer.parentElement:src.startContainer;
-                let font='';
-                while(p&&p!==c){ if(p.style&&p.style.fontFamily){ font=p.style.fontFamily; break; } p=p.parentElement; }
-                if(font) span.style.fontFamily=font;
+                // 14.18.4 · 도중 스타일 변경: 새 빈 span 을 만들 때도 직전까지의
+                // 캐럿 서식(색·크기·굵기·밑줄·형광펜·부분 글꼴)을 모두 먼저 심어 둔다.
+                // 예전엔 font-family 만 옮겨 "크기만 바꾼 뒤 다시 색 변경" 같은 흐름에서
+                // 앞에서 고른 24px/굵게가 빠지는 경우가 있었다.
+                const seed=(_pendingTyping&&_pendingTyping.host===c&&_pendingTyping.styles)
+                    ? _pendingTyping.styles
+                    : _typingStylesFromNode(src.startContainer,c);
+                for(const k in seed) _setInlineProp(span,k,seed[k]);
                 src.insertNode(span);
                 const nr=document.createRange();
                 nr.selectNodeContents(span); nr.collapse(true);
-                if(s.rangeCount){ s.removeAllRanges(); s.addRange(nr); }
                 _typingSpan=span;
-                savedCaret={c,r:nr.cloneRange()};
+                _restoreTypingRange(c,nr);
             }else{
                 // 캐럿을 서식 span 안으로 되돌린다 (툴바 입력창을 쓰다 돌아와도 이어짐)
                 const nr=document.createRange();
                 nr.selectNodeContents(span); nr.collapse(true);
-                if(s.rangeCount){ s.removeAllRanges(); s.addRange(nr); }
-                savedCaret={c,r:nr.cloneRange()};
+                _restoreTypingRange(c,nr);
             }
             const _removeStyleSafe=(name)=>{
                 // jsdom·일부 WebView 는 camelCase removeProperty 를 무시한다.
@@ -16069,20 +16196,25 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
         }
 
-        pushHistory();
-        const el={type:'image',id:uid('i'),url,
-                  x:rx,y:ry,
-                  w:rw,h:rh,sticker:true};
-        if(isSvg) el.svg=true;          // 벡터 스티커 표시
-        doc.pages[pi].els.push(el);
-        clearMulti(); deselectAll(true);
-        renderPageEls(pi);
-        saveDoc();
-        // 보관함에도 넣어 다른 노트에서 재사용
-        fetch('/api/stickers/save',{method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({data:url,name:'스티커'})}).catch(()=>{});
-        toast(isSvg?'스티커 저장됨 · 벡터라 확대해도 안 깨져요':'스티커 저장됨 · 보관함에서 다시 쓸 수 있어요',2600);
+        // 14.18.4 · "스티커로 만들기"는 이제 종이에 한 번 붙였다가 저장하는 동작이 아니라,
+        //   보관함에만 바로 넣는다. 원본 선택 요소는 그대로 두고, 필요할 때 사용자가
+        //   보관함에서 다시 골라 붙인다.
+        try{
+            const r=await fetch('/api/stickers/save',{method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({data:url,name:'스티커'})});
+            const d=await r.json().catch(()=>null);
+            if(!r.ok||!d||!d.ok){
+                toast('스티커 보관함 저장 실패',2200);
+                return;
+            }
+            toast(isSvg
+                ? '스티커함에 저장됨 · 벡터라 확대해도 안 깨져요'
+                : '스티커함에 저장됨 · 보관함에서 꺼내 쓸 수 있어요',2600);
+        }catch(e){
+            console.error(e);
+            toast('스티커 보관함 저장 실패',2200);
+        }
     }
 
     // 노트 정보 (용량·페이지·시간)
@@ -18722,7 +18854,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 {a:'trdoc-ko', i:'ri-book-open-line', t:'문서 전체 → 한국어'},
                 {a:'trdoc-en', i:'ri-book-open-line', t:'문서 전체 → 영어'},
             ]},
-            {a:'export',   i:'ri-download-2-line',t:'내보내기',   k:'Ctrl+E'},
+            {a:'export',   i:'ri-share-box-line',t:'내보내기',   k:'Ctrl+E'},
         ]);
     }
 
@@ -18993,7 +19125,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             <div class="ctx-item" onclick="ctxAction('info')"><i class="ri-information-line"></i> 노트 정보</div>
             <div class="ctx-sep"></div>
             <div class="ctx-item" onclick="ctxAction('lock')"><i class="ri-lock-2-line"></i> ${(cfg.lock&&cfg.lock.enc)?(adminMode?'잠금 해제':'비밀번호 해제'):'비밀번호 잠금'}</div>
-            <div class="ctx-item" onclick="ctxAction('export')"><i class="ri-download-2-line"></i> 백업(JSON) 내보내기</div>
+            <div class="ctx-item" onclick="ctxAction('export')"><i class="ri-share-box-line"></i> 백업(JSON) 내보내기</div>
             <div class="ctx-sep"></div>
             <div class="ctx-item danger" onclick="ctxAction('delete')"><i class="ri-delete-bin-6-line"></i> 휴지통으로 이동</div>`;
         m.classList.add('show');
@@ -24520,7 +24652,23 @@ document.addEventListener('pointerdown',e=>{
 // 외부(테스트·연동)에서 쓸 수 있는 최소 손잡이 — 노출해도 안전한 것만
 window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList,
                    list:()=>P.list, cur:()=>cur(), menu:openTrackMenu,
-                   audio:()=>A, queueNext:queueNext, gotoPage:gotoTrackPage, toggle:pp,
+                   audio:()=>A,
+                   ensureLyrics:t=>ensureLyrics(t),
+                   syncLine:function(){
+                     const t=cur();
+                     const raw=t&&t.lyrics;
+                     if(!(raw&&String(raw).indexOf('[')>=0)) return null;
+                     const lrc=parseLRC(raw);
+                     if(!lrc||!lrc.length) return null;
+                     const tt=(A.currentTime||0)+0.08;
+                     let idx=-1;
+                     for(let i=0;i<lrc.length;i++){
+                       if(tt>=+(lrc[i].t||0)) idx=i; else break;
+                     }
+                     if(idx<0) idx=0;
+                     return {track:t, idx, line:lrc[idx], lines:lrc};
+                   },
+                   queueNext:queueNext, gotoPage:gotoTrackPage, toggle:pp,
                    state:()=>({tab:P.bigTab,page:P.bigPage}), tagEditor:openTagEditor,
                    bigList:renderBigList, lyrics:renderLyrics, sync:syncLyrics,
                    _state:()=>P};
@@ -26831,6 +26979,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var note=$('noteOtter'), noteBub=$('noteOtterBubble');
     var mp=$('mpOtterBubble'), mpRoot=document.querySelector('.mp-otter');
     var pl=$('musicPlayer');
+    var mpSingHover=false, mpSingUntil=0;
 
     // 말풍선 보여주기 (show 클래스 + 타이머로 자동 숨김)
     function speak(bubble,text,dur){
@@ -26841,6 +26990,63 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       bubble._t=setTimeout(function(){ bubble.classList.remove('show'); }, dur||2400);
     }
     function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+    function mpVisible(){
+      return !!(mp&&mpRoot&&pl&&pl.style.display!=='none'&&pl.classList.contains('mp-bar'));
+    }
+    function singText(line){
+      var t=String(line||'').replace(/\s+/g,' ').trim();
+      if(!t) t='♪';
+      t=t.replace(/[~～]+$/,'').trim();
+      return t+'~';
+    }
+    function mpActiveLine(){
+      try{
+        return window.sdyMusic&&window.sdyMusic.syncLine ? window.sdyMusic.syncLine() : null;
+      }catch(e){ return null; }
+    }
+    function mpSinging(){ return mpSingHover || Date.now()<mpSingUntil; }
+    function singCurrentLyric(){
+      if(!mpVisible()||!mpSinging()) return;
+      var t=null;
+      try{ t=window.sdyMusic&&window.sdyMusic.cur ? window.sdyMusic.cur() : null; }catch(e){}
+      if(!t){
+        if(mp._singKey!=='idle:none'){
+          mp._singKey='idle:none';
+          speak(mp,'지금은 쉴래 해돌~',1800);
+        }
+        return;
+      }
+      if(t.lyrics===undefined&&(t.has_lyrics||t.has_sync)){
+        if(mp._singKey!=='loading:'+t.id){
+          mp._singKey='loading:'+t.id;
+          speak(mp,'싱크 가사 불러오는 중이해돌~',1800);
+        }
+        if(!t._lyrLoading && window.sdyMusic&&window.sdyMusic.ensureLyrics){
+          window.sdyMusic.ensureLyrics(t).then(function(){ if(mpSinging()) singCurrentLyric(); }).catch(function(){});
+        }
+        return;
+      }
+      var hit=mpActiveLine();
+      if(hit&&hit.line){
+        var line=singText(hit.line.s);
+        var key=(hit.track&&hit.track.id||'')+'|'+hit.idx+'|'+line;
+        if(mp._singKey!==key){
+          mp._singKey=key;
+          speak(mp,line,Math.max(1600,Math.min(4200,900+line.length*150)));
+        }
+        return;
+      }
+      var noKey='nosync:'+(t.id||'');
+      if(mp._singKey!==noKey){
+        mp._singKey=noKey;
+        speak(mp,'이 곡은 아직 싱크 가사가 없해돌~',1800);
+      }
+    }
+    function armMpSing(ms){
+      ms=Math.max(1200,+ms||9000);
+      mpSingUntil=Math.max(mpSingUntil,Date.now()+ms);
+      singCurrentLyric();
+    }
 
     // ── 노트(문서) 해돌이 ──
     var NOTE_IDLE=[
@@ -26877,18 +27083,35 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ];
     function mpSongPhrase(){
       try{
-        var t=cur();
+        var t=window.sdyMusic&&window.sdyMusic.cur ? window.sdyMusic.cur() : null;
         if(t&&t.title) return '지금 "'+t.title+'" 같이 들을래 해돌~?';
       }catch(e){}
       return null;
     }
+    if(mpRoot){
+      var mpEnter=function(){ mpSingHover=true; armMpSing(10000); };
+      var mpLeave=function(){ mpSingHover=false; armMpSing(1500); };
+      mpRoot.addEventListener('pointerenter',mpEnter);
+      mpRoot.addEventListener('mouseenter',mpEnter);
+      mpRoot.addEventListener('mouseover',mpEnter);
+      mpRoot.addEventListener('pointerleave',mpLeave);
+      mpRoot.addEventListener('mouseleave',mpLeave);
+      mpRoot.addEventListener('pointerdown',function(){ armMpSing(12000); });
+      mpRoot.addEventListener('click',function(){ armMpSing(12000); });
+      mpRoot.addEventListener('keydown',function(e){
+        if(e.key==='Enter'||e.key===' '){ e.preventDefault(); armMpSing(12000); }
+      });
+    }
     if(mp&&pl){
       setInterval(function(){
-        if(!mpRoot||!mpRoot.offsetParent) return;      // 음악바가 안 보이면 조용히
-        if(!pl.classList.contains('mp-bar')) return;   // 플로팅 원형 모드면 말풍선 안 띄움
+        if(!mpVisible()) return;                     // 음악바가 안 보이면 조용히
+        if(mpSinging()){ singCurrentLyric(); return; }
         var song=mpSongPhrase();
         speak(mp, (song&&Math.random()<0.4)?song:pick(MP_IDLE), 2600);
       }, 13000);
+      setInterval(function(){
+        if(mpSinging()) singCurrentLyric();
+      }, 120);
     }
   })();
 

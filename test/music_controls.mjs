@@ -185,5 +185,26 @@ assert.ok(apiCalls.some((c) => c.url.includes('/api/music/lookup')
 assert.ok(!document.getElementById('mpTagModal').classList.contains('show'),
   '우클릭 자동 찾기는 편집창을 억지로 띄우지 않는다');
 
+// 음악 해돌이 — 마우스로 건드리면 현재 싱크 가사를 따라 부른다.
+const mpOtter = document.querySelector('.mp-otter');
+const mpBubble = document.getElementById('mpOtterBubble');
+assert.ok(mpOtter, '음악 해돌이 루트가 있어야 한다');
+assert.equal(mpOtter.getAttribute('role'), 'button', '음악 해돌이는 상호작용 가능한 버튼이어야 한다');
+assert.equal(mpOtter.getAttribute('tabindex'), '0', '음악 해돌이는 키보드 포커스도 가능해야 한다');
+Object.defineProperty(mpOtter, 'offsetParent', { configurable: true, get(){ return document.getElementById('musicPlayer'); } });
+const otterTrack = [{ id:'t2', title:'Song 2', artist:'Art 2', lyrics:'[00:01.00]가사 2 첫줄\n[00:02.00]가사 2 둘째줄' }];
+state.queue = null; state.currentId = ''; state.idx = 0;
+window.sdyPlayFrom(otterTrack, 't2', '');
+document.getElementById('musicPlayer').style.display = 'flex';
+document.getElementById('musicPlayer').classList.add('mp-bar');
+await new Promise(resolve => setTimeout(resolve, 60));
+const audio = window.sdyMusic.audio();
+Object.defineProperty(audio, 'currentTime', { configurable: true, writable: true, value: 1.12 });
+audio.dispatchEvent(new window.Event('timeupdate'));
+mpOtter.dispatchEvent(new window.MouseEvent('click', { bubbles:true }));
+await new Promise(resolve => setTimeout(resolve, 80));
+assert.match(mpBubble.textContent, /가사 2 첫줄/, '해돌이를 건드리면 현재 싱크 가사를 말해야 한다');
+assert.match(mpBubble.textContent, /~\s*$/, '해돌이가 부르는 가사 끝에는 물결표가 붙어야 한다');
+
 dom.window.close();
-console.log(`Music controls: ${actionIds.length} fixed actions wired; artist filter + identical editor/context auto-find verified.`);
+console.log(`Music controls: ${actionIds.length} fixed actions wired; artist filter + identical editor/context auto-find + otter synced lyric verified.`);

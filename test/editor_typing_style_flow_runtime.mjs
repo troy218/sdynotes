@@ -457,7 +457,10 @@ try {
   liveContent.innerHTML = '';
   caretEnd(window, liveContent);
   typeAt(window, liveContent, '가나다라');
+  window.getSelection().removeAllRanges();   // 툴바 클릭 중 live selection 유실(iOS/WebView) 재현
   window.applyFont('jua'); await wait(40);
+  check('live selection 이 잠깐 사라져도 글꼴 변경이 캐럿을 다시 잡는다',
+    window.getSelection().rangeCount === 1 && liveContent.contains(window.getSelection().getRangeAt(0).startContainer));
 
   // Safari/WebView가 빈 span을 지운 상황을 재현한다. beforeinput이 pending state로
   // wrapper를 복원해야 바로 다음 " 마바사"부터 주아 글꼴이 적용된다.
@@ -468,7 +471,10 @@ try {
     bubbles: true, cancelable: true, inputType: 'insertText', data: ' '
   }));
   typeAt(window, liveContent, ' 마바사');
+  window.getSelection().removeAllRanges();
   window.setFS(24); await wait(40);
+  check('크기 변경 때도 캐럿이 다시 복원된다',
+    window.getSelection().rangeCount === 1 && liveContent.contains(window.getSelection().getRangeAt(0).startContainer));
   typeAt(window, liveContent, ' 아자차카');
   window.execFmt('bold'); await wait(40);
   typeAt(window, liveContent, ' 타파하.');

@@ -6008,14 +6008,17 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 /* ── 자리 잡기 ── */
 /* 노래 해돌이는 하단 음악 컨트롤바 바로 왼쪽에 붙여 앉힌다. */
 .mp-otter{position:absolute;left:auto;right:calc(100% + 10px);bottom:0;width:82px;height:82px;
-  pointer-events:none;filter:drop-shadow(0 3px 8px rgba(0,0,0,.16));}
+  pointer-events:auto;cursor:pointer;filter:drop-shadow(0 3px 8px rgba(0,0,0,.16));}
 .mp.mp-float .mp-otter{display:none;}   /* 플로팅 원형 모드엔 하단 바가 없으니 숨긴다 */
+.mp-otter:focus-visible{outline:2px dashed var(--accent);outline-offset:4px;border-radius:16px;}
+.mp-otter:hover svg{transform:translateY(-2px) scale(1.04);}
+.mp-otter:active svg{transform:scale(.94);}
 .note-otter{position:absolute;left:30px;bottom:10px;width:98px;height:98px;z-index:6;
   cursor:pointer;filter:drop-shadow(0 3px 8px rgba(0,0,0,.14));
   transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
 .note-otter.draw-on{bottom:calc(64px + 14px);}   /* 그리기 툴바가 뜨면 위로 피한다 */
-.mp-otter svg,.note-otter svg{width:100%;height:100%;display:block;overflow:visible;}
-.note-otter svg{transition:transform .15s cubic-bezier(.22,.9,.3,1.12);}
+.mp-otter svg,.note-otter svg{width:100%;height:100%;display:block;overflow:visible;
+  transition:transform .15s cubic-bezier(.22,.9,.3,1.12);}
 .note-otter:hover svg{transform:translateY(-2px) scale(1.04);}
 .note-otter:active svg{transform:scale(.93);}
 .note-otter:focus-visible{outline:2px dashed var(--accent);outline-offset:4px;border-radius:16px;}
@@ -6318,6 +6321,18 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    라 이미 스택 컨텍스트), pointer-events:none 으로 편집·선택을 방해하지 않는다.
    레이아웃을 못 재는 환경에서는 레이어가 없어 기존 span 배경이 폴백이 된다. */
 .tb .sdy-hl-layer{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:-1;}
+/* 일반 형광펜도 둥근 꼭짓점을 유지한다. 레이어가 있는 브라우저에서는 실제 색은
+   SVG 띠가 맡고, 저장 span 배경은 숨겨 이중 칠해짐 없이 '같은 둥근 형식'만 남긴다. */
+.tb-content [style*="background-color"],.tb-content mark{
+  border-radius:.28em;
+  -webkit-box-decoration-break:clone;
+  box-decoration-break:clone;
+}
+.tb.sdy-hl-band-on .tb-content[style*="background-color"],
+.tb.sdy-hl-band-on .tb-content [style*="background-color"],
+.tb.sdy-hl-band-on .tb-content mark{
+  background-color:transparent!important;
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃

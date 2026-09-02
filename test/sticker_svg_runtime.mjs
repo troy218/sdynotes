@@ -6,9 +6,9 @@
         image/svg+xml 로 돌려준다 — 저장 시 <script>·onclick 은 잘라 낸다
      ② base64 PNG 스티커도 여전히 image/png 로 저장·서빙된다
      ③ 글상자 + 펜 획을 함께 선택해 '스티커로 만들기'를 돌리면
-        · 새 스티커가 SVG data: URL 로 붙는다 (sticker+svg 표시)
+        · 종이에는 새 스티커가 자동으로 붙지 않는다
         · 구워진 SVG 안에 화면과 같은 <path>(펜 획)와 foreignObject(글자)가 있다
-        · 보관함에도 fmt:'svg' 로 저장된다
+        · 보관함에 fmt:'svg' 로 바로 저장된다
      ④ 보관함에서 그 스티커를 붙이면 SVG 로 표시된다 — 벡터라 확대해도 안 깨진다 */
 import assert from 'node:assert/strict';
 import net from 'node:net';
@@ -189,33 +189,27 @@ try {
   });
 
   let imgs = [...paper.querySelectorAll('.paper-img')];
-  check('구운 스티커(이미지)가 종이에 생긴다', imgs.length === 1);
-  let stEl = null;
-  {
-    stEl = window.findEl(0, imgs[0].dataset.id);
-    check('스티커는 sticker+svg 표시를 가진다', !!stEl && stEl.sticker === true && stEl.svg === true);
-    check('URL 이 SVG 벡터 data: URL 이다', (stEl.url || '').startsWith('data:image/svg+xml;charset=utf-8,'));
-  }
-  {
-    const svg = decodeURIComponent((stEl.url || '').replace(/^data:image\/svg\+xml;charset=utf-8,/, ''));
-    check('구워진 SVG 에 viewBox 가 있다', /viewBox="\d+ \d+ \d+ \d+"/.test(svg));
-    check('펜 획이 화면과 같은 <path> 지오메트리로 들어간다',
-      svg.includes('M 100 100 L 200 150 L 300 120'));
-    check('획 색·굵기·끝모양이 그대로다',
-      svg.includes('stroke="#e91e63"') && svg.includes('stroke-width="3"')
-      && svg.includes('stroke-linecap="round"'));
-    check('글자가 foreignObject 로 들어간다', svg.includes('<foreignObject'));
-    check('글자 내용이 살아 있다', svg.includes('안녕 스티커'));
-    check('글꼴·크기 서식이 유지된다', svg.includes('Jua') && svg.includes('font-size:16px'));
-  }
+  check('스티커로 만들기 직후에는 종이에 새 스티커가 자동으로 생기지 않는다', imgs.length === 0);
+  check('원본 글상자와 펜 획은 그대로 남아 있다',
+    paper.querySelectorAll('.tb, .stroke-g').length === 2);
+  let mine = null;
   {
     const list = await fetch(base + '/api/stickers/list', { cache: 'no-store' }).then(r => r.json());
-    const mine = (list.stickers || []).find(s => s.name === '스티커');
-    check('보관함에도 fmt:svg 로 저장된다', !!mine && mine.fmt === 'svg');
+    mine = (list.stickers || []).find(s => s.name === '스티커');
+    check('보관함에 fmt:svg 로 저장된다', !!mine && mine.fmt === 'svg');
     const r = await fetch(base + '/api/stickers/raw/' + mine.id);
     const body = await r.text();
     check('보관함 원본도 image/svg+xml 이다', (r.headers.get('content-type') || '').includes('image/svg+xml'));
     check('보관함 원본에도 글자·획이 있다', body.includes('안녕 스티커') && body.includes('M 100 100'));
+    check('구워진 SVG 에 viewBox 가 있다', /viewBox="\d+ \d+ \d+ \d+"/.test(body));
+    check('펜 획이 화면과 같은 <path> 지오메트리로 들어간다',
+      body.includes('M 100 100 L 200 150 L 300 120'));
+    check('획 색·굵기·끝모양이 그대로다',
+      body.includes('stroke="#e91e63"') && body.includes('stroke-width="3"')
+      && body.includes('stroke-linecap="round"'));
+    check('글자가 foreignObject 로 들어간다', body.includes('<foreignObject'));
+    check('글자 내용이 살아 있다', body.includes('안녕 스티커'));
+    check('글꼴·크기 서식이 유지된다', body.includes('Jua') && body.includes('font-size:16px'));
   }
 
   // ── ④ 보관함에서 붙이기 → SVG 로 표시 ─────────────────────────────────
@@ -226,18 +220,18 @@ try {
   const file = [...modal.querySelectorAll('.v-file')].find(f => (f.querySelector('.v-name') || {}).textContent === '스티커');
   check('구운 SVG 스티커가 보관함에 보인다', !!file);
   file.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-  await pollUntil(() => paper.querySelectorAll('.paper-img').length === 2);
+  await pollUntil(() => paper.querySelectorAll('.paper-img').length === 1);
   imgs = [...paper.querySelectorAll('.paper-img')];
-  check('보관함에서 붙이면 두 번째 스티커가 생긴다', imgs.length === 2);
+  check('보관함에서 붙이면 종이에 스티커가 생긴다', imgs.length === 1);
   {
-    const el = window.findEl(0, imgs[1].dataset.id);
+    const el = window.findEl(0, imgs[0].dataset.id);
     // 보관함에서 붙이면 서버 라우트(/api/stickers/raw/…)를 가리킨다 — 그 라우트가
     // image/svg+xml 로 SVG 를 돌려주므로 화면에선 벡터로 그려진다
     check('붙은 스티커는 SVG 를 가리킨다 (보관함 라우트 또는 data:URL)',
       /^data:image\/svg\+xml/.test(el.url || '') || /\/api\/stickers\/raw\//.test(el.url || ''));
     check('붙은 요소는 sticker 표시를 가진다', el.sticker === true);
     check('기본 자리(80,100)에 붙는다', el.x === 80 && el.y === 100);
-    const dom = imgs[1].querySelector('img');
+    const dom = imgs[0].querySelector('img');
     check('화면 <img> 가 그 SVG 를 가리킨다 — 브라우저가 벡터로 그린다',
       (dom.getAttribute('src') || '') === (el.localURL || el.url || ''));
   }
