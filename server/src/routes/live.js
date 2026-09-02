@@ -7,6 +7,26 @@ const LIVE_TTL = 12; // seconds
 
 const live = new Map(); // note -> Map(uid -> {...})
 
+// 14.18.4 · 실시간 그리기 미리보기(잉크) — 펜을 긋는 도중의 획을 다른 기기에
+//   획 단위 완성을 기다리지 않고 바로 보여 준다. 신뢰할 수 없는 입력이므로
+//   서버에서 모양/크기를 강제로 다듬는다 (좌표 2개 × 최대 96점 ≈ 2KB 미만).
+function sanitizeInk(ink) {
+  if (!ink || typeof ink !== 'object') return null;
+  const pts = Array.isArray(ink.pts) ? ink.pts : [];
+  const out = [];
+  for (let i = 0; i < pts.length && out.length < 96; i++) {
+    const p = pts[i];
+    if (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) {
+      out.push([Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]);
+    }
+  }
+  if (out.length < 2) return null;
+  const color = typeof ink.color === 'string' ? ink.color.slice(0, 24) : '#888888';
+  const size = Number.isFinite(ink.size) ? Math.min(200, Math.max(0.5, +ink.size)) : 2;
+  const op = Number.isFinite(ink.op) ? Math.min(1, Math.max(0.05, +ink.op)) : 1;
+  return { pts: out, color, size, op };
+}
+
 export function registerLive(app) {
   app.post('/api/live/ping', async (req, reply) => {
     const d = req.body || {};
@@ -24,19 +44,24 @@ export function registerLive(app) {
       me = { color: pickPastel(used, String(d.name || '익명').slice(0, 24)) };
       room.set(uid, me);
     }
+    const mode = ['draw', 'type'].includes(d.mode) ? d.mode : '';
     Object.assign(me, {
       name: String(d.name || '익명').slice(0, 24),
       x: d.x, y: d.y, page: d.page || 0,
       on: Boolean(d.on ?? true),
       act: String(d.act || '').slice(0, 40),
+      // 14.18.4 · mode: '' 마우스 / 'draw' 펜으로 그리는 중 / 'type' 글 입력 중
+      mode,
+      // 그리는 중에만 잉크 미리보기를 싣는다 (다른 모드에서는 지운다)
+      ink: mode === 'draw' ? sanitizeInk(d.ink) : null,
       ts: now,
     });
     for (const [k, v] of room) if (now - (v.ts || 0) > LIVE_TTL) room.delete(k);
     const peers = [];
     for (const [k, v] of room) {
       if (k === uid) continue;
-      const { ts, ...rest } = v;
-      peers.push({ uid: k, ...rest });
+      const { ts, ink, ...rest } = v;
+      peers.push({ uid: k, ink: ink || null, ...rest });
     }
     if (!room.size) live.delete(note);
     return reply.send({ ok: true, peers, color: me.color });

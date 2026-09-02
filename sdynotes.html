@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.18.2">
+<link rel="stylesheet" href="sdynotes.css?v=14.18.4">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <!-- 버전 · 작업 끝나면 아래 5곳을 같은 번호로 함께 올려라 (z +1)
@@ -17,7 +17,7 @@
          · 이 파일·sdynotes.js·sdynotes.css 를 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.18.2">
+    <meta name="application-version" content="14.18.4">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -435,7 +435,7 @@
                 <div class="tb-group fmt-group">
                     <div class="font-wrap">
                         <button id="fontBtn" class="font-btn" onmousedown="saveSel();event.preventDefault()" onclick="toggleFontMenu()" title="글꼴">
-                            <span id="fontLabel">노토 산스</span><i class="ri-arrow-down-s-fill"></i>
+                            <span id="fontLabel">프리텐다드</span><i class="ri-arrow-down-s-fill"></i>
                         </button>
                         <div id="fontMenu" class="font-menu"></div>
                     </div>
@@ -464,7 +464,7 @@
                     <div class="split-btn" id="hlWrap">
                         <button class="main" onmousedown="saveSel();event.preventDefault()" onclick="applyHighlight(currentHlColor)" title="형광펜 적용">
                             <span class="glyph"><i class="ri-mark-pen-line"></i></span>
-                            <span class="bar" id="hlBar" style="background:#ffff00;"></span>
+                            <span class="bar" id="hlBar" style="background:#ffff80;"></span>
                         </button>
                         <button class="caret" onmousedown="saveSel();event.preventDefault()" onclick="togglePop('hlPop')" title="형광펜 색 선택"><i class="ri-arrow-down-s-fill"></i></button>
                         <div class="color-popover" id="hlPop"></div>
@@ -486,6 +486,12 @@
                     <button onclick="openStickers()" id="stkBtn" class="tool-btn" title="스티커 넣기"><i class="ri-sticky-note-line"></i></button>
                     <button onclick="openTableModal()" class="tool-btn tb-hide-sm" title="표 삽입"><i class="ri-table-line"></i></button>
                     <button onclick="openLatexModal()" class="tool-btn tb-hide-sm" title="수식 삽입"><i class="ri-function-line"></i></button>
+                </div>
+
+                <span class="tool-sep"></span>
+
+                <!-- ═══ Draw Group · 14.18.3 펜/형광펜은 '넣기'와 따로 분리 ═══ -->
+                <div class="tb-group draw-group">
                     <button onclick="togglePen()" id="penBtn" class="tool-btn" title="펜 쓰기 / 종료"><i class="ri-pen-nib-line"></i></button>
                     <button onclick="toggleHighlighter()" id="highlighterBtn" class="tool-btn" title="형광펜 쓰기 / 종료"><i class="ri-mark-pen-line"></i></button>
                 </div>
@@ -744,13 +750,13 @@
         </div>
 
         <div id="drawToolbar" class="draw-toolbar" style="display:none">
-            <div class="color-pick sel" style="background:#111" data-c="#111" onclick="setDrawColor(this)"></div>
-            <div class="color-pick" style="background:#e74c3c" data-c="#e74c3c" onclick="setDrawColor(this)"></div>
-            <div class="color-pick" style="background:#3498db" data-c="#3498db" onclick="setDrawColor(this)"></div>
-            <div class="color-pick" style="background:#27ae60" data-c="#27ae60" onclick="setDrawColor(this)"></div>
-            <div class="color-pick" style="background:#f39c12" data-c="#f39c12" onclick="setDrawColor(this)"></div>
-            <div class="color-pick" style="background:#9b59b6" data-c="#9b59b6" onclick="setDrawColor(this)"></div>
-            <input type="color" id="penCustom" class="color-pick custom" value="#111111" oninput="setDrawColorVal(this.value)"
+            <div class="color-pick sel" style="background:#888888" data-c="#888888" onclick="setDrawColor(this)"></div>
+            <div class="color-pick" style="background:#f3a69e" data-c="#f3a69e" onclick="setDrawColor(this)"></div>
+            <div class="color-pick" style="background:#9acced" data-c="#9acced" onclick="setDrawColor(this)"></div>
+            <div class="color-pick" style="background:#93d7b0" data-c="#93d7b0" onclick="setDrawColor(this)"></div>
+            <div class="color-pick" style="background:#f9ce89" data-c="#f9ce89" onclick="setDrawColor(this)"></div>
+            <div class="color-pick" style="background:#cdacdb" data-c="#cdacdb" onclick="setDrawColor(this)"></div>
+            <input type="color" id="penCustom" class="color-pick custom" value="#888888" oninput="setDrawColorVal(this.value)"
                    title="사용자 색">
             <div class="tool-sep"></div>
             <div class="size-opt" data-s="1" style="width:5px;height:5px;" onclick="setDrawSize(this)" title="아주 얇게"></div>
@@ -2454,6 +2460,6 @@
      ═══════════════════════════════════════════════════════════════════ -->
 
 
-<script src="sdynotes.js?v=14.18.2" defer></script>
+<script src="sdynotes.js?v=14.18.4" defer></script>
 </body>
 </html>

@@ -187,13 +187,13 @@ try {
   content.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true, detail: 2 })); await wait(80);
   content.innerHTML = '안녕하세요 반갑습니다';
   caretAt(content.firstChild);
-  window.applyFont('noto'); await wait(100);
+  window.applyFont('pretendard'); await wait(100);
   const spFont = content.querySelector('span.sdy-type');
-  check('캐럿에 새 글꼴 span 이 생긴다', !!spFont && /Noto Sans KR/.test(spFont.getAttribute('style') || ''));
+  check('캐럿에 새 글꼴 span 이 생긴다', !!spFont && /Pretendard/.test(spFont.getAttribute('style') || ''));
   if (spFont) spFont.appendChild(document.createTextNode('새글'));
   content.dispatchEvent(new window.Event('input', { bubbles: true })); await wait(400);
   check('캐럿에서 글꼴 바꾸고 입력하면 새 글꼴로 입력된다',
-    textInStyle(content, p => /Noto Sans KR/.test(p.style.fontFamily || '')).includes('새글'));
+    textInStyle(content, p => /Pretendard/.test(p.style.fontFamily || '')).includes('새글'));
 
   // ── ⑥ 텍스트 선택이 없으면 툴바 토글이 꺼진다 ─────────────────────────────
   // 편집 모드에서 빠져나와 '상자 선택' 상태로 만든다.

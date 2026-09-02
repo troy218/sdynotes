@@ -308,7 +308,7 @@ try {
     (effStyle(window, content, '먹었다').fontFamily || '').includes('Gaegu'));
   check('앞 글자의 글꼴은 그대로다', effStyle(window, content, '소금빵').fontFamily == null);
   check('글꼴을 바꿔도 상자 글꼴(style)은 그대로다',
-    (content.style.fontFamily || '').indexOf('Noto') >= 0);
+    (content.style.fontFamily || '').indexOf('Pretendard') >= 0);
   check('앞 글자의 색도 살아 있다', effStyle(window, content, '소금빵').color === 'rgb(231, 76, 60)');
 
   window.setFS(24);

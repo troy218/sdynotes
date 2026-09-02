@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.18.2",
+  "version": "14.18.4",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -47,6 +47,7 @@
     "test:stkentry": "node test/sticker_entry_contract.mjs && node test/sticker_entry_runtime.mjs",
     "test:stksvg": "node test/sticker_svg_contract.mjs && node test/sticker_svg_runtime.mjs",
     "test:draw": "node test/editor_draw_contract.mjs",
+    "test:live": "node test/live_presence_contract.mjs",
     "test:editor": "node test/editor_format_runtime.mjs && node test/editor_draw_contract.mjs",
     "test:pages": "node test/editor_pages_sync_contract.mjs && node test/editor_pages_sync_runtime.mjs",
     "test:save": "node test/save_outbox_contract.mjs",

@@ -258,30 +258,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     };
     // 선택 가능한 글꼴 (한국어/영어)
     const FONTS=[
-        {id:'noto',   label:'노토 산스',    css:"'Noto Sans KR',sans-serif"},
-        {id:'gaegu',  label:'개구쟁이',     css:"'Gaegu','Noto Sans KR',cursive"},
-        {id:'jua',    label:'주아',        css:"'Jua','Noto Sans KR',sans-serif"},
-        {id:'pen',    label:'나눔손글씨',   css:"'Nanum Pen Script','Noto Sans KR',cursive"},
-        {id:'dohyeon',label:'도현',        css:"'Do Hyeon','Noto Sans KR',sans-serif"},
-        {id:'gowun',  label:'고운돋움',     css:"'Gowun Dodum','Noto Sans KR',sans-serif"},
-        {id:'poor',   label:'푸어스토리',   css:"'Poor Story','Noto Sans KR',cursive"},
-        {id:'blackhan',label:'검은고딕',    css:"'Black Han Sans','Noto Sans KR',sans-serif"},
+        {id:'pretendard',label:'프리텐다드',css:"'Pretendard Variable','Pretendard',sans-serif"},
+        {id:'gaegu',  label:'개구쟁이',     css:"'Gaegu','Pretendard Variable',cursive"},
+        {id:'jua',    label:'주아',        css:"'Jua','Pretendard Variable',sans-serif"},
+        {id:'pen',    label:'나눔손글씨',   css:"'Nanum Pen Script','Pretendard Variable',cursive"},
+        {id:'dohyeon',label:'도현',        css:"'Do Hyeon','Pretendard Variable',sans-serif"},
+        {id:'gowun',  label:'고운돋움',     css:"'Gowun Dodum','Pretendard Variable',sans-serif"},
+        {id:'poor',   label:'푸어스토리',   css:"'Poor Story','Pretendard Variable',cursive"},
+        {id:'blackhan',label:'검은고딕',    css:"'Black Han Sans','Pretendard Variable',sans-serif"},
         {id:'myeongjo',label:'나눔명조',    css:"'Nanum Myeongjo',serif"},
         {id:'times',  label:'Times New Roman', css:"'Times New Roman','Nanum Myeongjo',serif"},
         {id:'coding', label:'코딩체',      css:"'Nanum Gothic Coding',monospace"},
-        {id:'inter',  label:'Inter',      css:"'Inter','Noto Sans KR',sans-serif"},
+        {id:'inter',  label:'Inter',      css:"'Inter','Pretendard Variable',sans-serif"},
         {id:'playfair',label:'Playfair',  css:"'Playfair Display',serif"},
         {id:'caveat', label:'Caveat',     css:"'Caveat',cursive"},
         {id:'mono',   label:'Roboto Mono',css:"'Roboto Mono',monospace"}
     ];
     function fontCSS(id){ const f=FONTS.find(x=>x.id===id); return f?f.css:FONTS[0].css; }
-    let curFont='noto';
+    let curFont='pretendard';
 
     const PAGE_GAP=40;      // 페이지 사이 간격(종이 좌표)
     const ADD_ZONE_H=120;   // 새 페이지 추가 영역 높이
 
     let notebooks=[],curNB=null,curMemo=null;
-    let S=JSON.parse(localStorage.getItem('sdy3')||'null')||{dark:false,defPaper:'blank',defFS:16,defFont:'noto',accent:'#4f6ef7',appTitle:'',cardSize:'l'};
+    let S=JSON.parse(localStorage.getItem('sdy3')||'null')||{dark:false,defPaper:'blank',defFS:16,defFont:'pretendard',accent:'#4f6ef7',appTitle:'',cardSize:'l'};
     function saveS(){localStorage.setItem('sdy3',JSON.stringify(S));}
 
     // ===== 문서 모델 =====
@@ -372,7 +372,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.body.classList.toggle('card-s',S.cardSize==='s');
         document.body.classList.toggle('card-l',S.cardSize==='l');
         // 기본 글꼴
-        curFont=FONTS.some(f=>f.id===S.defFont)?S.defFont:'noto';
+        curFont=FONTS.some(f=>f.id===S.defFont)?S.defFont:'pretendard';   // 옛 defFont 'noto' 는 폴백으로 프리텐다드
         // 배경 사진
         applyWallpaper();
     }
@@ -1017,11 +1017,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(el.type!=='text') return;
             const inner=el.tight
                 ? `width:100%;height:100%;padding:0;box-sizing:border-box;font-size:${el.fontSize||16}px;line-height:1;color:var(--text1);`+
-                  `font-family:${fontCSS(el.font||'noto')};text-align:${el.align||'left'};`+
+                  `font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`+
                   `overflow:visible;position:relative;`
                 : `width:100%;height:100%;min-width:60px;min-height:28px;padding:8px 12px;border:2px solid transparent;`+
                   `box-sizing:border-box;font-size:${el.fontSize||16}px;line-height:1.5;color:var(--text1);`+
-                  `font-family:${fontCSS(el.font||'noto')};text-align:${el.align||'left'};`+
+                  `font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`+
                   `white-space:pre-wrap;word-break:break-word;overflow:hidden;`;
             html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;z-index:4;">`+
                   `<div style="${inner}">${el.html||''}</div></div>`;
@@ -4803,7 +4803,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 설정을 전부 기본값으로 되돌린다 (노트 데이터는 건드리지 않음)
     function resetSettings(){
         if(!confirm('설정을 기본값으로 되돌릴까요?\n(노트·폴더·휴지통 데이터는 그대로 유지됩니다)')) return;
-        S={dark:false, defPaper:'blank', defFS:16, defFont:'noto',
+        S={dark:false, defPaper:'blank', defFS:16, defFont:'pretendard',
            accent:'#4f6ef7', appTitle:'', cardSize:'m', wall:'', wallVeil:34, wallVideo:false};
         saveS();
         try{ pushSettings(); }catch(e){}
@@ -7586,7 +7586,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const c=document.createElement('div');
         c.className='tb-content'; c.contentEditable='false';
         c.style.fontSize=(el.fontSize||16)+'px';
-        c.style.fontFamily=fontCSS(el.font||'noto');
+        c.style.fontFamily=fontCSS(el.font||'pretendard');
         if(el.align) c.style.textAlign=el.align;
         if(el.textColor) c.style.color=el.textColor;
         if(el.cellBg) c.style.backgroundColor=el.cellBg;
@@ -7736,8 +7736,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     let _histT=0, _scriptEditUndoable=false;
-    function pushHistory(){
-        if(!doc) return;
+    // force=true 면 250ms 묶음을 건너뛰고 무조건 기록한다. 그리기(획·지우개)가
+    // 쓴다 — 빠르게 연속으로 그려도 한 획씩 각자 되돌아가야 하기 때문이다.
+    // 리턴값 = 방금 쌓은 스냅샷 문자열 (아무것도 안 쌓았으면 null). 그리기 쪽에서
+    // "결국 아무 변화가 없던 제스처"의 스냅샷을 도로 치울 때 쓴다.
+    function pushHistory(force){
+        if(!doc) return null;
         // 편집 중 툴바/우클릭 메뉴가 스크립트로 DOM 을 바꾼 작업은 브라우저 기본
         // contenteditable undo 스택에 안 들어가는 환경이 있다. 이 경우 바로 Ctrl+Z 를
         // 누르면 앱 히스토리로 되돌릴 수 있게 표시해 둔다. 실제 타이핑 input 이 오면
@@ -7745,11 +7749,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{ if(document.querySelector('.tb.edit')) _scriptEditUndoable=true; }catch(e){}
         const now=Date.now();
         // 잦은 변화는 한 덩어리로 묶는다 (큰 문서에서 JSON.stringify 폭주 방지)
-        if(now-_histT<250){ redoStack=[]; return; }
+        if(!force&&now-_histT<250){ redoStack=[]; return null; }
         _histT=now;
-        history.push(JSON.stringify(doc));
+        const snap=JSON.stringify(doc);
+        history.push(snap);
         if(history.length>60) history.shift();
         redoStack=[];                       // 새 작업이 생기면 다시 실행 기록은 무효
+        return snap;
     }
     // 되돌리기는 문서를 JSON 으로 통째 복원한다. 그런데 동기화용 Map
     // (__localRev/__lastHash) 은 JSON 을 거치면 그냥 {} 가 되어 버려서
@@ -7781,7 +7787,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         reviveDocMaps(keep);
         selected=null; clearMulti();
         if(curPageIdx>=doc.pages.length) curPageIdx=doc.pages.length-1;
-        renderPages(); saveDoc(); toast('되돌림',900);
+        renderPages(); saveDoc();
+        // 되돌리기가 종이를 통째로 다시 그리므로, 펜 모드 중이었다면 그리기
+        // 레이어(.drawing)를 새 종이에 다시 붙여야 한다. 예전엔 이게 빠져
+        // 되돌린 뒤 펜이 먹통 → 펜을 끄고 다시 켜야 하는 불편이 있었다.
+        if(penActive){ editorPapers().forEach(pp=>pp.classList.add('drawing')); try{ updateToolCursor(); }catch(e){} }
+        toast(penActive?'그리기 되돌림':'되돌림',900);
     }
     function redo(){
         if(!redoStack.length){ toast('다시 실행할 작업이 없습니다',900); return; }
@@ -7793,7 +7804,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         reviveDocMaps(keep);
         selected=null; clearMulti();
         if(curPageIdx>=doc.pages.length) curPageIdx=doc.pages.length-1;
-        renderPages(); saveDoc(); toast('다시 실행',900);
+        renderPages(); saveDoc();
+        if(penActive){ editorPapers().forEach(pp=>pp.classList.add('drawing')); try{ updateToolCursor(); }catch(e){} }
+        toast(penActive?'그리기 다시 실행':'다시 실행',900);
     }
 
     // ============ 선택/드래그 ============
@@ -8991,7 +9004,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function resetTypingFormat(){
         try{
             _typingSpan=null; _pendingTyping=null; savedCaret=null; savedRange=null; savedHost=null; textSel=null;
-            currentTextColor='#000000';
+            currentTextColor=TEXT_COLORS[0];
             const bar=document.getElementById('tcBar'), glyph=document.getElementById('tcGlyph');
             if(bar) bar.style.background=currentTextColor;
             if(glyph) glyph.style.color=currentTextColor;
@@ -13146,7 +13159,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     });
 
     // ============ 펜 / 지우개 ============
-    let penActive=false, eraserActive=false, drawColor='#111', drawSize=2;
+    let penActive=false, eraserActive=false, drawColor='#888888', drawSize=2;
     let shapeMode='free', markerMode=false;
     let drawing=false, curPts=null, curPathNode=null, drawPageIdx=0;
     const ERASER_MULT=6;   // 지우개 반경 = drawSize * ERASER_MULT
@@ -13205,6 +13218,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 14.17 · 펜 색·굵기·도형·형광펜을 브라우저에 기억해 두면 모바일/데스크톱
     //   모두 '다음에 펜을 열 때도 같은 설정'으로 바로 그릴 수 있다.
     const DRAW_CFG_KEY='sdy_draw_cfg';
+    // 14.18.3 · 펜 팔레트를 파스텔로 바꾸며, 브라우저에 남아 있던 옛 색도
+    //   같은 색조의 새 파스텔 색으로 자동 옮긴다 (사용자가 직접 고른 색은 그대로).
+    const LEGACY_DRAW_COLORS={'#111':'#888888','#111111':'#888888','#e74c3c':'#f3a69e','#3498db':'#9acced',
+                              '#27ae60':'#93d7b0','#f39c12':'#f9ce89','#9b59b6':'#cdacdb'};
     function saveDrawCfg(){
         try{ localStorage.setItem(DRAW_CFG_KEY, JSON.stringify({color:drawColor,size:drawSize,shape:shapeMode,marker:markerMode})); }catch(e){}
     }
@@ -13213,6 +13230,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const c=JSON.parse(localStorage.getItem(DRAW_CFG_KEY)||'null');
             if(!c) return;
             if(c.color){
+                if(LEGACY_DRAW_COLORS[String(c.color).toLowerCase()]) c.color=LEGACY_DRAW_COLORS[String(c.color).toLowerCase()];
                 drawColor=c.color;
                 const pc=document.getElementById('penCustom');
                 if(pc){ pc.value=c.color; pc.style.setProperty('--custom-color',c.color); }
@@ -13467,14 +13485,34 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return true;
     }
 
+    // ── 14.18.3 · 그리기 되돌리기 재설계 ──────────────────────────────────────
+    //  예전 문제 ①  drawStart 의 pushHistory 가 250ms 묶음에 걸려 빠르게 연속으로
+    //    그린 획들이 한 덩어리로 취급 → 되돌리기 한 번에 여러 획이 통째로 사라졌다.
+    //  예전 문제 ②  지우개는 pushHistory 를 '첫 획을 지운 뒤' 에야 남겼다 → 스냅샷이
+    //    이미 지워진 상태라 되돌려도 그 첫 획은 영영 돌아오지 않았다.
+    //  예전 문제 ③  되돌리기(undo)가 종이를 다시 그리면서 펜 모드(.drawing)가 풀렸다.
+    //  이제 ① 획·지우개 제스처마다 묶음 없이 '작업 전' 상태를 남기고, ② 아무 변화가
+    //  없었던 제스처(헛클릭·헛친 지우개)의 스냅샷은 도로 치워 되돌리기가 헛돌지
+    //  않게 하며, ③ 되돌린 뒤에도 펜 모드를 새 종이에 다시 붙인다.
+    let _drawSnap=null;       // 이번 그리기 제스처에서 남겨 둔 '작업 전' 스냅샷
+    let _eraseRemoved=false;  // 이번 지우개 제스처에서 실제로 지운 획이 있는가
+    function _dropDrawSnap(){
+        if(_drawSnap==null) return;
+        if(history.length&&history[history.length-1]===_drawSnap) history.pop();
+        _drawSnap=null;
+    }
     function drawStart(e,pageIdx){
         if(!penActive) return;
         e.preventDefault();
         curPageIdx=pageIdx; updatePageInfo();
         drawPageIdx=pageIdx;
         const p=surfacePos(e,pageIdx);
-        if(eraserActive){ drawing=true; lastErase=null; eraseSweep(p,pageIdx); return; }
-        pushHistory();
+        if(eraserActive){
+            drawing=true; lastErase=null; _eraseRemoved=false;
+            _drawSnap=pushHistory(true);      // 지우기 '전' 상태부터 보존
+            eraseSweep(p,pageIdx); return;
+        }
+        _drawSnap=pushHistory(true);          // 획마다 개별 되돌리기 보장
         clearMorphTimer();
         drawing=true;
         shapeStart={x:round1(p.x),y:round1(p.y)};
@@ -13523,8 +13561,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!drawing) return;
         drawing=false;
         clearMorphTimer();
-        if(eraserActive){ saveDoc(); return; }
-        if(!curPts||curPts.length<1){ if(curPathNode)curPathNode.remove(); return; }
+        if(eraserActive){ if(!_eraseRemoved) _dropDrawSnap(); saveDoc(); return; }
+        if(!curPts||curPts.length<1){ if(curPathNode)curPathNode.remove(); _dropDrawSnap(); return; }
         const shape=curShapeKind||(shapeMode!=='free'?shapeMode:null);
         const el={type:'stroke',id:uid('s'),pts:curPts,color:drawColor,size:effSize(),dx:0,dy:0};
         if(markerMode) el.opacity=0.4;
@@ -13538,6 +13576,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const svg=paperAt(drawPageIdx).querySelector('.layer-stroke');
         svg.appendChild(buildStrokeEl(el,drawPageIdx));
         curPts=null; curPathNode=null;
+        _drawSnap=null;      // 획이 실제로 추가됐다 → '작업 전' 스냅샷을 되돌림 사다리에 그대로 둔다
         saveDoc();
     }
     function round1(v){ return Math.round(v*10)/10; }
@@ -13646,7 +13685,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 removed=true;
             }
         }
-        if(removed&&!eraseAt._h){ pushHistory(); eraseAt._h=true; setTimeout(()=>eraseAt._h=false,400); }
+        if(removed) _eraseRemoved=true;   // 되돌리기 스냅샷은 drawStart 가 '지우기 전'으로 이미 남겼다
     }
 
     // draw-surface 이벤트 위임 — ★ pointerdown 으로 통합 (터치 300ms 지연 제거)
@@ -13783,9 +13822,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     })();
 
     // ============ 워드식 글자색 / 형광펜 ============
-    const TEXT_COLORS=['#000000','#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c','#3498db','#9b59b6','#e84393','#7f8c8d'];
-    const HL_COLORS=['#ffff00','#00ff00','#00ffff','#ff00ff','#ff9999','#99ccff','#ffcc99','#c0c0c0','#99ff99','#ffd700'];
-    let currentTextColor='#000000', currentHlColor='#ffff00';
+    // 14.18.3 · 파스텔톤 팔레트 — 예전 색을 같은 자리·같은 색조에서 흰색 50% 만 섞어
+    //   부드럽게 바꿨다 (검정→연회색, 빨강→코랄, ...). 형광펜(글자 배경)도 같은 규칙.
+    const TEXT_COLORS=['#808080','#f3a69e','#f3bf91','#f8e287','#97e6b8','#8ddece','#9acced','#cdacdb','#f4a1c9','#bfc6c6'];
+    const HL_COLORS=['#ffff80','#80ff80','#80ffff','#ff80ff','#ffcccc','#cce6ff','#ffe6cc','#e0e0e0','#ccffcc','#ffeb80'];
+    let currentTextColor=TEXT_COLORS[0], currentHlColor=HL_COLORS[0];
     // 실제 브라우저(특히 iOS Safari)는 툴바 버튼 pointerdown 순간 편집기의
     // Selection을 접어 버린다. jsdom 테스트에서 함수를 직접 호출할 때는 드러나지
     // 않는 차이다. pointerdown 전에 저장한 Range를 click handler가 끝날 때까지 잠근다.
@@ -13848,7 +13889,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // ===== 글꼴 선택 =====
     // 각 항목을 '해당 글꼴 자체'로 렌더링해 이름만 보고도 어떤 폰트인지 바로 알 수 있게 한다.
     //   좌측: 실제 글꼴로 그린 미리보기 문구 (abc 가나다)
-    //   우측: 글꼴 이름 (항상 Noto Sans 로 표시해 항상 가독) + 현재 선택 시 체크
+    //   우측: 글꼴 이름 (항상 기본 글꼴로 표시해 항상 가독) + 현재 선택 시 체크
     function buildFontMenu(){
         const m=document.getElementById('fontMenu');
         if(m.dataset.ready==='1') return;
@@ -15309,7 +15350,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const fs=Math.max(2,Math.min(200,Math.round(parseFloat(c.style.fontSize)||el.fontSize||curFontSize||16)));
         c.innerHTML=stripFormatting(c.innerHTML);
         c.style.fontSize=fs+'px';
-        c.style.fontFamily=fontCSS('noto');
+        c.style.fontFamily=fontCSS('pretendard');
         ['color','background-color','font-weight','font-style','text-decoration'].forEach(p=>{
             try{ c.style.removeProperty(p); }catch(e){}
         });
@@ -15959,11 +16000,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const inner=el.tight
                 ? `width:100%;height:100%;padding:0;box-sizing:border-box;`+
                   `font-size:${el.fontSize||16}px;line-height:1;color:${el.__c||'#111111'};`+
-                  `overflow:visible;font-family:${fontCSS(el.font||'noto')};`+
+                  `overflow:visible;font-family:${fontCSS(el.font||'pretendard')};`+
                   `text-align:${el.align||'left'};position:relative;`
                 : `width:100%;height:100%;padding:8px 12px;box-sizing:border-box;`+
                   `font-size:${el.fontSize||16}px;line-height:1.5;color:${el.__c||'#111111'};white-space:pre-wrap;`+
-                  `word-break:break-word;overflow:hidden;font-family:${fontCSS(el.font||'noto')};`+
+                  `word-break:break-word;overflow:hidden;font-family:${fontCSS(el.font||'pretendard')};`+
                   `text-align:${el.align||'left'};`;
             body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${el.w}px;height:${el.h}px;">`+
                   `<div style="${inner}">`+
@@ -17706,7 +17747,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     let liveTimer=null, liveRateTimer=null, liveLast={x:null,y:null,page:0},
         liveOn=false, liveMoved=false, _liveBusy=false, _liveQueued=false,
-        _liveLastPoll=0;
+        _liveLastPoll=0, liveMyColor='';
+    const liveInkTimers={};       // uid → 실시간 잉크 정리 타이머(펜을 뗀 뒤 잠시 유지)
     // 상대가 있을 때는 25fps로 왕복하고, 혼자일 때도 600ms마다 가볍게 확인한다.
     // 내 마우스가 멈췄다고 polling까지 4초 멈추면 움직이는 상대 커서가 내 화면에서
     // 4초씩 얼어 보였던 것이 '현재 위치가 바로 안 오는' 핵심 원인이었다.
@@ -17736,6 +17778,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({note:nb,uid:LIVE_ME}),keepalive:true}).catch(()=>{});
         document.querySelectorAll('.live-cur').forEach(n=>n.remove());
+        Object.keys(liveInkTimers).forEach(k=>{ clearTimeout(liveInkTimers[k]); delete liveInkTimers[k]; });
+        document.querySelectorAll('[id^="liveInk_"]').forEach(n=>n.remove());
+        const lg=document.getElementById('liveLegend'); if(lg) lg.remove();
     }
     // 상대가 보이는 동안에는 내가 가만히 있어도 계속 받아야 한다. 혼자일 때만
     // 발견 주기로 낮춰 서버와 배터리 부담을 줄인다.
@@ -17772,6 +17817,63 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             return '';
         }catch(e){ return ''; }
     }
+    // 14.18.4 · 지금 하는 일의 '종류' — 상대 화면에서 내 표시 모양을 정한다.
+    //   ''     : 평소(마우스 화살표)
+    //   'draw' : 펜으로 그리는 중 → 상대 화면에서 내 커서가 '펜촉'으로 바뀌고
+    //            지금 긋는 획(liveInk)이 실시간 미리보기로 같이 보인다.
+    //   'type' : 글 입력 중 → 상대 화면에서 내 커서 대신 '깜빡이는 캐럿'이 보인다.
+    function liveMode(){
+        try{
+            if(document.querySelector('.tb.edit')) return 'type';
+            if(typeof penActive!=='undefined'&&penActive
+                &&!(typeof eraserActive!=='undefined'&&eraserActive)) return 'draw';
+            return '';
+        }catch(e){ return ''; }
+    }
+    // 편집 중인 캐럿의 위치를 종이 좌표로 — 상대에게 '마우스'가 아니라
+    // '지금 글이 쓰이는 곳'을 보내야 깜빡이 캐럿이 제자리에 보인다.
+    function liveCaretPos(){
+        try{
+            const sel=getSelection();
+            if(!sel||!sel.rangeCount) return null;
+            const anc=sel.getRangeAt(0).commonAncestorContainer;
+            const cEl=anc.nodeType===1?anc:anc.parentElement;
+            const content=cEl&&cEl.closest&&cEl.closest('.tb-content');
+            if(!content||!content.closest('.tb.edit')) return null;
+            let r=null;
+            try{ r=sel.getRangeAt(0).getBoundingClientRect(); }catch(e){}
+            if(!r||(r.top===0&&r.bottom===0)) r=content.getBoundingClientRect();
+            const papers=editorPapers();
+            for(let i=0;i<papers.length;i++){
+                const pr=papers[i].getBoundingClientRect();
+                if(r.left>=pr.left-2&&r.left<=pr.right+2&&r.bottom>=pr.top-2&&r.bottom<=pr.bottom+2){
+                    const ps=paperSize();
+                    return {x:(r.left-pr.left)*(ps.w/Math.max(1,pr.width)),
+                            y:(r.bottom-pr.top)*(ps.h/Math.max(1,pr.height)),
+                            page:+papers[i].dataset.pageIdx||0};
+                }
+            }
+            return null;
+        }catch(e){ return null; }
+    }
+    // 그리고 있는 획의 '지금까지' 모양 — 완성을 기다리지 않고 실시간으로 보낸다.
+    //   트래픽을 줄이려고 점을 단순화(RDP)하고 최대 96점으로 자른다. 최종 획은
+    //   기존 요소 동기화 경로로 확실히 도착하므로 미리보기는 근삿값이어도 된다.
+    function liveInkPayload(){
+        try{
+            if(!drawing||!penActive||eraserActive) return null;
+            if(!curPts||curPts.length<2) return null;
+            let pts=rdpPts(curPts,1.1);
+            if(pts.length>96){
+                const step=(pts.length-1)/95,out=[];
+                for(let i=0;i<95;i++) out.push(pts[Math.round(i*step)]);
+                out.push(pts[pts.length-1]);
+                pts=out;
+            }
+            pts=pts.map(pt=>[round1(pt[0]),round1(pt[1])]);
+            return {pts,color:drawColor,size:round1(effSize()),op:effOpacity(),page:drawPageIdx||0};
+        }catch(e){ return null; }
+    }
     async function livePing(){
         if(!liveOn||!curNB) return;
         // 응답이 뒤섞여 커서가 뒤로 튀지 않게 하나씩 직렬 전송한다.
@@ -17779,15 +17881,24 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(_liveBusy){ _liveQueued=true; return; }
         const noteId=curNB.id;       // await 사이 노트 전환 시 옛 응답을 새 문서에 그리지 않음
         _liveBusy=true;
+        // 14.18.4 · 글 쓰는 중에는 마우스가 아니라 '캐럿 위치'를 상대에게 보낸다.
+        const mode=liveMode();
+        if(mode==='type'){
+            const cp=liveCaretPos();
+            if(cp){ liveLast=cp; liveMoved=true; }
+        }
         try{
             const r=await fetch('/api/live/ping',{method:'POST',
                 headers:{'Content-Type':'application/json'},
                 body:JSON.stringify({note:noteId,uid:LIVE_ME,name:liveName(),
                     x:liveLast.x,y:liveLast.y,page:liveLast.page,on:true,
-                    act:liveAct(),ts:Date.now()})});
+                    act:liveAct(),mode,
+                    ink:mode==='draw'?liveInkPayload():null,
+                    ts:Date.now()})});
             const d=await r.json().catch(()=>({}));
             if(!liveOn||!curNB||curNB.id!==noteId) return;
             if(d&&d.ok){
+                if(d.color) liveMyColor=d.color;
                 // 5.35: 표시 순서를 매번 완전 랜덤으로 (같은 순서 고정 방지)
                 const peers=(d.peers||[]).slice();
                 for(let i=peers.length-1;i>0;i--){
@@ -17810,10 +17921,71 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
         }
     }
+    // 14.18.4 · 실시간 잉크 — 상대가 그리고 있는 획을 상대의 종이 위에 임시 SVG로.
+    //   펜을 뗀 뒤에는 최종 획이 요소 동기화로 도착할 시간(3.5초)을 주고 지운다.
+    function _dropLiveInk(uid){
+        if(liveInkTimers[uid]) return;
+        liveInkTimers[uid]=setTimeout(()=>{
+            delete liveInkTimers[uid];
+            const el=document.getElementById('liveInk_'+uid);
+            if(el) el.remove();
+        },3500);
+    }
+    function _updateLiveInk(p){
+        const uid=p.uid, ink=p.ink;
+        if(!ink||!ink.pts||ink.pts.length<2){ _dropLiveInk(uid); return; }
+        if(liveInkTimers[uid]){ clearTimeout(liveInkTimers[uid]); delete liveInkTimers[uid]; }
+        const pageIdx=(ink.page!=null&&isFinite(+ink.page))?+ink.page:(+p.page||0);
+        const paper=paperAt(pageIdx);
+        if(!paper) return;
+        let svg=document.getElementById('liveInk_'+uid);
+        if(!svg||!svg.isConnected||svg.parentElement!==paper){
+            if(svg) svg.remove();
+            svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+            svg.id='liveInk_'+uid;
+            const ps=paperSize();
+            svg.setAttribute('viewBox','0 0 '+ps.w+' '+ps.h);
+            svg.setAttribute('preserveAspectRatio','none');
+            svg.style.cssText='position:absolute;inset:0;width:100%;height:100%;'+
+                              'pointer-events:none;z-index:30;overflow:visible;';
+            const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+            path.setAttribute('fill','none');
+            path.setAttribute('stroke-linecap','round');
+            path.setAttribute('stroke-linejoin','round');
+            svg.appendChild(path);
+            paper.appendChild(svg);
+        }
+        const path=svg.firstChild;
+        try{ path.setAttribute('d',strokePath(ink.pts)); }catch(e){ return; }
+        path.setAttribute('stroke',String(ink.color||'#888888').slice(0,24));
+        path.setAttribute('stroke-width',Math.max(.5,Math.min(200,+ink.size||2)));
+        path.setAttribute('stroke-opacity',ink.op==null?1:Math.max(.05,Math.min(1,+ink.op)));
+    }
+    // 14.18.4 · 왼쪽 범례 — 누가 어떤 색인지 한눈에. 커서에는 이름표 없이 색만 단다.
+    function _liveEsc(v){
+        return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function renderLiveLegend(rows){
+        let lg=document.getElementById('liveLegend');
+        if(!rows||!rows.length){ if(lg) lg.remove(); return; }
+        if(!lg){
+            lg=document.createElement('div');
+            lg.id='liveLegend'; lg.className='live-legend';
+            document.body.appendChild(lg);
+        }
+        const all=[{color:liveMyColor||'#4f6ef7',name:liveName(),act:liveAct(),me:true}].concat(rows);
+        lg.innerHTML=all.map(r=>
+            '<div class="ll-row'+(r.me?' me':'')+'">'+
+                '<span class="ll-dot" style="background:'+_liveEsc(r.color)+'"></span>'+
+                '<span class="ll-nm">'+_liveEsc(r.name)+(r.me?' (나)':'')+'</span>'+
+                (r.act?'<span class="ll-act">'+_liveEsc(r.act)+'</span>':'')+
+            '</div>').join('');
+    }
+    // 14.18.4 · 상대 커서 — 이름표 없이 색만. 그리는 중엔 펜촉, 글 쓰는 중엔 깜빡이 캐럿.
     function drawPeers(peers){
         const stage=document.getElementById('pagesStage');
         if(!stage) return;
-        const seen=new Set();
+        const seen=new Set(), rows=[];
         peers.forEach(p=>{
             if(p.x==null||p.y==null) return;
             seen.add(p.uid);
@@ -17832,17 +18004,20 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(!n){
                 n=document.createElement('div');
                 n.id='live_'+p.uid; n.className='live-cur';
-                n.innerHTML='<svg viewBox="0 0 24 24" width="20" height="20">'+
+                n.innerHTML='<svg class="lc lc-arrow" viewBox="0 0 24 24" width="20" height="20">'+
                     '<path d="M4 2 L20 12 L13 13 L16 21 L13 22 L10 14 L4 18 Z" '+
                     'fill="currentColor" stroke="#475569" stroke-width="1.4"/></svg>'+
-                    '<span class="live-nm"></span>';
+                    '<i class="lc lc-pen ri-pen-nib-fill"></i>'+
+                    '<span class="lc lc-caret"></span>';
                 layer.appendChild(n);
             }
             n.style.color=p.color||'#ef4444';
             n.style.zIndex=String(1+((Math.random()*40)|0));   // 5.35: 겹침 순서도 매번 랜덤
-            const nmEl=n.querySelector('.live-nm');
-            nmEl.textContent=(p.name||'익명')+(p.act?' · '+p.act:'');
-            nmEl.style.background=p.color||'#ef4444';
+            const mode=(p.mode==='draw'||p.mode==='type')?p.mode:'';
+            n.classList.toggle('draw',mode==='draw');
+            n.classList.toggle('type',mode==='type');
+            _updateLiveInk(p);
+            rows.push({color:p.color||'#ef4444',name:p.name||'익명',act:p.act||'',me:false});
             const pr=paper.getBoundingClientRect(), ps=paperSize();
             // pageScale은 루트 90% zoom과 전환 중 배율을 모른다. 실제 종이 사각형으로
             // 문서 좌표→화면 좌표를 구한 뒤 fixed 레이어의 CSS px로 변환한다.
@@ -17859,8 +18034,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
         });
         document.querySelectorAll('.live-cur').forEach(n=>{
-            if(!seen.has(n.id.replace('live_',''))) n.remove();
+            const uid=n.id.replace('live_','');
+            if(!seen.has(uid)){ n.remove(); _dropLiveInk(uid); }
         });
+        renderLiveLegend(rows);
     }
     addEventListener('beforeunload',()=>{ if(liveOn) stopLive(); });
 
@@ -17918,11 +18095,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     const inner=el.tight
                         ? `width:100%;height:100%;padding:0;box-sizing:border-box;`+
                           `font-size:${el.fontSize||16}px;line-height:1;color:${el.__c||'#111111'};`+
-                          `overflow:visible;font-family:${fontCSS(el.font||'noto')};`+
+                          `overflow:visible;font-family:${fontCSS(el.font||'pretendard')};`+
                           `text-align:${el.align||'left'};position:relative;`
                         : `width:100%;height:100%;padding:8px 12px;box-sizing:border-box;`+
                           `font-size:${el.fontSize||16}px;line-height:1.5;color:${el.__c||'#111111'};white-space:pre-wrap;`+
-                          `word-break:break-word;overflow:hidden;font-family:${fontCSS(el.font||'noto')};`+
+                          `word-break:break-word;overflow:hidden;font-family:${fontCSS(el.font||'pretendard')};`+
                           `text-align:${el.align||'left'};`;
                     body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;">`+
                           `<div style="${inner}">`+
@@ -17948,7 +18125,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${size.w}" height="${size.h}" viewBox="0 0 ${size.w} ${size.h}">`+
                     `<foreignObject x="0" y="0" width="${size.w}" height="${size.h}">`+
                     `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${size.w}px;height:${size.h}px;position:relative;`+
-                    `font-family:'Noto Sans KR',sans-serif;">${body}</div></foreignObject></svg>`;
+                    `font-family:'Pretendard Variable','Pretendard',sans-serif;">${body}</div></foreignObject></svg>`;
                 const img=await svgToImage(svg);
                 ctx.drawImage(img,0,0,size.w,size.h);
                 done=true;
@@ -18019,7 +18196,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const fs=el.fontSize||16;
             ctx.save();
             ctx.fillStyle='#111111';
-            ctx.font=`${fs}px ${fontCSS(el.font||'noto')}`;
+            ctx.font=`${fs}px ${fontCSS(el.font||'pretendard')}`;
             ctx.textBaseline='middle';
             const al=el.align||'left';
             ctx.textAlign=al==='center'?'center':al==='right'?'right':'left';
@@ -18031,7 +18208,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const fs=el.fontSize||16, lh=fs*1.5;
         ctx.save();
         ctx.fillStyle='#111111';
-        ctx.font=`${fs}px ${fontCSS(el.font||'noto')}`;
+        ctx.font=`${fs}px ${fontCSS(el.font||'pretendard')}`;
         ctx.textBaseline='top';
         const al=el.align||'left';
         ctx.textAlign=al==='center'?'center':al==='right'?'right':'left';
@@ -19162,7 +19339,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // 미리 불러올 글꼴 (문서·에디터에서 쓰이는 것들)
     const _SP_FONTS=[
-        '400 16px "Noto Sans KR"','700 16px "Noto Sans KR"',
+        '400 16px "Pretendard Variable"','500 16px "Pretendard Variable"','700 16px "Pretendard Variable"',
         '400 16px "Gaegu"','400 16px "Jua"',
         '400 16px "Nanum Pen Script"','400 16px "Do Hyeon"',
         '400 16px "Gowun Dodum"','400 16px "Poor Story"',
@@ -19175,8 +19352,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function _coreFontsReady(){
         if(!document.fonts||!document.fonts.load) return Promise.resolve();
         return Promise.all([
-            document.fonts.load('400 16px "Noto Sans KR"').catch(()=>{}),
-            document.fonts.load('700 16px "Noto Sans KR"').catch(()=>{}),
+            document.fonts.load('400 16px "Pretendard Variable"').catch(()=>{}),
+            document.fonts.load('700 16px "Pretendard Variable"').catch(()=>{}),
             document.fonts.load('16px remixicon').catch(()=>{}),
         ]).catch(()=>{});
     }
