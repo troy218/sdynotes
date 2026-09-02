@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.18.5",
+  "version": "14.19.0",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -16,6 +16,7 @@
     "test:motion": "node test/claw_cursor_contract.mjs && node test/home_stack_contract.mjs",
     "test:bounds": "node test/floating_window_bounds_contract.mjs && node test/floating_window_bounds_zoom_sim.mjs",
     "test:music": "node test/music_controls.mjs && node test/music_queue_contract.mjs && node test/music_enqueue_contract.mjs && node test/music_ui_position_contract.mjs",
+    "test:reco": "node test/music_reco_random_contract.mjs",
     "test:cards": "node test/cards_expand_contract.mjs",
     "test:bgm": "node test/yp_bgm_sync.cjs",
     "test:auth": "node test/auth_contract.mjs",
