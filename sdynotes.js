@@ -17747,7 +17747,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     let liveTimer=null, liveRateTimer=null, liveLast={x:null,y:null,page:0},
         liveOn=false, liveMoved=false, _liveBusy=false, _liveQueued=false,
-        _liveLastPoll=0;
+        _liveLastPoll=0, liveMyColor='';
+    const liveInkTimers={};       // uid → 실시간 잉크 정리 타이머(펜을 뗀 뒤 잠시 유지)
     // 상대가 있을 때는 25fps로 왕복하고, 혼자일 때도 600ms마다 가볍게 확인한다.
     // 내 마우스가 멈췄다고 polling까지 4초 멈추면 움직이는 상대 커서가 내 화면에서
     // 4초씩 얼어 보였던 것이 '현재 위치가 바로 안 오는' 핵심 원인이었다.
@@ -17777,6 +17778,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({note:nb,uid:LIVE_ME}),keepalive:true}).catch(()=>{});
         document.querySelectorAll('.live-cur').forEach(n=>n.remove());
+        Object.keys(liveInkTimers).forEach(k=>{ clearTimeout(liveInkTimers[k]); delete liveInkTimers[k]; });
+        document.querySelectorAll('[id^="liveInk_"]').forEach(n=>n.remove());
+        const lg=document.getElementById('liveLegend'); if(lg) lg.remove();
     }
     // 상대가 보이는 동안에는 내가 가만히 있어도 계속 받아야 한다. 혼자일 때만
     // 발견 주기로 낮춰 서버와 배터리 부담을 줄인다.
@@ -17813,6 +17817,63 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             return '';
         }catch(e){ return ''; }
     }
+    // 14.18.4 · 지금 하는 일의 '종류' — 상대 화면에서 내 표시 모양을 정한다.
+    //   ''     : 평소(마우스 화살표)
+    //   'draw' : 펜으로 그리는 중 → 상대 화면에서 내 커서가 '펜촉'으로 바뀌고
+    //            지금 긋는 획(liveInk)이 실시간 미리보기로 같이 보인다.
+    //   'type' : 글 입력 중 → 상대 화면에서 내 커서 대신 '깜빡이는 캐럿'이 보인다.
+    function liveMode(){
+        try{
+            if(document.querySelector('.tb.edit')) return 'type';
+            if(typeof penActive!=='undefined'&&penActive
+                &&!(typeof eraserActive!=='undefined'&&eraserActive)) return 'draw';
+            return '';
+        }catch(e){ return ''; }
+    }
+    // 편집 중인 캐럿의 위치를 종이 좌표로 — 상대에게 '마우스'가 아니라
+    // '지금 글이 쓰이는 곳'을 보내야 깜빡이 캐럿이 제자리에 보인다.
+    function liveCaretPos(){
+        try{
+            const sel=getSelection();
+            if(!sel||!sel.rangeCount) return null;
+            const anc=sel.getRangeAt(0).commonAncestorContainer;
+            const cEl=anc.nodeType===1?anc:anc.parentElement;
+            const content=cEl&&cEl.closest&&cEl.closest('.tb-content');
+            if(!content||!content.closest('.tb.edit')) return null;
+            let r=null;
+            try{ r=sel.getRangeAt(0).getBoundingClientRect(); }catch(e){}
+            if(!r||(r.top===0&&r.bottom===0)) r=content.getBoundingClientRect();
+            const papers=editorPapers();
+            for(let i=0;i<papers.length;i++){
+                const pr=papers[i].getBoundingClientRect();
+                if(r.left>=pr.left-2&&r.left<=pr.right+2&&r.bottom>=pr.top-2&&r.bottom<=pr.bottom+2){
+                    const ps=paperSize();
+                    return {x:(r.left-pr.left)*(ps.w/Math.max(1,pr.width)),
+                            y:(r.bottom-pr.top)*(ps.h/Math.max(1,pr.height)),
+                            page:+papers[i].dataset.pageIdx||0};
+                }
+            }
+            return null;
+        }catch(e){ return null; }
+    }
+    // 그리고 있는 획의 '지금까지' 모양 — 완성을 기다리지 않고 실시간으로 보낸다.
+    //   트래픽을 줄이려고 점을 단순화(RDP)하고 최대 96점으로 자른다. 최종 획은
+    //   기존 요소 동기화 경로로 확실히 도착하므로 미리보기는 근삿값이어도 된다.
+    function liveInkPayload(){
+        try{
+            if(!drawing||!penActive||eraserActive) return null;
+            if(!curPts||curPts.length<2) return null;
+            let pts=rdpPts(curPts,1.1);
+            if(pts.length>96){
+                const step=(pts.length-1)/95,out=[];
+                for(let i=0;i<95;i++) out.push(pts[Math.round(i*step)]);
+                out.push(pts[pts.length-1]);
+                pts=out;
+            }
+            pts=pts.map(pt=>[round1(pt[0]),round1(pt[1])]);
+            return {pts,color:drawColor,size:round1(effSize()),op:effOpacity(),page:drawPageIdx||0};
+        }catch(e){ return null; }
+    }
     async function livePing(){
         if(!liveOn||!curNB) return;
         // 응답이 뒤섞여 커서가 뒤로 튀지 않게 하나씩 직렬 전송한다.
@@ -17820,15 +17881,24 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(_liveBusy){ _liveQueued=true; return; }
         const noteId=curNB.id;       // await 사이 노트 전환 시 옛 응답을 새 문서에 그리지 않음
         _liveBusy=true;
+        // 14.18.4 · 글 쓰는 중에는 마우스가 아니라 '캐럿 위치'를 상대에게 보낸다.
+        const mode=liveMode();
+        if(mode==='type'){
+            const cp=liveCaretPos();
+            if(cp){ liveLast=cp; liveMoved=true; }
+        }
         try{
             const r=await fetch('/api/live/ping',{method:'POST',
                 headers:{'Content-Type':'application/json'},
                 body:JSON.stringify({note:noteId,uid:LIVE_ME,name:liveName(),
                     x:liveLast.x,y:liveLast.y,page:liveLast.page,on:true,
-                    act:liveAct(),ts:Date.now()})});
+                    act:liveAct(),mode,
+                    ink:mode==='draw'?liveInkPayload():null,
+                    ts:Date.now()})});
             const d=await r.json().catch(()=>({}));
             if(!liveOn||!curNB||curNB.id!==noteId) return;
             if(d&&d.ok){
+                if(d.color) liveMyColor=d.color;
                 // 5.35: 표시 순서를 매번 완전 랜덤으로 (같은 순서 고정 방지)
                 const peers=(d.peers||[]).slice();
                 for(let i=peers.length-1;i>0;i--){
@@ -17851,10 +17921,71 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
         }
     }
+    // 14.18.4 · 실시간 잉크 — 상대가 그리고 있는 획을 상대의 종이 위에 임시 SVG로.
+    //   펜을 뗀 뒤에는 최종 획이 요소 동기화로 도착할 시간(3.5초)을 주고 지운다.
+    function _dropLiveInk(uid){
+        if(liveInkTimers[uid]) return;
+        liveInkTimers[uid]=setTimeout(()=>{
+            delete liveInkTimers[uid];
+            const el=document.getElementById('liveInk_'+uid);
+            if(el) el.remove();
+        },3500);
+    }
+    function _updateLiveInk(p){
+        const uid=p.uid, ink=p.ink;
+        if(!ink||!ink.pts||ink.pts.length<2){ _dropLiveInk(uid); return; }
+        if(liveInkTimers[uid]){ clearTimeout(liveInkTimers[uid]); delete liveInkTimers[uid]; }
+        const pageIdx=(ink.page!=null&&isFinite(+ink.page))?+ink.page:(+p.page||0);
+        const paper=paperAt(pageIdx);
+        if(!paper) return;
+        let svg=document.getElementById('liveInk_'+uid);
+        if(!svg||!svg.isConnected||svg.parentElement!==paper){
+            if(svg) svg.remove();
+            svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+            svg.id='liveInk_'+uid;
+            const ps=paperSize();
+            svg.setAttribute('viewBox','0 0 '+ps.w+' '+ps.h);
+            svg.setAttribute('preserveAspectRatio','none');
+            svg.style.cssText='position:absolute;inset:0;width:100%;height:100%;'+
+                              'pointer-events:none;z-index:30;overflow:visible;';
+            const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+            path.setAttribute('fill','none');
+            path.setAttribute('stroke-linecap','round');
+            path.setAttribute('stroke-linejoin','round');
+            svg.appendChild(path);
+            paper.appendChild(svg);
+        }
+        const path=svg.firstChild;
+        try{ path.setAttribute('d',strokePath(ink.pts)); }catch(e){ return; }
+        path.setAttribute('stroke',String(ink.color||'#888888').slice(0,24));
+        path.setAttribute('stroke-width',Math.max(.5,Math.min(200,+ink.size||2)));
+        path.setAttribute('stroke-opacity',ink.op==null?1:Math.max(.05,Math.min(1,+ink.op)));
+    }
+    // 14.18.4 · 왼쪽 범례 — 누가 어떤 색인지 한눈에. 커서에는 이름표 없이 색만 단다.
+    function _liveEsc(v){
+        return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function renderLiveLegend(rows){
+        let lg=document.getElementById('liveLegend');
+        if(!rows||!rows.length){ if(lg) lg.remove(); return; }
+        if(!lg){
+            lg=document.createElement('div');
+            lg.id='liveLegend'; lg.className='live-legend';
+            document.body.appendChild(lg);
+        }
+        const all=[{color:liveMyColor||'#4f6ef7',name:liveName(),act:liveAct(),me:true}].concat(rows);
+        lg.innerHTML=all.map(r=>
+            '<div class="ll-row'+(r.me?' me':'')+'">'+
+                '<span class="ll-dot" style="background:'+_liveEsc(r.color)+'"></span>'+
+                '<span class="ll-nm">'+_liveEsc(r.name)+(r.me?' (나)':'')+'</span>'+
+                (r.act?'<span class="ll-act">'+_liveEsc(r.act)+'</span>':'')+
+            '</div>').join('');
+    }
+    // 14.18.4 · 상대 커서 — 이름표 없이 색만. 그리는 중엔 펜촉, 글 쓰는 중엔 깜빡이 캐럿.
     function drawPeers(peers){
         const stage=document.getElementById('pagesStage');
         if(!stage) return;
-        const seen=new Set();
+        const seen=new Set(), rows=[];
         peers.forEach(p=>{
             if(p.x==null||p.y==null) return;
             seen.add(p.uid);
@@ -17873,17 +18004,20 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(!n){
                 n=document.createElement('div');
                 n.id='live_'+p.uid; n.className='live-cur';
-                n.innerHTML='<svg viewBox="0 0 24 24" width="20" height="20">'+
+                n.innerHTML='<svg class="lc lc-arrow" viewBox="0 0 24 24" width="20" height="20">'+
                     '<path d="M4 2 L20 12 L13 13 L16 21 L13 22 L10 14 L4 18 Z" '+
                     'fill="currentColor" stroke="#475569" stroke-width="1.4"/></svg>'+
-                    '<span class="live-nm"></span>';
+                    '<i class="lc lc-pen ri-pen-nib-fill"></i>'+
+                    '<span class="lc lc-caret"></span>';
                 layer.appendChild(n);
             }
             n.style.color=p.color||'#ef4444';
             n.style.zIndex=String(1+((Math.random()*40)|0));   // 5.35: 겹침 순서도 매번 랜덤
-            const nmEl=n.querySelector('.live-nm');
-            nmEl.textContent=(p.name||'익명')+(p.act?' · '+p.act:'');
-            nmEl.style.background=p.color||'#ef4444';
+            const mode=(p.mode==='draw'||p.mode==='type')?p.mode:'';
+            n.classList.toggle('draw',mode==='draw');
+            n.classList.toggle('type',mode==='type');
+            _updateLiveInk(p);
+            rows.push({color:p.color||'#ef4444',name:p.name||'익명',act:p.act||'',me:false});
             const pr=paper.getBoundingClientRect(), ps=paperSize();
             // pageScale은 루트 90% zoom과 전환 중 배율을 모른다. 실제 종이 사각형으로
             // 문서 좌표→화면 좌표를 구한 뒤 fixed 레이어의 CSS px로 변환한다.
@@ -17900,8 +18034,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
         });
         document.querySelectorAll('.live-cur').forEach(n=>{
-            if(!seen.has(n.id.replace('live_',''))) n.remove();
+            const uid=n.id.replace('live_','');
+            if(!seen.has(uid)){ n.remove(); _dropLiveInk(uid); }
         });
+        renderLiveLegend(rows);
     }
     addEventListener('beforeunload',()=>{ if(liveOn) stopLive(); });
 

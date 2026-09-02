@@ -404,11 +404,46 @@
             will-change:transform;
             filter:drop-shadow(0 1px 2px rgba(0,0,0,.25));
         }
-        .live-nm{
-            position:absolute;left:15px;top:15px;white-space:nowrap;
-            font-size:10.5px;font-weight:700;color:#1f2937;
-            padding:2px 7px;border-radius:4px;
-            box-shadow:0 1px 4px rgba(0,0,0,.18);
+        /* 14.18.4 · 상대 커서는 '색만' — 이름·지금 하는 일은 왼쪽 범례가 안내한다.
+           그리는 중(mode:draw)엔 펜촉, 글 쓰는 중(mode:type)엔 깜빡이 캐럿으로 바뀐다. */
+        .live-cur .lc{display:none;}
+        .live-cur .lc-arrow{display:block;}
+        .live-cur.draw .lc-arrow{display:none;}
+        .live-cur.draw .lc-pen{display:block;}
+        .live-cur.type .lc-arrow{display:none;}
+        .live-cur.type .lc-caret{display:block;}
+        .live-cur .lc-pen{
+            position:absolute;left:-3px;top:-17px;font-size:18px;line-height:1;
+            filter:drop-shadow(0 1px 1px rgba(0,0,0,.3));
+        }
+        .live-cur .lc-caret{
+            position:absolute;left:-1.5px;top:-20px;width:3px;height:20px;border-radius:2px;
+            background:currentColor;box-shadow:0 0 0 1px rgba(255,255,255,.65);
+            animation:liveCaretBlink 1.05s steps(1,end) infinite;
+        }
+        @keyframes liveCaretBlink{0%,55%{opacity:1;}56%,100%{opacity:0;}}
+        /* 왼쪽 범례 — 색 점 + 이름(+ 지금 하는 일). 상대가 있을 때만 보인다. */
+        .live-legend{
+            position:fixed;left:10px;top:104px;z-index:1051;pointer-events:none;
+            display:flex;flex-direction:column;gap:4px;max-width:190px;
+        }
+        .live-legend .ll-row{
+            display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
+            background:color-mix(in srgb, var(--card) 78%, transparent);
+            border:1px solid color-mix(in srgb, var(--border) 60%, transparent);
+            backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+            font-size:11px;color:var(--text1);line-height:1.3;
+            box-shadow:0 1px 5px rgba(16,24,40,.08);
+        }
+        .live-legend .ll-dot{
+            flex:none;width:8px;height:8px;border-radius:50%;
+            box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.7);
+        }
+        .live-legend .ll-nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .live-legend .ll-row.me .ll-nm{color:var(--accent);}
+        .live-legend .ll-act{color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;}
+        @media(max-width:640px){
+            .live-legend{top:auto;bottom:70px;left:8px;max-width:150px;}
         }
         /* 노트 안의 링크는 파랗게 */
         .tb-content a{ color:#2563eb;text-decoration:underline;cursor:pointer; }
