@@ -201,10 +201,18 @@ await new Promise(resolve => setTimeout(resolve, 60));
 const audio = window.sdyMusic.audio();
 Object.defineProperty(audio, 'currentTime', { configurable: true, writable: true, value: 1.12 });
 audio.dispatchEvent(new window.Event('timeupdate'));
+await new Promise(resolve => setTimeout(resolve, 200));   // 120ms 주기 루프가 첫 줄을 띄운다
+// 14.23.x · 기본값은 '켜짐' — 음악바가 뜨면 클릭 없이도 따라 부른다
+assert.match(mpBubble.textContent, /가사 2 첫줄/, '기본 켜짐 상태에서 현재 싱크 가사를 말해야 한다');
+assert.match(mpBubble.textContent, /~\s*$/, '해돌이가 부르는 가사 끝에는 물결표가 붙어야 한다');
+// 잠시 기다려 '곡 우클릭 → 첫 클릭은 메뉴 닫기' 600ms 창을 지나가게 한다.
+// (바로 앞에서 window.sdyMusic.menu() 로 메뉴를 열었기 때문에, 이 창 안에
+//  해돌이를 클릭하면 메뉴 닫기로 삼켜져 토글이 안 먹는다.)
+await new Promise(resolve => setTimeout(resolve, 650));
+// 클릭하면 꺼진다 (다시 클릭해 켜는 건 별도 — 여기선 꺼짐만 확인)
 mpOtter.dispatchEvent(new window.MouseEvent('click', { bubbles:true }));
 await new Promise(resolve => setTimeout(resolve, 80));
-assert.match(mpBubble.textContent, /가사 2 첫줄/, '해돌이를 건드리면 현재 싱크 가사를 말해야 한다');
-assert.match(mpBubble.textContent, /~\s*$/, '해돌이가 부르는 가사 끝에는 물결표가 붙어야 한다');
+assert.ok(!mpOtter.classList.contains('singing'), '클릭하면 부르기 모드가 꺼져야 한다');
 
 dom.window.close();
 console.log(`Music controls: ${actionIds.length} fixed actions wired; artist filter + identical editor/context auto-find + otter synced lyric verified.`);

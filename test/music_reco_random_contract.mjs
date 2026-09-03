@@ -165,32 +165,41 @@ document.getElementById('musicPlayer').classList.add('mp-bar');
 await new Promise((r) => setTimeout(r, 60));
 const audio = window.sdyMusic.audio();
 Object.defineProperty(audio, 'currentTime', { configurable: true, writable: true, value: 1.2 });
+await new Promise((r) => setTimeout(r, 200));     // 120ms 주기 루프가 첫 줄을 띄운다
 
-// 켜기: 클릭 → 지금 가사를 부르고 singing 상태가 된다
-mpOtter.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-await new Promise((r) => setTimeout(r, 80));
-assert.ok(mpOtter.classList.contains('singing'), '클릭하면 부르기 모드가 켜져야 한다');
+// 14.23.x · 기본값은 '켜짐' — 음악바가 뜨면 곧바로 따라 부른다(클릭 전에도)
+assert.ok(mpOtter.classList.contains('singing'), '기본값: 음악바가 뜨면 부르기 모드가 켜져야 한다');
 assert.equal(mpOtter.getAttribute('aria-pressed'), 'true');
-assert.match(mpBubble.textContent, /첫 소절이야~/, '켜지면 현재 싱크 가사를 부른다');
+assert.match(mpBubble.textContent, /첫 소절이야~/, '기본 켜짐 상태에서 현재 싱크 가사를 부른다');
 assert.ok(mpBubble.classList.contains('show'));
 
-// 재클릭 전까지 계속: 시간이 흘러 줄이 바뀌면 알아서 다음 줄을 부른다
+// 계속: 시간이 흘러 줄이 바뀌면 알아서 다음 줄을 부른다
 audio.currentTime = 5.2;
 await new Promise((r) => setTimeout(r, 300));
 assert.match(mpBubble.textContent, /둘째 소절이야~/, '부르기 모드가 유지되는 동안 다음 줄로 넘어가야 한다');
 assert.ok(mpBubble.classList.contains('show'), '부르는 동안 말풍선이 꺼지지 않는다');
 
-// 끄기: 다시 클릭 → 조용해진다
+// 끄기: 클릭 → 조용해진다
 mpOtter.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 await new Promise((r) => setTimeout(r, 80));
-assert.ok(!mpOtter.classList.contains('singing'), '재클릭하면 부르기 모드가 꺼져야 한다');
+assert.ok(!mpOtter.classList.contains('singing'), '클릭하면 부르기 모드가 꺼져야 한다');
 assert.equal(mpOtter.getAttribute('aria-pressed'), 'false');
 assert.ok(!mpBubble.classList.contains('show'), '끄면 말풍선이 사라진다');
 audio.currentTime = 1.2;
 await new Promise((r) => setTimeout(r, 300));
 assert.ok(!mpBubble.classList.contains('show'), '꺼진 뒤에는 가사를 따라 부르지 않는다');
 
-// 호버로는 부르지 않는다 (클릭 토글 전용)
+// 다시 켜기: 또 클릭 → 다시 부른다
+mpOtter.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+await new Promise((r) => setTimeout(r, 80));
+assert.ok(mpOtter.classList.contains('singing'), '다시 클릭하면 부르기 모드가 켜져야 한다');
+assert.equal(mpOtter.getAttribute('aria-pressed'), 'true');
+assert.match(mpBubble.textContent, /첫 소절이야~/, '다시 켜면 현재 싱크 가사를 부른다');
+
+// 호버로는 부르지 않는다 (클릭 토글 전용) — 꺼진 상태에서 호버해도 켜지지 않는다
+mpOtter.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));   // 먼저 끈다
+await new Promise((r) => setTimeout(r, 80));
+assert.ok(!mpOtter.classList.contains('singing'), '끈 상태를 확인한다');
 mpOtter.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }));
 mpOtter.dispatchEvent(new window.MouseEvent('mouseenter'));
 await new Promise((r) => setTimeout(r, 250));

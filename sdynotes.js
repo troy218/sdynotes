@@ -27130,7 +27130,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var pl=$('musicPlayer');
     // 18.5 · 싱크 가사 따라 부르기는 '호버'가 아니라 '클릭 토글'이다.
     //   한 번 누르면 다시 누를 때까지 계속 부른다.
-    var mpSingOn=false;
+    // 14.23.x · 기본값은 '켜짐' — 하단 바가 뜨면 곧바로 따라 부른다.
+    //   클릭으로 끄면 다시 클릭할 때까지 꺼져 있다(아래 초기 상태 세팅이 켜짐 값).
+    var mpSingOn=true;
 
     // 말풍선 보여주기 (show 클래스 + 타이머로 자동 숨김)
     function speak(bubble,text,dur){
@@ -27236,13 +27238,40 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       '역시 너야! 해돌~'
     ];
     var editor=$('editorView');
+    // 14.23.x · AI 말풍선(#aiSay)·대화기록(#aiHist)이 떠 있으면 노래/아이디어
+    //   작은 말풍선(#noteOtterBubble)을 띄우지 않는다 — 둘 다 해돌이 머리 위에
+    //   붙어 있어 겹쳐 보인다. AI 창이 열려 있는 동안에는 조용히.
+    function noteAiOpen(){
+      var say=document.getElementById('aiSay'), h=document.getElementById('aiHist');
+      return (say&&!say.hidden)||(h&&!h.hidden);
+    }
+    function noteBubbleTry(t,dur){
+      if(noteAiOpen()) return;                    // AI 창이 떠 있으면 겹침 방지 — 조용히
+      speak(noteBub,t,dur);
+    }
+    function hideNoteBubble(){
+      if(noteBub){
+        if(noteBub._t) clearTimeout(noteBub._t);
+        noteBub.classList.remove('show');
+      }
+    }
     if(note&&noteBub){
       // 아이디어 한마디도 클릭이 아니라 호버에 맞춰 나온다 (클릭은 대화기록 몫)
-      note.addEventListener('mouseenter',function(){ speak(noteBub,pick(NOTE_TAP),1800); });
+      note.addEventListener('mouseenter',function(){ noteBubbleTry(pick(NOTE_TAP),1800); });
       setInterval(function(){
         if(editor&&!editor.classList.contains('open')) return;  // 편집기가 닫혀 있으면 조용히
-        speak(noteBub,pick(NOTE_IDLE),2400);
+        noteBubbleTry(pick(NOTE_IDLE),2400);
       }, 16000);
+      // AI 말풍선/대화기록이 열리는 순간, 떠 있던 작은 말풍선을 바로 접는다.
+      //   (안 그러면 둘이 겹쳐 보이고, 호버 말풍선이 어색하게 남는다)
+      if(typeof MutationObserver!=='undefined'){
+        ['aiSay','aiHist'].forEach(function(id){
+          var el=document.getElementById(id);
+          if(el) new MutationObserver(function(){
+            if(!el.hidden) hideNoteBubble();
+          }).observe(el,{attributes:true,attributeFilter:['hidden']});
+        });
+      }
     }
 
     // ── 노래 해돌이 ──
@@ -27268,6 +27297,13 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       mpRoot.addEventListener('keydown',function(e){
         if(e.key==='Enter'||e.key===' '){ e.preventDefault(); mpToggleSing(); }
       });
+      // 14.23.x · 기본값 켜짐 — 해돌이가 노래하는 모습(singing 클래스)과
+      //   aria-pressed 를 초기 상태부터 맞춰 준다. 여기서는 말풍선을 띄우지
+      //   않고(mpVisible() 전) 상태만 세팅하고, 실제 가사는 아래 13초/120ms
+      //   주기 루프가 곡이 시작되면 알아서 부른다.
+      mpSingOn=true;
+      mpRoot.classList.add('singing');
+      try{ mpRoot.setAttribute('aria-pressed','true'); }catch(e){}
     }
     if(mp&&pl){
       setInterval(function(){

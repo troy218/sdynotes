@@ -114,19 +114,47 @@ const AI_PROVIDER_DEFAULT_URL = 'https://api.openai.com/v1';
 const AI_PROVIDER_DEFAULT_MODEL = 'gpt-4o-mini';
 
 // .env → 공급사 목록. 키가 실제로 있는 것만 살려 둔다(빈 키로 401 을 맞지 않게).
+//
+// 같은 키로 '모델 여러 개'를 걸어 두고 싶으면 <이름>_MODELS 콤마 목록을 쓴다.
+//   GEMINI_MODELS=gemini-3.5-flash,gemini-3.1-flash-lite,gemini-3.5-flash-lite
+// 무료 티어는 모델마다 하루 한도가 따로라, 하나가 429 를 주면 체인이 **같은 키로**
+// 다음 모델로 넘어간다(그래야 '한도에 걸려도 자동으로 다음 모델'처럼 보인다).
+// 단일 <이름>_MODEL 보다 <이름>_MODELS 가 우선한다. manual 은 AI_MODELS / AI_MODEL.
 export function aiProvidersFromEnv(env = process.env) {
   const read = (k) => String(env[k] || '').trim();
   const out = [];
-  const push = (name, key, url, model) => {
-    if (!key) return;
-    out.push({
-      name, key,
-      url: String(url || AI_PROVIDER_PRESETS[name]?.url || AI_PROVIDER_DEFAULT_URL).replace(/\/+$/, ''),
-      model: model || AI_PROVIDER_PRESETS[name]?.model || AI_PROVIDER_DEFAULT_MODEL,
-    });
+  const seen = new Set();
+
+  // 모델 후보 목록. <NAME>_MODELS(콤마) → <NAME>_MODEL → 프리셋 기본.
+  const modelCandidates = (name, manual = false) => {
+    if (manual) {
+      const list = read('AI_MODELS').split(',').map((s) => s.trim()).filter(Boolean);
+      if (list.length) return list;
+      const single = read('AI_MODEL');
+      return single ? [single] : [AI_PROVIDER_DEFAULT_MODEL];
+    }
+    const list = read(`${name.toUpperCase()}_MODELS`).split(',').map((s) => s.trim()).filter(Boolean);
+    if (list.length) return list;
+    const single = read(`${name.toUpperCase()}_MODEL`);
+    return single ? [single] : [AI_PROVIDER_PRESETS[name]?.model || AI_PROVIDER_DEFAULT_MODEL];
   };
+
+  // 하나의 (키, url) 아래에서 모델 목록만큼 체인 항목을 만든다.
+  const push = (name, key, url, models) => {
+    if (!key) return;
+    const baseUrl = String(url || AI_PROVIDER_PRESETS[name]?.url || AI_PROVIDER_DEFAULT_URL).replace(/\/+$/, '');
+    for (const model of models) {
+      const p = { name, key, url: baseUrl, model };
+      const k = `${p.key}|${p.url}|${p.model}`;   // 같은 키+url+model 은 하나만
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(p);
+    }
+  };
+
   // ① 수동 지정이 있으면 그게 1순위 (예전 AI_KEY/AI_BASE_URL/AI_MODEL 그대로 동작)
-  push(read('AI_PROVIDER') || 'manual', read('AI_KEY'), read('AI_BASE_URL'), read('AI_MODEL'));
+  const manualKey = read('AI_KEY');
+  if (manualKey) push(read('AI_PROVIDER') || 'manual', manualKey, read('AI_BASE_URL'), modelCandidates('manual', true));
   // ② AI_PROVIDERS 로 여러 개를 순서대로
   const added = new Set();
   for (const raw of read('AI_PROVIDERS').split(',')) {
@@ -135,7 +163,7 @@ export function aiProvidersFromEnv(env = process.env) {
     const preset = AI_PROVIDER_PRESETS[name];
     if (!preset) continue;
     const key = read(preset.keyEnv) || (name === 'ollama' ? preset.placeholderKey : '');
-    push(name, key, read(`${name.toUpperCase()}_BASE_URL`), read(`${name.toUpperCase()}_MODEL`));
+    push(name, key, read(`${name.toUpperCase()}_BASE_URL`), modelCandidates(name));
     added.add(name);
   }
   // ③ 프리셋 키만 있어도 자동으로 붙는다 (AI_PROVIDERS 를 안 적어도 됨).
@@ -143,16 +171,10 @@ export function aiProvidersFromEnv(env = process.env) {
   //    경우 '덮어쓴 것 + 프리셋 기본값' 두 벌이 잡혀 같은 공급사를 두 번 때린다.
   for (const [name, preset] of Object.entries(AI_PROVIDER_PRESETS)) {
     if (name === 'ollama' || added.has(name)) continue;   // 로컬은 명시한 경우에만
-    push(name, read(preset.keyEnv), read(`${name.toUpperCase()}_BASE_URL`), read(`${name.toUpperCase()}_MODEL`));
+    push(name, read(preset.keyEnv), read(`${name.toUpperCase()}_BASE_URL`), modelCandidates(name));
   }
-  // 같은 키+url+model 이 두 번 들어오면 하나만 남긴다
-  const seen = new Set();
-  return out.filter((p) => {
-    const k = `${p.key}|${p.url}|${p.model}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+
+  return out;
 }
 
 export const AI_PROVIDERS = aiProvidersFromEnv();
