@@ -105,7 +105,7 @@ calls = [];
 extFetch = (u) => u.startsWith('https://api.groq.com')
   ? new Response('rate limited', { status: 429 })
   : chatOk('Gemini 가 답했어요');
-let r = await post({ task: 'summarize', text: '폴백 테스트 본문' });
+let r = await post({ task: 'outline', text: '폴백 테스트 본문' });
 ok('1차(Groq) 429 → 2차(Gemini)로 폴백해 성공', r.ok === true && r.text === 'Gemini 가 답했어요');
 ok('응답에 실제로 답한 공급사·모델이 담긴다', r.provider === 'gemini' && r.model === 'gemini-2.5-flash',
   JSON.stringify({ p: r.provider, m: r.model }));
@@ -119,7 +119,7 @@ ok('각자 자기 키를 헤더로만 보냈다', calls[0].auth === 'Bearer gsk-
 ai.aiCacheReset();
 calls = [];
 extFetch = () => chatOk('두번째 답');
-r = await post({ task: 'summarize', text: '쿨다운 건너뛰기 본문' });
+r = await post({ task: 'outline', text: '쿨다운 건너뛰기 본문' });
 ok('429 맞은 공급사는 쿨다운 동안 건너뛴다', r.ok === true && calls.length === 1
   && calls[0].url.startsWith('https://generativelanguage.googleapis.com'));
 
@@ -127,24 +127,24 @@ ok('429 맞은 공급사는 쿨다운 동안 건너뛴다', r.ok === true && cal
 ai.aiCacheReset(); ai.aiCooldownReset();
 calls = [];
 extFetch = () => new Response('rl', { status: 429 });
-r = await post({ task: 'summarize', text: '전부 막힘 본문' });
+r = await post({ task: 'outline', text: '전부 막힘 본문' });
 ok('전부 429 → 429 + limited + retry_after', r.status === 429 && r.limited === true && Number(r.retry_after) >= 1);
 ok('둘 다 때려 보고 나서 거절했다', calls.length === 2);
 extFetch = () => chatOk('부르면 안 되는 호출');
-r = await post({ task: 'summarize', text: '전부 쿨다운 중 본문' });
+r = await post({ task: 'outline', text: '전부 쿨다운 중 본문' });
 ok('전부 쉬는 중엔 외부 호출 0번', r.status === 429 && calls.length === 2);
 
 // ── 4) 전부 쉬는 중에도 캐시가 있으면 그것으로 답한다 ────────────────────────
 ai.aiCacheReset(); ai.aiCooldownReset();
 calls = [];
 extFetch = () => chatOk('캐시될 답');
-r = await post({ task: 'summarize', text: '캐시+쿨다운 본문' });
+r = await post({ task: 'outline', text: '캐시+쿨다운 본문' });
 ok('미리 캐시를 채운다', r.ok === true && r.provider === 'groq' && calls.length === 1);
 extFetch = () => new Response('rl', { status: 429 });
-await post({ task: 'summarize', text: '쿨다운을 거는 다른 본문' });   // 두 공급사 다 429
+await post({ task: 'outline', text: '쿨다운을 거는 다른 본문' });   // 두 공급사 다 429
 extFetch = () => chatOk('부르면 안 되는 호출');
 calls = [];
-r = await post({ task: 'summarize', text: '캐시+쿨다운 본문' });
+r = await post({ task: 'outline', text: '캐시+쿨다운 본문' });
 ok('전부 쿨다운이어도 캐시로 답한다 (외부 호출 0번)',
   r.ok === true && r.cached === true && r.text === '캐시될 답' && calls.length === 0);
 
@@ -152,7 +152,7 @@ ok('전부 쿨다운이어도 캐시로 답한다 (외부 호출 0번)',
 ai.aiCacheReset(); ai.aiCooldownReset();
 calls = [];
 extFetch = () => new Response('bad key', { status: 401 });
-r = await post({ task: 'summarize', text: '키 오류 체인 본문' });
+r = await post({ task: 'outline', text: '키 오류 체인 본문' });
 ok('401 은 limited 아님 → 502', r.status === 502 && r.limited === false);
 ok('401 이면 두 공급사 모두 확인한다', calls.length === 2);
 

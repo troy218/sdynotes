@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 14.22.0 · '가짜 모델 API' — 노트 해돌이를 키 없이 미리 보려고
+// 14.23.0 · '가짜 모델 API' — 노트 해돌이를 키 없이 미리 보려고
 // ---------------------------------------------------------------------------
 //   OpenAI 호환 /v1/chat/completions 만 흉내 낸다. 스트림(stream:true) 도
 //   진짜처럼 조각을 흘려 보내서, 해돌이가 '말하는' 모습까지 그대로 확인된다.
@@ -26,6 +26,8 @@ const readBody = (req) => new Promise((res) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 노트 본문을 대충 읽어 '그럴듯한' 답을 만든다 — 모델이 아니라 그냥 문장 조립.
+// 14.23.0 · 서버 task 는 두 가지 — 개요 정리(outline)와 질문(chat).
+//   chat 프롬프트는 [[note]] / [[free]] 판단 표식을 요구하므로 흉내 답도 붙여 준다.
 function fakeAnswer(messages = []) {
   const sys = String(messages.find((m) => m.role === 'system')?.content || '');
   const user = String(messages.find((m) => m.role === 'user')?.content || '');
@@ -34,21 +36,23 @@ function fakeAnswer(messages = []) {
   const body = note || question;
   const sentences = body.split(/(?<=[.!?다요]\s)|\n+/).map((s) => s.trim()).filter(Boolean);
   const head = sentences.slice(0, 3).join(' ') || body.slice(0, 60);
-  if (/개조식/.test(sys)) {
-    const items = (sentences.length ? sentences : [body]).slice(0, 5)
-      .map((s) => '- ' + s.replace(/^- /, '').slice(0, 40));
-    return items.join('\n');
+  if (/개요\(목차\) 형식/.test(sys)) {
+    if (!note) return '정리할 내용이 부족해요';
+    const topics = (sentences.length ? sentences : [body]).slice(0, 4);
+    return topics.map((t, i) => (i + 1) + '. ' + t.replace(/^[-\d.\s]+/, '').slice(0, 24)
+      + '\n  - ' + t.slice(0, 36)).join('\n');
   }
-  if (/질문에 짧고 정확하게|노트 본문에만 근거해/.test(sys)) {
-    if (!note) return '노트에는 없는 내용이에요.';
-    if (/없|모르/.test(body)) return '노트에는 없는 내용이에요.';
-    return '노트를 보면 ' + head.slice(0, 90) + ' — 여기까지 적혀 있어요. 해돌~';
-  }
-  if (/자유 질문|글쓰기 도우미/.test(sys)) {
-    return '질문 고마워요! ' + (question ? `"${question.slice(0, 30)}" 는 ` : '')
+  if (/판단 표식/.test(sys)) {
+    // 노트 글자가 질문에 겹치면 노트 질문[[note]], 아니면 자유 질문[[free]] 인 척
+    const overlap = note && question
+      && question.split(/\s+/).some((w) => w.length >= 2 && note.includes(w.replace(/[??.!,]/g, '')));
+    if (overlap) {
+      if (/없|모르/.test(body)) return '[[note]]\n노트에는 없는 내용이에요.';
+      return '[[note]]\n노트를 볼면 ' + head.slice(0, 90) + ' — 여기까지 적혀 있어요. 해돌~';
+    }
+    return '[[free]]\n질문 고마워요! ' + (question ? '"' + question.slice(0, 30) + '" 는 ' : '')
       + '지금 노트 흐름대로면 핵심을 먼저 적고 근거를 붙이는 게 좋아요. 해돌~';
   }
-  // 요약
   return head.slice(0, 220) + (body.length > 220 ? ' …' : '') + ' — 이 노트는 이런 이야기네요. 해돌~';
 }
 
