@@ -94,6 +94,11 @@ check('HTML: 이 페이지·전체 페이지 버튼이 질문칸(#aiQ)보다 먼
   && html.indexOf('id="aiOutlinePage"') < html.indexOf('id="aiQ"')
   && html.indexOf('id="aiOutlineDoc"') < html.indexOf('id="aiQ"')
   && !/id="aiOutline"/.test(html));
+check('HTML: 두 버튼은 \'개조식 요약\' 문구 바로 아래에 한 덩어리로 있다',
+  html.indexOf('개조식 요약') >= 0
+  && html.indexOf('개조식 요약') < html.indexOf('id="aiOutlinePage"')
+  && html.indexOf('class="ai-outline-box"') < html.indexOf('class="ai-askbar-field"')
+  && /class="ai-outline-box"/.test(html) && /class="ai-outline-ttl"/.test(html));
 check('HTML: 해돌이는 호버=아이디어 · 클릭=대화기록이라고 안내한다',
   /커서를 올리면 아이디어 · 누르면 대화기록/.test(html));
 check('HTML: 검색창은 #noteOtter 옆(같은 편집기 구역)에 붙어 있다',
@@ -104,7 +109,10 @@ check('HTML: 말풍선(#aiSay)에 이름·딱지·닫기·멈추기·복사가 �
   && /id="aiStop"/.test(html) && /id="aiCopy"/.test(html) && /id="aiOut"/.test(html));
 check('HTML: 대화기록(#aiHist > #aiHistList)이 있다',
   /id="aiHist"/.test(html) && /id="aiHistList"/.test(html));
-check('HTML: placeholder 가 Enter 로 묻는다고 안내한다', /placeholder="[^"]*\(Enter\)"/.test(html));
+check('HTML: 검색창 안내 글씨는 한 줄 — (Enter) 없이, Enter 안내는 title·aria 로',
+  /placeholder="해돌이에게 물어보기…"/.test(html)
+  && !/placeholder="[^"]*\(Enter\)"/.test(html)
+  && /title="[^"]*Enter[^"]*"/.test(html) && /aria-label="[^"]*Enter[^"]*"/.test(html));
 check('HTML: 질문칸은 여러 줄로 자랄 수 있는 textarea 다',
   /<textarea id="aiQ"/.test(html) && !/<input[^>]*id="aiQ"/.test(html));
 check('프런트: 질문이 길면 옆으로, 여러 줄이면 위로 자란다 (aiQGrow)',

@@ -13,7 +13,9 @@
      ⑤ Ctrl+클릭으로 두 상자를 함께 고르면 서식이 두 상자 모두에 칠해진다
      ⑥ 방향키로 상자(들)를 옮기고, 손잡이를 끌어 크기를 조절한다
      ⑦ Delete 로 지운 상자는 Ctrl+Z 로 되살아나고, 잠긴 상자는 지워지지 않는다
-     ⑧ Ctrl+S 로 강제 저장하면 서버(메모)까지 그대로 저장된다 */
+     ⑧ Ctrl+S 로 강제 저장하면 서버(메모)까지 그대로 저장된다
+     ⑨ 해돌이 검색창(#aiQ)에 포커스가 있으면 노트 단축키(Ctrl+A·Delete·Ctrl+Z)는
+        접히고, 입력칸 밖에서는 예전대로 노트를 다룬다 */
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
@@ -451,6 +453,44 @@ try {
       && t1?.align === 'center' && t1?.font === 'jua' && t1?.fontSize === 22);
     check('첫 상자의 이동·리사이즈 결과가 서버에 남는다', t1?.w === 320 && t1?.h === 110);
     check('두 번째 상자의 글자색도 서버에 남는다', (second?.html || '').includes('211, 84, 0'));
+  }
+
+  // ── ⑨ 해돌이 검색창(#aiQ)에 포커스가 있으면 노트 단축키는 접힌다 ────────
+  //   예전엔 해돌이와 이야기하다 Ctrl+A 를 누르면 칸 안의 글이 아니라 노트 전체가
+  //   선택되고, Delete 는 고른 요소를 지우고, Ctrl+Z 는 노트를 되돌렸다.
+  //   편집기 keydown 의 '바깥 입력칸' 가드가 이걸 막는다 (Ctrl+S 는 예외).
+  {
+    const before = document.querySelectorAll('#pagesStage .tb').length;
+    const ask = document.getElementById('aiQ');
+    assert.ok(ask, '해돌이 검색창(#aiQ)이 있다');
+    ask.value = '해돌아 이 노트 요약해 줘';
+    ask.focus();
+    check('검색창에 포커스가 가면 activeElement 가 #aiQ 다', document.activeElement === ask);
+    const evA = new window.KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(evA);
+    await wait(150);
+    check('검색창에서 Ctrl+A 는 노트를 전체 선택하지 않는다',
+      evA.defaultPrevented === false && document.querySelectorAll('#pagesStage .msel').length === 0);
+    const evDel = new window.KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true });
+    document.dispatchEvent(evDel);
+    await wait(150);
+    check('검색창에서 Delete 는 노트 요소를 지우지 않는다',
+      evDel.defaultPrevented === false && document.querySelectorAll('#pagesStage .tb').length === before);
+    const evZ = new window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(evZ);
+    await wait(150);
+    check('검색창에서 Ctrl+Z 는 노트를 되돌리지 않는다',
+      evZ.defaultPrevented === false && document.querySelectorAll('#pagesStage .tb').length === before);
+    ask.blur();
+    blur(window);
+    const evA2 = new window.KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(evA2);
+    await wait(150);
+    check('입력칸 밖에서는 Ctrl+A 가 예전대로 노트 전체를 고른다',
+      evA2.defaultPrevented === true && document.querySelectorAll('#pagesStage .msel').length >= 2,
+      document.querySelectorAll('#pagesStage .msel').length);
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await wait(120);
   }
 
   const fatal = errors.filter(Boolean);
