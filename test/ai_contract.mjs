@@ -38,6 +38,7 @@ process.env.AI_MAX_TEXT = '500';   // config 가 최소 500 으로 올림(clamp)
 process.env.AI_MAX_TOKENS = '321';
 process.env.AI_CACHE_TTL_MS = '60000';
 process.env.AI_RATE_N = '200';   // 이 파일에선 레이트리밋을 사실상 끈다 (전용 파일에서 따로 검증)
+process.env.AI_WARM_N = '1';    // 14.22.0 · '미리 준비' 전용 한도는 1 로 — 13) 에서 검증
 process.env.AI_RATE_WINDOW_MS = '60000';
 process.env.AI_COOLDOWN_MS = '300';
 
@@ -124,11 +125,15 @@ ok('둘 다 같은 답변을 받는다', both[0].text === '동시 응답' && bot
 ai.aiCacheReset();
 calls = [];
 extFetch = (u, opts) => chatOk('ok');
-const long = '가'.repeat(900);
+const long = '가'.repeat(600) + '나'.repeat(300);   // 14.22.0 · 앞 70% + 뒤 30%
 r = await post('/api/ai/ask', { task: 'summarize', text: long });
 ok('긴 본문은 AI_MAX_TEXT(500) 만큼만 전송', r.ok === true && r.truncated === true && r.chars === 500);
-ok('전송된 본문도 500자 (501자 아님)', calls[0].body.messages[1].content.includes('가'.repeat(500))
-  && !calls[0].body.messages[1].content.includes('가'.repeat(501)));
+ok('긴 본문은 전체 길이를 따로 알려 준다', r.note_chars === 900, r.note_chars);
+// 앞 350자(가) + 뒤 150자(나) 를 살리고 가운데만 접는다 — '앞부분만' 보내지 않는다
+ok('긴 본문은 앞부분(350자)을 보낸다', calls[0].body.messages[1].content.includes('가'.repeat(350))
+  && !calls[0].body.messages[1].content.includes('가'.repeat(351)));
+ok('긴 본문은 뒷부분(150자)도 보낸다', calls[0].body.messages[1].content.includes('나'.repeat(150)));
+ok('가운데가 접혔다는 표시가 남는다', /가운데 \d+자를 접었어요/.test(calls[0].body.messages[1].content));
 r = await post('/api/ai/ask', { task: 'summarize', text: '가'.repeat(499) });
 ok('한도 안쪽이면 truncated=false', r.ok === true && r.truncated === false && r.chars === 499);
 
@@ -182,6 +187,98 @@ ai.aiCacheReset();
 extFetch = () => chatOk('   ');
 r = await post('/api/ai/ask', { task: 'summarize', text: '빈 응답 본문' });
 ok('모델이 빈 내용을 주면 502', r.status === 502 && r.ok === false);
+
+// ── 12) 14.22.0 · 스트리밍 — 말하는 대로 흘려 보낸다 ──
+ai.aiCacheReset(); ai.aiRateReset(); ai.aiCooldownReset();
+// 모델(OpenAI 호환) 이 흘려 보내는 SSE — data: {choices:[{delta:{content}}]} … [DONE]
+const openaiSse = (parts, size = 8) => {
+  const raw = parts.map((t) => `data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}\n\n`)
+    .join('') + 'data: [DONE]\n\n';
+  const bytes = Buffer.from(raw, 'utf8');
+  const stream = new ReadableStream({
+    start(c) {
+      for (let i = 0; i < bytes.length; i += size) c.enqueue(new Uint8Array(bytes.subarray(i, i + size)));
+      c.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+};
+const parseEvts = (text) => text.split('\n\n').filter(Boolean).map((blk) => {
+  const o = { event: '', data: null };
+  for (const ln of blk.split('\n')) {
+    if (ln.startsWith('event:')) o.event = ln.slice(6).trim();
+    else if (ln.startsWith('data:')) o.data = JSON.parse(ln.slice(5).trim());
+  }
+  return o;
+});
+const askStream = async (body) => {
+  const res = await fetch(BASE + '/api/ai/ask', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ stream: true }, body)),
+  });
+  const text = await res.text();
+  return { status: res.status, ctype: res.headers.get('content-type') || '', text, evts: parseEvts(text) };
+};
+
+calls = [];
+extFetch = () => openaiSse(['광합성은 ', '엽록체에서 ', '일어난다.']);
+let sr = await askStream({ task: 'summarize', text: '광합성 노트' });
+ok('스트림: SSE(text/event-stream) 로 답한다', sr.status === 200 && /text\/event-stream/.test(sr.ctype), sr.ctype);
+let deltas = sr.evts.filter((e) => e.event === 'delta');
+ok('스트림: 조각(delta) 이 여러 개로 흘러온다', deltas.length === 3, deltas.length);
+ok('스트림: 조각을 모으면 전체 문장이 된다',
+  deltas.map((e) => e.data.t).join('') === '광합성은 엽록체에서 일어난다.',
+  deltas.map((e) => e.data.t).join(''));
+let doneEvt = sr.evts.find((e) => e.event === 'done');
+ok('스트림: 마지막에 done(전체·공급사·모델) 을 준다',
+  Boolean(doneEvt) && doneEvt.data.text === '광합성은 엽록체에서 일어난다.'
+  && doneEvt.data.provider === 'manual', doneEvt && JSON.stringify(doneEvt.data));
+ok('스트림: 모델 요청도 stream:true 로 나간다', calls[0].body.stream === true);
+ok('스트림: 키가 응답에 절대 새지 않는다', !sr.text.includes(FAKE_KEY));
+
+// 두 번째(같은 질문) → 캐시에서 바로 흘려 보낸다(외부 호출 0번)
+calls = [];
+sr = await askStream({ task: 'summarize', text: '광합성 노트' });
+ok('스트림: 같은 질문은 외부 호출 없이 캐시로 흘려 보낸다', calls.length === 0
+  && (sr.evts.find((e) => e.event === 'done') || {}).data?.cached === true, calls.length);
+
+// 스트림 중 429 → error 이벤트(한도) 로 알린다
+ai.aiCacheReset(); ai.aiCooldownReset();
+calls = [];
+extFetch = () => new Response('rate limited', { status: 429 });
+sr = await askStream({ task: 'summarize', text: '스트림 429 본문' });
+let errEvt = sr.evts.find((e) => e.event === 'error');
+ok('스트림: 429 는 error 이벤트로 알린다(제한 초 포함)',
+  Boolean(errEvt) && errEvt.data.limited === true && Number(errEvt.data.retry_after) >= 1
+  && /제한|사용량/.test(errEvt.data.error || ''), errEvt && JSON.stringify(errEvt.data));
+ok('스트림: 429 도 SSE(200) 로 감싸서 내려준다', sr.status === 200);
+await new Promise((z) => setTimeout(z, 350));   // 쿨다운 만료
+
+// 스트림을 못 주는 공급사 → 알아서 한 방(JSON) 응답으로 떨어진다
+ai.aiCacheReset(); ai.aiCooldownReset();
+calls = [];
+extFetch = (u, opts) => (JSON.parse(opts.body).stream
+  ? chatOk('')                                  // 빈 스트림 → 못 준다
+  : chatOk('그냥 한 방으로 줄게요'));
+sr = await askStream({ task: 'summarize', text: '스트림 미지원 본문' });
+ok('스트림: 스트림을 못 주는 공급사는 한 방 응답으로 떨어진다',
+  (sr.evts.find((e) => e.event === 'done') || {}).data?.text === '그냥 한 방으로 줄게요',
+  sr.text.slice(0, 120));
+
+// ── 13) 14.22.0 · 미리 준비(warm) — 한도를 따로 센다 ──
+//   (AI_RATE_N=200 으로 리밋이 사실상 꺼진 이 파일에서 AI_WARN_N 만 1 로 둔다)
+ai.aiCacheReset(); ai.aiRateReset(); ai.aiCooldownReset();
+calls = [];
+extFetch = () => chatOk('미리 준비된 요약');
+r = await post('/api/ai/ask', { task: 'summarize', text: '미리 준비 본문', warm: true });
+ok('미리 준비: warm:true 요청도 똑같이 답한다', r.ok === true && r.text === '미리 준비된 요약');
+r = await post('/api/ai/ask', { task: 'bullets', text: '미리 준비 본문 둘', warm: true });
+ok('미리 준비: 두 번째는 전용 한도(AI_WARM_N=1)에 걸린다', r.status === 429 && r.limited === true, r.status);
+r = await post('/api/ai/ask', { task: 'summarize', text: '사용자가 직접 누른 본문' });
+ok('미리 준비: 준비 한도가 찼어도 사용자가 누른 요청은 막지 않는다', r.ok === true, r.status);
+r = await post('/api/ai/ask', { task: 'summarize', text: '미리 준비 본문' });
+ok('미리 준비: 준비해 둔 답은 그대로 캐시에서 나온다(외부 호출 0번)',
+  r.ok === true && r.cached === true && r.text === '미리 준비된 요약', r.cached);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 await app.close();

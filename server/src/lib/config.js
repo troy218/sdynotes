@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 // ⑤의 ?v= 를 안 올리면 → nginx 가 sdynotes.js/css 를 1년 immutable 로 캐싱하므로
 //   이미 접속한 브라우저가 옛 JS/CSS 를 1년 동안 계속 쓴다(조용히 깨진다).
 //   그래서 내리는 쪽이 아니라 '올리는' 쪽으로 맞춘다.
-export const APP_VERSION = '14.21.0';
+export const APP_VERSION = '14.22.0';
 export const SETTINGS_SCHEMA = 3;
 
 // ── 저장소 모드 ────────────────────────────────────────────────────────
@@ -160,13 +160,22 @@ export const AI_PROVIDERS = aiProvidersFromEnv();
 export const AI_KEY = AI_PROVIDERS[0]?.key || '';
 export const AI_BASE_URL = AI_PROVIDERS[0]?.url || AI_PROVIDER_DEFAULT_URL;
 export const AI_MODEL = AI_PROVIDERS[0]?.model || AI_PROVIDER_DEFAULT_MODEL;
-export const AI_MAX_TOKENS = Math.min(4000, Math.max(256, parseInt(process.env.AI_MAX_TOKENS || '900', 10)));
+// 14.22.0 · 답이 중간에 끊기지 않게 기본 출력 토큰을 넉넉히 (한국어는 토큰이 빨리 먹힌다)
+export const AI_MAX_TOKENS = Math.min(8000, Math.max(256, parseInt(process.env.AI_MAX_TOKENS || '1800', 10)));
 export const AI_TIMEOUT_MS = Math.max(5000, parseInt(process.env.AI_TIMEOUT_MS || '45000', 10));
-export const AI_MAX_TEXT = Math.max(500, parseInt(process.env.AI_MAX_TEXT || '12000', 10));   // 노트 본문 입력 한도(자)
+// 14.22.0 · 긴 노트도 '앞부분만' 보내지 않게 입력 한도를 크게 올린다.
+//   (한도를 넘으면 앞 70% + 뒤 30% 를 살려 보낸다 — routes/ai.js fitText)
+//   기본 3만 자 ≈ 한국어 1.5~2만 토큰. 모델·요금에 맞게 AI_MAX_TEXT 로 조절.
+export const AI_MAX_TEXT = Math.max(500, parseInt(process.env.AI_MAX_TEXT || '30000', 10));   // 노트 본문 입력 한도(자)
 export const AI_MAX_QUESTION = 600;
 export const AI_CACHE_TTL_MS = Math.max(0, parseInt(process.env.AI_CACHE_TTL_MS || '600000', 10));
 export const AI_RATE_N = Math.max(1, parseInt(process.env.AI_RATE_N || '12', 10));      // 창당 요청 수
 export const AI_RATE_WINDOW_MS = Math.max(1000, parseInt(process.env.AI_RATE_WINDOW_MS || '60000', 10));
+// 14.22.0 · '미리 준비해 두기'(warm) 전용 창 — 버튼을 누르기 전에 백그라운드로
+//   요약·개조식을 채워 두는 요청이다. 사용자가 직접 누른 요청과 한도를 섞지 않게
+//   따로 센다(절반). 0 으로 두면 미리 준비를 끈다.
+export const AI_WARM_N = Math.max(0, parseInt(process.env.AI_WARM_N
+  || String(Math.max(2, Math.floor(AI_RATE_N / 2))), 10));
 export const AI_COOLDOWN_MS = Math.max(0, parseInt(process.env.AI_COOLDOWN_MS || '60000', 10)); // 429 뒤 재시도 대기
 export const AI_READY = AI_PROVIDERS.length > 0;
 

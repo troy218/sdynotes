@@ -1,8 +1,14 @@
-# AI 노트 도우미 설정 (14.20.0)
+# AI 노트 도우미 설정 (14.20.0 · 14.22.0 부터 '노트 해돌이')
 
-왼쪽 아래 **✨ 버튼(음악 칩과 마주 보는 자리, 14.21.0 부터) → AI 패널**.
-할 일은 4가지: `요약` · `개조식 정리` · `노트 질문`(노트 본문에만 근거) ·
-`자유 질문`.
+**14.22.0 부터는 노트를 열어야만 만날 수 있다.** 노트 안 왼쪽 아래
+**해돌이(마스코트)** 를 누르거나, 노트가 열려 있을 때만 보이는 왼쪽 아래 **✨
+버튼**(14.21.0 부터 그 자리)을 누르면 패널이 열린다. **홈 화면에는 뜨지 않는다.**
+
+화면은 **해돌이가 말하는 말풍선**이다 — 답은 한 방에 뚝 떨어지지 않고 **말하듯
+흘러나온다**(SSE 스트림). 표정도 따라 바뀐다(말하는 중 윙크 → 다 말하면 웃음 →
+못 답하면 울상). 할 일은 4가지: `요약` · `개조식 정리` · `노트 질문`(노트
+본문에만 근거) · `자유 질문`. **요약·개조식은 노트를 여는 순간 미리 준비해
+두므로 버튼을 누르면 기다림 없이 바로 나온다.**
 
 **기본값은 '끔'이다.** 키가 하나도 없으면 `/api/ai/status` 가 `enabled:false` 를
 돌려주고, 버튼의 점이 주황으로 뜨고 패널에는 *'키가 아직 등록되지 않았어요'*
@@ -151,12 +157,30 @@ GROQ_API_KEY=gsk_...
 
 | 변수 | 기본 | 뜻 |
 |---|---|---|
-| `AI_MAX_TOKENS` | `900` | 응답 길이 상한 (256~4000 clamp) |
-| `AI_MAX_TEXT` | `12000` | 한 번에 보내는 노트 본문 길이(자). 넘으면 자르고 `truncated:true` |
-| `AI_TIMEOUT_MS` | `45000` | 모델 호출 타임아웃 |
+| `AI_MAX_TOKENS` | `1800` | 응답 길이 상한 (256~8000 clamp). 14.22.0 부터 900 → 1800 — 한국어 답이 중간에 끊기지 않게 |
+| `AI_MAX_TEXT` | `30000` | 한 번에 보내는 노트 본문 길이(자). 넘으면 **앞 70% + 뒤 30%** 를 살리고 가운데만 접는다 (`truncated:true`, `note_chars` 에 원본 길이) |
+| `AI_TIMEOUT_MS` | `45000` | 모델 호출 타임아웃 (스트림은 '전체' 시간) |
 | `AI_CACHE_TTL_MS` | `600000` | 같은 입력 캐시 유지 (0 = 끔) |
 | `AI_RATE_N` / `AI_RATE_WINDOW_MS` | `12` / `60000` | uid(없으면 ip)별 60초당 요청 수 |
+| `AI_WARM_N` | `AI_RATE_N/2` | 14.22.0 · '미리 준비'(`warm:true`) 전용 한도 — 사용자가 누른 요청과 섞이지 않는다 (0 = 미리 준비 끔) |
 | `AI_COOLDOWN_MS` | `60000` | 429/5xx 를 맞은 **그 공급사만** 쉬는 시간 |
+
+### 스트리밍 (14.22.0)
+
+`POST /api/ai/ask` 에 `stream:true` 를 주면 SSE 로 답한다.
+
+```
+event: meta   data: {"truncated":false,"chars":123,"note_chars":123,"cached":false}
+event: delta  data: {"t":"광합성은 "}          ← 모델이 만드는 대로 여러 번
+event: done   data: {"text":"...","provider":"gemini","model":"...","cached":false}
+event: error  data: {"ok":false,"limited":true,"retry_after":37,"error":"..."}
+```
+
+- 캐시에 있으면 `delta` 한 방 + `cached:true` — '누르면 바로 나오는' 그 경로다.
+- 스트림을 못 주는 모델(응답이 JSON 으로 오는 곳)이면 알아서 한 방으로 받는다.
+- 조각이 이미 나간 뒤에는 다른 공급사로 갈아타지 않는다(앞부분이 두 번 붙는 게
+  더 나쁘다).
+- 스트림도 캐시·in-flight·레이트리밋·공급사 체인을 그대로 탄다.
 
 ## 3) 동작 확인
 
@@ -171,6 +195,16 @@ curl -s -X POST localhost:5000/api/ai/ask \
   -H 'Content-Type: application/json' \
   -d '{"task":"summarize","text":"광합성은 엽록체에서 일어난다. ..."}'
 # → {"ok":true,"text":"...","provider":"groq","model":"...","cached":false}
+
+# 말하는 대로 보기 (스트림)
+curl -N -X POST localhost:5000/api/ai/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"task":"summarize","text":"광합성은 엽록체에서 일어난다. ...","stream":true}'
+
+# 키 없이 화면·스트림만 확인 (개발용 가짜 모델 — 실제 모델을 부르지 않는다)
+node test/mock_ai_provider.mjs &
+AI_PROVIDER=manual AI_KEY=demo AI_BASE_URL=http://127.0.0.1:5399/v1 \
+  AI_MODEL=mock-haedori-1 PORT=5000 node server/src/index.js
 ```
 
 - `enabled:false` → `.env` 의 키와 서비스 재시작 확인.
@@ -189,7 +223,10 @@ curl -s -X POST localhost:5000/api/ai/ask \
 - **공급사별 쿨다운** — 한 곳이 429 를 맞으면 그 곳만 쉬고 나머지는 계속 쓴다.
   401/404 는 설정 문제라 쿨다운을 걸지 않는다.
 - **레이트리밋** — 로그인은 uid, 비로그인은 ip 로 계산.
-- **본문 길이 상한** — 긴 문서도 상한만큼만 잘라 보낸다.
+- **본문 길이 상한** — 긴 문서도 상한만큼만 보낸다. 14.22.0 부터는 **앞 70% +
+  뒤 30%** 를 살리므로 '앞부분만 읽고 답하는' 일이 없다(가운데만 접는다).
+- **미리 준비(warm) 는 전용 한도** — 요약·개조식을 백그라운드로 준비하는 요청은
+  `AI_WARM_N` 창을 따로 쓴다. 한도가 차도 사용자가 직접 누른 요청은 막지 않는다.
 
 ## 5) 테스트
 
@@ -198,12 +235,14 @@ npm run test:ai
 ```
 
 - `test/ai_contract.mjs` — 요청 모양(키가 헤더에만)·task 화이트리스트·캐시·
-  in-flight·길이 상한·429 쿨다운·401 처리 (31 검사)
+  in-flight·길이 상한(앞 70%+뒤 30%)·429 쿨다운·401 처리 + **SSE 스트림·스트림
+  캐시·스트림 429·미리 준비 한도 분리** (54 검사)
 - `test/ai_providers_contract.mjs` — `.env` 해석·프리셋 URL/모델·자동 감지·중복
-  제거·Ollama·**429 폴백**·전부 쿨다운 시 캐시 응답 (24 검사)
+  제거·Ollama·**429 폴백**·전부 쿨다운 시 캐시 응답 (25 검사)
 - `test/ai_ratelimit_contract.mjs` — 사용량 한도 (6 검사)
 - `test/ai_frontend_contract.mjs` — 소스 계약 + jsdom 에서 패널을 실제로 열고
-  실행해 `/api/ai/ask` 를 부르는지 (50 검사)
+  실행해 `/api/ai/ask` 를 부르는지 + **말하는 중 조각 관찰 · Enter(한글 조합
+  포함) · 미리 준비 즉시 응답 · 노트 밖(홈)에서는 숨김** (92 검사)
 
 ## 6) 파일 위치
 
@@ -211,6 +250,7 @@ npm run test:ai
 |---|---|
 | `server/src/routes/ai.js` | 라우트·프롬프트·공급사 체인·캐시·레이트리밋 (본체) |
 | `server/src/lib/config.js` | `AI_*` 설정 + `aiProvidersFromEnv()` (`.env` 에서만) |
-| `sdynotes.js` (끝부분) | AI 패널 IIFE + `window.__sdyAiBridge` (노트 글 추출) |
-| `sdynotes.html` (본문 끝) | `#aiFab` · `#aiPanel` 마크업 |
+| `sdynotes.js` (끝부분) | 노트 해돌이 IIFE + `window.__sdyAiBridge` (노트 글 추출) |
+| `sdynotes.html` (본문 끝) | `#aiFab` · `#aiPanel` · 해돌이 말풍선(`#aiSay`) 마크업 |
+| `test/mock_ai_provider.mjs` | 14.22.0 · 키 없이 화면·스트림을 보는 가짜 모델 API |
 | `sdynotes.css` (모바일 최종 블록 앞) | `.ai-*` 스타일 (기존 변수 사용 → 다크모드 자동) |

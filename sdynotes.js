@@ -27838,7 +27838,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 })();
 
 /* ══════════════════════════════════════════════════════════════════════
-   14.20.0 · AI 노트 도우미 (요약 · 개조식 · 노트 질문 · 자유 질문)
+   14.22.0 · 노트 해돌이 — AI 노트 도우미 (요약 · 개조식 · 노트 질문 · 자유 질문)
    ─────────────────────────────────────────────────────────────────────
    · 모델 키는 여기에 없다. 브라우저는 /api/ai/ask 만 부르고, 키·프롬프트는
      server/src/routes/ai.js 가 들고 있다 (OpenAI 호환 게이트웨이로 나간다).
@@ -27846,6 +27846,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      없어서, '아레나에 붙이기' 대신 '모델 API 에 붙이기'로 갔다.
    · 노트 글은 window.__sdyAiBridge(편집기 스코프)가 꺼내 준다 — 여기서 문서
      구조를 직접 건드리지 않는다.
+   · 홈 화면에는 없다. 노트(편집기)가 열려 있을 때만 해돌이가 나타난다 —
+     노트 안 왼쪽 아래 해돌이(#noteOtter) 를 누르거나, 그때만 보이는
+     둥근 버튼(#aiFab) 을 누르면 이 패널이 열린다.
+   · 말하는 대로: stream:true 로 부르면 서버가 SSE 로 조각을 흘려 보내고,
+     화면은 해돌이 말풍선에 글자를 한 글자씩 붙인다. 스트림을 못 쓰는
+     서버·환경이면 알아서 JSON 한 방으로 떨어진다.
+   · 요약·개조식은 노트를 여는 순간 '미리 준비(warm)' 해 둔다. 버튼을 누르면
+     준비된 답이 그 자리에서 바로 나온다(기다림 0 · 외부 호출 0).
    · 서버가 429(제한)를 주면 retry_after 만큼 기다렸다가 '다시 시도'를 낸다.
    ══════════════════════════════════════════════════════════════════════ */
 (function(){
@@ -27857,6 +27865,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
              {id:'ask',label:'노트 질문'},{id:'free',label:'자유 질문'}];
   // 질문란이 필요한 일. 요약·개조식은 노트만 있으면 된다.
   var NEEDQ={ask:1,free:1};
+  // 누르기 전에 미리 준비해 둘 수 있는 일(질문이 없어야 준비가 가능하다).
+  var WARM={summarize:1,bullets:1};
+  var WARM_MIN=40;      // 이보다 짧은 노트는 준비하지 않는다(의미 없는 호출 방지)
+  var WARM_MAX=40;      // 한 페이지에서 준비하는 최대 횟수
   var task='summarize', ctl=null, enabled=false, lastText='';
 
   function paintTasks(){
@@ -27875,18 +27887,47 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     Array.prototype.forEach.call(document.querySelectorAll('.ai-task'),function(b){
       b.classList.toggle('on',b.dataset.task===id);
     });
-    var q=$('aiQ');
+    var q=$('aiQ'), f=$('aiAskField'), go=$('aiGo');
     if(q){
       q.classList.toggle('hide',!NEEDQ[id]);
-      q.placeholder=(id==='free')?'무엇이든 물어보세요…'
-        :(id==='ask'?'노트에 대해 물어보기…':'');
+      q.placeholder=(id==='free')?'무엇이든 물어보세요… (Enter 로 바로)'
+        :(id==='ask'?'노트에 대해 물어보기… (Enter 로 바로)':'');
+    }
+    if(f) f.classList.toggle('noq',!NEEDQ[id]);      // 질문칸이 없으면 버튼이 칸을 채운다
+    if(go&&!ctl){
+      var t=go.querySelector('.ai-go-t');
+      if(t) t.textContent=NEEDQ[id]?'물어보기':'실행';
+    }
+    meta(readyMeta(id));
+    if(NEEDQ[id]&&q){
+      var p=$('aiPanel');
+      if(p&&!p.hidden) q.focus();
     }
   }
   function meta(t){ var m=$('aiMeta'); if(m) m.textContent=t||''; }
-  function out(t,cls){
-    var o=$('aiOut'); if(!o) return;
-    o.textContent=(t==null?'':String(t));
+  // 해돌이 표정 — 말풍선 옆 얼굴이 상황에 따라 바뀐다(해돌이 스쿼드 공유 표정)
+  var FACE={idle:'om-m-f-idle',think:'om-m-f-wink',happy:'om-m-f-happy',sad:'om-m-f-sad-mini'};
+  var faceNow='';
+  function otterFace(mood){
+    var n=FACE[mood]||FACE.idle;
+    if(n===faceNow) return;
+    faceNow=n;
+    var u=$('aiSayFace'); if(!u) return;
+    try{
+      u.setAttribute('href','#'+n);
+      u.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href','#'+n);
+    }catch(e){}
+  }
+  function out(t,cls,mood){
+    var o=$('aiOut'), say=$('aiSay'), ty=$('aiTyping');
+    if(!o) return;
+    var s=(t==null?'':String(t));
+    o.textContent=s;
     o.classList.toggle('busy',!!cls);
+    // 말풍선은 '글이 있거나 생각 중일 때' 만 — 빈 패널에 빈 버블이 뜨지 않게
+    if(say) say.hidden=!(s||cls);
+    if(ty) ty.hidden=!(cls&&!s);                     // 첫 글자 오기 전: 점 세 개
+    otterFace(mood||(cls?'think':'happy'));
   }
   function busy(on){
     var go=$('aiGo'), st=$('aiStop'), cp=$('aiCopy');
@@ -27895,7 +27936,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       // '생각 중' 끝나도 다시 켜지 않게 !enabled 을 함께 본다.
       go.disabled=on||!enabled;
       var t=go.querySelector('.ai-go-t');
-      if(t) t.textContent=on?'생각 중…':'실행';
+      if(t) t.textContent=on?'생각 중…':(NEEDQ[task]?'물어보기':'실행');
       var ic=go.querySelector('i');
       if(ic) ic.className=on?'ri-loader-4-line ai-go-spin':'ri-sparkling-2-fill';
     }
@@ -27907,29 +27948,201 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   function token(){
     try{ return (window.__sdyAuthState&&window.__sdyAuthState.token)||''; }catch(e){ return ''; }
   }
-  function noteText(){
+  function noteText(scope){
     try{
-      var scope=($('aiScope')&&$('aiScope').checked)?'page':'doc';
+      var sc=scope||(($('aiScope')&&$('aiScope').checked)?'page':'doc');
       if(window.__sdyAiBridge&&typeof window.__sdyAiBridge.text==='function'){
-        return String(window.__sdyAiBridge.text(scope)||'');
+        return String(window.__sdyAiBridge.text(sc)||'');
       }
     }catch(e){}
     return '';
   }
+  function inNote(){
+    var ev=$('editorView');
+    return !ev||ev.classList.contains('open');       // 편집기가 없으면(=테스트/구버전) 노트 안으로 본다
+  }
+  function syncFab(){
+    var f=$('aiFab'), p=$('aiPanel');
+    if(!f) return;
+    var note=inNote();
+    var show=note&&!(p&&!p.hidden);                  // 노트 밖(홈)에서는 아예 숨는다
+    f.classList.toggle('in-note',note);              // 노트 안 = 해돌이 옆 자리
+    f.classList.toggle('hide',!show);
+    try{ f.setAttribute('aria-hidden',show?'false':'true'); f.tabIndex=show?0:-1; }catch(e){}
+  }
+  function scrollTail(){
+    var b=$('aiBody'); if(!b) return;
+    try{ b.scrollTop=b.scrollHeight; }catch(e){}
+  }
+  // 해돌이(노트 속 해달) 작은 말풍선으로도 한마디 — 패널을 닫아도 남는다
+  function otterLine(t){
+    var b=$('noteOtterBubble'); if(!b||!t) return;
+    b.textContent=String(t);
+    b.classList.add('show');
+    if(b._t) clearTimeout(b._t);
+    b._t=setTimeout(function(){ b.classList.remove('show'); },2600);
+  }
+  function shortLine(s){
+    var t=String(s||'').replace(/\s+/g,' ').trim();
+    if(!t) return '';
+    return '해돌~ '+(t.length>32?(t.slice(0,32)+'…'):t);
+  }
+  function tailMeta(d,t0){
+    var s=((d.provider?d.provider+' · ':'')+(d.model||'')+(d.cached?' · 캐시':'')
+      +(d.truncated?' · 긴 노트는 앞·뒤를 읽었어요':'')
+      +' · '+(((Date.now()-t0)/1000).toFixed(1))+'초');
+    return s;
+  }
+
+  /* ── 미리 준비(warm) — 요약·개조식을 노트를 여는 순간 슬쩍 만들어 둔다 ──
+     같은 노트(같은 글)로는 두 번 묻지 않는다. 준비된 답은 브라우저에도
+     들고 있어서, 버튼을 누르면 서버까지 갈 일 없이 그 자리에서 바로 나온다. */
+  var warmCache={}, warmPend={}, warmTimer=null, warmCount=0;
+  function hash(s){
+    var h=5381, str=String(s||'');
+    for(var i=0;i<str.length;i++) h=((h<<5)+h+str.charCodeAt(i))|0;
+    return (h>>>0).toString(36)+'-'+str.length;
+  }
+  function warmKey(t,txt){ return t+'|'+hash(txt); }
+  function warmGet(t,txt){ return warmCache[warmKey(t,txt)]||null; }
+  function warmSet(t,txt,v){
+    warmCache[warmKey(t,txt)]=v;
+    var ks=Object.keys(warmCache);
+    if(ks.length>24) delete warmCache[ks[0]];        // 오래된 것부터 버린다
+  }
+  function readyMeta(id){
+    if(!WARM[id]) return '';
+    var txt=noteText('doc');
+    if(!txt) return '';
+    var hit=warmGet(id,txt);
+    if(hit&&hit.text) return '미리 준비해 뒀어요 · 누르면 바로 나와요 해돌~';
+    return '';
+  }
+  function warmOne(t,txt){
+    if(!enabled||!txt) return Promise.resolve(null);
+    var k=warmKey(t,txt);
+    if(warmCache[k]||warmPend[k]) return Promise.resolve(warmCache[k]||null);
+    if(warmCount>=WARM_MAX) return Promise.resolve(null);
+    warmCount++; warmPend[k]=1;
+    return fetch('/api/ai/ask',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-sdy-auth':token()},
+      body:JSON.stringify({task:t,text:txt,question:'',warm:true})
+    }).then(function(r){ return r.json(); }).then(function(d){
+      delete warmPend[k];
+      if(d&&d.ok&&d.text){
+        warmSet(t,txt,{text:String(d.text),provider:d.provider||'',model:d.model||''});
+        if(task===t&&!ctl) meta(readyMeta(t));        // 열려 있으면 '준비됨' 을 알린다
+      }
+      return warmCache[k]||null;
+    }).catch(function(){ delete warmPend[k]; return null; });
+  }
+  function warmAll(){
+    if(!enabled||ctl) return;
+    if(!inNote()) return;
+    try{ if(document.visibilityState==='hidden') return; }catch(e){}
+    var txt=noteText('doc');
+    if(!txt||txt.length<WARM_MIN) return;
+    var q=['summarize','bullets'], i=0;
+    (function next(){
+      if(i>=q.length) return;
+      var t=q[i++], k=warmKey(t,txt);
+      if(warmCache[k]||warmPend[k]){ next(); return; }
+      warmOne(t,txt).then(next,next);                // 한 번에 하나씩 — 서버를 몰아치지 않게
+    })();
+  }
+  function scheduleWarm(delay){
+    if(warmTimer) clearTimeout(warmTimer);
+    warmTimer=setTimeout(function(){ warmTimer=null; warmAll(); },delay==null?900:delay);
+  }
+  // 테스트·디버그: 기다리지 말고 지금 바로 준비 / 준비해 둔 답 비우기
+  window.sdyAiWarmNow=function(){ warmAll(); };
+  window.sdyAiWarmReset=function(){ warmCache={}; warmPend={}; warmCount=0; };
+
+  /* ── 스트리밍 읽기 (SSE) ─────────────────────────────────────────────
+     서버가 event: meta/delta/done/error 로 흘려 보낸다. JSON 으로 오면
+     (검증 오류 400·503·429, 또는 스트림을 못 주는 서버) 그냥 그대로 읽는다. */
+  function readSSE(r,onDelta){
+    var ct='';
+    try{ ct=String((r.headers&&r.headers.get)?(r.headers.get('content-type')||''):''); }catch(e){}
+    if(r.status>=400||ct.indexOf('application/json')>=0
+       ||!(r.body&&typeof r.body.getReader==='function')){
+      return r.json().then(function(d){ return {status:r.status,d:d||{}}; },
+        function(){ return {status:r.status,d:{ok:false,error:'AI 답을 읽지 못했어요'}}; });
+    }
+    var reader=r.body.getReader(), dec=new TextDecoder(), buf='', got=null;
+    function evt(raw){
+      var ev='message', data='', ln=String(raw).split('\n');
+      for(var i=0;i<ln.length;i++){
+        var s=ln[i];
+        if(s.indexOf('event:')===0) ev=s.slice(6).trim();
+        else if(s.indexOf('data:')===0) data+=s.slice(5).trim();
+      }
+      if(!data) return;
+      var j=null; try{ j=JSON.parse(data); }catch(e){ return; }
+      if(!j) return;
+      if(ev==='delta'){ if(j.t) onDelta(String(j.t)); }
+      else if(ev==='done'){
+        got={status:200,d:{ok:true,status:200,text:String(j.text||''),provider:j.provider||'',
+          model:j.model||'',cached:!!j.cached,truncated:!!j.truncated,chars:j.chars||0}};
+      }else if(ev==='error'){
+        var st=Number(j.status||502)||502;
+        got={status:st,d:{ok:false,status:st,limited:!!j.limited,
+          error:String(j.error||'AI에 닿지 못했어요'),hint:String(j.hint||''),
+          retry_after:Number(j.retry_after||0)||0}};
+      }
+    }
+    function pump(){
+      if(got) return Promise.resolve(got);
+      return reader.read().then(function(ch){
+        if(ch.done) return got||{status:200,d:{ok:false,error:'AI 답이 끊겼어요 · 다시 시도해 주세요'}};
+        buf+=dec.decode(ch.value,{stream:true});
+        var i, guard=0;
+        while((i=buf.indexOf('\n\n'))>=0&&guard++<800){
+          evt(buf.slice(0,i)); buf=buf.slice(i+2);
+          if(got) break;
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }
+
+  // 패널을 열면 해돌이가 먼저 한마디 — 말풍선이 빈 채로 뜨지 않게
+  var HELLO=['노트 읽을 준비 됐어! 뭐부터 볼까 해돌~',
+             '요약이랑 개조식은 슬쩍 준비해 둘게. 눌러봐 해돌~',
+             '궁금한 게 있으면 아래에 적어 줘. 노트만 보고 답할게 해돌~',
+             '오늘 노트도 같이 읽어볼게! 해돌~'];
+  var HELLO_EMPTY='아직 글이 없네! 적고 나면 내가 바로 읽어줄게 해돌~';
+  function greet(){
+    if(lastText) return;
+    var t='';
+    try{ t=noteText('doc'); }catch(e){}
+    out(t?HELLO[Math.floor(Math.random()*HELLO.length)]:HELLO_EMPTY);
+    meta('');
+  }
 
   window.sdyAiOpen=function(){
     var p=$('aiPanel'), f=$('aiFab');
+    if(!inNote()){ if(window.toast) window.toast('노트를 열면 해돌이가 나타나요 해돌~',1700); return; }
     if(p) p.hidden=false;
     if(f) f.classList.add('hide');
+    greet();
     // 열 때마다 서버 상태를 다시 확인 — 키 등록(재시작) 후에 새로고침 없이도
     // 다음에 열 때 바로 '켜짐' 으로 바뀐다.
     refreshStatus();
-    var q=$('aiQ'); if(q&&NEEDQ[task]) q.focus();
+    scheduleWarm(500);
+    var q=$('aiQ'); if(q&&NEEDQ[task]&&!q.classList.contains('hide')) q.focus();
+    scrollTail();
   };
   window.sdyAiClose=function(){
-    var p=$('aiPanel'), f=$('aiFab');
+    var p=$('aiPanel');
     if(p) p.hidden=true;
-    if(f) f.classList.remove('hide');
+    syncFab();
+  };
+  window.sdyAiToggle=function(){
+    var p=$('aiPanel');
+    if(p&&!p.hidden) window.sdyAiClose(); else window.sdyAiOpen();
   };
   window.sdyAiStop=function(){ if(ctl){ try{ ctl.abort(); }catch(e){} } };
   window.sdyAiCopy=function(){
@@ -27953,46 +28166,63 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     // 자유 질문만 노트를 안 보낸다. 요약·개조식·노트 질문은 노트 본문이 필요하다
     // (서버도 free 를 빼면 needText:true 라 빈 본문은 400 으로 거른다).
     var txt=(task==='free')?'':noteText();
-    if(task!=='free'&&!txt){ out('열린 노트에 글이 없어요.',true); meta(''); return; }
-    if(NEEDQ[task]&&!q){ out('질문을 적어 주세요.',true); meta(''); return; }
+    if(task!=='free'&&!txt){ out('열린 노트에 글이 없어요.',true,'sad'); meta(''); return; }
+    if(NEEDQ[task]&&!q){ out('질문을 적어 주세요.',true,'sad'); meta(''); return; }
+    // ① 미리 준비해 둔 답이 있으면 기다림 없이 그 자리에서 바로 나온다
+    if(WARM[task]){
+      var ready=warmGet(task,txt);
+      if(ready&&ready.text){
+        lastText=ready.text;
+        out(lastText); busy(false);
+        meta((ready.provider?ready.provider+' · ':'')+(ready.model||'')
+             +' · 미리 준비해 둔 답 해돌~');
+        scrollTail();
+        return;
+      }
+    }
     ctl=new AbortController();
-    busy(true); lastText=''; out('생각 중…',true); meta('');
-    var t0=Date.now();
+    busy(true); lastText=''; out('',true); meta('');
+    var t0=Date.now(), acc='';
+    // ② 말하는 대로: stream:true → SSE 조각이 올 때마다 말풍선에 붙인다
     fetch('/api/ai/ask',{
       method:'POST', signal:ctl.signal,
       headers:{'Content-Type':'application/json','x-sdy-auth':token()},
-      body:JSON.stringify({task:task,text:txt,question:q})
+      body:JSON.stringify({task:task,text:txt,question:q,stream:true})
     }).then(function(r){
-      return r.json().then(function(d){ return {status:r.status,d:d}; });
+      return readSSE(r,function(d){ acc+=d; out(acc,true); scrollTail(); });
     }).then(function(res){
       var d=res.d||{};
       if(d.ok){
-        lastText=String(d.text||'');
+        lastText=String(d.text||acc||'');
         out(lastText);
         // 공급사 체인을 쓰면 '누가 답했는지'가 매번 달라질 수 있어서 같이 보여 준다.
-        meta((d.provider?d.provider+' · ':'')+(d.model||'')+(d.cached?' · 캐시':'')
-             +(d.truncated?' · 앞부분만 보냄':'')
-             +' · '+(((Date.now()-t0)/1000).toFixed(1))+'초');
+        meta(tailMeta(d,t0));
+        if(WARM[task]) warmSet(task,txt,{text:lastText,provider:d.provider||'',model:d.model||''});
+        otterLine(shortLine(lastText));
       }else{
-        lastText='';
-        out(String(d.error||'AI에 닿지 못했어요'),true);
+        // 말하다 끊겼으면 그까지라도 남겨 둔다(복사·읽기는 되게)
+        lastText=acc?acc:'';
+        out(String(d.error||'AI에 닿지 못했어요'),true,'sad');
         // 401/404 는 설정 문제 — 어디를 봐야 하는지 서버가 짚어 준 걸 그대로 띄운다.
         meta(d.hint?(String(d.hint))
              :(d.retry_after?('약 '+d.retry_after+'초 뒤에 다시 시도해 주세요'):''));
       }
     }).catch(function(e){
-      lastText='';
-      out((e&&e.name==='AbortError')?'멈췄어요.':'네트워크 오류 · 잠시 뒤 다시 시도해 주세요',true);
+      lastText=acc?acc:'';
+      out((e&&e.name==='AbortError')?'멈췄어요.':'네트워크 오류 · 잠시 뒤 다시 시도해 주세요',true,'sad');
       meta('');
     }).then(function(){
-      ctl=null; busy(false);
+      ctl=null; busy(false); scrollTail();
     });
   };
 
-  // 질문란에서 Ctrl/Cmd+Enter 로 실행
+  // 질문란에서 Enter = 바로 물어보기 (한글 조합 중·Shift+Enter 는 제외)
   document.addEventListener('keydown',function(e){
-    if(e.target&&e.target.id!=='aiQ') return;
-    if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); window.sdyAiRun(); }
+    if(!e.target||e.target.id!=='aiQ') return;
+    if(e.key!=='Enter'||e.shiftKey) return;
+    if(e.isComposing||e.keyCode===229) return;        // ㄱ·ㅏ 조합 중 Enter 는 조합 끝이 아니다
+    e.preventDefault();
+    window.sdyAiRun();
   });
   // Esc 로 닫기
   document.addEventListener('keydown',function(e){
@@ -28015,9 +28245,40 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       if(m) m.textContent=enabled?((d.model||'')+(n>1?(' 외 '+(n-1)+'개'):'')):'AI 꺼짐';
       // 실행 중인 요청이 있으면 busy() 가 다시 덮으므로 유휴일 때만 건드린다.
       var go=$('aiGo'); if(go&&!ctl) go.disabled=!enabled;
+      syncFab();
     }).catch(function(){});
   }
-  function boot(){ paintTasks(); pick(task); refreshStatus(); }
+
+  function boot(){
+    paintTasks(); pick(task); refreshStatus(); syncFab();
+    // 질문칸 — 줄이 늘면 칸도 같이 자란다(최대 120px)
+    var q=$('aiQ');
+    if(q) q.addEventListener('input',function(){
+      try{ q.style.height='auto'; q.style.height=Math.min(120,q.scrollHeight)+'px'; }catch(e){}
+    });
+    // 노트 안 왼쪽 아래 해돌이를 누르면 패널이 열린다 (홈에는 해돌이가 없다)
+    var no=$('noteOtter');
+    if(no) no.addEventListener('click',function(){ window.sdyAiToggle(); });
+    // 노트를 열고 닫을 때 — 홈으로 나가면 패널도 같이 닫고(해돌이는 노트 친구니까),
+    // 노트를 열면 요약·개조식을 슬쩍 준비해 둔다.
+    var ed=$('editorView');
+    if(ed&&typeof MutationObserver!=='undefined'){
+      new MutationObserver(function(){
+        syncFab();
+        if(inNote()) scheduleWarm(700);
+        else { var p=$('aiPanel'); if(p) p.hidden=true; }
+      }).observe(ed,{attributes:true,attributeFilter:['class']});
+    }
+    // 글을 고치면(타이핑 멈춘 뒤) 준비해 둔 답을 다시 만든다
+    var stage=$('pagesStage');
+    if(stage&&typeof MutationObserver!=='undefined'){
+      var tt=null;
+      new MutationObserver(function(){
+        if(tt) clearTimeout(tt);
+        tt=setTimeout(function(){ scheduleWarm(1200); },1200);
+      }).observe(stage,{childList:true,subtree:true,characterData:true});
+    }
+  }
   window.sdyAiBoot=boot;
   // DOM 이 이미 있으면 바로, 아니면 load 에 맞춰 한 번만.
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
