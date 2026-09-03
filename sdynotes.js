@@ -28351,7 +28351,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       var h=q.scrollHeight||0;
       q.style.height=(h>0?Math.min(h,96):19)+'px';       // 96px 넘으면 칸 안에서 스크롤
       field.classList.toggle('multi',h>24);              // 두 줄부터는 각진 모서리
-      // 질문칸이 여러 줄로 자라면 이 기둥('개조식 요약' + 버튼 + 질문칸)이
+      // 질문칸이 여러 줄로 자라면 이 기둥(범위 버튼 + 질문칸)이
       //   위를 향해 자라면서 답변 말풍선(#aiSay) 자리까지 올라온다 — 버튼이
       //   말풍선에 깔리지 않도록 말풍선을 그만큼만 위로 양보시킨다.
       //   (기둥 높이 ≈ 질문칸 높이 + 88px, 말풍선 기본 자리 = 아래에서 122px)
