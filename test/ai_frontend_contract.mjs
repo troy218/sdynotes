@@ -94,11 +94,13 @@ check('HTML: 이 페이지·전체 페이지 버튼이 질문칸(#aiQ)보다 먼
   && html.indexOf('id="aiOutlinePage"') < html.indexOf('id="aiQ"')
   && html.indexOf('id="aiOutlineDoc"') < html.indexOf('id="aiQ"')
   && !/id="aiOutline"/.test(html));
-check('HTML: 두 버튼은 \'개조식 요약\' 문구 바로 아래에 한 덩어리로 있다',
-  html.indexOf('개조식 요약') >= 0
-  && html.indexOf('개조식 요약') < html.indexOf('id="aiOutlinePage"')
-  && html.indexOf('class="ai-outline-box"') < html.indexOf('class="ai-askbar-field"')
-  && /class="ai-outline-box"/.test(html) && /class="ai-outline-ttl"/.test(html));
+check('HTML: 별도 요약 문구 없이 두 범위 버튼만 질문칸 바로 위에 있다',
+  !/개조식\s+요약/.test(html)
+  && html.indexOf('class="ai-outline-row"') < html.indexOf('class="ai-askbar-field"')
+  && !/class="ai-outline-box"/.test(html) && !/class="ai-outline-ttl"/.test(html));
+check('CSS: 범위 버튼 둘은 질문칸과 가운데가 맞고 좁은 화면에서는 줄바꿈한다',
+  /\.ai-askbar\{[^}]*align-items:center/.test(css)
+  && /\.ai-outline-row\{[^}]*justify-content:center[^}]*flex-wrap:wrap/.test(css));
 check('HTML: 해돌이는 호버=아이디어 · 클릭=대화기록이라고 안내한다',
   /커서를 올리면 아이디어 · 누르면 대화기록/.test(html));
 check('HTML: 검색창은 #noteOtter 옆(같은 편집기 구역)에 붙어 있다',

@@ -6376,26 +6376,21 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    · 유리 질감은 음악 바·플레이어와 같은 --g-* 토큰 → 다크모드 자동.
    ══════════════════════════════════════════════════════════════════════ */
 
-/* ── 검색창 — 해돌이 바로 오른쪽 한 줄. '개조식 요약' + 범위 버튼은 바로 위 ──
+/* ── 검색창 — 해돌이 바로 오른쪽 한 줄. 범위 버튼은 바로 위 가운데 ──
    검색창은 아래에 고정(bottom)된 기둥이라, 질문칸이 여러 줄로 자라면 상자가
-   위를 향해 큰다. 그래서 문구·버튼 덩어리를 같은 기둥 맨 위에 얹어 두면
-   질문칸이 어느 쪽으로 자라도 겹치지 않고 같이 올라간다.
+   위를 향해 큰다. 버튼도 같은 기둥 맨 위에 두어 질문칸과 함께 올라가고,
+   질문칸 폭이 달라져도 가운데가 맞도록 기둥의 자식들을 중앙 정렬한다.
    z-index 는 답변 말풍선(#aiSay, 8)보다 위(9) — 질문을 여러 줄 적으면 이 기둥이
    말풍선 아래쪽까지 올라오는데, 그때 버튼이 말풍선에 깔려 안 눌리면 곤란하다. */
 .ai-askbar{position:absolute;left:140px;bottom:14px;z-index:9;
-    display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+    display:flex;flex-direction:column;align-items:center;gap:6px;
     max-width:min(420px,calc(100% - 160px));
     transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
 .ai-askbar.draw-on{bottom:calc(64px + 32px);}      /* 그리기 툴바가 뜨면 해돌이와 같이 위로 */
-/* '개조식 요약' 문구 + 그 아래 '이 페이지'·'전체 페이지' 버튼 둘 — 한 덩어리.
-   폭은 자기 내용만큼만(max-content)이라 질문칸이 옆으로 늘어도 밀리지 않고,
-   화면이 좁아 덩어리가 남는 폭을 넘으면 버튼 줄이 알아서 둘로 접힌다. */
-.ai-outline-box{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:4px;
-    width:max-content;max-width:100%;}
-.ai-outline-ttl{padding-left:5px;font-size:11px;font-weight:800;letter-spacing:.01em;
-    line-height:1.25;color:var(--text2);}
-/* 범위 버튼 줄 — '이 페이지' 와 '전체 페이지' 가 나란히 */
-.ai-outline-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+/* 범위 버튼 줄 — '이 페이지' 와 '전체 페이지' 를 질문칸 위 가운데에 나란히 둔다.
+   화면이 좁으면 가운데를 유지한 채 자연스럽게 두 줄로 접힌다. */
+.ai-outline-row{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;
+    max-width:100%;}
 .ai-outline{flex:none;display:flex;align-items:center;gap:6px;
     border:1px solid var(--g-line);background:var(--g-in);color:var(--text2);
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
