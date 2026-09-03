@@ -64,7 +64,7 @@ export const AI_TASKS = {
   },
 };
 
-const DISABLED = 'AI 키가 설정되지 않았어요 · 서버 .env 에 AI_KEY 를 넣으면 켜집니다';
+const DISABLED = 'AI 키가 아직 등록되지 않았어요 · 서버 .env 에 GEMINI_API_KEY(구글) 또는 AI_KEY 를 넣으면 알아서 켜집니다';
 
 // ── 캐시 · in-flight ────────────────────────────────────────────────────────
 const cache = new Map();      // key -> { text, at }
