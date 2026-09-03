@@ -6376,12 +6376,24 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    · 유리 질감은 음악 바·플레이어와 같은 --g-* 토큰 → 다크모드 자동.
    ══════════════════════════════════════════════════════════════════════ */
 
-/* ── 검색창 — 해돌이 바로 오른쪽 한 줄. '이 페이지'·'전체 페이지' 버튼은 바로 위 ── */
-.ai-askbar{position:absolute;left:140px;bottom:14px;z-index:7;
+/* ── 검색창 — 해돌이 바로 오른쪽 한 줄. '개조식 요약' + 범위 버튼은 바로 위 ──
+   검색창은 아래에 고정(bottom)된 기둥이라, 질문칸이 여러 줄로 자라면 상자가
+   위를 향해 큰다. 그래서 문구·버튼 덩어리를 같은 기둥 맨 위에 얹어 두면
+   질문칸이 어느 쪽으로 자라도 겹치지 않고 같이 올라간다.
+   z-index 는 답변 말풍선(#aiSay, 8)보다 위(9) — 질문을 여러 줄 적으면 이 기둥이
+   말풍선 아래쪽까지 올라오는데, 그때 버튼이 말풍선에 깔려 안 눌리면 곤란하다. */
+.ai-askbar{position:absolute;left:140px;bottom:14px;z-index:9;
     display:flex;flex-direction:column;align-items:flex-start;gap:6px;
     max-width:min(420px,calc(100% - 160px));
     transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
 .ai-askbar.draw-on{bottom:calc(64px + 32px);}      /* 그리기 툴바가 뜨면 해돌이와 같이 위로 */
+/* '개조식 요약' 문구 + 그 아래 '이 페이지'·'전체 페이지' 버튼 둘 — 한 덩어리.
+   폭은 자기 내용만큼만(max-content)이라 질문칸이 옆으로 늘어도 밀리지 않고,
+   화면이 좁아 덩어리가 남는 폭을 넘으면 버튼 줄이 알아서 둘로 접힌다. */
+.ai-outline-box{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:4px;
+    width:max-content;max-width:100%;}
+.ai-outline-ttl{padding-left:5px;font-size:11px;font-weight:800;letter-spacing:.01em;
+    line-height:1.25;color:var(--text2);}
 /* 범위 버튼 줄 — '이 페이지' 와 '전체 페이지' 가 나란히 */
 .ai-outline-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .ai-outline{flex:none;display:flex;align-items:center;gap:6px;
@@ -6423,7 +6435,9 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 .ai-askbar.ai-on .ai-dot{background:#22c55e;box-shadow:0 0 7px rgba(34,197,94,.9);}
 
 /* ── 해돌이 답변 말풍선 — 닫기 전까지 계속 떠 있다 ── */
-.ai-say{position:absolute;left:30px;bottom:122px;width:min(440px,calc(100vw - 60px));
+/* --ai-lift : 질문칸이 여러 줄로 자라 검색창 기둥(문구+버튼)이 위로 올라오면,
+   그 자리와 겹치지 않게 JS(aiQGrow)가 말풍선을 그만큼 더 올려 둔다(기본 0) */
+.ai-say{position:absolute;left:30px;bottom:calc(122px + var(--ai-lift,0px));width:min(440px,calc(100vw - 60px));
     z-index:8;display:flex;flex-direction:column;
     background:var(--g-fill-strong);
     backdrop-filter:blur(var(--g-blur-lg)) saturate(160%);
@@ -6434,7 +6448,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
     animation:aiPop .22s cubic-bezier(.22,.9,.32,1.06);
     transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
 .ai-say[hidden]{display:none;}
-.ai-say.draw-on{bottom:calc(64px + 140px);}        /* 그리기 툴바 위로 */
+.ai-say.draw-on{bottom:calc(64px + 140px + var(--ai-lift,0px));}   /* 그리기 툴바 위로 */
 /* 꼬리 — 아래를 향해 해돌이 얼굴 쪽을 가리킨다 (직접 말하는 느낌) */
 .ai-say::after{content:"";position:absolute;left:26px;bottom:-9px;width:0;height:0;
     border:9px solid transparent;border-bottom:0;
@@ -6524,7 +6538,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 @media (max-width:640px){
     .ai-askbar{left:96px;bottom:10px;max-width:calc(100% - 108px);}
     .ai-askbar-field{width:100%;}
-    .ai-say{left:10px;right:10px;bottom:88px;width:auto;}
+    .ai-say{left:10px;right:10px;bottom:calc(88px + var(--ai-lift,0px));width:auto;}
     .ai-say-body{max-height:44vh;}
     .ai-hist{left:10px;right:10px;bottom:88px;width:auto;max-height:50vh;}
 }
@@ -6883,7 +6897,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
   .ai-askbar{left:calc(96px + var(--ph-left));}
   .ai-askbar,.ai-askbar.draw-on{bottom:calc(var(--ph-safe) + 10px);}
   .ai-say,.ai-hist{left:max(10px,var(--ph-left));right:max(10px,var(--ph-right));width:auto;}
-  .ai-say,.ai-hist,.ai-say.draw-on,.ai-hist.draw-on{bottom:calc(var(--ph-safe) + 88px);}
+  .ai-say,.ai-hist,.ai-say.draw-on,.ai-hist.draw-on{bottom:calc(var(--ph-safe) + 88px + var(--ai-lift,0px));}
   .ai-say-body{max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 220px);}
 
   .mpb{

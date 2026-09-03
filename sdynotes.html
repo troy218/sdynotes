@@ -750,9 +750,13 @@
             <!-- ═══════════════════════════════════════════════════════════
                  14.23.0 · 노트 해돌이 — 창 없이 바로 말하는 AI 노트 도우미
                  · 아이콘 버튼·뜨는 창이 없다. 해돌이 옆 한 줄 검색창에 적고
-                   Enter 를 누르면 바로 묻는다(보내기 버튼 없음).
-                 · '이 페이지' · '전체 페이지' 는 검색창 바로 위 버튼 둘 —
-                   지금 보는 쪽만 물을지, 문서 전체를 물을지 고른다.
+                   Enter 를 누르면 바로 묻는다(보내기 버튼 없음). 검색창 안내
+                   글씨는 '해돌이에게 물어보기…' 한 줄 — Enter 안내는 칸에
+                   커서를 올렸을 때(title)와 스크린리더(aria-label)로만 전한다.
+                 · '개조식 요약' 문구 바로 아래에 '이 페이지'·'전체 페이지'
+                   버튼 둘 — 지금 보는 쪽만 물을지, 문서 전체를 물을지 고른다.
+                   질문칸이 길어져 옆으로 늘거나 여러 줄로 위로 자라도 이 덩어리는
+                   질문칸 바로 위에 얹혀 같이 올라가므로 겹치지 않는다.
                  · 노트 질문/자유 질문은 해돌이가 스스로 판단해 말풍선 머리에
                    딱지로 달아 준다. 답은 말풍선 — 닫기 전까지 계속 떠 있고,
                    길면 말풍선 안에서 아래로 스크롤해 전부 읽는다.
@@ -760,16 +764,23 @@
                    해돌이를 누르면 대화기록이 열린다.
                  ═══════════════════════════════════════════════════════════ -->
             <div id="aiAsk" class="ai-askbar">
-              <div class="ai-outline-row">
-                <button id="aiOutlinePage" class="ai-outline" type="button" onclick="sdyAiOutline('page')"
-                        title="지금 보고 있는 이 페이지를 정리해 줘요"><i class="ri-file-list-2-line" aria-hidden="true"></i><span>이 페이지</span></button>
-                <button id="aiOutlineDoc" class="ai-outline" type="button" onclick="sdyAiOutline('doc')"
-                        title="전체 페이지를 한 번에 정리해 줘요"><i class="ri-stack-line" aria-hidden="true"></i><span>전체 페이지</span></button>
+              <!-- '개조식 요약' + 그 아래 범위 버튼 둘 — 검색창과 한 기둥으로
+                   묶여 있어, 질문칸이 오른쪽으로 늘거나 여러 줄로 위로 자라도
+                   항상 질문칸 바로 위에 얹혀 있다(겹치지 않는다) -->
+              <div class="ai-outline-box">
+                <span class="ai-outline-ttl">개조식 요약</span>
+                <div class="ai-outline-row">
+                  <button id="aiOutlinePage" class="ai-outline" type="button" onclick="sdyAiOutline('page')"
+                          title="지금 보고 있는 이 페이지를 정리해 줘요"><i class="ri-file-list-2-line" aria-hidden="true"></i><span>이 페이지</span></button>
+                  <button id="aiOutlineDoc" class="ai-outline" type="button" onclick="sdyAiOutline('doc')"
+                          title="전체 페이지를 한 번에 정리해 줘요"><i class="ri-stack-line" aria-hidden="true"></i><span>전체 페이지</span></button>
+                </div>
               </div>
               <div class="ai-askbar-field">
                 <!-- 질문칸 — 글이 길어지면 옆으로, 여러 줄이면 위로 늘어난다 (JS aiQGrow) -->
                 <textarea id="aiQ" rows="1" maxlength="600" spellcheck="false" autocomplete="off"
-                       placeholder="해돌이에게 물어보기… (Enter)" aria-label="해돌이에게 질문하기"></textarea>
+                       placeholder="해돌이에게 물어보기…" title="Enter 를 누르면 바로 물어봐요 · Shift+Enter 는 줄바꿈"
+                       aria-label="해돌이에게 질문하기. Enter 를 누르면 바로 물어봐요"></textarea>
                 <span class="ai-dot" id="aiDot" title="AI 키 아직 미등록"></span>
               </div>
             </div>

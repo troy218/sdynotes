@@ -13171,6 +13171,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }
             }
         }
+        // ── 입력칸에 포커스가 있으면 이 아래 노트 단축키들은 접는다 ──
+        //   이 아래는 전부 '노트(캔버스)를 다루는' 단축키다 — Ctrl+A(전체 선택)·
+        //   Ctrl+C/X/J(요소 복사·잘라내기·복제)·Delete/Backspace(요소 삭제)·
+        //   Ctrl+D/E/P/Enter(쪽 복제·내보내기·새 쪽)·Ctrl+Z/Y(되돌리기).
+        //   그런데 해돌이 검색창(#aiQ)처럼 글자를 치는 칸에 포커스가 있을 때도
+        //   그대로 가로챘다 — Ctrl+A 를 누르면 칸 안의 글이 아니라 노트 전체가
+        //   선택되고, Ctrl+Z 는 방금 친 글이 아니라 노트를 되돌렸다.
+        //   그래서 노트 본문(.tb-content) 편집 중이 아닌 '바깥 입력칸'에서는
+        //   브라우저·입력칸 기본 동작에 맡긴다. (Ctrl+S 저장은 예외로 살린다.
+        //   찾기 Ctrl+F·바꿔치기 Ctrl+H·Esc 는 이 가드보다 위에서 먼저 본다.)
+        {
+            const _ae=document.activeElement, _tag=(_ae&&_ae.tagName)||'';
+            const _inField=(_tag==='INPUT'||_tag==='TEXTAREA'||_tag==='SELECT')
+                ||!!(_ae&&_ae.isContentEditable&&!_ae.classList.contains('tb-content'));
+            if(_inField&&!((e.ctrlKey||e.metaKey)&&(e.key==='s'||e.key==='S'))) return;
+        }
         // 요소 복사 / 잘라내기 / 붙여넣기 / 복제
         if((e.ctrlKey||e.metaKey)&&!document.querySelector('.tb.edit')&&doc
            && document.getElementById('editorView').classList.contains('open')){
@@ -15942,6 +15958,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     document.addEventListener('paste',async e=>{
         if(!doc||!document.getElementById('editorView').classList.contains('open')) return;
         if(document.querySelector('.tb.edit')) return;   // 텍스트 편집 중엔 기본 동작
+        // 입력칸(해돌이 검색창 #aiQ · 찾기칸 · 설정 입력칸…)에 붙여넣을 때는
+        //   노트에 글상자를 만들지 않는다 — 안 그러면 칸에 붙여야 할 글이
+        //   노트 한가운데 상자로 생기면서 정작 칸에는 아무것도 안 들어간다.
+        {
+            const _tag=((document.activeElement||{}).tagName)||'';
+            if(_tag==='INPUT'||_tag==='TEXTAREA'||_tag==='SELECT') return;
+        }
 
         const files=[];
         const items=e.clipboardData?.items||[];
@@ -27966,18 +27989,24 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var ev=$('editorView');
     return !ev||ev.classList.contains('open');       // 편집기가 없으면(=테스트/구버전) 노트 안으로 본다
   }
-  // 해돌이 혼잣말(작은 말풍선) — 큰 답변 말풍선과 별개로 잠깐 뜨는 한마디
+  /* 해돌이 혼잣말(작은 말풍선) — 큰 답변 말풍선과 별개로 잠깐 뜨는 한마디.
+     AI 가 대답하는 동안(ctl 이 살아 있는 동안)에는 아예 띄우지 않는다 — 답이
+     이미 큰 말풍선(#aiSay)에 다 보이고 있는데 해돌이 머리 아래에 작은 말풍선이
+     하나 더 떠서 같은 말이 두 번, 지저분하게 겹쳐 보이기 때문이다. */
   function otterLine(t){
+    if(ctl) return;                                     // 대답 중엔 조용히 — 아래쪽 겹침 방지
     var b=$('noteOtterBubble'); if(!b||!t) return;
     b.textContent=String(t);
     b.classList.add('show');
     if(b._t) clearTimeout(b._t);
     b._t=setTimeout(function(){ b.classList.remove('show'); },2600);
   }
-  function shortLine(s){
-    var t=String(s||'').replace(/\s+/g,' ').trim();
-    if(!t) return '';
-    return t.length>32?(t.slice(0,32)+'…'):t;
+  /* 떠 있던 작은 말풍선을 바로 접는다 — 대답을 시작하는 순간 쓴다
+     (말풍선(#aiSay)이 이미 열려 있으면 hidden 이 안 바뀌어 관찰자가 못 잡는다) */
+  function otterHide(){
+    var b=$('noteOtterBubble'); if(!b) return;
+    if(b._t) clearTimeout(b._t);
+    b.classList.remove('show');
   }
 
   /* ── 대화기록(#aiHist) — 해돌이를 누르면 열린다. 나눈 이야기는 최대 40개 ── */
@@ -28197,6 +28226,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ctl=new AbortController();
     busy(true); lastText=''; lastKind=''; lastQ=q;
     kindChip('');
+    otterHide();                                       // 대답 시작 — 작은 말풍선은 접는다
     out('',true); meta('');
     var acc='';
     // ② 말하는 대로: stream:true → SSE 조각이 올 때마다 말풍선에 붙인다
@@ -28235,7 +28265,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
           paintOutlineReady();
         }
         histPush(kind,q,lastText);
-        otterLine(shortLine(lastText)+' 해돌~');
+        // 답은 큰 말풍선(#aiSay)이 다 말하고 있다 — 같은 말을 작은 말풍선으로
+        //   아래에 한 번 더 띄우면 겹쳐 보이기만 해서 여기서는 조용히 넘긴다.
       }else{
         // 말하다 끊겼으면 그까지라도 남겨 둔다(복사·읽기는 되게)
         lastText=acc?(task==='chat'?(parseChat(acc).text||''):acc):'';
@@ -28259,13 +28290,13 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      해돌이가 스스로 판단한다 — 사용자가 딱지를 고르는 일은 없다. */
   window.sdyAiRun=function(){
     var qEl=$('aiQ'), q=qEl?String(qEl.value||'').trim():'';
-    if(ctl){ otterLine('다 말하고 나서 물어봐 줘 해돌~'); return; }
+    if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
     if(!q){ otterLine('뭐라도 적어 줘 해돌~'); return; }
     if(qEl){ qEl.value=''; aiQGrow(); }                 // 본 질문은 말풍선(과 기록)에 남으니 창은 비운다
     run('chat',q);
   };
   window.sdyAiOutline=function(scope){
-    if(ctl){ otterLine('다 말하고 나서 눌러 줘 해돌~'); return; }
+    if(ctl){ meta('다 말하고 나서 눌러 주세요 해돌~'); return; }     // 말하는 중 — 말풍선 안 한 줄로만
     run('outline','',scope);
   };
   window.sdyAiStop=function(){ if(ctl){ try{ ctl.abort(); }catch(e){} } };
@@ -28320,6 +28351,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       var h=q.scrollHeight||0;
       q.style.height=(h>0?Math.min(h,96):19)+'px';       // 96px 넘으면 칸 안에서 스크롤
       field.classList.toggle('multi',h>24);              // 두 줄부터는 각진 모서리
+      // 질문칸이 여러 줄로 자라면 이 기둥('개조식 요약' + 버튼 + 질문칸)이
+      //   위를 향해 자라면서 답변 말풍선(#aiSay) 자리까지 올라온다 — 버튼이
+      //   말풍선에 깔리지 않도록 말풍선을 그만큼만 위로 양보시킨다.
+      //   (기둥 높이 ≈ 질문칸 높이 + 88px, 말풍선 기본 자리 = 아래에서 122px)
+      var say=$('aiSay');
+      if(say){
+        var lift=(h>24)?Math.max(0,Math.min(48,h-28)):0;
+        say.style.setProperty('--ai-lift',lift+'px');
+      }
     }catch(e){}
   }
   document.addEventListener('input',function(e){
