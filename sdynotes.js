@@ -16975,6 +16975,26 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             pack:packTrJobs,
         };
     }catch(e){}
+
+    // 14.20.0 · AI 패널이 노트 글을 꺼내 쓰는 다리.
+    //   doc·collectPageEls·plainTextFromHtml 이 전부 이 편집기 스코프 안에 있어서
+    //   밖에서 문서 구조를 직접 건드리지 않게 '글만' 꺼내는 함수 하나만 내보낸다.
+    //   scope:'page' = 지금 보고 있는 쪽, 'doc' = 문서 전체(기본).
+    //   길이 상한은 서버(/api/ai/ask)가 다시 한 번 자르므로 여기서는 넉넉히 둔다.
+    try{
+        window.__sdyAiBridge={
+            text:(scope)=>{
+                try{
+                    if(!doc||!doc.pages||!doc.pages.length) return '';
+                    const idx=(scope==='page')?[curPageIdx|0]:doc.pages.map((p,i)=>i);
+                    const out=[];
+                    idx.forEach(i=>{ collectPageEls(i).forEach(o=>{ if(o.src) out.push(o.src); }); });
+                    return out.join('\n');
+                }catch(e){ return ''; }
+            },
+            title:()=>String((document.getElementById('edTitle')||{}).value||'').trim(),
+        };
+    }catch(e){}
     /* ============ /6.1 번역 ============ */
 
     // 가져온(tight) 상자에서 복사 시: 절대스팬 사이 줄바꿈을 공백으로 정돈해
@@ -27815,4 +27835,173 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   },true);
   // 엽스코드 로그인 진입(게이트)에서 열 수 있게 전역 노출
   window.__sdyAuthState=SDYA;
+})();
+
+/* ══════════════════════════════════════════════════════════════════════
+   14.20.0 · AI 노트 도우미 (요약 · 개조식 · 노트 질문 · 자유 질문)
+   ─────────────────────────────────────────────────────────────────────
+   · 모델 키는 여기에 없다. 브라우저는 /api/ai/ask 만 부르고, 키·프롬프트는
+     server/src/routes/ai.js 가 들고 있다 (OpenAI 호환 게이트웨이로 나간다).
+   · Arena.ai 자체는 공개 API·임베드가 없는 무료 채팅/투표 사이트라 부를 수
+     없어서, '아레나에 붙이기' 대신 '모델 API 에 붙이기'로 갔다.
+   · 노트 글은 window.__sdyAiBridge(편집기 스코프)가 꺼내 준다 — 여기서 문서
+     구조를 직접 건드리지 않는다.
+   · 서버가 429(제한)를 주면 retry_after 만큼 기다렸다가 '다시 시도'를 낸다.
+   ══════════════════════════════════════════════════════════════════════ */
+(function(){
+  if(window.__sdyAiInit) return; window.__sdyAiInit=true;
+  var $=function(id){ return document.getElementById(id); };
+  // 서버 AI_TASKS 와 같은 목록. 라벨만 여기 두고 '어떤 입력이 필요한지'는
+  // 서버가 400 으로 알려 주게 한다(정의를 두 벌로 늘리지 않으려고).
+  var TASKS=[{id:'summarize',label:'요약'},{id:'bullets',label:'개조식 정리'},
+             {id:'ask',label:'노트 질문'},{id:'free',label:'자유 질문'}];
+  // 질문란이 필요한 일. 요약·개조식은 노트만 있으면 된다.
+  var NEEDQ={ask:1,free:1};
+  var task='summarize', ctl=null, enabled=false, lastText='';
+
+  function paintTasks(){
+    var box=$('aiTasks'); if(!box) return;
+    box.textContent='';
+    TASKS.forEach(function(t){
+      var b=document.createElement('button');
+      b.type='button'; b.className='ai-task'+(t.id===task?' on':'');
+      b.textContent=t.label; b.dataset.task=t.id;
+      b.onclick=function(){ pick(t.id); };
+      box.appendChild(b);
+    });
+  }
+  function pick(id){
+    task=id;
+    Array.prototype.forEach.call(document.querySelectorAll('.ai-task'),function(b){
+      b.classList.toggle('on',b.dataset.task===id);
+    });
+    var q=$('aiQ');
+    if(q){
+      q.classList.toggle('hide',!NEEDQ[id]);
+      q.placeholder=(id==='free')?'무엇이든 물어보세요…'
+        :(id==='ask'?'노트에 대해 물어보기…':'');
+    }
+  }
+  function meta(t){ var m=$('aiMeta'); if(m) m.textContent=t||''; }
+  function out(t,cls){
+    var o=$('aiOut'); if(!o) return;
+    o.textContent=(t==null?'':String(t));
+    o.classList.toggle('busy',!!cls);
+  }
+  function busy(on){
+    var go=$('aiGo'), st=$('aiStop'), cp=$('aiCopy');
+    if(go){ go.disabled=!!on; go.textContent=on?'생각 중…':'실행'; }
+    if(st) st.hidden=!on;
+    if(cp) cp.hidden=on||!lastText;
+  }
+  // 로그인 토큰이 있으면 같이 보낸다(서버는 토큰이 있으면 uid 로, 없으면 ip 로
+  // 사용량 한도를 센다). 토큰이 없어도 동작한다.
+  function token(){
+    try{ return (window.__sdyAuthState&&window.__sdyAuthState.token)||''; }catch(e){ return ''; }
+  }
+  function noteText(){
+    try{
+      var scope=($('aiScope')&&$('aiScope').checked)?'page':'doc';
+      if(window.__sdyAiBridge&&typeof window.__sdyAiBridge.text==='function'){
+        return String(window.__sdyAiBridge.text(scope)||'');
+      }
+    }catch(e){}
+    return '';
+  }
+
+  window.sdyAiOpen=function(){
+    var p=$('aiPanel'), f=$('aiFab');
+    if(p) p.hidden=false;
+    if(f) f.classList.add('hide');
+    var q=$('aiQ'); if(q&&NEEDQ[task]) q.focus();
+  };
+  window.sdyAiClose=function(){
+    var p=$('aiPanel'), f=$('aiFab');
+    if(p) p.hidden=true;
+    if(f) f.classList.remove('hide');
+  };
+  window.sdyAiStop=function(){ if(ctl){ try{ ctl.abort(); }catch(e){} } };
+  window.sdyAiCopy=function(){
+    if(!lastText) return;
+    var done=function(){ if(window.toast) window.toast('결과를 복사했어요',1400); };
+    try{
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(lastText).then(done,function(){}); return;
+      }
+    }catch(e){}
+    try{
+      var ta=document.createElement('textarea');
+      ta.value=lastText; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove(); done();
+    }catch(e){}
+  };
+
+  window.sdyAiRun=function(){
+    if(ctl) return;                                   // 이미 실행 중
+    var q=$('aiQ')?String($('aiQ').value||'').trim():'';
+    // 자유 질문만 노트를 안 보낸다. 요약·개조식·노트 질문은 노트 본문이 필요하다
+    // (서버도 free 를 빼면 needText:true 라 빈 본문은 400 으로 거른다).
+    var txt=(task==='free')?'':noteText();
+    if(task!=='free'&&!txt){ out('열린 노트에 글이 없어요.',true); meta(''); return; }
+    if(NEEDQ[task]&&!q){ out('질문을 적어 주세요.',true); meta(''); return; }
+    ctl=new AbortController();
+    busy(true); lastText=''; out('생각 중…',true); meta('');
+    var t0=Date.now();
+    fetch('/api/ai/ask',{
+      method:'POST', signal:ctl.signal,
+      headers:{'Content-Type':'application/json','x-sdy-auth':token()},
+      body:JSON.stringify({task:task,text:txt,question:q})
+    }).then(function(r){
+      return r.json().then(function(d){ return {status:r.status,d:d}; });
+    }).then(function(res){
+      var d=res.d||{};
+      if(d.ok){
+        lastText=String(d.text||'');
+        out(lastText);
+        // 공급사 체인을 쓰면 '누가 답했는지'가 매번 달라질 수 있어서 같이 보여 준다.
+        meta((d.provider?d.provider+' · ':'')+(d.model||'')+(d.cached?' · 캐시':'')
+             +(d.truncated?' · 앞부분만 보냄':'')
+             +' · '+(((Date.now()-t0)/1000).toFixed(1))+'초');
+      }else{
+        lastText='';
+        out(String(d.error||'AI에 닿지 못했어요'),true);
+        // 401/404 는 설정 문제 — 어디를 봐야 하는지 서버가 짚어 준 걸 그대로 띄운다.
+        meta(d.hint?(String(d.hint))
+             :(d.retry_after?('약 '+d.retry_after+'초 뒤에 다시 시도해 주세요'):''));
+      }
+    }).catch(function(e){
+      lastText='';
+      out((e&&e.name==='AbortError')?'멈췄어요.':'네트워크 오류 · 잠시 뒤 다시 시도해 주세요',true);
+      meta('');
+    }).then(function(){
+      ctl=null; busy(false);
+    });
+  };
+
+  // 질문란에서 Ctrl/Cmd+Enter 로 실행
+  document.addEventListener('keydown',function(e){
+    if(e.target&&e.target.id!=='aiQ') return;
+    if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); window.sdyAiRun(); }
+  });
+  // Esc 로 닫기
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Escape') return;
+    var p=$('aiPanel'); if(p&&!p.hidden) window.sdyAiClose();
+  });
+
+  function boot(){
+    paintTasks(); pick(task);
+    fetch('/api/ai/status',{cache:'no-store'}).then(function(r){ return r.json(); }).then(function(d){
+      enabled=!!(d&&d.enabled);
+      var m=$('aiModel');
+      // 공급사 체인을 쓰면 여러 개가 붙는다 — '첫 모델 외 n개' 로 줄여 표시.
+      var n=(d&&d.providers&&d.providers.length)||0;
+      if(m) m.textContent=enabled?((d.model||'')+(n>1?(' 외 '+(n-1)+'개'):'')):'AI 꺼짐';
+      if(!enabled) meta((d&&d.error)||'AI 키가 설정되지 않았어요');
+    }).catch(function(){});
+  }
+  window.sdyAiBoot=boot;
+  // DOM 이 이미 있으면 바로, 아니면 load 에 맞춰 한 번만.
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
+  else boot();
 })();

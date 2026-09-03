@@ -20,6 +20,7 @@ import { registerCards } from './routes/cards.js';
 import { registerStickers } from './routes/stickers.js';
 import { registerWallpaper } from './routes/wallpaper.js';
 import { registerTranslate } from './routes/translate.js';
+import { registerAi } from './routes/ai.js';
 import { registerNotify } from './routes/notify.js';
 import { registerLive } from './routes/live.js';
 import { registerMisc } from './routes/misc.js';
@@ -62,6 +63,7 @@ registerCards(app);
 registerStickers(app);
 registerWallpaper(app);
 registerTranslate(app);
+registerAi(app);      // 14.20.0 · AI 노트 도우미 (요약·질문)
 registerNotify(app);
 registerLive(app);
 registerMisc(app);

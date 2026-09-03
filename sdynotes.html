@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.19.0">
+<link rel="stylesheet" href="sdynotes.css?v=14.20.0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <!-- 버전 · 작업 끝나면 아래 5곳을 같은 번호로 함께 올려라 (z +1)
@@ -17,7 +17,7 @@
          · 이 파일·sdynotes.js·sdynotes.css 를 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.19.0">
+    <meta name="application-version" content="14.20.0">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -2460,6 +2460,35 @@
      ═══════════════════════════════════════════════════════════════════ -->
 
 
-<script src="sdynotes.js?v=14.19.0" defer></script>
+<!-- ═══════════════════════════════════════════════════════════════════
+     14.20.0 · AI 노트 도우미 패널
+     · 오른쪽 아래 둥근 버튼(#aiFab) → 패널(#aiPanel).
+     · 글은 전부 서버(/api/ai/ask)를 거친다 — 모델 키는 프런트에 없다.
+     · '노트 본문'은 sdynotes.js 의 window.__sdyAiBridge 가 꺼내 준다.
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="aiFab" class="ai-fab" role="button" tabindex="0" title="AI 노트 도우미"
+     aria-label="AI 노트 도우미 열기" onclick="sdyAiOpen()"><i class="ri-sparkling-2-fill"></i></div>
+<div id="aiPanel" class="ai-panel" role="dialog" aria-modal="false" aria-labelledby="aiTtl" hidden>
+  <div class="ai-hd">
+    <b id="aiTtl">AI 노트 도우미</b>
+    <button class="ai-x" type="button" title="닫기" aria-label="닫기" onclick="sdyAiClose()"><i class="ri-close-line"></i></button>
+  </div>
+  <div id="aiTasks" class="ai-tasks"></div>
+  <textarea id="aiQ" rows="2" maxlength="600" spellcheck="false"
+            placeholder="노트에 대해 물어보기… (비워 두면 노트 전체를 요약해요)"></textarea>
+  <div class="ai-opts">
+    <label class="ai-scope"><input type="checkbox" id="aiScope"> 지금 쪽만</label>
+    <span id="aiModel" class="ai-model"></span>
+  </div>
+  <div class="ai-act">
+    <button id="aiGo" class="ai-go" type="button" onclick="sdyAiRun()">실행</button>
+    <button id="aiCopy" class="ai-copy" type="button" onclick="sdyAiCopy()" hidden>결과 복사</button>
+    <button id="aiStop" class="ai-stop" type="button" onclick="sdyAiStop()" hidden>멈추기</button>
+  </div>
+  <div id="aiOut" class="ai-out" aria-live="polite"></div>
+  <div id="aiMeta" class="ai-meta"></div>
+</div>
+
+<script src="sdynotes.js?v=14.20.0" defer></script>
 </body>
 </html>

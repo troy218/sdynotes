@@ -6361,6 +6361,60 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
   background-color:transparent!important;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   14.20.0 · AI 노트 도우미 패널
+   · 모달(.modal-bg z:1900) 아래, 일반 콘텐츠 위에 뜨게 1850 을 쓴다.
+   · 색은 전부 기존 변수(--card/--text1/--border/--accent)를 쓴다 → 다크모드 자동.
+   ══════════════════════════════════════════════════════════════════════ */
+.ai-fab{position:fixed;right:18px;bottom:18px;width:52px;height:52px;border-radius:50%;
+    background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff;display:flex;
+    align-items:center;justify-content:center;font-size:24px;cursor:pointer;z-index:1850;
+    box-shadow:0 6px 20px rgba(79,110,247,.35);transition:transform .18s ease,opacity .18s ease;}
+.ai-fab:hover{transform:translateY(-2px) scale(1.04);}
+.ai-fab:active{transform:scale(.95);}
+.ai-fab.hide{opacity:0;pointer-events:none;transform:scale(.7);}
+.ai-panel{position:fixed;right:18px;bottom:82px;width:min(360px,calc(100vw - 36px));
+    max-height:min(70vh,560px);display:flex;flex-direction:column;background:var(--card);
+    border:1px solid var(--border);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.18);
+    z-index:1850;overflow:hidden;animation:aiPop .2s ease-out;}
+.ai-panel[hidden]{display:none;}
+@keyframes aiPop{from{opacity:0;transform:translateY(10px) scale(.97);}to{opacity:1;transform:none;}}
+.ai-hd{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;
+    border-bottom:1px solid var(--border);font-size:13.5px;color:var(--text1);}
+.ai-x{border:0;background:transparent;color:var(--text3);font-size:19px;cursor:pointer;
+    width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+.ai-x:hover{background:var(--bg2);color:var(--text1);}
+.ai-tasks{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px 0;}
+.ai-task{border:1px solid var(--border);background:var(--bg2);color:var(--text2);
+    border-radius:999px;padding:5px 11px;font-size:12px;cursor:pointer;transition:all .15s;}
+.ai-task:hover{border-color:var(--accent);color:var(--text1);}
+.ai-task.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+#aiQ{margin:10px 12px 0;padding:8px 10px;border:1px solid var(--border);border-radius:10px;
+    background:var(--bg2);color:var(--text1);font:inherit;font-size:13px;resize:vertical;outline:none;}
+#aiQ:focus{border-color:var(--accent);}
+#aiQ.hide{display:none;}
+.ai-opts{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px 0;
+    font-size:11.5px;color:var(--text3);}
+.ai-scope{display:flex;align-items:center;gap:5px;cursor:pointer;}
+.ai-model{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%;}
+.ai-act{display:flex;gap:6px;padding:8px 12px;}
+.ai-go{flex:1;border:0;border-radius:10px;padding:9px;background:var(--accent);color:#fff;
+    font-size:13px;font-weight:600;cursor:pointer;}
+.ai-go:disabled{opacity:.55;cursor:progress;}
+.ai-copy,.ai-stop{border:1px solid var(--border);background:var(--bg2);color:var(--text2);
+    border-radius:10px;padding:9px 11px;font-size:12px;cursor:pointer;}
+.ai-stop{border-color:#e0a5a5;color:#c0392b;}
+.ai-copy[hidden],.ai-stop[hidden]{display:none;}
+.ai-out{padding:0 12px;font-size:12.8px;line-height:1.65;color:var(--text1);
+    overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:34vh;}
+.ai-out:empty{display:none;}
+.ai-out.busy{color:var(--text3);}
+.ai-meta{padding:8px 12px 11px;font-size:11px;color:var(--text3);min-height:16px;}
+@media (max-width:640px){
+    .ai-panel{right:10px;left:10px;bottom:74px;width:auto;max-height:62vh;}
+    .ai-fab{right:12px;bottom:12px;}
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 

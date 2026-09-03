@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 // ⑤의 ?v= 를 안 올리면 → nginx 가 sdynotes.js/css 를 1년 immutable 로 캐싱하므로
 //   이미 접속한 브라우저가 옛 JS/CSS 를 1년 동안 계속 쓴다(조용히 깨진다).
 //   그래서 내리는 쪽이 아니라 '올리는' 쪽으로 맞춘다.
-export const APP_VERSION = '14.19.0';
+export const APP_VERSION = '14.20.0';
 export const SETTINGS_SCHEMA = 3;
 
 // ── 저장소 모드 ────────────────────────────────────────────────────────
@@ -81,6 +81,103 @@ export const TAG_ALGO = '13.0';
 export const LT_URL = (process.env.LIBRETRANSLATE_URL || '').replace(/\/+$/, '');
 export const LT_KEY = (process.env.LIBRETRANSLATE_KEY || '').trim();
 export const TR_ENGINE = (process.env.TRANSLATE_ENGINE || 'auto').toLowerCase();
+
+// ── AI (노트 요약·질문) ────────────────────────────────────────────────
+// OpenAI 호환 /v1/chat/completions 를 쓰는 어디든 붙는다. 키는 서버에서만
+// 읽는다 — 프런트(sdynotes.js)에는 절대 심지 않는다(전역 CSP 가 없어서
+// JS 에 박힌 값은 그대로 노출된다).
+//
+// 왜 공급사 '체인'인가
+//   무료 티어는 하루 한도가 곧 끝난다. translate.js 가 Google 호스트 3개를
+//   순회하듯, 한 공급자가 429 를 주면 다음 공급자로 넘어가게 했다.
+//   AI_PROVIDERS="groq,gemini" + GROQ_API_KEY + GEMINI_API_KEY 면 끝.
+//
+// ⚠ 노트 앱이라 '데이터가 학습에 쓰이는가'가 중요하다
+//   Gemini 무료 티어는 입력이 Google 제품 개선에 사용될 수 있다(유료는 아님).
+//   개인 노트가 그게 싫으면 Groq(학습 미사용)를 먼저 두거나, 아래 Ollama 처럼
+//   아예 서버 안에서 돌린다.
+//
+// 로컬(Ollama) — 키 0원·외부 전송 0
+//   AI_BASE_URL=http://127.0.0.1:11434/v1 + AI_KEY=ollama + AI_MODEL=qwen2.5:3b
+//   (MIGRATION_AMD_TO_ARM.md 권장 Always Free 4 OCPU/24GB 면 3B 급 CPU 추론 가능)
+export const AI_PROVIDER_PRESETS = {
+  openai:     { url: 'https://api.openai.com/v1',      model: 'gpt-4o-mini',            keyEnv: 'OPENAI_API_KEY' },
+  groq:       { url: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', keyEnv: 'GROQ_API_KEY' },
+  gemini:     { url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', keyEnv: 'GEMINI_API_KEY' },
+  openrouter: { url: 'https://openrouter.ai/api/v1',   model: 'openai/gpt-4o-mini',     keyEnv: 'OPENROUTER_API_KEY' },
+  // 로컬 Ollama 는 키가 필요 없지만 OpenAI 호환 클라이언트라 빈 키를 거부하는
+  // 구현이 있어 자리표시자를 넣는다 (아무 값이나 됨 · 밖으로 나가지 않는다).
+  ollama:     { url: 'http://127.0.0.1:11434/v1',      model: 'qwen2.5:3b',             keyEnv: 'OLLAMA_API_KEY', placeholderKey: 'ollama' },
+};
+
+const AI_PROVIDER_DEFAULT_URL = 'https://api.openai.com/v1';
+const AI_PROVIDER_DEFAULT_MODEL = 'gpt-4o-mini';
+
+// .env → 공급사 목록. 키가 실제로 있는 것만 살려 둔다(빈 키로 401 을 맞지 않게).
+export function aiProvidersFromEnv(env = process.env) {
+  const read = (k) => String(env[k] || '').trim();
+  const out = [];
+  const push = (name, key, url, model) => {
+    if (!key) return;
+    out.push({
+      name, key,
+      url: String(url || AI_PROVIDER_PRESETS[name]?.url || AI_PROVIDER_DEFAULT_URL).replace(/\/+$/, ''),
+      model: model || AI_PROVIDER_PRESETS[name]?.model || AI_PROVIDER_DEFAULT_MODEL,
+    });
+  };
+  // ① 수동 지정이 있으면 그게 1순위 (예전 AI_KEY/AI_BASE_URL/AI_MODEL 그대로 동작)
+  push(read('AI_PROVIDER') || 'manual', read('AI_KEY'), read('AI_BASE_URL'), read('AI_MODEL'));
+  // ② AI_PROVIDERS 로 여러 개를 순서대로
+  const added = new Set();
+  for (const raw of read('AI_PROVIDERS').split(',')) {
+    const name = raw.trim().toLowerCase();
+    if (!name) continue;
+    const preset = AI_PROVIDER_PRESETS[name];
+    if (!preset) continue;
+    const key = read(preset.keyEnv) || (name === 'ollama' ? preset.placeholderKey : '');
+    push(name, key, read(`${name.toUpperCase()}_BASE_URL`), read(`${name.toUpperCase()}_MODEL`));
+    added.add(name);
+  }
+  // ③ 프리셋 키만 있어도 자동으로 붙는다 (AI_PROVIDERS 를 안 적어도 됨).
+  //    단 ②에서 이미 넣은 이름은 건너뛴다 — 안 그러면 BASE_URL/MODEL 을 덮어쓴
+  //    경우 '덮어쓴 것 + 프리셋 기본값' 두 벌이 잡혀 같은 공급사를 두 번 때린다.
+  for (const [name, preset] of Object.entries(AI_PROVIDER_PRESETS)) {
+    if (name === 'ollama' || added.has(name)) continue;   // 로컬은 명시한 경우에만
+    push(name, read(preset.keyEnv), read(`${name.toUpperCase()}_BASE_URL`), read(`${name.toUpperCase()}_MODEL`));
+  }
+  // 같은 키+url+model 이 두 번 들어오면 하나만 남긴다
+  const seen = new Set();
+  return out.filter((p) => {
+    const k = `${p.key}|${p.url}|${p.model}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+export const AI_PROVIDERS = aiProvidersFromEnv();
+// 하위 호환: 예전 코드가 읽던 이름. 체인의 첫 번째 공급사를 가리킨다.
+export const AI_KEY = AI_PROVIDERS[0]?.key || '';
+export const AI_BASE_URL = AI_PROVIDERS[0]?.url || AI_PROVIDER_DEFAULT_URL;
+export const AI_MODEL = AI_PROVIDERS[0]?.model || AI_PROVIDER_DEFAULT_MODEL;
+export const AI_MAX_TOKENS = Math.min(4000, Math.max(256, parseInt(process.env.AI_MAX_TOKENS || '900', 10)));
+export const AI_TIMEOUT_MS = Math.max(5000, parseInt(process.env.AI_TIMEOUT_MS || '45000', 10));
+export const AI_MAX_TEXT = Math.max(500, parseInt(process.env.AI_MAX_TEXT || '12000', 10));   // 노트 본문 입력 한도(자)
+export const AI_MAX_QUESTION = 600;
+export const AI_CACHE_TTL_MS = Math.max(0, parseInt(process.env.AI_CACHE_TTL_MS || '600000', 10));
+export const AI_RATE_N = Math.max(1, parseInt(process.env.AI_RATE_N || '12', 10));      // 창당 요청 수
+export const AI_RATE_WINDOW_MS = Math.max(1000, parseInt(process.env.AI_RATE_WINDOW_MS || '60000', 10));
+export const AI_COOLDOWN_MS = Math.max(0, parseInt(process.env.AI_COOLDOWN_MS || '60000', 10)); // 429 뒤 재시도 대기
+export const AI_READY = AI_PROVIDERS.length > 0;
+
+// 참고 · 왜 arena.ai 를 직접 부르지 않나
+//   arena.ai 는 공개 API·임베드 위젯이 없는 소비자용 채팅/투표 사이트다
+//   (reCAPTCHA + "대화가 제3자 AI 에 전달되고 공개될 수 있다" 약관). 계정을
+//   만들어 내부 엔드포인트를 우회 호출하는 것은 약관 위반이고, 개인 노트가
+//   제3자에게 공개될 수 있어 이 앱에서는 하지 않는다.
+//   한편 '아레나 UI' 자체는 오픈소스다 — lm-sys/FastChat(Apache-2.0)의
+//   `fastchat.serve.gradio_web_server_multi` 가 그 Gradio 화면이다. 그건
+//   '비교 사이트'를 따로 띄울 때 쓰는 물건이고, 이 노트 앱에는 필요 없다.
 
 // presence
 export const PRESENCE_TTL = 45; // seconds
