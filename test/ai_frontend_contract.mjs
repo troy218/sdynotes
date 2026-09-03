@@ -37,7 +37,9 @@ check('서버: 미리 준비(warm)는 개요 정리(outline)만 받는다',
 check('서버: 키는 Authorization 헤더로만 나간다',
   /Authorization: `Bearer \$\{p\.key\}`/.test(srv));
 check('서버: 같은 입력은 캐시로 답한다', /cachePut\(key, out\.text, out\.provider, out\.model\)/.test(srv) && /cached: true/.test(srv));
-check('서버: 429/5xx 만 쿨다운을 건다', /status === 429 \|\| status >= 500/.test(srv));
+check('서버: 429/5xx 만 한도(limited)로 분류한다', /status === 429 \|\| r\.status >= 500/.test(srv));
+check('서버: 자체 쿨다운이 없다 — 429 뒤에도 다음 요청은 곧바로 나간다',
+  !/AI_COOLDOWN_MS/.test(srv) && !/anyProviderReady/.test(srv) && !/coolSet/.test(srv));
 check('서버: stream:true 면 SSE(text/event-stream) 로 조각을 흘려 본다',
   /text\/event-stream/.test(srv) && /send\('delta'/.test(srv) && /b\.stream === true/.test(srv));
 check('서버: 긴 노트는 앞 70% + 뒤 30% 를 살린다',

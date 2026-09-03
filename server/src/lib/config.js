@@ -176,7 +176,8 @@ export const AI_RATE_WINDOW_MS = Math.max(1000, parseInt(process.env.AI_RATE_WIN
 //   따로 센다(절반). 0 으로 두면 미리 준비를 끈다.
 export const AI_WARM_N = Math.max(0, parseInt(process.env.AI_WARM_N
   || String(Math.max(2, Math.floor(AI_RATE_N / 2))), 10));
-export const AI_COOLDOWN_MS = Math.max(0, parseInt(process.env.AI_COOLDOWN_MS || '60000', 10)); // 429 뒤 재시도 대기
+// 공급사별 쿨다운(AI_COOLDOWN_MS)은 없어졌다 — 429/5xx 를 맞아도 서버가 스스로
+// 쉬지 않고, 다음 요청은 곧바로 다시 외부로 나간다 (공급사가 준 retry-after 만 전달).
 export const AI_READY = AI_PROVIDERS.length > 0;
 
 // 참고 · 왜 arena.ai 를 직접 부르지 않나

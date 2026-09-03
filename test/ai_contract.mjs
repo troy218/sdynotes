@@ -1,12 +1,12 @@
 // 14.20.0 · /api/ai 계약 테스트 — 실제 모델 API 대신 fetch 를 가짜로 갈아끼워
-// 요청 모양(키가 헤더에만 있는지)·캐시·in-flight 합치기·길이 제한·429 쿨다운을 검증한다.
+// 요청 모양(키가 헤더에만 있는지)·캐시·in-flight 합치기·길이 제한·429 제한 안내를 검증한다.
 //
 // 이 파일이 지키려는 계약
 //   1) 모델 키는 Authorization 헤더로만 나가고 응답·본문에는 절대 새지 않는다
 //   2) task 화이트리스트(outline/chat, 14.23.0) 밖의 일은 400 으로 거절한다 (임의 프롬프트 주입 차단)
 //   3) 같은 입력 재요청은 외부 호출 없이 캐시로 답한다 / 동시에 온 중복은 하나로 합친다
 //   4) 본문은 상한만큼만 잘라 보낸다 (truncated=true 로 클라이언트에 알린다)
-//   5) 429 를 맞으면 잠깐 쿨다운 — 그 사이엔 외부 API 를 아예 부르지 않는다
+//   5) 429 를 맞아도 서버 쪽 쿨다운은 없다 — 다음 요청은 곧바로 다시 외부로 나간다
 import assert from 'node:assert/strict';
 
 let calls = [];        // 모델 API 호출 기록
@@ -40,7 +40,6 @@ process.env.AI_CACHE_TTL_MS = '60000';
 process.env.AI_RATE_N = '200';   // 이 파일에선 레이트리밋을 사실상 끈다 (전용 파일에서 따로 검증)
 process.env.AI_WARM_N = '1';    // 14.22.0 · '미리 준비' 전용 한도는 1 로 — 13) 에서 검증
 process.env.AI_RATE_WINDOW_MS = '60000';
-process.env.AI_COOLDOWN_MS = '300';
 
 const ai = await import('../server/src/routes/ai.js');
 const { default: Fastify } = await import('fastify');
@@ -148,31 +147,36 @@ ok('한도 안쪽이면 truncated=false', r.ok === true && r.truncated === false
 r = await post('/api/ai/ask', { task: 'outline', text: '   \n  ' });
 ok('빈 노트 → 400 + 외부 호출 없음', r.status === 400 && /빈 노트/.test(r.error || ''));
 
-// ── 9) 429 → 제한 안내 + 쿨다운 동안 외부 호출 0번 ──
-ai.aiCacheReset(); ai.aiCooldownReset();
+// ── 9) 429 → 제한 안내 · 서버 쪽 쿨다운 없음(다음 요청은 곧바로 재시도) ──
+ai.aiCacheReset();
 calls = [];
 extFetch = () => new Response('rate limited', { status: 429 });
 r = await post('/api/ai/ask', { task: 'outline', text: '429 맞는 본문' });
-ok('429 → 429 + limited + retry_after', r.status === 429 && r.limited === true
-  && Number(r.retry_after) >= 1 && /제한|사용량/.test(r.error || ''));
-extFetch = () => chatOk('쿨다운 중이면 부르면 안 되는 호출');
-r = await post('/api/ai/ask', { task: 'outline', text: '쿨다운 중 본문' });
-ok('쿨다운 중에는 모델 API 를 부르지 않는다', r.status === 429 && calls.length === 1);
-await new Promise((z) => setTimeout(z, 350));   // 쿨다운 만료
-r = await post('/api/ai/ask', { task: 'outline', text: '쿨다운 뒤 본문' });
-ok('쿨다운이 지나면 다시 호출', r.ok === true && calls.length === 2);
+ok('429 → 429 + limited 안내', r.status === 429 && r.limited === true && /제한|사용량/.test(r.error || ''));
+ok('공급사가 retry-after 를 안 주면 서버가 초를 지어내지 않는다', Number(r.retry_after) === 0,
+  String(r.retry_after));
+extFetch = () => chatOk('곧바로 다시 나가야 하는 호출');
+r = await post('/api/ai/ask', { task: 'outline', text: '429 직후 본문' });
+ok('429 직후에도 기다림 없이 모델 API 를 다시 부른다 (쿨다운 없음)',
+  r.ok === true && calls.length === 2, calls.length);
+// 공급사가 retry-after 헤더를 주면 그 값만 그대로 전달한다
+ai.aiCacheReset();
+extFetch = () => new Response('rate limited', { status: 429, headers: { 'retry-after': '7' } });
+r = await post('/api/ai/ask', { task: 'outline', text: 'retry-after 있는 본문' });
+ok('공급사의 retry-after 는 그대로 실어 보낸다', r.status === 429 && Number(r.retry_after) === 7,
+  String(r.retry_after));
 
-// ── 10) 키 오류(401) → 502 · 쿨다운을 걸지 않아 바로 재시도된다 ──
-ai.aiCacheReset(); ai.aiCooldownReset();
+// ── 10) 키 오류(401) → 502 · 바로 재시도된다 ──
+ai.aiCacheReset();
 calls = [];
 extFetch = () => new Response('invalid api key', { status: 401 });
 r = await post('/api/ai/ask', { task: 'outline', text: '키 오류 본문' });
 ok('401 → 502 (limited 아님)', r.status === 502 && r.limited === false);
 r = await post('/api/ai/ask', { task: 'outline', text: '키 오류 본문 두번째' });
-ok('401 은 쿨다운이 없어서 곧바로 다시 나간다', calls.length === 2 && r.status === 502);
+ok('401 뒤에도 곧바로 다시 나간다', calls.length === 2 && r.status === 502);
 
 // ── 10-2) 설정 오류 힌트: 401 은 키, 404 는 모델명을 짚어 주고 키는 안 싣는다 ──
-ai.aiCacheReset(); ai.aiCooldownReset();
+ai.aiCacheReset();
 extFetch = () => new Response('invalid api key', { status: 401 });
 r = await post('/api/ai/ask', { task: 'outline', text: '힌트 401 본문' });
 ok('401 → 키 확인 힌트', r.status === 502 && /키가 거부됐어요\(401\)/.test(r.hint || ''));
@@ -183,11 +187,10 @@ r = await post('/api/ai/ask', { task: 'outline', text: '힌트 404 본문' });
 ok('404 → 모델명 확인 힌트', r.status === 502 && /모델을 못 찾았어요\(404\)/.test(r.hint || '')
   && /models/.test(r.hint || ''));
 ok('한도(429)에는 설정 힌트를 붙이지 않는다', true);
-ai.aiCacheReset(); ai.aiCooldownReset();
+ai.aiCacheReset();
 extFetch = () => new Response('rl', { status: 429 });
 r = await post('/api/ai/ask', { task: 'outline', text: '힌트 429 본문' });
 ok('429 → hint 비어 있음', r.status === 429 && r.hint === '');
-await new Promise((z) => setTimeout(z, 350));
 
 // ── 11) 빈 응답 ──
 ai.aiCacheReset();
@@ -196,7 +199,7 @@ r = await post('/api/ai/ask', { task: 'outline', text: '빈 응답 본문' });
 ok('모델이 빈 내용을 주면 502', r.status === 502 && r.ok === false);
 
 // ── 12) 14.22.0 · 스트리밍 — 말하는 대로 흘려 보낸다 ──
-ai.aiCacheReset(); ai.aiRateReset(); ai.aiCooldownReset();
+ai.aiCacheReset(); ai.aiRateReset();
 // 모델(OpenAI 호환) 이 흘려 보내는 SSE — data: {choices:[{delta:{content}}]} … [DONE]
 const openaiSse = (parts, size = 8) => {
   const raw = parts.map((t) => `data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}\n\n`)
@@ -250,19 +253,18 @@ ok('스트림: 같은 질문은 외부 호출 없이 캐시로 흘려 보낸다'
   && (sr.evts.find((e) => e.event === 'done') || {}).data?.cached === true, calls.length);
 
 // 스트림 중 429 → error 이벤트(한도) 로 알린다
-ai.aiCacheReset(); ai.aiCooldownReset();
+ai.aiCacheReset();
 calls = [];
 extFetch = () => new Response('rate limited', { status: 429 });
 sr = await askStream({ task: 'outline', text: '스트림 429 본문' });
 let errEvt = sr.evts.find((e) => e.event === 'error');
-ok('스트림: 429 는 error 이벤트로 알린다(제한 초 포함)',
-  Boolean(errEvt) && errEvt.data.limited === true && Number(errEvt.data.retry_after) >= 1
+ok('스트림: 429 는 error 이벤트로 알린다(제한 표시)',
+  Boolean(errEvt) && errEvt.data.limited === true
   && /제한|사용량/.test(errEvt.data.error || ''), errEvt && JSON.stringify(errEvt.data));
 ok('스트림: 429 도 SSE(200) 로 감싸서 내려준다', sr.status === 200);
-await new Promise((z) => setTimeout(z, 350));   // 쿨다운 만료
 
 // 스트림을 못 주는 공급사 → 알아서 한 방(JSON) 응답으로 떨어진다
-ai.aiCacheReset(); ai.aiCooldownReset();
+ai.aiCacheReset();
 calls = [];
 extFetch = (u, opts) => (JSON.parse(opts.body).stream
   ? chatOk('')                                  // 빈 스트림 → 못 준다
@@ -286,7 +288,7 @@ sr = await askStream({ task: 'chat', text: '광합성 노트', question: '어디
 
 // ── 13) 14.22.0 · 미리 준비(warm) — 한도를 따로 센다 ──
 //   (AI_RATE_N=200 으로 리밋이 사실상 꺼진 이 파일에서 AI_WARN_N 만 1 로 둔다)
-ai.aiCacheReset(); ai.aiRateReset(); ai.aiCooldownReset();
+ai.aiCacheReset(); ai.aiRateReset();
 calls = [];
 extFetch = () => chatOk('미리 준비된 개요');
 r = await post('/api/ai/ask', { task: 'outline', text: '미리 준비 본문', warm: true });

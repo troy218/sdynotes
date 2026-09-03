@@ -23,12 +23,12 @@
 //   · 같은 입력 재요청은 캐시로 응답 (외부 호출 0번)
 //   · 동시 중복 요청은 in-flight 하나로 합친다
 //   · uid(없으면 ip) 별 슬라이딩 윈도우 레이트리밋
-//   · 429/5xx 는 그 '공급사만' 잠깐 쿨다운 — 그 사이엔 외부 호출을 아예 하지 않는다
+//   · 429/5xx 는 '한도'로 표시만 한다 — 서버 쪽 쿨다운은 없다(다음 요청은 곧바로 다시 시도)
 import crypto from 'node:crypto';
 import {
   AI_PROVIDERS, AI_MAX_TOKENS, AI_TIMEOUT_MS,
   AI_MAX_TEXT, AI_MAX_QUESTION, AI_CACHE_TTL_MS,
-  AI_RATE_N, AI_RATE_WINDOW_MS, AI_COOLDOWN_MS, AI_WARM_N,
+  AI_RATE_N, AI_RATE_WINDOW_MS, AI_WARM_N,
 } from '../lib/config.js';
 import { requireUser } from '../lib/userauth.js';
 
@@ -124,38 +124,6 @@ function rateHit(key, now = Date.now(), n = AI_RATE_N) {
   return { ok: true, retry: 0 };
 }
 
-// ── 공급사별 쿨다운 ─────────────────────────────────────────────────────────
-// translate.js 의 호스트 쿨다운과 같은 발상: 429 를 맞은 '그 공급사만' 잠깐 쉰다.
-// 그래서 한 곳이 한도에 걸려도 나머지 공급사는 계속 쓸 수 있다.
-const cool = new Map();   // provider name -> { until, reason }
-export function aiCooldownReset() { cool.clear(); }
-const cooling = (name) => {
-  const c = cool.get(name);
-  return Boolean(c && c.until > Date.now());
-};
-const coolLeftSec = (name) => {
-  const c = cool.get(name);
-  return c ? Math.max(1, Math.ceil((c.until - Date.now()) / 1000)) : 1;
-};
-// 429(한도)·5xx(서버) 만 쉰다. 400/401/404 는 키·모델명 같은 설정 문제라
-// 다시 때려도 결과가 같고, 다른 공급사로 넘어가도 소용이 없다.
-function coolWorthy(status) { return status === 429 || status >= 500; }
-function coolSet(name, status) {
-  cool.set(name, { until: Date.now() + AI_COOLDOWN_MS, reason: `AI ${status}` });
-}
-// 아직 시도할 수 있는 공급사가 있나 (전부 쿨다운이면 '제한' 안내를 낸다)
-const anyProviderReady = () => AI_PROVIDERS.some((p) => !cooling(p.name));
-const earliestCoolSec = () => {
-  let best = 0;
-  for (const [name, c] of cool) {
-    if (c.until > Date.now()) {
-      const s = Math.ceil((c.until - Date.now()) / 1000);
-      if (!best || s < best) best = s;
-    }
-  }
-  return Math.max(1, best);
-};
-
 // ── 프롬프트 구성 ───────────────────────────────────────────────────────────
 export function aiMessages(task, text, question) {
   const spec = AI_TASKS[task] || AI_TASKS.outline;
@@ -196,13 +164,11 @@ async function callProvider(p, messages) {
     const err = new Error(`${p.name} ${r.status}`);
     err.provider = p.name;
     err.status = r.status;
-    // 429/5xx 만 '한도'로 보고 그 공급사를 쉬게 한다.
-    err.limited = coolWorthy(r.status);
-    if (err.limited) coolSet(p.name, r.status);
+    // 429/5xx 만 '한도'로 표시 — 서버 쪽 쿨다운은 없다. 다음 요청은 곧바로 다시 나간다.
+    err.limited = r.status === 429 || r.status >= 500;
     const ra = Number(r.headers.get('retry-after'));
-    err.retryAfterSec = err.limited
-      ? Math.max(1, Number.isFinite(ra) && ra > 0 ? Math.ceil(ra) : coolLeftSec(p.name))
-      : 0;
+    // 공급사가 직접 준 대기(retry-after)만 그대로 실어 보낸다 — 서버가 지어내지 않는다.
+    err.retryAfterSec = (err.limited && Number.isFinite(ra) && ra > 0) ? Math.ceil(ra) : 0;
     err.detail = raw.slice(0, 300);
     throw err;
   }
@@ -234,12 +200,9 @@ async function callProviderStream(p, messages, onDelta, signal) {
     const err = new Error(`${p.name} ${r.status}`);
     err.provider = p.name;
     err.status = r.status;
-    err.limited = coolWorthy(r.status);
-    if (err.limited) coolSet(p.name, r.status);
+    err.limited = r.status === 429 || r.status >= 500;
     const ra = Number(r.headers.get('retry-after'));
-    err.retryAfterSec = err.limited
-      ? Math.max(1, Number.isFinite(ra) && ra > 0 ? Math.ceil(ra) : coolLeftSec(p.name))
-      : 0;
+    err.retryAfterSec = (err.limited && Number.isFinite(ra) && ra > 0) ? Math.ceil(ra) : 0;
     err.detail = String(raw).slice(0, 300);
     throw err;
   }
@@ -292,13 +255,8 @@ async function callChainStream(messages, onDelta, signal, tried = []) {
   let emitted = false;
   const emit = (d) => { emitted = true; onDelta(d); };
   for (const p of AI_PROVIDERS) {
-    if (cooling(p.name)) {
-      lastErr = lastErr || Object.assign(new Error(`${p.name} 쿨다운`), { limited: true, provider: p.name });
-      continue;
-    }
     try {
       const text = await callProviderStream(p, messages, emit, signal);
-      cool.delete(p.name);
       return { text, provider: p.name, model: p.model };
     } catch (e) {
       lastErr = e;
@@ -308,7 +266,6 @@ async function callChainStream(messages, onDelta, signal, tried = []) {
       if (e.noStream) {                           // 스트림을 못 주면 그냥 한 번에 받는다
         try {
           const text = await callProvider(p, messages);
-          cool.delete(p.name);
           emit(text);
           return { text, provider: p.name, model: p.model };
         } catch (e2) {
@@ -322,7 +279,6 @@ async function callChainStream(messages, onDelta, signal, tried = []) {
   }
   const err = lastErr || new Error('쓸 수 있는 AI 공급사가 없어요');
   err.limited = limitedOnly;
-  err.retryAfterSec = err.limited ? earliestCoolSec() : 0;
   err.tried = tried;
   throw err;
 }
@@ -332,13 +288,8 @@ async function callChain(messages, tried = []) {
   let lastErr = null;
   let limitedOnly = true;
   for (const p of AI_PROVIDERS) {
-    if (cooling(p.name)) {                       // 방금 429 를 맞은 곳은 건너뛴다
-      lastErr = lastErr || Object.assign(new Error(`${p.name} 쿨다운`), { limited: true, provider: p.name });
-      continue;
-    }
     try {
       const text = await callProvider(p, messages);
-      cool.delete(p.name);
       return { text, provider: p.name, model: p.model };
     } catch (e) {
       lastErr = e;
@@ -350,7 +301,6 @@ async function callChain(messages, tried = []) {
   }
   const err = lastErr || new Error('쓸 수 있는 AI 공급사가 없어요');
   err.limited = limitedOnly;
-  err.retryAfterSec = err.limited ? earliestCoolSec() : 0;
   err.tried = tried;
   throw err;
 }
@@ -464,7 +414,7 @@ export function registerAi(app) {
   // 실패를 JSON 으로 — 스트림이든 아니든 같은 문구·같은 코드로 떨어진다.
   function failBody(e) {
     const limited = Boolean(e && e.limited);
-    const retry = limited ? Number((e && e.retryAfterSec) || earliestCoolSec()) : 0;
+    const retry = limited ? Number((e && e.retryAfterSec) || 0) : 0;   // 공급사가 준 대기만
     return {
       status: limited ? 429 : 502,
       body: {
@@ -472,7 +422,9 @@ export function registerAi(app) {
         limited,
         retry_after: retry,
         error: limited
-          ? `AI 사용량이 잠시 찼어요 · ${retry}초 뒤 다시 시도해 주세요`
+          ? (retry > 0
+            ? `AI 사용량이 잠시 찼어요 · ${retry}초 뒤 다시 시도해 주세요`
+            : 'AI 사용량이 잠시 찼어요 · 잠시 뒤 다시 시도해 주세요')
           : 'AI에 닿지 못했어요 · 잠시 뒤 다시 시도해 주세요',
         hint: limited ? '' : aiHintFor(e),
       },
@@ -527,15 +479,6 @@ export function registerAi(app) {
       });
       return;
     }
-    if (!anyProviderReady()) {
-      send('error', {
-        ok: false, limited: true, retry_after: earliestCoolSec(),
-        error: `AI 요청이 잠시 제한됐어요 · ${earliestCoolSec()}초 뒤 다시 시도해 주세요`,
-      });
-      try { res.end(); } catch { /* noop */ }
-      return;
-    }
-
     send('meta', Object.assign({}, base, { cached: false }));
     const ac = new AbortController();
     const timer = setTimeout(() => { try { ac.abort(); } catch { /* noop */ } }, AI_TIMEOUT_MS);
@@ -573,22 +516,6 @@ export function registerAi(app) {
     // 14.22.0 · stream:true 면 말하는 대로 흘려 보낸다(SSE).
     //   stream 이 없거나 못 읽는 환경이면 예전처럼 JSON 한 방으로 떨어진다.
     if (b.stream === true) { streamReply(req, reply, job); return; }
-
-    if (!anyProviderReady()) {
-      // 모든 공급사가 쉬는 중. 그래도 캐시에 있으면 그걸로 답한다(외부 호출 0번).
-      const hit = aiCacheGet(job.key);
-      if (hit) {
-        return reply.send({
-          ok: true, task: job.task, text: hit.text, model: hit.model || AI_MODEL,
-          provider: hit.provider || '', cached: true,
-          truncated: job.fit.truncated, chars: job.fit.chars, note_chars: job.fit.noteChars,
-        });
-      }
-      return reply.code(429).send({
-        ok: false, limited: true, retry_after: earliestCoolSec(),
-        error: `AI 요청이 잠시 제한됐어요 · ${earliestCoolSec()}초 뒤 다시 시도해 주세요`,
-      });
-    }
 
     try {
       const { text: out, cached, provider, model } = await aiCore(job.task, job.text, job.question);
