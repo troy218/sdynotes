@@ -27890,7 +27890,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   function busy(on){
     var go=$('aiGo'), st=$('aiStop'), cp=$('aiCopy');
-    if(go){ go.disabled=!!on; go.textContent=on?'생각 중…':'실행'; }
+    if(go){
+      // 키가 아직 등록되면(!enabled) 실행 버튼은 계속 비활성 —
+      // '생각 중' 끝나도 다시 켜지 않게 !enabled 을 함께 본다.
+      go.disabled=on||!enabled;
+      var t=go.querySelector('.ai-go-t');
+      if(t) t.textContent=on?'생각 중…':'실행';
+      var ic=go.querySelector('i');
+      if(ic) ic.className=on?'ri-loader-4-line ai-go-spin':'ri-sparkling-2-fill';
+    }
     if(st) st.hidden=!on;
     if(cp) cp.hidden=on||!lastText;
   }
@@ -27913,6 +27921,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var p=$('aiPanel'), f=$('aiFab');
     if(p) p.hidden=false;
     if(f) f.classList.add('hide');
+    // 열 때마다 서버 상태를 다시 확인 — 키 등록(재시작) 후에 새로고침 없이도
+    // 다음에 열 때 바로 '켜짐' 으로 바뀐다.
+    refreshStatus();
     var q=$('aiQ'); if(q&&NEEDQ[task]) q.focus();
   };
   window.sdyAiClose=function(){
@@ -27989,17 +28000,24 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var p=$('aiPanel'); if(p&&!p.hidden) window.sdyAiClose();
   });
 
-  function boot(){
-    paintTasks(); pick(task);
+  // 서버 키 상태 확인 — 버튼 점(초록/주황)·패널 안내 카드·실행 버튼
+  // 비활성을 전부 여기서 붙인다. 키가 등록돼도 안 돼도 이 호출이 전부다.
+  function refreshStatus(){
     fetch('/api/ai/status',{cache:'no-store'}).then(function(r){ return r.json(); }).then(function(d){
       enabled=!!(d&&d.enabled);
-      var m=$('aiModel');
+      var p=$('aiPanel'), f=$('aiFab'), dot=$('aiDot'), off=$('aiOff'), m=$('aiModel');
+      if(p) p.classList.toggle('ai-off',!enabled);
+      if(f) f.classList.toggle('ai-on',enabled);
+      if(dot) dot.title=enabled?'AI 켜짐':'AI 키 아직 미등록 — 서버 .env 에 GEMINI_API_KEY(구글) 를 넣으면 켜짐';
+      if(off) off.hidden=enabled;
       // 공급사 체인을 쓰면 여러 개가 붙는다 — '첫 모델 외 n개' 로 줄여 표시.
       var n=(d&&d.providers&&d.providers.length)||0;
       if(m) m.textContent=enabled?((d.model||'')+(n>1?(' 외 '+(n-1)+'개'):'')):'AI 꺼짐';
-      if(!enabled) meta((d&&d.error)||'AI 키가 설정되지 않았어요');
+      // 실행 중인 요청이 있으면 busy() 가 다시 덮으므로 유휴일 때만 건드린다.
+      var go=$('aiGo'); if(go&&!ctl) go.disabled=!enabled;
     }).catch(function(){});
   }
+  function boot(){ paintTasks(); pick(task); refreshStatus(); }
   window.sdyAiBoot=boot;
   // DOM 이 이미 있으면 바로, 아니면 load 에 맞춰 한 번만.
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);

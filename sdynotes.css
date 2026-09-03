@@ -6362,57 +6362,135 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   14.20.0 · AI 노트 도우미 패널
+   14.21.0 · AI 노트 도우미 — 왼쪽 아래 유리 FAB + 유리 패널
+   ─────────────────────────────────────────────────────────────────────
+   · 오른쪽 아랫자리는 음악 칩(#mpReopen)·엽스코드 칩(#ypReopen) 의 자리.
+     AI 버튼은 음악 칩과 마주 보듯 **왼쪽**에, 음악 칩과 같은 크기(42px)·
+     같은 유리 원반으로 떠 있다.
+   · 유리 질감은 음악 바·플레이어와 같은 --g-* 토큰 → 다모드 자동.
+   · 버튼의 작은 점 = 키 상태: 초록(켜짐) / 주황(키 아직 미등록).
+     키가 없으면 패널에 등록 안내 카드(#aiOff) 가 떠 있고, 키를 넣으면
+     자동으로 사라진다(패널을 다시 열 때마다 서버 상태를 다시 확인).
    · 모달(.modal-bg z:1900) 아래, 일반 콘텐츠 위에 뜨게 1850 을 쓴다.
-   · 색은 전부 기존 변수(--card/--text1/--border/--accent)를 쓴다 → 다크모드 자동.
    ══════════════════════════════════════════════════════════════════════ */
-.ai-fab{position:fixed;right:18px;bottom:18px;width:52px;height:52px;border-radius:50%;
-    background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff;display:flex;
-    align-items:center;justify-content:center;font-size:24px;cursor:pointer;z-index:1850;
-    box-shadow:0 6px 20px rgba(79,110,247,.35);transition:transform .18s ease,opacity .18s ease;}
-.ai-fab:hover{transform:translateY(-2px) scale(1.04);}
-.ai-fab:active{transform:scale(.95);}
+.ai-fab{position:fixed;left:14px;bottom:max(14px,env(safe-area-inset-bottom));
+    width:42px;height:42px;border-radius:50%;border:1px solid var(--g-brd);
+    background:var(--g-fill-strong);color:var(--accent);
+    backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%);
+    box-shadow:var(--g-hi),var(--g-shadow);
+    display:flex;align-items:center;justify-content:center;font-size:19px;cursor:pointer;
+    z-index:1850;transition:transform .18s ease,box-shadow .18s ease,opacity .18s ease;}
+.ai-fab:hover{transform:scale(1.06);box-shadow:var(--g-hi),0 8px 22px rgba(79,110,247,.45);}
+.ai-fab:active{transform:scale(.94);}
 .ai-fab.hide{opacity:0;pointer-events:none;transform:scale(.7);}
-.ai-panel{position:fixed;right:18px;bottom:82px;width:min(360px,calc(100vw - 36px));
-    max-height:min(70vh,560px);display:flex;flex-direction:column;background:var(--card);
-    border:1px solid var(--border);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.18);
-    z-index:1850;overflow:hidden;animation:aiPop .2s ease-out;}
+/* 키 상태 점 — 초록=켜짐, 주황=키 아직 미등록(서버 .env) */
+.ai-dot{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;border-radius:50%;
+    background:#f59e0b;box-shadow:0 0 0 2px var(--bg),0 0 8px rgba(245,158,11,.6);}
+.ai-fab.ai-on .ai-dot{background:#22c55e;box-shadow:0 0 0 2px var(--bg),0 0 8px rgba(34,197,94,.7);}
+
+.ai-panel{position:fixed;left:14px;bottom:66px;width:min(376px,calc(100vw - 28px));
+    max-height:min(72vh,600px);display:flex;flex-direction:column;
+    background:var(--g-fill-strong);
+    backdrop-filter:blur(var(--g-blur-lg)) saturate(160%);
+    -webkit-backdrop-filter:blur(var(--g-blur-lg)) saturate(160%);
+    border:1px solid var(--g-brd);border-radius:18px;
+    box-shadow:var(--g-hi),var(--g-shadow-lg);
+    z-index:1850;overflow:hidden;animation:aiPop .22s cubic-bezier(.22,.9,.32,1.06);
+    color:var(--text1);}
 .ai-panel[hidden]{display:none;}
 @keyframes aiPop{from{opacity:0;transform:translateY(10px) scale(.97);}to{opacity:1;transform:none;}}
-.ai-hd{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;
-    border-bottom:1px solid var(--border);font-size:13.5px;color:var(--text1);}
-.ai-x{border:0;background:transparent;color:var(--text3);font-size:19px;cursor:pointer;
-    width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
-.ai-x:hover{background:var(--bg2);color:var(--text1);}
-.ai-tasks{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px 0;}
-.ai-task{border:1px solid var(--border);background:var(--bg2);color:var(--text2);
-    border-radius:999px;padding:5px 11px;font-size:12px;cursor:pointer;transition:all .15s;}
-.ai-task:hover{border-color:var(--accent);color:var(--text1);}
-.ai-task.on{background:var(--accent);border-color:var(--accent);color:#fff;}
-#aiQ{margin:10px 12px 0;padding:8px 10px;border:1px solid var(--border);border-radius:10px;
-    background:var(--bg2);color:var(--text1);font:inherit;font-size:13px;resize:vertical;outline:none;}
-#aiQ:focus{border-color:var(--accent);}
+@keyframes aiBusy{0%,100%{opacity:1;}50%{opacity:.45;}}
+@keyframes aiSpin{to{transform:rotate(360deg);}}
+
+/* — 머리말: 그라데이션 엠블럼 + 제목/모델 — */
+.ai-hd{flex:none;display:flex;align-items:center;gap:9px;padding:11px 10px 11px 12px;
+    border-bottom:1px solid var(--g-line);}
+.ai-logo{flex:none;width:30px;height:30px;border-radius:9px;color:#fff;font-size:16px;
+    background:linear-gradient(135deg,var(--accent),#8b5cf6);
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 3px 10px rgba(79,110,247,.35);}
+.ai-hd-mid{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px;}
+#aiTtl{font-size:13.5px;font-weight:800;letter-spacing:-.01em;color:var(--text1);line-height:1.25;}
+.ai-model{font-size:10.5px;color:var(--text3);line-height:1.3;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ai-x{flex:none;border:0;background:transparent;color:var(--text3);font-size:18px;cursor:pointer;
+    width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    transition:background .15s ease,color .15s ease;}
+.ai-x:hover{background:var(--g-in);color:var(--text1);}
+
+/* — 몸통: 키 안내 카드 · 작업 칩 · 스코프 · 질문 · 결과 · 메타 — */
+.ai-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding-bottom:2px;}
+/* 키 미등록 안내 카드 — .env 에 키가 들어가면(=enabled) 알아서 사라진다 */
+.ai-off{margin:11px 12px 0;padding:12px 13px;border-radius:13px;
+    border:1.5px dashed color-mix(in srgb,var(--accent) 42%,transparent);
+    background:color-mix(in srgb,var(--accent) 7%,transparent);
+    display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.6;color:var(--text2);}
+.ai-off[hidden]{display:none;}
+.ai-off i{font-size:18px;color:var(--accent);line-height:1;}
+.ai-off b{color:var(--text1);font-size:12.5px;}
+.ai-off code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10.5px;
+    color:var(--text1);background:var(--g-in);border:1px solid var(--g-line);
+    border-radius:5px;padding:1px 5px;}
+/* 키 미등록 상태면 컨트롤은 흐리게 — 안내 카드가 주된 화면 */
+.ai-panel.ai-off .ai-tasks,.ai-panel.ai-off .ai-scope,.ai-panel.ai-off #aiQ{opacity:.5;}
+.ai-tasks{display:flex;flex-wrap:wrap;gap:6px;padding:11px 12px 0;}
+.ai-task{border:1px solid var(--g-line);background:var(--g-in);color:var(--text2);
+    border-radius:999px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;
+    transition:all .16s ease;}
+.ai-task:hover{border-color:var(--accent);color:var(--accent);}
+.ai-task.on{background:var(--accent);border-color:var(--accent);color:#fff;
+    box-shadow:0 3px 10px rgba(79,110,247,.35);}
+.ai-scope{display:flex;align-items:center;gap:7px;margin:10px 12px 0;padding:7px 10px;
+    border-radius:10px;border:1px solid var(--g-line);background:var(--g-in);
+    font-size:12px;color:var(--text2);cursor:pointer;user-select:none;
+    transition:all .16s ease;}
+.ai-scope:hover{border-color:color-mix(in srgb,var(--accent) 55%,transparent);color:var(--text1);}
+.ai-scope input{position:absolute;opacity:0;pointer-events:none;}
+.ai-scope-box{flex:none;width:17px;height:17px;border-radius:6px;border:1.5px solid var(--border);
+    background:var(--bg2);display:flex;align-items:center;justify-content:center;
+    color:transparent;font-size:11px;line-height:1;transition:all .16s ease;}
+.ai-scope input:checked ~ .ai-scope-box{background:var(--accent);border-color:var(--accent);color:#fff;}
+#aiQ{margin:8px 12px 0;padding:10px 11px;border:1px solid var(--g-line);border-radius:12px;
+    background:var(--g-in);color:var(--text1);font:inherit;font-size:13px;line-height:1.55;
+    resize:vertical;outline:none;min-height:42px;
+    transition:border-color .16s ease,box-shadow .16s ease;}
+#aiQ::placeholder{color:var(--text3);}
+#aiQ:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,110,247,.14);}
 #aiQ.hide{display:none;}
-.ai-opts{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px 0;
-    font-size:11.5px;color:var(--text3);}
-.ai-scope{display:flex;align-items:center;gap:5px;cursor:pointer;}
-.ai-model{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%;}
-.ai-act{display:flex;gap:6px;padding:8px 12px;}
-.ai-go{flex:1;border:0;border-radius:10px;padding:9px;background:var(--accent);color:#fff;
-    font-size:13px;font-weight:600;cursor:pointer;}
-.ai-go:disabled{opacity:.55;cursor:progress;}
-.ai-copy,.ai-stop{border:1px solid var(--border);background:var(--bg2);color:var(--text2);
-    border-radius:10px;padding:9px 11px;font-size:12px;cursor:pointer;}
-.ai-stop{border-color:#e0a5a5;color:#c0392b;}
-.ai-copy[hidden],.ai-stop[hidden]{display:none;}
-.ai-out{padding:0 12px;font-size:12.8px;line-height:1.65;color:var(--text1);
-    overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:34vh;}
+.ai-out{margin:10px 12px 0;padding:11px 12px;font-size:12.8px;line-height:1.7;color:var(--text1);
+    background:var(--g-in);border:1px solid var(--g-line);border-radius:12px;
+    overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:32vh;}
 .ai-out:empty{display:none;}
-.ai-out.busy{color:var(--text3);}
-.ai-meta{padding:8px 12px 11px;font-size:11px;color:var(--text3);min-height:16px;}
+.ai-out.busy{color:var(--text3);animation:aiBusy 1.15s ease-in-out infinite;}
+.ai-meta{padding:7px 14px 2px;font-size:10.8px;color:var(--text3);min-height:17px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* — 바닥: 멈추기 · 복사 · 실행 — */
+.ai-ft{flex:none;display:flex;gap:7px;padding:11px 12px;margin-top:8px;
+    border-top:1px solid var(--g-line);}
+.ai-go{flex:1 1 auto;border:0;border-radius:11px;padding:10px 12px;color:#fff;
+    background:var(--accent);font-size:13px;font-weight:700;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    box-shadow:0 4px 14px rgba(79,110,247,.32);
+    transition:transform .15s ease,box-shadow .15s ease,opacity .15s ease;}
+.ai-go i{font-size:15px;}
+.ai-go i.ai-go-spin{animation:aiSpin 1s linear infinite;}
+.ai-go:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 18px rgba(79,110,247,.45);}
+.ai-go:active:not(:disabled){transform:scale(.98);}
+.ai-go:disabled{opacity:.55;cursor:progress;box-shadow:none;}
+.ai-copy,.ai-stop{flex:none;border:1px solid var(--g-line);background:var(--g-in);color:var(--text2);
+    border-radius:11px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;
+    display:flex;align-items:center;gap:5px;transition:all .15s ease;}
+.ai-copy i,.ai-stop i{font-size:13px;}
+.ai-copy:hover{border-color:var(--accent);color:var(--accent);}
+.ai-stop{color:#c0392b;border-color:color-mix(in srgb,#c0392b 35%,transparent);}
+.ai-stop:hover{background:color-mix(in srgb,#c0392b 8%,transparent);}
+.ai-copy[hidden],.ai-stop[hidden]{display:none;}
+
+/* 좁은 화면 — 패널은 폭 전체 시트, 버튼은 safe-area 에 붙어 왼쪽으로 */
 @media (max-width:640px){
-    .ai-panel{right:10px;left:10px;bottom:74px;width:auto;max-height:62vh;}
-    .ai-fab{right:12px;bottom:12px;}
+    .ai-panel{left:10px;right:10px;width:auto;bottom:74px;max-height:62vh;}
+    .ai-fab{left:12px;bottom:12px;}
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -6765,6 +6843,12 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
   #mpReopen,#ypReopen{right:max(12px,var(--ph-right));width:46px;height:46px;}
   #mpReopen{bottom:calc(var(--ph-safe) + var(--ph-gap));font-size:20px;}
   #ypReopen{bottom:calc(var(--ph-safe) + var(--ph-gap) + var(--ph-stack));}
+  /* AI 버튼 — 음악 칩과 마주 보는 왼쪽 자리 (safe-area 포함) */
+  .ai-fab{left:max(12px,var(--ph-left));right:auto;width:46px;height:46px;font-size:20px;
+    bottom:calc(var(--ph-safe) + var(--ph-gap));}
+  .ai-panel{left:max(10px,var(--ph-left));right:max(10px,var(--ph-right));width:auto;
+    bottom:calc(var(--ph-safe) + 64px);
+    max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 84px);}
 
   .mpb{
     left:max(6px,var(--ph-left))!important;right:max(6px,var(--ph-right))!important;
