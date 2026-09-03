@@ -106,6 +106,38 @@ Google AI Studio 에서 만든 API 키가 맞는지… (Vertex AI 서비스계�
 + `/chat/completions` 입니다 — 이 저장소가 부르는 것과 정확히 같습니다
 ([공식 문서](https://ai.google.dev/gemini-api/docs/openai)).
 
+### ★ 같은 키로 모델 여러 개 걸어 두기 — 무료 티어 '한도 라우팅'
+
+무료 티어의 한도는 **모델마다 따로** 잡힙니다. 예를 들어 `Gemini 3.5 Flash` 가
+하루치(RPD)를 다 쓰면 막히지만, `Gemini 3.1 Flash Lite`·`Gemini 3.5 Flash Lite`
+는 아직 남아 있을 수 있습니다. 그래서 GEMINI 키 **하나로** 모델을 여러 개 나열해
+두면, 앞 모델이 429(한도)를 주면 **같은 키로 다음 모델로** 자동으로 넘어갑니다.
+체인이니 전부 막혀야 비로소 '제한' 안내가 나갑니다.
+
+```ini
+# /var/www/memo/.env  (로컬은 저장소 루트 .env)
+AI_PROVIDERS=gemini
+GEMINI_API_KEY=AIza...(그 키 하나면 충분)
+GEMINI_MODELS=gemini-3.5-flash,gemini-3.1-flash-lite,gemini-3.5-flash-lite
+```
+
+- `<이름>_MODELS` 는 **콤마(,) 목록** — 순서대로 시도합니다.
+- `<이름>_MODELS` 가 있으면 단일 `<이름>_MODEL` 보다 우선합니다.
+- 수동 경로도 똑같습니다: `AI_MODELS=m1,m2` (없으면 `AI_MODEL` 하나).
+- `AI_PROVIDERS` 를 안 적어도 프리셋 키만 있으면 자동으로 잡힙니다
+  (`GEMINI_API_KEY` + `GEMINI_MODELS` 만 있어도 됨).
+- **자기 키에서 정말 쓸 수 있는 모델명**은 위에 있는
+  `curl "…/v1beta/openai/models"` 로 뽑은 id 를 쓰세요. 없는 이름을 넣으면
+  `404` 가 나고 다음 모델로 넘어갑니다.
+- `/api/ai/status` 의 `providers` 에는 같은 공급사가 **모델별로** 나타납니다.
+- 예: `/var/www/memo/.env` 를 고쳤으면 `sudo systemctl restart sdy` 후
+  `curl -s localhost:5000/api/ai/status` 로 확인.
+
+> 참고 — 국내 오픈소스 노트앱 운영 관례대로, **무료 티어 한도는 자주 바뀝니다.**
+> 숫자를 외우지 말고 Google AI Studio 대시보드에서 확인하세요. 이 앱은 그래서
+> 공급사 체인(`AI_PROVIDERS=gemini,groq`)과 모델 체인(`GEMINI_MODELS=…`)을
+> 모두 지원합니다. 둘을 함께 써도 됩니다.
+
 ### 다른 공급사와 함께 쓰기 (체인)
 
 ```ini
@@ -141,6 +173,8 @@ GROQ_API_KEY=gsk_...
 
 - `AI_PROVIDERS` 를 안 적어도 **키가 있는 프리셋은 자동으로 붙는다.**
 - `<이름>_BASE_URL` · `<이름>_MODEL` 로 개별 덮어쓰기 가능 (예: `OLLAMA_MODEL`).
+- `<이름>_MODELS` 로 **모델 여러 개**를 체인에 올릴 수 있다 (같은 키로 429 시 다음 모델로,
+  위 "같은 키로 모델 여러 개 걸어 두기" 참고).
 - **키는 서버에서만 읽는다.** 프런트(`sdynotes.js`)에 키를 심지 말 것 — 이 사이트는
   전역 CSP 가 없어서 JS 에 박힌 값은 그대로 노출된다.
 

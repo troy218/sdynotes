@@ -68,6 +68,39 @@ ok('같은 키+url+model 중복은 한 번만', (() => {
   const l = cfg.aiProvidersFromEnv({ AI_PROVIDERS: 'groq,groq', GROQ_API_KEY: 'g1' });
   return l.length === 1;
 })());
+// 14.23.x · <이름>_MODELS 콤마 목록 → 같은 키/URL 로 모델 여러 개를 체인에 올린다.
+ok('GEMINI_MODELS 콤마 목록 → 모델별 체인 항목이 순서대로 잡힌다', (() => {
+  const l = cfg.aiProvidersFromEnv({
+    AI_PROVIDERS: 'gemini', GEMINI_API_KEY: 'm1',
+    GEMINI_MODELS: 'gemini-3.5-flash,gemini-3.1-flash-lite,gemini-3.5-flash-lite',
+  });
+  return l.length === 3
+    && l.every((p) => p.name === 'gemini' && p.key === 'm1')
+    && l[0].model === 'gemini-3.5-flash'
+    && l[1].model === 'gemini-3.1-flash-lite'
+    && l[2].model === 'gemini-3.5-flash-lite';
+})(), JSON.stringify(cfg.aiProvidersFromEnv({
+  AI_PROVIDERS: 'gemini', GEMINI_API_KEY: 'm1',
+  GEMINI_MODELS: 'gemini-3.5-flash,gemini-3.1-flash-lite,gemini-3.5-flash-lite',
+})));
+ok('<이름>_MODELS 는 <이름>_MODEL(단일) 보다 우선한다', (() => {
+  const l = cfg.aiProvidersFromEnv({
+    AI_PROVIDERS: 'gemini', GEMINI_API_KEY: 'm1',
+    GEMINI_MODEL: 'gemini-2.5-flash', GEMINI_MODELS: 'gemini-3.5-flash,gemini-3.1-flash-lite',
+  });
+  return l.length === 2 && l[0].model === 'gemini-3.5-flash' && l[1].model === 'gemini-3.1-flash-lite';
+})(), JSON.stringify(cfg.aiProvidersFromEnv({
+  AI_PROVIDERS: 'gemini', GEMINI_API_KEY: 'm1',
+  GEMINI_MODEL: 'gemini-2.5-flash', GEMINI_MODELS: 'gemini-3.5-flash,gemini-3.1-flash-lite',
+})));
+ok('AI_PROVIDERS 를 안 적어도 프리셋 키 + <이름>_MODELS 로 자동 감지된다', (() => {
+  const l = cfg.aiProvidersFromEnv({ GEMINI_API_KEY: 'm1', GEMINI_MODELS: 'gemini-3.5-flash,gemini-3.1-flash-lite' });
+  return l.length === 2 && l.every((p) => p.name === 'gemini');
+})());
+ok('AI_MODELS(수동) 도 콤마 목록을 받는다', (() => {
+  const l = cfg.aiProvidersFromEnv({ AI_KEY: 'k', AI_BASE_URL: 'https://my.gw/v1', AI_MODELS: 'm1,m2' });
+  return l[0].name === 'manual' && l.length === 2 && l[0].model === 'm1' && l[1].model === 'm2';
+})());
 // 회귀: AI_PROVIDERS 에 적은 공급사의 URL 을 덮어쓰면, 자동 감지 경로가 프리셋
 // 기본 URL 로 한 번 더 집어넣어 '같은 공급사를 두 번 때리는' 사고가 났었다.
 ok('AI_PROVIDERS + BASE_URL 덮어쓰기 → 덮어쓴 값 하나로만 (중복 호출 방지)', (() => {
