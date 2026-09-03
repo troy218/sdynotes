@@ -4,8 +4,8 @@
 // AI_PROVIDERS/AI_* 는 import 시점에 읽히므로 단독 프로세스로 돌린다.
 //   1) .env → 공급사 목록 해석 (프리셋 URL/모델, 자동 감지, 중복 제거, ollama)
 //   2) 1차 429 → 2차로 폴백 (응답에 '누가 답했는지'가 담긴다)
-//   3) 전부 429 → 429 + retry_after, 그 뒤엔 외부 호출 0번
-//   4) 전부 쉬는 중에도 캐시가 있으면 그것으로 답한다
+//   3) 전부 429 → 429 제한 안내 — 서버 쪽 쿨다운은 없어서 다음 요청은 곧바로 재시도
+//   4) 캐시가 있으면 외부 호출 없이 그것으로 답한다
 //   5) 키는 항상 Authorization 헤더로만 나간다
 import assert from 'node:assert/strict';
 
@@ -30,7 +30,6 @@ process.env.GEMINI_API_KEY = 'gem-fake-2222';
 process.env.AI_PROVIDERS = 'groq,gemini';
 process.env.AI_CACHE_TTL_MS = '60000';
 process.env.AI_RATE_N = '200';
-process.env.AI_COOLDOWN_MS = '300';
 
 const cfg = await import('../server/src/lib/config.js');
 const ai = await import('../server/src/routes/ai.js');
@@ -100,7 +99,7 @@ ok('status: 공급사 체인을 이름·모델로 알려 준다',
   && st.providers[0].name === 'groq' && st.providers[1].name === 'gemini');
 ok('status: 키는 응답에 없다', !JSON.stringify(st).includes('gsk-fake-1111') && !JSON.stringify(st).includes('gem-fake-2222'));
 
-ai.aiCacheReset(); ai.aiCooldownReset();
+ai.aiCacheReset();
 calls = [];
 extFetch = (u) => u.startsWith('https://api.groq.com')
   ? new Response('rate limited', { status: 429 })
@@ -115,41 +114,40 @@ ok('각자 자기 키를 헤더로만 보냈다', calls[0].auth === 'Bearer gsk-
   && calls[1].auth === 'Bearer gem-fake-2222'
   && !calls[0].raw.includes('gsk-fake-1111') && !calls[1].raw.includes('gem-fake-2222'));
 
-// Groq 는 쿨다운 중 → 다음 요청은 Groq 를 아예 안 부른다
+// 서버 쪽 쿨다운 없음 → 429 뒤 다음 요청도 1차(Groq)부터 다시 부른다
 ai.aiCacheReset();
 calls = [];
 extFetch = () => chatOk('두번째 답');
-r = await post({ task: 'outline', text: '쿨다운 건너뛰기 본문' });
-ok('429 맞은 공급사는 쿨다운 동안 건너뛴다', r.ok === true && calls.length === 1
-  && calls[0].url.startsWith('https://generativelanguage.googleapis.com'));
+r = await post({ task: 'outline', text: '429 직후 본문' });
+ok('429 뒤에도 다음 요청은 1차를 다시 부른다 (쿨다운 없음)', r.ok === true && calls.length === 1
+  && calls[0].url.startsWith('https://api.groq.com'));
 
-// ── 3) 전부 429 → 429 안내, 이후 외부 호출 0번 ──────────────────────────────
-ai.aiCacheReset(); ai.aiCooldownReset();
+// ── 3) 전부 429 → 429 제한 안내, 다음 요청은 곧바로 재시도 ──────────────────
+ai.aiCacheReset();
 calls = [];
 extFetch = () => new Response('rl', { status: 429 });
 r = await post({ task: 'outline', text: '전부 막힘 본문' });
-ok('전부 429 → 429 + limited + retry_after', r.status === 429 && r.limited === true && Number(r.retry_after) >= 1);
+ok('전부 429 → 429 + limited', r.status === 429 && r.limited === true);
 ok('둘 다 때려 보고 나서 거절했다', calls.length === 2);
-extFetch = () => chatOk('부르면 안 되는 호출');
-r = await post({ task: 'outline', text: '전부 쿨다운 중 본문' });
-ok('전부 쉬는 중엔 외부 호출 0번', r.status === 429 && calls.length === 2);
+extFetch = () => chatOk('곧바로 다시 나가야 하는 호출');
+r = await post({ task: 'outline', text: '전부 막힘 직후 본문' });
+ok('그 직후에도 기다림 없이 외부로 다시 나간다 (쿨다운 없음)',
+  r.ok === true && calls.length === 3, calls.length);
 
-// ── 4) 전부 쉬는 중에도 캐시가 있으면 그것으로 답한다 ────────────────────────
-ai.aiCacheReset(); ai.aiCooldownReset();
+// ── 4) 캐시가 있으면 외부 호출 없이 그것으로 답한다 ──────────────────────────
+ai.aiCacheReset();
 calls = [];
 extFetch = () => chatOk('캐시될 답');
-r = await post({ task: 'outline', text: '캐시+쿨다운 본문' });
+r = await post({ task: 'outline', text: '캐시 본문' });
 ok('미리 캐시를 채운다', r.ok === true && r.provider === 'groq' && calls.length === 1);
-extFetch = () => new Response('rl', { status: 429 });
-await post({ task: 'outline', text: '쿨다운을 거는 다른 본문' });   // 두 공급사 다 429
 extFetch = () => chatOk('부르면 안 되는 호출');
 calls = [];
-r = await post({ task: 'outline', text: '캐시+쿨다운 본문' });
-ok('전부 쿨다운이어도 캐시로 답한다 (외부 호출 0번)',
+r = await post({ task: 'outline', text: '캐시 본문' });
+ok('같은 질문은 캐시로 답한다 (외부 호출 0번)',
   r.ok === true && r.cached === true && r.text === '캐시될 답' && calls.length === 0);
 
 // ── 5) 401(키 오류) 은 '한도'가 아니라 502 로 떨어진다 ──────────────────────
-ai.aiCacheReset(); ai.aiCooldownReset();
+ai.aiCacheReset();
 calls = [];
 extFetch = () => new Response('bad key', { status: 401 });
 r = await post({ task: 'outline', text: '키 오류 체인 본문' });

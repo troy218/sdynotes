@@ -3,7 +3,8 @@
    예전(✨ 아이콘 버튼 + 뜨는 창)과 달라진 계약:
      1) 소스 — #aiFab/#aiPanel/할일칩(요약·개조식·노트질문·자유질문 고르기)/
         보내기 버튼이 없고, #noteOtter 옆 한 줄 검색창(#aiAsk > #aiQ) +
-        그 바로 위 개요 버튼(#aiOutline) 만 있다. 서버 task 도 outline/chat 둘뿐.
+        그 바로 위 '이 페이지'(#aiOutlinePage)·'전체 페이지'(#aiOutlineDoc)
+        버튼 둘만 있다. 서버 task 도 outline/chat 둘뿐.
      2) 런타임(jsdom) — Enter 로 바로 묻고(task=chat), 답은 해돌이 말풍선
         (#aiSay)에 스트리밍되고, [[note]]/[[free]] 표식은 '노트 질문/자유 질문'
         딱지(#aiKind)가 되고, 말풍선은 닫기(#aiSayX) 전까지 계속 떠 있고,
@@ -36,7 +37,9 @@ check('서버: 미리 준비(warm)는 개요 정리(outline)만 받는다',
 check('서버: 키는 Authorization 헤더로만 나간다',
   /Authorization: `Bearer \$\{p\.key\}`/.test(srv));
 check('서버: 같은 입력은 캐시로 답한다', /cachePut\(key, out\.text, out\.provider, out\.model\)/.test(srv) && /cached: true/.test(srv));
-check('서버: 429/5xx 만 쿨다운을 건다', /status === 429 \|\| status >= 500/.test(srv));
+check('서버: 429/5xx 만 한도(limited)로 분류한다', /status === 429 \|\| r\.status >= 500/.test(srv));
+check('서버: 자체 쿨다운이 없다 — 429 뒤에도 다음 요청은 곧바로 나간다',
+  !/AI_COOLDOWN_MS/.test(srv) && !/anyProviderReady/.test(srv) && !/coolSet/.test(srv));
 check('서버: stream:true 면 SSE(text/event-stream) 로 조각을 흘려 본다',
   /text\/event-stream/.test(srv) && /send\('delta'/.test(srv) && /b\.stream === true/.test(srv));
 check('서버: 긴 노트는 앞 70% + 뒤 30% 를 살린다',
@@ -61,8 +64,21 @@ check('프런트: 말풍선은 사용자가 닫기 전까지 유지된다 (닫�
 check('프런트: 대화기록은 해돌이 클릭으로 열고 최대 40개다',
   /window\.sdyAiHistToggle/.test(js) && /HIST_MAX=40/.test(js)
   && /no\.addEventListener\('click',function\(\)\{ window\.sdyAiHistToggle\(\); \}\)/.test(js));
-check('프런트: 개요 정리는 미리 준비해 둔 답을 먼저 찾는다',
+check('프런트: 정리는 미리 준비해 둔 답을 먼저 찾는다',
   /warmGet\(txt\)/.test(js) && /body:JSON\.stringify\(\{task:'outline',text:txt,question:'',warm:true\}\)/.test(js));
+check('프런트: 이 페이지/전체 페이지 범위로 나눠 묻는다',
+  /window\.sdyAiOutline=function\(scope\)/.test(js)
+  && /noteText\(task==='outline'\?scope:'doc'\)/.test(js)
+  && /outlinePage:'이 페이지'/.test(js) && /outlineDoc:'전체 페이지'/.test(js));
+check('프런트: 모델 이름·소요 초 같은 기술 정보는 화면에 남기지 않는다',
+  !/tailMeta/.test(js) && /meta\(''\);\s*\/\/ 모델·소요 초 같은 기술 정보는 안 보여 준다/.test(js)
+  && /dot\.title=enabled\?'AI 켜짐'/.test(js));
+check('프런트: 아이디어 해돌이는 클릭이 아니라 호버로 나온다',
+  /note\.addEventListener\('mouseenter',otterIdea\)/.test(js)
+  && !/note\.addEventListener\('click',otterIdea\)/.test(js));
+check('CSS: 답이 길면 말풍선 본문을 스크롤해서 읽는다',
+  /\.ai-say-body\{[^}]*overflow-y:auto/.test(css)
+  && /\.ai-say-body::-webkit-scrollbar\{/.test(css));
 check('프런트: 같은 요청을 두 번 보내지 않는다 (실행 중 가드)', /if\(ctl\) return;/.test(js));
 check('프런트: 실행 중 멈출 수 있다 (AbortController)', /new AbortController\(\)/.test(js) && /ctl\.abort\(\)/.test(js));
 check('프런트: 로그인 토큰을 x-sdy-auth 로 본다', /'x-sdy-auth':token\(\)/.test(js));
@@ -73,8 +89,13 @@ check('HTML: 아이콘 버튼·뜨는 창·할일칩·보내기 버튼이 사라
   && !/id="aiGo"/.test(html) && !/id="aiScope"/.test(html));
 check('HTML: 해돌이 옆 검색창(#aiAsk > #aiQ)이 있다',
   /id="aiAsk"/.test(html) && /id="aiQ"/.test(html));
-check('HTML: 개요 버튼(#aiOutline)이 질문칸(#aiQ)보다 먼저(위)에 있다',
-  html.indexOf('id="aiOutline"') >= 0 && html.indexOf('id="aiOutline"') < html.indexOf('id="aiQ"'));
+check('HTML: 이 페이지·전체 페이지 버튼이 질문칸(#aiQ)보다 먼저(위)에 있다',
+  html.indexOf('id="aiOutlinePage"') >= 0 && html.indexOf('id="aiOutlineDoc"') >= 0
+  && html.indexOf('id="aiOutlinePage"') < html.indexOf('id="aiQ"')
+  && html.indexOf('id="aiOutlineDoc"') < html.indexOf('id="aiQ"')
+  && !/id="aiOutline"/.test(html));
+check('HTML: 해돌이는 호버=아이디어 · 클릭=대화기록이라고 안내한다',
+  /커서를 올리면 아이디어 · 누르면 대화기록/.test(html));
 check('HTML: 검색창은 #noteOtter 옆(같은 편집기 구역)에 붙어 있다',
   html.indexOf('id="noteOtter"') < html.indexOf('id="aiAsk"')
   && html.indexOf('id="aiAsk"') < html.indexOf('id="drawToolbar"'));
@@ -84,6 +105,14 @@ check('HTML: 말풍선(#aiSay)에 이름·딱지·닫기·멈추기·복사가 �
 check('HTML: 대화기록(#aiHist > #aiHistList)이 있다',
   /id="aiHist"/.test(html) && /id="aiHistList"/.test(html));
 check('HTML: placeholder 가 Enter 로 묻는다고 안내한다', /placeholder="[^"]*\(Enter\)"/.test(html));
+check('HTML: 질문칸은 여러 줄로 자랄 수 있는 textarea 다',
+  /<textarea id="aiQ"/.test(html) && !/<input[^>]*id="aiQ"/.test(html));
+check('프런트: 질문이 길면 옆으로, 여러 줄이면 위로 자란다 (aiQGrow)',
+  /function aiQGrow\(/.test(js) && /--ai-q-w/.test(js)
+  && /ai-q-mirror/.test(js) && /document\.addEventListener\('input',/.test(js));
+check('CSS: 질문칸 폭은 --ai-q-w 를 따라 유동적이다',
+  /\.ai-askbar-field\{[^}]*width:min\(var\(--ai-q-w/.test(css)
+  && /\.ai-q-mirror\{/.test(css));
 
 check('CSS: 말풍선에 해돌이 쪽(아래)을 가리키는 꼬리가 있다', /\.ai-say::after\{[^}]*bottom:-9px/.test(css));
 check('CSS: 말풍선은 유리 토큰(var(--g-*))으로만 칠한다',
@@ -133,8 +162,8 @@ await tick(50); await flush();
 
 // ── 2-1) 부팅: 상태 확인 + 노트 밖에서는 미리 준비를 하지 않는다 ──
 check('런타임: 부팅하면 상태 조회를 한다', calls.some((c) => c.url === '/api/ai/status'));
-check('런타임: 켜짐이면 검색창 점(title)에 모델이 뜬다',
-  /AI 켜짐 · test-model/.test($('aiDot').title), $('aiDot').title);
+check('런타임: 켜짐이면 점에 AI 켜짐만 뜬다 (모델 이름은 안 보인다)',
+  $('aiDot').title === 'AI 켜짐', $('aiDot').title);
 check('런타임: 검색창은 떠 있고 처음엔 말풍선·기록이 닫혀 있다',
   Boolean($('aiAsk')) && $('aiSay').hidden === true && $('aiHist').hidden === true);
 w.sdyAiWarmNow();
@@ -146,26 +175,27 @@ check('런타임: 노트 밖(홈)에서는 개요를 미리 준비하지 않는�
 $('editorView').classList.add('open');
 await tick(60); await flush();
 
-// ── 2-2) '개요 정리' — 노트를 열면 미리 준비해 두고, 누르면 바로 나온다 ──
+// ── 2-2) '이 페이지'·'전체 페이지' — 노트를 열면 미리 준비해 두고, 누르면 바로 나온다 ──
 askRes = () => fakeRes(200, { ok: true, text: '1. 광합성\n  - 엽록체에서 일어난다', provider: 'groq', model: 'test-model', cached: false });
 calls.length = 0;
 w.sdyAiWarmNow();                       // 노트를 여는 순간 하는 그 호출을 지금 바로
 await tick(50); await flush();
 const warmCalls = calls.filter((c) => c.body && /"warm":true/.test(c.body));
-check('런타임: 미리 준비는 개요 정리 하나만 warm:true 로 부른다',
+check('런타임: 미리 준비는 warm:true 로 부른다 (쪽 하나라 글이 같아 한 번만)',
   warmCalls.length === 1 && /"task":"outline"/.test(warmCalls[0].body), warmCalls.length);
-check('런타임: 준비가 되면 개요 버튼이 ready 로 빛난다',
-  $('aiOutline').classList.contains('ready') === true);
+check('런타임: 준비가 되면 이 페이지·전체 페이지 버튼이 ready 로 빛난다',
+  $('aiOutlinePage').classList.contains('ready') === true
+  && $('aiOutlineDoc').classList.contains('ready') === true);
 check('런타임: 준비된 줄(title로) 알려 준다',
-  /미리 준비해 뒀어요/.test($('aiOutline').title), $('aiOutline').title);
+  /미리 준비해 뒀어요/.test($('aiOutlinePage').title), $('aiOutlinePage').title);
 calls.length = 0;
-w.sdyAiOutline();                       // 이제 버튼을 누른다
+w.sdyAiOutline('page');                 // 이제 '이 페이지' 버튼을 누른다
 await tick(30); await flush();
 check('런타임: 준비된 개요는 서버를 다시 부르지 않고 바로 나온다',
   calls.length === 0 && $('aiSay').hidden === false
   && $('aiOut').textContent === '1. 광합성\n  - 엽록체에서 일어난다', calls.length);
-check('런타임: 개요 답에는 개요 딱지가 붙는다',
-  $('aiKind').hidden === false && $('aiKind').textContent === '개요', $('aiKind').textContent);
+check('런타임: 이 페이지 답에는 이 페이지 딱지가 붙는다',
+  $('aiKind').hidden === false && $('aiKind').textContent === '이 페이지', $('aiKind').textContent);
 check('런타임: 준비된 답임을 meta 로 알려 준다',
   /미리 준비해 둔 답/.test($('aiMeta').textContent), $('aiMeta').textContent);
 check('런타임: 답이 있으면 복사 버튼이 보인다', $('aiCopy').hidden === false);
@@ -222,9 +252,8 @@ check('런타임: 다 말하면 표식 없는 온전한 답이 남는다', $('ai
   $('aiOut').textContent);
 check('런타임: 다 말하면 멈추기가 숨고 복사가 보인다',
   $('aiStop').hidden === true && $('aiCopy').hidden === false);
-check('런타임: 누가 답했는지와 소요시간을 남긴다',
-  /groq · test-model/.test($('aiMeta').textContent) && /초/.test($('aiMeta').textContent),
-  $('aiMeta').textContent);
+check('런타임: 모델 이름·소요 초 같은 기술 정보는 보이지 않는다',
+  $('aiMeta').textContent === '', JSON.stringify($('aiMeta').textContent));
 
 // ── 2-4) 말풍선은 닫기 전까지 계속 떠 있다 ──
 await tick(200); await flush();
@@ -279,6 +308,13 @@ check('런타임: 한글 조합 중 Enter 는 보내지 않는다',
 $('aiQ').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
 await tick(30);
 check('런타임: Shift+Enter 도 보내지 않는다', calls.length === 0);
+$('aiQ').value = '';
+// 질문칸 유동 크기 — 글을 치면 폭·높이를 다시 잰다 (jsdom 은 레이아웃이 0 이라 안 깨지는지만 본다)
+$('aiQ').value = '아주아주 긴 질문을 한 줄로 계속 적어 보면 옆으로 늘어나야 하고';
+$('aiQ').dispatchEvent(new w.Event('input', { bubbles: true }));
+check('런타임: 질문을 치면 칸 크기를 다시 잰다 (폭·높이가 잡힌다)',
+  $('aiQ').style.height !== '' && /px/.test($('aiQ').parentNode.style.getPropertyValue('--ai-q-w')),
+  $('aiQ').style.height + ' / ' + $('aiQ').parentNode.style.getPropertyValue('--ai-q-w'));
 $('aiQ').value = '';
 
 // ── 2-7) 대화기록 — 해돌이를 누르면 열리고, 고륵면 말풍선으로 다시 본다 ──
