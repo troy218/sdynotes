@@ -1,4 +1,4 @@
-// 14.20.0 · AI 노트 도우미 — 요약 · 질문 · 개조식
+// 14.23.0 · AI 노트 도우미 — 개요 정리 · 질문(노트/자유 자동 판단)
 //
 // 왜 서버를 거치는가
 //   모델 키는 돈이다. 프런트에 심으면 그대로 털린다(이 사이트는 전역 CSP 가 없다).
@@ -36,31 +36,29 @@ const AI_READY = AI_PROVIDERS.length > 0;
 const AI_MODEL = AI_PROVIDERS[0]?.model || '';
 
 // task → 시스템 프롬프트. 화면에 그대로 뿌릴 결과라 '형식'을 못 박는다.
+// 14.23.0 · 일은 두 가지뿐이다 — '개요 정리'(버튼)와 '질문'(chat).
+//   요약·개조식은 outline(개요) 하나로 합쳤고, 노트 질문/자유 질문은 사용자가
+//   고르지 않는다 — 해돌이(모델)가 질문을 보고 스스로 판단해 답 첫 줄에
+//   [[note]] / [[free]] 표식을 달아 주면 프런트가 딱지로 보여 준다.
 export const AI_TASKS = {
-  summarize: {
-    label: '요약',
-    system: '너는 한국어 노트 도우미다. 사용자가 준 노트 본문을 5문장 이내의 자연스러운 한국어 단락으로 요약한다. '
-      + '본문에 없는 내용을 지어내지 말고, 본문이 비어 있거나 너무 짧으면 "요약할 내용이 부족해요"라고만 답한다. '
-      + ' markdown·머리말·서두 인사 없이 본문만 쓴다.',
+  outline: {
+    label: '개요 정리',
+    system: '너는 한국어 노트 도우미다. 노트 본문의 흐름을 따라 개요(목차) 형식으로 정리한다. '
+      + '큰 주제는 "1. ", "2. " 처럼 번호를 단다(3~6개). 딸린 세부 항목은 그 아래에 "  - " 로 들여쓴다(주제당 0~3개). '
+      + '본문에 없는 내용을 지어내지 않고, 본문이 비어 있거나 너무 짧으면 "정리할 내용이 부족해요"라고만 답한다. '
+      + 'markdown 강조·머리말·서두 인사 없이 개요만 쓴다.',
     needText: true,
   },
-  bullets: {
-    label: '개조식 정리',
-    system: '너는 한국어 노트 도우미다. 노트 본문을 핵심만 뽑아 3~7개의 짧은 한국어 개조식 항목으로 정리한다. '
-      + '각 줄은 "- "로 시작하고 한 줄은 40자 안팎으로 짧게 쓴다. 본문에 없는 내용을 지어내지 않는다.',
-    needText: true,
-  },
-  ask: {
-    label: '노트에 대해 질문',
-    system: '너는 한국어 노트 도우미다. 주어진 노트 본문에만 근거해 질문에 짧고 정확하게 답한다. '
-      + '본문에 근거가 없으면 "노트에는 없는 내용이에요"라고 말한다. 지어내지 않는다.',
-    needText: true,
+  chat: {
+    label: '질문',
+    system: '너는 노트 앱의 해달 도우미 해돌이다. 사용자의 질문이 함께 복사된 노트 본문과 관련 있는지 스스로 판단해 답한다. '
+      + '먼저 첫 줄에 판단 표식 하나만 단독으로 쓴다: 노트 본문에 관한 질문이거나 본문을 근거로 답할 수 있으면 [[note]], '
+      + '노트와 무관한 일반·자유 질문이면 [[free]]. 둘째 줄부터 답을 쓴다. '
+      + '[[note]] 일 때는 노트 본문에만 근거해 짧고 정확하게 답하고, 본문에 근거가 없으면 "노트에는 없는 내용이에요"라고 말한다. '
+      + '[[free]] 일 때는 6문장 이내로 명확하게 답하고, 모르는 것은 모른다고 말한다. '
+      + '판단 표식 외에 주석·머리말을 달지 않는다.',
+    needText: false,   // 노트가 비어 있어도 된다 — 그러면 자유 질문([[free]])으로 답한다
     needQuestion: true,
-  },
-  free: {
-    label: '자유 질문',
-    system: '너는 한국어 글쓰기 도우미다. 질문에 6문장 이내로 명확하게 답한다. 모르는 것은 모른다고 말한다.',
-    needText: false,
   },
 };
 
@@ -160,13 +158,13 @@ const earliestCoolSec = () => {
 
 // ── 프롬프트 구성 ───────────────────────────────────────────────────────────
 export function aiMessages(task, text, question) {
-  const spec = AI_TASKS[task] || AI_TASKS.summarize;
+  const spec = AI_TASKS[task] || AI_TASKS.outline;
   const user = [];
-  if (spec.needText) {
+  // chat 은 노트가 있을 때만 본문을 싣는다 — 비어 있으면 자유 질문으로 판단하게
+  if (spec.needText || (task === 'chat' && text)) {
     user.push('노트 본문:\n"""' + text + '"""');
   }
-  if (spec.needQuestion) user.push('질문: ' + question);
-  if (task === 'free') user.push(String(question || text || ''));
+  if (spec.needQuestion || (task === 'chat' && question)) user.push('질문: ' + question);
   return [
     { role: 'system', content: spec.system },
     { role: 'user', content: user.join('\n\n') },
@@ -434,7 +432,6 @@ export function registerAi(app) {
     const question = String(b.question == null ? '' : b.question).trim().slice(0, AI_MAX_QUESTION);
     if (spec.needText && !text) return { err: { status: 400, body: { ok: false, error: '빈 노트예요 · 먼저 노트에 글을 적어 주세요' } } };
     if (spec.needQuestion && !question) return { err: { status: 400, body: { ok: false, error: '질문을 적어 주세요' } } };
-    if (task === 'free' && !question) return { err: { status: 400, body: { ok: false, error: '질문을 적어 주세요' } } };
 
     // 14.22.0 · 앞 70% + 뒤 30% — 뒤에 적은 결론도 같이 보낸다
     const fit = fitText(text, AI_MAX_TEXT);
@@ -442,9 +439,10 @@ export function registerAi(app) {
 
     const u = requireUser(req);
     const rlKey = u ? `uid:${u.uid}` : `ip:${req.ip || 'unknown'}`;
-    // warm = 누군가 누르기 '전에' 미리 답을 만들어 두는 요청(요약·개조식).
+    // warm = 누군가 누르기 '전에' 미리 답을 만들어 두는 요청(개요 정리).
+    //   질문이 필요한 chat 은 미리 준비할 수 없어 outline 만 받는다.
     //   직접 누른 요청과 한도를 섞지 않게 다른 창(AI_WARM_N)으로 센다.
-    const warm = b.warm === true && task !== 'free';
+    const warm = b.warm === true && task === 'outline';
     if (warm && AI_WARM_N === 0) {
       return { err: { status: 200, body: { ok: false, skipped: true, error: '미리 준비 꺼짐' } } };
     }

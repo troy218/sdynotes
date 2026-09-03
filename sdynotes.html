@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.22.0">
+<link rel="stylesheet" href="sdynotes.css?v=14.23.0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <!-- 버전 · 작업 끝나면 아래 5곳을 같은 번호로 함께 올려라 (z +1)
@@ -17,7 +17,7 @@
          · 이 파일·sdynotes.js·sdynotes.css 를 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.22.0">
+    <meta name="application-version" content="14.23.0">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -606,7 +606,7 @@
             </div>
             <!-- 18.0 · 해돌이(노트 해달) — 편집기 왼쪽 아래. 누르면 아이디어 해달로 잠깐 변신한다 -->
             <div id="noteOtter" class="note-otter" role="button" tabindex="0"
-                 title="해돌이 · 눌러 보세요" aria-label="해돌이. 누르면 아이디어가 떠올라요">
+                 title="해돌이 · 누르면 대화기록" aria-label="해돌이. 누르면 대화기록을 봐요">
               <div class="otter-bubble otter-bubble-mini" id="noteOtterBubble"></div>
               <svg class="om-svg om-doc" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
                 <g class="om-outer">
@@ -746,6 +746,46 @@
                 </g>
                 </g>
               </svg>
+            </div>
+            <!-- ═══════════════════════════════════════════════════════════
+                 14.23.0 · 노트 해돌이 — 창 없이 바로 말하는 AI 노트 도우미
+                 · 아이콘 버튼·뜨는 창이 없다. 해돌이 옆 한 줄 검색창에 적고
+                   Enter 를 누르면 바로 묻는다(보내기 버튼 없음).
+                 · '개요 정리' 는 검색창 바로 위 버튼 — 누르면 바로 정리.
+                 · 노트 질문/자유 질문은 해돌이가 스스로 판단해 말풍선 머리에
+                   딱지로 달아 준다. 답은 말풍선 — 닫기 전까지 계속 떠 있다.
+                 · 해돌이를 누르면 대화기록이 열린다.
+                 ═══════════════════════════════════════════════════════════ -->
+            <div id="aiAsk" class="ai-askbar">
+              <button id="aiOutline" class="ai-outline" type="button" onclick="sdyAiOutline()"
+                      title="노트 내용을 개요로 정리해 줘요"><i class="ri-list-ordered-2" aria-hidden="true"></i><span>개요 정리</span></button>
+              <div class="ai-askbar-field">
+                <input type="text" id="aiQ" maxlength="600" spellcheck="false" autocomplete="off"
+                       placeholder="해돌이에게 물어보기… (Enter)" aria-label="해돌이에게 질문하기">
+                <span class="ai-dot" id="aiDot" title="AI 키 아직 미등록"></span>
+              </div>
+            </div>
+            <div id="aiSay" class="ai-say" hidden>
+              <div class="ai-say-head">
+                <b class="ai-say-name">해돌이</b>
+                <span id="aiKind" class="ai-kind" hidden></span>
+                <span class="ai-say-gap"></span>
+                <button id="aiStop" class="ai-mini" type="button" title="멈추기" aria-label="멈추기" onclick="sdyAiStop()" hidden><i class="ri-close-circle-line" aria-hidden="true"></i></button>
+                <button id="aiCopy" class="ai-mini" type="button" title="답변 복사" aria-label="답변 복사" onclick="sdyAiCopy()" hidden><i class="ri-file-copy-line" aria-hidden="true"></i></button>
+                <button id="aiSayX" class="ai-mini" type="button" title="말풍선 닫기" aria-label="말풍선 닫기" onclick="sdyAiSayClose()"><i class="ri-close-line" aria-hidden="true"></i></button>
+              </div>
+              <div class="ai-say-body" id="aiSayBody">
+                <div id="aiOut" class="ai-out" aria-live="polite"></div>
+                <span class="ai-typing" id="aiTyping" hidden><i></i><i></i><i></i></span>
+              </div>
+              <div id="aiMeta" class="ai-meta"></div>
+            </div>
+            <div id="aiHist" class="ai-hist" hidden>
+              <div class="ai-hist-head">
+                <span class="ai-hist-ttl"><i class="ri-chat-history-line" aria-hidden="true"></i><b>해돌이와 나눈 이야기</b></span>
+                <button class="ai-mini" type="button" title="닫기" aria-label="대화기록 닫기" onclick="sdyAiHistToggle()"><i class="ri-close-line" aria-hidden="true"></i></button>
+              </div>
+              <div id="aiHistList" class="ai-hist-list"></div>
             </div>
         </div>
 
@@ -2460,79 +2500,9 @@
      ═══════════════════════════════════════════════════════════════════ -->
 
 
-<!-- ═══════════════════════════════════════════════════════════════════
-     14.22.0 · 노트 해돌이 — AI 노트 도우미 (해돌이가 말하는 말풍선 UI)
-     · 홈 화면에는 뜨지 않는다. 노트를 열어야만(편집기) 해돌이가 나타난다.
-       → 열리는 길은 두 곳: 노트 안 왼쪽 아래 해돌이(#noteOtter) 를 누르거나,
-         노트가 열려 있을 때만 보이는 둥근 버튼(#aiFab).
-     · 말하는 방식: 답은 해돌이 얼굴 옆 '말풍선' 에 말하듯 흘러나온다(SSE 스트림).
-       요약·개조식은 노트를 여는 순간 미리 준비해 두니 버튼을 누르면 바로 나온다.
-     · 버튼의 작은 점 = 키 상태: 초록은 켜짐, 주황 = 아직 키 미등록.
-       (서버 .env 에 GEMINI_API_KEY 넣으면 다음에 패널을 열 때 초록으로)
-     · 글은 전부 서버(/api/ai/ask)를 거친다 — 모델 키는 프런트에 없다.
-     · '노트 본문'은 sdynotes.js 의 window.__sdyAiBridge 가 꺼내 준다.
-     ═══════════════════════════════════════════════════════════════════ -->
-<div id="aiFab" class="ai-fab" role="button" tabindex="0" title="노트 해돌이"
-     aria-label="노트 해돌이 열기" onclick="sdyAiOpen()"><i class="ri-sparkling-2-fill"></i><span class="ai-dot" id="aiDot" title="AI 키 아직 미등록"></span></div>
-<div id="aiPanel" class="ai-panel" role="dialog" aria-modal="false" aria-labelledby="aiTtl" hidden>
-  <header class="ai-hd">
-    <span class="ai-hd-otter" aria-hidden="true">
-      <svg class="ai-otter-svg" viewBox="42 16 122 92" focusable="false">
-        <use href="#om-m-head" xlink:href="#om-m-head"/>
-        <use href="#om-m-f-excited" xlink:href="#om-m-f-excited"/>
-      </svg>
-    </span>
-    <div class="ai-hd-mid">
-      <b id="aiTtl">노트 해돌이</b>
-      <span id="aiModel" class="ai-model"></span>
-    </div>
-    <button class="ai-x" type="button" title="닫기" aria-label="닫기" onclick="sdyAiClose()"><i class="ri-close-line"></i></button>
-  </header>
-  <div class="ai-body" id="aiBody">
-    <div id="aiOff" class="ai-off" hidden>
-      <i class="ri-key-2-line" aria-hidden="true"></i>
-      <b>AI 키가 아직 등록되지 않았어요</b>
-      <span>Google AI Studio에서 만든 키를 서버 <code>.env</code> 의 <code>GEMINI_API_KEY</code> 에 넣고
-        재시작하면 알아서 켜져요 — 이 화면은 그대로 두고 열기만 하면 됩니다.</span>
-    </div>
-    <!-- 해돌이 말풍선 — 답은 여기 말하듯 흘러나온다 -->
-    <div class="ai-say" id="aiSay" hidden>
-      <span class="ai-say-otter" aria-hidden="true">
-        <svg class="ai-otter-svg" viewBox="42 16 122 92" focusable="false">
-          <use href="#om-m-head" xlink:href="#om-m-head"/>
-          <use id="aiSayFace" href="#om-m-f-idle" xlink:href="#om-m-f-idle"/>
-        </svg>
-      </span>
-      <div class="ai-say-box">
-        <b class="ai-say-name">해돌이</b>
-        <div id="aiOut" class="ai-out" aria-live="polite"></div>
-        <span class="ai-typing" id="aiTyping" hidden><i></i><i></i><i></i></span>
-      </div>
-    </div>
-    <div id="aiMeta" class="ai-meta"></div>
-  </div>
-  <footer class="ai-ft">
-    <div id="aiTasks" class="ai-tasks"></div>
-    <div class="ai-ask">
-      <div class="ai-ask-field" id="aiAskField">
-        <textarea id="aiQ" rows="1" maxlength="600" spellcheck="false"
-                  placeholder="노트에 대해 물어보기… (Enter 로 바로 물어봐요)"></textarea>
-        <button id="aiGo" class="ai-go" type="button" onclick="sdyAiRun()"><i class="ri-sparkling-2-fill" aria-hidden="true"></i><span class="ai-go-t">실행</span></button>
-      </div>
-    </div>
-    <div class="ai-ft-row">
-      <label class="ai-scope" for="aiScope">
-        <input type="checkbox" id="aiScope">
-        <span class="ai-scope-box" aria-hidden="true"><i class="ri-check-line"></i></span>
-        <span>지금 쪽만</span>
-      </label>
-      <span class="ai-ft-gap"></span>
-      <button id="aiStop" class="ai-stop" type="button" onclick="sdyAiStop()" hidden><i class="ri-close-circle-line"></i>멈추기</button>
-      <button id="aiCopy" class="ai-copy" type="button" onclick="sdyAiCopy()" hidden><i class="ri-file-copy-line"></i>복사</button>
-    </div>
-  </footer>
-</div>
+<!-- 14.23.0 · 노트 해돌이(AI 도우미) UI 는 편집기 안 #noteOtter 옆으로 옮겼다 — 아이콘 버튼·뜨는 창은 없다. -->
 
-<script src="sdynotes.js?v=14.22.0" defer></script>
+
+<script src="sdynotes.js?v=14.23.0" defer></script>
 </body>
 </html>

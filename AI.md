@@ -1,20 +1,21 @@
-# AI 노트 도우미 설정 (14.20.0 · 14.22.0 부터 '노트 해돌이')
+# AI 노트 도우미 설정 (14.23.0 · 노트 해돌이가 성큼 다가왔다)
 
-**14.22.0 부터는 노트를 열어야만 만날 수 있다.** 노트 안 왼쪽 아래
-**해돌이(마스코트)** 를 누르거나, 노트가 열려 있을 때만 보이는 왼쪽 아래 **✨
-버튼**(14.21.0 부터 그 자리)을 누르면 패널이 열린다. **홈 화면에는 뜨지 않는다.**
-
-화면은 **해돌이가 말하는 말풍선**이다 — 답은 한 방에 뚝 떨어지지 않고 **말하듯
-흘러나온다**(SSE 스트림). 표정도 따라 바뀐다(말하는 중 윙크 → 다 말하면 웃음 →
-못 답하면 울상). 할 일은 4가지: `요약` · `개조식 정리` · `노트 질문`(노트
-본문에만 근거) · `자유 질문`. **요약·개조식은 노트를 여는 순간 미리 준비해
-두므로 버튼을 누르면 기다림 없이 바로 나온다.**
+**해돌이가 직접 대답하는 검색창이다 — 14.23.0 부터** 떠다니던 ✨ 버튼·패널·
+작업 고르기가 전부 사라졌다. 노트를 열 때마다 해돌이 옆에 **작은 검색창**이
+붙어 있고, 거기에 궁금한 것을 쓴 뒤 **그냥 Enter 를 누르기만** 하면 된다
+(별도 보내기 버튼 없음 — 한글 조합 중에는 보내지 않는다). 해돌이가 **노트
+질문인지 자유 질문인지 스스로 판단해서** 딱지로 알려 준다. 답은 **말하는
+말풍선**에 흘러나오고(SSE 스트림), **내가 닫기 버튼을 누르기 전까지는 그
+자리에 그대로** 남는다. **`개요 정리`** 는 검색창 바로 위의 단 하나의 작업
+버튼 — 노트 글이 **켜지는 순간 백그라운드에서 미리 받아 두므로**, 누르는
+순간 답한다. 지난 이야기는 **해돌이를 살짝 누르기만** 하면 최신순으로 다시
+볼수 있다.
 
 **기본값은 '끔'이다.** 키가 하나도 없으면 `/api/ai/status` 가 `enabled:false` 를
-돌려주고, 버튼의 점이 주황으로 뜨고 패널에는 *'키가 아직 등록되지 않았어요'*
-안내 카드가 뜬다. 서버 `.env` 에 키(예: `GEMINI_API_KEY`)가 들어가면 버튼 점이
-초록이 되고 안내 카드는 사라진다(패널을 다시 열 때마다 상태를 다시 확인).
-사이트 다른 부분은 영향을 받지 않는다.
+돌려주고, 검색창 옆의 점이 주황으로 뜬다(점 위에 손을 띄면 무슨 뜻인지 말로
+알려 준다). 서버 `.env` 에 키(예: `GEMINI_API_KEY`)가 들어가면 점이 초록이
+된다. 사이트 다른 부분은 영향을 받지 않는다. 키가 없으면 해돌이가
+*'AI 키가 아직 등록되지 않았어요'* 라고 말풍선으로 말해 준다.
 
 ---
 
@@ -37,15 +38,15 @@ arena.ai 에 계정을 만들어 내부 엔드포인트를 부르는 우회 경�
 
 > 참고: '아레나 UI' 자체는 오픈소스다 — `lm-sys/FastChat`(Apache-2.0)의
 > `python3 -m fastchat.serve.gradio_web_server_multi` 가 그 Gradio 화면이다.
-> 그건 **비교 사이트를 따로 띄울 때** 쓰는 물건이고(별도 Python 서비스 + nginx
+> 그건 **비교 사이트를 따로 띄울 때** 쓰는 물건이고(별도 Python service + nginx
 > WebSocket 경로 필요), 이 노트 앱에는 필요 없다.
 
-## 1) 공급사 체인 — 무료 티어 한도가 걸려도 다음 공급사로
+## 1) 공급사 체인 — 무료 티어 한도가 걸리면 다음 공급사로
 
 `translate.js` 가 Google 호스트 3개를 순회하듯, **429 를 맞은 공급사만 잠시 쉬고
 다음 공급사로 넘어간다.** 전부 막혀야 비로소 '제한' 안내가 나간다.
 
-### ★ 이미 Gemini API 키를 서버에 넣어 두셨다면 — 이것만 하면 됩니다
+### ★ 이미 Gemini API 키를 serv 홠에 넣어 두셨다면 — 이것만 하면 됩니다
 
 ```ini
 # /var/www/memo/.env
@@ -91,11 +92,11 @@ curl -s "https://generativelanguage.googleapis.com/v1beta/openai/models" \
 GEMINI_MODEL=<위에 나온 id>
 ```
 
-안 그러면 `404` 가 떨어지고, 패널에는 *"gemini · 모델을 못 찾았어요(404) · curl
-"<base>/models" 로…"* 힌트가 뜹니다. `401` 이면 *"키가 거부됐어요(401) · Google AI
-Studio 에서 만든 API 키가 맞는지… (Vertex AI 서비스계정 키는 여기서 안 됩니다)"*
-가 뜹니다 — **AI Studio 키(aistudio.google.com)여야 하고 Vertex AI 서비스계정
-자격증명은 이 엔드포인트에서 안 됩니다.**
+안 그러면 `404` 가 떨어지고, 해돌이 말풍선에는 *"gemini · 모델을 못 찾았어요(404)
+· curl "<base>/models" 로…"* 힌트가 뜹니다. `401` 이면 *"키가 거부됐어요(401) ·
+Google AI Studio 에서 만든 API 키가 맞는지… (Vertex AI 서비스계정 키는 여기서 안
+됩니다)"* 가 뜹니다 — **AI Studio 키(aistudio.google.com)여야 하고 Vertex AI
+서비스계정 자격증명은 이 엔드포인트에서 안 됩니다.**
 
 엔드포인트 자체는 Google 공식 OpenAI 호환 경로
 `https://generativelanguage.googleapis.com/v1beta/openai` + `Authorization: Bearer <키>`
@@ -107,7 +108,7 @@ Studio 에서 만든 API 키가 맞는지… (Vertex AI 서비스계정 키는 �
 ```ini
 # /var/www/memo/.env  (로컬은 저장소 루트 .env)
 
-# ── A. 무료 티어 2개 체인 (Gemini 가 한도에 걸리면 Groq 로) ─────
+# ── A. 무료 티어 2개 체인 (Gemini 가 한도에 걸리면 Groq 로) ──
 AI_PROVIDERS=gemini,groq
 GEMINI_API_KEY=AIza...
 GROQ_API_KEY=gsk_...
@@ -144,7 +145,7 @@ GROQ_API_KEY=gsk_...
 
 | 공급사 | 무료 티어 | 입력을 학습에 쓰나 |
 |---|---|---|
-| **Groq** | 있음(모델별 하루 한도) | **아니요** ← 개인 노트에 무난 |
+| **Groq** | 있음(모델별 하루 한도) | **아니요** ← 개인 노트에 안전 |
 | **Google Gemini** | 있음(Flash 계열) | **예** — 무료 티어는 Google 제품 개선에 사용될 수 있음 |
 | **OpenRouter** | 일부 `:free` 모델 | 모델마다 다름 |
 | **Ollama(로컬)** | 무제한 | **서버 밖으로 안 나감** |
@@ -162,10 +163,10 @@ GROQ_API_KEY=gsk_...
 | `AI_TIMEOUT_MS` | `45000` | 모델 호출 타임아웃 (스트림은 '전체' 시간) |
 | `AI_CACHE_TTL_MS` | `600000` | 같은 입력 캐시 유지 (0 = 끔) |
 | `AI_RATE_N` / `AI_RATE_WINDOW_MS` | `12` / `60000` | uid(없으면 ip)별 60초당 요청 수 |
-| `AI_WARM_N` | `AI_RATE_N/2` | 14.22.0 · '미리 준비'(`warm:true`) 전용 한도 — 사용자가 누른 요청과 섞이지 않는다 (0 = 미리 준비 끔) |
+| `AI_WARM_N` | `AI_RATE_N/2` | **개요 정리 미리 준비**(`warm:true`) 전용 한도 — 사용자가 누른 요청과 섞이지 않는다 (0 = 미리 준비 끔) |
 | `AI_COOLDOWN_MS` | `60000` | 429/5xx 를 맞은 **그 공급사만** 쉬는 시간 |
 
-### 스트리밍 (14.22.0)
+### 스트리밍
 
 `POST /api/ai/ask` 에 `stream:true` 를 주면 SSE 로 답한다.
 
@@ -190,16 +191,21 @@ curl -s localhost:5000/api/ai/status
 # → {"ok":true,"enabled":true,"model":"llama-3.3-70b-versatile",
 #    "providers":[{"name":"groq","model":"..."},{"name":"gemini","model":"..."}], ...}
 
-# 실제 호출 — '누가 답했는지'가 provider 로 돌아온다
+# 실제 호출 — 개요 정리
 curl -s -X POST localhost:5000/api/ai/ask \
   -H 'Content-Type: application/json' \
-  -d '{"task":"summarize","text":"광합성은 엽록체에서 일어난다. ..."}'
+  -d '{"task":"outline","text":"광합성은 엽록체에서 일어난다. ..."}'
 # → {"ok":true,"text":"...","provider":"groq","model":"...","cached":false}
+
+# 질문 — 노트/자유 구분은 해돌이(서버 프롬프트)가 스스로 판단한다
+curl -s -X POST localhost:5000/api/ai/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"task":"chat","text":"광합성은 엽록체에서 일어난다. ...","question":"어디서 일어나?"}'
 
 # 말하는 대로 보기 (스트림)
 curl -N -X POST localhost:5000/api/ai/ask \
   -H 'Content-Type: application/json' \
-  -d '{"task":"summarize","text":"광합성은 엽록체에서 일어난다. ...","stream":true}'
+  -d '{"task":"outline","text":"광합성은 엽록체에서 일어난다. ...","stream":true}'
 
 # 키 없이 화면·스트림만 확인 (개발용 가짜 모델 — 실제 모델을 부르지 않는다)
 node test/mock_ai_provider.mjs &
@@ -216,16 +222,16 @@ AI_PROVIDER=manual AI_KEY=demo AI_BASE_URL=http://127.0.0.1:5399/v1 \
 ## 4) 안전장치 (기본으로 켜져 있다)
 
 - **키는 서버에만** — 프런트에는 없다.
-- **task 화이트리스트** — `summarize/bullets/ask/free` 만. 임의 system 프롬프트
+- **task 화이트리스트** — `outline/chat` 뿐 (2종). 임의 system 프롬프트
   주입 불가(그 외 값은 400).
 - **캐시 + in-flight 합치기** — 같은 노트를 여러 번 눌러도 모델 호출은 한 번.
   **모든 공급사가 쉬는 중에도 캐시가 있으면 그것으로 답한다**(외부 호출 0번).
 - **공급사별 쿨다운** — 한 곳이 429 를 맞으면 그 곳만 쉬고 나머지는 계속 쓴다.
   401/404 는 설정 문제라 쿨다운을 걸지 않는다.
 - **레이트리밋** — 로그인은 uid, 비로그인은 ip 로 계산.
-- **본문 길이 상한** — 긴 문서도 상한만큼만 보낸다. 14.22.0 부터는 **앞 70% +
-  뒤 30%** 를 살리므로 '앞부분만 읽고 답하는' 일이 없다(가운데만 접는다).
-- **미리 준비(warm) 는 전용 한도** — 요약·개조식을 백그라운드로 준비하는 요청은
+- **본문 길이 상한** — 긴 문서도 상한만큼만 보낸다. **앞 70% + 뒤 30%** 를
+  살리므로 '앞부분만 읽고 답하는' 일이 없다(가운데만 접는다).
+- **미리 준비(warm) 는 전용 한도** — 개요 정리를 백그라운드로 준비하는 요청은
   `AI_WARM_N` 창을 따로 쓴다. 한도가 차도 사용자가 직접 누른 요청은 막지 않는다.
 
 ## 5) 테스트
@@ -236,13 +242,14 @@ npm run test:ai
 
 - `test/ai_contract.mjs` — 요청 모양(키가 헤더에만)·task 화이트리스트·캐시·
   in-flight·길이 상한(앞 70%+뒤 30%)·429 쿨다운·401 처리 + **SSE 스트림·스트림
-  캐시·스트림 429·미리 준비 한도 분리** (54 검사)
+  캐시·스트림 429·미리 준비 한도 분리** (59 검사)
 - `test/ai_providers_contract.mjs` — `.env` 해석·프리셋 URL/모델·자동 감지·중복
   제거·Ollama·**429 폴백**·전부 쿨다운 시 캐시 응답 (25 검사)
 - `test/ai_ratelimit_contract.mjs` — 사용량 한도 (6 검사)
-- `test/ai_frontend_contract.mjs` — 소스 계약 + jsdom 에서 패널을 실제로 열고
-  실행해 `/api/ai/ask` 를 부르는지 + **말하는 중 조각 관찰 · Enter(한글 조합
-  포함) · 미리 준비 즉시 응답 · 노트 밖(홈)에서는 숨김** (92 검사)
+- `test/ai_frontend_contract.mjs` — 소스 계약 + jsdom 에서 **해돌이·검색창을 실제로
+  눌러 보고** Enter 로 질문을 보내는 검사 + **말하는 중 조각 관찰 · 한글 조합 중
+  안 보내기 · 미리 준비 즉시 응답 · 해돌이 표식([[note]]/[[free]]) 파싱 · 말풍선
+  유지 · 대화기록 재보기 · 429 안내** (81 검사)
 
 ## 6) 파일 위치
 
@@ -251,6 +258,6 @@ npm run test:ai
 | `server/src/routes/ai.js` | 라우트·프롬프트·공급사 체인·캐시·레이트리밋 (본체) |
 | `server/src/lib/config.js` | `AI_*` 설정 + `aiProvidersFromEnv()` (`.env` 에서만) |
 | `sdynotes.js` (끝부분) | 노트 해돌이 IIFE + `window.__sdyAiBridge` (노트 글 추출) |
-| `sdynotes.html` (본문 끝) | `#aiFab` · `#aiPanel` · 해돌이 말풍선(`#aiSay`) 마크업 |
-| `test/mock_ai_provider.mjs` | 14.22.0 · 키 없이 화면·스트림을 보는 가짜 모델 API |
-| `sdynotes.css` (모바일 최종 블록 앞) | `.ai-*` 스타일 (기존 변수 사용 → 다크모드 자동) |
+| `sdynotes.html` (본문 끝) | 노트 안 검색창(`#aiAsk`) · 말풍선(`#aiSay`) · 대화기록(`#aiHist`) 마크업 |
+| `test/mock_ai_provider.mjs` | 키 없이 화면·스트림을 보는 가짜 모델 API |
+| `sdynotes.css` | `.ai-*` 스타일 (기존 변수 사용 → 다크모드 자동) |

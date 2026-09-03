@@ -32,19 +32,19 @@ const post = (body) => fetch('http://127.0.0.1:5199/api/ai/ask', {
 let pass = 0, fail = 0;
 const ok = (name, cond) => { cond ? pass++ : fail++; console.log(`${cond ? '✅' : '❌'} ${name}`); };
 
-const r1 = await post({ task: 'summarize', text: '본문 1' });
-const r2 = await post({ task: 'summarize', text: '본문 2' });
-const r3 = await post({ task: 'summarize', text: '본문 3' });
+const r1 = await post({ task: 'outline', text: '본문 1' });
+const r2 = await post({ task: 'outline', text: '본문 2' });
+const r3 = await post({ task: 'outline', text: '본문 3' });
 ok('한도(3번) 안쪽은 전부 성공', r1.ok && r2.ok && r3.ok && calls === 3);
 
-const r4 = await post({ task: 'summarize', text: '본문 4' });
+const r4 = await post({ task: 'outline', text: '본문 4' });
 ok('한도를 넘기면 429 + limited', r4.status === 429 && r4.limited === true);
 ok('429 안내에 재시도 대기(retry_after)가 담긴다', Number(r4.retry_after) >= 1);
 ok('거절된 요청은 모델 API 를 부르지 않는다', calls === 3);
 
 const st = await fetch('http://127.0.0.1:5199/api/ai/status').then((r) => r.json());
 ok('상태 조회는 리밋을 소비하지 않는다', st.ok === true);
-const r5 = await post({ task: 'summarize', text: '본문 5' });
+const r5 = await post({ task: 'outline', text: '본문 5' });
 ok('상태 조회 뒤에도 여전히 제한 중', r5.status === 429 && calls === 3);
 
 console.log(`\n${pass} passed, ${fail} failed`);

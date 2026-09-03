@@ -27838,121 +27838,65 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 })();
 
 /* ══════════════════════════════════════════════════════════════════════
-   14.22.0 · 노트 해돌이 — AI 노트 도우미 (요약 · 개조식 · 노트 질문 · 자유 질문)
+   14.23.0 · 노트 해돌이 — 창 없이 바로 말하는 AI 노트 도우미
    ─────────────────────────────────────────────────────────────────────
+   · 아이콘 버튼·뜨는 창이 없다. 노트(편집기)를 열으면 왼쪽 아래 해돌이 옆에 한 줄
+     검색창(#aiAsk)이 붙어 있다. 질문을 적고 Enter 를 누르면 바로 묻는다(보내기
+     버튼 없음). '개요 정리' 는 검색창 바로 위 버튼 하나다 — 누르면 바로 정리.
+   · 노트 질문/자유 질문은 사용자가 고르지 않는다 — 해돌이(task=chat)가 질문이 노트
+     본문과 관련 있는지 스스로 판단해 답하고(서버 프롬프트가 첫 줄에 [[note]]/[[free]]
+     표식을 실어 준다), 말풍선 머리에 '노트 질문 / 자유 질문' 딱지로 달아 준다.
+   · 답은 해돌이 말풍선(#aiSay) — 창이 아니라 해돌이가 바로 말하는 느낌. 말풍선은
+     X(#aiSayX)를 눌러 닫기 전까지 계속 떠 있다(자동 숨김 없음).
+   · 해돌이를 누르면 대화기록(#aiHist) — 지금까지 나눈 질문과 답을 다시 본다.
    · 모델 키는 여기에 없다. 브라우저는 /api/ai/ask 만 부르고, 키·프롬프트는
-     server/src/routes/ai.js 가 들고 있다 (OpenAI 호환 게이트웨이로 나간다).
-   · Arena.ai 자체는 공개 API·임베드가 없는 무료 채팅/투표 사이트라 부를 수
-     없어서, '아레나에 붙이기' 대신 '모델 API 에 붙이기'로 갔다.
-   · 노트 글은 window.__sdyAiBridge(편집기 스코프)가 꺼내 준다 — 여기서 문서
-     구조를 직접 건드리지 않는다.
-   · 홈 화면에는 없다. 노트(편집기)가 열려 있을 때만 해돌이가 나타난다 —
-     노트 안 왼쪽 아래 해돌이(#noteOtter) 를 누르거나, 그때만 보이는
-     둥근 버튼(#aiFab) 을 누르면 이 패널이 열린다.
-   · 말하는 대로: stream:true 로 부르면 서버가 SSE 로 조각을 흘려 보내고,
-     화면은 해돌이 말풍선에 글자를 한 글자씩 붙인다. 스트림을 못 쓰는
-     서버·환경이면 알아서 JSON 한 방으로 떨어진다.
-   · 요약·개조식은 노트를 여는 순간 '미리 준비(warm)' 해 둔다. 버튼을 누르면
-     준비된 답이 그 자리에서 바로 나온다(기다림 0 · 외부 호출 0).
-   · 서버가 429(제한)를 주면 retry_after 만큼 기다렸다가 '다시 시도'를 낸다.
+     server/src/routes/ai.js 가 들고 있다. 검색창 점(#aiDot) = 키 상태.
+   · '개요 정리' 는 노트를 여는 순간 미리 준비(warm) 해 둔다 — 누르면 기다림 없이
+     바로 나온다(준비된 답이 없으면 SSE 스트림으로 말하듯 만든다).
    ══════════════════════════════════════════════════════════════════════ */
 (function(){
   if(window.__sdyAiInit) return; window.__sdyAiInit=true;
   var $=function(id){ return document.getElementById(id); };
-  // 서버 AI_TASKS 와 같은 목록. 라벨만 여기 두고 '어떤 입력이 필요한지'는
-  // 서버가 400 으로 알려 주게 한다(정의를 두 벌로 늘리지 않으려고).
-  var TASKS=[{id:'summarize',label:'요약'},{id:'bullets',label:'개조식 정리'},
-             {id:'ask',label:'노트 질문'},{id:'free',label:'자유 질문'}];
-  // 질문란이 필요한 일. 요약·개조식은 노트만 있으면 된다.
-  var NEEDQ={ask:1,free:1};
-  // 누르기 전에 미리 준비해 둘 수 있는 일(질문이 없어야 준비가 가능하다).
-  var WARM={summarize:1,bullets:1};
-  var WARM_MIN=40;      // 이보다 짧은 노트는 준비하지 않는다(의미 없는 호출 방지)
-  var WARM_MAX=40;      // 한 페이지에서 준비하는 최대 횟수
-  var task='summarize', ctl=null, enabled=false, lastText='';
+  // 서버 AI_TASKS(outline·chat)와 맞물린다 — task 를 고르는 단추는 없다.
+  var KIND={note:'노트 질문',free:'자유 질문',outline:'개요'};
+  var ctl=null, enabled=false, closedByUser=false;
+  var lastText='', lastKind='', lastQ='';
 
-  function paintTasks(){
-    var box=$('aiTasks'); if(!box) return;
-    box.textContent='';
-    TASKS.forEach(function(t){
-      var b=document.createElement('button');
-      b.type='button'; b.className='ai-task'+(t.id===task?' on':'');
-      b.textContent=t.label; b.dataset.task=t.id;
-      b.onclick=function(){ pick(t.id); };
-      box.appendChild(b);
-    });
-  }
-  function pick(id){
-    task=id;
-    Array.prototype.forEach.call(document.querySelectorAll('.ai-task'),function(b){
-      b.classList.toggle('on',b.dataset.task===id);
-    });
-    var q=$('aiQ'), f=$('aiAskField'), go=$('aiGo');
-    if(q){
-      q.classList.toggle('hide',!NEEDQ[id]);
-      q.placeholder=(id==='free')?'무엇이든 물어보세요… (Enter 로 바로)'
-        :(id==='ask'?'노트에 대해 물어보기… (Enter 로 바로)':'');
-    }
-    if(f) f.classList.toggle('noq',!NEEDQ[id]);      // 질문칸이 없으면 버튼이 칸을 채운다
-    if(go&&!ctl){
-      var t=go.querySelector('.ai-go-t');
-      if(t) t.textContent=NEEDQ[id]?'물어보기':'실행';
-    }
-    meta(readyMeta(id));
-    if(NEEDQ[id]&&q){
-      var p=$('aiPanel');
-      if(p&&!p.hidden) q.focus();
-    }
-  }
   function meta(t){ var m=$('aiMeta'); if(m) m.textContent=t||''; }
-  // 해돌이 표정 — 말풍선 옆 얼굴이 상황에 따라 바뀐다(해돌이 스쿼드 공유 표정)
-  var FACE={idle:'om-m-f-idle',think:'om-m-f-wink',happy:'om-m-f-happy',sad:'om-m-f-sad-mini'};
-  var faceNow='';
-  function otterFace(mood){
-    var n=FACE[mood]||FACE.idle;
-    if(n===faceNow) return;
-    faceNow=n;
-    var u=$('aiSayFace'); if(!u) return;
-    try{
-      u.setAttribute('href','#'+n);
-      u.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href','#'+n);
-    }catch(e){}
+  /* 말풍선 머리 딱지 — 노트 질문인지 자유 질문인지 해돌이가 판단한 결과 */
+  function kindChip(k){
+    var c=$('aiKind'); if(!c) return;
+    if(k&&KIND[k]){ c.textContent=KIND[k]; c.hidden=false; }
+    else c.hidden=true;
   }
-  function out(t,cls,mood){
-    var o=$('aiOut'), say=$('aiSay'), ty=$('aiTyping');
-    if(!o) return;
+  /* 말풍선 — 보여 줄 게 생기면 열리고, 닫기(#aiSayX) 전까지 계속 떠 있다 */
+  function out(t,cls){
+    var o=$('aiOut'), say=$('aiSay'), ty=$('aiTyping'), body=$('aiSayBody');
+    if(!o||!say) return;
+    if(closedByUser){ say.hidden=true; return; }          // 닫은 뒤엔 새 질문 전까지 조용히
+    if(!inNote()){ say.hidden=true; return; }             // 해돌이는 노트 친구 — 노트 밖에 없다
     var s=(t==null?'':String(t));
     o.textContent=s;
     o.classList.toggle('busy',!!cls);
-    // 말풍선은 '글이 있거나 생각 중일 때' 만 — 빈 패널에 빈 버블이 뜨지 않게
-    if(say) say.hidden=!(s||cls);
-    if(ty) ty.hidden=!(cls&&!s);                     // 첫 글자 오기 전: 점 세 개
-    otterFace(mood||(cls?'think':'happy'));
+    say.hidden=false;
+    if(ty) ty.hidden=!(cls&&!s);                          // 첫 글자 전: 생각하는 점 세 개
+    if(body&&cls&&s){ try{ body.scrollTop=body.scrollHeight; }catch(e){} }
   }
   function busy(on){
-    var go=$('aiGo'), st=$('aiStop'), cp=$('aiCopy');
-    if(go){
-      // 키가 아직 등록되면(!enabled) 실행 버튼은 계속 비활성 —
-      // '생각 중' 끝나도 다시 켜지 않게 !enabled 을 함께 본다.
-      go.disabled=on||!enabled;
-      var t=go.querySelector('.ai-go-t');
-      if(t) t.textContent=on?'생각 중…':(NEEDQ[task]?'물어보기':'실행');
-      var ic=go.querySelector('i');
-      if(ic) ic.className=on?'ri-loader-4-line ai-go-spin':'ri-sparkling-2-fill';
-    }
+    var st=$('aiStop'), cp=$('aiCopy');
     if(st) st.hidden=!on;
     if(cp) cp.hidden=on||!lastText;
   }
-  // 로그인 토큰이 있으면 같이 보낸다(서버는 토큰이 있으면 uid 로, 없으면 ip 로
-  // 사용량 한도를 센다). 토큰이 없어도 동작한다.
+
+  // 로그인 토큰 — 있으면 uid 로, 없으면 ip 로 서버가 사용량을 센다
   function token(){
     try{ return (window.__sdyAuthState&&window.__sdyAuthState.token)||''; }catch(e){ return ''; }
   }
-  function noteText(scope){
+  // 노트 글은 편집기 다리(bridge)에게만 부탁한다 — 문서 구조를 직접 건드리지 않게
+  function noteText(){
     try{
-      var sc=scope||(($('aiScope')&&$('aiScope').checked)?'page':'doc');
       if(window.__sdyAiBridge&&typeof window.__sdyAiBridge.text==='function'){
-        return String(window.__sdyAiBridge.text(sc)||'');
+        return String(window.__sdyAiBridge.text('doc')||'');
       }
     }catch(e){}
     return '';
@@ -27961,20 +27905,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var ev=$('editorView');
     return !ev||ev.classList.contains('open');       // 편집기가 없으면(=테스트/구버전) 노트 안으로 본다
   }
-  function syncFab(){
-    var f=$('aiFab'), p=$('aiPanel');
-    if(!f) return;
-    var note=inNote();
-    var show=note&&!(p&&!p.hidden);                  // 노트 밖(홈)에서는 아예 숨는다
-    f.classList.toggle('in-note',note);              // 노트 안 = 해돌이 옆 자리
-    f.classList.toggle('hide',!show);
-    try{ f.setAttribute('aria-hidden',show?'false':'true'); f.tabIndex=show?0:-1; }catch(e){}
-  }
-  function scrollTail(){
-    var b=$('aiBody'); if(!b) return;
-    try{ b.scrollTop=b.scrollHeight; }catch(e){}
-  }
-  // 해돌이(노트 속 해달) 작은 말풍선으로도 한마디 — 패널을 닫아도 남는다
+  // 해돌이 혼잣말(작은 말풍선) — 큰 답변 말풍선과 별개로 잠깐 뜨는 한마디
   function otterLine(t){
     var b=$('noteOtterBubble'); if(!b||!t) return;
     b.textContent=String(t);
@@ -27985,54 +27916,126 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   function shortLine(s){
     var t=String(s||'').replace(/\s+/g,' ').trim();
     if(!t) return '';
-    return '해돌~ '+(t.length>32?(t.slice(0,32)+'…'):t);
+    return t.length>32?(t.slice(0,32)+'…'):t;
   }
   function tailMeta(d,t0){
-    var s=((d.provider?d.provider+' · ':'')+(d.model||'')+(d.cached?' · 캐시':'')
+    return ((d.provider?d.provider+' · ':'')+(d.model||'')+(d.cached?' · 캐시':'')
       +(d.truncated?' · 긴 노트는 앞·뒤를 읽었어요':'')
       +' · '+(((Date.now()-t0)/1000).toFixed(1))+'초');
-    return s;
   }
 
-  /* ── 미리 준비(warm) — 요약·개조식을 노트를 여는 순간 슬쩍 만들어 둔다 ──
-     같은 노트(같은 글)로는 두 번 묻지 않는다. 준비된 답은 브라우저에도
-     들고 있어서, 버튼을 누르면 서버까지 갈 일 없이 그 자리에서 바로 나온다. */
+  /* ── 대화기록(#aiHist) — 해돌이를 누르면 열린다. 나눈 이야기는 최대 40개 ── */
+  var hist=[], HIST_MAX=40;
+  function fmtTime(at){
+    try{
+      var d=new Date(at);
+      return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+    }catch(e){ return ''; }
+  }
+  function histPush(kind,q,a){
+    hist.unshift({kind:kind||'', q:String(q||''), a:String(a||''), at:Date.now()});
+    if(hist.length>HIST_MAX) hist.length=HIST_MAX;
+    histPaint();
+  }
+  function histPaint(){
+    var box=$('aiHistList'); if(!box) return;
+    box.textContent='';
+    if(!hist.length){
+      var empty=document.createElement('div');
+      empty.className='ai-hist-empty';
+      empty.textContent='아직 나눈 이야기가 없어요. 옆 검색창에 적고 Enter 를 눌러 봐요.';
+      box.appendChild(empty);
+      return;
+    }
+    hist.forEach(function(h){
+      var b=document.createElement('button');
+      b.type='button'; b.className='ai-hist-item';
+      var row=document.createElement('span'); row.className='ai-hist-row';
+      if(KIND[h.kind]){
+        var k=document.createElement('span'); k.className='ai-kind';
+        k.textContent=KIND[h.kind];
+        row.appendChild(k);
+      }
+      var t=document.createElement('span'); t.className='ai-hist-t';
+      t.textContent=fmtTime(h.at);
+      row.appendChild(t);
+      var q=document.createElement('span'); q.className='ai-hist-q';
+      var qtxt=String(h.q||'').trim();
+      q.textContent=qtxt||'개요 정리해 줘';
+      var a=document.createElement('span'); a.className='ai-hist-a';
+      a.textContent=String(h.a||'').replace(/\s+/g,' ').trim();
+      b.appendChild(row); b.appendChild(q); b.appendChild(a);
+      b.onclick=function(){ histShow(h); };
+      box.appendChild(b);
+    });
+  }
+  /* 기록에서 고륵면 그 답을 말풍선으로 다시 보여 준다 */
+  function histShow(h){
+    window.sdyAiStop();
+    closedByUser=false;
+    lastText=String(h.a||''); lastKind=h.kind||''; lastQ=h.q||'';
+    kindChip(lastKind);
+    out(lastText); busy(false);
+    meta('대화기록 · '+fmtTime(h.at)+' 에 나눈 이야기예요');
+    var hh=$('aiHist'); if(hh) hh.hidden=true;
+  }
+  window.sdyAiHistToggle=function(){
+    var h=$('aiHist'); if(!h) return;
+    h.hidden=!h.hidden;
+    if(!h.hidden) histPaint();
+  };
+
+  /* ── 해돌이 판단 표식 — 서버가 답 첫 줄에 [[note]] / [[free]] 를 달아 준다 ──
+     조각이 흘러오는 중간에는 표식이 깨진 채 화면에 나오지 않도록,
+     표식 길이(8자)가 찰 때까지는 내용을 참는다. */
+  function parseChat(acc){
+    var s=String(acc==null?'':acc);
+    var m=/^\[\[(note|free)\]\][ \t]*\r?\n?/.exec(s);
+    if(m) return {kind:m[1], text:s.slice(m[0].length)};
+    var head=s.slice(0,8);
+    if(s&&('[[note]]'.indexOf(head)===0||'[[free]]'.indexOf(head)===0)) return {wait:true};
+    return {kind:'', text:s};                     // 표식이 없으면 딱지 없이 그대로
+  }
+
+  /* ── 미리 준비(warm) — '개요 정리' 를 노트를 여는 순간 슬쩍 만들어 둔다 ──
+     같은 노트(같은 글)로는 두 번 묻지 않는다. 준비된 답은 브라우저에도 들고
+     있어서, 버튼을 누르면 서버까지 갈 일 없이 그 자리에서 바로 나온다. */
   var warmCache={}, warmPend={}, warmTimer=null, warmCount=0;
+  var WARM_MIN=40;      // 이보다 짧은 노트는 준비하지 않는다(의미 없는 호출 방지)
+  var WARM_MAX=40;      // 한 페이지에서 준비하는 최대 횟수
   function hash(s){
     var h=5381, str=String(s||'');
     for(var i=0;i<str.length;i++) h=((h<<5)+h+str.charCodeAt(i))|0;
     return (h>>>0).toString(36)+'-'+str.length;
   }
-  function warmKey(t,txt){ return t+'|'+hash(txt); }
-  function warmGet(t,txt){ return warmCache[warmKey(t,txt)]||null; }
-  function warmSet(t,txt,v){
-    warmCache[warmKey(t,txt)]=v;
+  function warmKey(txt){ return 'outline|'+hash(txt); }
+  function warmGet(txt){ return warmCache[warmKey(txt)]||null; }
+  function warmSet(txt,v){
+    warmCache[warmKey(txt)]=v;
     var ks=Object.keys(warmCache);
     if(ks.length>24) delete warmCache[ks[0]];        // 오래된 것부터 버린다
   }
-  function readyMeta(id){
-    if(!WARM[id]) return '';
-    var txt=noteText('doc');
-    if(!txt) return '';
-    var hit=warmGet(id,txt);
-    if(hit&&hit.text) return '미리 준비해 뒀어요 · 누르면 바로 나와요 해돌~';
-    return '';
+  function paintOutlineReady(){
+    var b=$('aiOutline'); if(!b) return;
+    var ready=!!(enabled&&warmGet(noteText()));
+    b.classList.toggle('ready',ready);
+    b.title=ready?'미리 준비해 뒀어요 · 누르면 바로 나와요':'노트 내용을 개요로 정리해 줘요';
   }
-  function warmOne(t,txt){
+  function warmOne(txt){
     if(!enabled||!txt) return Promise.resolve(null);
-    var k=warmKey(t,txt);
+    var k=warmKey(txt);
     if(warmCache[k]||warmPend[k]) return Promise.resolve(warmCache[k]||null);
     if(warmCount>=WARM_MAX) return Promise.resolve(null);
     warmCount++; warmPend[k]=1;
     return fetch('/api/ai/ask',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-sdy-auth':token()},
-      body:JSON.stringify({task:t,text:txt,question:'',warm:true})
+      body:JSON.stringify({task:'outline',text:txt,question:'',warm:true})
     }).then(function(r){ return r.json(); }).then(function(d){
       delete warmPend[k];
       if(d&&d.ok&&d.text){
-        warmSet(t,txt,{text:String(d.text),provider:d.provider||'',model:d.model||''});
-        if(task===t&&!ctl) meta(readyMeta(t));        // 열려 있으면 '준비됨' 을 알린다
+        warmSet(txt,{text:String(d.text),provider:d.provider||'',model:d.model||''});
+        paintOutlineReady();
       }
       return warmCache[k]||null;
     }).catch(function(){ delete warmPend[k]; return null; });
@@ -28041,15 +28044,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!enabled||ctl) return;
     if(!inNote()) return;
     try{ if(document.visibilityState==='hidden') return; }catch(e){}
-    var txt=noteText('doc');
+    var txt=noteText();
     if(!txt||txt.length<WARM_MIN) return;
-    var q=['summarize','bullets'], i=0;
-    (function next(){
-      if(i>=q.length) return;
-      var t=q[i++], k=warmKey(t,txt);
-      if(warmCache[k]||warmPend[k]){ next(); return; }
-      warmOne(t,txt).then(next,next);                // 한 번에 하나씩 — 서버를 몰아치지 않게
-    })();
+    warmOne(txt);
   }
   function scheduleWarm(delay){
     if(warmTimer) clearTimeout(warmTimer);
@@ -28057,10 +28054,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   // 테스트·디버그: 기다리지 말고 지금 바로 준비 / 준비해 둔 답 비우기
   window.sdyAiWarmNow=function(){ warmAll(); };
-  window.sdyAiWarmReset=function(){ warmCache={}; warmPend={}; warmCount=0; };
+  window.sdyAiWarmReset=function(){ warmCache={}; warmPend={}; warmCount=0; paintOutlineReady(); };
 
   /* ── 스트리밍 읽기 (SSE) ─────────────────────────────────────────────
-     서버가 event: meta/delta/done/error 로 흘려 보낸다. JSON 으로 오면
+     서버가 event: meta/delta/done/error 로 흘려 본다. JSON 으로 오면
      (검증 오류 400·503·429, 또는 스트림을 못 주는 서버) 그냥 그대로 읽는다. */
   function readSSE(r,onDelta){
     var ct='';
@@ -28108,43 +28105,111 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     return pump();
   }
 
-  // 패널을 열면 해돌이가 먼저 한마디 — 말풍선이 빈 채로 뜨지 않게
-  var HELLO=['노트 읽을 준비 됐어! 뭐부터 볼까 해돌~',
-             '요약이랑 개조식은 슬쩍 준비해 둘게. 눌러봐 해돌~',
-             '궁금한 게 있으면 아래에 적어 줘. 노트만 보고 답할게 해돌~',
-             '오늘 노트도 같이 읽어볼게! 해돌~'];
-  var HELLO_EMPTY='아직 글이 없네! 적고 나면 내가 바로 읽어줄게 해돌~';
-  function greet(){
-    if(lastText) return;
-    var t='';
-    try{ t=noteText('doc'); }catch(e){}
-    out(t?HELLO[Math.floor(Math.random()*HELLO.length)]:HELLO_EMPTY);
-    meta('');
+  /* ── 묻고 답하기 — 개요 정리(outline) 와 질문(chat) 두 가지뿐 ── */
+  function run(task,q){
+    if(ctl) return;                                   // 말하는 중엔 또 묻지 않는다
+    q=String(q||'').trim();
+    var txt=noteText();
+    closedByUser=false;
+    if(task==='outline'&&!txt){
+      kindChip(''); meta('');
+      busy(false);
+      out('열린 노트에 글이 없어요. 글을 적고 나면 개요를 잡아 줄게요 해돌~',true);
+      return;
+    }
+    if(task==='chat'&&!q) return;                     // 빈 질문 Enter — 조용히 무시
+    // ① 개요 정리 — 미리 준비해 둔 답이 있으면 기다림 없이 그 자리에서 바로
+    if(task==='outline'){
+      var ready=warmGet(txt);
+      if(ready&&ready.text){
+        lastText=ready.text; lastKind='outline'; lastQ='';
+        kindChip('outline');
+        out(lastText); busy(false);
+        meta((ready.provider?ready.provider+' · ':'')+(ready.model||'')+' · 미리 준비해 둔 답이에요 해돌~');
+        histPush('outline','',lastText);
+        return;
+      }
+    }
+    ctl=new AbortController();
+    busy(true); lastText=''; lastKind=''; lastQ=q;
+    kindChip('');
+    out('',true); meta('');
+    var t0=Date.now(), acc='';
+    // ② 말하는 대로: stream:true → SSE 조각이 올 때마다 말풍선에 붙인다
+    fetch('/api/ai/ask',{
+      method:'POST', signal:ctl.signal,
+      headers:{'Content-Type':'application/json','x-sdy-auth':token()},
+      body:JSON.stringify({task:task,text:txt,question:q,stream:true})
+    }).then(function(r){
+      return readSSE(r,function(d){
+        acc+=d;
+        if(task==='chat'){
+          var p=parseChat(acc);
+          if(p.wait){ out('',true); return; }          // 표식이 채 안 왔으면 아직 생각 중
+          if(p.kind) kindChip(p.kind);
+          out(p.text,true);
+        }else{
+          out(acc,true);
+        }
+      });
+    }).then(function(res){
+      var d=res.d||{};
+      if(d.ok){
+        var text=String(d.text||acc||''), kind='outline';
+        if(task==='chat'){
+          var p=parseChat(text);
+          if(p.wait) p={kind:'',text:text};            // 표식만 달랑 오면 표식 없는 셈 친다
+          text=p.text; kind=p.kind;
+        }
+        lastText=text; lastKind=kind;
+        kindChip(kind);
+        out(lastText);
+        meta(tailMeta(d,t0));
+        if(task==='outline'){
+          warmSet(txt,{text:lastText,provider:d.provider||'',model:d.model||''});
+          paintOutlineReady();
+        }
+        histPush(kind,q,lastText);
+        otterLine(shortLine(lastText)+' 해돌~');
+      }else{
+        // 말하다 끊겼으면 그까지라도 남겨 둔다(복사·읽기는 되게)
+        lastText=acc?(task==='chat'?(parseChat(acc).text||''):acc):'';
+        kindChip('');
+        out(String(d.error||'AI에 닿지 못했어요'),true);
+        // 401/404 는 설정 문제 — 어디를 봐야 하는지 서버가 짚어 준 걸 그대로 띄운다.
+        meta(d.hint?String(d.hint):(d.retry_after?('약 '+d.retry_after+'초 뒤에 다시 시도해 주세요'):''));
+      }
+    }).catch(function(e){
+      if(e&&e.name==='AbortError'&&closedByUser){ return; }   // 말풍선을 닫으며 멈춘 것
+      lastText=acc?(task==='chat'?(parseChat(acc).text||''):acc):'';
+      kindChip('');
+      out((e&&e.name==='AbortError')?'멈췄어요.':'네트워크 오류 · 잠시 뒤 다시 시도해 주세요',true);
+      meta('');
+    }).then(function(){
+      ctl=null; busy(false);
+    });
   }
 
-  window.sdyAiOpen=function(){
-    var p=$('aiPanel'), f=$('aiFab');
-    if(!inNote()){ if(window.toast) window.toast('노트를 열면 해돌이가 나타나요 해돌~',1700); return; }
-    if(p) p.hidden=false;
-    if(f) f.classList.add('hide');
-    greet();
-    // 열 때마다 서버 상태를 다시 확인 — 키 등록(재시작) 후에 새로고침 없이도
-    // 다음에 열 때 바로 '켜짐' 으로 바뀐다.
-    refreshStatus();
-    scheduleWarm(500);
-    var q=$('aiQ'); if(q&&NEEDQ[task]&&!q.classList.contains('hide')) q.focus();
-    scrollTail();
+  /* 검색창 Enter → 바로 질문 (보내기 버튼 없음). 노트 질문인지 자유 질문인지는
+     해돌이가 스스로 판단한다 — 사용자가 딱지를 고르는 일은 없다. */
+  window.sdyAiRun=function(){
+    var qEl=$('aiQ'), q=qEl?String(qEl.value||'').trim():'';
+    if(ctl){ otterLine('다 말하고 나서 물어봐 줘 해돌~'); return; }
+    if(!q){ otterLine('뭐라도 적어 줘 해돌~'); return; }
+    if(qEl) qEl.value='';                               // 본 질문은 말풍선(과 기록)에 남으니 창은 비운다
+    run('chat',q);
   };
-  window.sdyAiClose=function(){
-    var p=$('aiPanel');
-    if(p) p.hidden=true;
-    syncFab();
-  };
-  window.sdyAiToggle=function(){
-    var p=$('aiPanel');
-    if(p&&!p.hidden) window.sdyAiClose(); else window.sdyAiOpen();
+  window.sdyAiOutline=function(){
+    if(ctl){ otterLine('다 말하고 나서 눌러 줘 해돌~'); return; }
+    run('outline','');
   };
   window.sdyAiStop=function(){ if(ctl){ try{ ctl.abort(); }catch(e){} } };
+  window.sdyAiSayClose=function(){
+    closedByUser=true;
+    window.sdyAiStop();                                 // 말하는 중에 닫으면 말하기도 멈춘다
+    sayHide();
+  };
+  function sayHide(){ var s=$('aiSay'); if(s) s.hidden=true; }
   window.sdyAiCopy=function(){
     if(!lastText) return;
     var done=function(){ if(window.toast) window.toast('결과를 복사했어요',1400); };
@@ -28160,116 +28225,66 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }catch(e){}
   };
 
-  window.sdyAiRun=function(){
-    if(ctl) return;                                   // 이미 실행 중
-    var q=$('aiQ')?String($('aiQ').value||'').trim():'';
-    // 자유 질문만 노트를 안 보낸다. 요약·개조식·노트 질문은 노트 본문이 필요하다
-    // (서버도 free 를 빼면 needText:true 라 빈 본문은 400 으로 거른다).
-    var txt=(task==='free')?'':noteText();
-    if(task!=='free'&&!txt){ out('열린 노트에 글이 없어요.',true,'sad'); meta(''); return; }
-    if(NEEDQ[task]&&!q){ out('질문을 적어 주세요.',true,'sad'); meta(''); return; }
-    // ① 미리 준비해 둔 답이 있으면 기다림 없이 그 자리에서 바로 나온다
-    if(WARM[task]){
-      var ready=warmGet(task,txt);
-      if(ready&&ready.text){
-        lastText=ready.text;
-        out(lastText); busy(false);
-        meta((ready.provider?ready.provider+' · ':'')+(ready.model||'')
-             +' · 미리 준비해 둔 답 해돌~');
-        scrollTail();
-        return;
-      }
-    }
-    ctl=new AbortController();
-    busy(true); lastText=''; out('',true); meta('');
-    var t0=Date.now(), acc='';
-    // ② 말하는 대로: stream:true → SSE 조각이 올 때마다 말풍선에 붙인다
-    fetch('/api/ai/ask',{
-      method:'POST', signal:ctl.signal,
-      headers:{'Content-Type':'application/json','x-sdy-auth':token()},
-      body:JSON.stringify({task:task,text:txt,question:q,stream:true})
-    }).then(function(r){
-      return readSSE(r,function(d){ acc+=d; out(acc,true); scrollTail(); });
-    }).then(function(res){
-      var d=res.d||{};
-      if(d.ok){
-        lastText=String(d.text||acc||'');
-        out(lastText);
-        // 공급사 체인을 쓰면 '누가 답했는지'가 매번 달라질 수 있어서 같이 보여 준다.
-        meta(tailMeta(d,t0));
-        if(WARM[task]) warmSet(task,txt,{text:lastText,provider:d.provider||'',model:d.model||''});
-        otterLine(shortLine(lastText));
-      }else{
-        // 말하다 끊겼으면 그까지라도 남겨 둔다(복사·읽기는 되게)
-        lastText=acc?acc:'';
-        out(String(d.error||'AI에 닿지 못했어요'),true,'sad');
-        // 401/404 는 설정 문제 — 어디를 봐야 하는지 서버가 짚어 준 걸 그대로 띄운다.
-        meta(d.hint?(String(d.hint))
-             :(d.retry_after?('약 '+d.retry_after+'초 뒤에 다시 시도해 주세요'):''));
-      }
-    }).catch(function(e){
-      lastText=acc?acc:'';
-      out((e&&e.name==='AbortError')?'멈췄어요.':'네트워크 오류 · 잠시 뒤 다시 시도해 주세요',true,'sad');
-      meta('');
-    }).then(function(){
-      ctl=null; busy(false); scrollTail();
-    });
-  };
-
-  // 질문란에서 Enter = 바로 물어보기 (한글 조합 중·Shift+Enter 는 제외)
+  // 검색창에서 Enter = 바로 물어보기 (한글 조합 중·Shift+Enter 는 제외)
   document.addEventListener('keydown',function(e){
     if(!e.target||e.target.id!=='aiQ') return;
     if(e.key!=='Enter'||e.shiftKey) return;
-    if(e.isComposing||e.keyCode===229) return;        // ㄱ·ㅏ 조합 중 Enter 는 조합 끝이 아니다
+    if(e.isComposing||e.keyCode===229) return;          // ㄱ·ㅏ 조합 중 Enter 는 조합 끝이 아니다
     e.preventDefault();
     window.sdyAiRun();
   });
-  // Esc 로 닫기
+  // Esc = 대화기록 닫기 (말풍선은 X 를 누를 때까지 계속 떠 있다)
   document.addEventListener('keydown',function(e){
     if(e.key!=='Escape') return;
-    var p=$('aiPanel'); if(p&&!p.hidden) window.sdyAiClose();
+    var h=$('aiHist'); if(h&&!h.hidden) h.hidden=true;
   });
 
-  // 서버 키 상태 확인 — 버튼 점(초록/주황)·패널 안내 카드·실행 버튼
-  // 비활성을 전부 여기서 붙인다. 키가 등록돼도 안 돼도 이 호출이 전부다.
+  /* 서버 키 상태 — 검색창 점(#aiDot) 초록=켜짐 / 주황=키 아직 미등록.
+     키가 등록돼도 안 돼도 이 호출이 전부다. */
   function refreshStatus(){
     fetch('/api/ai/status',{cache:'no-store'}).then(function(r){ return r.json(); }).then(function(d){
       enabled=!!(d&&d.enabled);
-      var p=$('aiPanel'), f=$('aiFab'), dot=$('aiDot'), off=$('aiOff'), m=$('aiModel');
-      if(p) p.classList.toggle('ai-off',!enabled);
-      if(f) f.classList.toggle('ai-on',enabled);
-      if(dot) dot.title=enabled?'AI 켜짐':'AI 키 아직 미등록 — 서버 .env 에 GEMINI_API_KEY(구글) 를 넣으면 켜짐';
-      if(off) off.hidden=enabled;
-      // 공급사 체인을 쓰면 여러 개가 붙는다 — '첫 모델 외 n개' 로 줄여 표시.
-      var n=(d&&d.providers&&d.providers.length)||0;
-      if(m) m.textContent=enabled?((d.model||'')+(n>1?(' 외 '+(n-1)+'개'):'')):'AI 꺼짐';
-      // 실행 중인 요청이 있으면 busy() 가 다시 덮으므로 유휴일 때만 건드린다.
-      var go=$('aiGo'); if(go&&!ctl) go.disabled=!enabled;
-      syncFab();
+      var bar=$('aiAsk'), dot=$('aiDot');
+      if(bar) bar.classList.toggle('ai-on',enabled);
+      if(dot) dot.title=enabled?('AI 켜짐 · '+String((d&&d.model)||''))
+        :'AI 키 아직 미등록 — 서버 .env 에 GEMINI_API_KEY(구글) 를 넣으면 켜짐';
+      paintOutlineReady();
+      scheduleWarm(400);
     }).catch(function(){});
   }
 
-  function boot(){
-    paintTasks(); pick(task); refreshStatus(); syncFab();
-    // 질문칸 — 줄이 늘면 칸도 같이 자란다(최대 120px)
-    var q=$('aiQ');
-    if(q) q.addEventListener('input',function(){
-      try{ q.style.height='auto'; q.style.height=Math.min(120,q.scrollHeight)+'px'; }catch(e){}
-    });
-    // 노트 안 왼쪽 아래 해돌이를 누르면 패널이 열린다 (홈에는 해돌이가 없다)
+  /* 그리기 툴바가 하단을 차지하면 해돌이와 같이 검색창·말풍선·기록도 위로 피신 */
+  function syncDrawOn(){
     var no=$('noteOtter');
-    if(no) no.addEventListener('click',function(){ window.sdyAiToggle(); });
-    // 노트를 열고 닫을 때 — 홈으로 나가면 패널도 같이 닫고(해돌이는 노트 친구니까),
-    // 노트를 열면 요약·개조식을 슬쩍 준비해 둔다.
+    var on=!!(no&&no.classList.contains('draw-on'));
+    ['aiAsk','aiSay','aiHist'].forEach(function(id){
+      var el=$(id); if(el) el.classList.toggle('draw-on',on);
+    });
+  }
+
+  function boot(){
+    refreshStatus(); paintOutlineReady(); syncDrawOn();
+    // 해돌이를 누르면 대화기록 — 창이 아니라 해돌이 곁에 작게 열린다
+    var no=$('noteOtter');
+    if(no){
+      no.addEventListener('click',function(){ window.sdyAiHistToggle(); });
+      if(typeof MutationObserver!=='undefined'){
+        new MutationObserver(syncDrawOn).observe(no,{attributes:true,attributeFilter:['class']});
+      }
+    }
+    // 노트를 열고 닫을 때 — 열으면 상태를 다시 확인하고 개요를 슬쩍 준비해 두고,
+    // 닫으면 말풍선·기록도 같이 닫는다(해돌이는 노트 친구라 노트 밖에 없다)
     var ed=$('editorView');
     if(ed&&typeof MutationObserver!=='undefined'){
       new MutationObserver(function(){
-        syncFab();
-        if(inNote()) scheduleWarm(700);
-        else { var p=$('aiPanel'); if(p) p.hidden=true; }
+        if(inNote()){ refreshStatus(); scheduleWarm(700); }
+        else{
+          sayHide();
+          var h=$('aiHist'); if(h) h.hidden=true;
+        }
       }).observe(ed,{attributes:true,attributeFilter:['class']});
     }
-    // 글을 고치면(타이핑 멈춘 뒤) 준비해 둔 답을 다시 만든다
+    // 글을 고치면(타이핑 멈춘 뒤) 준비해 둔 개요를 다시 만든다
     var stage=$('pagesStage');
     if(stage&&typeof MutationObserver!=='undefined'){
       var tt=null;
