@@ -70,6 +70,9 @@ check('프런트: 이 페이지/전체 페이지 범위로 나눠 묻는다',
   /window\.sdyAiOutline=function\(scope\)/.test(js)
   && /noteText\(task==='outline'\?scope:'doc'\)/.test(js)
   && /outlinePage:'이 페이지'/.test(js) && /outlineDoc:'전체 페이지'/.test(js));
+check('프런트: 이 페이지는 눌렀을 때 스크롤 위치로 현재 쪽을 다시 계산한다',
+  /function curPageFromScroll\(\)/.test(js)
+  && /const idx=\(scope==='page'\)\?\[curPageFromScroll\(\)\]/.test(js));
 check('프런트: 모델 이름·소요 초 같은 기술 정보는 화면에 남기지 않는다',
   !/tailMeta/.test(js) && /meta\(''\);\s*\/\/ 모델·소요 초 같은 기술 정보는 안 보여 준다/.test(js)
   && /dot\.title=enabled\?'AI 켜짐'/.test(js));
@@ -129,6 +132,7 @@ check('CSS: 말풍선은 유리 토큰(var(--g-*))으로만 칠한다',
   /\.ai-say\{[^}]*background:var\(--g-fill-strong\)/.test(css)
   && !/\.ai-say\{[^}]*#[0-9a-fA-F]{3,6}/.test(css));
 check('CSS: 검색창은 한 줄 필(pill) 모양이다', /\.ai-askbar-field\{[^}]*border-radius:999px/.test(css));
+check('CSS: 검색창은 바닥에서 조금 위(54px)로 떠 있다', /\.ai-askbar\{[^}]*bottom:54px/.test(css));
 check('CSS: 종류 딱지(.ai-kind) 스타일이 있다', /\.ai-kind\{/.test(css));
 check('CSS: 좁은 화면에서는 말풍선이 좌우 가득', /@media \(max-width:640px\)\{[\s\S]*\.ai-say\{left:10px;right:10px;/.test(css));
 check('CSS: 모바일 전용 최종 블록(파일 맨 끝)을 침범하지 않는다',
@@ -209,6 +213,26 @@ check('런타임: 이 페이지 답에는 이 페이지 딱지가 붙는다',
 check('런타임: 준비된 답임을 meta 로 알려 준다',
   /미리 준비해 둔 답/.test($('aiMeta').textContent), $('aiMeta').textContent);
 check('런타임: 답이 있으면 복사 버튼이 보인다', $('aiCopy').hidden === false);
+
+// ── 2-2b) 범위별 본문 — '이 페이지'는 현재 쪽 글만, '전체 페이지'는 문서 전체 글을 보낸다 ──
+// bridge 는 scope 로 범위를 구분한다. scope 가 뒤바뀌면 어떤 쪽을 보든
+// 첫 페이지만 요약되는 회귀가 난다. bridge 가 scope 에 따라 다른 글을
+// 돌려주게 해서 실제로 어떤 글이 요청되는지 확인한다.
+w.sdyAiWarmReset();
+w.__sdyAiBridge = { text: (scope) => (scope === 'page' ? 'PAGE_TEXT' : 'DOC_TEXT'), title: () => '생물 노트' };
+calls.length = 0;
+w.sdyAiOutline('page');
+await tick(30); await flush();
+check('런타임: 이 페이지는 현재 쪽 글(PAGE_TEXT)만 보낸다',
+  calls.length === 1 && JSON.parse(calls[0].body).text === 'PAGE_TEXT',
+  calls.map((c) => c.body).join(' | '));
+calls.length = 0;
+w.sdyAiOutline('doc');
+await tick(30); await flush();
+check('런타임: 전체 페이지는 문서 전체 글(DOC_TEXT)을 보낸다',
+  calls.length === 1 && JSON.parse(calls[0].body).text === 'DOC_TEXT',
+  calls.map((c) => c.body).join(' | '));
+w.__sdyAiBridge = { text: () => LONG, title: () => '생물 노트' };
 
 // ── 2-3) 검색창 Enter = 바로 묻기 (스트리밍 + 노트 질문 판단) ──
 const sse = (parts, done) => {

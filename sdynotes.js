@@ -6574,17 +6574,29 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         },500);
     }
 
-    function onEditorScroll(){
-        if(!doc) return;
+    // 스크롤 위치로 '지금 보고 있는 쪽'을 다시 계산한다. curPageIdx 갱신과
+    // AI 다리(bridge)가 둘 다 이 값을 쓴다. 스크롤 이벤트가 밀려 curPageIdx 가
+    // 낡은 채로 남아 있더라도(탭이 뒤에 있던 경우 등) '이 페이지' 요약을 누르는
+    // 순간 이 함수로 바로 계산해, 첫 페이지만 요약되는 일이 없게 한다.
+    function curPageFromScroll(){
+        if(!doc) return curPageIdx;
+        const body=document.getElementById('editorBody');
+        if(!body) return curPageIdx;
         const size=paperSize();
         const step=(size.h+PAGE_GAP)*pageScale;
-        const body=document.getElementById('editorBody');
-        const idx=Math.min(doc.pages.length-1, Math.max(0, Math.round((body.scrollTop+body.clientHeight*0.35)/step)));
+        if(!(step>0)) return curPageIdx;
+        const idx=Math.round((body.scrollTop+body.clientHeight*0.35)/step);
+        return Math.min(doc.pages.length-1, Math.max(0, idx));
+    }
+    function onEditorScroll(){
+        if(!doc) return;
+        const idx=curPageFromScroll();
         if(idx!==curPageIdx){ curPageIdx=idx; updatePageInfo(); }
         scheduleHiBg();                                    // 보는 쪽을 점점 고화질로
         try{ positionTblBar(); }catch(e){}
+        const body=document.getElementById('editorBody');
         const zone=document.getElementById('addPageZone');
-        if(zone){
+        if(zone&&body){
             const near=body.scrollTop+body.clientHeight >= body.scrollHeight-90;
             zone.classList.toggle('near',near);
         }
@@ -17009,7 +17021,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             text:(scope)=>{
                 try{
                     if(!doc||!doc.pages||!doc.pages.length) return '';
-                    const idx=(scope==='page')?[curPageIdx|0]:doc.pages.map((p,i)=>i);
+                    // '이 페이지'는 curPageIdx 를 그대로 믿지 않고, 누르는 순간
+                    // 스크롤 위치로 지금 보고 있는 쪽을 다시 계산해 쓴다.
+                    const idx=(scope==='page')?[curPageFromScroll()]:doc.pages.map((p,i)=>i);
                     const out=[];
                     idx.forEach(i=>{ collectPageEls(i).forEach(o=>{ if(o.src) out.push(o.src); }); });
                     return out.join('\n');
@@ -28354,7 +28368,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       // 질문칸이 여러 줄로 자라면 이 기둥(범위 버튼 + 질문칸)이
       //   위를 향해 자라면서 답변 말풍선(#aiSay) 자리까지 올라온다 — 버튼이
       //   말풍선에 깔리지 않도록 말풍선을 그만큼만 위로 양보시킨다.
-      //   (기둥 높이 ≈ 질문칸 높이 + 88px, 말풍선 기본 자리 = 아래에서 122px)
+      //   (기둥 높이 ≈ 질문칸 높이 + 88px, 말풍선 기본 자리 = 아래에서 162px)
       var say=$('aiSay');
       if(say){
         var lift=(h>24)?Math.max(0,Math.min(48,h-28)):0;
