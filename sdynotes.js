@@ -6147,10 +6147,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function ensureVisiblePagesRendered(){
         if(!doc||!doc.pages||!doc.pages.length) return;
         const n=doc.pages.length;
-        const want=new Set([0, curPageIdx|0]);
-        // 인접 한 쪽도 미리 (스크롤 없이 바로 보이게)
-        if((curPageIdx|0)+1<n) want.add((curPageIdx|0)+1);
-        if((curPageIdx|0)-1>=0) want.add((curPageIdx|0)-1);
+        let vis=curPageIdx|0;
+        try{ if(typeof getVisiblePageIdx==='function') vis=getVisiblePageIdx(); }catch(_e){}
+        const want=new Set([0, vis]);
+        if(vis+1<n) want.add(vis+1);
+        if(vis-1>=0) want.add(vis-1);
+        // 현재 보고 있는 쪽이 0이 아니면 cur도 보호
+        want.add(curPageIdx|0);
         want.forEach(i=>{
             if(i<0||i>=n) return;
             // 이미 그려진 쪽도 요소가 비어 있으면 다시 그린다 (IO 실패·조기 return 복구)
@@ -6359,13 +6362,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const cs=getComputedStyle(body);
         const availW=Math.max(120, body.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight));
         fitScale=Math.max(0.05, Math.min(availW/size.w, 1));
+        if(!isFinite(fitScale)||fitScale<=0) fitScale=1;
         pageScale=fitScale*(zoomPct/100);
+        if(!isFinite(pageScale)||pageScale<=0) pageScale=0.5;
 
         const totalH=doc.pages.length*size.h+(doc.pages.length-1)*PAGE_GAP+PAGE_GAP+ADD_ZONE_H;
         stage.style.width=(size.w*pageScale)+'px';
         stage.style.height=(totalH*pageScale)+'px';
 
-        // 손잡이·테두리가 확대율과 무관하게 같은 크기로 보이도록
         const isTouch=matchMedia('(pointer:coarse)').matches;
         const hs=Math.max(6,Math.min(22,(isTouch?16:12)/Math.max(.2,pageScale)));
         stage.style.setProperty('--hs',hs.toFixed(2)+'px');
@@ -6373,10 +6377,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         stage.style.setProperty('--pz',Math.max(.2,pageScale).toFixed(3));
         stage.style.setProperty('--pin-inv',(1/Math.max(.2,pageScale)).toFixed(4));
 
-        stage.querySelectorAll('.page-wrap').forEach((w,i)=>{
+        stage.querySelectorAll('.page-wrap').forEach((w)=>{
+            const pi=+w.dataset.pageIdx;
+            const idx=isNaN(pi)?0:pi;
             w.style.transform=`scale(${pageScale})`;
             w.style.left='0px';
-            w.style.top=(i*(size.h+PAGE_GAP)*pageScale)+'px';
+            w.style.top=(idx*(size.h+PAGE_GAP)*pageScale)+'px';
             w.style.width=size.w+'px';
             w.style.height=size.h+'px';
         });
@@ -6574,14 +6580,43 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         },500);
     }
 
+    function getVisiblePageIdx(){
+        try{
+            const body=document.getElementById('editorBody');
+            if(!body||!doc||!doc.pages||!doc.pages.length) return curPageIdx|0;
+            const papers=body.querySelectorAll('#pagesStage .paper');
+            if(!papers.length) return curPageIdx|0;
+            const br=body.getBoundingClientRect();
+            const vhMid=br.top+body.clientHeight*0.5;
+            let best=curPageIdx|0, bestScore=-1e12;
+            papers.forEach(p=>{
+                const pi=+p.dataset.pageIdx;
+                if(isNaN(pi)) return;
+                const r=p.getBoundingClientRect();
+                const visTop=Math.max(r.top,br.top);
+                const visBot=Math.min(r.bottom,br.bottom);
+                const visH=Math.max(0,visBot-visTop);
+                const center=(r.top+r.bottom)/2;
+                const dist=Math.abs(center-vhMid);
+                const score=visH - dist*0.35;
+                if(score>bestScore){ bestScore=score; best=pi; }
+            });
+            if(bestScore<0){
+                const size=paperSize();
+                const step=(size.h+PAGE_GAP)*Math.max(0.01,pageScale);
+                const est=Math.round((body.scrollTop+body.clientHeight*0.35)/step);
+                const clamped=Math.min(doc.pages.length-1,Math.max(0,est));
+                if(!isNaN(clamped)) return clamped;
+            }
+            return Math.min(doc.pages.length-1,Math.max(0,best));
+        }catch(e){ return curPageIdx|0; }
+    }
     function onEditorScroll(){
         if(!doc) return;
-        const size=paperSize();
-        const step=(size.h+PAGE_GAP)*pageScale;
         const body=document.getElementById('editorBody');
-        const idx=Math.min(doc.pages.length-1, Math.max(0, Math.round((body.scrollTop+body.clientHeight*0.35)/step)));
+        const idx=getVisiblePageIdx();
         if(idx!==curPageIdx){ curPageIdx=idx; updatePageInfo(); }
-        scheduleHiBg();                                    // 보는 쪽을 점점 고화질로
+        scheduleHiBg();
         try{ positionTblBar(); }catch(e){}
         const zone=document.getElementById('addPageZone');
         if(zone){
@@ -17009,7 +17044,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             text:(scope)=>{
                 try{
                     if(!doc||!doc.pages||!doc.pages.length) return '';
-                    const idx=(scope==='page')?[curPageIdx|0]:doc.pages.map((p,i)=>i);
+                    let pi=curPageIdx|0;
+                    try{ if(typeof getVisiblePageIdx==='function') pi=getVisiblePageIdx(); }catch(_e){}
+                    const idx=(scope==='page')?[pi]:doc.pages.map((p,i)=>i);
                     const out=[];
                     idx.forEach(i=>{ collectPageEls(i).forEach(o=>{ if(o.src) out.push(o.src); }); });
                     return out.join('\n');
