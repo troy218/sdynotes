@@ -125,7 +125,11 @@ function rateHit(key, now = Date.now(), n = AI_RATE_N) {
 }
 
 // ── 프롬프트 구성 ───────────────────────────────────────────────────────────
-export function aiMessages(task, text, question) {
+// 14.23.1 · outline 범위 안내 — scope:'page' 면 '지금 보는 한 쪽'임을 모델에게 알린다.
+//   이 한 줄이 없으면 한 쪽분량을 줘도 문서 전체 개요(서론→결론)처럼 답해
+//   "첫 페이지만 요약하는 것 같다" 고 보였다.
+const OUTLINE_PAGE_LINE = ' 지금 받은 본문은 문서 전체가 아니라 사용자가 눈으로 보고 있는 한 쪽(페이지) 분량이다. 이 한 쪽에 있는 내용만 정리하고, 문서의 다른 쪽이나 전체 구조에 대해 추측하지 않는다.';
+export function aiMessages(task, text, question, scope) {
   const spec = AI_TASKS[task] || AI_TASKS.outline;
   const user = [];
   // chat 은 노트가 있을 때만 본문을 싣는다 — 비어 있으면 자유 질문으로 판단하게
@@ -134,7 +138,7 @@ export function aiMessages(task, text, question) {
   }
   if (spec.needQuestion || (task === 'chat' && question)) user.push('질문: ' + question);
   return [
-    { role: 'system', content: spec.system },
+    { role: 'system', content: spec.system + (task === 'outline' && scope === 'page' ? OUTLINE_PAGE_LINE : '') },
     { role: 'user', content: user.join('\n\n') },
   ];
 }
@@ -306,9 +310,9 @@ async function callChain(messages, tried = []) {
 }
 
 // 캐시 키는 '체인 전체' 기준 — 공급사가 바뀌어도 같은 질문은 같은 답으로 친다.
-function aiKeyFor(task, text, question) {
+function aiKeyFor(task, text, question, scope) {
   const chainId = AI_PROVIDERS.map((p) => `${p.name}/${p.model}`).join('+');
-  return cacheKeyOf(task, chainId, text, question);
+  return cacheKeyOf(task + (scope === 'page' ? '@page' : ''), chainId, text, question);
 }
 const aiCacheGet = (key) => {
   if (!AI_CACHE_TTL_MS) return null;
@@ -316,8 +320,8 @@ const aiCacheGet = (key) => {
   return (hit && Date.now() - hit.at < AI_CACHE_TTL_MS) ? hit : null;
 };
 
-async function aiCore(task, text, question) {
-  const key = aiKeyFor(task, text, question);
+async function aiCore(task, text, question, scope) {
+  const key = aiKeyFor(task, text, question, scope);
   const hit = aiCacheGet(key);
   if (hit) return { text: hit.text, cached: true, provider: hit.provider, model: hit.model };
   const pending = inFlight.get(key);
@@ -327,7 +331,7 @@ async function aiCore(task, text, question) {
   }
 
   const p = (async () => {
-    const out = await callChain(aiMessages(task, text, question));
+    const out = await callChain(aiMessages(task, text, question, scope));
     cachePut(key, out.text, out.provider, out.model);
     return out;
   })().finally(() => { inFlight.delete(key); });
@@ -379,6 +383,7 @@ export function registerAi(app) {
     if (!AI_READY) return { err: { status: 503, body: { ok: false, error: DISABLED } } };
 
     let text = normText(b.text);
+    const scope = (task === 'outline' && b.scope === 'page') ? 'page' : '';
     const question = String(b.question == null ? '' : b.question).trim().slice(0, AI_MAX_QUESTION);
     if (spec.needText && !text) return { err: { status: 400, body: { ok: false, error: '빈 노트예요 · 먼저 노트에 글을 적어 주세요' } } };
     if (spec.needQuestion && !question) return { err: { status: 400, body: { ok: false, error: '질문을 적어 주세요' } } };
@@ -408,7 +413,7 @@ export function registerAi(app) {
         },
       };
     }
-    return { job: { task, spec, text, question, fit, warm, key: aiKeyFor(task, text, question) } };
+    return { job: { task, spec, text, question, fit, warm, scope, key: aiKeyFor(task, text, question, scope) } };
   }
 
   // 실패를 JSON 으로 — 스트림이든 아니든 같은 문구·같은 코드로 떨어진다.
@@ -487,7 +492,7 @@ export function registerAi(app) {
 
     const run = (async () => {
       const out = await callChainStream(
-        aiMessages(job.task, job.text, job.question),
+        aiMessages(job.task, job.text, job.question, job.scope),
         (d) => send('delta', { t: d }),
         ac.signal,
       );
@@ -518,7 +523,7 @@ export function registerAi(app) {
     if (b.stream === true) { streamReply(req, reply, job); return; }
 
     try {
-      const { text: out, cached, provider, model } = await aiCore(job.task, job.text, job.question);
+      const { text: out, cached, provider, model } = await aiCore(job.task, job.text, job.question, job.scope);
       return reply.send({
         ok: true, task: job.task, text: out, model: model || AI_MODEL, provider: provider || '',
         cached, truncated: job.fit.truncated, chars: job.fit.chars, note_chars: job.fit.noteChars,

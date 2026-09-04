@@ -6241,6 +6241,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const u=String((el&&el.url)||'');
         return !!(u && !/^blob:/i.test(u));
     }
+    // 14.23.1 · 글상자 '글 내용' 비교 — 가져오기 중복(이중 추출)은 글이 사실상 같다.
+    //   겹침만으로 지우면 사용자가 일부러 겹쳐 놓은 상자(캡션·메모·번역 겹칩)까지
+    //   렌더·저장 순간마다 통째로 사라져 "누른 상자가 사라진다" 로 보였다.
+    //   이제 겹침 + 글 일치 둘 다 맞아야 중복으로 본다.
+    function _elPlainText(el){
+        return String((el&&el.html)||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
+    }
+    function _elSameText(a,b){
+        const ta=_elPlainText(a), tb=_elPlainText(b);
+        if(!ta||!tb) return false;
+        return ta===tb || (ta.length>=12&&tb.length>=12&&(ta.indexOf(tb)===0||tb.indexOf(ta)===0));
+    }
     function sanitizePageEls(els){
         if(!els||!els.length) return els||[];
         const seen=new Set();
@@ -6261,7 +6273,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(i===j||drop.has(a.id)) continue;
                 const b=texts[j]; if(drop.has(b.id)) continue;
                 const oa=_boxOverlap(A,_elBox(b));
-                if(oa/aa>=0.88 && aa<=(_elBox(b).w*_elBox(b).h)+4) drop.add(a.id);
+                if(oa/aa>=0.88 && aa<=(_elBox(b).w*_elBox(b).h)+4 && _elSameText(a,b)) drop.add(a.id);
             }
             if(drop.has(a.id)) continue;
             for(const lx of latexs){
@@ -17730,8 +17742,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         doc.pages[loc.i].els.splice(loc.k,1); return true;
     }
     async function upsertEl(data,page){
-        let pi=Math.min(page,(doc.pages||[]).length-1);
-        if(pi<0) return false;
+        // 14.23.1 · 범위 밖 쪽의 op 를 '마지막 쪽'에 끼워 넣지 않는다.
+        //   예전엔 Math.min(page, len-1) 로 잘라 붙여, 먼 쪽(사라진 쪽)의 상자가
+        //   한 쪽에 겹쳐 쌓여 보였다. 문서에 없는 쪽의 op 는 무시하는 게 맞다.
+        let pi=page|0;
+        if(!(pi>=0&&pi<(doc.pages||[]).length)) return false;
         if(doc.pages[pi]&&doc.pages[pi].__lazy!=null) await loadBatch(pi);
         const loc=findElLoc(data.id);
         if(loc){
@@ -28110,7 +28125,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       b.title=ready?'미리 준비해 뒀어요 · 누르면 바로 나와요':it[2];
     });
   }
-  function warmOne(txt){
+  function warmOne(txt,scope){
     if(!enabled||!txt) return Promise.resolve(null);
     var k=warmKey(txt);
     if(warmCache[k]||warmPend[k]) return Promise.resolve(warmCache[k]||null);
@@ -28119,7 +28134,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     return fetch('/api/ai/ask',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-sdy-auth':token()},
-      body:JSON.stringify({task:'outline',text:txt,question:'',warm:true})
+      // scope 를 함께 보낸다 — 서버 프롬프트·캐시가 범위별로 갈라진다 (14.23.1)
+      body:JSON.stringify({task:'outline',text:txt,question:'',warm:true,
+        scope:(scope==='page'?'page':'doc')})
     }).then(function(r){ return r.json(); }).then(function(d){
       delete warmPend[k];
       if(d&&d.ok&&d.text){
@@ -28135,7 +28152,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     try{ if(document.visibilityState==='hidden') return; }catch(e){}
     ['page','doc'].forEach(function(sc){          // 쪽이 하나뿐인 노트는 글이 같아 한 번만 간다
       var txt=noteText(sc);
-      if(txt&&txt.length>=WARM_MIN) warmOne(txt);
+      if(txt&&txt.length>=WARM_MIN) warmOne(txt,sc);
     });
   }
   function scheduleWarm(delay){
@@ -28205,7 +28222,11 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(task==='outline'&&!txt){
       kindChip(''); meta('');
       busy(false);
-      out(scope==='page'?'이 페이지에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌~'
+      // 14.23.1 · 가져온 논문은 먼 쪽 본문을 늦게 받는다 — '없다'고 하지 않고
+      //   '불러오는 중'이라고 정확히 말한다 (문서 전체 글 유무로 구분)
+      var docAny=noteText('doc');
+      out(scope==='page'?(docAny?'이 쪽 본문을 아직 불러오는 중이에요. 잠시 뒤 다시 눌러 주세요 해돌~'
+        :'이 페이지에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌~')
         :'열린 노트에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌~',true);
       return;
     }
@@ -28233,7 +28254,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     fetch('/api/ai/ask',{
       method:'POST', signal:ctl.signal,
       headers:{'Content-Type':'application/json','x-sdy-auth':token()},
-      body:JSON.stringify({task:task,text:txt,question:q,stream:true})
+      // outline 은 범위를 함께 보낸다 — '이 페이지' 는 한 쪽분량임을 서버가 안다 (14.23.1)
+      body:JSON.stringify({task:task,text:txt,question:q,stream:true,
+        scope:(task==='outline'?scope:'doc')})
     }).then(function(r){
       return readSSE(r,function(d){
         acc+=d;
@@ -28354,7 +28377,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       // 질문칸이 여러 줄로 자라면 이 기둥(범위 버튼 + 질문칸)이
       //   위를 향해 자라면서 답변 말풍선(#aiSay) 자리까지 올라온다 — 버튼이
       //   말풍선에 깔리지 않도록 말풍선을 그만큼만 위로 양보시킨다.
-      //   (기둥 높이 ≈ 질문칸 높이 + 88px, 말풍선 기본 자리 = 아래에서 122px)
+      //   (기둥 높이 ≈ 질문칸 높이 + 88px, 말풍선 기본 자리 = 아래에서 144px)
       var say=$('aiSay');
       if(say){
         var lift=(h>24)?Math.max(0,Math.min(48,h-28)):0;

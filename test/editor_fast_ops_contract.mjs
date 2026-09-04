@@ -40,7 +40,9 @@ assert.match(openBody, /doc=loadedDoc; _docId=nb\.id;/,
 // 18.10 렌더러가 저장 마크업을 decodeTextMarkup 으로 풀도록 바뀌었다(예전은
 // el.html 을 그대로 innerHTML 에 꽂았다). 소스 계약은 '반드시 남아야 할 가드'
 // 만 보는 것이므로, 이 렌더 호출 형태가 바뀌어도 아래 가드가 남아 있는지 검사한다.
-const buildText = js.match(/function buildTextEl\(el,pageIdx\)\{([\s\S]{0,2600}?)\n        c\.innerHTML=decodeTextMarkup\(el\.html\|\|''\);/);
+// 14.23.1 · innerHTML 식에 (el.html||'') 가 그대로 보이면 된다 — 사이에
+//   _normalizePaletteHtml(...) 같은 정규화 래퍼가 끼어들어도 통과한다.
+const buildText = js.match(/function buildTextEl\(el,pageIdx\)\{([\s\S]{0,2600}?)\n        c\.innerHTML=decodeTextMarkup\([\s\S]{0,80}?el\.html\|\|''\)+;/);
 assert.ok(buildText, 'buildTextEl should exist');
 assert.match(buildText[1], /w\.dataset\.nbId=\(curNB&&curNB\.id\)\|\|'';/,
   'each text DOM must remember which notebook it was rendered for');

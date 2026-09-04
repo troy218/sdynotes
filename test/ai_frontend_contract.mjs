@@ -65,7 +65,9 @@ check('프런트: 대화기록은 해돌이 클릭으로 열고 최대 40개다'
   /window\.sdyAiHistToggle/.test(js) && /HIST_MAX=40/.test(js)
   && /no\.addEventListener\('click',function\(\)\{ window\.sdyAiHistToggle\(\); \}\)/.test(js));
 check('프런트: 정리는 미리 준비해 둔 답을 먼저 찾는다',
-  /warmGet\(txt\)/.test(js) && /body:JSON\.stringify\(\{task:'outline',text:txt,question:'',warm:true\}\)/.test(js));
+  /warmGet\(txt\)/.test(js) && /body:JSON\.stringify\(\{task:'outline',text:txt,question:'',warm:true,\s*scope:\(scope==='page'\?'page':'doc'\)\}\)/.test(js));
+check('프런트: 이 페이지 요청은 범위(scope:page) 를 서버에 알린다 — 한 쪽분량임을 프롬프트가 안다',
+  /scope:[(]task==='outline'[?]scope:'doc'[)][}][)]/.test(js));
 check('프런트: 이 페이지/전체 페이지 범위로 나눠 묻는다',
   /window\.sdyAiOutline=function\(scope\)/.test(js)
   && /noteText\(task==='outline'\?scope:'doc'\)/.test(js)
