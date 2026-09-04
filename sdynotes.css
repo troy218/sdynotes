@@ -6382,11 +6382,11 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    질문칸 폭이 달라져도 가운데가 맞도록 기둥의 자식들을 중앙 정렬한다.
    z-index 는 답변 말풍선(#aiSay, 8)보다 위(9) — 질문을 여러 줄 적으면 이 기둥이
    말풍선 아래쪽까지 올라오는데, 그때 버튼이 말풍선에 깔려 안 눌리면 곤란하다. */
-.ai-askbar{position:absolute;left:140px;bottom:14px;z-index:9;
+.ai-askbar{position:absolute;left:140px;bottom:28px;z-index:9;
     display:flex;flex-direction:column;align-items:center;gap:6px;
     max-width:min(420px,calc(100% - 160px));
     transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
-.ai-askbar.draw-on{bottom:calc(64px + 32px);}      /* 그리기 툴바가 뜨면 해돌이와 같이 위로 */
+.ai-askbar.draw-on{bottom:calc(64px + 44px);}      /* 그리기 툴바가 뜨면 해돌이와 같이 위로 */
 /* 범위 버튼 줄 — '이 페이지' 와 '전체 페이지' 를 질문칸 위 가운데에 나란히 둔다.
    화면이 좁으면 가운데를 유지한 채 자연스럽게 두 줄로 접힌다. */
 .ai-outline-row{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;
@@ -6531,7 +6531,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 
 /* 좁은 화면 — 검색창은 해돌이 옆 한 줄을 남은 폭에, 말풍선·기록은 좌우 가득 */
 @media (max-width:640px){
-    .ai-askbar{left:96px;bottom:10px;max-width:calc(100% - 108px);}
+    .ai-askbar{left:96px;bottom:22px;max-width:calc(100% - 108px);}
     .ai-askbar-field{width:100%;}
     .ai-say{left:10px;right:10px;bottom:calc(88px + var(--ai-lift,0px));width:auto;}
     .ai-say-body{max-height:44vh;}
@@ -6890,7 +6890,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
   #ypReopen{bottom:calc(var(--ph-safe) + var(--ph-gap) + var(--ph-stack));}
   /* 14.23.0 · AI 아이콘·창은 없다 — 해돌이 옆 검색창·말풍선·기록만 safe-area 를 피해 올린다 */
   .ai-askbar{left:calc(96px + var(--ph-left));}
-  .ai-askbar,.ai-askbar.draw-on{bottom:calc(var(--ph-safe) + 10px);}
+  .ai-askbar,.ai-askbar.draw-on{bottom:calc(var(--ph-safe) + 22px);}
   .ai-say,.ai-hist{left:max(10px,var(--ph-left));right:max(10px,var(--ph-right));width:auto;}
   .ai-say,.ai-hist,.ai-say.draw-on,.ai-hist.draw-on{bottom:calc(var(--ph-safe) + 88px + var(--ai-lift,0px));}
   .ai-say-body{max-height:calc(var(--sdy-mobile-vh,100dvh) - var(--ph-top) - var(--ph-safe) - 220px);}

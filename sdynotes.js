@@ -814,14 +814,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             if(dd){
                 _nbClearBlocked(nbId);
+                // dd.pages 는 firstSlice 번째부터의 실제 본문이다. 예전엔 이걸
+                // 그대로 pages[0..] 에 꽂아 '마지막으로 보던 쪽' 본문이 문서
+                // 맨 앞에 겹쳐 나왔다(여러 쪽이 한 쪽에 섞이는 원인). 반드시
+                // 앞뒤를 lazy 빈 쪽으로 채워 원래 자리에 놓는다.
                 const total=dd.total||dd.pages.length;
-                const pages=dd.pages.slice();
+                const pages=[];
+                for(let i=0;i<firstSlice&&i<total;i++)
+                    pages.push({id:'lazy_'+i,els:[],tables:[],__lazy:1});
+                dd.pages.forEach(p=>pages.push(p));
                 for(let i=pages.length;i<total;i++)
                     pages.push({id:'lazy_'+i,els:[],tables:[],__lazy:1});
                 cfg.pages=pages;
                 if(dd.sizePreset) cfg.sizePreset=dd.sizePreset;
                 cfg.__ref=cfg.serverDoc;
-                cfg.__loadedTo=dd.pages.length;
+                cfg.__loadedTo=firstSlice+dd.pages.length;
                 try{ setCfg(nbId,cfg); }catch(e){}   // 옛 빈화면 캐시 덮어쓰기
             }else{
                 // 본문을 못 받으면 빈 화면 역저장을 막되, 영구 차단 대신
@@ -6297,9 +6304,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         svg.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
         clearTimeout(chunkTimers[idx]); delete chunkTimers[idx];
 
-        let els=sanitizePageEls(doc.pages[idx].els||[]);
-        if(els!==doc.pages[idx].els && els.length!==(doc.pages[idx].els||[]).length)
-            doc.pages[idx].els=els;
+        // 화면은 문서 그대로 그린다. 예전엔 여기서 겹침(88%) 제거 결과를
+        // doc.pages[idx].els 에 되덮어써서, 다시 그려질 때마다 정상 글상자가
+        // 데이터에서 통째로 사라졌다(누르면 상자가 사라지는 원인). 중복 제거는
+        // 가져오기/저장 경로(sanitizePageEls 호출 2곳)에서만 한다.
+        const els=doc.pages[idx].els||[];
         const put=(el)=>{
             if(_pageRenderTok[idx]!==tok) return;
             if(el.type==='image') imgL.appendChild(buildImageEl(el,idx));
@@ -6574,12 +6583,22 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         },500);
     }
 
-    function onEditorScroll(){
-        if(!doc) return;
+    // 스크롤 위치 → 지금 화면에 보이는 쪽 번호. 스크롤 추적(onEditorScroll)과
+    // 해돌이 bridge 가 같은 계산을 쓰게 하나로 모은다 — 요약이 '첫 쪽'만
+    // 나오던 건 curPageIdx 가 화면보다 늦게 따라오는 순간이 있었기 때문이다.
+    function visiblePageIdx(){
+        if(!doc||!doc.pages||!doc.pages.length) return 0;
         const size=paperSize();
         const step=(size.h+PAGE_GAP)*pageScale;
         const body=document.getElementById('editorBody');
-        const idx=Math.min(doc.pages.length-1, Math.max(0, Math.round((body.scrollTop+body.clientHeight*0.35)/step)));
+        const st=(body&&body.scrollTop)||0;
+        const vh=(body&&body.clientHeight)||0;
+        return Math.min(doc.pages.length-1, Math.max(0, Math.round((st+vh*0.35)/step)));
+    }
+
+    function onEditorScroll(){
+        if(!doc) return;
+        const idx=visiblePageIdx();
         if(idx!==curPageIdx){ curPageIdx=idx; updatePageInfo(); }
         scheduleHiBg();                                    // 보는 쪽을 점점 고화질로
         try{ positionTblBar(); }catch(e){}
@@ -17009,7 +17028,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             text:(scope)=>{
                 try{
                     if(!doc||!doc.pages||!doc.pages.length) return '';
-                    const idx=(scope==='page')?[curPageIdx|0]:doc.pages.map((p,i)=>i);
+                    // 'page' 는 반드시 지금 화면에 보이는 쪽 — 변수만 믿지 않고 스크롤 위치로 다시 계산한다
+                    const idx=(scope==='page')?[visiblePageIdx()]:doc.pages.map((p,i)=>i);
                     const out=[];
                     idx.forEach(i=>{ collectPageEls(i).forEach(o=>{ if(o.src) out.push(o.src); }); });
                     return out.join('\n');
@@ -17653,6 +17673,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
 
     function _selectiveRenderPage(idx, activeId){
+        // 아직 안 받은 쪽(lazy 빈 스텁)에서는 지우면 안 된다 — els 가 [] 이라
+        // 화면에 남은 모든 상자를 '없는 요소'로 옥죄어 통째로 지워 버렸다.
+        // 이 경우는 통째 다시 그리기(renderPageEls)가 슬라이스를 받아 온다.
+        const pgz=doc&&doc.pages&&doc.pages[idx];
+        if(pgz&&pgz.__lazy!=null){ renderPageEls(idx); return; }
         const paper=paperAt(idx); if(!paper) return;
         const txtL=paper.querySelector('.layer-text');
         const svg=paper.querySelector('.layer-stroke');
