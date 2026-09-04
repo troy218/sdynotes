@@ -403,6 +403,10 @@ sdynotes-fast/
 | 버전 올리기 | `node scripts/bump-version.mjs 14.16.5` — 버전 5곳을 한 번에 |
 | 버전 동기화 검사 | `npm run bump:check` (CI 도 같은 검사를 돌린다) |
 
+- **버그를 고칠 때는 `docs/precise_fix_rules.md` 의 규칙을 따른다** —
+  증상을 덧붙이지 말고, 틀린 줄을 지우고 그 자리에 정확한 코드를 다시
+  쓴다(삭제 줄 수 ≈ 추가 줄 수). 재현 테스트가 먼저, 수정이 나중.
+
 - CI 워크플로는 `docs/ci-workflow.yml` 로 준비돼 있다. `.github/workflows/ci.yml`
   로 옮겨 커밋하면 브랜치 push 마다 `npm ci` → worker `requirements.txt` 설치 →
   파이썬 문법 검사 → 버전 동기화 검사 → `npm test` 가 돌아간다.

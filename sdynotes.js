@@ -815,13 +815,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(dd){
                 _nbClearBlocked(nbId);
                 const total=dd.total||dd.pages.length;
-                const pages=dd.pages.slice();
-                for(let i=pages.length;i<total;i++)
-                    pages.push({id:'lazy_'+i,els:[],tables:[],__lazy:1});
+                // 받아온 슬라이스(from=firstSlice)는 문서의 'firstSlice 자리'에 둔다.
+                // 예전엔 [0] 부터 놓아서, 마지막으로 보던 슬라이스가 1쪽 자리에
+                // 끼워지고(앞쪽이 전부 뒤바뀜), 그 뒤 다시 받은 슬라이스와 한 쪽에
+                // 겹쳐지는 원인이 됐다. firstSlice+k 번째 자리가 원래 위치다.
+                const pages=[];
+                for(let i=0;i<total;i++) pages.push({id:'lazy_'+i,els:[],tables:[],__lazy:1});
+                dd.pages.forEach((p,k)=>{ if(firstSlice+k<total) pages[firstSlice+k]=p; });
                 cfg.pages=pages;
                 if(dd.sizePreset) cfg.sizePreset=dd.sizePreset;
                 cfg.__ref=cfg.serverDoc;
-                cfg.__loadedTo=dd.pages.length;
+                cfg.__loadedTo=firstSlice+dd.pages.length;
                 try{ setCfg(nbId,cfg); }catch(e){}   // 옛 빈화면 캐시 덮어쓰기
             }else{
                 // 본문을 못 받으면 빈 화면 역저장을 막되, 영구 차단 대신
@@ -5404,8 +5408,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     let _lastPosT=0;
+    let _posReady=false;   // 노트 열기 시퀀스(restoreLastPos 전)에는 저장값을 덮지 않는다
     function saveLastPos(){
         if(!curNB||!doc) return;
+        if(!_posReady) return;          // 열리는 중 curPageIdx=0 이 저장값을 지우는 것을 막는다
         const now=Date.now();
         if(now-_lastPosT<400) return;      // 스크롤 연타는 한 번만
         _lastPosT=now;
@@ -5531,6 +5537,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 그래야 교체 직후 그 타이머가 새 노트로 엉뚱하게 흐르지 않는다.
         clearTimeout(_saveTimer); _saveTimer=null; _saveNoteId=null;
         curNB=nb; history=[]; redoStack=[]; curPageIdx=0; _histT=0;
+        _posReady=false;   // 이 노트의 마지막 위치를 restoreLastPos 가 읽을 때까지 덮지 않는다
         // 14.15 · 이전 노트의 선택/드래그 상태를 새 노트에 옮기지 않는다.
         try{ clearMulti(); }catch(e){}
         selected=null; drag=null; resize=null; textSel=null;
@@ -5616,7 +5623,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const _paint=()=>{ try{ layoutPages(); ensureVisiblePagesRendered(); }catch(e){} };
         requestAnimationFrame(_paint);
         setTimeout(_paint,420);
-        setTimeout(()=>{ try{ restoreLastPos(); ensureVisiblePagesRendered(); }catch(e){} },460);
+        setTimeout(()=>{ try{ restoreLastPos(); ensureVisiblePagesRendered(); }catch(e){} _posReady=true; },460);
         scheduleHiBg();                                                // 보는 쪽 배경을 점점 고화질로
         openNav(closeEditor);                                          // 뒤로가기 → 에디터 닫기
     }
@@ -28354,7 +28361,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       // 질문칸이 여러 줄로 자라면 이 기둥(범위 버튼 + 질문칸)이
       //   위를 향해 자라면서 답변 말풍선(#aiSay) 자리까지 올라온다 — 버튼이
       //   말풍선에 깔리지 않도록 말풍선을 그만큼만 위로 양보시킨다.
-      //   (기둥 높이 ≈ 질문칸 높이 + 88px, 말풍선 기본 자리 = 아래에서 122px)
+      //   (기둥 높이 ≈ 질문칸 높이 + 88px, 말풍선 기본 자리 = 아래에서 152px)
       var say=$('aiSay');
       if(say){
         var lift=(h>24)?Math.max(0,Math.min(48,h-28)):0;
