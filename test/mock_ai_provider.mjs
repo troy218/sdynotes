@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 14.23.0 · '가짜 모델 API' — 노트 해돌이를 키 없이 미리 보려고
+// 14.24.0 · '가짜 모델 API' — 질문·문서 편집 해돌이를 키 없이 미리 보려고
 // ---------------------------------------------------------------------------
 //   OpenAI 호환 /v1/chat/completions 만 흉내 낸다. 스트림(stream:true) 도
 //   진짜처럼 조각을 흘려 보내서, 해돌이가 '말하는' 모습까지 그대로 확인된다.
@@ -26,14 +26,31 @@ const readBody = (req) => new Promise((res) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 노트 본문을 대충 읽어 '그럴듯한' 답을 만든다 — 모델이 아니라 그냥 문장 조립.
-// 14.23.0 · 서버 task 는 두 가지 — 개요 정리(outline)와 질문(chat).
-//   chat 프롬프트는 [[note]] / [[free]] 판단 표식을 요구하므로 흉내 답도 붙여 준다.
+// edit이면 상태에 실제로 있는 첫 id를 써서 안전한 @ 명령을 하나 만든다.
 function fakeAnswer(messages = []) {
   const sys = String(messages.find((m) => m.role === 'system')?.content || '');
   const user = String(messages.find((m) => m.role === 'user')?.content || '');
-  const note = (user.match(/노트 본문:\n"""([\s\S]*?)"""/) || [, ''])[1].trim();
+  const tagged = (user.match(/<document>\n([\s\S]*?)\n<\/document>/) || [, ''])[1];
+  const quoted = (user.match(/노트 본문:\n"""([\s\S]*?)"""/) || [, ''])[1];
+  const documentBody = String(tagged || quoted || '').trim();
+  const note = /노트 본문:/.test(user) ? documentBody : '';
+  const editState = /문서 상태:/.test(user) ? documentBody : '';
   const question = (user.match(/질문: (.*)$/m) || [, ''])[1].trim();
+  const editRequest = (user.match(/편집 요청: (.*)$/m) || [, ''])[1].trim();
   const body = note || question;
+  if (/문서 편집 엔진/.test(sys)) {
+    const firstId = (editState.match(/\bid=([^\s]+)/) || [, ''])[1];
+    const page = Number((editState.match(/현재 (\d+)쪽/) || [, 1])[1]) || 1;
+    if (/추가|만들|적어/.test(editRequest)) {
+      return `@add ${page} | 60 | 100 | 320 | 72 | 목업 해돌이가 만든 새 글상자\n@done 새 글상자를 만들었어요`;
+    }
+    if (!firstId) return '@done 편집할 요소가 없어 무엇을 고칠지 찾지 못했어요';
+    if (/지워|삭제/.test(editRequest)) return `@del ${firstId}\n@done 첫 요소를 지웠어요`;
+    if (/내용|글|제목.*바꿔|고쳐/.test(editRequest)) {
+      return `@tx ${firstId} | 목업 해돌이가 요청대로 고친 글이에요\n@done 첫 글상자 내용을 고쳤어요`;
+    }
+    return `@mv ${firstId} | 60 | 40\n@done 첫 요소를 위쪽으로 옮겼어요`;
+  }
   const sentences = body.split(/(?<=[.!?다요]\s)|\n+/).map((s) => s.trim()).filter(Boolean);
   const head = sentences.slice(0, 3).join(' ') || body.slice(0, 60);
   if (/개요\(목차\) 형식/.test(sys)) {

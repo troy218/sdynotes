@@ -6414,8 +6414,18 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
     border-radius:999px;padding:9px 15px;
     transition:border-color .16s ease,box-shadow .16s ease;}
 .ai-askbar-field.multi{border-radius:20px;align-items:flex-end;}
-.ai-askbar-field.multi .ai-dot{margin-bottom:6px;}
+.ai-askbar-field.multi .ai-dot,.ai-askbar-field.multi .ai-edittag{margin-bottom:5px;}
 .ai-askbar-field:focus-within{border-color:var(--accent);box-shadow:var(--g-hi),0 0 0 3px rgba(79,110,247,.14);}
+/* 느낌표로 시작하면 질문이 아니라 문서 편집이라는 것을 보내기 전에 분명히 표시한다. */
+.ai-askbar.edit-on .ai-askbar-field{
+    border-color:color-mix(in srgb,#a855f7 72%,var(--g-brd));
+    box-shadow:var(--g-hi),0 0 0 3px color-mix(in srgb,#a855f7 16%,transparent),var(--g-shadow);}
+.ai-edittag{flex:none;border-radius:999px;padding:2px 7px;line-height:1.35;
+    border:1px solid color-mix(in srgb,#a855f7 42%,transparent);
+    color:color-mix(in srgb,#a855f7 78%,var(--text1));
+    background:color-mix(in srgb,#a855f7 12%,var(--g-in));
+    font-size:10px;font-weight:850;letter-spacing:.03em;}
+.ai-edittag[hidden]{display:none;}
 #aiQ{flex:1 1 auto;min-width:0;border:0;background:transparent;color:var(--text1);
     font:inherit;font-size:13.5px;line-height:1.4;outline:none;padding:0;
     display:block;width:100%;resize:none;overflow-y:auto;max-height:96px;
