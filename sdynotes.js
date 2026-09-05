@@ -17428,6 +17428,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             page:translatePageAction,
             doc:translateDocAction,
             getDoc:()=>doc,
+            curPage:()=>curPageIdx|0,     // 14.29.3 · 해돌이 '이 페이지 번역'용
             pack:packTrJobs,
         };
     }catch(e){}
@@ -30109,9 +30110,29 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   // 앱 동사 — 명사만 있고 이 동사가 없는데 문서 동사가 있으면 편집으로 둔다.
   var APP_VERB=/(틀어|재생|멈춰|정지|일시정지|다음 ?곡|이전 ?곡|열어|보여|닫아|시작해|내보내|찾아|검색해|보여줘|켜줘|꺼줘|키워|줄여|맞춰|재줘)/;
   var APP_DOCVERB=/(만들|고치|바꾸|옮기|지우|삭제|추가|정리)/;
+  /* 14.29.3 · 번역은 뜻이 둘이다.
+       (가) "이 페이지(노트·문서)를 한국어로 바꿔 줘" → 노트에 있는 기능 그대로,
+            그 쪽/문서의 글상자를 번역문으로 바꾸는 '네이티브 번역'을 실행한다(앱 실행).
+       (나) 그냥 "번역해 줘" → 해돌이가 번역해서 말풍선으로 말한다(질문).
+     가르는 기준: 번역하라는 말 + 대상이 '페이지·쪽·노트·문서·본문·전체' 처럼
+     노트 자체일 것. 단 '알려 줘·말해 줘·뜻이 뭐야'처럼 말로 듣겠다는 낌새가 있으면
+     (나)로 둔다. 노트를 열지 않았으면 바꿀 문서가 없으니 역시 (나)다. */
+  var TR_WORD=/(번역|translate|한국어로|한글로|영어로|일본어로|중국어로)/i;
+  var TR_SCOPE=/(페이지|페이지들|쪽|노트|문서|본문|전체|여기 ?있는 ?(글|내용))/;
+  var TR_SAY=/(알려|말해|설명|읽어|들려|보여 ?줘|무슨 ?뜻|뜻이|의미가|해석해서 ?(알려|말)|답만)/;
+  function looksLikeTranslateApp(q){
+    q=String(q||'');
+    if(!TR_WORD.test(q)) return false;
+    if(!TR_SCOPE.test(q)) return false;
+    if(TR_SAY.test(q)) return false;
+    if(!inNote()) return false;                 // 바꿀 노트가 없으면 말로 답한다
+    return true;
+  }
+  window.sdyAiLooksLikeTranslate=looksLikeTranslateApp;   // 테스트·디버그용
   function looksLikeApp(q){
     q=String(q||'');
     if(!q||appCmdOf(q)!=null) return false;
+    if(looksLikeTranslateApp(q)) return true;   // '이 쪽을 한국어로' = 기능 실행
     if(QUESTION_HINT.test(q)) return false;
     if(!APP_HINT.test(q)) return false;
     if(/새 ?노트/.test(q)) return true;
@@ -30598,6 +30619,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         if(!fq){ dropped++; return; }
         ops.push({cmd:'find',q:fq.slice(0,100)}); return;
       }
+      // 14.29.3 · @translate 범위 | 언어 — 노트의 '자동 번역' 기능을 그대로 실행한다
+      if(cmd==='translate'||cmd==='tr'||cmd==='번역'){
+        var rf2=cutN(rest,1);
+        var rscope=String(rf2.cuts.length?rf2.cuts[0]:rf2.rest).toLowerCase().trim();
+        var rlang=String(rf2.cuts.length?decode(rf2.rest):'').toLowerCase().trim();
+        if(rscope==='doc'||rscope==='all'||rscope==='문서'||rscope==='전체') rscope='doc';
+        else if(rscope==='page'||rscope==='쪽'||rscope==='페이지'||rscope==='') rscope='page';
+        else { dropped++; return; }
+        var LANG={ko:'ko','한국어':'ko','한글':'ko',korean:'ko',en:'en','영어':'en',english:'en',
+                  ja:'ja','일본어':'ja',japanese:'ja','zh':'zh-CN','zh-cn':'zh-CN','중국어':'zh-CN',chinese:'zh-CN'};
+        var lang=LANG[rlang]||'';
+        if(!lang){ dropped++; return; }
+        ops.push({cmd:'translate',scope:rscope,lang:lang}); return;
+      }
       if(cmd==='stickers'||cmd==='sticker'){ ops.push({cmd:'stickers'}); return; }
       if(cmd==='cards'||cmd==='card'){ ops.push({cmd:'cards'}); return; }
       if(cmd==='settings'||cmd==='setting'){ ops.push({cmd:'settings'}); return; }
@@ -30659,6 +30694,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         if(op.cmd==='present') return presentOp(op);
         if(op.cmd==='export') return exportOp(op);
         if(op.cmd==='find') return findOp(op);
+        if(op.cmd==='translate') return translateOp(op);
         if(op.cmd==='stickers'){ var st=needFn('openStickers'); if(!st){ bad('스티커 창을 열지 못했어요'); return; } try{ st(); }catch(e){ bad('스티커 창을 열지 못했어요'); return; } ok(); return; }
         if(op.cmd==='cards'){ var cd=needFn('openCards'); if(!cd){ bad('단어카드 창을 열지 못했어요'); return; } try{ cd(); }catch(e){ bad('단어카드 창을 열지 못했어요'); return; } ok(); return; }
         if(op.cmd==='settings'){ var sg=needFn('openSettings'); if(!sg){ bad('설정 창을 열지 못했어요'); return; } try{ sg(); }catch(e){ bad('설정 창을 열지 못했어요'); return; } ok(); return; }
@@ -30811,6 +30847,21 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       var em=needFn('openExportModal');
       if(!em){ bad('내보내기 창을 열지 못했어요'); return; }
       try{ em(); }catch(e){ bad('내보내기 창을 열지 못했어요'); return; }
+      ok(); return;
+    }
+    /* 14.29.3 · 노트의 자동 번역(우클릭 '이 페이지 번역'과 같은 함수)을 실행한다.
+       오래 걸리는 일이라 기다리지 않는다 — 진행바와 [중단] 버튼이 알아서 안내한다. */
+    function translateOp(op){
+      if(!inNote()){ bad('노트를 연 다음에 번역해 주세요 해돌~'); return; }
+      var T=null;
+      try{ T=window.__sdyTranslate||null; }catch(e){ T=null; }
+      if(!T||typeof T.page!=='function'||typeof T.doc!=='function'){ bad('번역 기능을 찾지 못했어요'); return; }
+      try{
+        if(op.scope==='doc') T.doc(op.lang);
+        else T.page((typeof T.curPage==='function'?T.curPage():0),op.lang);
+      }catch(e){ bad('번역을 시작하지 못했어요'); return; }
+      note(op.scope==='doc'?'문서 전체를 번역하고 있어요 · 진행바에서 멈출 수 있어요'
+                           :'이 페이지를 번역하고 있어요 · 진행바에서 멈출 수 있어요');
       ok(); return;
     }
     function findOp(op){
