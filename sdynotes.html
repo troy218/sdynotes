@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.28.2">
+<link rel="stylesheet" href="sdynotes.css?v=14.28.3">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <!-- 버전 · 작업 끝나면 아래 5곳을 같은 번호로 함께 올려라 (z +1)
@@ -17,7 +17,7 @@
          · 이 파일·sdynotes.js·sdynotes.css 를 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.28.2">
+    <meta name="application-version" content="14.28.3">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -408,6 +408,26 @@
         <main class="w-full px-6 pt-8 pb-10">
             <div id="breadcrumb" class="breadcrumb" style="display:none;"></div>
             <div id="noteGrid" class="note-grid" style="margin-top:12px;"></div>
+
+            <!-- ═══ 14.28.2 · 홈 하단 브랜딩 — powered by HAEDOL.AI ═══ -->
+            <footer id="haedolBrand" class="haedol-brand" aria-label="Powered by HAEDOL.AI">
+                <span class="hb-by">powered by</span>
+                <a class="hb-mark" href="https://haedol.ai" target="_blank" rel="noopener noreferrer" title="HAEDOL.AI — AI 노트 도우미 해돌이">
+                    <svg class="hb-logo" viewBox="0 0 28 28" aria-hidden="true">
+                        <!-- 바닷물결 -->
+                        <path class="hb-wave" d="M2 21.5 C5 18 7.5 24 10.5 21.5 C13.5 19 15 25 18 22 C21 19 23 24 26 21.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <!-- 해달 머리 + 몸통 -->
+                        <circle class="hb-face" cx="14" cy="12.5" r="6" fill="currentColor"/>
+                        <!-- 얼굴 하이라이트 -->
+                        <circle class="hb-cheek" cx="11.2" cy="13.3" r="1" fill="#fff" opacity=".55"/>
+                        <circle class="hb-cheek" cx="16.8" cy="13.3" r="1" fill="#fff" opacity=".55"/>
+                        <!-- 조약돌(배 위에 올린 돌) - 해돌이 상징 -->
+                        <ellipse cx="14" cy="14.8" rx="2.2" ry="1.4" fill="var(--card)" opacity=".9"/>
+                    </svg>
+                    <span class="hb-name">HAEDOL<b>.AI</b></span>
+                    <i class="ri-external-link-line hb-ext" aria-hidden="true"></i>
+                </a>
+            </footer>
         </main>
     </div>
 
@@ -2528,6 +2548,6 @@
 <!-- 14.23.0 · 노트 해돌이(AI 도우미) UI 는 편집기 안 #noteOtter 옆으로 옮겼다 — 아이콘 버튼·뜨는 창은 없다. -->
 
 
-<script src="sdynotes.js?v=14.28.2" defer></script>
+<script src="sdynotes.js?v=14.28.3" defer></script>
 </body>
 </html>
