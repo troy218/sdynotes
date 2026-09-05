@@ -303,41 +303,25 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     function paperSize(d){ const p=SIZE_PRESETS[(d||doc).sizePreset]||SIZE_PRESETS.a4_portrait; return {w:p.w,h:p.h}; }
 
-    const CLASSIC_DRAW_COLORS=['#111111','#a63f47','#3d6ea8','#2f7a5d','#b7792b','#7550a6'];
-    const CLASSIC_TEXT_COLORS=['#111111','#a63f47','#c06e34','#9a8527','#2f7a5d','#1c8a7a','#3d6ea8','#7550a6','#b44f7a','#5f6772'];
-    const CLASSIC_HL_COLORS=['#efd36a','#b7d97a','#83d7de','#d8ade8','#f2bcc5','#b7cdf7','#f2c796','#cfd4dd','#c5e1a5','#e6c15d'];
-    const DRAW_COLOR_ALIASES={
-        '#111':'#111111','#111111':'#111111','#888888':'#111111',
-        '#e74c3c':'#a63f47','#f3a69e':'#a63f47',
-        '#3498db':'#3d6ea8','#9acced':'#3d6ea8',
-        '#27ae60':'#2f7a5d','#93d7b0':'#2f7a5d',
-        '#f39c12':'#b7792b','#f9ce89':'#b7792b',
-        '#9b59b6':'#7550a6','#cdacdb':'#7550a6'
-    };
-    const TEXT_COLOR_ALIASES={
-        '#000':'#111111','#000000':'#111111','#111':'#111111','#111111':'#111111','#808080':'#111111',
-        '#e74c3c':'#a63f47','#f3a69e':'#a63f47',
-        '#e67e22':'#c06e34','#f3bf91':'#c06e34',
-        '#f1c40f':'#9a8527','#f8e287':'#9a8527',
-        '#2ecc71':'#2f7a5d','#97e6b8':'#2f7a5d',
-        '#1abc9c':'#1c8a7a','#8ddece':'#1c8a7a',
-        '#3498db':'#3d6ea8','#9acced':'#3d6ea8',
-        '#9b59b6':'#7550a6','#cdacdb':'#7550a6',
-        '#e84393':'#b44f7a','#f4a1c9':'#b44f7a',
-        '#7f8c8d':'#5f6772','#bfc6c6':'#5f6772'
-    };
-    const HL_COLOR_ALIASES={
-        '#ffff00':'#efd36a','#ffff80':'#efd36a',
-        '#00ff00':'#b7d97a','#80ff80':'#b7d97a',
-        '#00ffff':'#83d7de','#80ffff':'#83d7de',
-        '#ff00ff':'#d8ade8','#ff80ff':'#d8ade8',
-        '#ff9999':'#f2bcc5','#ffcccc':'#f2bcc5',
-        '#99ccff':'#b7cdf7','#cce6ff':'#b7cdf7',
-        '#ffcc99':'#f2c796','#ffe6cc':'#f2c796',
-        '#c0c0c0':'#cfd4dd','#e0e0e0':'#cfd4dd',
-        '#99ff99':'#c5e1a5','#ccffcc':'#c5e1a5',
-        '#ffd700':'#e6c15d','#ffeb80':'#e6c15d'
-    };
+    // 14.29.5 · 기본 팔레트를 '선명한 표준색'으로 되돌린다.
+    //   14.18.4 의 차분한(어두운) 톤은 종이 위에서 잘 안 보인다는 피드백.
+    //   글자색 · 펜색 · 형광펜 셋 다 눈에 잘 띄는 값으로 맞춘다.
+    //   각 배열의 [0] 이 아무것도 안 고른 초기 상태에서 쓰이는 기본색이다.
+    const CLASSIC_DRAW_COLORS=['#000000','#e74c3c','#3498db','#27ae60','#f39c12','#9b59b6'];
+    const CLASSIC_TEXT_COLORS=['#000000','#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c','#3498db','#9b59b6','#e84393','#7f8c8d'];
+    const CLASSIC_HL_COLORS=['#ffff00','#a8ff60','#7bfdff','#ff9cf5','#ffb3c1','#9cc9ff','#ffc98b','#dfe4ea','#b6ff8c','#ffd700'];
+    // 예전에는 이 표로 '저장된 색'을 그릴 때마다 어두운 톤으로 바꿔치기했다.
+    // 그래서 빨강으로 써 둔 글씨가 다시 열면 검붉게 보였다 — 사용자가 고른 색을
+    // 화면이 멋대로 바꾸는 셈이라, 표를 비워 **저장된 색을 그대로** 보여 준다.
+    // (표만 비우면 되고 호출부는 그대로다. 나중에 다시 매핑이 필요하면 여기에만
+    //  넣으면 된다. 비어 있으면 _classicPaletteColor 는 입력을 그대로 돌려준다.)
+    const DRAW_COLOR_ALIASES={};
+    const TEXT_COLOR_ALIASES={};
+    const HL_COLOR_ALIASES={};
+    // 매핑이 하나도 없으면 색 정규화는 통째로 건너뛴다 (여는 속도에도 이득).
+    const PALETTE_REMAP_ON=!!(Object.keys(DRAW_COLOR_ALIASES).length
+        ||Object.keys(TEXT_COLOR_ALIASES).length
+        ||Object.keys(HL_COLOR_ALIASES).length);
     function _paletteColorKey(v){
         v=String(v||'').trim().toLowerCase();
         if(!v||v==='inherit'||v==='initial') return '';
@@ -354,12 +338,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return v;
     }
     function _classicPaletteColor(kind,v){
+        if(!PALETTE_REMAP_ON) return v;      // 저장된 색을 그대로 쓴다
         const key=_paletteColorKey(v);
         const map=kind==='draw'?DRAW_COLOR_ALIASES:(kind==='text'?TEXT_COLOR_ALIASES:HL_COLOR_ALIASES);
         return key&&map[key]?map[key]:v;
     }
+    // 색 치환은 색 지정이 실제로 들어 있는 html 에서만 의미가 있다.
+    // 큰 문서를 열 때 이 함수가 쪽마다 수천 번 불리는데, 대부분의 글상자는
+    // 색 지정이 없다 → 그런 html 은 DOM 파싱 없이 그대로 돌려준다.
+    // (style.color / style.backgroundColor(=background 단축) / data-*color /
+    //  data-highlight / <font color> — 전부 'color' 또는 'background' 를 포함한다)
+    const _PAL_RE=/color|background|highlight/i;
     function _normalizePaletteHtml(html){
         if(!html||typeof document==='undefined') return html;
+        if(!PALETTE_REMAP_ON) return html;   // 바꿀 매핑이 없으면 파싱조차 하지 않는다
+        if(!_PAL_RE.test(html)) return html;
         const box=document.createElement('div');
         box.innerHTML=String(html||'');
         box.querySelectorAll('*').forEach(node=>{
@@ -384,6 +377,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     function _normalizeDocPalette(d){
         if(!d||!Array.isArray(d.pages)) return d;
+        if(!PALETTE_REMAP_ON) return d;      // 저장된 색을 건드리지 않는다
         d.pages.forEach(pg=>{
             (pg&&pg.els||[]).forEach(el=>{
                 if(!el||typeof el!=='object') return;
@@ -406,10 +400,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         d.glossary=cfg.glossary||{};
         if(Array.isArray(cfg.pages)&&cfg.pages.length){
             d.pages=cfg.pages.map(p=>{
+                // 배열은 반드시 복사본으로 넘긴다. getCfg 가 파싱 결과를 캐시하므로
+                // 원본 배열을 그대로 쓰면 편집(push/splice)이 '디스크에 저장된 값'
+                // 캐시까지 함께 바꿔 버려, 빈 저장 방지 가드가 무력화된다.
                 const np={id:p.id||blankPage().id,
-                          els:Array.isArray(p.els)?p.els:[],
-                          tables:Array.isArray(p.tables)?p.tables:[],
-                          notes:Array.isArray(p.notes)?p.notes:[]};
+                          els:Array.isArray(p.els)?p.els.slice():[],
+                          tables:Array.isArray(p.tables)?p.tables.slice():[],
+                          notes:Array.isArray(p.notes)?p.notes.slice():[]};
                 // ★ '아직 안 받은 쪽' 표시를 보존한다.
                 //   메모리에서 내려놓은(evict) 쪽은 원래 id 를 그대로 쓰므로
                 //   id 모양(lazy_N)만으로는 알 수 없다 → 저장된 표시를 믿는다.
@@ -723,8 +720,27 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(b){ b.classList.remove('on'); setSyncPct(0); }
             },450); } }
 
-    function getCfg(id){ try{return JSON.parse(localStorage.getItem('nb_'+id)||'{}');}catch(e){return {};} }
-    function setCfg(id,c){ try{localStorage.setItem('nb_'+id,JSON.stringify(c));return true;}
+    // 14.29.4 · 노트 설정(nb_*) 파싱 캐시 (한 칸)
+    //   큰 노트를 열 때 getCfg 가 같은 노트에 대해 여러 번 불린다
+    //   (openNB · isLocked · loadDocAsync · migrate · updateLockUI …).
+    //   본문(pages)이 들어 있는 수 MB JSON 을 그때마다 다시 파싱하면
+    //   느린 기기에서 이것만으로 몇 초가 날아간다.
+    //   → 저장된 '원문 문자열'이 그대로면 파싱 결과를 재사용한다.
+    //     (문자열 비교는 파싱보다 수십 배 싸다. 저장이 일어나면 원문이
+    //      달라지므로 캐시는 자동으로 무효가 된다 — 다른 탭/기기의 변경도 안전)
+    //   반환은 항상 얕은 복사본이라, 호출부가 최상위 필드를 고쳐도
+    //   캐시(=디스크 내용)가 오염되지 않는다.
+    let _cfgCacheId=null,_cfgCacheRaw=null,_cfgCacheObj=null;
+    function _cfgRaw(id){ try{ return localStorage.getItem('nb_'+id)||'{}'; }catch(e){ return '{}'; } }
+    function getCfg(id){
+        const raw=_cfgRaw(id);
+        if(_cfgCacheId===id&&_cfgCacheObj&&_cfgCacheRaw===raw) return {..._cfgCacheObj};
+        let o; try{ o=JSON.parse(raw)||{}; }catch(e){ o={}; }
+        _cfgCacheId=id; _cfgCacheRaw=raw; _cfgCacheObj=o;
+        return {...o};
+    }
+    function _cfgCacheDrop(id){ if(id==null||_cfgCacheId===id){ _cfgCacheId=null; _cfgCacheRaw=null; _cfgCacheObj=null; } }
+    function setCfg(id,c){ try{localStorage.setItem('nb_'+id,JSON.stringify(c));_cfgCacheDrop(id);return true;}
         catch(e){
             // 용량 부족: 절대 '다른 노트의 캐시를 통째로' 지우지 않는다.
             // (그러면 그 노트의 폴더 소속·고정·휴지통 정보까지 날아가
@@ -944,6 +960,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // (대용량 가져온 문서 본문을 열 때/스크롤할 때 쓰는 공용 헬퍼)
     // 이 요청은 '첫 슬라이스 심문'에 쓰이므로 서버가 느려도 무한정 매달리지
     // 않게 타임아웃을 준다. (타임아웃은 실패로 처리해 다음 재시도로 넘어간다)
+    // 14.29.4 · 슬라이스 요청은 'no-store'(항상 통째로 다시 받기) 대신
+    //   'no-cache'(항상 서버에 물어보되, 안 바뀌었으면 브라우저 캐시 재사용)를
+    //   쓴다. 서버는 ETag 로 답하므로 이미 본 슬라이스는 304 (본문 0바이트) 가
+    //   되어, 두 번째부터 노트가 눈에 띄게 빨리 열린다.
+    //   '최신 여부'는 매번 서버가 판정하므로 오래된 본문이 보일 일은 없다.
+    const SLICE_FETCH={cache:'no-cache'};
     async function fetchSlice(ms, ref, s0, total){
         try{
             const url='/api/import/docfile/'+encodeURIComponent(ref)
@@ -952,10 +974,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(window.AbortController&&ms){
                 const ctl=new AbortController();
                 const timer=setTimeout(()=>{ try{ ctl.abort(); }catch(e){} }, ms);
-                try{ rr=await fetch(url,{cache:'no-store',signal:ctl.signal}); }
+                try{ rr=await fetch(url,{cache:'no-cache',signal:ctl.signal}); }
                 finally{ clearTimeout(timer); }
             }else{
-                rr=await fetch(url,{cache:'no-store'});
+                rr=await fetch(url,SLICE_FETCH);
             }
             const dd=await rr.json().catch(()=>({}));
             if(rr.ok && dd && dd.ok!==false && Array.isArray(dd.pages)) return dd;
@@ -1025,7 +1047,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         d.__lazyLoading.add(s0);
         try{
             const rr=await fetch('/api/import/docfile/'+encodeURIComponent(d.__ref)
-                +'?from='+s0+'&to='+(s0+LAZY_SLICE),{cache:'no-store'});
+                +'?from='+s0+'&to='+(s0+LAZY_SLICE),SLICE_FETCH);
             const dd=await rr.json().catch(()=>({}));
             if(doc!==d) return;          // 14.9 · 그 사이 다른 노트를 열었으면 무시
             if(rr.ok&&dd.ok!==false&&Array.isArray(dd.pages)){
@@ -5651,24 +5673,25 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         doc=loadedDoc; _docId=nb.id;
         setTimeout(async()=>{
             try{ await initSync(); }catch(e){}
-            try{ startSlicePrefill(); }catch(e){}
+            // 14.29.4 · 나머지 슬라이스 미리 받기는 '첫 화면이 다 그려진 뒤'에
+            //   시작한다. 예전엔 여는 즉시 4갈래로 전 쪽을 내려받아, 느린 기기에서
+            //   그 파싱/네트워크가 첫 페인트와 경쟁하며 열기가 오래 걸렸다.
+            //   (받는 내용·최종 결과는 같고, 시작 시점만 뒤로 민다)
+            const kick=()=>{ try{ startSlicePrefill(); }catch(e){} };
+            if(window.requestIdleCallback) requestIdleCallback(kick,{timeout:2500});
+            else setTimeout(kick,900);
         },60);  // 렌더 먼저, 번역 동기화 후 나머지 슬라이스
         document.getElementById('edTitle').value=nb.title||'새 노트';
         document.getElementById('sizePresetSelect').value=doc.sizePreset;
         document.querySelectorAll('.ptool').forEach(b=>b.classList.toggle('active',b.dataset.p===doc.paper));
         curFontSize=S.defFS;
         document.getElementById('fsInput').value=curFontSize;
-        // 가져온 문서의 표는 격자선이 아직 없다 → 한 번 만들어 준다
-        try{
-            (doc.pages||[]).forEach((pg,pi)=>{
-                (pg.tables||[]).forEach(t=>{
-                    const hasLine=(pg.els||[]).some(e=>e.type==='stroke'&&tblOf(e)===t.id);
-                    // 10.4 · PDF에서 가져온 표(bg:1)는 격자가 배경 래스터에
-                    //   원본 그대로 있으므로 클라이언트가 따로 그리지 않는다.
-                    if(!t.bg && !hasLine) rebuildTable(pi,t.id,{quiet:true});
-                });
-            });
-        }catch(e){}
+        // 가져온 문서의 표는 격자선이 아직 없다 → 한 번 만들어 준다.
+        // 14.29.4 · 열 때 전 쪽을 훑지 않는다. 쪽마다 표×요소 전수 검사라
+        //   500쪽 문서에서는 이것만으로 몇 초가 걸렸다(가상화의 효과를 통째로
+        //   깎아먹던 지점). 이제 그 쪽을 실제로 그릴 때 한 번만 채운다
+        //   (ensureTableGrid) — 화면·저장 결과는 완전히 같다.
+        _tblGridDone=new Set();
         renderPages();
         hideEdLoading();
         updateLockUI();
@@ -6281,6 +6304,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         clearTimeout(_virtualTimer); _virtualTimer=null;
         renderedPages.clear();
         mountedShells.clear();
+        _tblGridDone=new Set();   // 표 격자선은 쪽을 그릴 때 다시 확인한다
         _shellWin={first:0,last:-1};
         // 14.12 · 노트 전환 시 기존 DOM과 비동기 콜백이 새 노트에 영향을 주지 못하게
         // renderVersion 은 콜백에서 확인하여 옛 콜백이 새 페이지를 건드리는 것을 막는다.
@@ -6439,6 +6463,26 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(drop.size) out=out.filter(e=>!drop.has(e.id));
         return out;
     }
+    // 14.29.4 · 표 격자선 지연 생성.
+    //   예전엔 노트를 열 때 모든 쪽의 표를 훑어 격자선을 만들었다(열기 지연의
+    //   큰 몫). 이제 그 쪽을 처음 그릴 때 딱 한 번 만든다. 만든 선은 doc 에
+    //   남으므로 두 번 돌지 않고, 결과물은 예전과 동일하다.
+    let _tblGridDone=new Set();
+    function ensureTableGrid(pi){
+        try{
+            if(_tblGridDone.has(pi)) return;
+            _tblGridDone.add(pi);
+            const pg=doc&&doc.pages&&doc.pages[pi];
+            if(!pg||!Array.isArray(pg.tables)||!pg.tables.length) return;
+            pg.tables.forEach(t=>{
+                // 10.4 · PDF에서 가져온 표(bg:1)는 격자가 배경 래스터에
+                //   원본 그대로 있으므로 클라이언트가 따로 그리지 않는다.
+                if(t.bg) return;
+                const hasLine=(pg.els||[]).some(e=>e.type==='stroke'&&tblOf(e)===t.id);
+                if(!hasLine) rebuildTable(pi,t.id,{quiet:true});
+            });
+        }catch(e){}
+    }
     function renderPageEls(idx){
         // 아직 안 가져온 슬라이스면 로드 후 렌더 (한 번에 다 열지 않는다)
         const pgz=doc&&doc.pages[idx];
@@ -6467,6 +6511,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 가져오기 중복 제거는 겹침 넓이를 서로 비교하는 O(n^2) 작업이다.
         // 스크롤로 같은 쪽을 다시 그릴 때마다 되풀이하면 그게 곧 렉이므로
         // '이 배열은 이미 정리했다'를 WeakSet 으로 기억해 한 번만 돌린다.
+        ensureTableGrid(idx);       // 이 쪽 표의 격자선(없으면 지금 만든다)
         let els=doc.pages[idx].els||[];
         if(!_sanDone.has(els)){
             const cleaned=sanitizePageEls(els);
@@ -17634,17 +17679,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // ── 14.25.0 · 똑똑한 해돌이 도우미 ──────────────────────────────────
     // 색이름 → 실제 팔레트. 화면의 글자색·형광펜·펜 목록(CLASSIC_*_COLORS)과
     // 같은 값이라, AI가 고른 색이 도구막대 색과 어긋나지 않는다.
-    const AI_TEXT_COLOR_NAMES={검정:'#111111',검은색:'#111111',까망:'#111111',
-        빨강:'#a63f47',빨간색:'#a63f47',주황:'#c06e34',주황색:'#c06e34',갈색:'#c06e34',
-        노랑:'#9a8527',노란색:'#9a8527',초록:'#2f7a5d',초록색:'#2f7a5d',녹색:'#2f7a5d',
-        청록:'#1c8a7a',파랑:'#3d6ea8',파란색:'#3d6ea8',남색:'#3d6ea8',하늘:'#3d6ea8',
-        보라:'#7550a6',보라색:'#7550a6',분홍:'#b44f7a',분홍색:'#b44f7a',핑크:'#b44f7a',
-        회색:'#5f6772',회색빛:'#5f6772',흰색:'#ffffff',하양:'#ffffff',하얀색:'#ffffff'};
-    const AI_HL_COLOR_NAMES={노랑:'#efd36a',노란색:'#efd36a',연두:'#b7d97a',연두색:'#b7d97a',
-        하늘:'#83d7de',하늘색:'#83d7de',파랑:'#b7cdf7',파란색:'#b7cdf7',
-        보라:'#d8ade8',보라색:'#d8ade8',분홍:'#f2bcc5',분홍색:'#f2bcc5',핑크:'#f2bcc5',
-        빨강:'#f2bcc5',빨간색:'#f2bcc5',주황:'#f2c796',주황색:'#f2c796',
-        초록:'#c5e1a5',초록색:'#c5e1a5',회색:'#cfd4dd',황금:'#e6c15d',금색:'#e6c15d'};
+    const AI_TEXT_COLOR_NAMES={검정:'#000000',검은색:'#000000',까망:'#000000',
+        빨강:'#e74c3c',빨간색:'#e74c3c',주황:'#e67e22',주황색:'#e67e22',갈색:'#e67e22',
+        노랑:'#f1c40f',노란색:'#f1c40f',초록:'#2ecc71',초록색:'#2ecc71',녹색:'#2ecc71',
+        청록:'#1abc9c',파랑:'#3498db',파란색:'#3498db',남색:'#3498db',하늘:'#3498db',
+        보라:'#9b59b6',보라색:'#9b59b6',분홍:'#e84393',분홍색:'#e84393',핑크:'#e84393',
+        회색:'#7f8c8d',회색빛:'#7f8c8d',흰색:'#ffffff',하양:'#ffffff',하얀색:'#ffffff'};
+    const AI_HL_COLOR_NAMES={노랑:'#ffff00',노란색:'#ffff00',연두:'#a8ff60',연두색:'#a8ff60',
+        하늘:'#7bfdff',하늘색:'#7bfdff',파랑:'#9cc9ff',파란색:'#9cc9ff',
+        보라:'#ff9cf5',보라색:'#ff9cf5',분홍:'#ffb3c1',분홍색:'#ffb3c1',핑크:'#ffb3c1',
+        빨강:'#ffb3c1',빨간색:'#ffb3c1',주황:'#ffc98b',주황색:'#ffc98b',
+        초록:'#b6ff8c',초록색:'#b6ff8c',회색:'#dfe4ea',황금:'#ffd700',금색:'#ffd700'};
     const AI_CLEAR_WORDS={없음:1,지우기:1,지워:1,투명:1,none:1,clear:1,off:1};
     function aiEditColor(value,hl){
         let v=String(value==null?'':value).trim().toLowerCase();
@@ -17816,7 +17861,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 못 건드렸기 때문이다. 이제 저장 포맷과 같은 글자 span(background-color)으로
     // 글귀 단위로 칠하고, 스냅샷에도 칠해진 곳을 ⟦…⟧ 로 보여 준다.
     const AI_HL_MARK=['\u27e6','\u27e7'];               // ⟦ ⟧ — 스냅샷의 형광펜 표시
-    const AI_HL_DEFAULT='#efd36a';                     // 색을 안 적으면 노랑 형광펜
+    const AI_HL_DEFAULT='#ffff00';                     // 색을 안 적으면 노랑 형광펜
     const AI_HL_BG_RE=/background(?:-color)?\s*:\s*[^;"']+\s*;?/gi;
     const AI_VOID_TAGS={br:1,hr:1,img:1,input:1,meta:1,link:1,area:1,base:1,col:1,
         embed:1,source:1,track:1,wbr:1};

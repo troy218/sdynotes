@@ -11,7 +11,9 @@ export function createWorkerProxy({ app, logger }) {
   async function proxy(req, reply, options = {}) {
     const target = `${WORKER_URL}${req.url}`;
     const headers = {};
-    for (const h of ['content-type', 'content-length', 'accept', 'authorization', 'x-admin-token', 'admin-token', 'cookie', 'x-sdy-auth']) {
+    // if-none-match/if-modified-since 를 넘겨야 워커가 304(본문 0바이트) 로
+    // 답할 수 있다 — 이미 받아 둔 노트 슬라이스를 다시 열 때 결정적으로 빠르다.
+    for (const h of ['content-type', 'content-length', 'accept', 'accept-encoding', 'if-none-match', 'if-modified-since', 'authorization', 'x-admin-token', 'admin-token', 'cookie', 'x-sdy-auth']) {
       const v = req.headers[h];
       if (v !== undefined) headers[h] = v;
     }
@@ -56,7 +58,15 @@ export function createWorkerProxy({ app, logger }) {
       reply.code(r.status);
       reply.header('Content-Type', rct);
       reply.header('Cache-Control', r.headers.get('cache-control') || 'no-store');
+      // 검증자(ETag/Last-Modified)를 그대로 전달한다. 이게 없으면 브라우저가
+      // 조건부 요청을 걸 수 없어 매번 본문을 통째로 다시 받는다.
+      for (const h of ['etag', 'last-modified', 'vary']) {
+        const v = r.headers.get(h);
+        if (v) reply.header(h, v);
+      }
       if (r.headers.get('content-disposition')) reply.header('Content-Disposition', r.headers.get('content-disposition'));
+      // 304 는 본문이 없다 (있으면 프로토콜 위반이라 브라우저가 끊는다).
+      if (r.status === 304) return reply.send();
       if (r.body) {
         // Fastify 가 스트림을 라이프사이클에 맞춰 파이프한다 (종료/오류 정리).
         return reply.send(Readable.fromWeb(r.body));

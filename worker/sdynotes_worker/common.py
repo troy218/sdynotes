@@ -56,7 +56,7 @@ for _d in (IMG_DIR, DOCS_DIR, UPLOAD_DIR, JOBS_DIR, MUSIC_DIR, SYNC_DIR):
 # server/src/lib/config.js 의 APP_VERSION 과 항상 같은 값이어야 한다.
 # 작업마다 같이 올려라 — 함께 바꿔야 하는 5곳 전체 목록은
 # server/src/lib/config.js 상단 주석에 있다.
-APP_VERSION = "14.29.3"
+APP_VERSION = "14.29.5"
 SETTINGS_SCHEMA = 3
 
 _STORAGE_MODE = (os.environ.get("SDY_STORAGE") or "oracle").strip().lower()
