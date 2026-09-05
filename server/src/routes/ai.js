@@ -28,6 +28,7 @@ import crypto from 'node:crypto';
 import {
   AI_PROVIDERS, AI_MAX_TOKENS, AI_TIMEOUT_MS,
   AI_MAX_TEXT, AI_MAX_QUESTION, AI_MAX_CONTEXT, AI_CACHE_TTL_MS,
+  AI_PART_CHARS, AI_MAX_PARTS, AI_CONTINUE_PARTS,
   AI_RATE_N, AI_RATE_WINDOW_MS, AI_WARM_N,
 } from '../lib/config.js';
 import { requireUser } from '../lib/userauth.js';
@@ -120,7 +121,7 @@ export const AI_TASKS = {
       + '10. "○○가 있는 쪽으로 가줘"처럼 이동 요청이면 문서 상태에서 해당 내용이 있는 쪽을 찾아 @goto 쪽번호 하나만 실행한다. 내용은 건드리지 않는다.\n'
       + '11. 이어서 하는 요청("아까 그 상자", "이번엔 파란색으로")은 이전 대화에서 대상을 찾는다. 그래도 모를 때만 @ask로 되묻는다.\n'
       + '12. 대상을 특정할 수 없거나 문서 편집과 무관한 요청이면 실행 없이 @ask로 되묻거나 @done으로 이유를 쓴다.\n'
-      + '13. 실행 명령은 한 번에 40개 이하다. 큰 개편은 중요한 변경부터 40개 안에서 끝낸다.\n'
+      + '13. 실행 명령은 한 번에 120개 이하다. 긴 원고 작성·큰 개편도 중간을 생략하지 말고 120개 안에서 끝낸다.\n'
       + '14. 글 안의 실제 줄바꿈은 반드시 두 글자 \\n으로 쓰고, 명령 하나를 물리적인 한 줄에 유지한다. 글 안의 | 는 @tbl에서만 칸 구분이 되니, 표 칸에 | 글자 자체를 넣고 싶으면 쉼표로 바꾼다.',
     needText: true,     // 빈 문서도 페이지 메타데이터가 든 상태 스냅샷은 항상 있다
     needQuestion: true,
@@ -195,20 +196,28 @@ function normText(s) {
   return String(s == null ? '' : s).replace(/\r\n/g, '\n').trim();
 }
 
-// ── 14.22.0 · 긴 노트는 '앞부분만' 보내지 않는다 ─────────────────────────────
-//   예전엔 그냥 앞에서 max 자만 잘랐다. 그러면 노트가 길 때 모델은 앞부분만 보고
-//   답해서 "왜 뒤에 적은 얘기는 몰라?" 가 됐다. 이제는 앞 70% + 뒤 30% 를 살리고
-//   가운데만 '생략' 표시로 접는다 — 결론이 보통 뒤에 있으니 뒤를 남기는 게 낫다.
-export function fitText(s, max) {
+// ── 14.27.1 · 긴 노트는 앞·중간·뒤를 고르게 읽는다 ────────────────────────
+// 앞/뒤만 남기면 긴 회의록·원고의 본론이 통째로 사라진다. 제한을 넘는 입력은
+// 40%·30%·30% 세 구간으로 샘플링하고, 빠진 두 구간의 크기를 명시한다.
+// 선택한 원문 글자 수(chars)는 정확히 lim이며, 아주 조금 넘은 입력도 중복되지 않는다.
+export function fitText(s, max, label = '긴 노트') {
   const t = String(s == null ? '' : s);
   const lim = Math.max(1, max | 0);
   if (t.length <= lim) return { text: t, truncated: false, chars: t.length, noteChars: t.length };
-  const head = Math.max(1, Math.floor(lim * 0.7));
-  const tail = lim - head;
+  const head = Math.max(1, Math.floor(lim * 0.4));
+  const middle = Math.max(0, Math.floor(lim * 0.3));
+  const tail = Math.max(0, lim - head - middle);
+  const omitted = t.length - lim;
+  const gap1 = Math.floor(omitted / 2);
+  const gap2 = omitted - gap1;
+  const middleAt = head + gap1;
+  const tailAt = middleAt + middle + gap2;
   const text = t.slice(0, head)
-    + '\n\n… (긴 노트라 가운데 ' + Math.max(0, t.length - head - tail) + '자를 접었어요) …\n\n'
-    + (tail > 0 ? t.slice(t.length - tail) : '');
-  return { text, truncated: true, chars: head + tail, noteChars: t.length };
+    + '\n\n… (' + label + ': 여기서 ' + gap1 + '자를 접었어요) …\n\n'
+    + t.slice(middleAt, middleAt + middle)
+    + '\n\n… (' + label + ': 여기서 ' + gap2 + '자를 접었어요) …\n\n'
+    + (tail > 0 ? t.slice(tailAt, tailAt + tail) : '');
+  return { text, truncated: true, chars: head + middle + tail, noteChars: t.length };
 }
 
 function cacheKeyOf(task, model, text, question) {
@@ -282,7 +291,12 @@ function providerBody(p, messages, stream) {
     stream: !!stream,
   });
 }
-async function callProvider(p, messages) {
+function providerSignal(signal) {
+  const timeout = AbortSignal.timeout(AI_TIMEOUT_MS);
+  return signal && AbortSignal.any ? AbortSignal.any([signal, timeout]) : (signal || timeout);
+}
+
+async function callProvider(p, messages, signal) {
   const r = await fetch(`${p.url}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -290,7 +304,7 @@ async function callProvider(p, messages) {
       Authorization: `Bearer ${p.key}`,
     },
     body: providerBody(p, messages, false),
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    signal: providerSignal(signal),
   });
   const raw = await r.text();
   if (!r.ok) {
@@ -307,10 +321,11 @@ async function callProvider(p, messages) {
   }
   let j;
   try { j = JSON.parse(raw); } catch { throw new Error('AI 응답 형식'); }
-  const out = j?.choices?.[0]?.message?.content;
-  const text = typeof out === 'string' ? out.trim() : '';
-  if (!text) { const e = new Error('AI 빈 응답'); e.provider = p.name; throw e; }
-  return text;
+  const choice = j?.choices?.[0];
+  const out = choice?.message?.content;
+  const text = typeof out === 'string' ? out : '';
+  if (!text.trim()) { const e = new Error('AI 빈 응답'); e.provider = p.name; throw e; }
+  return { text, finishReason: String(choice?.finish_reason || '') };
 }
 
 // ── 14.22.0 · 스트리밍 (말하는 대로 흘려 보내기) ────────────────────────────
@@ -349,7 +364,7 @@ async function callProviderStream(p, messages, onDelta, signal) {
   }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
-  let buf = ''; let out = '';
+  let buf = ''; let out = ''; let finishReason = '';
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -367,17 +382,63 @@ async function callProviderStream(p, messages, onDelta, signal) {
       let j;
       try { j = JSON.parse(payload); } catch { continue; }
       // OpenAI 호환: choices[0].delta.content (어떤 곳은 message.content 로 준다)
-      const d = (j && j.choices && j.choices[0])
-        ? ((j.choices[0].delta && j.choices[0].delta.content)
-          || (j.choices[0].message && j.choices[0].message.content) || '')
+      const choice = j && j.choices && j.choices[0];
+      const d = choice
+        ? ((choice.delta && choice.delta.content)
+          || (choice.message && choice.message.content) || '')
         : '';
+      if (choice && choice.finish_reason) finishReason = String(choice.finish_reason);
       if (typeof d === 'string' && d) { out += d; onDelta(d); }
     }
   }
-  const text = out.trim();
+  const text = out;
   // 조각이 하나도 안 왔으면 '말하기 실패' 로 보고, 한 방 응답으로 다시 시도한다.
-  if (!text) { const e = new Error('AI 빈 응답'); e.provider = p.name; e.noStream = true; throw e; }
-  return text;
+  if (!text.trim()) { const e = new Error('AI 빈 응답'); e.provider = p.name; e.noStream = true; throw e; }
+  return { text, finishReason };
+}
+
+function continuationMessages(base, text, part) {
+  // 전체 출력을 매번 다시 보내면 작은 모델의 컨텍스트를 또 채우므로 끝 6000자만 준다.
+  return base.concat([
+    { role: 'assistant', content: text.slice(-6000) },
+    { role: 'user', content: `출력 한도 때문에 끊겼다. ${part}번째 파트를 이어서 작성하라. 이미 쓴 내용은 반복하지 말고 중단된 지점 바로 다음부터 출력하라.` },
+  ]);
+}
+
+const outputLimited = (reason) => /^(length|max_tokens|max_output_tokens)$/i.test(String(reason || ''));
+
+function ensureComplete(messages, got, part) {
+  if (!outputLimited(got.finishReason) || part < AI_CONTINUE_PARTS) return;
+  // 편집 명령이 중간에 끊긴 채 적용되는 것보다 아무것도 바꾸지 않는 편이 안전하다.
+  if (/문서 편집 엔진/.test(String(messages?.[0]?.content || ''))) {
+    const e = new Error('AI 편집 출력이 끝까지 오지 않았어요');
+    e.incomplete = true;
+    throw e;
+  }
+}
+
+async function callProviderComplete(p, messages, signal) {
+  let current = messages; let out = '';
+  for (let part = 1; part <= AI_CONTINUE_PARTS; part++) {
+    const got = await callProvider(p, current, signal);
+    out += got.text;
+    ensureComplete(messages, got, part);
+    if (!outputLimited(got.finishReason) || part === AI_CONTINUE_PARTS) return out.trim();
+    current = continuationMessages(messages, out, part + 1);
+  }
+  return out.trim();
+}
+
+async function callProviderStreamComplete(p, messages, onDelta, signal) {
+  let current = messages; let out = '';
+  for (let part = 1; part <= AI_CONTINUE_PARTS; part++) {
+    const got = await callProviderStream(p, current, onDelta, signal);
+    out += got.text;
+    ensureComplete(messages, got, part);
+    if (!outputLimited(got.finishReason) || part === AI_CONTINUE_PARTS) return out.trim();
+    current = continuationMessages(messages, out, part + 1);
+  }
+  return out.trim();
 }
 
 // 스트림 체인 — 조각이 이미 나가기 시작했으면 다른 공급사로 갈아타지 않는다
@@ -389,7 +450,7 @@ async function callChainStream(messages, onDelta, signal, tried = []) {
   const emit = (d) => { emitted = true; onDelta(d); };
   for (const p of AI_PROVIDERS) {
     try {
-      const text = await callProviderStream(p, messages, emit, signal);
+      const text = await callProviderStreamComplete(p, messages, emit, signal);
       return { text, provider: p.name, model: p.model };
     } catch (e) {
       lastErr = e;
@@ -398,7 +459,7 @@ async function callChainStream(messages, onDelta, signal, tried = []) {
       if (emitted) throw e;                       // 이미 말하기 시작 → 여기서 끝
       if (e.noStream) {                           // 스트림을 못 주면 그냥 한 번에 받는다
         try {
-          const text = await callProvider(p, messages);
+          const text = await callProviderComplete(p, messages, signal);
           emit(text);
           return { text, provider: p.name, model: p.model };
         } catch (e2) {
@@ -417,12 +478,12 @@ async function callChainStream(messages, onDelta, signal, tried = []) {
 }
 
 // 체인 순회 — 살아 있는 공급사를 순서대로 tries 하다가 하나라도 성공하면 끝.
-async function callChain(messages, tried = []) {
+async function callChain(messages, tried = [], signal) {
   let lastErr = null;
   let limitedOnly = true;
   for (const p of AI_PROVIDERS) {
     try {
-      const text = await callProvider(p, messages);
+      const text = await callProviderComplete(p, messages, signal);
       return { text, provider: p.name, model: p.model };
     } catch (e) {
       lastErr = e;
@@ -436,6 +497,73 @@ async function callChain(messages, tried = []) {
   err.limited = limitedOnly;
   err.tried = tried;
   throw err;
+}
+
+// ── 작은 모델용 긴 편집 분할 ────────────────────────────────────────────────
+// 페이지/요소 한 줄을 가능한 한 자르지 않고 균등하게 나눈다. 첫 두 메타 줄은
+// 모든 파트에 반복해 좌표·현재 쪽 정보를 잃지 않는다.
+export function splitEditText(text, partChars = AI_PART_CHARS, maxParts = AI_MAX_PARTS) {
+  const src = String(text || '');
+  if (src.length <= partChars || maxParts <= 1) return [src];
+  const lines = src.split('\n');
+  const prefix = lines.slice(0, 2).join('\n');
+  const body = lines.slice(2);
+  const target = Math.max(partChars - prefix.length - 80,
+    Math.ceil((src.length - prefix.length) / maxParts));
+  const parts = []; let buf = ''; let pageHeader = '';
+  for (const line of body) {
+    const isPage = /^\[\d+쪽/.test(line.trim());
+    if (isPage) pageHeader = line;
+    const next = buf ? buf + '\n' + line : line;
+    if (buf && next.length > target && parts.length < maxParts - 1) {
+      parts.push(prefix + '\n' + buf);
+      // 요소 묶음 중간에서 갈려도 어느 쪽인지 알 수 있게 최근 쪽 머리말을 반복한다.
+      buf = (!isPage && pageHeader ? pageHeader + '\n' : '') + line;
+    } else buf = next;
+  }
+  if (buf || !parts.length) parts.push(prefix + (buf ? '\n' + buf : ''));
+  return parts;
+}
+
+function mergeEditPlans(plans) {
+  const commands = []; const asks = []; const summaries = [];
+  for (const plan of plans) {
+    for (const raw of String(plan || '').replace(/\r/g, '').split('\n')) {
+      const line = raw.trim();
+      if (!line.startsWith('@')) continue;
+      if (/^@(done|end|say|완료)(?:\s|$)/i.test(line)) {
+        const summary = line.replace(/^@\S+\s*/, '').trim();
+        if (summary) summaries.push(summary);
+      } else if (/^@(ask|q|물음|질문)(?:\s|$)/i.test(line)) asks.push(line);
+      // 여러 파트가 같은 전역 명령(@title/@newpage/@add 등)을 냈다면 한 번만 실행한다.
+      else if (!commands.includes(line)) commands.push(line);
+    }
+  }
+  if (!commands.length && asks.length) return asks[0] + '\n@done 대상이 모호해 먼저 확인이 필요해요';
+  const summary = summaries.filter((s) => !/파트.*변경 없음/.test(s)).slice(0, 3).join(' · ');
+  return commands.join('\n') + (commands.length ? '\n' : '')
+    + '@done ' + (summary || `${plans.length}개 파트의 긴 편집 계획을 모두 확인했어요`);
+}
+
+async function callEditParts(text, question, context, signal) {
+  const parts = splitEditText(text);
+  if (parts.length === 1) return callChain(aiMessages('edit', text, question, context), [], signal);
+  // 각 파트는 독립적으로 계획하므로 작은 모델의 컨텍스트 부담이 줄고 병렬로 끝난다.
+  // 실제 문서 적용은 합친 전문이 완성된 뒤 브라우저에서 딱 한 번만 일어난다.
+  const outputs = await Promise.all(parts.map((part, i) => {
+    const budget = Math.max(1, Math.floor(120 / parts.length));
+    const guide = `분할 편집 ${i + 1}/${parts.length}: 이 문서 파트에 실제로 보이는 대상만 편집하고 최대 ${budget}개 명령만 출력하라. `
+      + '새 상자·표·쪽·제목처럼 문서 전체에서 한 번만 할 일은 첫 파트만 출력하고, "각 쪽마다"라고 명시한 요청만 파트별로 출력하라. '
+      + '대상이 없으면 명령을 추측하지 말고 @done 파트 변경 없음으로 끝내라.';
+    // 분할 지침을 앞에 둬서 긴 이전 대화가 상한을 채워도 잘리지 않게 한다.
+    const ctx = [guide, context].filter(Boolean).join('\n\n');
+    return callChain(aiMessages('edit', part, question, ctx), [], signal);
+  }));
+  return {
+    text: mergeEditPlans(outputs.map((o) => o.text)),
+    provider: [...new Set(outputs.map((o) => o.provider))].join('+'),
+    model: [...new Set(outputs.map((o) => o.model))].join('+'),
+  };
 }
 
 // 캐시 키는 '체인 전체' 기준 — 공급사가 바뀌어도 같은 질문은 같은 답으로 친다.
@@ -463,7 +591,9 @@ async function aiCore(task, text, question, context) {
   }
 
   const p = (async () => {
-    const out = await callChain(aiMessages(task, text, question, context));
+    const out = task === 'edit'
+      ? await callEditParts(text, question, context)
+      : await callChain(aiMessages(task, text, question, context));
     if (!noCache) cachePut(key, out.text, out.provider, out.model);
     return out;
   })().finally(() => { if (!noCache) inFlight.delete(key); });
@@ -515,7 +645,7 @@ export function registerAi(app) {
     if (!AI_READY) return { err: { status: 503, body: { ok: false, error: DISABLED } } };
 
     let text = normText(b.text);
-    const question = String(b.question == null ? '' : b.question).trim().slice(0, AI_MAX_QUESTION);
+    const question = fitText(String(b.question == null ? '' : b.question).trim(), AI_MAX_QUESTION, '긴 요청').text;
     if (spec.needText && !text) {
       const error = task === 'edit'
         ? '문서 상태를 읽지 못했어요 · 노트를 다시 열고 시도해 주세요'
@@ -530,7 +660,7 @@ export function registerAi(app) {
       return { err: { status: 400, body: { ok: false, error } } };
     }
 
-    // 14.22.0 · 앞 70% + 뒤 30% — 뒤에 적은 결론도 같이 보낸다
+    // 14.27.1 · 앞·중간·뒤 3구간 — 긴 문서의 본론과 결론도 같이 보낸다
     const fit = fitText(text, AI_MAX_TEXT);
     text = fit.text;
 
@@ -571,6 +701,7 @@ export function registerAi(app) {
   // 실패를 JSON 으로 — 스트림이든 아니든 같은 문구·같은 코드로 떨어진다.
   function failBody(e) {
     const limited = Boolean(e && e.limited);
+    const incomplete = Boolean(e && e.incomplete);
     const retry = limited ? Number((e && e.retryAfterSec) || 0) : 0;   // 공급사가 준 대기만
     return {
       status: limited ? 429 : 502,
@@ -578,12 +709,14 @@ export function registerAi(app) {
         ok: false,
         limited,
         retry_after: retry,
-        error: limited
-          ? (retry > 0
-            ? `AI 사용량이 잠시 찼어요 · ${retry}초 뒤 다시 시도해 주세요`
-            : 'AI 사용량이 잠시 찼어요 · 잠시 뒤 다시 시도해 주세요')
-          : 'AI에 닿지 못했어요 · 잠시 뒤 다시 시도해 주세요',
-        hint: limited ? '' : aiHintFor(e),
+        error: incomplete
+          ? `AI 출력이 ${AI_CONTINUE_PARTS}파트 뒤에도 끝나지 않아 안전하게 적용하지 않았어요 · AI_CONTINUE_PARTS를 늘리거나 요청을 나눠 주세요`
+          : (limited
+            ? (retry > 0
+              ? `AI 사용량이 잠시 찼어요 · ${retry}초 뒤 다시 시도해 주세요`
+              : 'AI 사용량이 잠시 찼어요 · 잠시 뒤 다시 시도해 주세요')
+            : 'AI에 닿지 못했어요 · 잠시 뒤 다시 시도해 주세요'),
+        hint: (limited || incomplete) ? '' : aiHintFor(e),
       },
     };
   }
@@ -643,11 +776,18 @@ export function registerAi(app) {
     res.on('close', stop);
 
     const run = (async () => {
-      const out = await callChainStream(
-        aiMessages(job.task, job.text, job.question, job.context),
-        (d) => send('delta', { t: d }),
-        ac.signal,
-      );
+      let out;
+      if (job.task === 'edit' && splitEditText(job.text).length > 1) {
+        // 분할 명령은 조각끼리 한 줄이 섞이지 않도록 병렬 수집 후 한 번에 보낸다.
+        out = await callEditParts(job.text, job.question, job.context, ac.signal);
+        if (out.text) send('delta', { t: out.text });
+      } else {
+        out = await callChainStream(
+          aiMessages(job.task, job.text, job.question, job.context),
+          (d) => send('delta', { t: d }),
+          ac.signal,
+        );
+      }
       if (!job.noCache) cachePut(job.key, out.text, out.provider, out.model);
       return out;
     })();

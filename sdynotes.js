@@ -5423,10 +5423,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     const body=document.getElementById('editorBody');
                     body.scrollTop=(i)*(size.h+PAGE_GAP)*pageScale;
                     updatePageInfo();
+                    // 서버 슬라이스를 기다리느라 첫 화면이 멎지 않게 위치부터 옮기고 병렬 로드한다.
+                    maintainPageWindow(i,true);
                 }catch(e){}
             };
-            if(doc.__ref) ensureLazyPage(i).then(doScroll);
-            else doScroll();
+            doScroll();
         }
     }
 
@@ -6043,6 +6044,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{ pageObserver.disconnect(); }catch(e){}
         try{ pageUnloader.disconnect(); }catch(e){}
         Object.keys(chunkTimers).forEach(k=>clearTimeout(chunkTimers[k]));
+        clearTimeout(_virtualTimer); _virtualTimer=null;
         renderedPages.clear();
         // 14.12 · 노트 전환 시 기존 DOM과 비동기 콜백이 새 노트에 영향을 주지 못하게
         // renderVersion 은 콜백에서 확인하여旧的 콜백이 새 페이지를 건드리는 것을 방지한다.
@@ -6146,29 +6148,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 화면에 바로 보여야 하는 쪽을 IO 와 무관하게 강제 렌더
     function ensureVisiblePagesRendered(){
         if(!doc||!doc.pages||!doc.pages.length) return;
-        const n=doc.pages.length;
-        const want=new Set([0, curPageIdx|0]);
-        // 인접 한 쪽도 미리 (스크롤 없이 바로 보이게)
-        if((curPageIdx|0)+1<n) want.add((curPageIdx|0)+1);
-        if((curPageIdx|0)-1>=0) want.add((curPageIdx|0)-1);
-        want.forEach(i=>{
-            if(i<0||i>=n) return;
-            // 이미 그려진 쪽도 요소가 비어 있으면 다시 그린다 (IO 실패·조기 return 복구)
-            const need=!renderedPages.has(i);
-            let emptyDom=false;
-            try{
-                if(!need){
-                    const paper=paperAt(i);
-                    const txt=paper&&paper.querySelector('.layer-text');
-                    const els=((doc.pages[i]||{}).els)||[];
-                    if(els.length && txt && !txt.childElementCount) emptyDom=true;
-                }
-            }catch(e){}
-            if(need||emptyDom){
-                if(emptyDom) renderedPages.delete(i);
-                try{ renderPageEls(i); }catch(e){}
+        const i=Math.max(0,Math.min(doc.pages.length-1,curPageIdx|0));
+        // 이미 그렸다고 표시됐지만 DOM이 빈 경우(IO/노트 전환 경쟁)를 현재 쪽만 복구한다.
+        try{
+            if(renderedPages.has(i)){
+                const paper=paperAt(i),txt=paper&&paper.querySelector('.layer-text');
+                const els=((doc.pages[i]||{}).els)||[];
+                if(els.length&&txt&&!txt.childElementCount) renderedPages.delete(i);
             }
-        });
+        }catch(e){}
+        // 뒷페이지를 볼 때 1페이지까지 계속 붙잡지 않는다.
+        maintainPageWindow(i,true);
     }
 
     // ===== 유동 로딩 =====
@@ -6178,39 +6168,72 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     const renderedPages=new Set();
     const HEAVY_ELS=120;              // 이보다 많으면 나눠 그린다
     const CHUNK=60;                   // 한 번에 채우는 개수
-    const _pageRenderTok={};          // 14.4 · 같은 쪽을 다시 그리면 이전 청크 루프를 버린다
+    const VIRTUAL_RENDER_RADIUS=1;    // 현재 쪽 + 위아래 한 쪽만 선렌더
+    const VIRTUAL_KEEP_RADIUS=2;      // 두 쪽 밖의 무거운 DOM은 즉시 회수
+    const _pageRenderTok={};          // 같은 쪽을 다시 그리거나 비우면 이전 청크 루프를 버린다
     const chunkTimers={};
+    let _virtualTimer=null;
 
     const pageObserver=new IntersectionObserver((entries)=>{
         entries.forEach(en=>{
             // 14.12 · 노트가 전환되면旧的 콜백은 무시
             if(window._renderVersion !== (doc&&doc.__rv)) return;
             const i=+en.target.dataset.pageIdx;
-            if(en.isIntersecting){
+            if(en.isIntersecting&&Math.abs(i-(curPageIdx|0))<=VIRTUAL_KEEP_RADIUS){
                 if(!renderedPages.has(i)) renderPageEls(i);
             }
         });
     },{root:document.getElementById('editorBody'), rootMargin:'700px 0px'});
 
-    // 멀리 있는 페이지는 비워 둔다 (되돌아오면 위 관찰자가 다시 그린다)
+    function canUnloadPage(i){
+        if(i===curPageIdx||findOpen||wfOn) return false;
+        const paper=paperAt(i);
+        if(!paper) return false;
+        if(paper.querySelector('.tb.edit,.sel,.msel')) return false;
+        if(activeTbl&&activeTbl.pageIdx===i) return false;
+        return true;
+    }
+    function unloadPage(i){
+        if(Math.abs(i-(curPageIdx|0))<=VIRTUAL_KEEP_RADIUS) return false;
+        if(!renderedPages.has(i)||!canUnloadPage(i)) return false;
+        // setTimeout뿐 아니라 이미 RAF 큐에 들어간 step도 토큰으로 무효화한다.
+        _pageRenderTok[i]=(_pageRenderTok[i]||0)+1;
+        clearTimeout(chunkTimers[i]); delete chunkTimers[i];
+        clearPageEls(i);
+        renderedPages.delete(i);
+        return true;
+    }
+
+    // IO는 보조 수단이다. 빠른 점프·transform 환경에서는 아래 고정 렌더 창이
+    // 실제 상한을 책임지고, IO는 천천히 스크롤할 때 미리 그려 주기만 한다.
     const pageUnloader=new IntersectionObserver((entries)=>{
         entries.forEach(en=>{
-            // 14.12 · 노트가 전환되면旧的 콜백은 무시
-            if(window._renderVersion !== (doc&&doc.__rv)) return;
-            if(en.isIntersecting) return;
-            const i=+en.target.dataset.pageIdx;
-            if(!renderedPages.has(i)) return;
-            if(i===curPageIdx) return;
-            // 편집·선택 중인 내용이 들어 있으면 건드리지 않는다
-            const paper=en.target;
-            if(paper.querySelector('.tb.edit,.sel,.msel')) return;
-            if(activeTbl&&activeTbl.pageIdx===i) return;
-            if(findOpen||wfOn) return;
-            clearTimeout(chunkTimers[i]); delete chunkTimers[i];
-            clearPageEls(i);
-            renderedPages.delete(i);
+            if(window._renderVersion !== (doc&&doc.__rv)||en.isIntersecting) return;
+            unloadPage(+en.target.dataset.pageIdx);
         });
-    },{root:document.getElementById('editorBody'), rootMargin:'2400px 0px'});
+    },{root:document.getElementById('editorBody'), rootMargin:'1800px 0px'});
+
+    function maintainPageWindow(center,immediate){
+        if(!doc||!doc.pages||!doc.pages.length) return;
+        center=Math.max(0,Math.min(doc.pages.length-1,center|0));
+        // 먼저 먼 DOM과 진행 중 청크를 회수해 뒷페이지 렌더에 메모리·프레임을 양보한다.
+        Array.from(renderedPages).forEach(i=>{
+            if(Math.abs(i-center)>VIRTUAL_KEEP_RADIUS) unloadPage(i);
+        });
+        if(!renderedPages.has(center)) try{ renderPageEls(center); }catch(e){}
+        clearTimeout(_virtualTimer);
+        const nearby=()=>{
+            if(!doc||center!==(curPageIdx|0)) return;
+            for(let d=1;d<=VIRTUAL_RENDER_RADIUS;d++){
+                [center-d,center+d].forEach(i=>{
+                    if(i>=0&&i<doc.pages.length&&!renderedPages.has(i))
+                        try{ renderPageEls(i); }catch(e){}
+                });
+            }
+        };
+        if(immediate) nearby();
+        else _virtualTimer=setTimeout(nearby,32);
+    }
 
     function clearPageEls(idx){
         const paper=paperAt(idx); if(!paper) return;
@@ -6300,18 +6323,24 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         let els=sanitizePageEls(doc.pages[idx].els||[]);
         if(els!==doc.pages[idx].els && els.length!==(doc.pages[idx].els||[]).length)
             doc.pages[idx].els=els;
-        const put=(el)=>{
+        const makeBags=()=>({img:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()});
+        const flushBags=b=>{
             if(_pageRenderTok[idx]!==tok) return;
-            if(el.type==='image') imgL.appendChild(buildImageEl(el,idx));
+            imgL.appendChild(b.img); svg.appendChild(b.svg); txtL.appendChild(b.txt);
+        };
+        const put=(el,b)=>{
+            if(_pageRenderTok[idx]!==tok) return;
+            const to=b||{img:imgL,svg:svg,txt:txtL};
+            if(el.type==='image') to.img.appendChild(buildImageEl(el,idx));
             else if(el.type==='legacyDraw'){
                 const im=document.createElementNS('http://www.w3.org/2000/svg','image');
                 im.setAttribute('href',el.url); im.setAttribute('x',0); im.setAttribute('y',0);
                 im.setAttribute('width',size.w); im.setAttribute('height',size.h);
-                svg.appendChild(im);
+                to.svg.appendChild(im);
             }
-            else if(el.type==='stroke') svg.appendChild(buildStrokeEl(el,idx));
-            else if(el.type==='text') txtL.appendChild(buildTextEl(el,idx));
-            else if(el.type==='latex') txtL.appendChild(buildLatexEl(el,idx));
+            else if(el.type==='stroke') to.svg.appendChild(buildStrokeEl(el,idx));
+            else if(el.type==='text') to.txt.appendChild(buildTextEl(el,idx));
+            else if(el.type==='latex') to.txt.appendChild(buildLatexEl(el,idx));
         };
         const finish=()=>{
             // 14.12 · finish 도 renderVersion 검증을 통과해야 실행
@@ -6330,16 +6359,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         };
 
         if(els.length<=HEAVY_ELS){          // 가벼우면 한 번에
-            els.forEach(put); finish(); return;
+            const bags=makeBags();
+            els.forEach(el=>put(el,bags)); flushBags(bags); finish(); return;
         }
-        // 무거우면: 글자를 먼저 보여 주고 나머지는 이어서 채운다
+        // 무거우면: 한 프레임의 요소를 fragment 세 개에 모아 레이어별 한 번만 삽입한다.
         let at=0;
         const step=()=>{
             if(_pageRenderTok[idx]!==tok) return;
             // 14.12 · step 실행 중 노트가 전환되면 중단
             if(window._renderVersion !== (doc&&doc.__rv)) return;
-            const end=Math.min(els.length, at+CHUNK);
-            for(;at<end;at++) put(els[at]);
+            const end=Math.min(els.length, at+CHUNK),bags=makeBags();
+            for(;at<end;at++) put(els[at],bags);
+            flushBags(bags);
             if(at<els.length){
                 chunkTimers[idx]=setTimeout(()=>requestAnimationFrame(step),0);
             }else{
@@ -6492,7 +6523,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             fl.title=n?`즐겨찾는 페이지 ${n}개`:'즐겨찾는 페이지';
             fl.style.color=n?'#f59e0b':'';
         }
-        editorPapers().forEach((p,i)=>p.classList.toggle('focused',i===curPageIdx&&doc.pages.length>1));
+        editorPapers().forEach((p,i)=>{
+            const on=i===curPageIdx&&doc.pages.length>1;
+            p.classList.toggle('focused',on);
+            const wrap=p.closest('.page-wrap'); if(wrap) wrap.classList.toggle('focused',on);
+            p.setAttribute('aria-current',on?'page':'false');
+        });
     }
 
     function addPage(){
@@ -6574,13 +6610,35 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         },500);
     }
 
+    // 화면에서 실제로 가장 많이 보이는 종이를 현재 페이지로 잡는다.
+    // 한 기준점 반올림 방식은 1쪽이 더 많이 보여도 2쪽으로 넘어가는 오판이 있었다.
+    function mostVisiblePageIndex(scrollTop,viewportH,count,pageH,gap,scale,current){
+        if(count<=1) return 0;
+        const step=(pageH+gap)*scale,ph=pageH*scale;
+        if(!(step>0)||!(ph>0)) return Math.max(0,Math.min(count-1,current|0));
+        const top=Math.max(0,Number(scrollTop)||0),bottom=top+Math.max(0,Number(viewportH)||0);
+        const first=Math.max(0,Math.floor((top-ph)/step));
+        const last=Math.min(count-1,Math.floor(bottom/step));
+        let best=Math.max(first,Math.min(last,current|0)),bestSeen=-1;
+        for(let i=first;i<=last;i++){
+            const pt=i*step,pb=pt+ph;
+            const seen=Math.max(0,Math.min(bottom,pb)-Math.max(top,pt));
+            // 더 많이 보일 때만 교체한다. 정확한 동률은 기존 쪽을 유지해 경계 떨림 방지.
+            if(seen>bestSeen||(seen===bestSeen&&i===(current|0))){ best=i; bestSeen=seen; }
+        }
+        return best;
+    }
+    try{ window.sdyMostVisiblePageIndex=mostVisiblePageIndex; }catch(e){}
+
     function onEditorScroll(){
         if(!doc) return;
         const size=paperSize();
-        const step=(size.h+PAGE_GAP)*pageScale;
         const body=document.getElementById('editorBody');
-        const idx=Math.min(doc.pages.length-1, Math.max(0, Math.round((body.scrollTop+body.clientHeight*0.35)/step)));
+        const idx=mostVisiblePageIndex(body.scrollTop,body.clientHeight,doc.pages.length,
+            size.h,PAGE_GAP,pageScale,curPageIdx);
         if(idx!==curPageIdx){ curPageIdx=idx; updatePageInfo(); }
+        // Observer가 transform/빠른 스크롤을 놓쳐도 현재 쪽을 즉시 그리고 먼 DOM을 회수한다.
+        maintainPageWindow(idx,false);
         scheduleHiBg();                                    // 보는 쪽을 점점 고화질로
         try{ positionTblBar(); }catch(e){}
         const zone=document.getElementById('addPageZone');
@@ -9380,7 +9438,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
         paintTblCellSelection();
     }
-    function renderAllTblDivs(){ if(doc) doc.pages.forEach((p,i)=>{ if(paperAt(i)) renderTblDivs(i); }); }
+    function renderAllTblDivs(){ if(doc) doc.pages.forEach((p,i)=>{ if(renderedPages.has(i)) renderTblDivs(i); }); }
 
     // 표 가까이(22px 이내) 가면 손잡이 · ＋ 버튼이 나타난다
     const TBL_NEAR=22;
@@ -9914,8 +9972,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const size=paperSize();
         const el=findEl(hit.pageIdx,hit.id);
         const top=(hit.pageIdx*(size.h+PAGE_GAP)+((el&&el.y)||0))*pageScale;
-        _scrollBodyTo(body,Math.max(0,top-body.clientHeight*0.35),soft?'auto':'smooth');
+        const far=Math.abs(hit.pageIdx-(curPageIdx|0))>2;
         curPageIdx=hit.pageIdx; updatePageInfo();
+        maintainPageWindow(hit.pageIdx,true);
+        _scrollBodyTo(body,Math.max(0,top-body.clientHeight*0.35),(soft||far)?'auto':'smooth');
         setTimeout(paintFindHits,soft?60:320);
     }
 
@@ -9938,8 +9998,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         i=Math.max(1,Math.min(doc.pages.length,i))-1;
         const body=document.getElementById('editorBody');
         const size=paperSize();
-        _scrollBodyTo(body,i*(size.h+PAGE_GAP)*pageScale,'smooth');
+        const far=Math.abs(i-(curPageIdx|0))>2;
         curPageIdx=i; updatePageInfo();
+        // 먼 점프를 smooth로 하면 중간 수십 쪽이 차례로 로드되므로 즉시 이동한다.
+        maintainPageWindow(i,true);
+        _scrollBodyTo(body,i*(size.h+PAGE_GAP)*pageScale,far?'auto':'smooth');
     }
     function favList(){
         if(!doc) return [];
@@ -12617,7 +12680,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 색칠 제거 → 원래 글자 그대로 다시 그린다
     function wfClear(){
         if(!doc) return;
-        doc.pages.forEach((p,i)=>{ if(paperAt(i)) renderPageEls(i); });
+        // 가상화된 빈 종이까지 전부 다시 그리지 않고 현재 DOM에 있는 쪽만 복원한다.
+        Array.from(renderedPages).forEach(i=>renderPageEls(i));
+        maintainPageWindow(curPageIdx,true);
     }
     // 화면의 글자에만 색을 입힌다 (문서 데이터는 절대 건드리지 않음)
     function wfPaint(){
@@ -13992,6 +14057,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function restoreSel(){
         if(!savedRange||!savedHost) return null;
         if(!document.body.contains(savedHost)) return null;
+        // 저장 Range보다 사용자가 나중에 고른 상자가 우선이다. 메뉴를 여는 동안
+        // selectionchange가 늦게 도착하면 이전 상자의 Range가 살아나 새 상자에
+        // 적용할 글꼴/크기/색을 가로채는 일이 있었다.
+        const rangeBox=savedHost.closest&&savedHost.closest('.tb');
+        const picked=multiSel.length
+            ? multiSel.map(m=>m.node).filter(n=>n&&n.isConnected&&n.classList.contains('tb'))
+            : Array.from(document.querySelectorAll('#pagesStage .tb.sel,#pagesStage .tb.msel'));
+        if(picked.length&&picked.indexOf(rangeBox)<0){
+            savedRange=null; savedHost=null;
+            return null;
+        }
         savedHost.contentEditable='true';
         savedHost.focus({preventScroll:true});
         const s=window.getSelection();
@@ -17017,8 +17093,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     //   되묻기(@ask)까지 허용 목록이 늘었다. 적용 규칙은 같다 — 검증·한 번에·undo.
     //   14.27.0 · 형광펜 글귀 단위(@hl)·표 삭제 완화(@del·@tdel)·보기 좋은 배치
     //   (@tidy·auto 좌표)가 늘었다. 스냅샷은 칠해진 곳을 ⟦…⟧ 로 보여 준다.
-    const AI_EDIT_MAX_ITEMS=240, AI_EDIT_MAX_SNAPSHOT=28000;
-    const AI_EDIT_MAX_OPS=40, AI_EDIT_MAX_TEXT=2000;
+    //   14.27.1 · 긴 편집을 위해 요소 800개·상태 8만 자·상자 미리보기 1200자와
+    //   명령 120개·명령 본문 12000자까지 확장했다. 검증·원자 적용·undo는 그대로다.
+    const AI_EDIT_MAX_ITEMS=800, AI_EDIT_MAX_SNAPSHOT=80000;
+    const AI_EDIT_MAX_OPS=120, AI_EDIT_MAX_TEXT=12000;
 
     function aiEditText(el){
         if(!el) return '';
@@ -17054,7 +17132,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         };
         const preview=(value,max)=>{
             const text=String(value||'').replace(/\s+/g,' ').replace(/</g,'‹').replace(/>/g,'›').trim();
-            const lim=max||240;
+            const lim=max||1200;
             return text.length>lim?text.slice(0,lim)+'…':text;
         };
         // 14.27.0 · 글상자 미리보기에는 형광펜이 칠해진 글귀를 ⟦…⟧ 로 표시한다.
@@ -17064,7 +17142,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 ?aiEditHlPreview(el.html)
                 :String(aiEditText(el)||'').replace(/\s+/g,' ')
                     .replace(/</g,'‹').replace(/>/g,'›').trim();
-            const lim=max||240;
+            const lim=max||1200;
             return text.length>lim?text.slice(0,lim)+'…':text;
         };
         // id는 모델이 그대로 되돌려 보내는 실행 토큰이다. 프롬프트 구분자나
@@ -17765,9 +17843,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const d=doc,_pi=pi;
             setTimeout(()=>{
                 if(doc!==d||!curNB) return;
+                try{ maintainPageWindow(_pi,true); }catch(e){}
                 const w=document.querySelectorAll('.page-wrap')[_pi];
                 if(w&&typeof w.scrollIntoView==='function')
-                    w.scrollIntoView({behavior:'smooth',block:'center'});
+                    // AI가 먼 쪽으로 이동할 때 중간 페이지들을 연쇄 로드하지 않는다.
+                    w.scrollIntoView({behavior:'auto',block:'center'});
             },60);
         }catch(e){}
     }
@@ -29966,7 +30046,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       dropped++;
     });
-    return {ops:ops.slice(0,60),say:say,ask:ask,dropped:dropped+Math.max(0,ops.length-60)};
+    return {ops:ops.slice(0,160),say:say,ask:ask,dropped:dropped+Math.max(0,ops.length-160)};
   };
 
   /* ── 14.26.0 · 앱 실행 파서 — 허용 목록 밖의 줄은 버린다. 한 번에 10개까지. ── */

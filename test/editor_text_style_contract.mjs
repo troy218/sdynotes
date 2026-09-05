@@ -289,6 +289,13 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
     && js.includes('_toolbarSelLockUntil=Date.now()+1500'));
 }
 {
+  const b = body('restoreSel');
+  check('새로 고른 상자가 이전 상자의 늦은 저장 선택보다 우선한다',
+    b.includes("document.querySelectorAll('#pagesStage .tb.sel,#pagesStage .tb.msel')")
+    && b.includes('picked.indexOf(rangeBox)<0')
+    && b.includes('savedRange=null; savedHost=null;'));
+}
+{
   const b = body('enterEdit');
   check('편집에 들어가면 이전 상자의 저장된 선택/캐럿을 먼저 지운다',
     b.indexOf('clearTextSelection()') >= 0);

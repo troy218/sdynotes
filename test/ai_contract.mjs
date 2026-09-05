@@ -29,7 +29,9 @@ globalThis.fetch = async (url, opts = {}) => {
 const json200 = (j) => new Response(JSON.stringify(j), {
   status: 200, headers: { 'content-type': 'application/json' },
 });
-const chatOk = (txt) => json200({ choices: [{ message: { role: 'assistant', content: txt } }] });
+const chatOk = (txt, finishReason = '') => json200({ choices: [{
+  message: { role: 'assistant', content: txt }, finish_reason: finishReason || null,
+}] });
 
 process.env.AI_KEY = FAKE_KEY;
 process.env.AI_BASE_URL = 'https://ai.example.test/v1/';      // 끝 슬래시 → 붙일 때 정리되는지 확인
@@ -43,6 +45,12 @@ process.env.AI_RATE_WINDOW_MS = '60000';
 
 const ai = await import('../server/src/routes/ai.js');
 const cfg = await import('../server/src/lib/config.js');
+const splitSample = '노트 제목: 테스트\n페이지 크기: 800x1100\n'
+  + Array.from({ length: 30 }, (_, i) => `[${i + 1}쪽]\n  id=t_${i} text=${'가'.repeat(30)}`).join('\n');
+const splitParts = ai.splitEditText(splitSample, 300, 4);
+assert.ok(splitParts.length > 1 && splitParts.length <= 4);
+assert.ok(splitParts.every((part) => part.startsWith('노트 제목: 테스트\n페이지 크기: 800x1100')));
+assert.ok(splitParts.join('\n').includes('id=t_0') && splitParts.join('\n').includes('id=t_29'));
 const { default: Fastify } = await import('fastify');
 
 const app = Fastify({ logger: false });
@@ -80,6 +88,16 @@ ok('모델·온도·max_tokens 를 보낸다', c0.body.model === 'test-model-x'
 ok('system+user 2 메시지', Array.isArray(c0.body.messages) && c0.body.messages.length === 2
   && c0.body.messages[0].role === 'system' && c0.body.messages[1].role === 'user');
 ok('user 메시지에 노트 본문이 담긴다', /광합성은 엽록체에서/.test(c0.body.messages[1].content));
+
+// 작은 모델이 자체 출력 한도에 닿으면 끊긴 지점부터 자동으로 이어 받는다.
+ai.aiCacheReset(); calls = [];
+let continueCall = 0;
+extFetch = () => (++continueCall === 1) ? chatOk('첫 번째 파트', 'length') : chatOk('두 번째 파트', 'stop');
+r = await post('/api/ai/ask', { task: 'outline', text: '자동 이어쓰기 고유 본문' });
+ok('출력 한도(length)면 다음 파트를 자동 호출한다', calls.length === 2);
+ok('자동 이어쓰기 파트를 한 답으로 합친다', r.text === '첫 번째 파트두 번째 파트');
+ok('이어쓰기 호출은 반복 금지와 다음 지점을 명시한다',
+  /이미 쓴 내용은 반복하지 말고/.test(calls[1].body.messages.at(-1).content));
 
 // ── 3) 질문: 질문이 프롬프트에 실린다 ──
 calls = [];
@@ -229,15 +247,16 @@ ok('둘 다 같은 답변을 받는다', both[0].text === '동시 응답' && bot
 ai.aiCacheReset();
 calls = [];
 extFetch = (u, opts) => chatOk('ok');
-const long = '가'.repeat(600) + '나'.repeat(300);   // 14.22.0 · 앞 70% + 뒤 30%
+const long = '가'.repeat(300) + '중'.repeat(300) + '나'.repeat(300); // 14.27.1 · 앞·중간·뒤
 r = await post('/api/ai/ask', { task: 'outline', text: long });
 ok('긴 본문은 AI_MAX_TEXT(500) 만큼만 전송', r.ok === true && r.truncated === true && r.chars === 500);
 ok('긴 본문은 전체 길이를 따로 알려 준다', r.note_chars === 900, r.note_chars);
-// 앞 350자(가) + 뒤 150자(나) 를 살리고 가운데만 접는다 — '앞부분만' 보내지 않는다
-ok('긴 본문은 앞부분(350자)을 보낸다', calls[0].body.messages[1].content.includes('가'.repeat(350))
-  && !calls[0].body.messages[1].content.includes('가'.repeat(351)));
-ok('긴 본문은 뒷부분(150자)도 보낸다', calls[0].body.messages[1].content.includes('나'.repeat(150)));
-ok('가운데가 접혔다는 표시가 남는다', /가운데 \d+자를 접었어요/.test(calls[0].body.messages[1].content));
+// 앞 200자 + 가운데 150자 + 뒤 150자를 고르게 살린다.
+const sentLong = calls[0].body.messages[1].content;
+ok('긴 본문은 앞부분(200자)을 보낸다', sentLong.includes('가'.repeat(200)));
+ok('긴 본문은 중간 내용도 보낸다', sentLong.includes('중'.repeat(100)));
+ok('긴 본문은 뒷부분(150자)도 보낸다', sentLong.includes('나'.repeat(150)));
+ok('두 생략 구간이 표시된다', (sentLong.match(/긴 노트: 여기서 \d+자를 접었어요/g) || []).length === 2);
 r = await post('/api/ai/ask', { task: 'outline', text: '가'.repeat(499) });
 ok('한도 안쪽이면 truncated=false', r.ok === true && r.truncated === false && r.chars === 499);
 
@@ -299,9 +318,11 @@ ok('모델이 빈 내용을 주면 502', r.status === 502 && r.ok === false);
 // ── 12) 14.22.0 · 스트리밍 — 말하는 대로 흘려 보낸다 ──
 ai.aiCacheReset(); ai.aiRateReset();
 // 모델(OpenAI 호환) 이 흘려 보내는 SSE — data: {choices:[{delta:{content}}]} … [DONE]
-const openaiSse = (parts, size = 8) => {
+const openaiSse = (parts, size = 8, finishReason = '') => {
+  const finish = finishReason
+    ? `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: finishReason }] })}\n\n` : '';
   const raw = parts.map((t) => `data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}\n\n`)
-    .join('') + 'data: [DONE]\n\n';
+    .join('') + finish + 'data: [DONE]\n\n';
   const bytes = Buffer.from(raw, 'utf8');
   const stream = new ReadableStream({
     start(c) {
@@ -344,7 +365,24 @@ ok('스트림: 마지막에 done(전체·공급사·모델) 을 준다',
 ok('스트림: 모델 요청도 stream:true 로 나간다', calls[0].body.stream === true);
 ok('스트림: 키가 응답에 절대 새지 않는다', !sr.text.includes(FAKE_KEY));
 
+// 스트림도 length 종료를 감지해 새 스트림 파트를 이어 붙인다.
+ai.aiCacheReset(); calls = []; continueCall = 0;
+extFetch = () => (++continueCall === 1)
+  ? openaiSse(['스트림 첫 파트'], 8, 'length')
+  : openaiSse(['스트림 둘째 파트'], 8, 'stop');
+sr = await askStream({ task: 'outline', text: '스트림 자동 이어쓰기 고유 본문' });
+deltas = sr.evts.filter((e) => e.event === 'delta');
+doneEvt = sr.evts.find((e) => e.event === 'done');
+ok('스트림 출력 한도도 자동으로 다음 파트를 호출한다', calls.length === 2);
+ok('스트림 이어쓰기 전문이 done에 합쳐진다',
+  doneEvt?.data?.text === '스트림 첫 파트스트림 둘째 파트');
+
 // 두 번째(같은 질문) → 캐시에서 바로 흘려 보낸다(외부 호출 0번)
+// 앞의 기본 광합성 답을 다시 준비해 캐시 경로를 확인한다.
+ai.aiCacheReset(); calls = [];
+extFetch = () => openaiSse(['광합성은 엽록체에서 일어난다.']);
+sr = await askStream({ task: 'outline', text: '광합성 노트' });
+calls = [];
 calls = [];
 sr = await askStream({ task: 'outline', text: '광합성 노트' });
 ok('스트림: 같은 질문은 외부 호출 없이 캐시로 흘려 보낸다', calls.length === 0

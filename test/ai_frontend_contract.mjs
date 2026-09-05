@@ -45,8 +45,9 @@ check('서버: 자체 쿨다운이 없다 — 429 뒤에도 다음 요청은 곧
   !/AI_COOLDOWN_MS/.test(srv) && !/anyProviderReady/.test(srv) && !/coolSet/.test(srv));
 check('서버: stream:true 면 SSE(text/event-stream) 로 조각을 흘려 본다',
   /text\/event-stream/.test(srv) && /send\('delta'/.test(srv) && /b\.stream === true/.test(srv));
-check('서버: 긴 노트는 앞 70% + 뒤 30% 를 살린다',
-  /function fitText/.test(srv) && /Math\.floor\(lim \* 0\.7\)/.test(srv));
+check('서버: 긴 노트는 앞·중간·뒤 3구간을 살린다',
+  /function fitText/.test(srv) && /Math\.floor\(lim \* 0\.4\)/.test(srv)
+  && /Math\.floor\(lim \* 0\.3\)/.test(srv));
 
 check('프런트: 키를 직접 들고 있지 않다 (sk- 리터럴 없음)', !/sk-[A-Za-z0-9_\-]{8,}/.test(js));
 check('프런트: AI 는 자기 엔드포인트(/api/ai/ask)만 부른다', /fetch\('\/api\/ai\/ask'/.test(js));
@@ -58,9 +59,12 @@ check('프런트: 편집도 capture/apply bridge로만 하고 요청 중 문서 
   && /expectedRevision!==aiEditRevision\(\)/.test(js) && /res\.stale=true/.test(js));
 check('프런트: 모델 명령은 허용 목록 파서로 평문·좌표만 받는다',
   /window\.sdyAiEditParse=function/.test(js) && /cmd:'mv'/.test(js)
-  && /cmd:'tx'/.test(js) && /cmd:'add'/.test(js) && /ops\.slice\(0,60\)/.test(js));
-check('프런트: AI 편집은 최대 40개이며 한 번의 undo 지점으로 묶인다',
-  /AI_EDIT_MAX_OPS=40/.test(js) && /const beforeChange=[\s\S]{0,500}pushHistory\(true\)/.test(js));
+  && /cmd:'tx'/.test(js) && /cmd:'add'/.test(js) && /ops\.slice\(0,160\)/.test(js));
+check('프런트: AI 편집은 최대 120개이며 한 번의 undo 지점으로 묶인다',
+  /AI_EDIT_MAX_OPS=120/.test(js) && /const beforeChange=[\s\S]{0,500}pushHistory\(true\)/.test(js));
+check('프런트: 장문 편집 스냅샷·요소·명령 본문 상한이 확장됐다',
+  /AI_EDIT_MAX_ITEMS=800/.test(js) && /AI_EDIT_MAX_SNAPSHOT=80000/.test(js)
+  && /AI_EDIT_MAX_TEXT=12000/.test(js) && /const lim=max\|\|1200/.test(js));
 check('프런트: 예전 할 일(summarize/bullets/ask/free 고르기)이 없다',
   !/'summarize'/.test(js) && !/'bullets'/.test(js) && !/sdyAiToggle/.test(js));
 check('프런트: 보내기 버튼이 없다 — Enter 만 누르면 바로 묻는다(한글 조합 중 제외)',
@@ -155,7 +159,7 @@ check('서버: edit 프롬프트는 자리·크기를 auto로 맡기라고 한�
 check('서버: 여러 턴 문맥 상한이 AI_MAX_CONTEXT 이다',
   /AI_MAX_CONTEXT/.test(srv) && !/slice\(0, 1500\)/.test(srv)
   && /AI_MAX_CONTEXT/.test(fs.readFileSync(path.join(REPO, 'server/src/lib/config.js'), 'utf8')));
-check('서버: 편집 요청 한도가 40개로 늘었다', /한 번에 40개 이하/.test(srv));
+check('서버: 편집 요청 한도가 120개로 늘었다', /한 번에 120개 이하/.test(srv));
 check('프런트: 형광펜 파서는 글귀·색·지우기·상자 전체를 구분해 읽는다',
   /cmd:'hl'/.test(js) && /single:true/.test(js) && /head==='형광펜'/.test(js));
 check('프런트: @tdel·@tidy 를 파싱한다',
@@ -230,8 +234,8 @@ check('HTML: 검색창 안내 글씨는 한 줄 — (Enter) 없이, Enter 안내
 check('HTML: 질문칸은 여러 줄로 자랄 수 있는 textarea 다',
   /<textarea id="aiQ"/.test(html) && !/<input[^>]*id="aiQ"/.test(html));
 check('HTML: 질문칸 길이 상한이 서버 요청 상한(AI_MAX_QUESTION)과 어긋나지 않는다',
-  /maxlength="1200"/.test(html)
-  && /AI_MAX_QUESTION \|\| '1200'/.test(fs.readFileSync(path.join(REPO, 'server/src/lib/config.js'), 'utf8')));
+  /maxlength="6000"/.test(html)
+  && /AI_MAX_QUESTION \|\| '6000'/.test(fs.readFileSync(path.join(REPO, 'server/src/lib/config.js'), 'utf8')));
 check('HTML/CSS: 말투로 되는 편집·실행을 안내하고 입력 중 딱지를 보여 준다',
   /고쳐 달라는 말은 문서를 고치고 시켜 달라는 말은 앱을 실행해요/.test(html)
   && /id="aiEditTag"[^>]*hidden>편집</.test(html)
