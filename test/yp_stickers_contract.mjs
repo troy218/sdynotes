@@ -45,7 +45,7 @@ assert.match(chat, /text, stickers, reactions/, '채팅 메시지는 text 와 st
 
 /* ── 런타임 계약 (jsdom) ──────────────────────────────────────────────── */
 const fullHtml = html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/,
-  '<script>' + js + '</script>');
+  () => '<script>' + js.replace(/<\/script/gi, '<\\/script>') + '</script>');
 const vc = new VirtualConsole();
 const errors = [];
 vc.on('jsdomError', e => { if (!/Could not load/.test(e.message)) errors.push(e.message); });

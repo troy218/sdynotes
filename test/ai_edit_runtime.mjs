@@ -224,16 +224,16 @@ try {
     /<b>굵은<\/b> 제목\+파란/.test(tb2.html) && /<span style="color:#a63f47">/.test(tb2.html)
     && /<br>둘째 줄<br>셋째 줄/.test(tb2.html), tb2.html.slice(0, 200));
   check('글꼴·크기·색·형광펜·굵기·정렬이 상자에 반영된다',
-    tb2.font === 'gaegu' && tb2.fontSize === 22 && tb2.textColor === '#a63f47'
-    && tb2.cellBg === '#efd36a' && tb2.fontWeight === '700' && tb2.align === 'center',
+    tb2.font === 'gaegu' && tb2.fontSize === 22 && tb2.textColor === '#e74c3c'
+    && tb2.cellBg === '#ffff00' && tb2.fontWeight === '700' && tb2.align === 'center',
     JSON.stringify({ font: tb2.font, fs: tb2.fontSize, fg: tb2.textColor, hl: tb2.cellBg }));
   const st2 = window.findEl(0, 'stroke-1');
-  check('그림획 펜색·굵기를 바꾼다', st2.color === '#3d6ea8' && st2.size === 4,
+  check('그림획 펜색·굵기를 바꾼다', st2.color === '#3498db' && st2.size === 4,
     JSON.stringify({ color: st2.color, size: st2.size }));
 
   const cap3 = window.__sdyAiBridge.capture();
   check('스냅샷에 글꼴·크기·색·형광펜·굵기·정렬이 보인다',
-    /id=title-box type=글상자.*font=gaegu fs=22 al=center fg=#a63f47 hl=#efd36a st=B/.test(cap3.text));
+    /id=title-box type=글상자.*font=gaegu fs=22 al=center fg=#e74c3c hl=#ffff00 st=B/.test(cap3.text));
 
   const r3 = window.__sdyAiBridge.apply([
     { cmd: 'tbl', page: 1, x: 60, y: 400, rows: 2, cols: 2, text: '이름|나이\n철수|7' },
@@ -316,11 +316,11 @@ try {
   const hlBox = window.findEl(0, 'title-box');
   check('형광펜은 그 글귀만 칠하고 굵기·글자색 span을 살린다',
     rH.applied === 1 && rH.failed === 1
-    && /<span style="color:#a63f47"><span style="background-color:#efd36a">물 부족<\/span><\/span>/.test(hlBox.html)
+    && /<span style="color:#a63f47"><span style="background-color:#ffff00">물 부족<\/span><\/span>/.test(hlBox.html)
     && /<b>핵심<\/b>/.test(hlBox.html) && /둘째 줄은 그냥 글/.test(hlBox.html),
     hlBox.html.slice(0, 220));
   check('형광펜 색을 안 적으면 노랑을 쓴다',
-    !hlBox.cellBg && (hlBox.html.match(/background-color:#efd36a/g) || []).length === 1);
+    !hlBox.cellBg && (hlBox.html.match(/background-color:#ffff00/g) || []).length === 1);
 
   const capH2 = window.__sdyAiBridge.capture();
   check('스냅샷은 칠해진 글귀를 ⟦…⟧ 로 보여 주고 아닌 곳은 그대로 둔다',
@@ -345,7 +345,7 @@ try {
   ], capH4.revision);
   await wait(150);
   check('값 하나로 오면 색으로 알아들어 상자 전체 형광펜이 된다',
-    rH4.applied === 1 && window.findEl(0, 'title-box').cellBg === '#b7d97a',
+    rH4.applied === 1 && window.findEl(0, 'title-box').cellBg === '#a8ff60',
     String(window.findEl(0, 'title-box').cellBg));
   const capH5 = window.__sdyAiBridge.capture();
   const rH5 = window.__sdyAiBridge.apply([
@@ -368,8 +368,8 @@ try {
   const pHtml = window.findEl(0, 'title-box').html;
   check('모델의 @hl 두 줄이 파서를 지나 그대로 적용된다',
     planP.ops.length === 2 && planP.dropped === 0 && rP.applied === 2 && rP.failed === 0
-    && /<span style="background-color:#83d7de">물 부족<\/span>/.test(pHtml)
-    && /<span style="background-color:#efd36a">42%<\/span>/.test(pHtml),
+    && /<span style="background-color:#7bfdff">물 부족<\/span>/.test(pHtml)
+    && /<span style="background-color:#ffff00">42%<\/span>/.test(pHtml),
     pHtml.slice(0, 240));
 
   // ── 14.27.0 · 표는 칸 id로 지워도 표 전체가 사라진다 ──

@@ -37,7 +37,7 @@ const fnBody = (src, name) => {
   check('strokePath 도 화면 규칙 그대로다 (sharp → 직선, 부드럽게 → 2차 곡선)',
     sp.includes('if(sharp){') && sp.includes(' Q ${pts[i][0]} ${pts[i][1]} ${mx} ${my}'));
   check('글자는 foreignObject + htmlToXhtml 로 서식이 유지된다',
-    b.includes('<foreignObject') && b.includes('htmlToXhtml(fixDarkColors(el.html))'));
+    b.includes('<foreignObject') && b.includes('htmlToXhtml(fixDarkColors(imathExpandHtml(el.html)))'));
   check('이미지는 data: 로 인라인해 <image> 로 넣는다',
     b.includes('await toDataURL(el.url)') && b.includes('`<image x="${el.x}"'));
   check('만들 내용이 없으면 실패로 처리해 폴백을 유도한다', b.includes("throw new Error('스티커로 만들 내용이 없다')"));
