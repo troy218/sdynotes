@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -256,6 +257,7 @@ def run_once():
             )
         except Exception as exc:
             log("first attempt failed:", exc)
+            notice("FIRST_ERR=" + str(exc))
             ZIP_PATH.unlink(missing_ok=True)
             fetch(f"https://drive.google.com/uc?export=download&id={FILE_ID}", ZIP_PATH)
 
@@ -288,6 +290,7 @@ def main():
         log("FAILED (continuing):", exc)
         info["status"] = "failed"
         info["error"] = str(exc)
+        notice("TRACE=" + traceback.format_exc())
     finally:
         notice(
             f"STATUS={info.get('status')} SIZE={info.get('size')} "
