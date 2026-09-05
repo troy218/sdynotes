@@ -47,7 +47,7 @@ assert.match(buildText[1], /w\.dataset\.nbId=\(curNB&&curNB\.id\)\|\|'';/,
 assert.match(buildText[1], /w\._sdyRv=doc&&doc\.__rv;/,
   'each text DOM must remember its render version');
 
-const syncText = js.match(/function syncTextEl\(w\)\{([\s\S]*?)\n        el\.html=stripWF/);
+const syncText = js.match(/function syncTextEl\(w\)\{([\s\S]*?)\n        el\.html=imathCollapse\(stripWF/);
 assert.ok(syncText, 'syncTextEl should exist');
 assert.match(syncText[1], /if\(!w\|\|!w\.isConnected\) return;/,
   'delayed text sync must ignore detached boxes');

@@ -11,7 +11,7 @@ assert.match(musicPy, /recog_mbid/, '인식된 곡은 MBID를 저장해 완전 �
 assert.match(musicCloudPy, /def _cloud_dedupe_recognized\(mid\):/, '클라우드 음원도 인식 중복 자동 정리를 수행해야 한다');
 assert.match(js, /duplicate_removed[\s\S]{0,360}중복 음원을 자동으로 정리/, '프론트엔드는 중복 자동 삭제 응답을 사용자에게 알려야 한다');
 const fullHtml = html.includes('<script src="sdynotes.js')
-  ? html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, '<script>' + js + '</script>')
+  ? html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, () => '<script>' + js.replace(/<\/script/gi, '<\\/script>') + '</script>')
   : html;
 const errors = [];
 const vc = new VirtualConsole();

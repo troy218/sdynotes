@@ -79,7 +79,7 @@ assert.match(js, /if\(_isTest\) aEl\.innerHTML='<i class="ri-edit-line"><\/i>제
 
 /* ── 런타임 계약 ───────────────────────────────────────────────────────── */
 const fullHtml = html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/,
-  '<script>' + js + '</script>');
+  () => '<script>' + js.replace(/<\/script/gi, '<\\/script>') + '</script>');
 const vc = new VirtualConsole();
 vc.on('jsdomError', error => {
   if (!/Could not load (script|link|style)/.test(error.message)) {

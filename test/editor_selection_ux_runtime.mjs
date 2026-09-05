@@ -303,8 +303,8 @@ try {
   await wait(60);
   check('새 상자를 만들면 툴바 굵게가 꺼진다', !document.querySelector('.tb-bold').classList.contains('active'));
   check('새 상자를 만들면 툴바 밑줄이 꺼진다', !document.querySelector('.tb-under').classList.contains('active'));
-  check('새 상자를 만들면 글자색 표시가 기본(진한 먹색)으로 풀린다',
-    /rgb\(17, 17, 17\)|#111111/.test(document.getElementById('tcBar').style.background));
+  check('새 상자를 만들면 글자색 표시가 기본(검정)으로 풀린다',
+    /rgb\(0, 0, 0\)|#000000/.test(document.getElementById('tcBar').style.background));
   check('새 상자를 만들면 형광펜 표시가 풀린다',
     /transparent|^$/.test(document.getElementById('hlBar').style.background));
   check('새 상자에서도 툴바 글꼴은 이전 글꼴(개구쟁이)이다', /개구쟁이|Gaegu/.test(fontLabel()));

@@ -13,7 +13,7 @@ const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8
 const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../sdynotes.css', import.meta.url), 'utf8');
 const fullHtml = html.includes('<script src="sdynotes.js')
-  ? html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, '<script>' + js + '</script>')
+  ? html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, () => '<script>' + js.replace(/<\/script/gi, '<\\/script>') + '</script>')
   : html;
 const pass = [];
 const ok = (name, cond) => {

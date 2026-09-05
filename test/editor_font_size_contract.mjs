@@ -19,7 +19,7 @@ const fsStore = scaleBody.match(/if\(el\.type==='text'\)\{\s*\n\s*el\.fontSize=M
 assert.ok(fsStore, 'scaleSelection must store the scaled font size on the text element (even when it had none)');
 assert.match(scaleBody, /c\.style\.fontSize=el\.fontSize\+'px';/,
   'scaleSelection must repaint the box content with the new font size');
-assert.match(scaleBody, /if\(scaleInlineFS\(c,f\)\) el\.html=stripWF\(c\.innerHTML\);/,
+assert.match(scaleBody, /if\(scaleInlineFS\(c,f\)\) el\.html=imathCollapse\(stripWF\(c\.innerHTML\)\);/,
   'partially sized inline text must be scaled too and written back to the element html');
 assert.match(scaleBody, /if\(lastFS\) setToolbarFS\(lastFS\);/,
   'scaleSelection must hand the new font size to the toolbar so +/- continues from it');

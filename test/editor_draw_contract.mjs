@@ -153,7 +153,7 @@ try {
     document.getElementById('penBtn').classList.contains('active') && !document.getElementById('highlighterBtn').classList.contains('active'));
 
   // ── 2) 설정 저장 ─────────────────────────────────────────
-  const red = document.querySelector('.color-pick[data-c="#a63f47"]');
+  const red = document.querySelector('.color-pick[data-c="#e74c3c"]');
   red.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   check('펜 굵기는 더 얇은 단계 포함 4단계다',
     document.querySelectorAll('.size-opt').length === 4 && !!document.querySelector('.size-opt[data-s="1"]'));
@@ -164,7 +164,7 @@ try {
   red.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await wait(60);
   const saved = JSON.parse(window.localStorage.getItem('sdy_draw_cfg') || '{}');
-  check('색 설정이 저장된다', saved.color === '#a63f47');
+  check('색 설정이 저장된다', saved.color === '#e74c3c');
   check('사용자 색 선택기도 원형 color-pick 으로 표시된다', custom.classList.contains('color-pick'));
   check('굵기 설정이 저장된다', saved.size === 4);
 
@@ -258,9 +258,20 @@ try {
   console.error((e.stack || '').split('\n').slice(0, 4).join('\n'));
   process.exitCode = 1;
 } finally {
-  try { child.kill('SIGTERM'); } catch {}
-  await wait(300);
-  try { child.kill('SIGKILL'); } catch {}
-  closeDoms(doms);
+  // 다음 런타임 계약이 즉시 다른 서버를 띄울 수 있다. 종료 신호만 보내고
+  // 기다리지 않으면 아직 포트를 쥔 이전 Fastify가 다음 테스트의 freePort()
+  // 직후에 충돌할 수 있다. 창의 타이머부터 닫고, 서버가 실제로 종료될 때까지
+  // 기다린 뒤에만 이 프로세스를 끝낸다.
+  await closeDoms(doms);
+  if (child && child.exitCode === null) {
+    const exited = new Promise(resolve => child.once('exit', resolve));
+    try { child.kill('SIGTERM'); } catch {}
+    await Promise.race([exited, wait(1500)]);
+    if (child.exitCode === null) {
+      const killed = new Promise(resolve => child.once('exit', resolve));
+      try { child.kill('SIGKILL'); } catch {}
+      await Promise.race([killed, wait(1500)]);
+    }
+  }
   process.exit(process.exitCode || 0);
 }

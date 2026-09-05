@@ -59,7 +59,7 @@ assert.match(js, /_eqAnalyser\.fftSize=1024; _eqAnalyser\.smoothingTimeConstant=
 
 /* ── 런타임 계약 ───────────────────────────────────────────────────────── */
 const fullHtml = html.includes('<script src="sdynotes.js')
-  ? html.replace(/<script src="sdynotes\.js(?:\?[^\"]*)?\"[^>]*><\/script>/, '<script>' + js + '</script>')
+  ? html.replace(/<script src="sdynotes\.js(?:\?[^\"]*)?\"[^>]*><\/script>/, () => '<script>' + js.replace(/<\/script/gi, '<\\/script>') + '</script>')
   : html;
 const vc = new VirtualConsole();
 vc.on('jsdomError', error => {

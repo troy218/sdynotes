@@ -256,7 +256,7 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
 {
   const b = body('commitEditingText');
   check('커밋은 내용을 el.html/폰트크기로 옮긴다',
-    b.includes('el.html=stripWF(c.innerHTML)') && b.includes('el.fontSize=parseInt(c.style.fontSize)||16'));
+    b.includes('el.html=imathCollapse(stripWF(c.innerHTML))') && b.includes('el.fontSize=parseInt(c.style.fontSize)||16'));
   check('빈 상자도 남겨둔다 (위치 표시 유지)', b.includes('빈 상자도 남겨둔다'));
 }
 {
