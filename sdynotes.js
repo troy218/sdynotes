@@ -441,6 +441,57 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     function uid(p){ return p+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
     function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+    /* 14.28.2 · 해돌이 말풍선용 아주 작은 마크다운 렌더러.
+       #/##/### 제목 · **굵게** · *기울임* · \`코드\` · $수식$은 그대로 보존 ·
+       -/1. 목록 · 링크 깡통 무시 · 나머지는 모두 이스케이프.
+       XSS 방지 위해 태그·스크립트는 전부 이스케이프한다. */
+    function mdToHtml(s){
+      s=String(s==null?'':s);
+      // $...$ / $$...$$ 수식은 내부에 마크다운이 들어오지 않게 임시 치환
+      const maths=[];
+      s=s.replace(/\$\$[^$\n]+\$\$|\$[^$\n]+\$/g,(m)=>{const i=maths.length;maths.push(m);return'\u0000'+i+'\u0000';});
+      const lines=s.split('\n'), out=[];
+      let inList=false, listType='', listIndent=0;
+      const closeList=()=>{ if(inList){ out.push(listType==='ol'?'</ol>':'</ul>'); inList=false; } };
+      const inline=(t)=>{
+        t=esc(t);
+        // **굵게**
+        t=t.replace(/\*\*([^*\n]+?)\*\*/g,'<strong>$1</strong>');
+        // *기울임* (단어 경계 안, 공백 뒤)
+        t=t.replace(/(^|[\s(])\*([^*\n]+?)\*(?=[\s).,!?:;]|$)/g,'$1<em>$2</em>');
+        // `코드`
+        t=t.replace(/`([^`\n]+?)`/g,'<code>$1</code>');
+        // 수식 복원
+        t=t.replace(/\u0000(\d+)\u0000/g,(_,i)=>esc(maths[+i]||''));
+        return t;
+      };
+      for(const raw of lines){
+        const line=raw.replace(/\s+$/,'');
+        if(!line.trim()){ closeList(); out.push('<div class="md-blank"></div>'); continue; }
+        // 제목
+        let m=/^(#{1,3})\s+(.*)$/.exec(line);
+        if(m){ closeList();
+          const lv=m[1].length;
+          out.push(`<h${lv} class="md-h md-h${lv}">${inline(m[2])}</h${lv}>`); continue;
+        }
+        // 순서 없는 목록  "- "/"* "/"＋ "/"• "
+        m=/^(\s*)([-*+•])\s+(.*)$/.exec(line);
+        let mo=/^(\s*)(\d+)\.\s+(.*)$/.exec(line);
+        if(m||mo){
+          const indent=(m?m[1]:mo[1]).length, num=m?0:parseInt(mo[2],10);
+          const cont=m?m[3]:mo[3];
+          const type=m?'ul':'ol';
+          if(!inList||listType!==type){ closeList(); out.push(type==='ol'?'<ol>':'<ul>'); inList=true; listType=type; }
+          listIndent=indent;
+          out.push(`<li>${inline(cont)}</li>`);
+          continue;
+        }
+        closeList();
+        out.push(`<p>${inline(line)}</p>`);
+      }
+      closeList();
+      return out.join('\n');
+    }
     function toast(m,ms=2000){ if(!document) return; const t=document.getElementById('toast'); if(!t) return; t.textContent=m;t.classList.add('show');setTimeout(()=>{ if(t.isConnected) t.classList.remove('show'); },ms);}
     // 색을 밝게/어둡게 (p<0 어둡게, p>0 밝게)
     function shade(hex,p){
@@ -7346,8 +7397,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(el.isMath){ w.classList.add('math'); w.title='PDF 수식'; }
         if(el.isBg){ w.classList.add('pdf-bg'); w.title='PDF 원본 배경'; }
         if(el.locked) w.classList.add('el-lock');
-        // ★ 모바일: 더블클릭 대신 한 번 탭으로 이미지 확대 (dblclick은 터치에서 불안정)
-        img.ondblclick=(e)=>{ e.stopPropagation(); document.getElementById('vImg').src=bestSrc; document.getElementById('viewer').style.display='flex'; };
+        // ★ 14.28.1 · 그림을 더블클릭하면 주변이 싹 사라지는 확대 뷰어로 들어가던 동작을 없앤다.
+        //   그림은 한 번 눌러 선택 → 테두리/손잡이가 뜬 상태에서 바로 이동·크기 조절한다.
+        //   (크게 보기는 우클릭 메뉴의 '크게 보기'나 스페이스바 등 별도 동작으로만 열리게 한다.)
         w.appendChild(img);
         // 테두리를 잡으면 이동 (손잡이는 이 위에 그려진다)
         ['top','bottom','left','right'].forEach(side=>{
@@ -8946,15 +8998,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 drag=null;
                 return;
             }
-            // ★ 모바일: 이미 선택된 이미지를 다시 탭하면 확대 보기 (dblclick 대체)
-            if(matchMedia('(pointer:coarse)').matches){
-                const el2=findEl(pageIdx,im.dataset.id);
-                document.getElementById('vImg').src=(el2&&el2.url)||(el2&&el2.localURL)||'';
-                document.getElementById('viewer').style.display='flex';
-                drag=null;
-                return;
-            }
-            selected={type:'image',el:im};              // 2차부터 이동
+            // ★ 14.28.1 · 모바일에서도 '이미 선택된 이미지 다시 탭'으로 전체화면 뷰어가
+            //   뜨면 주변 글/획이 싹 사라진다. 뷰어 자동 진입은 막고, 두 번째 탭부터는
+            //   데스크톱과 똑같이 바로 이동/크기 조절로 들어간다.
+            selected={type:'image',el:im};              // 2차 탭/클릭부터 이동
             drag={el:im,pageIdx,sx:e.clientX,sy:e.clientY,ox:parseFloat(im.style.left)||0,oy:parseFloat(im.style.top)||0,pending:true};
             _beginDragPreview(drag);
             return;
@@ -17235,8 +17282,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 else if(el.type==='image') kind='사진';
                 else if(el.type==='latex'){
                     kind='수식';
+                    if(el.displayMath) fmt+=' display=1';
                     if(el.fontSize&&+el.fontSize!==20) fmt+=' fs='+Math.round(+el.fontSize);
-                    extra=' text='+JSON.stringify(preview(aiEditText(el)));
+                    extra=' latex='+JSON.stringify(preview(aiEditText(el)));
                 }
                 else if(el.type==='stroke'){
                     kind='그림획';
@@ -18200,8 +18248,25 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     p.w=bw; p.h=bh;
                 }else p=place(op.x,op.y,bw,bh,{pi:pi,snap:true,avoid:true});
                 beforeChange(); pg.els=pg.els||[];
+                const body0=text(op.text);
+                let useHtml=html(body0), useFs=fontSize, useFont=font, useAlign=null, useBold=false;
+                const titleMatch=/^(#{1,3})\s+/.exec(body0);
+                if(titleMatch){
+                    const level=titleMatch[1].length;
+                    const stripped=body0.replace(/^#{1,3}\s+/,'');
+                    useHtml='<b>'+esc(stripped).replace(/\n/g,'<br>')+'</b>';
+                    useFs=level===1?30:(level===2?24:20);
+                    useBold=true;
+                    if(level===1) useAlign='center';
+                }else if(pg.els.length===0&&pi===0&&body0.length<=60&&body0.indexOf('\n')<0&&p.y<=AI_MARGIN+AI_GRID+1){
+                    useHtml='<b>'+esc(body0).replace(/\n/g,'<br>')+'</b>';
+                    useFs=28; useBold=true; useAlign='center';
+                }
                 const nel={type:'text',id:uid('t'),x:p.x,y:p.y,w:p.w,h:p.h,
-                    html:html(op.text),fontSize:fontSize,font:font};
+                    html:useHtml,fontSize:useFs,font:useFont};
+                if(useAlign) nel.align=useAlign;
+                if(useBold) nel.fontWeight='700';
+
                 if(styleSrc){
                     if(styleSrc.align) nel.align=styleSrc.align;
                     if(styleSrc.textColor) nel.textColor=styleSrc.textColor;
@@ -18213,7 +18278,42 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 pg.els.push(nel);
                 touched.add(pi); res.applied++; return;
             }
+            // @math — 새 수식(LaTeX) 상자
+            if(cmd==='math'||cmd==='ltx'||cmd==='formula'){
+                const numOkM=v=>finite(v)||aiEditIsAuto(v);
+                if(!finite(op.page)||!Number.isInteger(Number(op.page))
+                   ||!numOkM(op.x)||!numOkM(op.y)||!numOkM(op.w)||!numOkM(op.h)){
+                    bad('새 수식의 페이지나 위치가 올바르지 않아요'); return;
+                }
+                const page=round(op.page),pi=page-1,pg=doc.pages[pi];
+                if(page<1||page>doc.pages.length||!pg||pg.__lazy!=null){
+                    bad('해당 페이지를 찾거나 불러오지 못했어요'); return;
+                }
+                const latex=String(op.latex==null?'':op.latex).trim().slice(0,2000);
+                if(!latex){ bad('LaTeX 수식이 비어 있어요'); return; }
+                const isDisplay=!!op.display||latex.length>40||/\\(int|sum|prod|lim|frac|sqrt|begin|matrix)/.test(latex);
+                const estW=()=>{
+                    const approx=Math.max(60,Math.min(size.w-2*AI_MARGIN,Math.round(10+latex.length*(isDisplay?9:7))));
+                    return isDisplay?Math.min(size.w-2*AI_MARGIN,Math.max(200,approx)):Math.min(size.w/2,approx);
+                };
+                const estH=()=>isDisplay?Math.max(48,Math.min(140,Math.round(40+(latex.match(/\\(frac|sqrt)|\^|_/g)||[]).length*6))):44;
+                const mg=aiEditMargins(pi);
+                const wideM=Math.max(200,Math.min(size.w-2*AI_MARGIN,(mg.width&&mg.width>=200)?mg.width:(size.w-2*AI_MARGIN)));
+                const bw=aiEditIsAuto(op.w)?(isDisplay?wideM:estW()):clamp(round(op.w),40,size.w);
+                const bh=aiEditIsAuto(op.h)?estH():clamp(round(op.h),28,size.h);
+                let p;
+                if(aiEditIsAuto(op.x)||aiEditIsAuto(op.y)){
+                    p=aiEditFreeSpot(pi,bw,bh,aiEditIsAuto(op.y)?0:round(op.y));
+                    p.w=bw; p.h=bh;
+                }else p=place(op.x,op.y,bw,bh,{pi:pi,snap:true,avoid:true});
+                beforeChange(); pg.els=pg.els||[];
+                const nm={type:'latex',id:uid('m'),x:p.x,y:p.y,w:p.w,h:p.h,
+                    latex:latex,fontSize:isDisplay?22:18,displayMath:isDisplay?1:0};
+                pg.els.push(nm);
+                touched.add(pi); res.applied++; return;
+            }
             const found=findAny(op&&op.id);
+
             if(!found){
                 // 표 id로 지우면 표 전체(칸·테두리)를 함께 지운다.
                 if(cmd==='del'){
@@ -18244,6 +18344,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(el.type!=='text'){ bad('글상자만 내용을 바꿀 수 있어요'); return; }
                 beforeChange(); el.html=html(op.text);
                 delete el.fit; delete el.fitDown; delete el.trFS; delete el.trLS; delete el.trFW;
+                touched.add(pi); res.applied++; return;
+            }
+            if(cmd==='mtx'||cmd==='latex'){
+                if(el.type!=='latex'){ bad('@mtx는 수식 요소에만 쓸 수 있어요'); return; }
+                const newLatex=String(op.latex==null?'':op.latex).trim().slice(0,2000);
+                if(!newLatex){ bad('바꿀 LaTeX 수식이 비어 있어요'); return; }
+                beforeChange();
+                el.latex=newLatex;
+                if(op.display==1||op.display===true) el.displayMath=1;
+                else if(op.display===0||op.display===false) el.displayMath=0;
                 touched.add(pi); res.applied++; return;
             }
             if(cmd==='rp'){
@@ -20362,6 +20472,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(kind==='img'){
                 const im=findEl(pageIdx,host.dataset.id);
                 const lk=!(im&&im.freeRatio);
+                items.push({a:'el-view', i:'ri-zoom-in-line', t:'크게 보기'});
                 more.push({a:'el-ratio', i:lk?'ri-lock-line':'ri-lock-unlock-line',
                            t:lk?'비율 고정 해제':'비율 고정하기'});
             }
@@ -20561,6 +20672,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         else if(a==='tbl-del'){ tblDelAll(); }
         else if(a==='el-lock'){ toggleLockEl(); }
         else if(a==='el-sticker'){ makeSticker(); }
+        else if(a==='el-view'){
+            // ★ 14.28.1 · 이미지 크게 보기는 더블클릭/재탭으로 자동 진입하지 않고
+            //   우클릭 메뉴에서 명시적으로 고를 때만 전체화면 뷰어를 연다.
+            const t=ctxTarget&&ctxTarget.el;
+            if(t){
+                const el2=findEl(+t.dataset.pageIdx,t.dataset.id);
+                document.getElementById('vImg').src=(el2&&el2.url)||(el2&&el2.localURL)||'';
+                document.getElementById('viewer').style.display='flex';
+            }
+        }
         else if(a==='el-group'){ groupSelection(); }
         else if(a==='el-ungroup'){ ungroupSelection(); }
             else if(a==='tr-ko'||a==='tr-en'){ translateElement(t.el,a==='tr-ko'?'ko':'en'); }
@@ -29469,7 +29590,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       try{ follow=(body.scrollHeight-body.scrollTop-body.clientHeight)<28; }
       catch(e){ follow=true; }
     }
-    o.textContent=s;
+    // 14.28.2 · 말하는 중(cls truthy)에는 평문으로 빠르게 흘리고,
+    //   다 말한 뒤에만 마크다운(# 제목·**굵게**·목록·`코드`)을 렌더링한다 —
+    //   스트림 중간에 토큰이 잘려 **짝이 안 맞거나 제목이 깜빡이는 걸 막기 위함.
+    if(cls){
+      o.textContent=s;
+    }else{
+      o.innerHTML=mdToHtml(s);
+    }
     o.classList.toggle('busy',!!cls);
     say.hidden=false;
     if(ty) ty.hidden=!(cls&&!s);                          // 첫 글자 전: 생각하는 점 세 개
@@ -29610,7 +29738,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   // '고쳐 달라'는 말인지 — 맞으면 ! 없이도 편집으로 보낸다. 물음 말투(?, 어떻게,
   // 왜, 알려줘…)가 섞여 있으면 질문으로 둔다. 노트 밖이나 편집 준비 전에는 안 쓴다.
-  var EDIT_HINT=/(바꿔|변경해|수정해|고쳐|편집해|옮겨|이동해|이동시켜|지워|삭제해|없애|추가해|넣어|만들어|키워|줄여|크게 해|작게 해|늘려|맨 위|맨 아래|위쪽으로|아래쪽으로|왼쪽으로|오른쪽으로|가운데로|중앙으로|정렬해|맞춰|글꼴|글자 ?크기|글씨 ?크기|굵게|밑줄|취소선|기울임|형광펜|하이라이트|칠해|강조|중요한 (내용|부분|곳)|빨갛게|파랗게|노랗게|초록색으로|표(를| 만들어| 그려| 추가| 지워)|표 ?(전체)? ?(지우|삭제|없애)|정돈|깔끔하|보기 좋|가지런|줄 ?맞춰|겹치(지|는) ?(않|않게|만)|쪽으로 (가|이동|넘어가|보내)|페이지.*이동|붙여넣|클립보드|복사해|오타|맞춤법|띄어쓰기|줄바꿈|제목을|부제를|제목으로|제목만|덧붙여|이어서 써|마지막에 써)/;
+  var EDIT_HINT=/(바꿔|변경해|수정해|고쳐|편집해|옮겨|이동해|이동시켜|지워|삭제해|없애|추가해|넣어|만들어|키워|줄여|크게 해|작게 해|늘려|맨 위|맨 아래|위쪽으로|아래쪽으로|왼쪽으로|오른쪽으로|가운데로|중앙으로|정렬해|맞춰|글꼴|글자 ?크기|글씨 ?크기|굵게|밑줄|취소선|기울임|형광펜|하이라이트|칠해|강조|중요한 (내용|부분|곳)|빨갛게|파랗게|노랗게|초록색으로|표(를| 만들어| 그려| 추가| 지워)|표 ?(전체)? ?(지우|삭제|없애)|정돈|깔끔하|보기 좋|가지런|줄 ?맞춰|겹치(지|는) ?(않|않게|만)|쪽으로 (가|이동|넘어가|보내)|페이지.*이동|붙여넣|클립보드|복사해|오타|맞춤법|띄어쓰기|줄바꿈|제목을|부제를|제목으로|제목만|덧붙여|이어서 써|마지막에 써|수식 (넣어|만들어|추가해|써줘|그려줘)|공식 (넣어|만들어|추가해|써줘)|분수|적분|시그마|루트|근의 ?공식|매스|LaTeX|라텍)/;;
   var QUESTION_HINT=/[?？]|어떻게|어떤|왜|무엇|뭐야|뭔지|뭔가|언제|어디|누가|누구|몇|얼마|인지|인가요|인가\b|알려줘|설명해|뜻이|의미가|방법|차이가|이유가|물어|질문|요약해줘|정리해줘|알려줄래|해석해|번역해/;
   function canEdit(){
     return inNote()&&(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function');
@@ -29694,7 +29822,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     return {text:'',revision:''};
   }
   function editProgress(acc){
-    var count=(String(acc||'').match(/^\s*@(?:mv|sz|bx|tx|rp|ap|st|hl|add|tbl|tsz|tmv|tcell|tdel|del|tidy|goto|newpage|title|clip|clipin|copy)\b/gmi)||[]).length;
+    var count=(String(acc||'').match(/^\s*@(?:mv|sz|bx|tx|rp|ap|st|hl|add|math|ltx|formula|mtx|latex|수식|tbl|tsz|tmv|tcell|tdel|del|tidy|goto|newpage|title|clip|clipin|copy)\b/gmi)||[]).length;
     return count?('문서 편집안을 만드는 중… · 변경 '+count+'개'):'문서를 살펴보는 중…';
   }
   // 클립보드 명령(@clip·@clipin·@copy)이 섞이면 bridge.apply가 Promise를
@@ -29949,6 +30077,35 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         var aw=numAuto(gcut.cuts[3]),ah=numAuto(gcut.cuts[4]),body=decode(inh.rest);
         if(gcut.cuts.length===5&&nums([page,ax,ay,aw,ah])&&body)
           ops.push({cmd:'add',page:page,x:ax,y:ay,w:aw,h:ah,text:body,inherit:inh.inherit});
+        else dropped++;
+        return;
+      }
+      // @math / @ltx / @formula / @수식 — 새 수식(LaTeX) 상자.
+      if(head==='math'||head==='ltx'||head==='formula'||head==='madd'||head==='수식'||head==='수식넣기'||head==='수식추가'){
+        var mcut=cutN(rest,5);
+        var mpage=number(mcut.cuts[0]),mx=numAuto(mcut.cuts[1]),my=numAuto(mcut.cuts[2]);
+        var mw=numAuto(mcut.cuts[3]),mh=numAuto(mcut.cuts[4]),msrc=decode(mcut.rest);
+        var mdisp=0;
+        msrc=String(msrc||'').trim();
+        var mdbl=/^\$\$([\s\S]+)\$\$$/.exec(msrc);
+        if(mdbl){ msrc=mdbl[1].trim(); mdisp=1; }
+        else{ var msng=/^\$([^$\n]+)\$$/.exec(msrc); if(msng){ msrc=msng[1].trim(); mdisp=0; } }
+        if(mcut.cuts.length===5&&nums([mpage,mx,my,mw,mh])&&msrc)
+          ops.push({cmd:'math',page:mpage,x:mx,y:my,w:mw,h:mh,latex:msrc,display:mdisp});
+        else dropped++;
+        return;
+      }
+      // @mtx / @latex / @mtext — 기존 수식의 LaTeX 원문 변경.
+      if(head==='mtx'||head==='latex'||head==='mtext'||head==='수식내용'||head==='수식텍스트'){
+        var mbar=rest.indexOf('|');
+        var mid2=mbar<0?'':rest.slice(0,mbar).trim();
+        var msrc2=decode(mbar<0?'':rest.slice(mbar+1));
+        var mdisp2=0;
+        msrc2=String(msrc2||'').trim();
+        var mdbl2=/^\$\$([\s\S]+)\$\$$/.exec(msrc2);
+        if(mdbl2){ msrc2=mdbl2[1].trim(); mdisp2=1; }
+        else{ var msng2=/^\$([^$\n]+)\$$/.exec(msrc2); if(msng2){ msrc2=msng2[1].trim(); mdisp2=0; } }
+        if(mid2&&msrc2) ops.push({cmd:'mtx',id:mid2,latex:msrc2,display:mdisp2});
         else dropped++;
         return;
       }
