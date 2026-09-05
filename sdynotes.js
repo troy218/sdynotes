@@ -6089,86 +6089,196 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(mt) target.addEventListener(mt,e=>{ if(sdyIgnoreCompatMouse()) return; handler(e); },opts);
     }
 
-    // ============ 페이지 렌더 ============
+    // ============ 페이지 렌더 · 셸 가상화 ============
+    // 500쪽이 넘는 문서를 열어도 한 번에 500장의 종이를 만들지 않는다.
+    //   ① 스테이지 높이만 전체 쪽수로 잡아 스크롤 막대 길이는 정확히 유지한다.
+    //   ② 화면에 걸치는 쪽 ± 여유분만 실제 DOM(page-wrap)으로 올린다 → '셸 창'
+    //   ③ 그 안에서 다시 현재 쪽 ±1 만 요소를 그린다              → '요소 창'
+    // 종이는 absolute + top 계산 배치라서 중간이 비어도 스크롤 위치가 어긋나지
+    // 않는다(스페이서가 필요 없다). 그래서 5쪽이든 5000쪽이든 DOM 비용이 같다.
+    //
+    // 예전 구조(전 쪽 셸 생성 + IntersectionObserver 두 개)는 지웠다.
+    //   · 셸 500개 = 노드 5천 개 + observe 1000회 → 여는 순간 멎었다.
+    //   · IO 는 transform 조상·빠른 점프에서 콜백을 놓쳐 빈 종이 회귀가 잦았다.
+    //   지금은 스크롤 위치에서 창을 '계산'하므로 놓칠 콜백 자체가 없다.
+    const renderedPages=new Set();    // 요소까지 그려 둔 쪽
+    const mountedShells=new Map();    // 화면에 올려 둔 종이 (pageIdx → .page-wrap)
+    const HEAVY_ELS=120;              // 이보다 많으면 나눠 그린다
+    const CHUNK=60;                   // 한 번에 채우는 개수
+    const VIRTUAL_RENDER_RADIUS=1;    // 현재 쪽 + 위아래 한 쪽만 요소 렌더
+    const VIRTUAL_KEEP_RADIUS=2;      // 두 쪽 밖의 무거운 요소 DOM은 즉시 회수
+    const SHELL_PAD=2;                // 화면 위아래로 더 올려 두는 종이 수
+    const SHELL_MAX=24;               // 동시에 올려 두는 종이 상한(극단 축소 방어)
+    const FILL_IDLE=90;               // 스크롤이 멎고 이만큼 뒤에 내용을 채운다
+    const FILL_MAX_GAP=220;           // 스크롤이 이어져도 이 간격마다 한 번은 채운다
+    const _pageRenderTok={};          // 같은 쪽을 다시 그리거나 비우면 이전 청크 루프를 버린다
+    const chunkTimers={};
+    let _virtualTimer=null;
+    let _lastFillAt=0;
+    let _shellWin={first:0,last:-1};
+
+    function pageStep(){ const s=paperSize(); return (s.h+PAGE_GAP)*pageScale; }
+    function pageTopPx(i){ const s=paperSize(); return i*(s.h+PAGE_GAP)*pageScale; }
+
+    // 종이 한 장(셸)을 만든다 — 내용(요소)은 renderPageEls 가 따로 채운다.
+    function buildPageShell(i){
+        const size=paperSize();
+        const wrap=document.createElement('div');
+        wrap.className='page-wrap';
+        wrap.dataset.pageIdx=i;
+
+        const label=document.createElement('div');
+        label.className='page-label';
+        label.innerHTML=`<span>페이지 ${i+1} / ${doc.pages.length}</span>`;
+        const del=document.createElement('button');
+        del.className='page-del';
+        del.innerHTML='<i class="ri-delete-bin-line"></i> 삭제';
+        del.disabled=doc.pages.length<=1;
+        del.onclick=(e)=>{ e.stopPropagation(); deletePage(i); };
+        label.appendChild(del);
+        wrap.appendChild(label);
+
+        const paper=document.createElement('div');
+        paper.className='paper paper-'+doc.paper;
+        paper.dataset.pageIdx=i;
+        paper.style.width=size.w+'px';
+        paper.style.height=size.h+'px';
+        paper.innerHTML=`<div class="layer layer-img"></div>
+                         <svg class="stroke-svg layer-stroke" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none"></svg>
+                         <div class="layer layer-text"></div>
+                         <div class="layer find-layer"></div>
+                         <div class="layer layer-tbl"></div>
+                         <div class="draw-surface"></div>`;
+        // 메모 모드는 pointer 캡처 단계에서 먼저 받는다. 텍스트 상자·이미지
+        // 위에서도 자식 선택/드래그 이벤트에 빼앗기지 않고 그 지점에 붙는다.
+        const onPaperPlacementDown=e=>{
+            if(e.button===2) return;   // 18.8 · 우클릭은 배치/메모 모드를 건드리지 않는다
+            // 요소 배치 모드(그림·수식)도 캡처 단계에서 받는다 — 자식 요소가
+            // 이벤트를 가로채도 누른 바로 그 지점(pageLocal 문서 좌표)에 놓인다.
+            if(placeMode){
+                e.preventDefault(); e.stopPropagation();
+                const p=pageLocal(e,i); commitPlaceAt(i,p.x,p.y); return;
+            }
+            if(pinMode&&!e.target.closest('.pin')){
+                e.preventDefault(); e.stopPropagation();
+                const p=pageLocal(e,i); _pinPointerBlockUntil=Date.now()+500;
+                addPin(i,p.x,p.y); return;
+            }
+            if(textToolActive){
+                e.preventDefault(); e.stopPropagation();
+                const dim=textBoxDefaultSize();
+                const p=pageLocal(e,i), c=clampEl(p.x-dim.w/2,p.y-dim.h/2,dim.w,dim.h);
+                _textPointerBlockUntil=Date.now()+500;
+                addTextBox(i,c.x,c.y,dim); setTextTool(false);
+            }
+        };
+        sdyAddPointerCompat(paper,'pointerdown',onPaperPlacementDown,true);
+        // ★ pointerdown 로 변경 — 터치 장치에서 300ms 지연 제거
+        sdyAddPointerCompat(paper,'pointerdown',e=>onPaperDown(e,i));
+        wrap.appendChild(paper);
+
+        const on=(i===curPageIdx&&doc.pages.length>1);
+        wrap.classList.toggle('focused',on);
+        paper.classList.toggle('focused',on);
+        paper.setAttribute('aria-current',on?'page':'false');
+        // 새로 올라온 종이도 지금 켜져 있는 모드를 그대로 물려받는다.
+        // (펜/형광펜 모드로 스크롤하면 새 쪽에는 그리기 판이 없던 회귀 방지)
+        try{ if(penActive) paper.classList.add('drawing'); }catch(e){}
+        return wrap;
+    }
+
+    // 배치는 계산값 그대로 — 앞쪽 쪽이 DOM 에 없어도 자리가 밀리지 않는다.
+    function positionPageWrap(wrap,i){
+        const size=paperSize();
+        wrap.style.transform=`scale(${pageScale})`;
+        wrap.style.left='0px';
+        wrap.style.top=pageTopPx(i)+'px';
+        wrap.style.width=size.w+'px';
+        wrap.style.height=size.h+'px';
+    }
+
+    // 이 쪽의 종이를 DOM 에 올리고 .paper 를 돌려준다 (이미 있으면 그대로).
+    function ensurePageShell(i){
+        if(!doc||!doc.pages||!doc.pages[i]) return null;
+        const stage=document.getElementById('pagesStage');
+        if(!stage) return null;
+        let wrap=mountedShells.get(i);
+        if(wrap&&wrap.isConnected) return wrap.querySelector('.paper');
+        wrap=buildPageShell(i);
+        mountedShells.set(i,wrap);
+        positionPageWrap(wrap,i);
+        stage.appendChild(wrap);
+        return wrap.querySelector('.paper');
+    }
+
+    // 종이를 통째로 내린다 (문서 데이터 doc.pages 는 절대 건드리지 않는다).
+    function unmountPageShell(i){
+        const wrap=mountedShells.get(i);
+        if(!wrap) return false;
+        if(!canUnloadPage(i)) return false;
+        _pageRenderTok[i]=(_pageRenderTok[i]||0)+1;   // 예약된 청크 렌더까지 취소
+        clearTimeout(chunkTimers[i]); delete chunkTimers[i];
+        renderedPages.delete(i);
+        mountedShells.delete(i);
+        try{ wrap.remove(); }catch(e){}
+        return true;
+    }
+
+    // 지금 화면에 걸쳐 있는 쪽 번호 범위 (스크롤 위치로 '계산'한다)
+    function visiblePageRange(){
+        const n=(doc&&doc.pages&&doc.pages.length)||0;
+        const cur=Math.max(0,Math.min(n-1,curPageIdx|0));
+        if(n<=0) return {first:0,last:-1};
+        const body=document.getElementById('editorBody');
+        const step=pageStep();
+        // 레이아웃이 아직 0 인 순간(에디터 슬라이드인·테스트 DOM)에는 현재 쪽 기준.
+        if(!body||!(step>0)||!(body.clientHeight>0)) return {first:cur,last:cur};
+        const top=Math.max(0,body.scrollTop||0), bottom=top+body.clientHeight;
+        return {
+            first:Math.max(0,Math.min(n-1,Math.floor(top/step))),
+            last :Math.max(0,Math.min(n-1,Math.floor(bottom/step)))
+        };
+    }
+
+    // 셸 창을 지금 위치에 맞춘다 — 스크롤 프레임마다 불러도 싼 연산이다.
+    function syncPageShells(){
+        if(!doc||!doc.pages||!doc.pages.length) return _shellWin;
+        const n=doc.pages.length, cur=Math.max(0,Math.min(n-1,curPageIdx|0));
+        const vis=visiblePageRange();
+        let first=Math.max(0,Math.min(vis.first,cur)-SHELL_PAD);
+        let last =Math.min(n-1,Math.max(vis.last ,cur)+SHELL_PAD);
+        if(last-first+1>SHELL_MAX){          // 극단 축소·먼 점프 직후 방어
+            first=Math.max(0,cur-(SHELL_MAX>>1));
+            last =Math.min(n-1,first+SHELL_MAX-1);
+            first=Math.max(0,last-SHELL_MAX+1);
+        }
+        if(first!==_shellWin.first||last!==_shellWin.last){
+            mountedShells.forEach((w,i)=>{ if(i<first||i>last) unmountPageShell(i); });
+        }
+        for(let i=first;i<=last;i++) ensurePageShell(i);
+        _shellWin={first,last};
+        return _shellWin;
+    }
+
     function renderPages(){
         const stage=document.getElementById('pagesStage');
-        try{ pageObserver.disconnect(); }catch(e){}
-        try{ pageUnloader.disconnect(); }catch(e){}
-        Object.keys(chunkTimers).forEach(k=>clearTimeout(chunkTimers[k]));
+        if(!stage) return;
+        Object.keys(chunkTimers).forEach(k=>{ clearTimeout(chunkTimers[k]); delete chunkTimers[k]; });
         clearTimeout(_virtualTimer); _virtualTimer=null;
         renderedPages.clear();
+        mountedShells.clear();
+        _shellWin={first:0,last:-1};
         // 14.12 · 노트 전환 시 기존 DOM과 비동기 콜백이 새 노트에 영향을 주지 못하게
-        // renderVersion 은 콜백에서 확인하여旧的 콜백이 새 페이지를 건드리는 것을 방지한다.
+        // renderVersion 은 콜백에서 확인하여 옛 콜백이 새 페이지를 건드리는 것을 막는다.
         // 14.14 · 반드시 숫자로 초기화한다. 예전엔 window._renderVersion 이 undefined 인
-        //   첫 오픈에서 ++undefined → NaN 이 되고, NaN !== NaN 이라 renderPageEls /
-        //   IntersectionObserver / ensureVisible 가 전부 즉시 return 해 **빈 종이만**
-        //   보였다. (홈 미리보기는 이 가드를 안 써서 정상 — 제목·텍스트상자 껍데기만
-        //   있고 내용물이 없는 증상의 직접 원인)
+        //   첫 오픈에서 ++undefined → NaN 이 되고, NaN !== NaN 이라 renderPageEls 가
+        //   전부 즉시 return 해 **빈 종이만** 보였다.
         const rv=(window._renderVersion|0)+1;
         window._renderVersion=rv;
         // doc 에도 버전을 기록하여 renderPageEls 에서 doc===_d 외에 추가로 검증
         if(doc) doc.__rv=rv;
         stage.innerHTML='';
-        const size=paperSize();
-        doc.pages.forEach((pg,i)=>{
-            const wrap=document.createElement('div');
-            wrap.className='page-wrap';
-            wrap.dataset.pageIdx=i;
-
-            const label=document.createElement('div');
-            label.className='page-label';
-            label.innerHTML=`<span>페이지 ${i+1} / ${doc.pages.length}</span>`;
-            const del=document.createElement('button');
-            del.className='page-del';
-            del.innerHTML='<i class="ri-delete-bin-line"></i> 삭제';
-            del.disabled=doc.pages.length<=1;
-            del.onclick=(e)=>{ e.stopPropagation(); deletePage(i); };
-            label.appendChild(del);
-            wrap.appendChild(label);
-
-            const paper=document.createElement('div');
-            paper.className='paper paper-'+doc.paper;
-            paper.dataset.pageIdx=i;
-            paper.style.width=size.w+'px';
-            paper.style.height=size.h+'px';
-            paper.innerHTML=`<div class="layer layer-img"></div>
-                             <svg class="stroke-svg layer-stroke" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none"></svg>
-                             <div class="layer layer-text"></div>
-                             <div class="layer find-layer"></div>
-                             <div class="layer layer-tbl"></div>
-                             <div class="draw-surface"></div>`;
-            // 메모 모드는 pointer 캡처 단계에서 먼저 받는다. 텍스트 상자·이미지
-            // 위에서도 자식 선택/드래그 이벤트에 빼앗기지 않고 그 지점에 붙는다.
-            const onPaperPlacementDown=e=>{
-                if(e.button===2) return;   // 18.8 · 우클릭은 배치/메모 모드를 건드리지 않는다
-                // 요소 배치 모드(그림·수식)도 캡처 단계에서 받는다 — 자식 요소가
-                // 이벤트를 가로채도 누른 바로 그 지점(pageLocal 문서 좌표)에 놓인다.
-                if(placeMode){
-                    e.preventDefault(); e.stopPropagation();
-                    const p=pageLocal(e,i); commitPlaceAt(i,p.x,p.y); return;
-                }
-                if(pinMode&&!e.target.closest('.pin')){
-                    e.preventDefault(); e.stopPropagation();
-                    const p=pageLocal(e,i); _pinPointerBlockUntil=Date.now()+500;
-                    addPin(i,p.x,p.y); return;
-                }
-                if(textToolActive){
-                    e.preventDefault(); e.stopPropagation();
-                    const dim=textBoxDefaultSize();
-                    const p=pageLocal(e,i), c=clampEl(p.x-dim.w/2,p.y-dim.h/2,dim.w,dim.h);
-                    _textPointerBlockUntil=Date.now()+500;
-                    addTextBox(i,c.x,c.y,dim); setTextTool(false);
-                }
-            };
-            sdyAddPointerCompat(paper,'pointerdown',onPaperPlacementDown,true);
-            // ★ pointerdown 로 변경 — 터치 장치에서 300ms 지연 제거
-            sdyAddPointerCompat(paper,'pointerdown',e=>onPaperDown(e,i));
-            wrap.appendChild(paper);
-            stage.appendChild(wrap);
-            // 내용은 화면에 들어올 때 렌더 (가상화) — 페이지가 많아도 가벼움
-            pageObserver.observe(paper);
-            pageUnloader.observe(paper);
-        });
+        if(!doc||!doc.pages||!doc.pages.length) return;
 
         const zone=document.createElement('div');
         zone.className='add-page-zone';
@@ -6177,73 +6287,43 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         zone.onclick=addPage;
         stage.appendChild(zone);
 
+        layoutPages();        // 전체 쪽수만큼 스테이지 높이를 먼저 잡는다(스크롤 길이 유지)
+        syncPageShells();     // 화면에 걸치는 종이만 올린다
         updatePageInfo();
-        layoutPages();
         try{ applyTint(); renderAllTblDivs(); if(sidePanel) renderPanel(); }catch(e){}
         try{ if(wfOn) setTimeout(()=>{ wfAnalyze(); wfPaint(); },30); }catch(e){}
-        // 14.12 · 모든 Observer 콜백이 새로운 DOM에만 반응하도록 보장
-        try{ pageObserver.disconnect(); }catch(e){}
-        try{ pageUnloader.disconnect(); }catch(e){}
-        stage.querySelectorAll('.paper').forEach(p=>{
-            pageObserver.observe(p);
-            pageUnloader.observe(p);
-        });
-        // 14.14 · 첫 페이지·현재 쪽은 Observer 콜백을 기다리지 않고 바로 그린다.
-        //   에디터가 translateX 슬라이드인 중이거나, IO root(#editorBody) 레이아웃이
-        //   아직 0 이거나, 일부 브라우저가 transform 조상 아래 intersection 을
-        //   놓치면 isIntersecting 이 영영 안 와 **빈 종이 + 제목/텍스트상자 껍데기만**
-        //   보이는 회귀가 난다. 홈 미리보기(renderPageStatic)는 IO 를 안 써서 정상.
+        // 14.14 · 현재 쪽은 스크롤 콜백을 기다리지 않고 바로 그린다.
         try{ ensureVisiblePagesRendered(); }catch(e){}
     }
 
-    // 화면에 바로 보여야 하는 쪽을 IO 와 무관하게 강제 렌더
+    // 화면에 바로 보여야 하는 쪽을 강제 렌더
     function ensureVisiblePagesRendered(){
         if(!doc||!doc.pages||!doc.pages.length) return;
         const i=Math.max(0,Math.min(doc.pages.length-1,curPageIdx|0));
-        // 이미 그렸다고 표시됐지만 DOM이 빈 경우(IO/노트 전환 경쟁)를 현재 쪽만 복구한다.
+        // 이미 그렸다고 표시됐지만 DOM이 빈 경우(노트 전환 경쟁)를 현재 쪽만 복구한다.
         try{
             if(renderedPages.has(i)){
                 const paper=paperAt(i),txt=paper&&paper.querySelector('.layer-text');
                 const els=((doc.pages[i]||{}).els)||[];
-                if(els.length&&txt&&!txt.childElementCount) renderedPages.delete(i);
+                if(!paper||(els.length&&txt&&!txt.childElementCount)) renderedPages.delete(i);
             }
         }catch(e){}
-        // 뒷페이지를 볼 때 1페이지까지 계속 붙잡지 않는다.
         maintainPageWindow(i,true);
     }
 
     // ===== 유동 로딩 =====
-    // ① 화면 근처 페이지만 그린다.
-    // ② 멀어진 페이지는 내용을 비워 메모리를 돌려준다 (스크롤로 돌아오면 다시 그림).
-    // ③ 요소가 아주 많은 페이지는 한 번에 다 그리지 않고 나눠서 채운다.
-    const renderedPages=new Set();
-    const HEAVY_ELS=120;              // 이보다 많으면 나눠 그린다
-    const CHUNK=60;                   // 한 번에 채우는 개수
-    const VIRTUAL_RENDER_RADIUS=1;    // 현재 쪽 + 위아래 한 쪽만 선렌더
-    const VIRTUAL_KEEP_RADIUS=2;      // 두 쪽 밖의 무거운 DOM은 즉시 회수
-    const _pageRenderTok={};          // 같은 쪽을 다시 그리거나 비우면 이전 청크 루프를 버린다
-    const chunkTimers={};
-    let _virtualTimer=null;
-
-    const pageObserver=new IntersectionObserver((entries)=>{
-        entries.forEach(en=>{
-            // 14.12 · 노트가 전환되면旧的 콜백은 무시
-            if(window._renderVersion !== (doc&&doc.__rv)) return;
-            const i=+en.target.dataset.pageIdx;
-            if(en.isIntersecting&&Math.abs(i-(curPageIdx|0))<=VIRTUAL_KEEP_RADIUS){
-                if(!renderedPages.has(i)) renderPageEls(i);
-            }
-        });
-    },{root:document.getElementById('editorBody'), rootMargin:'700px 0px'});
-
+    // ① 화면 근처 쪽만 종이를 올리고, ② 그중 현재 쪽 근처만 요소를 그리고,
+    // ③ 요소가 아주 많은 쪽은 한 번에 다 그리지 않고 나눠서 채운다.
     function canUnloadPage(i){
-        if(i===curPageIdx||findOpen||wfOn) return false;
+        if(i===(curPageIdx|0)) return false;
         const paper=paperAt(i);
-        if(!paper) return false;
+        if(!paper) return true;                       // 이미 화면에 없다
         if(paper.querySelector('.tb.edit,.sel,.msel')) return false;
         if(activeTbl&&activeTbl.pageIdx===i) return false;
+        try{ if(drawing&&drawPageIdx===i) return false; }catch(e){}
         return true;
     }
+    // 요소만 비운다 (종이는 그대로 — 찾기·형광 띠는 다시 그릴 때 복원된다)
     function unloadPage(i){
         if(Math.abs(i-(curPageIdx|0))<=VIRTUAL_KEEP_RADIUS) return false;
         if(!renderedPages.has(i)||!canUnloadPage(i)) return false;
@@ -6255,26 +6335,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return true;
     }
 
-    // IO는 보조 수단이다. 빠른 점프·transform 환경에서는 아래 고정 렌더 창이
-    // 실제 상한을 책임지고, IO는 천천히 스크롤할 때 미리 그려 주기만 한다.
-    const pageUnloader=new IntersectionObserver((entries)=>{
-        entries.forEach(en=>{
-            if(window._renderVersion !== (doc&&doc.__rv)||en.isIntersecting) return;
-            unloadPage(+en.target.dataset.pageIdx);
-        });
-    },{root:document.getElementById('editorBody'), rootMargin:'1800px 0px'});
-
+    // 셸 창은 즉시, 요소 창은 스크롤이 멎은 뒤에 맞춘다.
+    // (관성 스크롤 도중에 무거운 쪽을 그리면 그게 곧 렉이다)
     function maintainPageWindow(center,immediate){
         if(!doc||!doc.pages||!doc.pages.length) return;
         center=Math.max(0,Math.min(doc.pages.length-1,center|0));
-        // 먼저 먼 DOM과 진행 중 청크를 회수해 뒷페이지 렌더에 메모리·프레임을 양보한다.
-        Array.from(renderedPages).forEach(i=>{
-            if(Math.abs(i-center)>VIRTUAL_KEEP_RADIUS) unloadPage(i);
-        });
-        if(!renderedPages.has(center)) try{ renderPageEls(center); }catch(e){}
-        clearTimeout(_virtualTimer);
-        const nearby=()=>{
-            if(!doc||center!==(curPageIdx|0)) return;
+        syncPageShells();
+        clearTimeout(_virtualTimer); _virtualTimer=null;
+        const fill=()=>{
+            _lastFillAt=Date.now();
+            if(!doc||!doc.pages||!doc.pages[center]) return;
+            // 먼저 먼 요소 DOM과 진행 중 청크를 회수해 메모리·프레임을 양보한다.
+            Array.from(renderedPages).forEach(i=>{
+                if(Math.abs(i-center)>VIRTUAL_KEEP_RADIUS) unloadPage(i);
+            });
+            if(!renderedPages.has(center)) try{ renderPageEls(center); }catch(e){}
             for(let d=1;d<=VIRTUAL_RENDER_RADIUS;d++){
                 [center-d,center+d].forEach(i=>{
                     if(i>=0&&i<doc.pages.length&&!renderedPages.has(i))
@@ -6282,8 +6357,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 });
             }
         };
-        if(immediate) nearby();
-        else _virtualTimer=setTimeout(nearby,32);
+        if(immediate) fill();
+        // 계속 스크롤하는 동안에도 FILL_MAX_GAP 마다 한 번은 채운다 —
+        // 디바운스만 걸면 '손을 뗄 때까지 백지'가 되어 더 답답하다.
+        else if(Date.now()-_lastFillAt>=FILL_MAX_GAP) fill();
+        else _virtualTimer=setTimeout(()=>{ _virtualTimer=null; if(center===(curPageIdx|0)) fill(); },FILL_IDLE);
     }
 
     function clearPageEls(idx){
@@ -6315,6 +6393,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const u=String((el&&el.url)||'');
         return !!(u && !/^blob:/i.test(u));
     }
+    const _sanDone=new WeakSet();   // 이미 중복 정리를 끝낸 els 배열
     function sanitizePageEls(els){
         if(!els||!els.length) return els||[];
         const seen=new Set();
@@ -6371,9 +6450,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         svg.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
         clearTimeout(chunkTimers[idx]); delete chunkTimers[idx];
 
-        let els=sanitizePageEls(doc.pages[idx].els||[]);
-        if(els!==doc.pages[idx].els && els.length!==(doc.pages[idx].els||[]).length)
-            doc.pages[idx].els=els;
+        // 가져오기 중복 제거는 겹침 넓이를 서로 비교하는 O(n^2) 작업이다.
+        // 스크롤로 같은 쪽을 다시 그릴 때마다 되풀이하면 그게 곧 렉이므로
+        // '이 배열은 이미 정리했다'를 WeakSet 으로 기억해 한 번만 돌린다.
+        let els=doc.pages[idx].els||[];
+        if(!_sanDone.has(els)){
+            const cleaned=sanitizePageEls(els);
+            if(cleaned!==els && cleaned.length!==els.length) doc.pages[idx].els=cleaned;
+            els=doc.pages[idx].els||[];
+            _sanDone.add(els);
+        }
         const makeBags=()=>({img:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()});
         const flushBags=b=>{
             if(_pageRenderTok[idx]!==tok) return;
@@ -6399,6 +6485,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             try{ renderTblDivs(idx); }catch(e){}
             try{ renderPins(idx); }catch(e){}
             try{ if(findOpen) paintFindHits(); }catch(e){}
+            // 가상화로 내려갔다 돌아온 쪽도 단어 분석 색칠을 되찾는다
+            try{ if(wfOn) wfPaintPage(idx); }catch(e){}
             try{
                 if((doc.pages[idx].els||[]).length===0&&doc.__ref){
                     doc.__retry=doc.__retry||{};
@@ -6455,13 +6543,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         stage.style.setProperty('--pz',Math.max(.2,pageScale).toFixed(3));
         stage.style.setProperty('--pin-inv',(1/Math.max(.2,pageScale)).toFixed(4));
 
-        stage.querySelectorAll('.page-wrap').forEach((w,i)=>{
-            w.style.transform=`scale(${pageScale})`;
-            w.style.left='0px';
-            w.style.top=(i*(size.h+PAGE_GAP)*pageScale)+'px';
-            w.style.width=size.w+'px';
-            w.style.height=size.h+'px';
-        });
+        // 올라와 있는 종이만 다시 놓는다 (자리는 쪽 번호로 계산 — 배열 순서가 아니다)
+        mountedShells.forEach((w,i)=>positionPageWrap(w,i));
+        // 배율이 바뀌면 화면에 걸치는 쪽 수도 달라진다 → 셸 창을 다시 맞춘다
+        try{ syncPageShells(); }catch(e){}
         const zone=document.getElementById('addPageZone');
         if(zone){
             zone.style.top=(doc.pages.length*(size.h+PAGE_GAP)*pageScale)+'px';
@@ -6538,9 +6623,24 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     function editorPapers(){ return Array.from(document.querySelectorAll('#pagesStage .paper')); }
     // 14.12 · paperAt 은 DOM 에서 찾되, 부모가 없으면 (이미 제거됨) null 반환
+    // 19.x · 셸 가상화 후에는 '창 밖의 쪽'도 정상적으로 null 이다 — 부르는 쪽은
+    //        반드시 null 을 견뎌야 한다. paperQ 는 그 방어를 한 줄로 해 준다.
     function paperAt(i){
+        const wrap=mountedShells.get(+i);
+        if(wrap&&wrap.isConnected){
+            const p=wrap.querySelector('.paper');
+            if(p) return p;
+        }
+        // 창 안의 종이는 전부 mountedShells 에 있다 → 없으면 DOM 을 뒤질 필요도 없다.
+        // (500쪽 문서에서 '전 쪽 훑기' 코드가 querySelector 를 500번 때리던 비용 제거)
+        if(mountedShells.size) return null;
         const el=document.querySelector(`#pagesStage .paper[data-page-idx="${i}"]`);
         return (el && el.parentNode) ? el : null;
+    }
+    // 그 쪽 종이 안에서 찾기 (종이가 화면에 없으면 null)
+    function paperQ(i,sel){
+        const p=paperAt(i);
+        return p?p.querySelector(sel):null;
     }
 
     function updatePageInfo(){
@@ -6574,12 +6674,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             fl.title=n?`즐겨찾는 페이지 ${n}개`:'즐겨찾는 페이지';
             fl.style.color=n?'#f59e0b':'';
         }
-        editorPapers().forEach((p,i)=>{
-            const on=i===curPageIdx&&doc.pages.length>1;
-            p.classList.toggle('focused',on);
-            const wrap=p.closest('.page-wrap'); if(wrap) wrap.classList.toggle('focused',on);
-            p.setAttribute('aria-current',on?'page':'false');
+        // 가상화 후 DOM 에는 창 안의 종이만 있다 → 배열 순서가 아니라 쪽 번호로 판정한다
+        mountedShells.forEach((wrap,i)=>{
+            const on=(i===(curPageIdx|0))&&doc.pages.length>1;
+            wrap.classList.toggle('focused',on);
+            const p=wrap.querySelector('.paper');
+            if(p){ p.classList.toggle('focused',on); p.setAttribute('aria-current',on?'page':'false'); }
         });
+        // 쪽수가 바뀌면 라벨('페이지 3 / 500')과 삭제 버튼 상태도 같이 갱신한다
+        mountedShells.forEach((wrap,i)=>{
+            const lb=wrap.querySelector('.page-label>span');
+            if(lb) lb.textContent=`페이지 ${i+1} / ${doc.pages.length}`;
+            const del=wrap.querySelector('.page-del');
+            if(del) del.disabled=doc.pages.length<=1;
+        });
+    }
+    // 쪽 번호로 종이를 화면에 올리고 스크롤로 데려간다 (가상화된 먼 쪽도 안전)
+    function scrollPageIntoView(pi,behavior){
+        if(!doc||!doc.pages||!doc.pages[pi]) return;
+        curPageIdx=pi; updatePageInfo();
+        maintainPageWindow(pi,true);
+        const body=document.getElementById('editorBody');
+        const w=mountedShells.get(pi);
+        if(w&&typeof w.scrollIntoView==='function'){ w.scrollIntoView({behavior:behavior||'auto',block:'center'}); return; }
+        _scrollBodyTo(body,pageTopPx(pi),behavior||'auto');
     }
 
     function addPage(){
@@ -6591,8 +6709,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const _d=doc, _pi=curPageIdx;
         setTimeout(()=>{
             if(doc!==_d||!curNB) return;
-            const w=document.querySelectorAll('.page-wrap')[_pi];
-            if(w && typeof w.scrollIntoView==='function') w.scrollIntoView({behavior:'smooth',block:'center'});
+            scrollPageIntoView(_pi,'smooth');
         },60);
         toast(`페이지 ${doc.pages.length} 추가됨`,1200);
     }
@@ -6688,7 +6805,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const idx=mostVisiblePageIndex(body.scrollTop,body.clientHeight,doc.pages.length,
             size.h,PAGE_GAP,pageScale,curPageIdx);
         if(idx!==curPageIdx){ curPageIdx=idx; updatePageInfo(); }
-        // Observer가 transform/빠른 스크롤을 놓쳐도 현재 쪽을 즉시 그리고 먼 DOM을 회수한다.
+        // 종이(셸)는 매 프레임 값싸게 맞추고, 무거운 내용은 스크롤이 멎은 뒤에 채운다.
+        syncPageShells();
         maintainPageWindow(idx,false);
         scheduleHiBg();                                    // 보는 쪽을 점점 고화질로
         try{ positionTblBar(); }catch(e){}
@@ -6951,7 +7069,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const b=elBBox(el,pi);
             const inside = b.x>=x && b.y>=y && (b.x+b.w)<=(x+w) && (b.y+b.h)<=(y+h);
             if(!inside) return;
-            const node=paperAt(pi).querySelector(`[data-id="${el.id}"]`);
+            const node=paperQ(pi,`[data-id="${el.id}"]`);
             if(node){ node.classList.add('msel'); multiSel.push({id:el.id,pageIdx:pi,node}); }
         });
     }
@@ -8169,7 +8287,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const out=[];
         (page.els||[]).forEach(el=>{
             if(el.type!=='text') return;
-            const node=paperAt(pi).querySelector('.tb[data-id="'+el.id+'"]');
+            const node=paperQ(pi,'.tb[data-id="'+el.id+'"]');
             out.push({id:el.id, pi, el, node, x:el.x||0, y:el.y||0, w:el.w||0, h:el.h||0});
         });
         return out;
@@ -8185,7 +8303,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     // 특정 상자를 '선택' 상태로 만든다
     function selectTextBoxById(pi,id){
-        const node=paperAt(pi).querySelector('.tb[data-id="'+id+'"]');
+        const node=paperQ(pi,'.tb[data-id="'+id+'"]');
         if(!node) return false;
         deselectAll(true); clearMulti();
         node.classList.add('sel');
@@ -8383,7 +8501,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     function pageLocal(e,pageIdx){
-        const paper=paperAt(pageIdx);
+        const paper=paperAt(pageIdx)||ensurePageShell(pageIdx);
+        if(!paper) return {x:0,y:0};
         const r=paper.getBoundingClientRect();
         const s=paperSize();
         // 실제 화면 사각형을 기준으로 환산한다. 임시 핀치 확대나 브라우저 배율이
@@ -8871,7 +8990,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     const cell=tblCellAt(pageIdx,e);
                     if(cell){
                         e.preventDefault();
-                        const node=paperAt(pageIdx).querySelector(`.tb[data-id="${cell.id}"]`);
+                        const node=paperQ(pageIdx,`.tb[data-id="${cell.id}"]`);
                         if(node){
                             drag=null;
                             if(e.detail>=2){
@@ -9252,7 +9371,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const el={type:'text',id:uid('t'),x,y,w:sz.w,h:sz.h,html:'',fontSize:curFontSize,font:curFont};
         doc.pages[pageIdx].els.push(el);
         const node=buildTextEl(el,pageIdx);
-        paperAt(pageIdx).querySelector('.layer-text').appendChild(node);
+        // 가상화로 종이가 내려가 있으면 먼저 올린다 (창 밖 쪽에 글상자를 넣는 경로 방어)
+        const _txtL=(ensurePageShell(pageIdx)||{querySelector:()=>null}).querySelector('.layer-text');
+        if(!_txtL) return null;
+        _txtL.appendChild(node);
         enterEdit(node,false);
         // 새 상자에서도 툴바가 '지금 입력될 글꼴·크기'를 그대로 보여 준다
         try{ syncToolbarFromCaret(); syncCurSel(); }catch(e){}
@@ -9485,7 +9607,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
         paintTblCellSelection();
     }
-    function renderAllTblDivs(){ if(doc) doc.pages.forEach((p,i)=>{ if(renderedPages.has(i)) renderTblDivs(i); }); }
+    // 화면에 요소를 그려 둔 쪽만 다시 그린다 (500쪽을 훑지 않는다)
+    function renderAllTblDivs(){ if(doc) Array.from(renderedPages).forEach(i=>{ try{ renderTblDivs(i); }catch(e){} }); }
 
     // 표 가까이(22px 이내) 가면 손잡이 · ＋ 버튼이 나타난다
     const TBL_NEAR=22;
@@ -9520,7 +9643,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const t=findTbl(pi,tid); if(!t) return;
         // 손잡이는 칸 글자 위를 살짝 덮는다. 눌린 지점이 경계선에서
         // 얼마나 떨어졌는지로 '크기 조절'과 '글자 선택'을 가른다.
-        const paperR=paperAt(pi).getBoundingClientRect(),sc=pageScreenScale(pi);
+        const _paper=paperAt(pi); if(!_paper) return;
+        const paperR=_paper.getBoundingClientRect(),sc=pageScreenScale(pi);
         const edge = (kind==='col')
             ? Math.abs(e.clientX-(paperR.left+colX(t,idx+1)*sc.x))
             : Math.abs(e.clientY-(paperR.top +rowY(t,idx+1)*sc.y));
@@ -9914,10 +10038,20 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.getElementById('findCount').textContent='0';
         document.querySelectorAll('.find-layer').forEach(l=>l.innerHTML='');
     }
+    // 글상자의 순수 글자. 찾기·개요·통계·단어분석이 같은 요소를 몇 번씩 묻기
+    // 때문에 500쪽 문서에서는 이 HTML 파싱이 통째로 렉이 된다 → html 이 그대로면
+    // 지난 결과를 돌려준다(요소가 사라지면 WeakMap 이 알아서 비운다).
+    const _plainCache=new WeakMap();
     function elPlainText(el){
-        if(el&&el.type==='latex') return el.latex||'';
-        const d=document.createElement('div'); d.innerHTML=el.html||'';
-        return d.textContent||'';
+        if(!el) return '';
+        if(el.type==='latex') return el.latex||'';
+        const html=el.html||'';
+        const hit=_plainCache.get(el);
+        if(hit&&hit.html===html) return hit.text;
+        const d=document.createElement('div'); d.innerHTML=html;
+        const text=d.textContent||'';
+        try{ _plainCache.set(el,{html,text}); }catch(e){}
+        return text;
     }
     function runFind(q){
         findQ=(q||'');
@@ -10003,6 +10137,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.querySelectorAll('.find-layer').forEach(l=>l.innerHTML='');
         if(!findOpen||!findHits.length) return;
         findHits.forEach((h,i)=>{
+            // 화면에 올라와 있는 쪽만 칠한다 (가상화된 쪽은 다시 그릴 때 복원된다)
+            if(!mountedShells.has(h.pageIdx)) return;
             const paper=paperAt(h.pageIdx); if(!paper) return;
             const layer=paper.querySelector('.find-layer'); if(!layer) return;
             hitRects(h).forEach(r=>{
@@ -12337,7 +12473,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                   fontSize:curFontSize||16,font:curFont};
         doc.pages[pi].els.push(el);
         renderPageEls(pi); saveDoc();
-        const node=paperAt(pi).querySelector(`.tb[data-id="${el.id}"]`);
+        const node=paperQ(pi,`.tb[data-id="${el.id}"]`);
         if(node){
             enterEdit(node,false);
             const c=node.querySelector('.tb-content');
@@ -12422,7 +12558,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             layer.appendChild(d);
         });
     }
-    function renderAllPins(){ if(doc) doc.pages.forEach((p,i)=>{ if(paperAt(i)) renderPins(i); }); }
+    function renderAllPins(){ if(doc) Array.from(mountedShells.keys()).forEach(i=>{ try{ renderPins(i); }catch(e){} }); }
     function openPin(pi,id){
         const n=pageNotes(pi).find(x=>x.id===id); if(!n) return;
         curPin={pi,id};
@@ -12732,18 +12868,23 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         maintainPageWindow(curPageIdx,true);
     }
     // 화면의 글자에만 색을 입힌다 (문서 데이터는 절대 건드리지 않음)
+    function wfPaintPage(pi){
+        if(!doc||!wfMap||!wfOn) return;
+        const pg=doc.pages[pi]; if(!pg) return;
+        const paper=paperAt(pi); if(!paper) return;
+        const max=wfStats.length?wfStats[0].n:1;
+        (pg.els||[]).forEach(el=>{
+            if(el.type!=='text') return;
+            const node=paper.querySelector(`.tb[data-id="${el.id}"] .tb-content`);
+            if(!node) return;
+            wfPaintNode(node,max);
+        });
+    }
     function wfPaint(){
         if(!doc||!wfMap) return;
-        const max=wfStats.length?wfStats[0].n:1;
-        doc.pages.forEach((pg,pi)=>{
-            const paper=paperAt(pi); if(!paper) return;
-            (pg.els||[]).forEach(el=>{
-                if(el.type!=='text') return;
-                const node=paper.querySelector(`.tb[data-id="${el.id}"] .tb-content`);
-                if(!node) return;
-                wfPaintNode(node,max);
-            });
-        });
+        // 500쪽을 전부 훑지 않는다 — 지금 화면에 올라와 있는 쪽만 칠하고,
+        // 나머지는 그 쪽이 다시 그려질 때(renderPageEls) 자동으로 칠해진다.
+        Array.from(mountedShells.keys()).forEach(pi=>wfPaintPage(pi));
     }
     function wfPaintNode(root,max){
         const texts=[];
@@ -13762,7 +13903,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         shapeStart={x:round1(p.x),y:round1(p.y)};
         curShapeKind=shapeMode!=='free'?shapeMode:null;
         curPts=[[round1(p.x),round1(p.y)]];
-        const svg=paperAt(pageIdx).querySelector('.layer-stroke');
+        const svg=paperQ(pageIdx,'.layer-stroke');
+        if(!svg){ drawing=false; return; }
         curPathNode=document.createElementNS('http://www.w3.org/2000/svg','path');
         curPathNode.setAttribute('fill','none');
         curPathNode.setAttribute('stroke',drawColor);
@@ -13817,8 +13959,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         }
         doc.pages[drawPageIdx].els.push(el);
         if(curPathNode) curPathNode.remove();
-        const svg=paperAt(drawPageIdx).querySelector('.layer-stroke');
-        svg.appendChild(buildStrokeEl(el,drawPageIdx));
+        const svg=paperQ(drawPageIdx,'.layer-stroke');
+        if(svg) svg.appendChild(buildStrokeEl(el,drawPageIdx));
         curPts=null; curPathNode=null;
         _drawSnap=null;      // 획이 실제로 추가됐다 → '작업 전' 스냅샷을 되돌림 사다리에 그대로 둔다
         saveDoc();
@@ -13924,7 +14066,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(el.type!=='stroke') continue;
             if(eraserHitsStroke(el,p,r)){
                 els.splice(i,1);
-                const g=paperAt(pageIdx).querySelector(`.stroke-g[data-id="${el.id}"]`);
+                const g=paperQ(pageIdx,`.stroke-g[data-id="${el.id}"]`);
                 if(g) g.remove();
                 removed=true;
             }
@@ -16152,7 +16294,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             doc.pages[pt.pageIdx].els.push(el);
             renderPageEls(pt.pageIdx);
             saveDoc();
-            const node=paperAt(pt.pageIdx).querySelector(`.tb[data-id="${el.id}"]`);
+            const node=paperQ(pt.pageIdx,`.tb[data-id="${el.id}"]`);
             if(node){ deselectAll(); node.classList.add('sel'); selected={type:'text',el:node}; }
             toast('텍스트 붙여넣음',1200);
             return;
@@ -17891,11 +18033,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const d=doc,_pi=pi;
             setTimeout(()=>{
                 if(doc!==d||!curNB) return;
+                // AI가 먼 쪽으로 이동해도 중간 페이지를 연쇄 로드하지 않는다(즉시 이동).
                 try{ maintainPageWindow(_pi,true); }catch(e){}
-                const w=document.querySelectorAll('.page-wrap')[_pi];
-                if(w&&typeof w.scrollIntoView==='function')
-                    // AI가 먼 쪽으로 이동할 때 중간 페이지들을 연쇄 로드하지 않는다.
-                    w.scrollIntoView({behavior:'auto',block:'center'});
+                try{ scrollPageIntoView(_pi,'auto'); }catch(e){}
             },60);
         }catch(e){}
     }
