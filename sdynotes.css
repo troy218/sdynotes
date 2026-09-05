@@ -1304,7 +1304,17 @@
             outline:1px solid var(--border);border:none;border-radius:3px;
             box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden;
         }
-        /* 현재 페이지 강조 테두리는 두지 않는다 (산만함) */
+        /* 현재 페이지는 실제 노출 면적 판정과 같은 focused 상태를 또렷하게 보여 준다.
+           --pz 역수를 써서 확대/축소해도 테두리 굵기가 거의 일정하다. */
+        .paper.focused{
+            outline:calc(3px / var(--pz,1)) solid var(--accent);
+            outline-offset:calc(3px / var(--pz,1));
+            box-shadow:0 0 0 calc(7px / var(--pz,1)) rgba(79,110,247,.12),var(--shadow);
+        }
+        .page-wrap.focused .page-label{color:var(--accent);font-weight:800;}
+        .page-wrap.focused .page-label>span{
+            padding:3px 8px;border-radius:999px;background:rgba(79,110,247,.12);
+        }
 
         .add-page-zone{
             position:absolute;left:0;

@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 // ⑤의 ?v= 를 안 올리면 → nginx 가 sdynotes.js/css 를 1년 immutable 로 캐싱하므로
 //   이미 접속한 브라우저가 옛 JS/CSS 를 1년 동안 계속 쓴다(조용히 깨진다).
 //   그래서 내리는 쪽이 아니라 '올리는' 쪽으로 맞춘다.
-export const APP_VERSION = '14.27.0';
+export const APP_VERSION = '14.27.4';
 export const SETTINGS_SCHEMA = 3;
 
 // ── 저장소 모드 ────────────────────────────────────────────────────────
@@ -183,18 +183,23 @@ export const AI_KEY = AI_PROVIDERS[0]?.key || '';
 export const AI_BASE_URL = AI_PROVIDERS[0]?.url || AI_PROVIDER_DEFAULT_URL;
 export const AI_MODEL = AI_PROVIDERS[0]?.model || AI_PROVIDER_DEFAULT_MODEL;
 // 14.22.0 · 답이 중간에 끊기지 않게 기본 출력 토큰을 넉넉히 (한국어는 토큰이 빨리 먹힌다)
-// 14.27.0 · 편집 명령이 40개까지 늘면서 @ 명령 묶음이 길어졌다 — 기본 2500 으로 올린다.
-export const AI_MAX_TOKENS = Math.min(8000, Math.max(256, parseInt(process.env.AI_MAX_TOKENS || '2500', 10)));
-export const AI_TIMEOUT_MS = Math.max(5000, parseInt(process.env.AI_TIMEOUT_MS || '45000', 10));
-// 14.22.0 · 긴 노트도 '앞부분만' 보내지 않게 입력 한도를 크게 올린다.
-//   (한도를 넘으면 앞 70% + 뒤 30% 를 살려 보낸다 — routes/ai.js fitText)
-//   기본 3만 자 ≈ 한국어 1.5~2만 토큰. 모델·요금에 맞게 AI_MAX_TEXT 로 조절.
-export const AI_MAX_TEXT = Math.max(500, parseInt(process.env.AI_MAX_TEXT || '30000', 10));   // 노트 본문 입력 한도(자)
-// 14.27.0 · "여러 상자를 이렇게 저렇게" 같은 긴 편집 요청을 통째로 받는다.
-export const AI_MAX_QUESTION = Math.max(200, parseInt(process.env.AI_MAX_QUESTION || '1200', 10));
-// 14.27.0 · 이어서 하는 편집·실행 — 프런트가 최근 대화 여러 턴을 묶어 보낸다.
-//   문맥이 길수록 "아까 그 상자" 같은 말을 잘 알아듣는다(돈·한도는 AI_MAX_TEXT 와 별개).
-export const AI_MAX_CONTEXT = Math.max(0, parseInt(process.env.AI_MAX_CONTEXT || '6000', 10));
+// 14.27.1 · 장문 작성과 최대 120개 편집 명령을 끝까지 받도록 출력 여유를 넓힌다.
+// 공급사별 출력 한도가 더 작으면 .env의 AI_MAX_TOKENS로 낮출 수 있다.
+export const AI_MAX_TOKENS = Math.min(16000, Math.max(256, parseInt(process.env.AI_MAX_TOKENS || '8000', 10)));
+// 긴 응답은 45초 안에 정상적으로 끝나지 않을 수 있다. 사용자는 프런트의 중단 버튼으로 즉시 취소할 수 있다.
+export const AI_TIMEOUT_MS = Math.max(5000, parseInt(process.env.AI_TIMEOUT_MS || '120000', 10));
+// 14.27.1 · 긴 노트의 앞·중간·뒤를 고르게 읽는다(routes/ai.js fitText).
+// 기본 8만 자. 비정상 설정으로 요청이 무한히 커지지 않도록 20만 자에서 막는다.
+export const AI_MAX_TEXT = Math.min(200000, Math.max(500, parseInt(process.env.AI_MAX_TEXT || '80000', 10)));
+// 여러 상자에 대한 상세 지시나 긴 초안을 한 요청으로 받을 수 있게 한다.
+export const AI_MAX_QUESTION = Math.min(20000, Math.max(200, parseInt(process.env.AI_MAX_QUESTION || '6000', 10)));
+// 이어서 하는 장문 편집도 최근 대화가 너무 빨리 잘리지 않게 한다.
+export const AI_MAX_CONTEXT = Math.min(50000, Math.max(0, parseInt(process.env.AI_MAX_CONTEXT || '16000', 10)));
+// 낮은 사양·작은 컨텍스트 모델용 분할 처리. 긴 편집 상태는 이 크기마다 나눠
+// 최대 AI_MAX_PARTS개로 병렬 계획하고, 출력 한도에 닿으면 AI_CONTINUE_PARTS까지 이어 쓴다.
+export const AI_PART_CHARS = Math.min(50000, Math.max(4000, parseInt(process.env.AI_PART_CHARS || '18000', 10)));
+export const AI_MAX_PARTS = Math.min(8, Math.max(1, parseInt(process.env.AI_MAX_PARTS || '4', 10)));
+export const AI_CONTINUE_PARTS = Math.min(8, Math.max(1, parseInt(process.env.AI_CONTINUE_PARTS || '4', 10)));
 export const AI_CACHE_TTL_MS = Math.max(0, parseInt(process.env.AI_CACHE_TTL_MS || '600000', 10));
 export const AI_RATE_N = Math.max(1, parseInt(process.env.AI_RATE_N || '12', 10));      // 창당 요청 수
 export const AI_RATE_WINDOW_MS = Math.max(1000, parseInt(process.env.AI_RATE_WINDOW_MS || '60000', 10));
