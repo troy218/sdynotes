@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.24.0">
+<link rel="stylesheet" href="sdynotes.css?v=14.26.0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <!-- 버전 · 작업 끝나면 아래 5곳을 같은 번호로 함께 올려라 (z +1)
@@ -17,7 +17,7 @@
          · 이 파일·sdynotes.js·sdynotes.css 를 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.24.0">
+    <meta name="application-version" content="14.26.0">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -758,8 +758,9 @@
                    질문칸이 길어져 옆으로 늘거나 여러 줄로 위로 자라도 버튼은
                    질문칸과 함께 올라가므로 겹치지 않는다.
                  · 노트 질문/자유 질문은 해돌이가 스스로 판단해 말풍선 머리에
-                   딱지로 달아 준다. ! 로 시작하면 문서 편집 모드로 위치·크기·
-                   내용을 직접 고치며, Ctrl+Z 한 번으로 되돌릴 수 있다.
+                   딱지로 달아 준다. 14.25.0 · '고쳐 달라'는 말이면 ! 없이도
+                   문서 편집 모드로 위치·크기·내용·서식·표를 직접 고치며,
+                   Ctrl+Z 한 번으로 되돌릴 수 있다.
                    답은 말풍선 — 닫기 전까지 계속 떠 있고, 길면 안에서 스크롤한다.
                  · 해돌이에게 커서를 올리면 아이디어(전구)로 변신하고,
                    해돌이를 누르면 대화기록이 열린다.
@@ -774,11 +775,12 @@
               </div>
               <div class="ai-askbar-field">
                 <!-- 질문칸 — 글이 길어지면 옆으로, 여러 줄이면 위로 늘어난다.
-                     ! 로 시작하면 해돌이가 문서를 직접 고치는 편집 모드다. -->
+                     '고쳐 달라'는 말이면 ! 없이도 문서를 고치고, '시켜 달라'는 말이면
+                     노래·타이머·노트 같은 앱 기능을 직접 실행하는 모드다. -->
                 <textarea id="aiQ" rows="1" maxlength="600" spellcheck="false" autocomplete="off"
                        placeholder="해돌이에게 물어보기…"
-                       title="Enter를 누르면 바로 물어봐요 · !로 시작하면 문서를 고쳐요 · Shift+Enter는 줄바꿈"
-                       aria-label="해돌이에게 질문하기. Enter를 누르면 보내고, 느낌표로 시작하면 문서를 편집해요"></textarea>
+                       title="Enter를 누르면 바로 물어봐요 · 고쳐 달라는 말은 문서를 고치고 시켜 달라는 말은 앱을 실행해요 · Shift+Enter는 줄바꿈"
+                       aria-label="해돌이에게 질문하기. Enter를 누르면 보내고, 고쳐 달라는 말은 문서를 편집하고 시켜 달라는 말은 앱 기능을 실행해요"></textarea>
                 <span class="ai-edittag" id="aiEditTag" hidden>편집</span>
                 <span class="ai-dot" id="aiDot" title="AI 키 아직 미등록"></span>
               </div>
@@ -2521,6 +2523,6 @@
 <!-- 14.23.0 · 노트 해돌이(AI 도우미) UI 는 편집기 안 #noteOtter 옆으로 옮겼다 — 아이콘 버튼·뜨는 창은 없다. -->
 
 
-<script src="sdynotes.js?v=14.24.0" defer></script>
+<script src="sdynotes.js?v=14.26.0" defer></script>
 </body>
 </html>

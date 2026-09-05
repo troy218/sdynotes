@@ -23,8 +23,8 @@ let pass = 0;
 const check = (name, cond) => { assert.ok(cond, name); pass++; console.log('  ✓ ' + name); };
 
 // ── 1) 소스 계약 ─────────────────────────────────────────────────────────────
-check('서버: task 화이트리스트 3종(outline/chat/edit)',
-  /^  outline: \{/m.test(srv) && /^  chat: \{/m.test(srv) && /^  edit: \{/m.test(srv)
+check('서버: task 화이트리스트 4종(outline/chat/edit/app)',
+  /^  outline: \{/m.test(srv) && /^  chat: \{/m.test(srv) && /^  edit: \{/m.test(srv) && /^  app: \{/m.test(srv)
   && !/^  summarize: \{/m.test(srv) && !/^  bullets: \{/m.test(srv)
   && !/^  ask: \{/m.test(srv) && !/^  free: \{/m.test(srv));
 check('서버: edit은 @ 명령 허용 목록이며 캐시/in-flight를 쓰지 않는다',
@@ -85,6 +85,62 @@ check('프런트: !·/편집·편집: 접두사를 edit 요청으로 보내고 �
   /var EDIT_PRE=/.test(js) && /run\('edit',editCommand\)/.test(js)
   && /if\(task==='edit'\)\{ out\(editProgress\(acc\),true\); return; \}/.test(js)
   && /editApplyDone\(text,editCapture\)/.test(js));
+// ── 14.25.0 · 똑똑한 해돌이 — 자동 라우팅·서식·표·이동·클립보드·되묻기 ──
+check('서버: chat은 편집 요청이면 [[edit]] 표식으로 넘기라고 한다',
+  /\[\[edit\]\]/.test(srv) && /문서 편집기가 이어받는다/.test(srv));
+check('서버: edit 프롬프트는 부분 수정·서식·표·이동·클립보드·되묻기를 문서화한다',
+  ['@rp', '@ap', '@st', '@tbl', '@tsz', '@tmv', '@tcell', '@goto', '@newpage',
+    '@title', '@clip', '@clipin', '@copy', '@ask'].every((c) => srv.includes(c)));
+check('서버: edit 후속 문맥(context)을 이전 대화로 전달한다',
+  /aiMessages\(task, text, question, context\)/.test(srv) && /이전 대화:\\n/.test(srv));
+check('프런트: [[edit]] 표식을 파싱해 편집으로 넘긴다',
+  /note\|free\|edit/.test(js) && /run\('edit',q,scope,true\)/.test(js));
+check('프런트: ! 없이도 고쳐 달라는 말투면 편집으로 자동 라우팅한다',
+  /function looksLikeEdit\(q\)/.test(js) && /window\.sdyAiLooksLikeEdit=looksLikeEdit/.test(js)
+  && /if\(looksLikeEdit\(q\)\)\{ run\('edit',q\); return; \}/.test(js));
+check('프런트: 편집 파서는 부분 수정·서식·표·이동·클립보드·되묻기를 읽는다',
+  /cmd:'rp'/.test(js) && /cmd:'ap'/.test(js) && /cmd:'st'/.test(js) && /cmd:'tbl'/.test(js)
+  && /cmd:'tsz'/.test(js) && /cmd:'tmv'/.test(js) && /cmd:'tcell'/.test(js) && /cmd:'goto'/.test(js)
+  && /cmd:'newpage'/.test(js) && /cmd:'title'/.test(js) && /cmd:'clip'/.test(js)
+  && /cmd:'clipin'/.test(js) && /cmd:'copy'/.test(js) && /ask=decode\(rest\)/.test(js));
+check('프런트: 스냅샷에 서식·표 정보를 싣는다',
+  /fmt\+=' font='/.test(js) && /fs='\+Math\.round/.test(js) && /type=표/.test(js) && /rows='\+rows/.test(js));
+check('프런트: 편집 요청에 직전 1턴 문맥을 싣는다',
+  /context:task==='edit'\?editCtxText\(\):\(task==='app'\?appCtxText\(\):''\)/.test(js));
+check('프런트: 클립보드 명령은 비동기 적용을 기다렸다 마무리한다',
+  /typeof applied\.then==='function'/.test(js) && /clipboard\.readText/.test(js));
+check('프런트: 되돌리기 직후 내 에코가 서식을 되살리지 못하게 가드한다',
+  /let _undoGuardUntil=0/.test(js) && /_undoGuardUntil=Date\.now\(\)\+30000/.test(js)
+  && /op\.dev&&op\.dev===SYNC_DEV&&Date\.now\(\)<_undoGuardUntil/.test(js));
+// ── 14.26.0 · 해돌이 앱 실행 — 음악·노트·타이머·도구·되묻기 ──
+check('서버: chat은 앱 실행 요청이면 [[app]] 표식으로 넘기라고 한다',
+  /\[\[app\]\]/.test(srv) && /앱 실행기가 이어받는다/.test(srv));
+check('서버: app 프롬프트는 음악·노트·타이머·도구·되묻기를 문서화한다',
+  ['@music play', '@note open', '@timer', '@clock', '@sw', '@present', '@export', '@find',
+    '@stickers', '@cards', '@settings', '@ask', '@done'].every((c) => srv.includes(c)));
+check('서버: app 후속 문맥(context)을 이전 대화로 전달한다',
+  /task === 'app'/.test(srv) && /이전 대화:\\n/.test(srv));
+check('프런트: [[app]] 표식을 파싱해 앱 실행으로 넘긴다',
+  /note\|free\|edit\|app/.test(js) && /run\('app',q,scope,true\)/.test(js));
+check('프런트: /앱 접두사는 앱 실행을 강제한다',
+  /var APP_PRE=/.test(js) && /run\('app',appCommand\)/.test(js)
+  && /\/앱 뒤에 무엇을 실행할지/.test(js));
+check('프런트: 시켜 달라는 말투면 앱 실행으로 자동 라우팅한다',
+  /function looksLikeApp\(q\)/.test(js) && /window\.sdyAiLooksLikeApp=looksLikeApp/.test(js)
+  && /if\(looksLikeApp\(q\)\)\{ run\('app',q\); return; \}/.test(js));
+check('프런트: 앱 파서는 음악·노트·타이머·도구·되묻기를 읽는다',
+  /window\.sdyAiAppParse=function/.test(js) && /cmd:'music'/.test(js) && /cmd:'note'/.test(js)
+  && /cmd:'timer'/.test(js) && /cmd:'clock'/.test(js) && /cmd:'sw'/.test(js)
+  && /cmd:'present'/.test(js) && /cmd:'export'/.test(js) && /cmd:'find'/.test(js)
+  && /cmd:'stickers'/.test(js) && /cmd:'cards'/.test(js) && /cmd:'settings'/.test(js)
+  && /ops\.slice\(0,10\)/.test(js));
+check('프런트: 앱 스냅샷에 노트 목록·음악·집중 화면을 싣는다',
+  /열린 노트: '/.test(js) && /노트 목록 '/.test(js) && /노래 목록 '/.test(js) && /집중 화면: '/.test(js));
+check('프런트: 집중시계에 타이머·스톱워치 손잡이를 노출한다',
+  /window\.sdyTimerStart=/.test(js) && /window\.sdyTimerStop=/.test(js)
+  && /window\.sdySwStart=/.test(js) && /window\.sdyTimerState=/.test(js));
+check('프런트: 앱 실행은 말투에 따라 앱 실행 딱지를 단다',
+  /tag\.textContent=appOn\?'앱 실행':'편집'/.test(js) && /app:'앱 실행'/.test(js));
 check('프런트: 모델 이름·소요 초 같은 기술 정보는 화면에 남기지 않는다',
   !/tailMeta/.test(js) && /meta\(''\);\s*\/\/ 모델·소요 초 같은 기술 정보는 안 보여 준다/.test(js)
   && /dot\.title=enabled\?'AI 켜짐'/.test(js));
@@ -132,8 +188,9 @@ check('HTML: 검색창 안내 글씨는 한 줄 — (Enter) 없이, Enter 안내
   && /title="[^"]*Enter[^"]*"/.test(html) && /aria-label="[^"]*Enter[^"]*"/.test(html));
 check('HTML: 질문칸은 여러 줄로 자랄 수 있는 textarea 다',
   /<textarea id="aiQ"/.test(html) && !/<input[^>]*id="aiQ"/.test(html));
-check('HTML/CSS: ! 편집을 안내하고 입력 중 편집 딱지를 보여 준다',
-  /!로 시작하면 문서를 고쳐요/.test(html) && /id="aiEditTag"[^>]*hidden>편집</.test(html)
+check('HTML/CSS: 말투로 되는 편집·실행을 안내하고 입력 중 딱지를 보여 준다',
+  /고쳐 달라는 말은 문서를 고치고 시켜 달라는 말은 앱을 실행해요/.test(html)
+  && /id="aiEditTag"[^>]*hidden>편집</.test(html)
   && /\.ai-askbar\.edit-on \.ai-askbar-field/.test(css) && /\.ai-edittag\{/.test(css));
 check('프런트: 질문이 길면 옆으로, 여러 줄이면 위로 자란다 (aiQGrow)',
   /function aiQGrow\(/.test(js) && /--ai-q-w/.test(js)
@@ -476,5 +533,306 @@ check('런타임: 노트를 닫으면 말풍선·기록도 같이 닫힌다',
   $('aiSay').hidden === true && $('aiHist').hidden === true);
 $('editorView').classList.add('open');
 await tick(60);
+
+// ── 2-10) 똑똑한 해돌이(14.25.0): ! 없는 자동 라우팅·새 명령·되묻기 ──
+{
+  const p2 = w.sdyAiEditParse([
+    '@rp t_1 | 옛말 | 새말',
+    '@rp t_2 | 지울말',
+    '@ap t_1 | 뒤 | 덧붙는 줄',
+    '@st t_1 | font=gaegu, fs=20, fg=빨강, hl=노랑, bold=on, align=center',
+    '@st s_1 | color=#a63f47, size=3',
+    '@add 1 | 60 | 400 | 300 | 80 | ~t_1 | 이웃 닮은 상자',
+    '@tbl 1 | 60 | 200 | 2 | 3 | 이름|나이|지역\\n철수|7|서울',
+    '@tsz tb_1 | 400 | 120',
+    '@tmv tb_1 | 60 | 300',
+    '@tcell tb_1 | 2 | 3 | 서울',
+    '@tcell tb_1 | 1 | 1 |',
+    '@goto 3',
+    '@newpage',
+    '@title 새 노트 이름',
+    '@clip 1 | 60 | 400 | 300 | 80',
+    '@clipin t_1 | 앞',
+    '@copy t_1',
+    '@ask 파란 상자와 빨간 상자 중 어느 것을 옮길까요?',
+    '@nonsense blah',
+    '@done 다 했어요',
+  ].join('\n'));
+  check('런타임: 새 명령 17종을 파싱하고 모르는 명령만 센다',
+    p2.ops.length === 17 && p2.dropped === 1 && p2.say === '다 했어요', `${p2.ops.length}/${p2.dropped}`);
+  check('런타임: 부분 바꾸기는 찾을 글·바꿀 글을 나누고 바꿀 글 없으면 지우기로 본다',
+    p2.ops[0].cmd === 'rp' && p2.ops[0].find === '옛말' && p2.ops[0].repl === '새말'
+    && p2.ops[1].cmd === 'rp' && p2.ops[1].find === '지울말' && p2.ops[1].repl === '');
+  check('런타임: 덧붙이기·서식은 방향과 서식 덩어리를 살린다',
+    p2.ops[2].cmd === 'ap' && p2.ops[2].dir === '뒤' && p2.ops[2].text === '덧붙는 줄'
+    && p2.ops[3].cmd === 'st' && /font=gaegu/.test(p2.ops[3].style) && /align=center/.test(p2.ops[3].style));
+  check('런타임: 새 상자는 ~id 서식 물려받기를 읽는다',
+    p2.ops[5].cmd === 'add' && p2.ops[5].inherit === 't_1' && p2.ops[5].text === '이웃 닮은 상자');
+  check('런타임: 표는 행·칸 구분을 살려 통째로 넘긴다',
+    p2.ops[6].cmd === 'tbl' && p2.ops[6].rows === 2 && p2.ops[6].cols === 3
+    && p2.ops[6].text === '이름|나이|지역\n철수|7|서울');
+  check('런타임: 표 크기·이동·칸(빈 칸 비우기 포함)·쪽 이동·새 쪽·제목을 파싱한다',
+    p2.ops[7].cmd === 'tsz' && p2.ops[8].cmd === 'tmv'
+    && p2.ops[9].cmd === 'tcell' && p2.ops[9].r === 2 && p2.ops[9].c === 3 && p2.ops[9].text === '서울'
+    && p2.ops[10].cmd === 'tcell' && p2.ops[10].text === ''
+    && p2.ops[11].cmd === 'goto' && p2.ops[11].page === 3
+    && p2.ops[12].cmd === 'newpage' && p2.ops[13].cmd === 'title' && p2.ops[13].text === '새 노트 이름');
+  check('런타임: 클립보드 3종과 되묻기를 파싱한다',
+    p2.ops[14].cmd === 'clip' && p2.ops[14].w === 300 && p2.ops[14].h === 80
+    && p2.ops[15].cmd === 'clipin' && p2.ops[15].dir === '앞'
+    && p2.ops[16].cmd === 'copy' && p2.ops[16].id === 't_1'
+    && p2.ask === '파란 상자와 빨간 상자 중 어느 것을 옮길까요?');
+}
+
+// 자동 라우팅용 편집 다리 — 비동기(clipboard) 없이 동기 적용만 기록한다
+const autoApplied = [];
+const autoBodies = [];
+w.__sdyAiBridge = {
+  text: () => LONG,
+  capture: () => ({ text: EDIT_SNAPSHOT, revision: 'rev-auto' }),
+  apply: (ops, revision) => {
+    autoApplied.push({ ops, revision });
+    return { applied: ops.length, failed: 0, notes: [], stale: false };
+  },
+};
+const origFetch = w.fetch;
+w.fetch = (url, opts = {}) => {
+  if (String(url) === '/api/ai/ask') autoBodies.push(JSON.parse(opts.body || '{}'));
+  return origFetch(url, opts);
+};
+check('런타임: 고쳐 달라는 말투는 ! 없이도 편집으로 본다',
+  w.sdyAiLooksLikeEdit('제목을 맨 위로 옮겨 줘') === true
+  && w.sdyAiLooksLikeEdit('두 번째 상자 글자를 빨갛게 해줘') === true
+  && w.sdyAiLooksLikeEdit('표 만들어 줘') === true);
+check('런타임: 물음 말투·일반 질문은 편집으로 보내지 않는다 (!는 강제라 제외)',
+  w.sdyAiLooksLikeEdit('어디서 일어나?') === false
+  && w.sdyAiLooksLikeEdit('표는 어떻게 만들어?') === false
+  && w.sdyAiLooksLikeEdit('이게 뭔지 알려줘') === false
+  && w.sdyAiLooksLikeEdit('!강제 편집') === false);
+askRes = () => fakeRes(200, { ok: true, text: '@mv t_1 | 40 | 20\n@done 제목을 맨 위로 옮겼어요',
+  provider: 'gemini', model: 'gem' });
+calls.length = 0; autoBodies.length = 0; autoApplied.length = 0;
+$('aiQ').value = '제목을 맨 위로 옮겨 줘';
+$('aiQ').dispatchEvent(new w.Event('input', { bubbles: true }));
+check('런타임: ! 없이도 고쳐 달라는 말을 치면 편집 딱지가 켜진다',
+  $('aiAsk').classList.contains('edit-on') && $('aiEditTag').hidden === false);
+$('aiQ').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+await tick(80); await flush();
+check('런타임: ! 없는 편집 말투는 task=edit 으로 가고 말은 통째로 실린다',
+  autoBodies.length === 1 && autoBodies[0].task === 'edit'
+  && autoBodies[0].question === '제목을 맨 위로 옮겨 줘' && autoBodies[0].text === EDIT_SNAPSHOT);
+check('런타임: 자동 라우팅 편집도 캡처 revision으로 적용하고 요약한다',
+  autoApplied.length === 1 && autoApplied[0].revision === 'rev-auto'
+  && /제목을 맨 위로 옮겼어요/.test($('aiOut').textContent) && /적용 1개/.test($('aiOut').textContent));
+check('런타임: 자동 라우팅에도 문서 편집 딱지가 붙는다',
+  $('aiKind').hidden === false && $('aiKind').textContent === '문서 편집');
+
+// 물음이 섞인 편집 단어는 질문으로 — 서버가 답한다
+askRes = () => fakeRes(200, { ok: true, text: '[[note]]\n표 단추를 누르면 돼요', provider: 'groq', model: 'm' });
+autoBodies.length = 0; autoApplied.length = 0;
+$('aiQ').value = '표는 어떻게 만들어?';
+w.sdyAiRun();
+await tick(80); await flush();
+check('런타임: 어떻게 같은 물음은 편집 단어가 있어도 chat 으로 간다',
+  autoBodies.length === 1 && autoBodies[0].task === 'chat' && autoApplied.length === 0
+  && $('aiKind').textContent === '노트 질문');
+
+// 서버 [[edit]] — chat 으로 나갔다가 편집으로 자동 넘기기 (한 번만)
+askRes = (url, b) => (b.task === 'chat'
+  ? fakeRes(200, { ok: true, text: '[[edit]]', provider: 'groq', model: 'm' })
+  : fakeRes(200, { ok: true, text: '@tx t_1 | 손본 내용\n@done 손봐뒀어요', provider: 'groq', model: 'm' }));
+autoBodies.length = 0; autoApplied.length = 0;
+$('aiQ').value = '저거 좀 손봐줘';
+w.sdyAiRun();
+await tick(120); await flush();
+check('런타임: 서버 [[edit]] 이면 스냅샷을 잡아 edit 으로 넘긴다',
+  autoBodies.length === 2 && autoBodies[0].task === 'chat' && autoBodies[1].task === 'edit'
+  && autoBodies[1].text === EDIT_SNAPSHOT && autoApplied.length === 1);
+check('런타임: 넘겨받은 편집 결과가 말풍선에 요약된다',
+  /손봐뒀어요/.test($('aiOut').textContent) && $('aiKind').textContent === '문서 편집');
+
+// @ask 되묻기 — 실행 없이 질문만, 다음 요청에 문맥으로 실린다
+askRes = () => fakeRes(200, { ok: true, text: '@ask 파란 상자와 빨간 상자 중 어느 것을 옮길까요?\n@done 되묻기',
+  provider: 'groq', model: 'm' });
+autoBodies.length = 0; autoApplied.length = 0;
+$('aiQ').value = '! 상자 옮겨 줘';
+w.sdyAiRun();
+await tick(80); await flush();
+check('런타임: @ask 는 적용 없이 질문을 말풍선에 싣는다',
+  autoApplied.length === 0 && /어느 것을 옮길까요/.test($('aiOut').textContent)
+  && /이어서 할게요/.test($('aiOut').textContent));
+askRes = () => fakeRes(200, { ok: true, text: '@mv t_9 | 10 | 10\n@done 파란 상자를 옮겼어요',
+  provider: 'groq', model: 'm' });
+autoBodies.length = 0;
+$('aiQ').value = '! 파란 상자';
+w.sdyAiRun();
+await tick(80); await flush();
+check('런타임: 다음 편집 요청에 직전 1턴 문맥이 실린다',
+  autoBodies.length === 1 && /이전 요청: 상자 옮겨 줘/.test(autoBodies[0].context || '')
+  && /어느 것을 옮길까요/.test(autoBodies[0].context || ''));
+
+// 비동기 적용(clipboard) — Promise 를 기다렸다 마무리한다
+w.__sdyAiBridge = {
+  text: () => LONG,
+  capture: () => ({ text: EDIT_SNAPSHOT, revision: 'rev-async' }),
+  apply: () => new Promise((resolve) => setTimeout(
+    () => resolve({ applied: 1, failed: 0, notes: [], stale: false }), 30)),
+};
+askRes = () => fakeRes(200, { ok: true, text: '@copy t_1\n@done 복사했어요', provider: 'groq', model: 'm' });
+$('aiQ').value = '! 복사해 줘';
+w.sdyAiRun();
+await tick(120); await flush();
+check('런타임: 비동기 적용이 끝나야 요약이 나온다',
+  /복사했어요/.test($('aiOut').textContent) && /적용 1개/.test($('aiOut').textContent));
+// ── 2-11) 해돌이 앱 실행(14.26.0): 시켜 달라 말투·새 명령·넘기기 ──
+{
+  // 한 계획은 10개까지라 묶음을 나눠 파싱한다
+  const p3 = w.sdyAiAppParse([
+    '@music play | 봄날',
+    '@music pause',
+    '@music resume',
+    '@music next',
+    '@music prev',
+    '@music mix | 5',
+    '@music mix',
+    '@music big',
+    '@music vol | 70',
+    '@done 음악 묶음',
+  ].join('\n'));
+  check('런타임: 음악 9종은 동작·검색어·곡수·볼륨을 나눈다',
+    p3.ops.length === 9 && p3.dropped === 0 && p3.say === '음악 묶음'
+    && p3.ops[0].cmd === 'music' && p3.ops[0].act === 'play' && p3.ops[0].q === '봄날'
+    && p3.ops[1].act === 'pause' && p3.ops[2].act === 'resume'
+    && p3.ops[3].act === 'next' && p3.ops[4].act === 'prev'
+    && p3.ops[5].act === 'mix' && p3.ops[5].n === 5
+    && p3.ops[6].act === 'mix' && p3.ops[6].n === 20
+    && p3.ops[7].act === 'big' && p3.ops[8].act === 'vol' && p3.ops[8].v === 70);
+  const p3b = w.sdyAiAppParse([
+    '@note new',
+    '@note open | 회의록',
+    '@note close',
+    '@timer 25 | 집중',
+    '@timer 1시간 30분',
+    '@timer off',
+    '@clock',
+    '@sw',
+    '@done 노트·시계 묶음',
+  ].join('\n'));
+  check('런타임: 노트·타이머·시계·스톱워치를 파싱한다',
+    p3b.ops.length === 8 && p3b.dropped === 0
+    && p3b.ops[0].cmd === 'note' && p3b.ops[0].act === 'new'
+    && p3b.ops[1].cmd === 'note' && p3b.ops[1].act === 'open' && p3b.ops[1].q === '회의록'
+    && p3b.ops[2].act === 'close'
+    && p3b.ops[3].cmd === 'timer' && p3b.ops[3].act === 'on' && p3b.ops[3].min === '25'
+    && p3b.ops[3].memo === '집중' && p3b.ops[4].min === '1시간 30분' && p3b.ops[4].memo === ''
+    && p3b.ops[5].cmd === 'timer' && p3b.ops[5].act === 'off'
+    && p3b.ops[6].cmd === 'clock' && p3b.ops[7].cmd === 'sw');
+  const p3c = w.sdyAiAppParse([
+    '@present on',
+    '@present off',
+    '@export pdf',
+    '@export',
+    '@find 광합성',
+    '@stickers',
+    '@cards',
+    '@settings',
+    '@music vol | 999',
+    '@bogus xxx',
+    '@ask 어느 노래를 틀까요?',
+    '@done 도구 묶음',
+  ].join('\n'));
+  check('런타임: 발표·내보내기·찾기·창 열기·되묻기를 파싱하고 잘못된 것만 센다',
+    p3c.ops.length === 8 && p3c.dropped === 2 && p3c.say === '도구 묶음'
+    && p3c.ask === '어느 노래를 틀까요?'
+    && p3c.ops[0].cmd === 'present' && p3c.ops[0].on === true
+    && p3c.ops[1].cmd === 'present' && p3c.ops[1].on === false
+    && p3c.ops[2].cmd === 'export' && p3c.ops[2].pdf === true
+    && p3c.ops[3].cmd === 'export' && p3c.ops[3].pdf === false
+    && p3c.ops[4].cmd === 'find' && p3c.ops[4].q === '광합성'
+    && p3c.ops[5].cmd === 'stickers' && p3c.ops[6].cmd === 'cards' && p3c.ops[7].cmd === 'settings');
+  const p4 = w.sdyAiAppParse(new Array(12).fill('@clock').join('\n'));
+  check('런타임: 앱 명령은 한 번에 10개까지만 받는다',
+    p4.ops.length === 10 && p4.dropped === 2);
+}
+check('런타임: 시켜 달라는 말투는 앱 실행으로 본다',
+  w.sdyAiLooksLikeApp('봄날 틀어줘') === true
+  && w.sdyAiLooksLikeApp('노래 좀 틀어줘') === true
+  && w.sdyAiLooksLikeApp('새 노트 만들어줘') === true
+  && w.sdyAiLooksLikeApp('회의록 노트 열어줘') === true
+  && w.sdyAiLooksLikeApp('5분 타이머 맞춰줘') === true
+  && w.sdyAiLooksLikeApp('발표 시작해줘') === true);
+check('런타임: 문서 작업·물음은 앱 실행으로 보내지 않는다 (/앱은 강제라 제외)',
+  w.sdyAiLooksLikeApp('발표 자료 만들어줘') === false
+  && w.sdyAiLooksLikeApp('제목을 맨 위로 옮겨 줘') === false
+  && w.sdyAiLooksLikeApp('노래 가사 알려줘') === false
+  && w.sdyAiLooksLikeApp('타이머가 뭐야?') === false
+  && w.sdyAiLooksLikeApp('/앱 강제 실행') === false);
+
+// 앱 실행용 적용기 스텁 — 진짜 적용기는 런타임 파일에서 검증한다
+const appApplied = [];
+const realAppApply = w.sdyAiAppApply;
+$('aiQ').value = '봄날 틀어줘';
+$('aiQ').dispatchEvent(new w.Event('input', { bubbles: true }));
+check('런타임: 시켜 달라는 말을 치면 앱 실행 딱지가 켜진다',
+  $('aiAsk').classList.contains('edit-on') && $('aiEditTag').hidden === false
+  && $('aiEditTag').textContent === '앱 실행');
+w.sdyAiAppApply = (ops) => { appApplied.push(ops); return { applied: ops.length, failed: 0, notes: [] }; };
+askRes = () => fakeRes(200, { ok: true, text: '@music play | 봄날\n@done 봄날을 틀었어요', provider: 'groq', model: 'm' });
+autoBodies.length = 0; appApplied.length = 0;
+$('aiQ').value = '봄날 틀어줘';
+w.sdyAiRun();
+await tick(80); await flush();
+check('런타임: 시켜 달라는 말투는 task=app 으로 가고 앱 상태가 실린다',
+  autoBodies.length === 1 && autoBodies[0].task === 'app'
+  && autoBodies[0].question === '봄날 틀어줘' && /열린 노트:/.test(autoBodies[0].text || ''));
+check('런타임: 앱 실행 결과가 말풍선에 요약되고 앱 실행 딱지가 붙는다',
+  /봄날을 틀었어요/.test($('aiOut').textContent) && /실행 1개/.test($('aiOut').textContent)
+  && $('aiKind').textContent === '앱 실행');
+w.sdyAiAppApply = realAppApply;
+askRes = () => fakeRes(200, { ok: true, text: '@clock\n@done 시계를 열었어요', provider: 'groq', model: 'm' });
+w.sdyAiAppApply = (ops) => { appApplied.push(ops); return { applied: ops.length, failed: 0, notes: [] }; };
+autoBodies.length = 0; appApplied.length = 0;
+$('aiQ').value = '/앱 시계 보여줘';
+w.sdyAiRun();
+await tick(80); await flush();
+check('런타임: /앱 접두사는 앱 실행을 강제한다',
+  autoBodies.length === 1 && autoBodies[0].task === 'app' && autoBodies[0].question === '시계 보여줘');
+w.sdyAiAppApply = realAppApply;
+
+// 서버 [[app]] — chat 으로 나갔다가 앱 실행으로 자동 넘기기 (한 번만)
+askRes = (url, b) => (b.task === 'chat'
+  ? fakeRes(200, { ok: true, text: '[[app]]', provider: 'groq', model: 'm' })
+  : fakeRes(200, { ok: true, text: '@music pause\n@done 멈췄어요', provider: 'groq', model: 'm' }));
+w.sdyAiAppApply = (ops) => { appApplied.push(ops); return { applied: ops.length, failed: 0, notes: [] }; };
+autoBodies.length = 0; appApplied.length = 0;
+$('aiQ').value = '저거 좀 꺼봐';
+w.sdyAiRun();
+await tick(120); await flush();
+check('런타임: 서버 [[app]] 이면 앱 상태를 잡아 app 으로 넘긴다',
+  autoBodies.length === 2 && autoBodies[0].task === 'chat' && autoBodies[1].task === 'app'
+  && /열린 노트:/.test(autoBodies[1].text || '') && appApplied.length === 1);
+w.sdyAiAppApply = (ops) => ({ applied: ops.length, failed: 0, notes: [] });
+askRes = () => fakeRes(200, { ok: true, text: '@music resume\n@done 계속 틀었어요', provider: 'groq', model: 'm' });
+autoBodies.length = 0;
+$('aiQ').value = '계속 틀어줘';
+w.sdyAiRun();
+await tick(80); await flush();
+check('런타임: 다음 실행 요청에 직전 1턴 문맥이 실린다',
+  autoBodies.length === 1 && /이전 요청: 저거 좀 꺼봐/.test(autoBodies[0].context || ''));
+w.sdyAiAppApply = realAppApply;
+
+// 진짜 적용기 — 조각 환경이라 목록이 비어 실패하지만 추락하지 않는다
+{
+  const r1 = await w.sdyAiAppApply([{ cmd: 'music', act: 'play', q: '봄날' }]);
+  check('런타임: 진짜 적용기는 빈 노래 목록을 거절한다',
+    r1.applied === 0 && r1.failed === 1 && /비어 있어/.test((r1.notes || []).join(' ')));
+  const r2 = await w.sdyAiAppApply([{ cmd: 'bogus' }]);
+  check('런타임: 진짜 적용기는 모르는 동작을 거절한다', r2.applied === 0 && r2.failed === 1);
+  const r3 = await w.sdyAiAppApply([{ cmd: 'timer', act: 'on', min: '0', memo: '' }]);
+  check('런타임: 진짜 적용기는 0분 타이머를 거절한다', r3.applied === 0 && r3.failed === 1);
+}
+
+w.__sdyAiBridge = { text: () => LONG, title: () => '생물 노트' };
+w.fetch = origFetch;
 
 console.log(`\n  ${pass} passed`);
