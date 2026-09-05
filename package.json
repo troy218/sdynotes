@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.25.0",
+  "version": "14.26.0",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -55,7 +55,7 @@
     "test:oracle": "node test/oracle_db_contract.mjs && node test/sdb_shim_contract.mjs && node test/migrate_oracle_sim.mjs",
     "test:call": "node test/call_relay_contract.mjs && node test/chat_endpoint.mjs && node test/voice_relay_contract.mjs && node test/yp_smoke_v4.cjs && python3 test/nginx_voice_ws_patch_test.py",
     "test:translate": "node test/translate_contract.mjs && node test/translate_flow_runtime.mjs",
-    "test:ai": "node test/ai_contract.mjs && node test/ai_providers_contract.mjs && node test/ai_model_chain_contract.mjs && node test/ai_ratelimit_contract.mjs && node test/ai_frontend_contract.mjs && node test/ai_edit_runtime.mjs",
+    "test:ai": "node test/ai_contract.mjs && node test/ai_providers_contract.mjs && node test/ai_model_chain_contract.mjs && node test/ai_ratelimit_contract.mjs && node test/ai_frontend_contract.mjs && node test/ai_edit_runtime.mjs && node test/ai_app_runtime.mjs",
     "test:perf": "node test/perf_tuning_contract.mjs",
     "test:fmtv2": "node test/editor_inline_fmt_v2_runtime.mjs"
   },

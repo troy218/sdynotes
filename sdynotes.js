@@ -25691,6 +25691,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                    queueNext:queueNext, gotoPage:gotoTrackPage, toggle:pp,
                    state:()=>({tab:P.bigTab,page:P.bigPage}), tagEditor:openTagEditor,
                    bigList:renderBigList, lyrics:renderLyrics, sync:syncLyrics,
+                   // 14.26.0 · 해돌이 앱 실행용 — 일시정지·다음/이전 곡·볼륨·큰 화면 닫기
+                   pause:()=>{ smoothPause(); }, next:()=>playNext(), prev:()=>playPrev(),
+                   vol:v=>setVol(v), closeBig:()=>closeBig(),
                    _state:()=>P};
 })();
 
@@ -26005,6 +26008,17 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&S.open) paint(); });
   window.openFocusClock=m=>open(typeof m==='string'?m:null);
   window.closeFocusClock=close;
+  // 14.26.0 · 해돌이 앱 실행용 손잡이 — 타이머 시작(분)·정지, 스톱워치 시작, 상태 읽기.
+  //   화면을 직접 눌렀을 때와 같은 함수(tmSet·tmStart·swStart·open)를 그대로 부른다.
+  window.sdyTimerStart=(min,label)=>{ try{
+    const m=Math.max(1,Math.min(1440,Math.round(+min||25)));
+    tmSet(m*60000,String(label||m+'분')); setMode('timer'); open('timer'); tmStart(); return true;
+  }catch(e){ return false; } };
+  window.sdyTimerStop=()=>{ try{ tmReset(); close(); return true; }catch(e){ return false; } };
+  window.sdySwStart=()=>{ try{ setMode('stop'); open('stop'); swStart(); return true; }catch(e){ return false; } };
+  window.sdyTimerState=()=>{ try{
+    return {open:!!S.open,mode:S.mode,run:!!S.tm.run,left:tmLeft(),label:S.tm.label||''};
+  }catch(e){ return null; } };
   dot();
 })();
 
@@ -28778,12 +28792,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      누르면 기다림 없이 바로 나온다(준비된 답이 없으면 SSE 스트림으로 말하듯 만든다).
    · 14.24.0 · ! 로 시작한 요청은 문서 상태와 revision을 캡처해 편집한다. 모델의
      @ 명령은 스트림 완료 뒤 허용 목록으로 검증하고, 한 번의 undo로 묶어 적용한다.
+   · 14.26.0 · /앱 으로 시작한 요청이나 '시켜 달라'는 말은 앱 상태 스냅샷을
+     잡아 앱 실행(task=app) 으로 보낸다. 노래·타이머·노트·발표·내보내기·찾기·
+     창 열기 @ 명령을 순서대로 실행한다(음악 자동재생 확인은 0.7초 대기).
    ══════════════════════════════════════════════════════════════════════ */
 (function(){
   if(window.__sdyAiInit) return; window.__sdyAiInit=true;
   var $=function(id){ return document.getElementById(id); };
   // 서버 AI_TASKS(outline·chat·edit)와 맞물린다 — outline 은 범위에 따라 딱지만 나뉜다.
-  var KIND={note:'노트 질문',free:'자유 질문',outlinePage:'이 페이지',outlineDoc:'전체 페이지',edit:'문서 편집'};
+  var KIND={note:'노트 질문',free:'자유 질문',outlinePage:'이 페이지',outlineDoc:'전체 페이지',edit:'문서 편집',app:'앱 실행'};
   var ctl=null, enabled=false, closedByUser=false;
   var lastText='', lastKind='', lastQ='';
 
@@ -28930,10 +28947,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      표식 길이(8자)가 찰 때까지는 내용을 참는다. */
   function parseChat(acc){
     var s=String(acc==null?'':acc);
-    var m=/^\[\[(note|free|edit)\]\][ \t]*\r?\n?/.exec(s);
+    var m=/^\[\[(note|free|edit|app)\]\][ \t]*\r?\n?/.exec(s);
     if(m) return {kind:m[1], text:s.slice(m[0].length)};
     var head=s.slice(0,8);
-    if(s&&('[[note]]'.indexOf(head)===0||'[[free]]'.indexOf(head)===0||'[[edit]]'.indexOf(head)===0)) return {wait:true};
+    if(s&&('[[note]]'.indexOf(head)===0||'[[free]]'.indexOf(head)===0||'[[edit]]'.indexOf(head)===0||'[[app]]'.indexOf(head)===0)) return {wait:true};
     return {kind:'', text:s};                     // 표식이 없으면 딱지 없이 그대로
   }
 
@@ -28969,6 +28986,41 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     return '이전 요청: '+editCtxQ+'\n이전 결과: '+editCtxA;
   }
   window.sdyAiLooksLikeEdit=looksLikeEdit;   // 테스트·디버그용 말투 감지 노출
+
+  /* ── 14.26.0 · 해돌이 앱 실행 — 음악·타이머·노트·발표·내보내기·찾기·창 열기 ──
+     /앱, /app, "앱:" 접두사는 앱 실행을 강제한다. 접두사가 없어도 앱 기능을
+     시키는 말(아래 APP_HINT)이면 앱 실행으로 자동 라우팅하고, 애매하면
+     chat 서버가 [[app]] 표식으로 넘긴다(질문·편집과 같은 방식).
+     편집과 겹치는 말("발표 자료 만들어줘")은 문서 동사가 있으면 편집으로 둔다.
+     단 "새 노트"는 앱이다. 스트림 중에는 부분 실행하지 않고, done을 받은
+     뒤에만 파싱해 순서대로 실행한다. */
+  var APP_PRE=/^\s*(?:\/(?:app|앱)(?=\s|$)|앱\s*[:：])\s*/;
+  function appCmdOf(q){
+    if(!APP_PRE.test(q||'')) return null;
+    return String(q).replace(APP_PRE,'').trim();
+  };
+  // 앱 명사 — 노래·타이머·노트·발표·내보내기·찾기·창 열기 말투.
+  var APP_HINT=/(틀어|재생해|일시 ?정지|멈춰|정지해|다음 ?곡|이전 ?곡|노래|음악|BGM|랜덤 ?믹스|믹스로|플레이어|볼륨|소리 (키워|줄여|크게|작게)|타이머|스톱워치|스탑워치|집중 ?시계|시계 (열어|보여|틀어)|새 노트|노트를? (열어|닫아|만들어)|노트 (목록|열어|닫아|만들어)|다른 노트|발표(를| 모드| 시작| 해)|프레젠테이션|내보내|PDF로|피디에프|찾기 (열어|보여)|스티커|단어 ?카드|설정(을| 화면| 열어| 보여))/;
+  // 앱 동사 — 명사만 있고 이 동사가 없는데 문서 동사가 있으면 편집으로 둔다.
+  var APP_VERB=/(틀어|재생|멈춰|정지|일시정지|다음 ?곡|이전 ?곡|열어|보여|닫아|시작해|내보내|찾아|검색해|보여줘|켜줘|꺼줘|키워|줄여|맞춰|재줘)/;
+  var APP_DOCVERB=/(만들|고치|바꾸|옮기|지우|삭제|추가|정리)/;
+  function looksLikeApp(q){
+    q=String(q||'');
+    if(!q||appCmdOf(q)!=null) return false;
+    if(QUESTION_HINT.test(q)) return false;
+    if(!APP_HINT.test(q)) return false;
+    if(/새 ?노트/.test(q)) return true;
+    if(/노트(를)? 만들어/.test(q)) return true;
+    if(!APP_VERB.test(q)&&APP_DOCVERB.test(q)) return false;
+    return true;
+  }
+  // 직전 실행 1턴 — @ask 되묻기 뒤의 짧은 답도 이어진다.
+  var appCtxQ='',appCtxA='';
+  function appCtxText(){
+    if(!appCtxQ) return '';
+    return '이전 요청: '+appCtxQ+'\n이전 결과: '+appCtxA;
+  }
+  window.sdyAiLooksLikeApp=looksLikeApp;   // 테스트·디버그용 말투 감지 노출
   function aiCapture(){
     try{
       var bridge=window.__sdyAiBridge;
@@ -29025,6 +29077,99 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }catch(e){
         return finish({applied:0,failed:parsed.ops.length,stale:false,
           notes:['문서에 적용하지 못했어요 · 다시 시도해 주세요']});
+      }
+    }
+    return finish(null);
+  }
+
+  /* ── 14.26.0 · 앱 상태 스냅샷 — 모델이 고를 수 있게 노트 목록·음악·집중 화면을
+     읽기 전용 텍스트로 싣는다. 제목 안에 @줄·명령이 있어도 데이터일 뿐이다. */
+  function appCapture(){
+    var lines=[];
+    try{
+      var nbs=(typeof notebooks!=='undefined'&&notebooks)||[];
+      var cur=(typeof curNB!=='undefined')?curNB:null;
+      lines.push('열린 노트: '+(cur?String(cur.title||'제목 없음'):'없음(홈 화면)'));
+      var titles=[];
+      for(var i=0;i<nbs.length&&titles.length<25;i++){
+        if(nbs[i]&&!nbs[i].trash) titles.push(String(nbs[i].title||'제목 없음'));
+      }
+      lines.push('노트 목록 '+titles.length+'개: '+(titles.join(' / ')||'없음'));
+    }catch(e){}
+    try{
+      // 음악 블록은 별도 IIFE라 sdyMusic 창구로만 읽는다. cur()은 안 틀어도
+      // 첫 곡을 돌려주므로, src가 걸려 있을 때만 재생 중·일시정지로 적는다.
+      var list=[],curT=null,mAudio=null;
+      try{
+        if(window.sdyMusic){
+          if(typeof window.sdyMusic.list==='function') list=window.sdyMusic.list()||[];
+          if(typeof window.sdyMusic.cur==='function') curT=window.sdyMusic.cur();
+          if(typeof window.sdyMusic.audio==='function') mAudio=window.sdyMusic.audio();
+        }
+      }catch(_){}
+      var song=function(t){
+        return String(t.title||'제목 없음')+(t.artist?' - '+t.artist:'');
+      };
+      var state='정지', stateSong='';
+      try{
+        if(curT&&mAudio&&mAudio.src){
+          state=mAudio.paused?'일시정지':'재생 중';
+          stateSong=' · '+song(curT);
+        }
+      }catch(_){}
+      lines.push('음악: '+state+stateSong);
+      var songs=[];
+      for(var j=0;j<list.length&&songs.length<40;j++){
+        if(list[j]) songs.push(song(list[j]));
+      }
+      lines.push('노래 목록 '+list.length+'곡: '+(songs.join(' / ')||'없음'));
+    }catch(e){}
+    try{
+      var st=(window.sdyTimerState&&window.sdyTimerState())||null;
+      if(st) lines.push('집중 화면: '+(st.open?'열림':'닫힘')+' · 모드 '+st.mode
+        +(st.run?(' · 타이머 실행 중(약 '+Math.max(1,Math.round(st.left/60000))+'분 남음)'):''));
+    }catch(e){}
+    return lines.join('\n');
+  }
+  window.sdyAiAppSnapshot=function(){ try{ return appCapture(); }catch(e){ return ''; } };
+  function appProgress(acc){
+    var count=(String(acc||'').match(/^\s*@(music|note|timer|clock|sw|present|export|find|stickers|cards|settings)\b/gmi)||[]).length;
+    return count?('앱 실행안을 만드는 중… · 동작 '+count+'개'):'앱 상태를 살펴보는 중…';
+  }
+  // 앱 실행 마무리 — editApplyDone과 같은 모양. 음악 재생은 자동재생 확인을
+  // 위해 Promise를 돌려줄 수 있어 run()이 기다렸다 마무리한다.
+  function appApplyDone(raw){
+    var parsed=window.sdyAiAppParse
+      ?window.sdyAiAppParse(raw):{ops:[],say:'',ask:'',dropped:0};
+    var finish=function(res){
+      res=res||{applied:0,failed:0,notes:[]};
+      var applied=Number(res.applied||0),failed=Number(res.failed||0)+Number(parsed.dropped||0);
+      var ask=String(parsed.ask||'').trim();
+      var say=String(parsed.say||'').trim()
+        ||(applied?'요청대로 실행했어요 해돌~':(ask?'':'실행할 내용을 찾지 못했어요'));
+      var counts=[];
+      if(applied) counts.push('실행 '+applied+'개');
+      if(failed) counts.push('건너뜀 '+failed+'개');
+      var output=say+(counts.length?'\n\n'+counts.join(' · '):'');
+      if(res.notes&&res.notes.length) output+=(output?'\n':'')+res.notes.join('\n');
+      if(ask) output+=(output?'\n\n':'')+ask+'\n(알려주면 바로 이어서 할게요 해돌~)';
+      if(applied){
+        try{ if(window.toast) window.toast('해돌이가 실행했어요 해돌~',2000); }catch(e){}
+      }
+      return output;
+    };
+    if(parsed.ops.length){
+      try{
+        if(window.sdyAiAppApply){
+          var r=window.sdyAiAppApply(parsed.ops);
+          if(r&&typeof r.then==='function') return r.then(finish,finish);
+          return finish(r);
+        }
+        return finish({applied:0,failed:parsed.ops.length,
+          notes:['앱 실행 연결을 찾지 못했어요 · 페이지를 새로고침해 주세요']});
+      }catch(e){
+        return finish({applied:0,failed:parsed.ops.length,
+          notes:['실행하지 못했어요 · 다시 시도해 주세요']});
       }
     }
     return finish(null);
@@ -29215,6 +29360,329 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     return {ops:ops.slice(0,60),say:say,ask:ask,dropped:dropped+Math.max(0,ops.length-60)};
   };
 
+  /* ── 14.26.0 · 앱 실행 파서 — 허용 목록 밖의 줄은 버린다. 한 번에 10개까지. ── */
+  window.sdyAiAppParse=function(raw){
+    var ops=[],say='',ask='',dropped=0;
+    var src=String(raw==null?'':raw).replace(/\r\n?/g,'\n');
+    src=src.replace(/^\s*```[^\n]*\n?/gm,'').replace(/^\s*```\s*$/gm,'');
+    var decode=function(value){
+      return String(value==null?'':value).replace(/\\(n|t|\\)/g,function(all,ch){
+        return ch==='n'?'\n':(ch==='t'?'\t':'\\');
+      }).trim();
+    };
+    // 앞의 n개 필드만 자르고 나머지는 값으로 — 값 안의 | 는 살린다.
+    var cutN=function(s,n){
+      var cuts=[],from=0;
+      for(var i=0;i<n;i++){
+        var next=s.indexOf('|',from); if(next<0) break;
+        cuts.push(s.slice(from,next).trim()); from=next+1;
+      }
+      return {cuts:cuts,rest:s.slice(from)};
+    };
+    var number=function(value,min,max){
+      var s=String(value==null?'':value).trim();
+      if(!/^-?\d+(?:\.\d+)?$/.test(s)) return null;
+      var n=Number(s);
+      if(!isFinite(n)||n<min||n>max) return null;
+      return n;
+    };
+    src.split('\n').forEach(function(line){
+      var t=String(line||'').trim();
+      if(!t) return;
+      var m=/^@([a-z]+)\s*([\s\S]*)$/i.exec(t);
+      if(!m){ dropped++; return; }
+      var cmd=m[1].toLowerCase(), rest=String(m[2]||'').trim();
+      if(cmd==='done'){ if(!say) say=decode(rest).slice(0,300); return; }
+      if(cmd==='ask'){ if(!ask) ask=decode(rest).slice(0,300); return; }
+      if(cmd==='music'){
+        var f=cutN(rest,1);
+        // '|'가 없으면 줄 전체가 동작이다(@music mix·@music pause처럼).
+        var act=String(f.cuts.length?f.cuts[0]:f.rest).toLowerCase(), v=f.cuts.length?decode(f.rest):'';
+        if(act==='play'){ ops.push({cmd:'music',act:'play',q:v.slice(0,100)}); return; }
+        if(act==='pause'||act==='resume'||act==='next'||act==='prev'||act==='big'){
+          ops.push({cmd:'music',act:act}); return;
+        }
+        if(act==='mix'){ var n=v?number(v,1,200):20; if(n==null){ dropped++; return; } ops.push({cmd:'music',act:'mix',n:n}); return; }
+        if(act==='vol'||act==='volume'){ var vv=number(v,0,100); if(vv==null){ dropped++; return; } ops.push({cmd:'music',act:'vol',v:vv}); return; }
+        dropped++; return;
+      }
+      if(cmd==='note'){
+        var nf=cutN(rest,1);
+        var nact=String(nf.cuts.length?nf.cuts[0]:nf.rest).toLowerCase(), nv=nf.cuts.length?decode(nf.rest):'';
+        if(nact==='new'||nact==='close'){ ops.push({cmd:'note',act:nact}); return; }
+        if(nact==='open'){ if(!nv){ dropped++; return; } ops.push({cmd:'note',act:'open',q:nv.slice(0,100)}); return; }
+        dropped++; return;
+      }
+      if(cmd==='timer'){
+        if(/^off\s*$/i.test(rest)){ ops.push({cmd:'timer',act:'off'}); return; }
+        var tf=cutN(rest,1);
+        var tmin=String(tf.cuts.length?tf.cuts[0]:tf.rest).trim().slice(0,20);
+        var tmemo=tf.cuts.length?decode(tf.rest).slice(0,60):'';
+        ops.push({cmd:'timer',act:'on',min:tmin,memo:tmemo});
+        return;
+      }
+      if(cmd==='clock'){ ops.push({cmd:'clock'}); return; }
+      if(cmd==='sw'||cmd==='stopwatch'){ ops.push({cmd:'sw'}); return; }
+      if(cmd==='present'){
+        var pa=rest.toLowerCase();
+        if(pa==='on'||pa==='off'||pa==='start'||pa==='stop'||pa==='end'){ ops.push({cmd:'present',on:(pa==='on'||pa==='start')}); return; }
+        dropped++; return;
+      }
+      if(cmd==='export'){
+        var ea=rest.toLowerCase();
+        if(!ea){ ops.push({cmd:'export',pdf:false}); return; }
+        if(ea==='pdf'){ ops.push({cmd:'export',pdf:true}); return; }
+        dropped++; return;
+      }
+      if(cmd==='find'){
+        var fq=decode(rest);
+        if(!fq){ dropped++; return; }
+        ops.push({cmd:'find',q:fq.slice(0,100)}); return;
+      }
+      if(cmd==='stickers'||cmd==='sticker'){ ops.push({cmd:'stickers'}); return; }
+      if(cmd==='cards'||cmd==='card'){ ops.push({cmd:'cards'}); return; }
+      if(cmd==='settings'||cmd==='setting'){ ops.push({cmd:'settings'}); return; }
+      dropped++;
+    });
+    return {ops:ops.slice(0,10),say:say,ask:ask,dropped:dropped+Math.max(0,ops.length-10)};
+  };
+
+  /* ── 14.26.0 · 앱 실행 적용기 — 화면의 버튼을 누른 것과 같은 함수를 순서대로
+     부른다. 목록 대조·노트 열림·숫자 범위를 다시 검사하고, 하나가 실패해도
+     나머지는 이어서 실행한다. 음악 재생이 섞이면 자동재생 확인을 위해
+     Promise를 돌려준다. */
+  window.sdyAiAppApply=function(ops){
+    var res={applied:0,failed:0,notes:[]};
+    var note=function(s){ if(res.notes.length<6) res.notes.push(s); };
+    var ok=function(){ res.applied++; };
+    var bad=function(s){ res.failed++; note(s); };
+    var needFn=function(name){
+      try{
+        var f=null;
+        if(typeof window!=='undefined'&&window&&typeof window[name]==='function') f=window[name];
+        else { try{ f=eval(name); }catch(_){ f=null; } }
+        if(typeof f==='function') return f;
+      }catch(e){}
+      return null;
+    };
+    // 음악 블록은 별도 IIFE라 window.sdyMusic·sdySearchTracks·sdyPlayFrom·
+    // sdyPlayRandomMix 창구로만 다룬다. bare P·cur·A·playFrom은 여기서 안 보인다.
+    var musicList=function(){
+      try{
+        if(window.sdyMusic&&typeof window.sdyMusic.list==='function'){
+          var L=window.sdyMusic.list();
+          if(Array.isArray(L)) return L;
+        }
+      }catch(e){}
+      return [];
+    };
+    var musicCur=function(){
+      try{
+        if(window.sdyMusic&&typeof window.sdyMusic.cur==='function') return window.sdyMusic.cur();
+      }catch(e){}
+      return null;
+    };
+    var musicAudio=function(){
+      try{
+        if(window.sdyMusic&&typeof window.sdyMusic.audio==='function') return window.sdyMusic.audio();
+      }catch(e){}
+      return null;
+    };
+    var played=false;   // 이번 실행에서 재생을 시도했는지 — 자동재생 확인용
+    var chain=Promise.resolve();
+    (ops||[]).forEach(function(op){
+      chain=chain.then(function(){
+        if(op.cmd==='music') return musicOp(op);
+        if(op.cmd==='note') return noteOp(op);
+        if(op.cmd==='timer') return timerOp(op);
+        if(op.cmd==='clock'){ var f=needFn('openFocusClock'); if(!f){ bad('시계 화면을 열지 못했어요'); return; } f('clock'); ok(); return; }
+        if(op.cmd==='sw'){ var sw=needFn('sdySwStart'); if(!sw||!sw()){ bad('스톱워치를 시작하지 못했어요'); return; } ok(); return; }
+        if(op.cmd==='present') return presentOp(op);
+        if(op.cmd==='export') return exportOp(op);
+        if(op.cmd==='find') return findOp(op);
+        if(op.cmd==='stickers'){ var st=needFn('openStickers'); if(!st){ bad('스티커 창을 열지 못했어요'); return; } try{ st(); }catch(e){ bad('스티커 창을 열지 못했어요'); return; } ok(); return; }
+        if(op.cmd==='cards'){ var cd=needFn('openCards'); if(!cd){ bad('단어카드 창을 열지 못했어요'); return; } try{ cd(); }catch(e){ bad('단어카드 창을 열지 못했어요'); return; } ok(); return; }
+        if(op.cmd==='settings'){ var sg=needFn('openSettings'); if(!sg){ bad('설정 창을 열지 못했어요'); return; } try{ sg(); }catch(e){ bad('설정 창을 열지 못했어요'); return; } ok(); return; }
+        bad('알 수 없는 동작이에요');
+      }).catch(function(){ bad('실행 중 문제가 생겼어요'); });
+    });
+    function musicOp(op){
+      var list=musicList(), A=musicAudio(), curT=musicCur();
+      var m=null;
+      try{ m=(window.sdyMusic&&typeof window.sdyMusic==='object')?window.sdyMusic:null; }catch(e){ m=null; }
+      if(op.act==='play'){
+        if(!list.length){ bad('노래 목록이 비어 있어요 · 음악 탭에서 노래를 먼저 넣어 주세요'); return; }
+        var st=needFn('sdySearchTracks'), pf=needFn('sdyPlayFrom');
+        if(!st||!pf){ bad('음악 재생 준비가 안 됐어요'); return; }
+        var hits=op.q?st(list,op.q):[];
+        if(op.q&&!hits.length){ bad('‘'+op.q+'’와 맞는 노래를 찾지 못했어요'); return; }
+        var pool=hits.length?hits:list;
+        var t=hits.length?hits[0]:(curT||list[0]);
+        if(!t){ bad('틀 노래를 찾지 못했어요'); return; }
+        try{ pf(pool,t.id,'해돌이'); }catch(e){ bad('노래를 틀지 못했어요'); return; }
+        played=true; ok(); return;
+      }
+      if(op.act==='pause'){
+        if(!m||typeof m.pause!=='function'||!A){ bad('일시정지하지 못했어요'); return; }
+        try{ if(!A.paused) m.pause(); }catch(e){ bad('일시정지하지 못했어요'); return; }
+        ok(); return;
+      }
+      if(op.act==='resume'){
+        if(!A){ bad('계속 틀지 못했어요'); return; }
+        try{
+          if(A.paused){
+            if(!A.src&&list.length){
+              var playedId='';
+              try{ playedId=(curT&&curT.id)||''; }catch(_){}
+              var pf2=needFn('sdyPlayFrom');
+              if(pf2){ pf2(list,playedId||list[0].id,'해돌이'); played=true; }
+            }
+            else if(A.src){ var r=A.play(); if(r&&typeof r.catch==='function') r.catch(function(){}); }
+          }
+        }catch(e){ bad('계속 틀지 못했어요'); return; }
+        ok(); return;
+      }
+      if(op.act==='next'||op.act==='prev'){
+        if(!list.length){ bad('노래 목록이 비어 있어요'); return; }
+        var fn=m?(m[op.act==='next'?'next':'prev']):null;
+        if(typeof fn!=='function'){ bad('곡을 넘기지 못했어요'); return; }
+        try{ fn(); }catch(e){ bad('곡을 넘기지 못했어요'); return; }
+        ok(); return;
+      }
+      if(op.act==='mix'){
+        if(!list.length){ bad('노래 목록이 비어 있어요'); return; }
+        var mx=needFn('sdyPlayRandomMix');
+        if(!mx){ bad('랜덤 믹스를 만들지 못했어요'); return; }
+        try{ mx(op.n||20); }catch(e){ bad('랜덤 믹스를 만들지 못했어요'); return; }
+        played=true; ok(); return;
+      }
+      if(op.act==='big'){
+        var bg=m?m.big:null;
+        if(typeof bg!=='function'){ bad('큰 플레이어를 열지 못했어요'); return; }
+        try{ bg(); }catch(e){ bad('큰 플레이어를 열지 못했어요'); return; }
+        ok(); return;
+      }
+      if(op.act==='vol'){
+        var sv=m?m.vol:null;
+        if(typeof sv!=='function'){ bad('볼륨을 바꾸지 못했어요'); return; }
+        try{ sv(Math.max(0,Math.min(1,op.v/100))); }catch(e){ bad('볼륨을 바꾸지 못했어요'); return; }
+        ok(); return;
+      }
+      bad('알 수 없는 음악 동작이에요');
+    }
+    function noteOp(op){
+      if(op.act==='new'){
+        var cn=needFn('createNB');
+        if(!cn){ bad('새 노트를 만들지 못했어요'); return Promise.resolve(); }
+        return Promise.resolve().then(function(){ return cn(); }).then(function(){ ok(); },function(){ bad('새 노트를 만들지 못했어요'); });
+      }
+      if(op.act==='open'){
+        var nbs=[]; try{ nbs=(typeof notebooks!=='undefined'&&notebooks)||[]; }catch(e){ nbs=[]; }
+        var q=String(op.q||'').trim().toLowerCase();
+        var hit=null;
+        for(var i=0;i<nbs.length;i++){
+          if(nbs[i]&&!nbs[i].trash&&String(nbs[i].title||'').trim().toLowerCase()===q){ hit=nbs[i]; break; }
+        }
+        if(!hit){
+          for(var j=0;j<nbs.length;j++){
+            if(nbs[j]&&!nbs[j].trash&&String(nbs[j].title||'').toLowerCase().indexOf(q)>=0){ hit=nbs[j]; break; }
+          }
+        }
+        if(!hit){ bad('‘'+op.q+'’ 노트를 찾지 못했어요'); return Promise.resolve(); }
+        var ob=needFn('openNB');
+        if(!ob){ bad('노트를 열지 못했어요'); return Promise.resolve(); }
+        return Promise.resolve().then(function(){ return ob(hit); }).then(function(){ ok(); },function(){ bad('노트를 열지 못했어요'); });
+      }
+      if(op.act==='close'){
+        var ed=null;
+        try{ ed=document.getElementById('editorView'); }catch(e){ ed=null; }
+        if(!ed||!ed.classList.contains('open')){ bad('이미 홈 화면이에요'); return; }
+        var ce=needFn('closeEditor');
+        if(!ce){ bad('노트를 닫지 못했어요'); return; }
+        try{ ce(); }catch(e){ bad('노트를 닫지 못했어요'); return; }
+        ok(); return;
+      }
+      bad('알 수 없는 노트 동작이에요');
+    }
+    function timerOp(op){
+      if(op.act==='off'){
+        var ts=needFn('sdyTimerStop');
+        if(!ts||!ts()){ bad('타이머를 멈추지 못했어요'); return; }
+        ok(); return;
+      }
+      var raw=String(op.min||'').trim(), min=null;
+      var h=/(\d+)\s*시간/.exec(raw), mi=/(\d+)\s*분/.exec(raw), se=/(\d+)\s*초/.exec(raw);
+      if(h||mi||se){
+        min=(h?parseInt(h[1],10)*60:0)+(mi?parseInt(mi[1],10):0)+(se?Math.ceil(parseInt(se[1],10)/60):0);
+      }else if(/^\d+(\.\d+)?$/.test(raw)){
+        min=Math.round(parseFloat(raw));
+      }
+      if(min==null||min<1||min>1440){ bad('타이머 시간은 1분에서 24시간 사이로 말해 주세요'); return; }
+      var tt=needFn('sdyTimerStart');
+      if(!tt||!tt(min,op.memo||'')){ bad('타이머를 시작하지 못했어요'); return; }
+      ok(); return;
+    }
+    function presentOp(op){
+      if(!inNote()){ bad('노트를 연 다음에 발표해 주세요 해돌~'); return; }
+      if(op.on){
+        var sp2=needFn('startPresent');
+        if(!sp2){ bad('발표를 시작하지 못했어요'); return; }
+        // 모드 켜짐·화면 표시까지는 동기라 바로 확인할 수 있고, 쪽 그리기는
+        // 백그라운드에서 이어진다(끝날 때까지 @done을 붙잡지 않는다).
+        try{
+          var pr=sp2();
+          if(pr&&typeof pr.catch==='function') pr.catch(function(){});
+        }catch(e){ bad('발표를 시작하지 못했어요'); return; }
+        ok(); return;
+      }
+      var on=false; try{ on=(typeof presentOn!=='undefined')&&!!presentOn; }catch(e){ on=false; }
+      if(!on){ bad('발표 중이 아니에요'); return; }
+      var ep=needFn('endPresent');
+      if(!ep){ bad('발표를 끝내지 못했어요'); return; }
+      try{ ep(); }catch(e){ bad('발표를 끝내지 못했어요'); return; }
+      ok(); return;
+    }
+    function exportOp(op){
+      if(!inNote()){ bad('노트를 연 다음에 내보내 주세요 해돌~'); return; }
+      if(op.pdf){
+        var ex=needFn('exportPDF');
+        if(!ex){ bad('PDF로 저장하지 못했어요'); return; }
+        return Promise.resolve().then(function(){ return ex(); }).then(function(){ ok(); },function(){ bad('PDF로 저장하지 못했어요'); });
+      }
+      var em=needFn('openExportModal');
+      if(!em){ bad('내보내기 창을 열지 못했어요'); return; }
+      try{ em(); }catch(e){ bad('내보내기 창을 열지 못했어요'); return; }
+      ok(); return;
+    }
+    function findOp(op){
+      if(!inNote()){ bad('노트를 연 다음에 찾아 주세요 해돌~'); return; }
+      var of=needFn('openFind'), rf=needFn('runFind');
+      if(!of){ bad('찾기를 열지 못했어요'); return; }
+      try{
+        of();
+        var inp=document.getElementById('findInput');
+        if(inp){ inp.value=op.q; }
+        if(rf) rf(op.q);
+      }catch(e){ bad('찾기를 실행하지 못했어요'); return; }
+      ok(); return;
+    }
+    return chain.then(function(){
+      // 음악 재생을 시도했으면 자동재생이 막혔는지 확인한다 — 막혔으면
+      // 곡은 골라 둔 상태라 ▶ 만 누르면 바로 나온다.
+      if(!played) return res;
+      return new Promise(function(resolve){
+        setTimeout(function(){
+          try{
+            var A=null;
+            try{ A=(window.sdyMusic&&window.sdyMusic.audio)?window.sdyMusic.audio():null; }catch(e){ A=null; }
+            if(A&&A.src&&A.paused) note('브라우저 정책상 자동재생이 막히면 아래 바의 ▶ 를 눌러 주세요');
+          }catch(e){}
+          resolve(res);
+        },700);
+      });
+    });
+  };
+
   /* ── 미리 준비(warm) — '이 페이지'·'전체 페이지' 정리를 노트를 여는 순간
      슬쩍 만들어 둔다. 같은 글로는 두 번 묻지 않는다(쪽 하나뿐인 노트는 이 페이지
      글 = 전체 글이라 한 번만 간다). 준비된 답은 브라우저에도 들고 있어서,
@@ -29329,15 +29797,16 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
 
   /* ── 묻고 답하기 — 정리(outline: 이 페이지/전체 페이지) 와 질문(chat) ──
-     14.25.0 · chat 답이 [[edit]] 이면(서버가 편집 요청이라 판단) 문서 스냅샷을
-     잡아 edit 으로 한 번만 자동 넘기기한다. edit 요청에는 직전 편집 1턴을
-     context 로 싣는다(@ask 되묻기 뒤의 짧은 답도 이어진다). */
+     14.26.0 · chat 답이 [[edit]]·[[app]] 이면(서버가 편집·실행 요청이라 판단)
+     스냅샷을 잡아 해당 일로 한 번만 자동 넘기기한다. edit·app 요청에는 직전
+     1턴을 context 로 싣는다(@ask 되묻기 뒤의 짧은 답도 이어진다). */
   function run(task,q,scope,hopped){
     if(ctl) return;                                   // 말하는 중엔 또 묻지 않는다
     q=String(q||'').trim();
-    scope=(scope==='page')?'page':'doc';              // outline 의 범위 — chat/edit 은 문서 전체
+    scope=(scope==='page')?'page':'doc';              // outline 의 범위 — chat/edit/app 은 문서 전체
     var editCapture=task==='edit'?aiCapture():null;
-    var txt=editCapture?editCapture.text:noteText(task==='outline'?scope:'doc');
+    var appText=task==='app'?appCapture():'';
+    var txt=editCapture?editCapture.text:(task==='app'?appText:noteText(task==='outline'?scope:'doc'));
     closedByUser=false;
     if(task==='outline'&&!txt){
       kindChip(''); meta('');
@@ -29349,6 +29818,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(task==='chat'&&!q) return;                     // 빈 질문 Enter — 조용히 무시
     if(task==='edit'&&(!q||!txt)){
       otterLine(!txt?'문서 상태를 읽지 못했어요 · 노트를 다시 열어 주세요':'어떻게 고칠지 적어 줘 해돌~');
+      return;
+    }
+    if(task==='app'&&(!q||!txt)){
+      otterLine(!txt?'앱 상태를 읽지 못했어요 · 페이지를 새로고침해 주세요':'무엇을 실행할지 적어 줘 해돌~');
       return;
     }
     // ① 정리 — 미리 준비해 둔 답이 있으면 기다림 없이 그 자리에서 바로
@@ -29366,7 +29839,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }
     ctl=new AbortController();
     busy(true); lastText=''; lastKind=''; lastQ=q;
-    kindChip(task==='edit'?'edit':'');
+    kindChip(task==='edit'?'edit':(task==='app'?'app':''));
     otterHide();                                       // 대답 시작 — 작은 말풍선은 접는다
     out('',true); meta('');
     var acc='';
@@ -29376,17 +29849,23 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       method:'POST', signal:ctl.signal,
       headers:{'Content-Type':'application/json','x-sdy-auth':token()},
       body:JSON.stringify({task:task,text:txt,question:q,stream:true,
-        context:task==='edit'?editCtxText():''})
+        context:task==='edit'?editCtxText():(task==='app'?appCtxText():'')})
     }).then(function(r){
       return readSSE(r,function(d){
         acc+=d;
         if(task==='edit'){ out(editProgress(acc),true); return; }
+        if(task==='app'){ out(appProgress(acc),true); return; }
         if(task==='chat'){
           var p=parseChat(acc);
           if(p.wait){ out('',true); return; }          // 표식이 채 안 왔으면 아직 생각 중
           if(p.kind==='edit'){                         // 서버가 편집 요청이라 판단 — 넘기는 중
             kindChip('edit');
             out('문서 편집 요청으로 보여서 넘기는 중…',true);
+            return;
+          }
+          if(p.kind==='app'){                          // 서버가 앱 실행 요청이라 판단 — 넘기는 중
+            kindChip('app');
+            out('앱 실행 요청으로 보여서 넘기는 중…',true);
             return;
           }
           if(p.kind) kindChip(p.kind);
@@ -29410,6 +29889,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
             kind='';
             text='편집 요청 같은데 · 노트를 연 다음에 다시 말해 줘 해돌~';
           }
+          // 서버 [[app]] — 앱 실행으로 한 번만 넘긴다(노트 밖에서도 된다).
+          if(kind==='app'&&!hopped){
+            ctl=null; moved=true; run('app',q,scope,true); return;
+          }
         }
         var doneAll=function(finalText){
           lastText=finalText; lastKind=kind;
@@ -29422,6 +29905,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
           }
           if(task==='edit'){                           // 다음 편집 요청에 실을 직전 1턴
             editCtxQ=q; editCtxA=String(finalText||'').slice(0,500);
+          }
+          if(task==='app'){                            // 다음 실행 요청에 실을 직전 1턴
+            appCtxQ=q; appCtxA=String(finalText||'').slice(0,500);
           }
           histPush(kind,q,lastText);
           // 답은 큰 말풍선(#aiSay)이 다 말하고 있다 — 같은 말을 작은 말풍선으로
@@ -29436,10 +29922,19 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
             return;
           }
           doneAll(applied);
+        }else if(task==='app'){
+          kind='app';
+          var ran=appApplyDone(text);                    // 완성된 계획만 순서대로 실행
+          if(ran&&typeof ran.then==='function'){        // 음악 재생 — 자동재생 확인하고 마무리
+            out('앱에서 실행하는 중…',true);
+            ran.then(doneAll,function(){ doneAll('실행하지 못했어요 · 다시 시도해 주세요'); });
+            return;
+          }
+          doneAll(ran);
         }else doneAll(text);
       }else{
         // 말하다 끊겼으면 그까지라도 남겨 둔다(복사·읽기는 되게)
-        lastText=task==='edit'?'':(acc?(task==='chat'?(parseChat(acc).text||''):acc):'');
+        lastText=(task==='edit'||task==='app')?'':(acc?(task==='chat'?(parseChat(acc).text||''):acc):'');
         kindChip('');
         out(String(d.error||'AI에 닿지 못했어요'),true);
         // 401/404 는 설정 문제 — 어디를 봐야 하는지 서버가 짚어 준 걸 그대로 띄운다.
@@ -29447,7 +29942,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
     }).catch(function(e){
       if(e&&e.name==='AbortError'&&closedByUser){ return; }   // 말풍선을 닫으며 멈춘 것
-      lastText=task==='edit'?'':(acc?(task==='chat'?(parseChat(acc).text||''):acc):'');
+      lastText=(task==='edit'||task==='app')?'':(acc?(task==='chat'?(parseChat(acc).text||''):acc):'');
       kindChip('');
       out((e&&e.name==='AbortError')?'멈췄어요.':'네트워크 오류 · 잠시 뒤 다시 시도해 주세요',true);
       meta('');
@@ -29459,12 +29954,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 
   /* 검색창 Enter → 바로 질문 (보내기 버튼 없음). 노트 질문인지 자유 질문인지는
      해돌이가 스스로 판단한다 — 사용자가 딱지를 고르는 일은 없다.
-     14.25.0 · '고쳐 달라'는 말투면 ! 없이도 편집으로 자동 라우팅한다. */
+     14.26.0 · '시켜 달라'는 말투면 앱 실행으로, '고쳐 달라'는 말투면 편집으로
+     자동 라우팅한다. 겹치는 말은 looksLikeApp 안의 문서-동사 규칙이 가른다. */
   window.sdyAiRun=function(){
     var qEl=$('aiQ'), q=qEl?String(qEl.value||'').trim():'';
     if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
     if(!q){ otterLine('뭐라도 적어 줘 해돌~'); return; }
     var editCommand=editCmdOf(q);
+    var appCommand=appCmdOf(q);
     if(qEl){ qEl.value=''; aiQGrow(); }                 // 본 요청은 말풍선(과 기록)에 남으니 칸은 비운다
     if(editCommand!=null){
       if(!editCommand){ otterLine('! 뒤에 어떻게 고칠지 적어 줘 해돌~ · 예) !제목을 맨 위로 옮겨 줘'); return; }
@@ -29474,6 +29971,11 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       run('edit',editCommand); return;
     }
+    if(appCommand!=null){
+      if(!appCommand){ otterLine('/앱 뒤에 무엇을 실행할지 적어 줘 해돌~ · 예) /앱 노래 틀어줘'); return; }
+      run('app',appCommand); return;
+    }
+    if(looksLikeApp(q)){ run('app',q); return; }        // '시켜 달라'는 말이면 앱 실행으로
     if(looksLikeEdit(q)){ run('edit',q); return; }      // ! 없어도 '고쳐 달라'는 말이면 편집으로
     run('chat',q);
   };
@@ -29542,11 +30044,13 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         var lift=(h>24)?Math.max(0,Math.min(48,h-28)):0;
         say.style.setProperty('--ai-lift',lift+'px');
       }
-      // !, /편집, "편집:" — 또는 '고쳐 달라'는 말투를 입력하는 동안
-      // 편집 모드임을 색과 딱지로 즉시 알린다.
+      // !, /편집, "편집:" — 또는 '고쳐 달라'·'시켜 달라'는 말투를 입력하는 동안
+      // 모드를 색과 딱지로 즉시 알린다. 앱 실행은 같은 자리에 '앱 실행' 딱지.
       var editOn=EDIT_PRE.test(q.value||'')||looksLikeEdit(q.value||'');
-      var ask=$('aiAsk'); if(ask) ask.classList.toggle('edit-on',editOn);
-      var tag=$('aiEditTag'); if(tag) tag.hidden=!editOn;
+      var appOn=!editOn&&(APP_PRE.test(q.value||'')||looksLikeApp(q.value||''));
+      var ask=$('aiAsk'); if(ask) ask.classList.toggle('edit-on',editOn||appOn);
+      var tag=$('aiEditTag');
+      if(tag){ tag.hidden=!(editOn||appOn); tag.textContent=appOn?'앱 실행':'편집'; }
     }catch(e){}
   }
   document.addEventListener('input',function(e){

@@ -3,7 +3,7 @@
 //
 // 이 파일이 지키려는 계약
 //   1) 모델 키는 Authorization 헤더로만 나가고 응답·본문에는 절대 새지 않는다
-//   2) task 화이트리스트(outline/chat/edit, 14.24.0) 밖의 일은 400 으로 거절한다 (임의 프롬프트 주입 차단)
+//   2) task 화이트리스트(outline/chat/edit/app, 14.26.0) 밖의 일은 400 으로 거절한다 (임의 프롬프트 주입 차단)
 //   3) 같은 입력 재요청은 외부 호출 없이 캐시로 답한다 / 동시에 온 중복은 하나로 합친다
 //   4) 본문은 상한만큼만 잘라 보낸다 (truncated=true 로 클라이언트에 알린다)
 //   5) 429 를 맞아도 서버 쪽 쿨다운은 없다 — 다음 요청은 곧바로 다시 외부로 나간다
@@ -61,8 +61,8 @@ let g = await get('/api/ai/status');
 let j = JSON.parse(g.body);
 ok('status: enabled=true', g.status === 200 && j.enabled === true);
 ok('status: 모델명을 알려 준다', j.model === 'test-model-x');
-ok('status: 할 일 3종(outline/chat/edit)', Array.isArray(j.tasks) && j.tasks.length === 3
-  && j.tasks.map((t) => t.id).join(',') === 'outline,chat,edit');
+ok('status: 할 일 4종(outline/chat/edit/app)', Array.isArray(j.tasks) && j.tasks.length === 4
+  && j.tasks.map((t) => t.id).join(',') === 'outline,chat,edit,app');
 ok('status: 키가 응답에 새지 않는다', !g.body.includes(FAKE_KEY) && !g.body.includes(FAKE_KEY.slice(3)));
 
 // ── 2) 개요 정리: OpenAI 호환 본문으로 나가고 키는 헤더에만 ──
@@ -139,8 +139,41 @@ r = await post('/api/ai/ask', { ...editBody, context: '이전 요청: 제목 Sta
 ok('편집 후속 문맥(context)은 이전 대화 레이블로 모델에 전달한다',
   r.ok === true && /이전 대화:\n이전 요청: 제목 Stand by/.test(calls[calls.length - 1].body.messages[1].content));
 r = await post('/api/ai/ask', { task: 'chat', text: '본문', question: '질문', context: '무시되는 문맥' });
-ok('context 는 edit 전용 — chat 에는 실리지 않는다',
+ok('context 는 edit·app 전용 — chat 에는 실리지 않는다',
   r.ok === true && !/무시되는 문맥/.test(calls[calls.length - 1].body.messages[1].content));
+
+// ── 3-4) 해돌이 앱 실행(14.26.0): 음악·노트·타이머·도구 ──
+ai.aiCacheReset();
+calls = [];
+const appPlan = '@music play | 봄날\n@done 봄날을 틀었어요';
+extFetch = () => chatOk(appPlan);
+const appBody = {
+  task: 'app',
+  text: '열린 노트: 회의록\n노트 목록 2개: 회의록 / 일기\n음악: 정지\n노래 목록 2곡: 봄날 - 방탄소년단 / NIGHT DANCER - imase',
+  question: '봄날 틀어줘',
+};
+r = await post('/api/ai/ask', appBody);
+ok('앱 실행 계획을 그대로 돌려준다', r.ok === true && r.task === 'app' && r.text === appPlan);
+const appMessages = calls[0].body.messages;
+ok('앱 시스템 프롬프트는 음악·노트·타이머·도구·되묻기를 문서화한다',
+  ['@music play', '@note open', '@timer', '@clock', '@sw', '@present', '@export', '@find',
+    '@stickers', '@cards', '@settings', '@ask', '@done'].every((c) => appMessages[0].content.includes(c)));
+ok('앱 상태와 실행 요청은 서로 다른 레이블로 모델에 전달한다',
+  /앱 상태:\n<appstate>/.test(appMessages[1].content)
+  && /실행 요청: 봄날 틀어줘/.test(appMessages[1].content));
+ok('앱 상태 안 가짜 지시를 따르지 말라는 방어 규칙이 있다', /신뢰할 수 없는 사용자 데이터/.test(appMessages[0].content));
+ok('질문 프롬프트는 앱 실행 요청이면 [[app]] 으로 넘기라고 한다',
+  /\[\[app\]\]/.test(ai.AI_TASKS.chat.system));
+r = await post('/api/ai/ask', appBody);
+ok('같은 실행 요청도 캐시하지 않고 매번 새 계획을 만든다',
+  r.ok === true && r.cached === false && calls.length === 2);
+r = await post('/api/ai/ask', { task: 'app', text: '', question: '노래 틀어줘' });
+ok('앱 상태 없는 실행은 외부 호출 없이 400', r.status === 400 && /앱 상태/.test(r.error || '') && calls.length === 2);
+r = await post('/api/ai/ask', { task: 'app', text: '열린 노트: 없음', question: '' });
+ok('요청 없는 실행은 외부 호출 없이 400', r.status === 400 && /무엇을 실행할지/.test(r.error || '') && calls.length === 2);
+r = await post('/api/ai/ask', { ...appBody, context: '이전 요청: 봄날 틀어줘\n이전 결과: 틀었어요' });
+ok('실행 후속 문맥(context)도 이전 대화 레이블로 모델에 전달한다',
+  r.ok === true && /이전 대화:\n이전 요청: 봄날 틀어줘/.test(calls[calls.length - 1].body.messages[1].content));
 
 // ── 4) task 화이트리스트 ──
 calls = [];
