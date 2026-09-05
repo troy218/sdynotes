@@ -16999,11 +16999,249 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         };
     }catch(e){}
 
-    // 14.20.0 · AI 패널이 노트 글을 꺼내 쓰는 다리.
-    //   doc·collectPageEls·plainTextFromHtml 이 전부 이 편집기 스코프 안에 있어서
-    //   밖에서 문서 구조를 직접 건드리지 않게 '글만' 꺼내는 함수 하나만 내보낸다.
-    //   scope:'page' = 지금 보고 있는 쪽, 'doc' = 문서 전체(기본).
-    //   길이 상한은 서버(/api/ai/ask)가 다시 한 번 자르므로 여기서는 넉넉히 둔다.
+    // 14.20.0 · AI UI가 노트 글과 문서 구조를 편집기 스코프 안에서만 다루는 다리.
+    //   일반 질문은 text()로 글만 읽는다. 14.24.0 문서 편집은 capture()로 제한된
+    //   상태 스냅샷을 만들고, apply()가 허용된 명령만 검증해 한 번에 적용한다.
+    //   모델 응답이 오는 동안 노트를 바꾸거나 내용을 고치면 revision이 달라져
+    //   오래된 계획은 전부 거절한다. AI 편집 전체는 Ctrl+Z 한 번으로 되돌릴 수 있다.
+    const AI_EDIT_MAX_ITEMS=180, AI_EDIT_MAX_SNAPSHOT=26000;
+    const AI_EDIT_MAX_OPS=30, AI_EDIT_MAX_TEXT=2000;
+
+    function aiEditText(el){
+        if(!el) return '';
+        if(el.type==='text') return el.tight?tightTextFromHtml(el.html):plainTextFromHtml(el.html);
+        if(el.type==='latex') return String(el.latex||'');
+        return '';
+    }
+    function aiEditStrokeBox(el){
+        let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity,n=0;
+        (el&&el.pts||[]).forEach(pt=>{
+            if(!pt||!Number.isFinite(+pt[0])||!Number.isFinite(+pt[1])) return;
+            n++; x1=Math.min(x1,+pt[0]); y1=Math.min(y1,+pt[1]);
+            x2=Math.max(x2,+pt[0]); y2=Math.max(y2,+pt[1]);
+        });
+        if(!n) x1=y1=x2=y2=0;
+        const dx=+el.dx||0,dy=+el.dy||0;
+        return {x:x1+dx,y:y1+dy,w:Math.max(0,x2-x1),h:Math.max(0,y2-y1),baseX:x1,baseY:y1};
+    }
+    function aiEditBox(el){
+        if(el&&el.type==='stroke') return aiEditStrokeBox(el);
+        return {x:+(el&&el.x)||0,y:+(el&&el.y)||0,w:+(el&&el.w)||0,h:+(el&&el.h)||0};
+    }
+    function aiEditSnapshot(){
+        if(!doc||!doc.pages||!doc.pages.length) return '';
+        const size=paperSize();
+        const title=(String((document.getElementById('edTitle')||{}).value||'')
+            .replace(/\s+/g,' ').replace(/</g,'‹').replace(/>/g,'›').trim())||'(제목 없음)';
+        const lines=[]; let chars=0,items=0,folded=false;
+        const add=line=>{
+            line=String(line||'');
+            if(chars+line.length+1>AI_EDIT_MAX_SNAPSHOT){ folded=true; return false; }
+            lines.push(line); chars+=line.length+1; return true;
+        };
+        const preview=value=>{
+            const text=String(value||'').replace(/\s+/g,' ').replace(/</g,'‹').replace(/>/g,'›').trim();
+            return text.length>240?text.slice(0,240)+'…':text;
+        };
+        add('노트 제목: '+title);
+        add('페이지 크기: '+size.w+'x'+size.h+' px · 왼쪽 위=0,0 · 총 '
+            +doc.pages.length+'쪽 · 현재 '+(Math.min(Math.max(curPageIdx|0,0),doc.pages.length-1)+1)+'쪽');
+        // 긴 문서에서도 현재 쪽은 반드시 모델에게 보인다. 나머지는 페이지 순서대로 싣는다.
+        const current=Math.min(Math.max(curPageIdx|0,0),doc.pages.length-1);
+        const order=[current].concat(doc.pages.map((p,i)=>i).filter(i=>i!==current));
+        for(const pi of order){
+            if(items>=AI_EDIT_MAX_ITEMS||folded) break;
+            const pg=doc.pages[pi];
+            if(!add('['+(pi+1)+'쪽'+(pi===current?' · 현재':'')+']')) break;
+            if(!pg||pg.__lazy!=null){ add('  (아직 불러오지 않은 쪽 · 편집 불가)'); continue; }
+            const els=pg.els||[];
+            if(!els.length){ add('  (빈 쪽 · @add 가능)'); continue; }
+            for(const el of els){
+                if(items>=AI_EDIT_MAX_ITEMS||folded) break;
+                if(!el||!el.id) continue;
+                const elementId=String(el.id);
+                // id는 모델이 그대로 되돌려 보내는 실행 토큰이다. 프롬프트 구분자나
+                // 필드 구분자로 해석될 수 있는 비정상 가져오기 id는 노출하지 않는다.
+                if(!elementId||elementId.length>160||/[\s<>|]/.test(elementId)) continue;
+                const b=aiEditBox(el);
+                let kind='기타',extra='';
+                if(el.type==='text'){ kind='글상자'; extra=' text='+JSON.stringify(preview(aiEditText(el))); }
+                else if(el.type==='image') kind='사진';
+                else if(el.type==='latex'){ kind='수식'; extra=' text='+JSON.stringify(preview(aiEditText(el))); }
+                else if(el.type==='stroke') kind='그림획';
+                else if(el.type==='legacyDraw') kind='배경그림';
+                else continue;
+                let line='  id='+elementId+' type='+kind+' x='+Math.round(b.x)+' y='+Math.round(b.y)
+                    +' w='+Math.round(b.w)+' h='+Math.round(b.h)+extra;
+                if(el.locked) line+=' (잠김 · 편집 불가)';
+                if(el.tbl) line+=' (표 칸 · 편집 불가)';
+                if(!add(line)) break;
+                items++;
+            }
+        }
+        if(folded||items>=AI_EDIT_MAX_ITEMS) lines.push('… (긴 문서라 일부 요소는 생략됨)');
+        return lines.join('\n');
+    }
+    // 서버 왕복 중 문서가 달라졌는지 확인하는 로컬 전용 지문. 서버에는 보내지 않는다.
+    function aiEditRevision(){
+        let h=2166136261;
+        const mix=value=>{
+            const s=String(value==null?'':value);
+            for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
+            h^=31; h=Math.imul(h,16777619);
+        };
+        mix(curNB&&curNB.id); mix((document.getElementById('edTitle')||{}).value); mix(doc&&doc.sizePreset);
+        (doc&&doc.pages||[]).forEach(pg=>{
+            mix(pg&&pg.id); mix(pg&&pg.__lazy);
+            (pg&&pg.els||[]).forEach(el=>{
+                if(!el) return;
+                ['id','type','x','y','w','h','dx','dy','html','latex','locked'].forEach(k=>mix(el[k]));
+                mix(el.tbl&&JSON.stringify(el.tbl));
+                if(el.type==='stroke') mix(JSON.stringify(el.pts||[]));
+            });
+            mix(JSON.stringify(pg&&pg.tables||[]));
+        });
+        return (h>>>0).toString(36);
+    }
+    function aiEditApply(ops,expectedRevision){
+        const res={applied:0,failed:0,notes:[],stale:false};
+        const note=msg=>{ if(msg&&res.notes.length<4&&res.notes.indexOf(msg)<0) res.notes.push(msg); };
+        const bad=msg=>{ res.failed++; note(msg); };
+        if(!doc||!curNB){ bad('열린 노트가 없어요'); return res; }
+        if(!Array.isArray(ops)||!ops.length) return res;
+        // 모델을 기다리는 동안 사용자가 타이핑한 글도 먼저 doc에 반영한 뒤 비교한다.
+        try{ commitEditingText(); }catch(e){}
+        if(expectedRevision&&expectedRevision!==aiEditRevision()){
+            res.stale=true;
+            note('기다리는 동안 문서가 바뀌어서 오래된 편집 계획은 적용하지 않았어요 · 다시 요청해 주세요');
+            return res;
+        }
+        const size=paperSize();
+        const finite=v=>v!==''&&v!=null&&Number.isFinite(Number(v));
+        const round=v=>Math.round(Number(v));
+        const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+        const text=v=>String(v==null?'':v).slice(0,AI_EDIT_MAX_TEXT);
+        const html=v=>esc(text(v)).replace(/\n/g,'<br>');
+        const findAny=id=>{
+            id=String(id||'').trim();
+            if(!id) return null;
+            for(let pi=0;pi<doc.pages.length;pi++){
+                const pg=doc.pages[pi]; if(!pg||pg.__lazy!=null) continue;
+                const el=(pg.els||[]).find(item=>item&&item.id===id);
+                if(el) return {el,pi};
+            }
+            return null;
+        };
+        const touched=new Set(); let historyStarted=false;
+        const beforeChange=()=>{
+            if(historyStarted) return;
+            // 첫 유효 명령이 확인된 뒤에만 선택을 접고 undo 지점을 만든다.
+            // 전부 잘못된 계획은 사용자의 편집 상태조차 건드리지 않는다.
+            try{ deselectAll(true); clearMulti(); selected=null; }catch(e){}
+            pushHistory(true); historyStarted=true;
+        };
+        const boxSize=(w,h)=>({
+            w:clamp(round(w),20,Math.max(20,size.w)),
+            h:clamp(round(h),20,Math.max(20,size.h)),
+        });
+        const place=(x,y,w,h)=>{
+            const d=boxSize(w,h);
+            return {x:clamp(round(x),0,Math.max(0,size.w-d.w)),
+                y:clamp(round(y),0,Math.max(0,size.h-d.h)),w:d.w,h:d.h};
+        };
+        const limited=ops.slice(0,AI_EDIT_MAX_OPS);
+        if(ops.length>AI_EDIT_MAX_OPS){
+            res.failed+=ops.length-AI_EDIT_MAX_OPS;
+            note('명령이 많아 앞의 '+AI_EDIT_MAX_OPS+'개만 확인했어요');
+        }
+        limited.forEach(op=>{
+            const cmd=String(op&&op.cmd||'').toLowerCase();
+            if(cmd==='add'){
+                if(!finite(op.page)||!Number.isInteger(Number(op.page))
+                   ||!finite(op.x)||!finite(op.y)||!finite(op.w)||!finite(op.h)){
+                    bad('새 글상자의 페이지나 위치가 올바르지 않아요'); return;
+                }
+                const page=round(op.page),pi=page-1,pg=doc.pages[pi];
+                if(page<1||page>doc.pages.length||!pg||pg.__lazy!=null){
+                    bad('해당 페이지를 찾거나 불러오지 못했어요'); return;
+                }
+                if(!text(op.text).trim()){ bad('내용이 없는 새 글상자는 만들지 않았어요'); return; }
+                const p=place(op.x,op.y,op.w,op.h);
+                beforeChange(); pg.els=pg.els||[];
+                pg.els.push({type:'text',id:uid('t'),x:p.x,y:p.y,w:p.w,h:p.h,
+                    html:html(op.text),fontSize:curFontSize||16,font:curFont||'pretendard'});
+                touched.add(pi); res.applied++; return;
+            }
+            const found=findAny(op&&op.id);
+            if(!found){ bad('문서 상태에 없는 요소라 건너뛰었어요'); return; }
+            const {el,pi}=found;
+            if(el.locked){ bad('잠긴 요소는 고칠 수 없어요'); return; }
+            if(el.tbl){ bad('표 칸은 AI 편집에서 고칠 수 없어요'); return; }
+            if(cmd==='del'){
+                beforeChange();
+                doc.pages[pi].els=(doc.pages[pi].els||[]).filter(item=>item!==el);
+                touched.add(pi); res.applied++; return;
+            }
+            if(cmd==='tx'){
+                if(el.type!=='text'){ bad('글상자만 내용을 바꿀 수 있어요'); return; }
+                beforeChange(); el.html=html(op.text);
+                delete el.fit; delete el.fitDown; delete el.trFS; delete el.trLS; delete el.trFW;
+                touched.add(pi); res.applied++; return;
+            }
+            if(cmd!=='mv'&&cmd!=='sz'&&cmd!=='bx'){
+                bad('알 수 없는 편집 명령을 건너뛰었어요'); return;
+            }
+            if(!['text','image','latex','stroke','legacyDraw'].includes(el.type)){
+                bad('지원하지 않는 요소 종류라 건너뛰었어요'); return;
+            }
+            if(el.type==='legacyDraw'){
+                bad('배경그림은 이동하거나 크기를 바꿀 수 없어요'); return;
+            }
+            if(el.type==='stroke'&&cmd!=='mv'){
+                bad('그림획은 이동만 할 수 있어요'); return;
+            }
+            if((cmd==='mv'||cmd==='bx')&&(!finite(op.x)||!finite(op.y))){
+                bad('이동 좌표가 올바르지 않아요'); return;
+            }
+            if((cmd==='sz'||cmd==='bx')&&(!finite(op.w)||!finite(op.h))){
+                bad('크기가 올바르지 않아요'); return;
+            }
+            if(el.type==='stroke'){
+                const b=aiEditStrokeBox(el);
+                const x=clamp(round(op.x),0,Math.max(0,size.w-b.w));
+                const y=clamp(round(op.y),0,Math.max(0,size.h-b.h));
+                beforeChange(); el.dx=x-b.baseX; el.dy=y-b.baseY;
+                touched.add(pi); res.applied++; return;
+            }
+            const b=aiEditBox(el);
+            let p;
+            if(cmd==='mv') p=place(op.x,op.y,Math.max(20,b.w),Math.max(20,b.h));
+            else if(cmd==='sz'){
+                // 크기만 바꾸라는 요청은 x/y를 움직이지 않는다. 가장자리까지 남은
+                // 폭이 20px보다 작으면 그 여유만큼까지 허용해 페이지 밖으로 새지 않게 한다.
+                if(!finite(b.x)||!finite(b.y)||b.x<0||b.y<0||b.x>=size.w||b.y>=size.h){
+                    bad('요소의 현재 위치가 페이지 밖이라 크기를 바꾸지 않았어요'); return;
+                }
+                const maxW=Math.max(1,size.w-b.x),maxH=Math.max(1,size.h-b.y);
+                p={x:b.x,y:b.y,w:clamp(round(op.w),Math.min(20,maxW),maxW),
+                    h:clamp(round(op.h),Math.min(20,maxH),maxH)};
+            }else p=place(op.x,op.y,op.w,op.h);
+            beforeChange();
+            if(cmd!=='sz'){ el.x=p.x; el.y=p.y; }
+            if(cmd!=='mv'){ el.w=p.w; el.h=p.h; }
+            touched.add(pi); res.applied++;
+        });
+        if(res.applied>0){
+            touched.forEach(pi=>{
+                try{ doc.pages[pi].__dirty=true; }catch(e){}
+                try{ if(renderedPages.has(pi)) renderPageEls(pi); }catch(e){}
+            });
+            try{ syncBoost(); }catch(e){}
+            saveDoc(); queueOps();
+        }
+        return res;
+    }
+
     try{
         window.__sdyAiBridge={
             text:(scope)=>{
@@ -17016,6 +17254,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }catch(e){ return ''; }
             },
             title:()=>String((document.getElementById('edTitle')||{}).value||'').trim(),
+            snapshot:()=>{ try{ commitEditingText(); return aiEditSnapshot(); }catch(e){ return ''; } },
+            capture:()=>{
+                try{
+                    commitEditingText();
+                    return {text:aiEditSnapshot(),revision:aiEditRevision()};
+                }catch(e){ return {text:'',revision:''}; }
+            },
+            apply:(ops,revision)=>{
+                try{ return aiEditApply(ops,revision); }
+                catch(e){ return {applied:0,failed:Array.isArray(ops)?ops.length:0,stale:false,
+                    notes:['적용 중 오류 · '+String(e&&e.message||'다시 시도해 주세요')]}; }
+            },
         };
     }catch(e){}
     /* ============ /6.1 번역 ============ */
@@ -27923,12 +28173,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      server/src/routes/ai.js 가 들고 있다. 검색창 점(#aiDot) = 키 상태.
    · '이 페이지'·'전체 페이지' 는 노트를 여는 순간 미리 준비(warm) 해 둔다 —
      누르면 기다림 없이 바로 나온다(준비된 답이 없으면 SSE 스트림으로 말하듯 만든다).
+   · 14.24.0 · ! 로 시작한 요청은 문서 상태와 revision을 캡처해 편집한다. 모델의
+     @ 명령은 스트림 완료 뒤 허용 목록으로 검증하고, 한 번의 undo로 묶어 적용한다.
    ══════════════════════════════════════════════════════════════════════ */
 (function(){
   if(window.__sdyAiInit) return; window.__sdyAiInit=true;
   var $=function(id){ return document.getElementById(id); };
-  // 서버 AI_TASKS(outline·chat)와 맞물린다 — outline 은 범위에 따라 딱지만 나뉜다.
-  var KIND={note:'노트 질문',free:'자유 질문',outlinePage:'이 페이지',outlineDoc:'전체 페이지'};
+  // 서버 AI_TASKS(outline·chat·edit)와 맞물린다 — outline 은 범위에 따라 딱지만 나뉜다.
+  var KIND={note:'노트 질문',free:'자유 질문',outlinePage:'이 페이지',outlineDoc:'전체 페이지',edit:'문서 편집'};
   var ctl=null, enabled=false, closedByUser=false;
   var lastText='', lastKind='', lastQ='';
 
@@ -28082,6 +28334,140 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     return {kind:'', text:s};                     // 표식이 없으면 딱지 없이 그대로
   }
 
+  /* ── 14.24.0 · 해돌이 문서 편집 — ! 요청 → 검증된 @ 명령 → 한 번에 적용 ──
+     일반 질문과 섞이지 않도록 !, /편집, /edit, "편집:" 접두사만 편집 요청으로 본다.
+     스트림 중에는 명령 원문을 노출하거나 부분 적용하지 않고, done을 받은 뒤에만
+     파싱한다. 편집기 bridge가 요청 시점 revision을 다시 확인해 오래된 계획도 막는다. */
+  var EDIT_PRE=/^\s*(?:[!！]+|\/(?:edit|수정|편집)(?=\s|$)|(?:수정|편집)\s*[:：])\s*/;
+  function editCmdOf(q){
+    if(!EDIT_PRE.test(q||'')) return null;
+    return String(q).replace(EDIT_PRE,'').trim();
+  }
+  function aiCapture(){
+    try{
+      var bridge=window.__sdyAiBridge;
+      if(bridge&&typeof bridge.capture==='function'){
+        var got=bridge.capture()||{};
+        return {text:String(got.text||''),revision:String(got.revision||'')};
+      }
+      if(bridge&&typeof bridge.snapshot==='function')
+        return {text:String(bridge.snapshot()||''),revision:''};
+    }catch(e){}
+    return {text:'',revision:''};
+  }
+  function editProgress(acc){
+    var count=(String(acc||'').match(/^\s*@(?:mv|sz|bx|tx|add|del)\b/gmi)||[]).length;
+    return count?('문서 편집안을 만드는 중… · 변경 '+count+'개'):'문서를 살펴보는 중…';
+  }
+  function editApplyDone(raw,capture){
+    var parsed=window.sdyAiEditParse
+      ?window.sdyAiEditParse(raw):{ops:[],say:'',dropped:0};
+    var res={applied:0,failed:0,notes:[],stale:false};
+    if(parsed.ops.length){
+      try{
+        var bridge=window.__sdyAiBridge;
+        if(bridge&&typeof bridge.apply==='function')
+          res=bridge.apply(parsed.ops,capture&&capture.revision)||res;
+        else{
+          res.failed=parsed.ops.length;
+          res.notes=['문서 편집 연결을 찾지 못했어요 · 페이지를 새로고침해 주세요'];
+        }
+      }catch(e){
+        res.failed=parsed.ops.length;
+        res.notes=['문서에 적용하지 못했어요 · 다시 시도해 주세요'];
+      }
+    }
+    if(res.stale){
+      return (res.notes&&res.notes[0])
+        ||'기다리는 동안 문서가 바뀌어서 적용하지 않았어요 · 다시 요청해 주세요';
+    }
+    var applied=Number(res.applied||0),failed=Number(res.failed||0)+Number(parsed.dropped||0);
+    var say=String(parsed.say||'').trim()
+      ||(applied?'요청대로 문서를 고쳤어요 해돌~':'바꿀 내용을 찾지 못했어요');
+    var counts=[];
+    if(applied) counts.push('적용 '+applied+'개');
+    if(failed) counts.push('건너뜀 '+failed+'개');
+    var output=say+(counts.length?'\n\n'+counts.join(' · '):'');
+    if(res.notes&&res.notes.length) output+='\n'+res.notes.join('\n');
+    if(applied){
+      try{ if(window.toast) window.toast('해돌이가 문서를 고쳤어요 · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e){}
+    }
+    return output;
+  }
+
+  /* 모델 응답 파서. 허용 목록 밖의 줄은 버리고, 문서에는 HTML이 아니라 평문만
+     전달한다. @tx의 빈 본문은 "상자 내용 비우기"라서 정상 명령으로 허용한다. */
+  window.sdyAiEditParse=function(raw){
+    var ops=[],say='',dropped=0;
+    var src=String(raw==null?'':raw).replace(/\r\n?/g,'\n');
+    src=src.replace(/^\s*```[^\n]*\n?/gm,'').replace(/^\s*```\s*$/gm,'');
+    var number=function(value){
+      var s=String(value==null?'':value).trim();
+      if(!/^-?\d+(?:\.\d+)?(?:px)?$/i.test(s)) return null;
+      var n=Number(s.replace(/px$/i,'')); return isFinite(n)?n:null;
+    };
+    var decode=function(value){
+      return String(value==null?'':value).replace(/\\(n|t|\\)/g,function(all,ch){
+        return ch==='n'?'\n':(ch==='t'?'\t':'\\');
+      }).trim();
+    };
+    src.split('\n').forEach(function(original){
+      var line=original.replace(/\s*｜\s*/g,'|').trim();
+      if(line.charAt(0)!=='@') return;
+      var split=line.search(/[\s|]/);
+      var head=(split<0?line.slice(1):line.slice(1,split)).replace(/:$/,'').toLowerCase();
+      var rest=split<0?'':line.slice(split+1).trim();
+      var fields=rest.split('|').map(function(v){ return v.trim(); });
+      var at=function(i){ return fields[i]==null?'':fields[i]; };
+      var nums=function(values){ return values.every(function(v){ return v!==null; }); };
+      if(head==='done'||head==='end'||head==='say'||head==='완료'){
+        if(rest) say=decode(rest).replace(/\n/g,' ').slice(0,400);
+        return;
+      }
+      if(head==='mv'||head==='move'){
+        var x=number(at(1)),y=number(at(2));
+        if(at(0)&&nums([x,y])) ops.push({cmd:'mv',id:at(0),x:x,y:y}); else dropped++;
+        return;
+      }
+      if(head==='sz'||head==='size'||head==='resize'||head==='rs'){
+        var w=number(at(1)),h=number(at(2));
+        if(at(0)&&nums([w,h])) ops.push({cmd:'sz',id:at(0),w:w,h:h}); else dropped++;
+        return;
+      }
+      if(head==='bx'||head==='box'||head==='rect'||head==='place'){
+        var x2=number(at(1)),y2=number(at(2)),w2=number(at(3)),h2=number(at(4));
+        if(at(0)&&nums([x2,y2,w2,h2])) ops.push({cmd:'bx',id:at(0),x:x2,y:y2,w:w2,h:h2});
+        else dropped++;
+        return;
+      }
+      if(head==='tx'||head==='text'||head==='set'||head==='put'){
+        var bar=rest.indexOf('|');
+        var id=bar<0?'':rest.slice(0,bar).trim();
+        if(id) ops.push({cmd:'tx',id:id,text:decode(rest.slice(bar+1))}); else dropped++;
+        return;
+      }
+      if(head==='add'||head==='new'){
+        var cuts=[],from=0;
+        for(var i=0;i<5;i++){
+          var next=rest.indexOf('|',from); if(next<0) break;
+          cuts.push(rest.slice(from,next).trim()); from=next+1;
+        }
+        var page=number(cuts[0]),ax=number(cuts[1]),ay=number(cuts[2]);
+        var aw=number(cuts[3]),ah=number(cuts[4]),body=decode(rest.slice(from));
+        if(cuts.length===5&&nums([page,ax,ay,aw,ah])&&body)
+          ops.push({cmd:'add',page:page,x:ax,y:ay,w:aw,h:ah,text:body});
+        else dropped++;
+        return;
+      }
+      if(head==='del'||head==='rm'||head==='delete'||head==='remove'){
+        if(at(0)) ops.push({cmd:'del',id:at(0)}); else dropped++;
+        return;
+      }
+      dropped++;
+    });
+    return {ops:ops.slice(0,60),say:say,dropped:dropped+Math.max(0,ops.length-60)};
+  };
+
   /* ── 미리 준비(warm) — '이 페이지'·'전체 페이지' 정리를 노트를 여는 순간
      슬쩍 만들어 둔다. 같은 글로는 두 번 묻지 않는다(쪽 하나뿐인 노트는 이 페이지
      글 = 전체 글이라 한 번만 간다). 준비된 답은 브라우저에도 들고 있어서,
@@ -28199,8 +28585,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   function run(task,q,scope){
     if(ctl) return;                                   // 말하는 중엔 또 묻지 않는다
     q=String(q||'').trim();
-    scope=(scope==='page')?'page':'doc';              // outline 의 범위 — chat 은 항상 문서 전체
-    var txt=noteText(task==='outline'?scope:'doc');
+    scope=(scope==='page')?'page':'doc';              // outline 의 범위 — chat/edit 은 문서 전체
+    var editCapture=task==='edit'?aiCapture():null;
+    var txt=editCapture?editCapture.text:noteText(task==='outline'?scope:'doc');
     closedByUser=false;
     if(task==='outline'&&!txt){
       kindChip(''); meta('');
@@ -28210,6 +28597,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       return;
     }
     if(task==='chat'&&!q) return;                     // 빈 질문 Enter — 조용히 무시
+    if(task==='edit'&&(!q||!txt)){
+      otterLine(!txt?'문서 상태를 읽지 못했어요 · 노트를 다시 열어 주세요':'어떻게 고칠지 적어 줘 해돌~');
+      return;
+    }
     // ① 정리 — 미리 준비해 둔 답이 있으면 기다림 없이 그 자리에서 바로
     if(task==='outline'){
       var ready=warmGet(txt);
@@ -28225,7 +28616,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }
     ctl=new AbortController();
     busy(true); lastText=''; lastKind=''; lastQ=q;
-    kindChip('');
+    kindChip(task==='edit'?'edit':'');
     otterHide();                                       // 대답 시작 — 작은 말풍선은 접는다
     out('',true); meta('');
     var acc='';
@@ -28237,6 +28628,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }).then(function(r){
       return readSSE(r,function(d){
         acc+=d;
+        if(task==='edit'){ out(editProgress(acc),true); return; }
         if(task==='chat'){
           var p=parseChat(acc);
           if(p.wait){ out('',true); return; }          // 표식이 채 안 왔으면 아직 생각 중
@@ -28256,6 +28648,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
           if(p.wait) p={kind:'',text:text};            // 표식만 달랑 오면 표식 없는 셈 친다
           text=p.text; kind=p.kind;
         }
+        if(task==='edit'){
+          kind='edit';
+          text=editApplyDone(text,editCapture);          // 완성된 계획만 원자적으로 적용
+        }
         lastText=text; lastKind=kind;
         kindChip(kind);
         out(lastText);
@@ -28269,7 +28665,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         //   아래에 한 번 더 띄우면 겹쳐 보이기만 해서 여기서는 조용히 넘긴다.
       }else{
         // 말하다 끊겼으면 그까지라도 남겨 둔다(복사·읽기는 되게)
-        lastText=acc?(task==='chat'?(parseChat(acc).text||''):acc):'';
+        lastText=task==='edit'?'':(acc?(task==='chat'?(parseChat(acc).text||''):acc):'');
         kindChip('');
         out(String(d.error||'AI에 닿지 못했어요'),true);
         // 401/404 는 설정 문제 — 어디를 봐야 하는지 서버가 짚어 준 걸 그대로 띄운다.
@@ -28277,7 +28673,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
     }).catch(function(e){
       if(e&&e.name==='AbortError'&&closedByUser){ return; }   // 말풍선을 닫으며 멈춘 것
-      lastText=acc?(task==='chat'?(parseChat(acc).text||''):acc):'';
+      lastText=task==='edit'?'':(acc?(task==='chat'?(parseChat(acc).text||''):acc):'');
       kindChip('');
       out((e&&e.name==='AbortError')?'멈췄어요.':'네트워크 오류 · 잠시 뒤 다시 시도해 주세요',true);
       meta('');
@@ -28292,7 +28688,16 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var qEl=$('aiQ'), q=qEl?String(qEl.value||'').trim():'';
     if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
     if(!q){ otterLine('뭐라도 적어 줘 해돌~'); return; }
-    if(qEl){ qEl.value=''; aiQGrow(); }                 // 본 질문은 말풍선(과 기록)에 남으니 창은 비운다
+    var editCommand=editCmdOf(q);
+    if(qEl){ qEl.value=''; aiQGrow(); }                 // 본 요청은 말풍선(과 기록)에 남으니 칸은 비운다
+    if(editCommand!=null){
+      if(!editCommand){ otterLine('! 뒤에 어떻게 고칠지 적어 줘 해돌~ · 예) !제목을 맨 위로 옮겨 줘'); return; }
+      if(!inNote()){ otterLine('노트를 연 다음에 고쳐 달라고 해 줘 해돌~'); return; }
+      if(!(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function')){
+        otterLine('문서 편집 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
+      }
+      run('edit',editCommand); return;
+    }
     run('chat',q);
   };
   window.sdyAiOutline=function(scope){
@@ -28360,6 +28765,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         var lift=(h>24)?Math.max(0,Math.min(48,h-28)):0;
         say.style.setProperty('--ai-lift',lift+'px');
       }
+      // !, /편집, "편집:"을 입력하는 동안 편집 모드임을 색과 딱지로 즉시 알린다.
+      var editOn=EDIT_PRE.test(q.value||'');
+      var ask=$('aiAsk'); if(ask) ask.classList.toggle('edit-on',editOn);
+      var tag=$('aiEditTag'); if(tag) tag.hidden=!editOn;
     }catch(e){}
   }
   document.addEventListener('input',function(e){

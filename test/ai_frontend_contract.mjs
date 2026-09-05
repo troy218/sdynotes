@@ -1,14 +1,13 @@
-/* 14.23.0 · 노트 해돌이 계약 — 검색창 · 개요 버튼 · 말풍선 · 대화기록
+/* 14.24.0 · 노트 해돌이 계약 — 질문 · 개요 · 안전한 문서 편집
    ---------------------------------------------------------------------------
    예전(✨ 아이콘 버튼 + 뜨는 창)과 달라진 계약:
      1) 소스 — #aiFab/#aiPanel/할일칩(요약·개조식·노트질문·자유질문 고르기)/
         보내기 버튼이 없고, #noteOtter 옆 한 줄 검색창(#aiAsk > #aiQ) +
         그 바로 위 '이 페이지'(#aiOutlinePage)·'전체 페이지'(#aiOutlineDoc)
-        버튼 둘만 있다. 서버 task 도 outline/chat 둘뿐.
-     2) 런타임(jsdom) — Enter 로 바로 묻고(task=chat), 답은 해돌이 말풍선
-        (#aiSay)에 스트리밍되고, [[note]]/[[free]] 표식은 '노트 질문/자유 질문'
-        딱지(#aiKind)가 되고, 말풍선은 닫기(#aiSayX) 전까지 계속 떠 있고,
-        해돌이(#noteOtter)를 누르면 대화기록(#aiHist)이 열린다. */
+        버튼 둘만 있다. 일반 질문은 chat, 느낌표로 시작한 요청은 edit이다.
+     2) 런타임(jsdom) — Enter 로 바로 묻고, chat 답은 말풍선에 스트리밍된다.
+        !편집 요청은 문서 스냅샷과 revision을 캡처하고, 모델의 @ 명령을 완료 뒤
+        허용 목록으로 파싱해 bridge.apply에 한 번만 전달한다. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,10 +23,14 @@ let pass = 0;
 const check = (name, cond) => { assert.ok(cond, name); pass++; console.log('  ✓ ' + name); };
 
 // ── 1) 소스 계약 ─────────────────────────────────────────────────────────────
-check('서버: task 화이트리스트 2종(outline/chat)',
-  /^  outline: \{/m.test(srv) && /^  chat: \{/m.test(srv)
+check('서버: task 화이트리스트 3종(outline/chat/edit)',
+  /^  outline: \{/m.test(srv) && /^  chat: \{/m.test(srv) && /^  edit: \{/m.test(srv)
   && !/^  summarize: \{/m.test(srv) && !/^  bullets: \{/m.test(srv)
   && !/^  ask: \{/m.test(srv) && !/^  free: \{/m.test(srv));
+check('서버: edit은 @ 명령 허용 목록이며 캐시/in-flight를 쓰지 않는다',
+  /edit: \{[\s\S]*?@mv[\s\S]*?@tx[\s\S]*?@add[\s\S]*?noCache: true/.test(srv)
+  && /const noCache = !!AI_TASKS\[task\]\?\.noCache/.test(srv)
+  && /job\.noCache \? null : aiCacheGet/.test(srv));
 check('서버: chat 프롬프트가 해돌이 판단 표식([[note]]/[[free]])을 첫 줄에 요구한다',
   /\[\[note\]\]/.test(srv) && /\[\[free\]\]/.test(srv));
 check('서버: chat 은 노트가 비어 있어도 된다(needText:false) · 질문은 필요하다',
@@ -50,6 +53,14 @@ check('프런트: AI 는 자기 엔드포인트(/api/ai/ask)만 부른다', /fet
 check('프런트: 상태 조회로 켜짐/모델을 확인한다', /fetch\('\/api\/ai\/status'/.test(js));
 check('프런트: 노트 글은 bridge 로만 꺼낸다 (문서 구조를 직접 안 건드림)',
   /window\.__sdyAiBridge\.text\(/.test(js));
+check('프런트: 편집도 capture/apply bridge로만 하고 요청 중 문서 변경을 막는다',
+  /capture:\(\)=>/.test(js) && /apply:\(ops,revision\)=>/.test(js)
+  && /expectedRevision!==aiEditRevision\(\)/.test(js) && /res\.stale=true/.test(js));
+check('프런트: 모델 명령은 허용 목록 파서로 평문·좌표만 받는다',
+  /window\.sdyAiEditParse=function/.test(js) && /cmd:'mv'/.test(js)
+  && /cmd:'tx'/.test(js) && /cmd:'add'/.test(js) && /ops\.slice\(0,60\)/.test(js));
+check('프런트: AI 편집은 최대 30개이며 한 번의 undo 지점으로 묶인다',
+  /AI_EDIT_MAX_OPS=30/.test(js) && /const beforeChange=[\s\S]{0,500}pushHistory\(true\)/.test(js));
 check('프런트: 예전 할 일(summarize/bullets/ask/free 고르기)이 없다',
   !/'summarize'/.test(js) && !/'bullets'/.test(js) && !/sdyAiToggle/.test(js));
 check('프런트: 보내기 버튼이 없다 — Enter 만 누르면 바로 묻는다(한글 조합 중 제외)',
@@ -70,6 +81,10 @@ check('프런트: 이 페이지/전체 페이지 범위로 나눠 묻는다',
   /window\.sdyAiOutline=function\(scope\)/.test(js)
   && /noteText\(task==='outline'\?scope:'doc'\)/.test(js)
   && /outlinePage:'이 페이지'/.test(js) && /outlineDoc:'전체 페이지'/.test(js));
+check('프런트: !·/편집·편집: 접두사를 edit 요청으로 보내고 완료 전 부분 적용하지 않는다',
+  /var EDIT_PRE=/.test(js) && /run\('edit',editCommand\)/.test(js)
+  && /if\(task==='edit'\)\{ out\(editProgress\(acc\),true\); return; \}/.test(js)
+  && /editApplyDone\(text,editCapture\)/.test(js));
 check('프런트: 모델 이름·소요 초 같은 기술 정보는 화면에 남기지 않는다',
   !/tailMeta/.test(js) && /meta\(''\);\s*\/\/ 모델·소요 초 같은 기술 정보는 안 보여 준다/.test(js)
   && /dot\.title=enabled\?'AI 켜짐'/.test(js));
@@ -117,6 +132,9 @@ check('HTML: 검색창 안내 글씨는 한 줄 — (Enter) 없이, Enter 안내
   && /title="[^"]*Enter[^"]*"/.test(html) && /aria-label="[^"]*Enter[^"]*"/.test(html));
 check('HTML: 질문칸은 여러 줄로 자랄 수 있는 textarea 다',
   /<textarea id="aiQ"/.test(html) && !/<input[^>]*id="aiQ"/.test(html));
+check('HTML/CSS: ! 편집을 안내하고 입력 중 편집 딱지를 보여 준다',
+  /!로 시작하면 문서를 고쳐요/.test(html) && /id="aiEditTag"[^>]*hidden>편집</.test(html)
+  && /\.ai-askbar\.edit-on \.ai-askbar-field/.test(css) && /\.ai-edittag\{/.test(css));
 check('프런트: 질문이 길면 옆으로, 여러 줄이면 위로 자란다 (aiQGrow)',
   /function aiQGrow\(/.test(js) && /--ai-q-w/.test(js)
   && /ai-q-mirror/.test(js) && /document\.addEventListener\('input',/.test(js));
@@ -327,7 +345,80 @@ check('런타임: 질문을 치면 칸 크기를 다시 잰다 (폭·높이가 �
   $('aiQ').style.height + ' / ' + $('aiQ').parentNode.style.getPropertyValue('--ai-q-w'));
 $('aiQ').value = '';
 
-// ── 2-7) 대화기록 — 해돌이를 누르면 열리고, 고륵면 말풍선으로 다시 본다 ──
+// ── 2-7) ! 문서 편집 — 스냅샷 → 숨긴 명령 스트림 → 완료 뒤 한 번 적용 ──
+{
+  const parsed = w.sdyAiEditParse([
+    '@mv t_1 | 120px | 80',
+    '@tx t_2 |',                         // 빈 내용으로 만들기도 정상 명령
+    '@add 1 | 30 | 200 | 320 | 70 | 새 문장\\n둘째 줄 | 세로줄',
+    '@mv t_bad | 숫자아님 | 20',
+    '@unknown anything',
+    '@done 세 군데를 정리했어요',
+  ].join('\n'));
+  check('런타임: 편집 파서는 이동·빈 텍스트·새 상자를 허용 목록으로 읽는다',
+    parsed.ops.length === 3 && parsed.ops[0].cmd === 'mv'
+    && parsed.ops[1].cmd === 'tx' && parsed.ops[1].text === ''
+    && parsed.ops[2].cmd === 'add' && /둘째 줄 \| 세로줄/.test(parsed.ops[2].text));
+  check('런타임: 잘못된 숫자·모르는 명령은 실행하지 않고 센다', parsed.dropped === 2);
+  check('런타임: @done만 사용자에게 보여 줄 요약으로 분리한다', parsed.say === '세 군데를 정리했어요');
+}
+const EDIT_SNAPSHOT = '페이지 크기: 800x1100 px · 총 1쪽\n[1쪽]\n  id=t_1 type=글상자 x=40 y=50 w=300 h=80 text="옛 제목"';
+const editApplied = [];
+w.__sdyAiBridge = {
+  text: () => LONG,
+  capture: () => ({ text: EDIT_SNAPSHOT, revision: 'revision-before-ai' }),
+  apply: (ops, revision) => {
+    editApplied.push({ ops, revision });
+    return { applied: ops.length, failed: 0, notes: [], stale: false };
+  },
+};
+const EDIT_FULL = '@mv t_1 | 80 | 30\n@tx t_1 | 새 제목\\n부제\n@done 제목을 위로 옮기고 내용을 고쳤어요';
+askRes = (url, b) => sse(['@mv t_1 | 80', ' | 30\n@tx t_1 | 새', ' 제목\\n부제'],
+  { text: EDIT_FULL, provider: 'gemini', model: 'gem', cached: false, truncated: false });
+calls.length = 0;
+$('aiQ').value = '! 제목을 위로 옮기고 새 제목과 부제로 고쳐 줘';
+$('aiQ').dispatchEvent(new w.Event('input', { bubbles: true }));
+check('런타임: !를 입력하는 즉시 편집 모드 색·딱지가 켜진다',
+  $('aiAsk').classList.contains('edit-on') && $('aiEditTag').hidden === false);
+$('aiQ').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+await tick(25); await flush();
+{
+  const editReq = JSON.parse(calls[0].body);
+  check('런타임: !는 떼고 task=edit·문서 스냅샷·편집 요청을 보낸다',
+    editReq.task === 'edit' && editReq.text === EDIT_SNAPSHOT
+    && editReq.question === '제목을 위로 옮기고 새 제목과 부제로 고쳐 줘' && editReq.stream === true);
+}
+check('런타임: 명령 스트림 중에는 @ 원문을 보이지 않고 아직 적용하지 않는다',
+  editApplied.length === 0 && !$('aiOut').textContent.includes('@'));
+check('런타임: 처리 중에도 말풍선 딱지는 문서 편집이다',
+  $('aiKind').hidden === false && $('aiKind').textContent === '문서 편집');
+await tick(400); await flush();
+check('런타임: done 뒤 파싱된 명령을 캡처 revision과 함께 한 번만 적용한다',
+  editApplied.length === 1 && editApplied[0].revision === 'revision-before-ai'
+  && editApplied[0].ops.length === 2 && editApplied[0].ops[1].text === '새 제목\n부제');
+check('런타임: 말풍선에는 @ 명령 대신 요약과 적용 개수만 보인다',
+  /제목을 위로 옮기고/.test($('aiOut').textContent)
+  && /적용 2개/.test($('aiOut').textContent) && !$('aiOut').textContent.includes('@mv'));
+check('런타임: 전송 뒤 편집 입력 딱지는 꺼진다',
+  !$('aiAsk').classList.contains('edit-on') && $('aiEditTag').hidden === true);
+
+// bridge가 stale을 알리면 모델 계획을 적용 성공처럼 표시하지 않는다.
+w.__sdyAiBridge = {
+  text: () => LONG,
+  capture: () => ({ text: EDIT_SNAPSHOT, revision: 'old-revision' }),
+  apply: () => ({ applied: 0, failed: 0, stale: true,
+    notes: ['기다리는 동안 문서가 바뀌어서 적용하지 않았어요 · 다시 요청해 주세요'] }),
+};
+askRes = () => fakeRes(200, { ok: true, text: '@del t_1\n@done 지웠어요', provider: 'gemini', model: 'gem' });
+$('aiQ').value = '/편집 첫 상자를 지워 줘';
+w.sdyAiRun();
+await tick(80); await flush();
+check('런타임: 문서가 바뀐 stale 계획은 적용 완료로 표시하지 않는다',
+  /문서가 바뀌어서 적용하지 않았어요/.test($('aiOut').textContent)
+  && !/적용 1개/.test($('aiOut').textContent));
+w.__sdyAiBridge = { text: () => LONG, title: () => '생물 노트' };
+
+// ── 2-8) 대화기록 — 해돌이를 누르면 열리고, 고르면 말풍선으로 다시 본다 ──
 $('aiSayX').dispatchEvent(new w.Event('click', { bubbles: true }));
 // (inline onclick 은 jsdom 에서 안 돌므로 직접 부른다)
 w.sdyAiSayClose();
@@ -340,10 +431,11 @@ check('런타임: 해돌이를 누르면 대화기록이 열린다', $('aiHist')
   check('런타임: 나눈 이야기가 최신순으로 쌓인다 (개요+질문들)',
     items.length >= 4, items.length);
   check('런타임: 최신 이야기가 맨 위에 온다',
-    /빈 노트 질문/.test(items[0].textContent), items[0].textContent.slice(0, 40));
-  check('런타임: 기록에 종류 딱지가 있다',
-    w.document.querySelectorAll('.ai-hist-item .ai-kind').length >= 2
-    && [...w.document.querySelectorAll('.ai-hist-item .ai-kind')].some((k) => /자유 질문/.test(k.textContent)));
+    /첫 상자를 지워 줘/.test(items[0].textContent), items[0].textContent.slice(0, 50));
+  check('런타임: 기록에 질문·편집 종류 딱지가 있다',
+    w.document.querySelectorAll('.ai-hist-item .ai-kind').length >= 3
+    && [...w.document.querySelectorAll('.ai-hist-item .ai-kind')].some((k) => /자유 질문/.test(k.textContent))
+    && [...w.document.querySelectorAll('.ai-hist-item .ai-kind')].some((k) => /문서 편집/.test(k.textContent)));
   // '날씨' 줄을 고륵면 그 답이 말풍선에 다시 뜬다
   let target = null;
   w.document.querySelectorAll('.ai-hist-item').forEach((el) => {
@@ -364,7 +456,7 @@ check('런타임: 다시 누르면 기록이 열린다', $('aiHist').hidden === 
 w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 check('런타임: Esc 로 기록을 닫는다', $('aiHist').hidden === true);
 
-// ── 2-8) 실패 경로 — 말풍선이 이유를 말해 준다 ──
+// ── 2-9) 실패 경로 — 말풍선이 이유를 말해 준다 ──
 askRes = () => fakeRes(429, { ok: false, limited: true, retry_after: 37, error: 'AI 사용량이 잠시 찼어요' });
 w.sdyAiWarmReset();
 calls.length = 0;

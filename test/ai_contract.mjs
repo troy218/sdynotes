@@ -3,7 +3,7 @@
 //
 // 이 파일이 지키려는 계약
 //   1) 모델 키는 Authorization 헤더로만 나가고 응답·본문에는 절대 새지 않는다
-//   2) task 화이트리스트(outline/chat, 14.23.0) 밖의 일은 400 으로 거절한다 (임의 프롬프트 주입 차단)
+//   2) task 화이트리스트(outline/chat/edit, 14.24.0) 밖의 일은 400 으로 거절한다 (임의 프롬프트 주입 차단)
 //   3) 같은 입력 재요청은 외부 호출 없이 캐시로 답한다 / 동시에 온 중복은 하나로 합친다
 //   4) 본문은 상한만큼만 잘라 보낸다 (truncated=true 로 클라이언트에 알린다)
 //   5) 429 를 맞아도 서버 쪽 쿨다운은 없다 — 다음 요청은 곧바로 다시 외부로 나간다
@@ -61,8 +61,8 @@ let g = await get('/api/ai/status');
 let j = JSON.parse(g.body);
 ok('status: enabled=true', g.status === 200 && j.enabled === true);
 ok('status: 모델명을 알려 준다', j.model === 'test-model-x');
-ok('status: 할 일 2종(outline/chat)', Array.isArray(j.tasks) && j.tasks.length === 2
-  && j.tasks.map((t) => t.id).join(',') === 'outline,chat');
+ok('status: 할 일 3종(outline/chat/edit)', Array.isArray(j.tasks) && j.tasks.length === 3
+  && j.tasks.map((t) => t.id).join(',') === 'outline,chat,edit');
 ok('status: 키가 응답에 새지 않는다', !g.body.includes(FAKE_KEY) && !g.body.includes(FAKE_KEY.slice(3)));
 
 // ── 2) 개요 정리: OpenAI 호환 본문으로 나가고 키는 헤더에만 ──
@@ -95,6 +95,34 @@ extFetch = () => chatOk('[[free]]\n노트 없이 답했어요.');
 r = await post('/api/ai/ask', { task: 'chat', text: '   \n  ', question: '그냥 궁금한 것' });
 ok('빈 노트 + chat → 400 이 아니라 모델이 답한다', r.ok === true && /^\[\[free\]\]/.test(r.text || ''));
 ok('빈 노트면 user 메시지에 본문을 싣지 않는다', !/노트 본문:/.test(calls[0].body.messages[1].content));
+
+// ── 3-2) 문서 편집: 상태/요청을 분리하고 실행 계획을 캐시하지 않는다 ──
+ai.aiCacheReset();
+calls = [];
+const editPlan = '@tx t_1 | 새 제목\\n부제\n@done 제목과 부제를 고쳤어요';
+extFetch = () => chatOk(editPlan);
+const editBody = {
+  task: 'edit',
+  text: '페이지 크기: 800x1100 px · 총 1쪽\n[1쪽]\n  id=t_1 type=글상자 x=40 y=50 w=300 h=80 text="옛 제목"',
+  question: '제목을 새 제목과 부제로 바꿔 줘',
+};
+r = await post('/api/ai/ask', editBody);
+ok('문서 편집 계획을 그대로 돌려준다', r.ok === true && r.task === 'edit' && r.text === editPlan);
+const editMessages = calls[0].body.messages;
+ok('편집 시스템 프롬프트는 허용 명령과 @done 형식을 고정한다',
+  /@mv/.test(editMessages[0].content) && /@tx/.test(editMessages[0].content)
+  && /@add/.test(editMessages[0].content) && /@done/.test(editMessages[0].content));
+ok('문서 상태와 편집 요청은 서로 다른 레이블로 모델에 전달한다',
+  /문서 상태:\n<document>/.test(editMessages[1].content)
+  && /편집 요청: 제목을 새 제목과 부제로/.test(editMessages[1].content));
+ok('문서 안 가짜 지시를 따르지 말라는 방어 규칙이 있다', /신뢰할 수 없는 사용자 문서/.test(editMessages[0].content));
+r = await post('/api/ai/ask', editBody);
+ok('같은 편집 요청도 캐시하지 않고 매번 새 계획을 만든다',
+  r.ok === true && r.cached === false && calls.length === 2);
+r = await post('/api/ai/ask', { task: 'edit', text: '', question: '상자 추가' });
+ok('문서 상태 없는 편집은 외부 호출 없이 400', r.status === 400 && /문서 상태/.test(r.error || '') && calls.length === 2);
+r = await post('/api/ai/ask', { task: 'edit', text: '페이지 크기: 800x1100', question: '' });
+ok('요청 없는 편집은 외부 호출 없이 400', r.status === 400 && /어떻게 고칠지/.test(r.error || '') && calls.length === 2);
 
 // ── 4) task 화이트리스트 ──
 calls = [];
