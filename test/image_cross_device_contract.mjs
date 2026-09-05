@@ -153,8 +153,23 @@ try {
   console.log(`\n이미지 크로스 디바이스: PASS ${pass}`);
 } catch (e) {
   console.error('FAIL: ' + (e && e.stack || e));
-  throw e;
+  process.exitCode = 1;
 } finally {
-  try { child.kill('SIGTERM'); } catch {}
-  await closeDoms(doms);
+  // 창을 먼저 배수한다. 서버부터 내리면 부팅 직후의 알림 poll fetch가 늦게
+  // 끝나면서 이미 close된 JSDOM의 document를 만질 수 있다. 이 계약은 다음
+  // 이미지 런타임 테스트도 바로 띄우므로 서버가 실제로 죽는 것까지 기다린다.
+  // 두 번째 JSDOM은 노트를 연 직후라 부팅 시 예약한 notifPoll fetch가 막
+  // 시작될 수 있다. 기본 500ms보다 길게 배수해서 그 continuation도 살아 있는
+  // document에서 끝낸다.
+  await closeDoms(doms, { tailMs: 2000 });
+  if (child.exitCode === null) {
+    const exited = new Promise(resolve => child.once('exit', resolve));
+    try { child.kill('SIGTERM'); } catch {}
+    await Promise.race([exited, wait(1500)]);
+    if (child.exitCode === null) {
+      const killed = new Promise(resolve => child.once('exit', resolve));
+      try { child.kill('SIGKILL'); } catch {}
+      await Promise.race([killed, wait(1500)]);
+    }
+  }
 }
