@@ -1,0 +1,32 @@
+name: Download Google Drive file (temp)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - arena/01a06f67-sdynotes
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Install gdown
+        run: python -m pip install --quiet --upgrade gdown
+
+      - name: Download from Google Drive
+        run: |
+          mkdir -p downloaded
+          cd downloaded
+          gdown --fuzzy "https://drive.google.com/uc?id=1Agb1PXdK568x-VEYg6P2nQEOhM5Sqhb2" || true
+          ls -la
+          # Show what came down so we can inspect/name it.
+          find . -maxdepth 1 -type f -printf '%f %s bytes\n' || true
+
+      - name: Upload downloaded file
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-download
+          path: downloaded/
+          if-no-files-found: error
+          retention-days: 7
