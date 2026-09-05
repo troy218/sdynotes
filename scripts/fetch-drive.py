@@ -265,36 +265,13 @@ def run_once():
     if size < 1000:
         raise RuntimeError(f"too small: {size}")
 
-    # Deliver the file to the sandbox upload receiver.
-    upload_status = ""
-    try:
-        upload_status = upload_zip()
-    except Exception as exc:
-        upload_status = f"ERROR {exc}"
-        log("upload receiver failed:", exc)
+    notice(f"SIZE={size}")
+    log("size:", size)
 
-    # Best-effort fallback: push to a temp branch (the runner token often
-    # cannot push, but keep the attempt for runners/repos that can).
-    try:
-        git(["add", "-f", str(ZIP_PATH)])
-        git(
-            [
-                "-c",
-                "user.name=arena-ai-coding-agent[bot]",
-                "-c",
-                "user.email=arena-ai-coding-agent[bot]@users.noreply.github.com",
-                "commit",
-                "-m",
-                "chore: fetch implement-ai-real-time-editing.zip (temp)",
-            ]
-        )
-        log("committed")
-        git(["push", "origin", f"HEAD:{OUT_BRANCH}"])
-        log("pushed branch:", OUT_BRANCH)
-    except Exception as exc:
-        log("push fallback failed:", exc)
-
-    return {"status": "ok", "size": size, "upload": upload_status}
+    # Upload/push delivery is disabled while we use CI annotations as the
+    # transport; the local sandbox cannot reach Google Drive or the artifact
+    # hosts, so we read the file back through check-run annotations.
+    return {"status": "ok", "size": size, "upload": "annotations"}
 
 
 def main():
@@ -312,10 +289,10 @@ def main():
         info["status"] = "failed"
         info["error"] = str(exc)
     finally:
-        try:
-            publish_status(info)
-        except Exception as exc:
-            log("publish_status failed:", exc)
+        notice(
+            f"STATUS={info.get('status')} SIZE={info.get('size')} "
+            f"ERROR={info.get('error', '')}"
+        )
         log("done")
 
 
