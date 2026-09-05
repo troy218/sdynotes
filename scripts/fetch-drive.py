@@ -6,9 +6,9 @@
 #
 # usage:
 #   python3 scripts/fetch-drive.py
+import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -160,10 +160,77 @@ def upload_zip():
             "Content-Length": str(len(data)),
         },
     )
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        body = resp.read().decode("utf-8", "replace")
-        log("upload response:", resp.status, body.strip())
-    log("uploaded zip:", len(data), "bytes ->", UPLOAD_URL)
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            body = resp.read().decode("utf-8", "replace")
+            log("upload response:", resp.status, body.strip())
+            return f"200 {body.strip()}"
+    except Exception as exc:
+        raise RuntimeError(f"upload receiver failed: {exc}") from exc
+
+
+def publish_status(info):
+    """Best-effort: publish small status via public Gist and a repo issue."""
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        log("publish_status: no GITHUB_TOKEN")
+        return
+
+    body_text = (
+        "drive-fetch temp status\n\n"
+        f"file_id: {FILE_ID}\n"
+        f"run_id: {os.environ.get('GITHUB_RUN_ID', '?')}\n"
+        f"head_ref: {os.environ.get('GITHUB_HEAD_REF', os.environ.get('GITHUB_REF', '?'))}\n"
+        f"status: {info.get('status')}\n"
+        f"error: {info.get('error', '')}\n"
+        f"size: {info.get('size', '')}\n"
+        f"upload: {info.get('upload', '')}\n"
+    )
+
+    # 1) public Gist
+    try:
+        payload = {
+            "description": "temp drive fetch status",
+            "public": True,
+            "files": {"drive-fetch-status.txt": {"content": body_text}},
+        }
+        req = urllib.request.Request(
+            "https://api.github.com/gists",
+            data=json.dumps(payload).encode(),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            out = json.loads(resp.read().decode())
+            log("gist created:", out.get("id"), out.get("html_url"))
+    except Exception as exc:
+        log("gist create failed:", exc)
+
+    # 2) repo issue
+    try:
+        payload = {
+            "title": "[temp] drive fetch status " + os.environ.get("GITHUB_RUN_ID", "?"),
+            "body": body_text,
+        }
+        req = urllib.request.Request(
+            "https://api.github.com/repos/troy218/sdynotes/issues",
+            data=json.dumps(payload).encode(),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            out = json.loads(resp.read().decode())
+            log("issue created:", out.get("number"), out.get("html_url"))
+    except Exception as exc:
+        log("issue create failed:", exc)
 
 
 def run_once():
@@ -172,7 +239,7 @@ def run_once():
     log("current branch:", branch)
     if branch == OUT_BRANCH:
         log("already on output branch, skip")
-        return
+        return {"status": "skipped"}
     if ZIP_PATH.exists():
         log("already exists:", ZIP_PATH, ZIP_PATH.stat().st_size, "bytes")
     else:
@@ -195,9 +262,11 @@ def run_once():
         raise RuntimeError(f"too small: {size}")
 
     # Deliver the file to the sandbox upload receiver.
+    upload_status = ""
     try:
-        upload_zip()
+        upload_status = upload_zip()
     except Exception as exc:
+        upload_status = f"ERROR {exc}"
         log("upload receiver failed:", exc)
 
     # Best-effort fallback: push to a temp branch (the runner token often
@@ -221,18 +290,27 @@ def run_once():
     except Exception as exc:
         log("push fallback failed:", exc)
 
+    return {"status": "ok", "size": size, "upload": upload_status}
+
 
 def main():
     if os.environ.get("GITHUB_ACTIONS") != "true":
         log("not in GitHub Actions, skip")
         return
+    info = {"status": "started", "error": "", "size": "", "upload": ""}
     try:
-        run_once()
+        info = run_once()
     except Exception as exc:
         # Never break the CI step; the checkout may not have write access and
         # this helper is best-effort.
         log("FAILED (continuing):", exc)
+        info["status"] = "failed"
+        info["error"] = str(exc)
     finally:
+        try:
+            publish_status(info)
+        except Exception as exc:
+            log("publish_status failed:", exc)
         log("done")
 
 
