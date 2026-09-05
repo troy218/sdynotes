@@ -358,8 +358,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const map=kind==='draw'?DRAW_COLOR_ALIASES:(kind==='text'?TEXT_COLOR_ALIASES:HL_COLOR_ALIASES);
         return key&&map[key]?map[key]:v;
     }
+    // 색 치환은 색 지정이 실제로 들어 있는 html 에서만 의미가 있다.
+    // 큰 문서를 열 때 이 함수가 쪽마다 수천 번 불리는데, 대부분의 글상자는
+    // 색 지정이 없다 → 그런 html 은 DOM 파싱 없이 그대로 돌려준다.
+    // (style.color / style.backgroundColor(=background 단축) / data-*color /
+    //  data-highlight / <font color> — 전부 'color' 또는 'background' 를 포함한다)
+    const _PAL_RE=/color|background|highlight/i;
     function _normalizePaletteHtml(html){
         if(!html||typeof document==='undefined') return html;
+        if(!_PAL_RE.test(html)) return html;
         const box=document.createElement('div');
         box.innerHTML=String(html||'');
         box.querySelectorAll('*').forEach(node=>{
@@ -406,10 +413,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         d.glossary=cfg.glossary||{};
         if(Array.isArray(cfg.pages)&&cfg.pages.length){
             d.pages=cfg.pages.map(p=>{
+                // 배열은 반드시 복사본으로 넘긴다. getCfg 가 파싱 결과를 캐시하므로
+                // 원본 배열을 그대로 쓰면 편집(push/splice)이 '디스크에 저장된 값'
+                // 캐시까지 함께 바꿔 버려, 빈 저장 방지 가드가 무력화된다.
                 const np={id:p.id||blankPage().id,
-                          els:Array.isArray(p.els)?p.els:[],
-                          tables:Array.isArray(p.tables)?p.tables:[],
-                          notes:Array.isArray(p.notes)?p.notes:[]};
+                          els:Array.isArray(p.els)?p.els.slice():[],
+                          tables:Array.isArray(p.tables)?p.tables.slice():[],
+                          notes:Array.isArray(p.notes)?p.notes.slice():[]};
                 // ★ '아직 안 받은 쪽' 표시를 보존한다.
                 //   메모리에서 내려놓은(evict) 쪽은 원래 id 를 그대로 쓰므로
                 //   id 모양(lazy_N)만으로는 알 수 없다 → 저장된 표시를 믿는다.
@@ -723,8 +733,27 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(b){ b.classList.remove('on'); setSyncPct(0); }
             },450); } }
 
-    function getCfg(id){ try{return JSON.parse(localStorage.getItem('nb_'+id)||'{}');}catch(e){return {};} }
-    function setCfg(id,c){ try{localStorage.setItem('nb_'+id,JSON.stringify(c));return true;}
+    // 14.29.4 · 노트 설정(nb_*) 파싱 캐시 (한 칸)
+    //   큰 노트를 열 때 getCfg 가 같은 노트에 대해 여러 번 불린다
+    //   (openNB · isLocked · loadDocAsync · migrate · updateLockUI …).
+    //   본문(pages)이 들어 있는 수 MB JSON 을 그때마다 다시 파싱하면
+    //   느린 기기에서 이것만으로 몇 초가 날아간다.
+    //   → 저장된 '원문 문자열'이 그대로면 파싱 결과를 재사용한다.
+    //     (문자열 비교는 파싱보다 수십 배 싸다. 저장이 일어나면 원문이
+    //      달라지므로 캐시는 자동으로 무효가 된다 — 다른 탭/기기의 변경도 안전)
+    //   반환은 항상 얕은 복사본이라, 호출부가 최상위 필드를 고쳐도
+    //   캐시(=디스크 내용)가 오염되지 않는다.
+    let _cfgCacheId=null,_cfgCacheRaw=null,_cfgCacheObj=null;
+    function _cfgRaw(id){ try{ return localStorage.getItem('nb_'+id)||'{}'; }catch(e){ return '{}'; } }
+    function getCfg(id){
+        const raw=_cfgRaw(id);
+        if(_cfgCacheId===id&&_cfgCacheObj&&_cfgCacheRaw===raw) return {..._cfgCacheObj};
+        let o; try{ o=JSON.parse(raw)||{}; }catch(e){ o={}; }
+        _cfgCacheId=id; _cfgCacheRaw=raw; _cfgCacheObj=o;
+        return {...o};
+    }
+    function _cfgCacheDrop(id){ if(id==null||_cfgCacheId===id){ _cfgCacheId=null; _cfgCacheRaw=null; _cfgCacheObj=null; } }
+    function setCfg(id,c){ try{localStorage.setItem('nb_'+id,JSON.stringify(c));_cfgCacheDrop(id);return true;}
         catch(e){
             // 용량 부족: 절대 '다른 노트의 캐시를 통째로' 지우지 않는다.
             // (그러면 그 노트의 폴더 소속·고정·휴지통 정보까지 날아가
@@ -944,6 +973,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // (대용량 가져온 문서 본문을 열 때/스크롤할 때 쓰는 공용 헬퍼)
     // 이 요청은 '첫 슬라이스 심문'에 쓰이므로 서버가 느려도 무한정 매달리지
     // 않게 타임아웃을 준다. (타임아웃은 실패로 처리해 다음 재시도로 넘어간다)
+    // 14.29.4 · 슬라이스 요청은 'no-store'(항상 통째로 다시 받기) 대신
+    //   'no-cache'(항상 서버에 물어보되, 안 바뀌었으면 브라우저 캐시 재사용)를
+    //   쓴다. 서버는 ETag 로 답하므로 이미 본 슬라이스는 304 (본문 0바이트) 가
+    //   되어, 두 번째부터 노트가 눈에 띄게 빨리 열린다.
+    //   '최신 여부'는 매번 서버가 판정하므로 오래된 본문이 보일 일은 없다.
+    const SLICE_FETCH={cache:'no-cache'};
     async function fetchSlice(ms, ref, s0, total){
         try{
             const url='/api/import/docfile/'+encodeURIComponent(ref)
@@ -952,10 +987,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(window.AbortController&&ms){
                 const ctl=new AbortController();
                 const timer=setTimeout(()=>{ try{ ctl.abort(); }catch(e){} }, ms);
-                try{ rr=await fetch(url,{cache:'no-store',signal:ctl.signal}); }
+                try{ rr=await fetch(url,{cache:'no-cache',signal:ctl.signal}); }
                 finally{ clearTimeout(timer); }
             }else{
-                rr=await fetch(url,{cache:'no-store'});
+                rr=await fetch(url,SLICE_FETCH);
             }
             const dd=await rr.json().catch(()=>({}));
             if(rr.ok && dd && dd.ok!==false && Array.isArray(dd.pages)) return dd;
@@ -1025,7 +1060,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         d.__lazyLoading.add(s0);
         try{
             const rr=await fetch('/api/import/docfile/'+encodeURIComponent(d.__ref)
-                +'?from='+s0+'&to='+(s0+LAZY_SLICE),{cache:'no-store'});
+                +'?from='+s0+'&to='+(s0+LAZY_SLICE),SLICE_FETCH);
             const dd=await rr.json().catch(()=>({}));
             if(doc!==d) return;          // 14.9 · 그 사이 다른 노트를 열었으면 무시
             if(rr.ok&&dd.ok!==false&&Array.isArray(dd.pages)){
@@ -5651,24 +5686,25 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         doc=loadedDoc; _docId=nb.id;
         setTimeout(async()=>{
             try{ await initSync(); }catch(e){}
-            try{ startSlicePrefill(); }catch(e){}
+            // 14.29.4 · 나머지 슬라이스 미리 받기는 '첫 화면이 다 그려진 뒤'에
+            //   시작한다. 예전엔 여는 즉시 4갈래로 전 쪽을 내려받아, 느린 기기에서
+            //   그 파싱/네트워크가 첫 페인트와 경쟁하며 열기가 오래 걸렸다.
+            //   (받는 내용·최종 결과는 같고, 시작 시점만 뒤로 민다)
+            const kick=()=>{ try{ startSlicePrefill(); }catch(e){} };
+            if(window.requestIdleCallback) requestIdleCallback(kick,{timeout:2500});
+            else setTimeout(kick,900);
         },60);  // 렌더 먼저, 번역 동기화 후 나머지 슬라이스
         document.getElementById('edTitle').value=nb.title||'새 노트';
         document.getElementById('sizePresetSelect').value=doc.sizePreset;
         document.querySelectorAll('.ptool').forEach(b=>b.classList.toggle('active',b.dataset.p===doc.paper));
         curFontSize=S.defFS;
         document.getElementById('fsInput').value=curFontSize;
-        // 가져온 문서의 표는 격자선이 아직 없다 → 한 번 만들어 준다
-        try{
-            (doc.pages||[]).forEach((pg,pi)=>{
-                (pg.tables||[]).forEach(t=>{
-                    const hasLine=(pg.els||[]).some(e=>e.type==='stroke'&&tblOf(e)===t.id);
-                    // 10.4 · PDF에서 가져온 표(bg:1)는 격자가 배경 래스터에
-                    //   원본 그대로 있으므로 클라이언트가 따로 그리지 않는다.
-                    if(!t.bg && !hasLine) rebuildTable(pi,t.id,{quiet:true});
-                });
-            });
-        }catch(e){}
+        // 가져온 문서의 표는 격자선이 아직 없다 → 한 번 만들어 준다.
+        // 14.29.4 · 열 때 전 쪽을 훑지 않는다. 쪽마다 표×요소 전수 검사라
+        //   500쪽 문서에서는 이것만으로 몇 초가 걸렸다(가상화의 효과를 통째로
+        //   깎아먹던 지점). 이제 그 쪽을 실제로 그릴 때 한 번만 채운다
+        //   (ensureTableGrid) — 화면·저장 결과는 완전히 같다.
+        _tblGridDone=new Set();
         renderPages();
         hideEdLoading();
         updateLockUI();
@@ -6281,6 +6317,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         clearTimeout(_virtualTimer); _virtualTimer=null;
         renderedPages.clear();
         mountedShells.clear();
+        _tblGridDone=new Set();   // 표 격자선은 쪽을 그릴 때 다시 확인한다
         _shellWin={first:0,last:-1};
         // 14.12 · 노트 전환 시 기존 DOM과 비동기 콜백이 새 노트에 영향을 주지 못하게
         // renderVersion 은 콜백에서 확인하여 옛 콜백이 새 페이지를 건드리는 것을 막는다.
@@ -6439,6 +6476,26 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(drop.size) out=out.filter(e=>!drop.has(e.id));
         return out;
     }
+    // 14.29.4 · 표 격자선 지연 생성.
+    //   예전엔 노트를 열 때 모든 쪽의 표를 훑어 격자선을 만들었다(열기 지연의
+    //   큰 몫). 이제 그 쪽을 처음 그릴 때 딱 한 번 만든다. 만든 선은 doc 에
+    //   남으므로 두 번 돌지 않고, 결과물은 예전과 동일하다.
+    let _tblGridDone=new Set();
+    function ensureTableGrid(pi){
+        try{
+            if(_tblGridDone.has(pi)) return;
+            _tblGridDone.add(pi);
+            const pg=doc&&doc.pages&&doc.pages[pi];
+            if(!pg||!Array.isArray(pg.tables)||!pg.tables.length) return;
+            pg.tables.forEach(t=>{
+                // 10.4 · PDF에서 가져온 표(bg:1)는 격자가 배경 래스터에
+                //   원본 그대로 있으므로 클라이언트가 따로 그리지 않는다.
+                if(t.bg) return;
+                const hasLine=(pg.els||[]).some(e=>e.type==='stroke'&&tblOf(e)===t.id);
+                if(!hasLine) rebuildTable(pi,t.id,{quiet:true});
+            });
+        }catch(e){}
+    }
     function renderPageEls(idx){
         // 아직 안 가져온 슬라이스면 로드 후 렌더 (한 번에 다 열지 않는다)
         const pgz=doc&&doc.pages[idx];
@@ -6467,6 +6524,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 가져오기 중복 제거는 겹침 넓이를 서로 비교하는 O(n^2) 작업이다.
         // 스크롤로 같은 쪽을 다시 그릴 때마다 되풀이하면 그게 곧 렉이므로
         // '이 배열은 이미 정리했다'를 WeakSet 으로 기억해 한 번만 돌린다.
+        ensureTableGrid(idx);       // 이 쪽 표의 격자선(없으면 지금 만든다)
         let els=doc.pages[idx].els||[];
         if(!_sanDone.has(els)){
             const cleaned=sanitizePageEls(els);

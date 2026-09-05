@@ -216,6 +216,36 @@ def import_img(name):
     return resp
 
 
+# ── 슬라이스 메모리 캐시 ────────────────────────────────────────────────
+# 이미 만들어 둔 노트를 여는 경로(GET .s{n}.gz)는 읽기 전용 gzip 파일을 그대로
+# 흘려보낸다. 같은 파일을 열 때마다 디스크를 때리지 않도록 최근 것만 담아 둔다.
+# 키에 ETag(수정시각+크기)를 넣으므로, 저장으로 파일이 바뀌면 캐시는 자동으로
+# 빗나가고 새 내용을 읽는다 — 오래된 본문이 나갈 수 없다.
+try:                       # (_imp_env_int 는 이 파일 아래쪽에서 정의된다)
+    _SLICE_CACHE_MAX = max(16, int(os.environ.get("SDY_SLICE_CACHE_MAX", "512")))
+except (TypeError, ValueError):
+    _SLICE_CACHE_MAX = 512                                    # 슬라이스 개수
+_slice_cache = {}
+_slice_cache_lock = threading.Lock()
+
+
+def _slice_cache_get(path, etag):
+    key = (path, etag)
+    with _slice_cache_lock:
+        hit = _slice_cache.get(key)
+        if hit is not None:
+            _slice_cache.pop(key, None)     # LRU: 최근 쓴 것을 뒤로
+            _slice_cache[key] = hit
+            return hit
+    with open(path, "rb") as fp:
+        body = fp.read()
+    with _slice_cache_lock:
+        _slice_cache[key] = body
+        while len(_slice_cache) > _SLICE_CACHE_MAX:
+            _slice_cache.pop(next(iter(_slice_cache)), None)
+    return body
+
+
 @app.route("/api/import/docfile/<jid>", methods=["GET", "POST"])
 def import_docfile(jid):
     """대용량 문서 본문 서버 보관소.
@@ -341,11 +371,24 @@ def import_docfile(jid):
         if fr % IMP_SLICE == 0 and (to - fr) <= IMP_SLICE:
             sp = os.path.join(DOCS_DIR, f"{jid}.s{fr}.gz")
             if os.path.exists(sp):
-                with open(sp, "rb") as fp:
-                    body = fp.read()
+                # 14.29.4 · 노트 여는 속도.
+                #   같은 슬라이스를 열 때마다 디스크에서 다시 읽었다. 이제
+                #   ① 조건부 요청(ETag) → 안 바뀌었으면 304 만 보내고 본문 0바이트
+                #   ② 최근 슬라이스는 메모리에 캐시 → 디스크 I/O 자체를 건너뜀
+                #   ETag 는 (수정시각, 크기) 라 저장(POST)하면 즉시 달라진다.
+                st = os.stat(sp)
+                etag = '"%x-%x"' % (int(st.st_mtime_ns), st.st_size)
+                inm = request.headers.get("If-None-Match") or ""
+                if etag in [t.strip() for t in inm.split(",")]:
+                    resp = Response(status=304)
+                    resp.headers["ETag"] = etag
+                    resp.headers["Cache-Control"] = "private, max-age=0, must-revalidate"
+                    return resp
+                body = _slice_cache_get(sp, etag)
                 resp = Response(body, mimetype="application/json")
                 resp.headers["Content-Encoding"] = "gzip"
-                resp.headers["Cache-Control"] = "no-store"
+                resp.headers["ETag"] = etag
+                resp.headers["Cache-Control"] = "private, max-age=0, must-revalidate"
                 return resp
         # 폴백: 옛 단일 파일 또는 비정렬 범위
         if os.path.exists(path):
