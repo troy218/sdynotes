@@ -59,8 +59,8 @@ check('프런트: 편집도 capture/apply bridge로만 하고 요청 중 문서 
 check('프런트: 모델 명령은 허용 목록 파서로 평문·좌표만 받는다',
   /window\.sdyAiEditParse=function/.test(js) && /cmd:'mv'/.test(js)
   && /cmd:'tx'/.test(js) && /cmd:'add'/.test(js) && /ops\.slice\(0,60\)/.test(js));
-check('프런트: AI 편집은 최대 30개이며 한 번의 undo 지점으로 묶인다',
-  /AI_EDIT_MAX_OPS=30/.test(js) && /const beforeChange=[\s\S]{0,500}pushHistory\(true\)/.test(js));
+check('프런트: AI 편집은 최대 40개이며 한 번의 undo 지점으로 묶인다',
+  /AI_EDIT_MAX_OPS=40/.test(js) && /const beforeChange=[\s\S]{0,500}pushHistory\(true\)/.test(js));
 check('프런트: 예전 할 일(summarize/bullets/ask/free 고르기)이 없다',
   !/'summarize'/.test(js) && !/'bullets'/.test(js) && !/sdyAiToggle/.test(js));
 check('프런트: 보내기 버튼이 없다 — Enter 만 누르면 바로 묻는다(한글 조합 중 제외)',
@@ -141,6 +141,47 @@ check('프런트: 집중시계에 타이머·스톱워치 손잡이를 노출한
   && /window\.sdySwStart=/.test(js) && /window\.sdyTimerState=/.test(js));
 check('프런트: 앱 실행은 말투에 따라 앱 실행 딱지를 단다',
   /tag\.textContent=appOn\?'앱 실행':'편집'/.test(js) && /app:'앱 실행'/.test(js));
+// ── 14.27.0 · 형광펜(글귀 단위)·표 삭제·보기 좋은 배치·여러 대화 문맥 ──
+check('서버: edit 프롬프트는 형광펜을 글귀 단위(@hl)로 시키고 상자 전체(@st hl)와 구분한다',
+  /@hl 요소id \| 찾을 글 \| 색/.test(srv) && /중요한 글귀/.test(srv)
+  && /⟦…⟧/.test(srv) && /hl은 상자 전체 배경/.test(srv));
+check('서버: edit 프롬프트는 표 삭제를 표 id로 시키고 칸 id도 표 전체 삭제로 알린다',
+  /@del 요소id — 요소를 삭제한다\. 표 id\(tb_…\)/.test(srv)
+  && /표 칸 id를 넣어도 그 표 전체를 지운다/.test(srv) && /@tdel 표id/.test(srv)
+  && /칸마다 @del을 쓰지 않는다/.test(srv));
+check('서버: edit 프롬프트는 자리·크기를 auto로 맡기라고 한다',
+  /x·y·w·h에 auto를 쓰면/.test(srv) && /@tidy 쪽번호/.test(srv)
+  && /새 상자·표의 자리는 되도록 auto로 맡긴다/.test(srv));
+check('서버: 여러 턴 문맥 상한이 AI_MAX_CONTEXT 이다',
+  /AI_MAX_CONTEXT/.test(srv) && !/slice\(0, 1500\)/.test(srv)
+  && /AI_MAX_CONTEXT/.test(fs.readFileSync(path.join(REPO, 'server/src/lib/config.js'), 'utf8')));
+check('서버: 편집 요청 한도가 40개로 늘었다', /한 번에 40개 이하/.test(srv));
+check('프런트: 형광펜 파서는 글귀·색·지우기·상자 전체를 구분해 읽는다',
+  /cmd:'hl'/.test(js) && /single:true/.test(js) && /head==='형광펜'/.test(js));
+check('프런트: @tdel·@tidy 를 파싱한다',
+  /head==='tdel'/.test(js) && /cmd:'tidy'/.test(js));
+check('프런트: 자리·크기 auto 를 파싱한다',
+  /var numAuto=function/.test(js) && /numAuto\(gcut\.cuts\[1\]\)/.test(js)
+  && /numAuto\(tcut\.cuts\[1\]\)/.test(js));
+check('프런트: 스냅샷은 칠해진 글귀를 ⟦…⟧ 로 보여 준다',
+  /function aiEditHlPreview\(/.test(js) && /previewEl=\(el,max\)=>/.test(js)
+  && /previewEl\(el\)\)/.test(js));
+check('프런트: 형광펜은 저장 포맷과 같은 background-color span 으로 글귀만 칠한다',
+  /function aiEditMarkHtml\(/.test(js) && /background-color:'/.test(js)
+  && /function aiEditUnmarkHtml\(/.test(js));
+check('프런트: 새 요소는 격자·본문 왼쪽 끝에 맞추고 겹치지 않는 자리에 둔다',
+  /function aiEditNeat\(/.test(js) && /function aiEditFreeSpot\(/.test(js)
+  && /AI_GRID=8/.test(js) && /avoid:true/.test(js));
+check('프런트: 새 상자는 글이 넘치지 않을 만큼 높이를 잡는다',
+  /function aiEditGuessH\(/.test(js) && /Math\.max\(round\(op\.h\),guess\)/.test(js));
+check('프런트: 표 칸·테두리 삭제는 표 전체 삭제로 이어진다',
+  /function dropTable|const dropTable=/.test(js) && /if\(cmd==='del'&&el\.tbl\)/.test(js));
+check('프런트: 최근 대화 여러 턴을 묶어 문맥으로 보낸다',
+  /function aiCtxText\(\)/.test(js) && /CTX_TURNS=5/.test(js)
+  && /이전 요청: '\+ctxCut/.test(js) && /앞선 대화/.test(js));
+check('프런트: 형광펜·표 삭제·정돈 말투도 편집으로 자동 라우팅한다',
+  /하이라이트/.test(js) && /중요한 \(내용\|부분\|곳\)/.test(js)
+  && /정돈/.test(js) && /보기 좋/.test(js));
 check('프런트: 모델 이름·소요 초 같은 기술 정보는 화면에 남기지 않는다',
   !/tailMeta/.test(js) && /meta\(''\);\s*\/\/ 모델·소요 초 같은 기술 정보는 안 보여 준다/.test(js)
   && /dot\.title=enabled\?'AI 켜짐'/.test(js));
@@ -188,6 +229,9 @@ check('HTML: 검색창 안내 글씨는 한 줄 — (Enter) 없이, Enter 안내
   && /title="[^"]*Enter[^"]*"/.test(html) && /aria-label="[^"]*Enter[^"]*"/.test(html));
 check('HTML: 질문칸은 여러 줄로 자랄 수 있는 textarea 다',
   /<textarea id="aiQ"/.test(html) && !/<input[^>]*id="aiQ"/.test(html));
+check('HTML: 질문칸 길이 상한이 서버 요청 상한(AI_MAX_QUESTION)과 어긋나지 않는다',
+  /maxlength="1200"/.test(html)
+  && /AI_MAX_QUESTION \|\| '1200'/.test(fs.readFileSync(path.join(REPO, 'server/src/lib/config.js'), 'utf8')));
 check('HTML/CSS: 말투로 되는 편집·실행을 안내하고 입력 중 딱지를 보여 준다',
   /고쳐 달라는 말은 문서를 고치고 시켜 달라는 말은 앱을 실행해요/.test(html)
   && /id="aiEditTag"[^>]*hidden>편집</.test(html)
@@ -584,6 +628,41 @@ await tick(60);
     && p2.ask === '파란 상자와 빨간 상자 중 어느 것을 옮길까요?');
 }
 
+// ── 2-9b) 14.27.0 새 명령 — 형광펜(@hl)·표 삭제(@tdel)·정돈(@tidy)·auto 자리 ──
+{
+  const p4 = w.sdyAiEditParse([
+    '@hl t_1 | 중요한 결론 | 노랑',       // 글귀만 칠하기
+    '@hl t_1 | 연두',                      // 값 하나 = 상자 전체 색
+    '@hl t_1 | 옛 강조 | 없음',            // 그 글귀 형광펜 지우기
+    '@hl t_2',                             // 값 없음 = 상자 전체(기본 노랑)
+    '@hl t_1 | 보라 | 이미 칠해진 곳',      // 순서가 뒤집혀 와도 읽는다
+    '@tdel tb_9',                          // 표 삭제 별칭
+    '@tidy 2',                             // 쪽 정돈
+    '@tidy',                               // 쪽번호 없이 = 현재 쪽
+    '@add 1 | auto | auto | auto | auto | 알아서 놓는 상자',
+    '@tbl 1 | auto | auto | 2 | 2 | 가|나\\n다|라',
+    '@hl | 노랑',                          // id 없음 — 버린다
+    '@done 형광펜·표·정돈 묶음',
+  ].join('\n'));
+  check('런타임: 형광펜·표 삭제·정돈·auto 묶음을 파싱하고 잘못된 줄만 센다',
+    p4.ops.length === 10 && p4.dropped === 1 && p4.say === '형광펜·표·정돈 묶음',
+    `${p4.ops.length}/${p4.dropped}`);
+  check('런타임: 형광펜은 글귀·색을 나누고 값 하나면 상자 전체로 본다',
+    p4.ops[0].cmd === 'hl' && p4.ops[0].find === '중요한 결론' && p4.ops[0].color === '노랑'
+    && p4.ops[1].cmd === 'hl' && p4.ops[1].find === '연두' && p4.ops[1].single === true
+    && p4.ops[2].find === '옛 강조' && p4.ops[2].color === '없음'
+    && p4.ops[3].find === '' && p4.ops[3].single === true
+    && p4.ops[4].find === '보라' && p4.ops[4].color === '이미 칠해진 곳');
+  check('런타임: @tdel 은 삭제로, @tidy 는 쪽 정돈으로 파싱한다',
+    p4.ops[5].cmd === 'del' && p4.ops[5].id === 'tb_9'
+    && p4.ops[6].cmd === 'tidy' && p4.ops[6].page === 2
+    && p4.ops[7].cmd === 'tidy' && p4.ops[7].page === '');
+  check('런타임: auto 자리·크기는 그대로 적용기에 넘긴다',
+    p4.ops[8].cmd === 'add' && p4.ops[8].x === 'auto' && p4.ops[8].h === 'auto'
+    && p4.ops[8].text === '알아서 놓는 상자'
+    && p4.ops[9].cmd === 'tbl' && p4.ops[9].x === 'auto' && p4.ops[9].rows === 2);
+}
+
 // 자동 라우팅용 편집 다리 — 비동기(clipboard) 없이 동기 적용만 기록한다
 const autoApplied = [];
 const autoBodies = [];
@@ -604,6 +683,11 @@ check('런타임: 고쳐 달라는 말투는 ! 없이도 편집으로 본다',
   w.sdyAiLooksLikeEdit('제목을 맨 위로 옮겨 줘') === true
   && w.sdyAiLooksLikeEdit('두 번째 상자 글자를 빨갛게 해줘') === true
   && w.sdyAiLooksLikeEdit('표 만들어 줘') === true);
+check('런타임: 형광펜·표 삭제·정돈 말투도 ! 없이 편집으로 본다',
+  w.sdyAiLooksLikeEdit('중요한 내용에 형광펜 칠해줘') === true
+  && w.sdyAiLooksLikeEdit('이 페이지 깔끔하게 정돈해 줘') === true
+  && w.sdyAiLooksLikeEdit('표 전체 지워줘') === true
+  && w.sdyAiLooksLikeEdit('상자들이 겹치지 않게 보기 좋게 맞춰 줘') === true);
 check('런타임: 물음 말투·일반 질문은 편집으로 보내지 않는다 (!는 강제라 제외)',
   w.sdyAiLooksLikeEdit('어디서 일어나?') === false
   && w.sdyAiLooksLikeEdit('표는 어떻게 만들어?') === false

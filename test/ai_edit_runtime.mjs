@@ -303,6 +303,144 @@ try {
   ], cap7.revision);
   check('없는 쪽·표·빈 제목은 거절한다', r7.applied === 0 && r7.failed === 4, JSON.stringify(r7));
 
+  // ── 14.27.0 · 형광펜(글귀 단위) ──
+  window.findEl(0, 'title-box').html =
+    '<b>핵심</b> 결론은 <span style="color:#a63f47">물 부족</span>이다<br>둘째 줄은 그냥 글';
+  delete window.findEl(0, 'title-box').cellBg;
+  const capH = window.__sdyAiBridge.capture();
+  const rH = window.__sdyAiBridge.apply([
+    { cmd: 'hl', id: 'title-box', find: '물 부족', color: '노랑' },
+    { cmd: 'hl', id: 'title-box', find: '없는 글귀', color: '노랑' },
+  ], capH.revision);
+  await wait(200);
+  const hlBox = window.findEl(0, 'title-box');
+  check('형광펜은 그 글귀만 칠하고 굵기·글자색 span을 살린다',
+    rH.applied === 1 && rH.failed === 1
+    && /<span style="color:#a63f47"><span style="background-color:#efd36a">물 부족<\/span><\/span>/.test(hlBox.html)
+    && /<b>핵심<\/b>/.test(hlBox.html) && /둘째 줄은 그냥 글/.test(hlBox.html),
+    hlBox.html.slice(0, 220));
+  check('형광펜 색을 안 적으면 노랑을 쓴다',
+    !hlBox.cellBg && (hlBox.html.match(/background-color:#efd36a/g) || []).length === 1);
+
+  const capH2 = window.__sdyAiBridge.capture();
+  check('스냅샷은 칠해진 글귀를 ⟦…⟧ 로 보여 주고 아닌 곳은 그대로 둔다',
+    /⟦물 부족⟧/.test(capH2.text) && !/⟦핵심⟧/.test(capH2.text)
+    && /text="핵심 결론은 ⟦물 부족⟧이다 둘째 줄은 그냥 글"/.test(capH2.text),
+    (capH2.text.match(/id=title-box[^\n]*/) || [''])[0]);
+
+  const capH3 = window.__sdyAiBridge.capture();
+  const rH3 = window.__sdyAiBridge.apply([
+    { cmd: 'hl', id: 'title-box', find: '⟦물 부족⟧', color: '없음' },
+  ], capH3.revision);
+  await wait(200);
+  check('스냅샷의 ⟦⟧를 그대로 베껴 와도 그 글귀 형광펜만 지운다',
+    rH3.applied === 1 && !/background-color/.test(window.findEl(0, 'title-box').html)
+    && /<span style="color:#a63f47">물 부족<\/span>/.test(window.findEl(0, 'title-box').html)
+    && /<b>핵심<\/b>/.test(window.findEl(0, 'title-box').html),
+    window.findEl(0, 'title-box').html.slice(0, 220));
+
+  const capH4 = window.__sdyAiBridge.capture();
+  const rH4 = window.__sdyAiBridge.apply([
+    { cmd: 'hl', id: 'title-box', find: '연두', color: '', single: true },
+  ], capH4.revision);
+  await wait(150);
+  check('값 하나로 오면 색으로 알아들어 상자 전체 형광펜이 된다',
+    rH4.applied === 1 && window.findEl(0, 'title-box').cellBg === '#b7d97a',
+    String(window.findEl(0, 'title-box').cellBg));
+  const capH5 = window.__sdyAiBridge.capture();
+  const rH5 = window.__sdyAiBridge.apply([
+    { cmd: 'hl', id: 'title-box', find: '', color: '없음' },
+    { cmd: 'hl', id: 'photo-1', find: '', color: '노랑' },
+  ], capH5.revision);
+  check('상자 전체 형광펜은 지우고 사진에는 칠하지 않는다',
+    rH5.applied === 1 && rH5.failed === 1 && !window.findEl(0, 'title-box').cellBg);
+
+  // ── 14.27.0 · 모델이 내보내는 @ 줄을 파서로 읽어 그대로 적용한다(이어짐 확인) ──
+  window.findEl(0, 'title-box').html = '오늘의 결론: 물 부족이 가장 크다. 수치는 42%다.';
+  const capP = window.__sdyAiBridge.capture();
+  const planP = window.sdyAiEditParse([
+    '@hl title-box | 물 부족 | 하늘',
+    '@hl title-box | 42%',
+    '@done 두 곳에 형광펜을 칠했어요',
+  ].join('\n'));
+  const rP = window.__sdyAiBridge.apply(planP.ops, capP.revision);
+  await wait(200);
+  const pHtml = window.findEl(0, 'title-box').html;
+  check('모델의 @hl 두 줄이 파서를 지나 그대로 적용된다',
+    planP.ops.length === 2 && planP.dropped === 0 && rP.applied === 2 && rP.failed === 0
+    && /<span style="background-color:#83d7de">물 부족<\/span>/.test(pHtml)
+    && /<span style="background-color:#efd36a">42%<\/span>/.test(pHtml),
+    pHtml.slice(0, 240));
+
+  // ── 14.27.0 · 표는 칸 id로 지워도 표 전체가 사라진다 ──
+  const capT = window.__sdyAiBridge.capture();
+  const rT = window.__sdyAiBridge.apply([
+    { cmd: 'tbl', page: 1, x: 'auto', y: 'auto', rows: 2, cols: 2, text: '가|나\n다|라' },
+  ], capT.revision);
+  await wait(300);
+  const docT = window.__sdyTranslate.getDoc();
+  const tbl2 = (docT.pages[0].tables || [])[0];
+  check('표 자리를 auto로 맡기면 페이지 안 빈자리에 정돈돼 들어간다',
+    rT.applied === 1 && !!tbl2 && tbl2.x >= 0 && tbl2.y >= 0
+    && tbl2.x + tbl2.cw[0] + tbl2.cw[1] <= 800
+    && tbl2.y + tbl2.ch[0] + tbl2.ch[1] <= 1100
+    && tbl2.x % 8 === 0 && tbl2.y % 8 === 0,
+    tbl2 && JSON.stringify({ x: tbl2.x, y: tbl2.y, cw: tbl2.cw, ch: tbl2.ch }));
+  const cell2 = docT.pages[0].els.find((e) => e.type === 'text' && e.tbl && e.tbl.tid === tbl2.id);
+  const capT2 = window.__sdyAiBridge.capture();
+  const rT2 = window.__sdyAiBridge.apply([{ cmd: 'del', id: cell2.id }], capT2.revision);
+  await wait(300);
+  const docT2 = window.__sdyTranslate.getDoc();
+  check('표 칸 id로 지워도 표·칸·테두리가 함께 사라진다',
+    rT2.applied === 1 && (docT2.pages[0].tables || []).length === 0
+    && !docT2.pages[0].els.some((e) => e.tbl && e.tbl.tid === tbl2.id)
+    && /표 전체를 지웠어요/.test((rT2.notes || []).join(' ')), JSON.stringify(rT2));
+
+  // ── 14.27.0 · 보기 좋은 배치 — auto 자리·글에 맞춘 높이·쪽 정돈 ──
+  const before = window.__sdyTranslate.getDoc().pages[0].els.length;
+  const capA = window.__sdyAiBridge.capture();
+  const longText = '새로 덧붙이는 긴 메모다. '.repeat(6);
+  const rA = window.__sdyAiBridge.apply([
+    { cmd: 'add', page: 1, x: 'auto', y: 'auto', w: 'auto', h: 'auto', text: longText },
+  ], capA.revision);
+  await wait(300);
+  const docA = window.__sdyTranslate.getDoc();
+  const addedAuto = docA.pages[0].els[docA.pages[0].els.length - 1];
+  const boxes = docA.pages[0].els
+    .filter((e) => e.type !== 'stroke' && !(e.type === 'stroke' && e.tbl))
+    .map((e) => ({ id: e.id, x: e.x, y: e.y, w: e.w, h: e.h }));
+  const clash = boxes.some((a) => boxes.some((b) => a !== b
+    && a.x < b.x + b.w - 2 && b.x < a.x + a.w - 2
+    && a.y < b.y + b.h - 2 && b.y < a.y + a.h - 2));
+  check('auto로 더한 상자는 본문 너비를 따르고 글이 넘치지 않을 만큼 크다',
+    rA.applied === 1 && docA.pages[0].els.length === before + 1
+    && addedAuto.w >= 120 && addedAuto.h >= 60
+    && addedAuto.x >= 0 && addedAuto.y >= 0
+    && addedAuto.x + addedAuto.w <= 800 && addedAuto.y + addedAuto.h <= 1100,
+    JSON.stringify({ w: addedAuto.w, h: addedAuto.h, x: addedAuto.x, y: addedAuto.y }));
+  check('auto로 더한 상자는 다른 상자와 겹치지 않는다', !clash,
+    JSON.stringify(boxes.filter((b) => b.id === addedAuto.id)));
+
+  const capM = window.__sdyAiBridge.capture();
+  window.__sdyAiBridge.apply([{ cmd: 'mv', id: 'title-box', x: 101, y: 203 }], capM.revision);
+  await wait(150);
+  check('옮기기(@mv)는 요청한 좌표를 그대로 존중한다(격자를 강제로 씌우지 않는다)',
+    window.findEl(0, 'title-box').x === 101 && window.findEl(0, 'title-box').y === 203,
+    JSON.stringify({ x: window.findEl(0, 'title-box').x, y: window.findEl(0, 'title-box').y }));
+
+  const tb = window.findEl(0, 'title-box');
+  const lb = window.findEl(0, 'locked-box');
+  tb.x = 53; tb.y = 101; lb.x = 44; lb.y = 180;
+  const capY = window.__sdyAiBridge.capture();
+  const rY = window.__sdyAiBridge.apply([{ cmd: 'tidy', page: 1 }], capY.revision);
+  await wait(250);
+  check('@tidy는 본문 왼쪽 끝·격자에 맞추고 잠긴 상자는 건드리지 않는다',
+    rY.applied === 1 && window.findEl(0, 'title-box').x === 40
+    && window.findEl(0, 'title-box').y % 8 === 0
+    && window.findEl(0, 'locked-box').x === 44 && window.findEl(0, 'locked-box').y === 180,
+    JSON.stringify({ title: { x: window.findEl(0, 'title-box').x, y: window.findEl(0, 'title-box').y },
+      locked: { x: window.findEl(0, 'locked-box').x, y: window.findEl(0, 'locked-box').y } }));
+
   // 클립보드 — 읽기/쓰기를 흉내 내어 붙여넣기·복사 경로를 탄다
   let clipStore = '클립보드에서 온 글';
   try {
