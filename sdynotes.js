@@ -17015,8 +17015,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     //   14.25.0 · 스냅샷에 글꼴·서식·표를 싣고(@st·@tbl·@tcell), 부분 수정(@rp·@ap),
     //   쪽 이동·추가(@goto·@newpage), 노트 제목(@title), 클립보드(@clip·@clipin·@copy),
     //   되묻기(@ask)까지 허용 목록이 늘었다. 적용 규칙은 같다 — 검증·한 번에·undo.
-    const AI_EDIT_MAX_ITEMS=180, AI_EDIT_MAX_SNAPSHOT=26000;
-    const AI_EDIT_MAX_OPS=30, AI_EDIT_MAX_TEXT=2000;
+    //   14.27.0 · 형광펜 글귀 단위(@hl)·표 삭제 완화(@del·@tdel)·보기 좋은 배치
+    //   (@tidy·auto 좌표)가 늘었다. 스냅샷은 칠해진 곳을 ⟦…⟧ 로 보여 준다.
+    const AI_EDIT_MAX_ITEMS=240, AI_EDIT_MAX_SNAPSHOT=28000;
+    const AI_EDIT_MAX_OPS=40, AI_EDIT_MAX_TEXT=2000;
 
     function aiEditText(el){
         if(!el) return '';
@@ -17055,6 +17057,16 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const lim=max||240;
             return text.length>lim?text.slice(0,lim)+'…':text;
         };
+        // 14.27.0 · 글상자 미리보기에는 형광펜이 칠해진 글귀를 ⟦…⟧ 로 표시한다.
+        //   모델이 '이미 칠한 곳'을 알아야 겹칠하거나 딴 데를 칠하지 않는다.
+        const previewEl=(el,max)=>{
+            const text=(el&&el.type==='text'&&!el.tight)
+                ?aiEditHlPreview(el.html)
+                :String(aiEditText(el)||'').replace(/\s+/g,' ')
+                    .replace(/</g,'‹').replace(/>/g,'›').trim();
+            const lim=max||240;
+            return text.length>lim?text.slice(0,lim)+'…':text;
+        };
         // id는 모델이 그대로 되돌려 보내는 실행 토큰이다. 프롬프트 구분자나
         // 필드 구분자로 해석될 수 있는 비정상 가져오기 id는 노출하지 않는다.
         const safeId=id=>{
@@ -17071,7 +17083,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         for(const pi of order){
             if(items>=AI_EDIT_MAX_ITEMS||folded) break;
             const pg=doc.pages[pi];
-            if(!add('['+(pi+1)+'쪽'+(pi===current?' · 현재':'')+']')) break;
+            // 빈 자리도 알려 준다 — 새 상자·표를 어디에 두면 정돈돼 보이는지
+            // 모델이 스스로 고르게(그래도 최종 배치는 aiEditNeat가 다듬는다).
+            let filled=0;
+            aiEditOccupied(pi).forEach(o=>{ filled=Math.max(filled,Math.round(o.y+o.h)); });
+            const freeFrom=Math.min(size.h,filled?filled+AI_GAP:AI_MARGIN);
+            if(!add('['+(pi+1)+'쪽'+(pi===current?' · 현재':'')+']'
+                +(filled?' 빈 자리 y='+freeFrom+'~'+size.h+' · 본문 왼쪽 x='
+                    +(aiEditMargins(pi).left==null?AI_MARGIN:aiEditMargins(pi).left):' (빈 쪽)'))) break;
             if(!pg||pg.__lazy!=null){ add('  (아직 불러오지 않은 쪽 · 편집 불가)'); continue; }
             const els=pg.els||[];
             // 표는 칸 글과 함께 한 줄로 먼저 보여 준다 — 칸은 @tcell·@st로, 표 전체는
@@ -17087,7 +17106,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 els.forEach(e=>{
                     if(e&&e.type==='text'&&e.tbl&&e.tbl.tid===t.id
                        &&Number.isInteger(+e.tbl.r)&&Number.isInteger(+e.tbl.c))
-                        cells[e.tbl.r+'_'+e.tbl.c]=preview(aiEditText(e),28);
+                        cells[e.tbl.r+'_'+e.tbl.c]=previewEl(e,28);
                 });
                 const grid=[];
                 for(let r=0;r<rows;r++){
@@ -17133,7 +17152,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     if(td.indexOf('underline')>=0) st.push('U');
                     if(td.indexOf('line-through')>=0) st.push('S');
                     if(st.length) fmt+=' st='+st.join(',');
-                    extra=' text='+JSON.stringify(preview(aiEditText(el)));
+                    extra=' text='+JSON.stringify(previewEl(el));
                 }
                 else if(el.type==='image') kind='사진';
                 else if(el.type==='latex'){
@@ -17362,6 +17381,384 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         });
         return {html:out,count:spans.length};
     }
+
+    // ── 14.27.0 · 형광펜(부분 강조) ──────────────────────────────────────
+    // 해돌이가 형광펜을 못 알아듣던 이유는 '상자 전체 배경(el.cellBg)'밖에
+    // 못 건드렸기 때문이다. 이제 저장 포맷과 같은 글자 span(background-color)으로
+    // 글귀 단위로 칠하고, 스냅샷에도 칠해진 곳을 ⟦…⟧ 로 보여 준다.
+    const AI_HL_MARK=['\u27e6','\u27e7'];               // ⟦ ⟧ — 스냅샷의 형광펜 표시
+    const AI_HL_DEFAULT='#efd36a';                     // 색을 안 적으면 노랑 형광펜
+    const AI_HL_BG_RE=/background(?:-color)?\s*:\s*[^;"']+\s*;?/gi;
+    const AI_VOID_TAGS={br:1,hr:1,img:1,input:1,meta:1,link:1,area:1,base:1,col:1,
+        embed:1,source:1,track:1,wbr:1};
+    // span·font 같은 글자 꾸밈 태그에 형광펜(배경색)이 들어 있는가.
+    function aiEditTagBg(tagStr){
+        const s=String(tagStr||'');
+        const m=/background(?:-color)?\s*:\s*([^;"']+)/i.exec(s);
+        if(m){
+            // rgb(…)·이름으로 적혀 있어도 알아본다(가져온 문서에 그런 경우가 있다).
+            let raw=String(m[1]).trim();
+            try{
+                if(typeof _colorToHex==='function'){
+                    const hx=_colorToHex(raw);
+                    if(hx&&hx!=='transparent') raw=hx;
+                }
+            }catch(e){}
+            const c=aiEditColor(raw,true);
+            if(c) return c;
+        }
+        const d=/data-(?:highlight|background-color)\s*=\s*"([^"]+)"/i.exec(s);
+        if(d){
+            const c2=aiEditColor(d[1],true);
+            if(c2) return c2;
+        }
+        return '';
+    }
+    // 태그 문자열에서 배경색만 걷어낸다(다른 서식은 그대로).
+    function aiEditStripBg(tagStr){
+        return String(tagStr||'')
+            .replace(/(<[a-zA-Z][^>]*?\sstyle\s*=\s*")([^"]*)(")/gi,(all,pre,css,post)=>{
+                const next=css.replace(AI_HL_BG_RE,'').replace(/;;+/g,';')
+                    .replace(/^\s*;|;\s*$/g,'').trim();
+                return pre+next+post;
+            })
+            .replace(/\sdata-(?:highlight|background-color)\s*=\s*"[^"]*"/gi,'');
+    }
+    // 스냅샷 미리보기 — 칠해진 글귀를 ⟦…⟧ 로 감싸 모델에게 보여 준다.
+    function aiEditHlPreview(html){
+        const parts=String(html==null?'':html).split(/(<[^>]*>)/g);
+        const stack=[]; let out='',open=false;
+        parts.forEach(part=>{
+            if(!part) return;
+            if(part.charAt(0)==='<'){
+                if(/^<br\s*\/?>$/i.test(part)){ if(open){ out+=AI_HL_MARK[1]; open=false; } out+='\n'; return; }
+                const m=/^<\s*(\/?)\s*([a-zA-Z][0-9]*)([^>]*?)(\/?)\s*>$/.exec(part);
+                if(!m) return;
+                const tag=m[2].toLowerCase();
+                if(m[1]){
+                    for(let k=stack.length-1;k>=0;k--){
+                        if(stack[k].tag===tag){ stack.length=k; break; }
+                    }
+                    return;
+                }
+                if(m[4]||AI_VOID_TAGS[tag]) return;
+                stack.push({tag:tag,bg:tag==='mark'||!!aiEditTagBg(part)});
+                return;
+            }
+            let bg=false;
+            for(const s of stack){ if(s.bg){ bg=true; break; } }
+            const txt=aiEditDecodeEntities(part).replace(/\s+/g,' ');
+            if(!txt) return;
+            if(bg&&!open){ out+=AI_HL_MARK[0]; open=true; }
+            else if(!bg&&open){ out+=AI_HL_MARK[1]; open=false; }
+            out+=txt.replace(/</g,'‹').replace(/>/g,'›');
+        });
+        if(open) out+=AI_HL_MARK[1];
+        return out.replace(/\s+/g,' ').trim();
+    }
+    // 모델이 스냅샷의 ⟦⟧ 표시를 그대로 베껴 와도 찾을 수 있게 털어 낸다.
+    function aiEditLooseFind(value){
+        const mark=new RegExp('['+AI_HL_MARK[0]+AI_HL_MARK[1]+']','g');
+        return String(value==null?'':value).replace(mark,'').replace(/\s+/g,' ').trim();
+    }
+    // 글귀에 형광펜 span을 씌운다. 기존 굵기·색 span과 어긋나게 중첩되지 않도록
+    // 글 토큰 단위로 감싼다(태그를 반쯤 걸친 span을 만들지 않는다).
+    function aiEditMarkHtml(html,find,color){
+        const src=String(html==null?'':html);
+        const needle=String(find==null?'':find);
+        if(!needle) return {html:src,count:0};
+        const toks=[];
+        src.split(/(<[^>]*>)/g).forEach(part=>{
+            if(!part) return;
+            if(part.charAt(0)==='<'){
+                if(/^<br\s*\/?>$/i.test(part)) toks.push({t:'br'});
+                else toks.push({t:'tag',s:part});
+            }else toks.push({t:'txt',s:aiEditDecodeEntities(part)});
+        });
+        let joined=''; const pos=[];
+        toks.forEach((tk,i)=>{
+            if(tk.t==='txt'){ for(let k=0;k<tk.s.length;k++) pos.push({i:i,o:k}); joined+=tk.s; }
+            else if(tk.t==='br'){ pos.push({i:i,o:-1}); joined+='\n'; }
+        });
+        const spans=[]; let from=0;
+        for(;;){
+            const at=joined.indexOf(needle,from);
+            if(at<0||spans.length>=50) break;
+            spans.push([at,at+needle.length]);
+            from=at+Math.max(1,needle.length);
+        }
+        if(!spans.length) return {html:src,count:0};
+        const open='<span style="background-color:'+color+'">';
+        for(let s=spans.length-1;s>=0;s--){
+            const a=spans[s][0],b=spans[s][1];
+            const hit=[];
+            for(let k=a;k<b;k++){
+                const p=pos[k];
+                if(!p||p.o<0) continue;                 // 줄바꿈은 건너뛴다(줄별로 칠한다)
+                if(!hit.length||hit[hit.length-1].i!==p.i) hit.push({i:p.i,from:p.o,to:p.o});
+                else hit[hit.length-1].to=p.o;
+            }
+            for(let k=hit.length-1;k>=0;k--){
+                const i=hit[k].i,tk=toks[i];
+                if(!tk||tk.t!=='txt') continue;
+                const mid=tk.s.slice(hit[k].from,hit[k].to+1);
+                if(!mid) continue;
+                const before=tk.s.slice(0,hit[k].from),after=tk.s.slice(hit[k].to+1);
+                const parts=[];
+                if(before) parts.push({t:'txt',s:before});
+                parts.push({t:'raw',s:open},{t:'txt',s:mid},{t:'raw',s:'</span>'});
+                if(after) parts.push({t:'txt',s:after});
+                toks.splice.apply(toks,[i,1].concat(parts));
+            }
+        }
+        let out='';
+        toks.forEach(tk=>{
+            if(tk.t==='tag'||tk.t==='raw') out+=tk.s;
+            else if(tk.t==='br') out+='<br>';
+            else if(tk.t==='txt') out+=esc(tk.s).replace(/\n/g,'<br>');
+        });
+        return {html:out,count:spans.length};
+    }
+    // 형광펜을 지운 자리에 남는 빈 꾸밈 span은 털어 낸다(문서가 지저분해지지 않게).
+    function aiEditDropEmptyTags(html){
+        let out=String(html==null?'':html),prev='';
+        for(let i=0;i<3&&out!==prev;i++){
+            prev=out;
+            out=out.replace(/<(span|b|strong|i|em|u|font)\b[^>]*>\s*<\/\1>/gi,'');
+            // 배경만 있던 span은 빈 style="" 이 남는다 — 속성을 지우고,
+            // 속성 없는 span 은 알맹이만 남긴다(안에 태그가 있으면 건드리지 않는다).
+            out=out.replace(/(<[a-zA-Z][a-zA-Z0-9]*)\s+style=""(?=[\s>])/g,'$1');
+            out=out.replace(/<span>((?:(?!<)[\s\S])*)<\/span>/gi,'$1');
+        }
+        return out;
+    }
+    // 형광펜 지우기 — 찾을 글이 있으면 그 글귀만, 없으면 상자 전체.
+    // 글귀 지우기는 그 글귀를 감싸고 있던 span을 경계에서 끊고 다시 이어 붙인다:
+    //   <span S>AB CD</span> 에서 AB만 지우면 <span S></span><span S′>AB</span><span S> CD</span>
+    //   (S′=S에서 배경색만 뺀 것) → 나머지 글의 형광펜·서식은 그대로 남는다.
+    function aiEditUnmarkHtml(html,find){
+        const src=String(html==null?'':html);
+        const needle=String(find==null?'':find);
+        const toks=[];
+        src.split(/(<[^>]*>)/g).forEach(part=>{
+            if(!part) return;
+            if(part.charAt(0)==='<'){
+                if(/^<br\s*\/?>$/i.test(part)) toks.push({t:'br'});
+                else toks.push({t:'tag',s:part});
+            }else toks.push({t:'txt',s:aiEditDecodeEntities(part)});
+        });
+        let touched=0;
+        if(!needle){
+            toks.forEach(tk=>{
+                if(tk.t!=='tag') return;
+                const next=aiEditStripBg(tk.s);
+                if(next!==tk.s){ tk.s=next; touched++; }
+            });
+        }else{
+            let joined=''; const pos=[];
+            toks.forEach((tk,i)=>{
+                if(tk.t==='txt'){ for(let k=0;k<tk.s.length;k++) pos.push({i:i,o:k}); joined+=tk.s; }
+                else if(tk.t==='br'){ pos.push({i:i,o:-1}); joined+='\n'; }
+            });
+            const spans=[]; let from=0;
+            for(;;){
+                const at=joined.indexOf(needle,from);
+                if(at<0||spans.length>=50) break;
+                spans.push([at,at+needle.length]);
+                from=at+Math.max(1,needle.length);
+            }
+            if(!spans.length) return {html:src,count:0};
+            for(let s=spans.length-1;s>=0;s--){
+                const a=spans[s][0],b=spans[s][1];
+                const pA=pos[a]; if(!pA) continue;
+                const pB=b<pos.length?pos[b]:null;
+                const stTok=pA.i, endTok=pB?pB.i:toks.length;
+                // ① 이 범위를 감싸고 있는 span(형광펜이 있는 것만)
+                const stack=[],wrap=[];
+                for(let i=0;i<stTok;i++){
+                    const tk=toks[i];
+                    if(tk.t!=='tag') continue;
+                    const m=/^<\s*(\/?)\s*([a-zA-Z][0-9]*)([^>]*?)(\/?)\s*>$/.exec(tk.s);
+                    if(!m) continue;
+                    const tag=m[2].toLowerCase();
+                    if(m[1]){
+                        for(let k=stack.length-1;k>=0;k--){
+                            if(stack[k].tag===tag){ stack.length=k; break; }
+                        }
+                    }else if(!m[4]&&!AI_VOID_TAGS[tag]) stack.push({tag:tag,i:i,s:tk.s});
+                }
+                stack.forEach(o=>{ if(aiEditTagBg(o.s)) wrap.push(o); });
+                // ② 범위 안에 들어 있는 태그의 배경색도 지운다
+                let inside=0;
+                for(let i=stTok;i<endTok&&i<toks.length;i++){
+                    if(toks[i].t!=='tag') continue;
+                    const next=aiEditStripBg(toks[i].s);
+                    if(next!==toks[i].s){ toks[i].s=next; inside++; }
+                }
+                if(!wrap.length&&!inside) continue;      // 이 글귀엔 칠해진 곳이 없다
+                const closeAll=wrap.map(function(){ return '<'+'/span>'; }).join('');
+                const reopen=arr=>arr.map(o=>o.s).join('');
+                const plain=wrap.map(o=>({s:aiEditStripBg(o.s)}));
+                // 찾은 글귀는 '배경 없는 span'으로, 그 앞뒤는 원래 배경으로 이어 붙인다.
+                const head=closeAll+reopen(plain);
+                const tail=closeAll+reopen(wrap);
+                // ③ 글 토큰을 잘라 경계를 넣는다(뒤에서부터 — 앞쪽 색인은 그대로)
+                const hit=[];
+                for(let k=a;k<b;k++){
+                    const p=pos[k];
+                    if(!p||p.o<0) continue;
+                    if(!hit.length||hit[hit.length-1].i!==p.i) hit.push({i:p.i,from:p.o,to:p.o});
+                    else hit[hit.length-1].to=p.o;
+                }
+                for(let k=hit.length-1;k>=0;k--){
+                    const i=hit[k].i,tk=toks[i];
+                    if(!tk||tk.t!=='txt') continue;
+                    const mid=tk.s.slice(hit[k].from,hit[k].to+1);
+                    if(!mid) continue;
+                    const before=tk.s.slice(0,hit[k].from),after=tk.s.slice(hit[k].to+1);
+                    const parts=[];
+                    if(before) parts.push({t:'txt',s:before});
+                    parts.push({t:'raw',s:head},{t:'txt',s:mid},{t:'raw',s:tail});
+                    if(after) parts.push({t:'txt',s:after});
+                    toks.splice.apply(toks,[i,1].concat(parts));
+                }
+                touched+=hit.length+inside;
+            }
+        }
+        if(!touched) return {html:src,count:0};
+        let out='';
+        toks.forEach(tk=>{
+            if(tk.t==='tag'||tk.t==='raw') out+=tk.s;
+            else if(tk.t==='br') out+='<br>';
+            else if(tk.t==='txt') out+=esc(tk.s).replace(/\n/g,'<br>');
+        });
+        return {html:aiEditDropEmptyTags(out),count:touched};
+    }
+
+    // ── 14.27.0 · 사람이 보기 좋은 배치 ────────────────────────────────
+    // 모델이 준 좌표를 그대로 쓰면 상자마다 왼쪽 끝이 다르고 서로 겹친다.
+    // 그래서 ① 8px 격자에 맞추고 ② 이웃·본문 왼쪽 끝에 붙이고 ③ 새 요소는
+    // 겹치지 않는 첫 빈자리로 내린다. 명시 좌표(@mv·@bx)는 ①·②만 적용해
+    // '옮겨 달라'는 요청을勝手に 뒤집지 않는다.
+    const AI_GRID=8, AI_EDGE=28, AI_GAP=12, AI_MARGIN=40;
+    // 쪽에서 자리를 차지하는 상자들(표 테두리 획은 표 상자로 한 번만 센다).
+    function aiEditOccupied(pi,skipId){
+        const out=[];
+        const pg=doc&&doc.pages&&doc.pages[pi];
+        if(!pg) return out;
+        (pg.els||[]).forEach(el=>{
+            if(!el||el.id===skipId) return;
+            if(el.type==='stroke'&&el.tbl) return;
+            const b=aiEditBox(el);
+            if(b.w>0||b.h>0) out.push({x:b.x,y:b.y,w:b.w,h:b.h,id:el.id});
+        });
+        (pg.tables||[]).forEach(t=>{
+            if(!t||t.id===skipId) return;
+            const s=tblSize(t);
+            out.push({x:+t.x||0,y:+t.y||0,w:s.w,h:s.h,id:t.id});
+        });
+        return out;
+    }
+    const aiEditHits=(a,b,pad)=>a.x<b.x+b.w+pad&&b.x<a.x+a.w+pad
+        &&a.y<b.y+b.h+pad&&b.y<a.y+a.h+pad;
+    // 본문이 쓰는 왼쪽 끝·너비 — 새 상자를 이 값에 맞춘다(문서가 정돈돼 보인다).
+    function aiEditMargins(pi){
+        const boxes=aiEditOccupied(pi).filter(b=>b.w>10&&b.h>6);
+        const count=(list,key)=>{
+            const map={};
+            list.forEach(b=>{ const k=Math.round(b[key]/AI_GRID)*AI_GRID; map[k]=(map[k]||0)+1; });
+            let best=null,n=0;
+            for(const k in map){ if(map[k]>n){ n=map[k]; best=+k; } }
+            return best;
+        };
+        const texts=boxes.filter(b=>b.w<aiEditPageSize().w-8);
+        return {
+            left:count(texts.length?texts:boxes,'x'),
+            width:count(texts,'w'),
+            top:boxes.length?Math.min.apply(null,boxes.map(b=>b.y)):AI_MARGIN,
+        };
+    }
+    const aiEditPageSize=()=>paperSize();
+    // 겹치지 않는 첫 빈자리 — 위부터 훑고, 왼쪽 끝 → 가운데 → 오른쪽 순으로 본다.
+    function aiEditFreeSpot(pi,w,h,startY){
+        const size=aiEditPageSize();
+        const m=aiEditMargins(pi);
+        const list=aiEditOccupied(pi);
+        const left=m.left==null?AI_MARGIN:Math.min(m.left,Math.max(0,size.w-w));
+        // 후보 자리도 격자에 맞춘다 — 본문 왼쪽 끝 → 가운데 → 오른쪽 순.
+        // 왼쪽 줄을 먼저 훑어야 새 상자가 본문과 왼쪽이 맞아 정돈돼 보인다.
+        const xs=[left,Math.round(Math.max(0,size.w-w)/2),Math.max(0,size.w-w-left)]
+            .map(v=>Math.max(0,Math.min(Math.round(v/AI_GRID)*AI_GRID,Math.max(0,size.w-w))));
+        const yEnd=Math.max(AI_MARGIN,Math.round(size.h-h));
+        const y0=Math.max(AI_MARGIN,Math.min(Math.round(+startY)||AI_MARGIN,yEnd));
+        const scan=(from,to)=>{
+            for(let i=0;i<xs.length;i++){
+                for(let y=from;y<=to;y+=AI_GRID){
+                    const box={x:xs[i],y:y,w:w,h:h};
+                    if(!list.some(o=>aiEditHits(box,o,AI_GAP))) return box;
+                }
+            }
+            return null;
+        };
+        // 요청한 높이부터 아래로 훑고, 없으면 페이지 맨 위부터 다시 본다.
+        const hit=scan(y0,yEnd)||scan(AI_MARGIN,yEnd);
+        if(hit) return hit;
+        // 빈자리가 없으면 맨 아래 내용 밑에 둔다(그래도 페이지 안).
+        let bottom=AI_MARGIN;
+        list.forEach(o=>{ bottom=Math.max(bottom,o.y+o.h+AI_GAP); });
+        return {x:left,y:Math.max(AI_MARGIN,Math.min(bottom,yEnd)),w:w,h:h};
+    }
+    // 격자·왼쪽 끝 맞추기(+ 필요하면 겹침 피하기). 페이지 밖으로 나가지 않는다.
+    function aiEditNeat(pi,x,y,w,h,opt){
+        const size=aiEditPageSize();
+        const o=opt||{};
+        const d={w:Math.max(20,Math.min(Math.round(w),size.w)),
+                 h:Math.max(20,Math.min(Math.round(h),size.h))};
+        const m=aiEditMargins(pi);
+        let nx=Math.round(+x||0),ny=Math.round(+y||0);
+        // 격자는 새 요소에만 — '그 좌표로 옮겨 달라'는 요청은 좌표를 존중한다.
+        if(o.snap){
+            nx=Math.round(nx/AI_GRID)*AI_GRID;
+            ny=Math.round(ny/AI_GRID)*AI_GRID;
+        }
+        if(o.align!==false&&m.left!=null&&Math.abs(nx-m.left)<=AI_EDGE) nx=m.left;
+        let box={x:nx,y:ny,w:d.w,h:d.h};
+        if(o.avoid){
+            const list=aiEditOccupied(pi,o.skipId);
+            let guard=0;
+            while(list.some(ob=>aiEditHits(box,ob,AI_GAP))&&guard++<400){
+                const clash=list.filter(ob=>aiEditHits(box,ob,AI_GAP));
+                const below=Math.min.apply(null,clash.map(ob=>ob.y+ob.h+AI_GAP));
+                const ny2=Math.round(below/AI_GRID)*AI_GRID;
+                if(ny2<=box.y||ny2+d.h>size.h) break;
+                box={x:box.x,y:ny2,w:d.w,h:d.h};
+            }
+        }
+        box.x=Math.max(0,Math.min(box.x,Math.max(0,size.w-box.w)));
+        box.y=Math.max(0,Math.min(box.y,Math.max(0,size.h-box.h)));
+        return box;
+    }
+    // 새 상자의 높이 어림 — 글이 상자 밖으로 새는 게 제일 보기 나쁘다.
+    // 한글은 1자, 영숫자는 0.55자 폭으로 세고 줄 간격 1.5 + 위아래 여백을 더한다.
+    function aiEditGuessH(text,w,fontSize){
+        const size=aiEditPageSize();
+        const fs=Math.max(8,Math.min(200,+fontSize||16));
+        const bw=Math.max(40,Math.min(+w||size.w-2*AI_MARGIN,size.w-8))-16;
+        const perLine=Math.max(4,Math.floor(bw/fs));
+        let lines=0;
+        String(text==null?'':text).split('\n').forEach(line=>{
+            let units=0;
+            for(const ch of line){
+                units+=/[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/.test(ch)?1:0.55;
+            }
+            lines+=Math.max(1,Math.ceil(units/perLine));
+        });
+        return Math.max(28,Math.min(size.h-8,Math.round(lines*fs*1.5+18)));
+    }
+    const aiEditIsAuto=v=>{
+        const s=String(v==null?'':v).trim().toLowerCase();
+        return s==='auto'||s==='자동'||s==='알아서'||s==='-'||s==='*'||s==='?';
+    };
     // @goto·@newpage 뒤 화면 이동 — addPage와 같은 규칙(교체된 노트면 무시).
     function aiEditScrollToPage(pi){
         try{
@@ -17425,10 +17822,28 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             w:clamp(round(w),20,Math.max(20,size.w)),
             h:clamp(round(h),20,Math.max(20,size.h)),
         });
-        const place=(x,y,w,h)=>{
+        // 좌표 다듬기. 새 요소(opt.snap·opt.avoid)는 격자에 맞추고 겹치지 않는
+        // 자리로 내린다. 옮기기(@mv·@bx)는 '그 자리로 옮겨 달라'는 요청이라
+        // 격자까지는 씌우지 않고 본문 왼쪽 끝과 가까울 때만 붙인다.
+        const place=(x,y,w,h,opt)=>{
             const d=boxSize(w,h);
-            return {x:clamp(round(x),0,Math.max(0,size.w-d.w)),
-                y:clamp(round(y),0,Math.max(0,size.h-d.h)),w:d.w,h:d.h};
+            const o=opt||{};
+            const pi=(o.pi==null)?(curPageIdx|0):o.pi;
+            if(o.neat===false)
+                return {x:clamp(round(x),0,Math.max(0,size.w-d.w)),
+                    y:clamp(round(y),0,Math.max(0,size.h-d.h)),w:d.w,h:d.h};
+            return aiEditNeat(pi,x,y,d.w,d.h,{snap:!!o.snap,avoid:!!o.avoid,
+                align:o.align!==false,skipId:o.skipId});
+        };
+        // 표 전체 삭제 — 칸·테두리 획까지 함께 지운다(@del·@tdel 모두).
+        const dropTable=tf=>{
+            beforeChange();
+            doc.pages[tf.pi].tables=(doc.pages[tf.pi].tables||[]).filter(x=>x!==tf.t);
+            doc.pages[tf.pi].els=(doc.pages[tf.pi].els||[])
+                .filter(e=>!(e&&e.tbl&&e.tbl.tid===tf.t.id));
+            try{ clearActiveTbl(); }catch(e){}
+            touched.add(tf.pi);
+            try{ if(renderedPages.has(tf.pi)) renderTblDivs(tf.pi); }catch(e){}
         };
         const limited=ops.slice(0,AI_EDIT_MAX_OPS);
         if(ops.length>AI_EDIT_MAX_OPS){
@@ -17462,6 +17877,85 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 aiEditScrollToPage(curPageIdx);
                 touched.add(curPageIdx); res.applied++; return;
             }
+            // 14.27.0 · @tidy — 쪽을 보기 좋게 정돈한다. ① 8px 격자에 맞추고
+            //   ② 본문 왼쪽 끝에 가까운 상자는 그 끝에 붙이고 ③ 절반 넘게
+            //   겹친 상자만 아래로 내린다(나란히 세운 두 칸은 건드리지 않는다).
+            if(cmd==='tidy'){
+                let tpi=curPageIdx|0;
+                if(finite(op.page)){
+                    if(!Number.isInteger(Number(op.page))){
+                        bad('정돈할 쪽 번호가 올바르지 않아요'); return;
+                    }
+                    tpi=round(op.page)-1;
+                }
+                const tpg=doc.pages[tpi];
+                if(tpi<0||tpi>=doc.pages.length||!tpg||tpg.__lazy!=null){
+                    bad('그 쪽을 찾거나 불러오지 못했어요'); return;
+                }
+                const tleft=(aiEditMargins(tpi).left);
+                const margin=tleft==null?AI_MARGIN:tleft;
+                const items=[];
+                (tpg.els||[]).forEach(el=>{
+                    if(!el||el.locked||el.tbl) return;
+                    if(!['text','image','latex','stroke'].includes(el.type)) return;
+                    const b=aiEditBox(el);
+                    if(b.w<=0&&b.h<=0) return;
+                    let nx=Math.round(b.x/AI_GRID)*AI_GRID,ny=Math.round(b.y/AI_GRID)*AI_GRID;
+                    if(Math.abs(nx-margin)<=Math.round(AI_EDGE*1.5)) nx=margin;
+                    nx=clamp(nx,0,Math.max(0,size.w-Math.round(b.w)));
+                    ny=clamp(ny,0,Math.max(0,size.h-Math.round(b.h)));
+                    items.push({el:el,base:b,box:{x:nx,y:ny,w:b.w,h:b.h}});
+                });
+                items.sort((a,b)=>a.box.y-b.box.y||a.box.x-b.box.x);
+                const placed=[];
+                items.forEach(item=>{
+                    let guard=0;
+                    for(;;){
+                        const clash=placed.find(o=>{
+                            if(!aiEditHits(item.box,o.box,AI_GAP/2)) return false;
+                            const ow=Math.min(item.box.x+item.box.w,o.box.x+o.box.w)
+                                -Math.max(item.box.x,o.box.x);
+                            const oh=Math.min(item.box.y+item.box.h,o.box.y+o.box.h)
+                                -Math.max(item.box.y,o.box.y);
+                            return ow*oh>0.5*Math.min(item.box.w*item.box.h,o.box.w*o.box.h);
+                        });
+                        if(!clash||guard++>60) break;
+                        const below=Math.round((clash.box.y+clash.box.h+AI_GAP)/AI_GRID)*AI_GRID;
+                        if(below<=item.box.y) break;
+                        item.box.y=Math.min(below,Math.max(0,size.h-Math.round(item.box.h)));
+                    }
+                    placed.push(item);
+                });
+                const moves=items.filter(item=>Math.round(item.base.x)!==item.box.x
+                    ||Math.round(item.base.y)!==item.box.y);
+                // 표도 같은 규칙으로(칸은 rebuildTable이 따라온다).
+                const tbls=[];
+                (tpg.tables||[]).forEach(t=>{
+                    if(!t||!Array.isArray(t.cw)||!Array.isArray(t.ch)) return;
+                    const ts=tblSize(t);
+                    let nx=Math.round((+t.x||0)/AI_GRID)*AI_GRID;
+                    if(Math.abs(nx-margin)<=Math.round(AI_EDGE*1.5)) nx=margin;
+                    nx=clamp(nx,0,Math.max(0,size.w-ts.w));
+                    const ny=clamp(Math.round((+t.y||0)/AI_GRID)*AI_GRID,
+                        0,Math.max(0,size.h-ts.h));
+                    if(Math.round(+t.x||0)!==nx||Math.round(+t.y||0)!==ny)
+                        tbls.push({t:t,x:nx,y:ny});
+                });
+                if(!moves.length&&!tbls.length){ bad('이미 정돈돼 있어요'); return; }
+                beforeChange();
+                moves.forEach(item=>{
+                    if(item.el.type==='stroke'){
+                        item.el.dx=item.box.x-item.base.baseX;
+                        item.el.dy=item.box.y-item.base.baseY;
+                    }else{ item.el.x=item.box.x; item.el.y=item.box.y; }
+                });
+                tbls.forEach(item=>{
+                    item.t.x=item.x; item.t.y=item.y;
+                    try{ rebuildTable(tpi,item.t.id,{quiet:true}); }catch(e){}
+                });
+                if(tbls.length){ try{ if(renderedPages.has(tpi)) renderTblDivs(tpi); }catch(e){} }
+                touched.add(tpi); res.applied++; return;
+            }
             if(cmd==='title'){
                 const t=text(op.text).replace(/\s+/g,' ').trim().slice(0,100);
                 if(!t){ bad('노트 제목이 비어 있어요'); return; }
@@ -17474,8 +17968,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 res.applied++; return;
             }
             if(cmd==='tbl'){
+                const posOk=v=>finite(v)||aiEditIsAuto(v);
                 if(!finite(op.page)||!Number.isInteger(Number(op.page))
-                   ||!finite(op.x)||!finite(op.y)||!finite(op.rows)||!finite(op.cols)){
+                   ||!posOk(op.x)||!posOk(op.y)||!finite(op.rows)||!finite(op.cols)){
                     bad('표를 만들 위치나 크기가 올바르지 않아요'); return;
                 }
                 const page=round(op.page),pi=page-1,pg=doc.pages[pi];
@@ -17506,8 +18001,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const maxW=Math.max(120,size.w-16),maxH=Math.max(80,size.h-16);
                 if(tw>maxW){ const k=maxW/tw; for(let i=0;i<cw.length;i++) cw[i]=Math.max(TBL_MINW,Math.round(cw[i]*k)); tw=cw.reduce((a,b)=>a+b,0); }
                 if(th>maxH){ const k=maxH/th; for(let i=0;i<ch.length;i++) ch[i]=Math.max(TBL_MINH,Math.round(ch[i]*k)); th=ch.reduce((a,b)=>a+b,0); }
-                const ox=clamp(round(op.x),8,Math.max(8,size.w-tw-8));
-                const oy=clamp(round(op.y),8,Math.max(8,size.h-th-8));
+                // 14.27.0 · auto면 겹치지 않는 빈자리를 고르고, 좌표를 주면
+                // 격자·본문 왼쪽 끝에 맞춰 정돈된 자리에 둔다.
+                let ox,oy;
+                if(aiEditIsAuto(op.x)||aiEditIsAuto(op.y)){
+                    const spot=aiEditFreeSpot(pi,tw,th,aiEditIsAuto(op.y)?0:round(op.y));
+                    ox=spot.x; oy=spot.y;
+                }else{
+                    const neat=aiEditNeat(pi,clamp(round(op.x),8,Math.max(8,size.w-tw-8)),
+                        clamp(round(op.y),8,Math.max(8,size.h-th-8)),tw,th,{snap:true,avoid:false});
+                    ox=neat.x; oy=neat.y;
+                }
                 beforeChange();
                 if(!Array.isArray(pg.tables)) pg.tables=[];
                 const tid='tb_'+Math.random().toString(36).slice(2,9);
@@ -17581,8 +18085,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 touched.add(tf.pi); res.applied++; return;
             }
             if(cmd==='add'){
+                const numOk=v=>finite(v)||aiEditIsAuto(v);
                 if(!finite(op.page)||!Number.isInteger(Number(op.page))
-                   ||!finite(op.x)||!finite(op.y)||!finite(op.w)||!finite(op.h)){
+                   ||!numOk(op.x)||!numOk(op.y)||!numOk(op.w)||!numOk(op.h)){
                     bad('새 글상자의 페이지나 위치가 올바르지 않아요'); return;
                 }
                 const page=round(op.page),pi=page-1,pg=doc.pages[pi];
@@ -17599,7 +18104,21 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         styleSrc=src.el;
                     }
                 }
-                const p=place(op.x,op.y,op.w,op.h);
+                // 14.27.0 · auto 크기·자리 — 본문 너비를 따르고, 글이 넘치지
+                // 않을 만큼 높이를 잡은 뒤 겹치지 않는 첫 빈자리에 둔다.
+                const body=text(op.text);
+                const mg=aiEditMargins(pi);
+                const wide=Math.max(120,Math.min(size.w-2*AI_MARGIN,
+                    (mg.width&&mg.width>=120)?mg.width:(size.w-2*AI_MARGIN)));
+                const bw=aiEditIsAuto(op.w)?wide:clamp(round(op.w),20,size.w);
+                const guess=aiEditGuessH(body,bw,fontSize);
+                const bh=clamp(aiEditIsAuto(op.h)?guess
+                    :Math.max(round(op.h),guess),20,size.h);
+                let p;
+                if(aiEditIsAuto(op.x)||aiEditIsAuto(op.y)){
+                    p=aiEditFreeSpot(pi,bw,bh,aiEditIsAuto(op.y)?0:round(op.y));
+                    p.w=bw; p.h=bh;
+                }else p=place(op.x,op.y,bw,bh,{pi:pi,snap:true,avoid:true});
                 beforeChange(); pg.els=pg.els||[];
                 const nel={type:'text',id:uid('t'),x:p.x,y:p.y,w:p.w,h:p.h,
                     html:html(op.text),fontSize:fontSize,font:font};
@@ -17619,21 +18138,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 // 표 id로 지우면 표 전체(칸·테두리)를 함께 지운다.
                 if(cmd==='del'){
                     const tf=findTblAny(op&&op.id);
-                    if(tf){
-                        beforeChange();
-                        doc.pages[tf.pi].tables=(doc.pages[tf.pi].tables||[]).filter(x=>x!==tf.t);
-                        doc.pages[tf.pi].els=(doc.pages[tf.pi].els||[])
-                            .filter(e=>!(e&&e.tbl&&e.tbl.tid===tf.t.id));
-                        try{ clearActiveTbl(); }catch(e){}
-                        touched.add(tf.pi);
-                        try{ if(renderedPages.has(tf.pi)) renderTblDivs(tf.pi); }catch(e){}
-                        res.applied++; return;
-                    }
+                    if(tf){ dropTable(tf); res.applied++; return; }
                 }
                 bad('문서 상태에 없는 요소라 건너뛰었어요'); return;
             }
             const {el,pi}=found;
             if(el.locked){ bad('잠긴 요소는 고칠 수 없어요'); return; }
+            // 14.27.0 · 표 칸이나 테두리 획을 지우라는 말은 '그 표를 지워 달라'로
+            //   알아듣는다 — 칸만 떼어 지우면 테두리가 남아 결국 표 전체 삭제다.
+            if(cmd==='del'&&el.tbl){
+                const tf=findTblAny(el.tbl.tid);
+                if(tf){ dropTable(tf); note('표 칸이라 표 전체를 지웠어요'); res.applied++; return; }
+                bad('표를 찾지 못했어요 · 다시 요청해 주세요'); return;
+            }
             // 표 테두리 선은 표를 고치면 자동 재생성되니 직접 건드리지 않는다.
             if(el.type==='stroke'&&el.tbl){ bad('표 테두리는 표 명령(@tsz·@tmv)으로만 다룰 수 있어요'); return; }
             if(cmd==='del'){
@@ -17670,6 +18187,52 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 beforeChange();
                 el.html=!aiEditText(el).trim()?piece
                     :(front?piece+'<br>'+(el.html||''):(el.html||'')+'<br>'+piece);
+                delete el.fit; delete el.fitDown; delete el.trFS; delete el.trLS; delete el.trFW;
+                touched.add(pi); res.applied++; return;
+            }
+            // 14.27.0 · @hl — 형광펜. 글귀를 주면 '그 글귀만' 칠한다(저장 포맷과
+            //   같은 background-color span). 글귀가 없으면 상자 전체 배경이다.
+            //   색을 안 적으면 노랑, '없음·지우기'면 지우기다.
+            if(cmd==='hl'){
+                if(el.type!=='text'){ bad('형광펜은 글상자(표 칸 포함)에만 칠할 수 있어요'); return; }
+                let find=aiEditLooseFind(op.find);
+                let colorV=String(op.color==null?'':op.color).trim();
+                // "@hl id | 노랑" 처럼 값 하나만 오면 색으로, 아니면 찾을 글로 본다.
+                if(op.single&&find
+                   &&(aiEditColor(find,true)!=null||AI_CLEAR_WORDS[find.toLowerCase()])){
+                    colorV=find; find='';
+                }
+                // "@hl id | 노랑 | 중요한 글" 처럼 순서가 뒤집혀 오면 바꿔 준다.
+                if(find&&colorV&&aiEditColor(colorV,true)==null
+                   &&!AI_CLEAR_WORDS[colorV.toLowerCase()]&&aiEditColor(find,true)!=null){
+                    const swap=find; find=colorV; colorV=swap;
+                }
+                const whole=!find||find==='*'||find==='전체'||find==='모두'||find==='all';
+                const clearing=!!colorV&&!!AI_CLEAR_WORDS[colorV.toLowerCase()];
+                const color=aiEditColor(colorV,true)||AI_HL_DEFAULT;
+                if(clearing){
+                    if(whole){
+                        const had=!!el.cellBg||/background(?:-color)?\s*:/i.test(String(el.html||''));
+                        if(!had){ bad('지울 형광펜이 없어요'); return; }
+                        beforeChange();
+                        delete el.cellBg;
+                        el.html=aiEditUnmarkHtml(el.html,'').html;
+                    }else{
+                        const got=aiEditUnmarkHtml(el.html,find);
+                        if(!got.count){ bad('상자에서 찾을 글을 찾지 못했어요'); return; }
+                        beforeChange();
+                        el.html=got.html;
+                        if(el.cellBg){ delete el.cellBg; note('상자 전체 배경 형광펜도 함께 지웠어요'); }
+                    }
+                }else if(whole){
+                    beforeChange();
+                    el.cellBg=color;
+                }else{
+                    const got=aiEditMarkHtml(el.html,find,color);
+                    if(!got.count){ bad('상자에서 찾을 글을 찾지 못했어요'); return; }
+                    beforeChange();
+                    el.html=got.html;
+                }
                 delete el.fit; delete el.fitDown; delete el.trFS; delete el.trLS; delete el.trFW;
                 touched.add(pi); res.applied++; return;
             }
@@ -17749,7 +18312,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
             const b=aiEditBox(el);
             let p;
-            if(cmd==='mv') p=place(op.x,op.y,Math.max(20,b.w),Math.max(20,b.h));
+            if(cmd==='mv') p=place(op.x,op.y,Math.max(20,b.w),Math.max(20,b.h),{pi:pi,skipId:el.id});
             else if(cmd==='sz'){
                 // 크기만 바꾸라는 요청은 x/y를 움직이지 않는다. 가장자리까지 남은
                 // 폭이 20px보다 작으면 그 여유만큼까지 허용해 페이지 밖으로 새지 않게 한다.
@@ -17759,7 +18322,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const maxW=Math.max(1,size.w-b.x),maxH=Math.max(1,size.h-b.y);
                 p={x:b.x,y:b.y,w:clamp(round(op.w),Math.min(20,maxW),maxW),
                     h:clamp(round(op.h),Math.min(20,maxH),maxH)};
-            }else p=place(op.x,op.y,op.w,op.h);
+            }else p=place(op.x,op.y,op.w,op.h,{pi:pi,skipId:el.id});
             beforeChange();
             if(cmd!=='sz'){ el.x=p.x; el.y=p.y; }
             if(cmd!=='mv'){ el.w=p.w; el.h=p.h; }
@@ -28967,7 +29530,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   // '고쳐 달라'는 말인지 — 맞으면 ! 없이도 편집으로 보낸다. 물음 말투(?, 어떻게,
   // 왜, 알려줘…)가 섞여 있으면 질문으로 둔다. 노트 밖이나 편집 준비 전에는 안 쓴다.
-  var EDIT_HINT=/(바꿔|변경해|수정해|고쳐|편집해|옮겨|이동해|이동시켜|지워|삭제해|없애|추가해|넣어|만들어|키워|줄여|크게 해|작게 해|늘려|맨 위|맨 아래|위쪽으로|아래쪽으로|왼쪽으로|오른쪽으로|가운데로|중앙으로|정렬해|맞춰|글꼴|글자 ?크기|글씨 ?크기|굵게|밑줄|취소선|기울임|형광펜|강조해|빨갛게|파랗게|노랗게|초록색으로|표(를| 만들어| 그려| 추가| 지워)|쪽으로 (가|이동|넘어가|보내)|페이지.*이동|붙여넣|클립보드|복사해|오타|맞춤법|띄어쓰기|줄바꿈|제목을|부제를|제목으로|제목만|덧붙여|이어서 써|마지막에 써)/;
+  var EDIT_HINT=/(바꿔|변경해|수정해|고쳐|편집해|옮겨|이동해|이동시켜|지워|삭제해|없애|추가해|넣어|만들어|키워|줄여|크게 해|작게 해|늘려|맨 위|맨 아래|위쪽으로|아래쪽으로|왼쪽으로|오른쪽으로|가운데로|중앙으로|정렬해|맞춰|글꼴|글자 ?크기|글씨 ?크기|굵게|밑줄|취소선|기울임|형광펜|하이라이트|칠해|강조|중요한 (내용|부분|곳)|빨갛게|파랗게|노랗게|초록색으로|표(를| 만들어| 그려| 추가| 지워)|표 ?(전체)? ?(지우|삭제|없애)|정돈|깔끔하|보기 좋|가지런|줄 ?맞춰|겹치(지|는) ?(않|않게|만)|쪽으로 (가|이동|넘어가|보내)|페이지.*이동|붙여넣|클립보드|복사해|오타|맞춤법|띄어쓰기|줄바꿈|제목을|부제를|제목으로|제목만|덧붙여|이어서 써|마지막에 써)/;
   var QUESTION_HINT=/[?？]|어떻게|어떤|왜|무엇|뭐야|뭔지|뭔가|언제|어디|누가|누구|몇|얼마|인지|인가요|인가\b|알려줘|설명해|뜻이|의미가|방법|차이가|이유가|물어|질문|요약해줘|정리해줘|알려줄래|해석해|번역해/;
   function canEdit(){
     return inNote()&&(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function');
@@ -28978,13 +29541,34 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!canEdit()) return false;
     return EDIT_HINT.test(q)&&!QUESTION_HINT.test(q);
   }
-  // 직전 편집 1턴 — @ask 되묻기 뒤 "파란 상자" 같은 짧은 답이 와도
-  // 무엇을 가리키는지 알 수 있게 다음 편집 요청에 문맥으로 싣는다.
-  var editCtxQ='',editCtxA='';
-  function editCtxText(){
-    if(!editCtxQ) return '';
-    return '이전 요청: '+editCtxQ+'\n이전 결과: '+editCtxA;
+  // 14.27.0 · 여러 대화를 묶어 문맥으로 — 예전엔 직전 편집 1턴만 실었다.
+  //   이제 대화기록(질문·편집·실행 전부)에서 최근 CTX_TURNS턴을 오래된
+  //   순서로 싣는다. "@ask 되묻기 → 짧은 답"은 물론 "아까 그 상자",
+  //   "방금 만든 표" 같은 이어서 하기도 해돌이가 알아듣는다.
+  var CTX_TURNS=5, CTX_Q=240, CTX_A=300, CTX_MAX=5200;
+  function ctxCut(value,max){
+    var v=String(value==null?'':value).replace(/\s+/g,' ').trim();
+    return v.length>max?v.slice(0,max)+'…':v;
   }
+  function aiCtxText(){
+    var turns=[],i;
+    for(i=0;i<hist.length&&turns.length<CTX_TURNS;i++){
+      var h=hist[i]; if(!h) continue;
+      var q=String(h.q||'').trim();
+      if(!q) continue;                      // 개요 정리(요청 없는 답)는 문맥에서 뺀다
+      turns.push({kind:h.kind,q:q,a:String(h.a||'').trim()});
+    }
+    if(!turns.length) return '';
+    var out=[],n=turns.length;
+    for(i=n-1;i>=1;i--){                    // hist는 최신이 앞 — 오래된 것부터 적는다
+      out.push((n-i)+') 앞선 대화('+(KIND[turns[i].kind]||'대화')+'): '
+        +ctxCut(turns[i].q,CTX_Q)+' → '+ctxCut(turns[i].a,CTX_A));
+    }
+    out.push('이전 요청: '+ctxCut(turns[0].q,CTX_Q));
+    out.push('이전 결과: '+ctxCut(turns[0].a,CTX_A));
+    return out.join('\n').slice(0,CTX_MAX);
+  }
+  function editCtxText(){ return aiCtxText(); }
   window.sdyAiLooksLikeEdit=looksLikeEdit;   // 테스트·디버그용 말투 감지 노출
 
   /* ── 14.26.0 · 해돌이 앱 실행 — 음악·타이머·노트·발표·내보내기·찾기·창 열기 ──
@@ -29014,12 +29598,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!APP_VERB.test(q)&&APP_DOCVERB.test(q)) return false;
     return true;
   }
-  // 직전 실행 1턴 — @ask 되묻기 뒤의 짧은 답도 이어진다.
-  var appCtxQ='',appCtxA='';
-  function appCtxText(){
-    if(!appCtxQ) return '';
-    return '이전 요청: '+appCtxQ+'\n이전 결과: '+appCtxA;
-  }
+  // 실행 문맥도 같은 대화 뭉치를 쓴다 — @ask 되묻기 뒤의 짧은 답도 이어진다.
+  function appCtxText(){ return aiCtxText(); }
   window.sdyAiLooksLikeApp=looksLikeApp;   // 테스트·디버그용 말투 감지 노출
   function aiCapture(){
     try{
@@ -29034,7 +29614,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     return {text:'',revision:''};
   }
   function editProgress(acc){
-    var count=(String(acc||'').match(/^\s*@(?:mv|sz|bx|tx|rp|ap|st|add|tbl|tsz|tmv|tcell|del|goto|newpage|title|clip|clipin|copy)\b/gmi)||[]).length;
+    var count=(String(acc||'').match(/^\s*@(?:mv|sz|bx|tx|rp|ap|st|hl|add|tbl|tsz|tmv|tcell|tdel|del|tidy|goto|newpage|title|clip|clipin|copy)\b/gmi)||[]).length;
     return count?('문서 편집안을 만드는 중… · 변경 '+count+'개'):'문서를 살펴보는 중…';
   }
   // 클립보드 명령(@clip·@clipin·@copy)이 섞이면 bridge.apply가 Promise를
@@ -29200,6 +29780,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       return {cuts:cuts,rest:s.slice(from)};
     };
+    // 14.27.0 · auto — 좌표·크기를 문서에게 맡긴다(겹치지 않는 정돈된 자리).
+    var numAuto=function(value){
+      var s=String(value==null?'':value).trim().toLowerCase();
+      if(s==='auto'||s==='자동'||s==='알아서'||s==='-'||s==='*'||s==='?') return 'auto';
+      return number(value);
+    };
     // "~상자id | 본문" — 새 상자가 이웃 상자 서식을 물려받을 때.
     var inheritOf=function(s){
       s=String(s==null?'':s).replace(/^\s+/,'');
@@ -29279,8 +29865,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       if(head==='add'||head==='new'||head==='추가'){
         var gcut=cutN(rest,5),inh=inheritOf(gcut.rest);
-        var page=number(gcut.cuts[0]),ax=number(gcut.cuts[1]),ay=number(gcut.cuts[2]);
-        var aw=number(gcut.cuts[3]),ah=number(gcut.cuts[4]),body=decode(inh.rest);
+        var page=number(gcut.cuts[0]),ax=numAuto(gcut.cuts[1]),ay=numAuto(gcut.cuts[2]);
+        var aw=numAuto(gcut.cuts[3]),ah=numAuto(gcut.cuts[4]),body=decode(inh.rest);
         if(gcut.cuts.length===5&&nums([page,ax,ay,aw,ah])&&body)
           ops.push({cmd:'add',page:page,x:ax,y:ay,w:aw,h:ah,text:body,inherit:inh.inherit});
         else dropped++;
@@ -29289,7 +29875,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       // @tbl — 표 만들기. 본문은 행(\n)·칸(|) 구분이라 통째로 넘긴다.
       if(head==='tbl'||head==='table'||head==='표'){
         var tcut=cutN(rest,5);
-        var tpage=number(tcut.cuts[0]),tx=number(tcut.cuts[1]),ty=number(tcut.cuts[2]);
+        var tpage=number(tcut.cuts[0]),tx=numAuto(tcut.cuts[1]),ty=numAuto(tcut.cuts[2]);
         var trows=number(tcut.cuts[3]),tcols=number(tcut.cuts[4]),tbody=decode(tcut.rest);
         if(tcut.cuts.length===5&&nums([tpage,tx,ty,trows,tcols])&&tbody)
           ops.push({cmd:'tbl',page:tpage,x:tx,y:ty,rows:trows,cols:tcols,text:tbody});
@@ -29314,8 +29900,31 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         else dropped++;
         return;
       }
-      if(head==='del'||head==='rm'||head==='delete'||head==='remove'||head==='삭제'){
+      // @hl — 형광펜. "@hl id | 찾을 글 | 색"(글귀만) · "@hl id | 색"(상자 전체)
+      //   · "@hl id | 찾을 글 | 없음"(그 글귀 지우기). 값이 하나면 적용기가
+      //   색인지 찾을 글인지 가린다.
+      if(head==='hl'||head==='highlight'||head==='highlighter'||head==='mark'
+         ||head==='형광펜'||head==='형광'||head==='강조'){
+        var hbars=(rest.match(/\|/g)||[]).length;
+        var hf=rest.split('|').map(function(v){ return v.trim(); });
+        if(!hf[0]){ dropped++; return; }
+        if(hbars>=2)
+          ops.push({cmd:'hl',id:hf[0],find:decode(hf[1]),color:decode(hf[2]||'')});
+        else if(hbars===1)
+          ops.push({cmd:'hl',id:hf[0],find:decode(hf[1]),color:'',single:true});
+        else ops.push({cmd:'hl',id:hf[0],find:'',color:'',single:true});
+        return;
+      }
+      // @tdel — 표 삭제 별칭. 표 칸 id를 넣어도 적용기가 표 전체를 지운다.
+      if(head==='del'||head==='rm'||head==='delete'||head==='remove'||head==='삭제'
+         ||head==='tdel'||head==='deltable'||head==='tabledel'||head==='표삭제'||head==='표지우기'){
         if(at(0)) ops.push({cmd:'del',id:at(0)}); else dropped++;
+        return;
+      }
+      // @tidy — 쪽 정돈(격자·왼쪽 끝 맞추기 + 심한 겹침 풀기). 쪽번호는 생략 가능.
+      if(head==='tidy'||head==='neat'||head==='정돈'||head==='가지런히'){
+        var yp=number(at(0));
+        ops.push({cmd:'tidy',page:yp==null?'':yp});
         return;
       }
       if(head==='goto'||head==='go'||head==='page'||head==='페이지'||head==='쪽'){
@@ -29334,11 +29943,11 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       // 글은 무시하고 "~id"만 물려받기로 읽는다.
       if(head==='clip'||head==='paste'||head==='붙여넣기'){
         var pcut=cutN(rest,4);
-        var ppage=number(pcut.cuts[0]),px=number(pcut.cuts[1]),py=number(pcut.cuts[2]);
-        var pw=number(pcut.cuts[3]);
+        var ppage=number(pcut.cuts[0]),px=numAuto(pcut.cuts[1]),py=numAuto(pcut.cuts[2]);
+        var pw=numAuto(pcut.cuts[3]);
         var ptail=cutN(String(pcut.rest||''),1),ph,pinh;
-        if(ptail.cuts.length===1){ ph=number(ptail.cuts[0]); pinh=inheritOf(ptail.rest); }
-        else{ ph=number(pcut.rest); pinh={inherit:''}; }
+        if(ptail.cuts.length===1){ ph=numAuto(ptail.cuts[0]); pinh=inheritOf(ptail.rest); }
+        else{ ph=numAuto(pcut.rest); pinh={inherit:''}; }
         if(pcut.cuts.length===4&&nums([ppage,px,py,pw,ph]))
           ops.push({cmd:'clip',page:ppage,x:px,y:py,w:pw,h:ph,inherit:pinh.inherit});
         else dropped++;
@@ -29903,12 +30512,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
             warmSet(txt,{text:lastText,provider:d.provider||'',model:d.model||''});
             paintOutlineReady();
           }
-          if(task==='edit'){                           // 다음 편집 요청에 실을 직전 1턴
-            editCtxQ=q; editCtxA=String(finalText||'').slice(0,500);
-          }
-          if(task==='app'){                            // 다음 실행 요청에 실을 직전 1턴
-            appCtxQ=q; appCtxA=String(finalText||'').slice(0,500);
-          }
+          // 대화 문맥은 histPush로 쌓인 대화기록에서 만든다(aiCtxText) —
+          // 편집·실행·질문이 한 뭉치로 이어진다.
           histPush(kind,q,lastText);
           // 답은 큰 말풍선(#aiSay)이 다 말하고 있다 — 같은 말을 작은 말풍선으로
           //   아래에 한 번 더 띄우면 겹쳐 보이기만 해서 여기서는 조용히 넘긴다.

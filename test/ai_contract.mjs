@@ -42,6 +42,7 @@ process.env.AI_WARM_N = '1';    // 14.22.0 · '미리 준비' 전용 한도는 1
 process.env.AI_RATE_WINDOW_MS = '60000';
 
 const ai = await import('../server/src/routes/ai.js');
+const cfg = await import('../server/src/lib/config.js');
 const { default: Fastify } = await import('fastify');
 
 const app = Fastify({ logger: false });
@@ -141,6 +142,24 @@ ok('편집 후속 문맥(context)은 이전 대화 레이블로 모델에 전달
 r = await post('/api/ai/ask', { task: 'chat', text: '본문', question: '질문', context: '무시되는 문맥' });
 ok('context 는 edit·app 전용 — chat 에는 실리지 않는다',
   r.ok === true && !/무시되는 문맥/.test(calls[calls.length - 1].body.messages[1].content));
+
+// ── 3-3b) 14.27.0 · 형광펜·표 삭제·보기 좋은 배치·여러 대화 묶음 문맥 ──
+ok('편집 프롬프트는 형광펜(@hl)·정돈(@tidy)·표 삭제 별칭(@tdel)·auto 자리를 문서화한다',
+  ['@hl', '@tidy', '@tdel', 'auto'].every((c) => editMessages[0].content.includes(c))
+  && /중요한 글귀/.test(editMessages[0].content)
+  && /⟦…⟧/.test(editMessages[0].content)
+  && /표 칸 id를 넣어도 그 표 전체를 지운다/.test(editMessages[0].content));
+const longCtx = Array.from({ length: 5 }, (_, i) => `${i + 1}) 앞선 대화(문서 편집): 요청 ${i} → 결과 ${i}`).join('\n')
+  + '\n이전 요청: ' + '아주 긴 요청 '.repeat(200)
+  + '\n이전 결과: ' + '아주 긴 결과 '.repeat(200);
+r = await post('/api/ai/ask', { ...editBody, context: longCtx });
+const sentCtx = (calls[calls.length - 1].body.messages[1].content
+  .match(/이전 대화:\n([\s\S]*?)\n\n편집 요청:/) || [, ''])[1];
+ok('여러 턴을 묶은 긴 문맥이 예전 1500자에서 잘리지 않고 통째로 전달된다',
+  r.ok === true && sentCtx.length > 2500 && /1\) 앞선 대화/.test(sentCtx)
+  && /이전 요청: 아주 긴 요청/.test(sentCtx) && /이전 결과: 아주 긴 결과/.test(sentCtx),
+  `len=${sentCtx.length}`);
+ok('문맥 상한은 AI_MAX_CONTEXT 이다', cfg.AI_MAX_CONTEXT > 1500 && sentCtx.length <= cfg.AI_MAX_CONTEXT);
 
 // ── 3-4) 해돌이 앱 실행(14.26.0): 음악·노트·타이머·도구 ──
 ai.aiCacheReset();
