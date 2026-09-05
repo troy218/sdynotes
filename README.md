@@ -1,4 +1,4 @@
-# SDYnotes 14.29.0 — Fastify + Python worker + Oracle 자체 저장소
+# SDYnotes 14.29.1 — Fastify + Python worker + Oracle 자체 저장소
 
 기존 단일 `app.py`(약 11,000줄)를 **"빠른 부분은 Node, 무거운 부분만 Python"** 으로
 재설계한 백엔드입니다. **14.12 부터 모든 데이터(상태·파일)는 이 Oracle VM 디스크에
@@ -9,6 +9,17 @@
 
 프런트(`sdynotes.html`)의 주요 변화:
 
+- **14.29.1 `powered by HAEDOL.AI` 서명을 로딩 화면으로**:
+  - 홈 화면 하단(`<main>` 푸터)이 아니라 **사이트에 들어올 때 뜨는 로딩 화면(`#splash`)**
+    아래쪽에 둡니다. 로고·제목·진행바를 가리지 않는 자리에서, 로딩이 뜨고 0.45초 뒤
+    아래에서 부드럽게 떠오릅니다(`spBrandIn`).
+  - 제목과 같은 그라데이션이 천천히 흐르고(`spBrandShine`) 해달 로고의 물결이 살짝
+    일렁입니다. 다크 모드 보정·safe-area·좁은 화면 축소·`prefers-reduced-motion` 대응 포함.
+  - 스플래시는 1초 안팎이면 사라지므로 **링크가 아닌 장식**입니다(`pointer-events:none`,
+    스크린리더에는 `aria-label` 로 한 번만).
+  - 예전 홈 푸터용 CSS(`.haedol-brand` 계열)는 **삭제**했습니다. 이 블록이 파일 맨 끝
+    '모바일 최종 블록' 뒤에 붙어 있어서 `test:phone` 의 *최종 블록의 선언은 전부 @media
+    안에만 있다* 계약을 깨고 있었는데, 옮기면서 함께 해결됐습니다(54/54 통과).
 - **14.29.0 500쪽+ 대용량 노트 열람 — 페이지 '셸 가상화' 재설계**:
   - 예전에는 노트를 열 때 **모든 쪽**의 `page-wrap`/`paper`/레이어를 한꺼번에 만들고
     `IntersectionObserver` 두 개에 전부 `observe` 했습니다. 500쪽이면 노드 5천 개 +
