@@ -1338,10 +1338,37 @@
         .layer-img{z-index:2;}
         .layer-text{z-index:3;}
         .layer-stroke{z-index:4;}
-        /* 선택한 것은 항상 맨 앞으로 튀어나와 바로 잡을 수 있게 */
+        /* ★ 14.28.1 · 이미지 선택/이동/크기 조절 중에도 주변 요소(글·수식·다른 그림·펜 획)가
+           절대 숨겨지지 않게 — 모든 형제 레이어의 opacity/visibility/display/filter 를
+           강제로 원래대로 되돌린다. (과거 버전에서는 :has 셀렉터로 선택 이미지가 아닌
+           다른 요소를 opacity:0 / display:none 으로 숨기던 경로가 있었음) */
+        .paper:has(.paper-img.sel) .layer-text,
+        .paper:has(.paper-img.sel) .layer-stroke,
+        .paper:has(.paper-img.sel) .layer-tbl,
+        .paper:has(.paper-img.sel) .find-layer,
+        .paper:has(.paper-img.sel) .layer-pin,
+        .paper:has(.paper-img.sel) .layer-img > *,
+        .paper:has(.paper-img.sdy-dragging) .layer-text,
+        .paper:has(.paper-img.sdy-dragging) .layer-stroke,
+        .paper:has(.paper-img.sdy-dragging) .layer-tbl,
+        .paper:has(.paper-img.sdy-resizing) .layer-text,
+        .paper:has(.paper-img.sdy-resizing) .layer-stroke,
+        .paper:has(.paper-img.sdy-resizing) .layer-tbl{
+            opacity:1!important; visibility:visible!important;
+            filter:none!important; backdrop-filter:none!important;
+        }
+        .paper:has(.paper-img.sel) .tb-content,
+        .paper:has(.paper-img.sel) .paper-img > img,
+        .paper:has(.paper-img.sel) .stroke-vis{
+            opacity:1!important;
+        }
         .tb.sel,.tb.edit,.tb.msel{z-index:60!important;}
         .paper-img.sel,.paper-img.msel{z-index:60!important;}
         .stroke-g.sel,.stroke-g.msel{ }
+        /* 이미지 선택 테두리·핸들은 배경 없이 악센트 선만 보이게 — 핸들이 주변 글/그림을
+           가리지 않는다. */
+        .paper-img.sel{background:transparent!important;box-shadow:none!important;}
+        .paper-img.sel>img{background:transparent!important;}
         /* SVG 자체는 클릭을 통과시키고, 획의 hit 영역만 잡히게 한다 */
         .stroke-svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;}
         .layer-stroke .stroke-g{pointer-events:none;}
