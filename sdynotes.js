@@ -441,6 +441,57 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     function uid(p){ return p+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
     function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+    /* 14.28.2 · 해돌이 말풍선용 아주 작은 마크다운 렌더러.
+       #/##/### 제목 · **굵게** · *기울임* · \`코드\` · $수식$은 그대로 보존 ·
+       -/1. 목록 · 링크 깡통 무시 · 나머지는 모두 이스케이프.
+       XSS 방지 위해 태그·스크립트는 전부 이스케이프한다. */
+    function mdToHtml(s){
+      s=String(s==null?'':s);
+      // $...$ / $$...$$ 수식은 내부에 마크다운이 들어오지 않게 임시 치환
+      const maths=[];
+      s=s.replace(/\$\$[^$\n]+\$\$|\$[^$\n]+\$/g,(m)=>{const i=maths.length;maths.push(m);return'\u0000'+i+'\u0000';});
+      const lines=s.split('\n'), out=[];
+      let inList=false, listType='', listIndent=0;
+      const closeList=()=>{ if(inList){ out.push(listType==='ol'?'</ol>':'</ul>'); inList=false; } };
+      const inline=(t)=>{
+        t=esc(t);
+        // **굵게**
+        t=t.replace(/\*\*([^*\n]+?)\*\*/g,'<strong>$1</strong>');
+        // *기울임* (단어 경계 안, 공백 뒤)
+        t=t.replace(/(^|[\s(])\*([^*\n]+?)\*(?=[\s).,!?:;]|$)/g,'$1<em>$2</em>');
+        // `코드`
+        t=t.replace(/`([^`\n]+?)`/g,'<code>$1</code>');
+        // 수식 복원
+        t=t.replace(/\u0000(\d+)\u0000/g,(_,i)=>esc(maths[+i]||''));
+        return t;
+      };
+      for(const raw of lines){
+        const line=raw.replace(/\s+$/,'');
+        if(!line.trim()){ closeList(); out.push('<div class="md-blank"></div>'); continue; }
+        // 제목
+        let m=/^(#{1,3})\s+(.*)$/.exec(line);
+        if(m){ closeList();
+          const lv=m[1].length;
+          out.push(`<h${lv} class="md-h md-h${lv}">${inline(m[2])}</h${lv}>`); continue;
+        }
+        // 순서 없는 목록  "- "/"* "/"＋ "/"• "
+        m=/^(\s*)([-*+•])\s+(.*)$/.exec(line);
+        let mo=/^(\s*)(\d+)\.\s+(.*)$/.exec(line);
+        if(m||mo){
+          const indent=(m?m[1]:mo[1]).length, num=m?0:parseInt(mo[2],10);
+          const cont=m?m[3]:mo[3];
+          const type=m?'ul':'ol';
+          if(!inList||listType!==type){ closeList(); out.push(type==='ol'?'<ol>':'<ul>'); inList=true; listType=type; }
+          listIndent=indent;
+          out.push(`<li>${inline(cont)}</li>`);
+          continue;
+        }
+        closeList();
+        out.push(`<p>${inline(line)}</p>`);
+      }
+      closeList();
+      return out.join('\n');
+    }
     function toast(m,ms=2000){ if(!document) return; const t=document.getElementById('toast'); if(!t) return; t.textContent=m;t.classList.add('show');setTimeout(()=>{ if(t.isConnected) t.classList.remove('show'); },ms);}
     // 색을 밝게/어둡게 (p<0 어둡게, p>0 밝게)
     function shade(hex,p){
@@ -29539,7 +29590,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       try{ follow=(body.scrollHeight-body.scrollTop-body.clientHeight)<28; }
       catch(e){ follow=true; }
     }
-    o.textContent=s;
+    // 14.28.2 · 말하는 중(cls truthy)에는 평문으로 빠르게 흘리고,
+    //   다 말한 뒤에만 마크다운(# 제목·**굵게**·목록·`코드`)을 렌더링한다 —
+    //   스트림 중간에 토큰이 잘려 **짝이 안 맞거나 제목이 깜빡이는 걸 막기 위함.
+    if(cls){
+      o.textContent=s;
+    }else{
+      o.innerHTML=mdToHtml(s);
+    }
     o.classList.toggle('busy',!!cls);
     say.hidden=false;
     if(ty) ty.hidden=!(cls&&!s);                          // 첫 글자 전: 생각하는 점 세 개

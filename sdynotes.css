@@ -6525,8 +6525,24 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 .ai-say-body:hover::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--text3) 62%,transparent);
     background-clip:content-box;}
 .ai-out{font-size:13px;line-height:1.72;color:var(--text1);
-    white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;}
+    word-break:break-word;overflow-wrap:anywhere;}
 .ai-out:empty{display:none;}
+/* 14.28.2 · 해돌이 말풍선 안 간단 마크다운 — 제목은 크고 굵게, 중요어 굵게 */
+.ai-out p{margin:0 0 6px;}
+.ai-out p:last-child{margin-bottom:0;}
+.ai-out .md-blank{height:4px;}
+.ai-out h1.md-h{font-size:19px;font-weight:800;line-height:1.35;margin:4px 0 8px;color:var(--text1);}
+.ai-out h2.md-h{font-size:16px;font-weight:800;line-height:1.35;margin:10px 0 5px;color:var(--text1);}
+.ai-out h3.md-h{font-size:14px;font-weight:800;line-height:1.35;margin:8px 0 4px;color:var(--text1);}
+.ai-out strong{font-weight:800;color:var(--text1);}
+.ai-out em{font-style:italic;}
+.ai-out code{font-family:var(--mono,'ui-monospace',Menlo,Consolas,monospace);font-size:12px;
+    background:color-mix(in srgb,var(--text1) 8%,transparent);padding:1px 5px;border-radius:4px;}
+.ai-out ul,.ai-out ol{margin:2px 0 8px;padding-left:20px;}
+.ai-out ul{list-style:disc outside;}
+.ai-out ol{list-style:decimal outside;}
+.ai-out li{margin:2px 0;}
+.ai-out p:has(+ h1.md-h),.ai-out p:has(+ h2.md-h),.ai-out p:has(+ h3.md-h){margin-bottom:2px;}
 /* 말하는 중(아직 첫 글자가 안 왔을 때) — 생각하는 점 세 개 */
 .ai-typing[hidden]{display:none;}
 .ai-typing{display:inline-flex;gap:4px;padding:3px 0 1px;}
