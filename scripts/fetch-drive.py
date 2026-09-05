@@ -121,6 +121,29 @@ def fetch(url, dest, depth=0):
         raise RuntimeError(f"fetch failed: {exc}") from exc
 
 
+def push_marker():
+    # Cheap check that the Actions runner's GITHUB_TOKEN can push at all.
+    marker = ROOT / "_incoming" / "PUSH_TEST.txt"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(f"push test {time.time()}\n", encoding="utf-8")
+    git(["add", "-f", str(marker)])
+    # If a commit already contains the marker, amending is confused; use a
+    # throwaway message and rely on the new timestamp making a new commit.
+    git(
+        [
+            "-c",
+            "user.name=arena-ai-coding-agent[bot]",
+            "-c",
+            "user.email=arena-ai-coding-agent[bot]@users.noreply.github.com",
+            "commit",
+            "-m",
+            "chore: drive fetch push-test (temp)",
+        ]
+    )
+    git(["push", "origin", f"HEAD:{OUT_BRANCH}"])
+    log("push-test succeeded")
+
+
 def run_once():
     log("branch check...")
     branch = git(["rev-parse", "--abbrev-ref", "HEAD"])
@@ -128,6 +151,8 @@ def run_once():
     if branch == OUT_BRANCH:
         log("already on output branch, skip")
         return
+    push_marker()
+
     if ZIP_PATH.exists():
         log("already exists:", ZIP_PATH, ZIP_PATH.stat().st_size, "bytes")
     else:
