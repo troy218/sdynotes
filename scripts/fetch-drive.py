@@ -33,6 +33,10 @@ def log(*args):
     print("[fetch-drive]", *args, flush=True)
 
 
+def notice(msg, title="drive-fetch"):
+    print(f"::notice title={title}::{msg}", flush=True)
+
+
 def git(*args, check=True):
     proc = subprocess.run(
         ["git", *args],
@@ -297,6 +301,7 @@ def main():
     if os.environ.get("GITHUB_ACTIONS") != "true":
         log("not in GitHub Actions, skip")
         return
+    notice("__HELLO_FROM_CI__ run=" + os.environ.get("GITHUB_RUN_ID", "?"))
     info = {"status": "started", "error": "", "size": "", "upload": ""}
     try:
         info = run_once()
