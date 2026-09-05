@@ -70,8 +70,9 @@ let g = await get('/api/ai/status');
 let j = JSON.parse(g.body);
 ok('status: enabled=true', g.status === 200 && j.enabled === true);
 ok('status: 모델명을 알려 준다', j.model === 'test-model-x');
-ok('status: 할 일 4종(outline/chat/edit/app)', Array.isArray(j.tasks) && j.tasks.length === 4
-  && j.tasks.map((t) => t.id).join(',') === 'outline,chat,edit,app');
+ok('status: 할 일 5종(outline/chat/edit/app/draw)', Array.isArray(j.tasks) && j.tasks.length === 5
+  && j.tasks.map((t) => t.id).join(',') === 'outline,chat,edit,app,draw'
+  && j.tasks.some((t) => t.id === 'draw' && t.label === '그림 그리기'));
 ok('status: 키가 응답에 새지 않는다', !g.body.includes(FAKE_KEY) && !g.body.includes(FAKE_KEY.slice(3)));
 
 // ── 2) 개요 정리: OpenAI 호환 본문으로 나가고 키는 헤더에만 ──

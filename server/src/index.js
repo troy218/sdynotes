@@ -21,6 +21,7 @@ import { registerStickers } from './routes/stickers.js';
 import { registerWallpaper } from './routes/wallpaper.js';
 import { registerTranslate } from './routes/translate.js';
 import { registerAi } from './routes/ai.js';
+import { registerAiTools } from './routes/aiTools.js';
 import { registerNotify } from './routes/notify.js';
 import { registerLive } from './routes/live.js';
 import { registerMisc } from './routes/misc.js';
@@ -64,6 +65,7 @@ registerStickers(app);
 registerWallpaper(app);
 registerTranslate(app);
 registerAi(app);      // 14.20.0 · AI 노트 도우미 (요약·질문)
+registerAiTools(app); // 14.30.0 · 해돌이 인터넷 도구 (웹 검색 · 사진 검색/저장)
 registerNotify(app);
 registerLive(app);
 registerMisc(app);
