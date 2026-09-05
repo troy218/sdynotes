@@ -124,6 +124,24 @@ ok('문서 상태 없는 편집은 외부 호출 없이 400', r.status === 400 &
 r = await post('/api/ai/ask', { task: 'edit', text: '페이지 크기: 800x1100', question: '' });
 ok('요청 없는 편집은 외부 호출 없이 400', r.status === 400 && /어떻게 고칠지/.test(r.error || '') && calls.length === 2);
 
+// ── 3-3) 똑똑한 해돌이(14.25.0): 자동 라우팅·서식·표·문맥 ──
+ok('질문 프롬프트는 편집 요청이면 [[edit]] 으로 넘기라고 한다',
+  /\[\[edit\]\]/.test(ai.AI_TASKS.chat.system) && /\[\[note\]\]/.test(ai.AI_TASKS.chat.system)
+  && /\[\[free\]\]/.test(ai.AI_TASKS.chat.system));
+ok('편집 프롬프트는 부분 수정·서식·표·이동·클립보드·되묻기를 문서화한다',
+  ['@rp', '@ap', '@st', '@tbl', '@tsz', '@tmv', '@tcell', '@goto', '@newpage',
+    '@title', '@clip', '@clipin', '@copy', '@ask'].every((c) => editMessages[0].content.includes(c)));
+ok('편집 프롬프트는 글꼴·색 지도를 싣는다',
+  /gaegu\(개구쟁이\)/.test(editMessages[0].content) && /형광펜: 노랑/.test(editMessages[0].content));
+ok('편집 프롬프트는 통째 교체보다 부분 수정을 먼저 쓰라고 한다',
+  /통째로\(@tx\)보다 부분\(@rp\)/.test(editMessages[0].content));
+r = await post('/api/ai/ask', { ...editBody, context: '이전 요청: 제목 Stand by\n이전 결과: 파란 상자를 물어봄' });
+ok('편집 후속 문맥(context)은 이전 대화 레이블로 모델에 전달한다',
+  r.ok === true && /이전 대화:\n이전 요청: 제목 Stand by/.test(calls[calls.length - 1].body.messages[1].content));
+r = await post('/api/ai/ask', { task: 'chat', text: '본문', question: '질문', context: '무시되는 문맥' });
+ok('context 는 edit 전용 — chat 에는 실리지 않는다',
+  r.ok === true && !/무시되는 문맥/.test(calls[calls.length - 1].body.messages[1].content));
+
 // ── 4) task 화이트리스트 ──
 calls = [];
 extFetch = () => chatOk('nope');

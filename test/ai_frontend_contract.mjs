@@ -85,6 +85,33 @@ check('프런트: !·/편집·편집: 접두사를 edit 요청으로 보내고 �
   /var EDIT_PRE=/.test(js) && /run\('edit',editCommand\)/.test(js)
   && /if\(task==='edit'\)\{ out\(editProgress\(acc\),true\); return; \}/.test(js)
   && /editApplyDone\(text,editCapture\)/.test(js));
+// ── 14.25.0 · 똑똑한 해돌이 — 자동 라우팅·서식·표·이동·클립보드·되묻기 ──
+check('서버: chat은 편집 요청이면 [[edit]] 표식으로 넘기라고 한다',
+  /\[\[edit\]\]/.test(srv) && /문서 편집기가 이어받는다/.test(srv));
+check('서버: edit 프롬프트는 부분 수정·서식·표·이동·클립보드·되묻기를 문서화한다',
+  ['@rp', '@ap', '@st', '@tbl', '@tsz', '@tmv', '@tcell', '@goto', '@newpage',
+    '@title', '@clip', '@clipin', '@copy', '@ask'].every((c) => srv.includes(c)));
+check('서버: edit 후속 문맥(context)을 이전 대화로 전달한다',
+  /aiMessages\(task, text, question, context\)/.test(srv) && /이전 대화:\\n/.test(srv));
+check('프런트: [[edit]] 표식을 파싱해 편집으로 넘긴다',
+  /note\|free\|edit/.test(js) && /run\('edit',q,scope,true\)/.test(js));
+check('프런트: ! 없이도 고쳐 달라는 말투면 편집으로 자동 라우팅한다',
+  /function looksLikeEdit\(q\)/.test(js) && /window\.sdyAiLooksLikeEdit=looksLikeEdit/.test(js)
+  && /if\(looksLikeEdit\(q\)\)\{ run\('edit',q\); return; \}/.test(js));
+check('프런트: 편집 파서는 부분 수정·서식·표·이동·클립보드·되묻기를 읽는다',
+  /cmd:'rp'/.test(js) && /cmd:'ap'/.test(js) && /cmd:'st'/.test(js) && /cmd:'tbl'/.test(js)
+  && /cmd:'tsz'/.test(js) && /cmd:'tmv'/.test(js) && /cmd:'tcell'/.test(js) && /cmd:'goto'/.test(js)
+  && /cmd:'newpage'/.test(js) && /cmd:'title'/.test(js) && /cmd:'clip'/.test(js)
+  && /cmd:'clipin'/.test(js) && /cmd:'copy'/.test(js) && /ask=decode\(rest\)/.test(js));
+check('프런트: 스냅샷에 서식·표 정보를 싣는다',
+  /fmt\+=' font='/.test(js) && /fs='\+Math\.round/.test(js) && /type=표/.test(js) && /rows='\+rows/.test(js));
+check('프런트: 편집 요청에 직전 1턴 문맥을 싣는다',
+  /context:task==='edit'\?editCtxText\(\):''/.test(js));
+check('프런트: 클립보드 명령은 비동기 적용을 기다렸다 마무리한다',
+  /typeof applied\.then==='function'/.test(js) && /clipboard\.readText/.test(js));
+check('프런트: 되돌리기 직후 내 에코가 서식을 되살리지 못하게 가드한다',
+  /let _undoGuardUntil=0/.test(js) && /_undoGuardUntil=Date\.now\(\)\+30000/.test(js)
+  && /op\.dev&&op\.dev===SYNC_DEV&&Date\.now\(\)<_undoGuardUntil/.test(js));
 check('프런트: 모델 이름·소요 초 같은 기술 정보는 화면에 남기지 않는다',
   !/tailMeta/.test(js) && /meta\(''\);\s*\/\/ 모델·소요 초 같은 기술 정보는 안 보여 준다/.test(js)
   && /dot\.title=enabled\?'AI 켜짐'/.test(js));
@@ -132,8 +159,8 @@ check('HTML: 검색창 안내 글씨는 한 줄 — (Enter) 없이, Enter 안내
   && /title="[^"]*Enter[^"]*"/.test(html) && /aria-label="[^"]*Enter[^"]*"/.test(html));
 check('HTML: 질문칸은 여러 줄로 자랄 수 있는 textarea 다',
   /<textarea id="aiQ"/.test(html) && !/<input[^>]*id="aiQ"/.test(html));
-check('HTML/CSS: ! 편집을 안내하고 입력 중 편집 딱지를 보여 준다',
-  /!로 시작하면 문서를 고쳐요/.test(html) && /id="aiEditTag"[^>]*hidden>편집</.test(html)
+check('HTML/CSS: ! 없이도 되는 편집을 안내하고 입력 중 편집 딱지를 보여 준다',
+  /! 없이도 문서를 고쳐요/.test(html) && /id="aiEditTag"[^>]*hidden>편집</.test(html)
   && /\.ai-askbar\.edit-on \.ai-askbar-field/.test(css) && /\.ai-edittag\{/.test(css));
 check('프런트: 질문이 길면 옆으로, 여러 줄이면 위로 자란다 (aiQGrow)',
   /function aiQGrow\(/.test(js) && /--ai-q-w/.test(js)
@@ -476,5 +503,158 @@ check('런타임: 노트를 닫으면 말풍선·기록도 같이 닫힌다',
   $('aiSay').hidden === true && $('aiHist').hidden === true);
 $('editorView').classList.add('open');
 await tick(60);
+
+// ── 2-10) 똑똑한 해돌이(14.25.0): ! 없는 자동 라우팅·새 명령·되묻기 ──
+{
+  const p2 = w.sdyAiEditParse([
+    '@rp t_1 | 옛말 | 새말',
+    '@rp t_2 | 지울말',
+    '@ap t_1 | 뒤 | 덧붙는 줄',
+    '@st t_1 | font=gaegu, fs=20, fg=빨강, hl=노랑, bold=on, align=center',
+    '@st s_1 | color=#a63f47, size=3',
+    '@add 1 | 60 | 400 | 300 | 80 | ~t_1 | 이웃 닮은 상자',
+    '@tbl 1 | 60 | 200 | 2 | 3 | 이름|나이|지역\\n철수|7|서울',
+    '@tsz tb_1 | 400 | 120',
+    '@tmv tb_1 | 60 | 300',
+    '@tcell tb_1 | 2 | 3 | 서울',
+    '@tcell tb_1 | 1 | 1 |',
+    '@goto 3',
+    '@newpage',
+    '@title 새 노트 이름',
+    '@clip 1 | 60 | 400 | 300 | 80',
+    '@clipin t_1 | 앞',
+    '@copy t_1',
+    '@ask 파란 상자와 빨간 상자 중 어느 것을 옮길까요?',
+    '@nonsense blah',
+    '@done 다 했어요',
+  ].join('\n'));
+  check('런타임: 새 명령 17종을 파싱하고 모르는 명령만 센다',
+    p2.ops.length === 17 && p2.dropped === 1 && p2.say === '다 했어요', `${p2.ops.length}/${p2.dropped}`);
+  check('런타임: 부분 바꾸기는 찾을 글·바꿀 글을 나누고 바꿀 글 없으면 지우기로 본다',
+    p2.ops[0].cmd === 'rp' && p2.ops[0].find === '옛말' && p2.ops[0].repl === '새말'
+    && p2.ops[1].cmd === 'rp' && p2.ops[1].find === '지울말' && p2.ops[1].repl === '');
+  check('런타임: 덧붙이기·서식은 방향과 서식 덩어리를 살린다',
+    p2.ops[2].cmd === 'ap' && p2.ops[2].dir === '뒤' && p2.ops[2].text === '덧붙는 줄'
+    && p2.ops[3].cmd === 'st' && /font=gaegu/.test(p2.ops[3].style) && /align=center/.test(p2.ops[3].style));
+  check('런타임: 새 상자는 ~id 서식 물려받기를 읽는다',
+    p2.ops[5].cmd === 'add' && p2.ops[5].inherit === 't_1' && p2.ops[5].text === '이웃 닮은 상자');
+  check('런타임: 표는 행·칸 구분을 살려 통째로 넘긴다',
+    p2.ops[6].cmd === 'tbl' && p2.ops[6].rows === 2 && p2.ops[6].cols === 3
+    && p2.ops[6].text === '이름|나이|지역\n철수|7|서울');
+  check('런타임: 표 크기·이동·칸(빈 칸 비우기 포함)·쪽 이동·새 쪽·제목을 파싱한다',
+    p2.ops[7].cmd === 'tsz' && p2.ops[8].cmd === 'tmv'
+    && p2.ops[9].cmd === 'tcell' && p2.ops[9].r === 2 && p2.ops[9].c === 3 && p2.ops[9].text === '서울'
+    && p2.ops[10].cmd === 'tcell' && p2.ops[10].text === ''
+    && p2.ops[11].cmd === 'goto' && p2.ops[11].page === 3
+    && p2.ops[12].cmd === 'newpage' && p2.ops[13].cmd === 'title' && p2.ops[13].text === '새 노트 이름');
+  check('런타임: 클립보드 3종과 되묻기를 파싱한다',
+    p2.ops[14].cmd === 'clip' && p2.ops[14].w === 300 && p2.ops[14].h === 80
+    && p2.ops[15].cmd === 'clipin' && p2.ops[15].dir === '앞'
+    && p2.ops[16].cmd === 'copy' && p2.ops[16].id === 't_1'
+    && p2.ask === '파란 상자와 빨간 상자 중 어느 것을 옮길까요?');
+}
+
+// 자동 라우팅용 편집 다리 — 비동기(clipboard) 없이 동기 적용만 기록한다
+const autoApplied = [];
+const autoBodies = [];
+w.__sdyAiBridge = {
+  text: () => LONG,
+  capture: () => ({ text: EDIT_SNAPSHOT, revision: 'rev-auto' }),
+  apply: (ops, revision) => {
+    autoApplied.push({ ops, revision });
+    return { applied: ops.length, failed: 0, notes: [], stale: false };
+  },
+};
+const origFetch = w.fetch;
+w.fetch = (url, opts = {}) => {
+  if (String(url) === '/api/ai/ask') autoBodies.push(JSON.parse(opts.body || '{}'));
+  return origFetch(url, opts);
+};
+check('런타임: 고쳐 달라는 말투는 ! 없이도 편집으로 본다',
+  w.sdyAiLooksLikeEdit('제목을 맨 위로 옮겨 줘') === true
+  && w.sdyAiLooksLikeEdit('두 번째 상자 글자를 빨갛게 해줘') === true
+  && w.sdyAiLooksLikeEdit('표 만들어 줘') === true);
+check('런타임: 물음 말투·일반 질문은 편집으로 보내지 않는다 (!는 강제라 제외)',
+  w.sdyAiLooksLikeEdit('어디서 일어나?') === false
+  && w.sdyAiLooksLikeEdit('표는 어떻게 만들어?') === false
+  && w.sdyAiLooksLikeEdit('이게 뭔지 알려줘') === false
+  && w.sdyAiLooksLikeEdit('!강제 편집') === false);
+askRes = () => fakeRes(200, { ok: true, text: '@mv t_1 | 40 | 20\n@done 제목을 맨 위로 옮겼어요',
+  provider: 'gemini', model: 'gem' });
+calls.length = 0; autoBodies.length = 0; autoApplied.length = 0;
+$('aiQ').value = '제목을 맨 위로 옮겨 줘';
+$('aiQ').dispatchEvent(new w.Event('input', { bubbles: true }));
+check('런타임: ! 없이도 고쳐 달라는 말을 치면 편집 딱지가 켜진다',
+  $('aiAsk').classList.contains('edit-on') && $('aiEditTag').hidden === false);
+$('aiQ').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+await tick(80); await flush();
+check('런타임: ! 없는 편집 말투는 task=edit 으로 가고 말은 통째로 실린다',
+  autoBodies.length === 1 && autoBodies[0].task === 'edit'
+  && autoBodies[0].question === '제목을 맨 위로 옮겨 줘' && autoBodies[0].text === EDIT_SNAPSHOT);
+check('런타임: 자동 라우팅 편집도 캡처 revision으로 적용하고 요약한다',
+  autoApplied.length === 1 && autoApplied[0].revision === 'rev-auto'
+  && /제목을 맨 위로 옮겼어요/.test($('aiOut').textContent) && /적용 1개/.test($('aiOut').textContent));
+check('런타임: 자동 라우팅에도 문서 편집 딱지가 붙는다',
+  $('aiKind').hidden === false && $('aiKind').textContent === '문서 편집');
+
+// 물음이 섞인 편집 단어는 질문으로 — 서버가 답한다
+askRes = () => fakeRes(200, { ok: true, text: '[[note]]\n표 단추를 누르면 돼요', provider: 'groq', model: 'm' });
+autoBodies.length = 0; autoApplied.length = 0;
+$('aiQ').value = '표는 어떻게 만들어?';
+w.sdyAiRun();
+await tick(80); await flush();
+check('런타임: 어떻게 같은 물음은 편집 단어가 있어도 chat 으로 간다',
+  autoBodies.length === 1 && autoBodies[0].task === 'chat' && autoApplied.length === 0
+  && $('aiKind').textContent === '노트 질문');
+
+// 서버 [[edit]] — chat 으로 나갔다가 편집으로 자동 넘기기 (한 번만)
+askRes = (url, b) => (b.task === 'chat'
+  ? fakeRes(200, { ok: true, text: '[[edit]]', provider: 'groq', model: 'm' })
+  : fakeRes(200, { ok: true, text: '@tx t_1 | 손본 내용\n@done 손봐뒀어요', provider: 'groq', model: 'm' }));
+autoBodies.length = 0; autoApplied.length = 0;
+$('aiQ').value = '저거 좀 손봐줘';
+w.sdyAiRun();
+await tick(120); await flush();
+check('런타임: 서버 [[edit]] 이면 스냅샷을 잡아 edit 으로 넘긴다',
+  autoBodies.length === 2 && autoBodies[0].task === 'chat' && autoBodies[1].task === 'edit'
+  && autoBodies[1].text === EDIT_SNAPSHOT && autoApplied.length === 1);
+check('런타임: 넘겨받은 편집 결과가 말풍선에 요약된다',
+  /손봐뒀어요/.test($('aiOut').textContent) && $('aiKind').textContent === '문서 편집');
+
+// @ask 되묻기 — 실행 없이 질문만, 다음 요청에 문맥으로 실린다
+askRes = () => fakeRes(200, { ok: true, text: '@ask 파란 상자와 빨간 상자 중 어느 것을 옮길까요?\n@done 되묻기',
+  provider: 'groq', model: 'm' });
+autoBodies.length = 0; autoApplied.length = 0;
+$('aiQ').value = '! 상자 옮겨 줘';
+w.sdyAiRun();
+await tick(80); await flush();
+check('런타임: @ask 는 적용 없이 질문을 말풍선에 싣는다',
+  autoApplied.length === 0 && /어느 것을 옮길까요/.test($('aiOut').textContent)
+  && /이어서 할게요/.test($('aiOut').textContent));
+askRes = () => fakeRes(200, { ok: true, text: '@mv t_9 | 10 | 10\n@done 파란 상자를 옮겼어요',
+  provider: 'groq', model: 'm' });
+autoBodies.length = 0;
+$('aiQ').value = '! 파란 상자';
+w.sdyAiRun();
+await tick(80); await flush();
+check('런타임: 다음 편집 요청에 직전 1턴 문맥이 실린다',
+  autoBodies.length === 1 && /이전 요청: 상자 옮겨 줘/.test(autoBodies[0].context || '')
+  && /어느 것을 옮길까요/.test(autoBodies[0].context || ''));
+
+// 비동기 적용(clipboard) — Promise 를 기다렸다 마무리한다
+w.__sdyAiBridge = {
+  text: () => LONG,
+  capture: () => ({ text: EDIT_SNAPSHOT, revision: 'rev-async' }),
+  apply: () => new Promise((resolve) => setTimeout(
+    () => resolve({ applied: 1, failed: 0, notes: [], stale: false }), 30)),
+};
+askRes = () => fakeRes(200, { ok: true, text: '@copy t_1\n@done 복사했어요', provider: 'groq', model: 'm' });
+$('aiQ').value = '! 복사해 줘';
+w.sdyAiRun();
+await tick(120); await flush();
+check('런타임: 비동기 적용이 끝나야 요약이 나온다',
+  /복사했어요/.test($('aiOut').textContent) && /적용 1개/.test($('aiOut').textContent));
+w.__sdyAiBridge = { text: () => LONG, title: () => '생물 노트' };
+w.fetch = origFetch;
 
 console.log(`\n  ${pass} passed`);
