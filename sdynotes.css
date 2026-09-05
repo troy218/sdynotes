@@ -6463,6 +6463,15 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
   background-color:transparent!important;
 }
 
+/* 14.29.2 · 문장 안에 섞여 들어온 수식(해돌이가 쓴 $…$)
+   저장은 <span class="imath" data-latex="…">$…$</span> 그대로이고,
+   화면에서만 KaTeX 로 채운다. 글줄 흐름을 깨지 않게 인라인으로 앉히고,
+   글자 크기는 그 자리 본문 크기를 따른다. */
+.tb-content .imath{display:inline-block;vertical-align:-.14em;line-height:1.1;
+  white-space:normal;max-width:100%;}
+.tb-content .imath .katex{font-size:1.02em;line-height:1.1;}
+.tb-content .imath .katex-display{margin:0;}
+
 /* ══════════════════════════════════════════════════════════════════════
    14.23.0 · 노트 해돌이 — 창 없이 바로 말하는 AI 노트 도우미
    ─────────────────────────────────────────────────────────────────────
@@ -6601,6 +6610,11 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 .ai-out h3.md-h{font-size:14px;font-weight:800;line-height:1.35;margin:8px 0 4px;color:var(--text1);}
 .ai-out strong{font-weight:800;color:var(--text1);}
 .ai-out em{font-style:italic;}
+/* 14.29.2 · 말풍선 안 수식 — 문장에 섞인 $…$ 은 글줄 안에, $$…$$ 은 한 줄로 */
+.ai-out .md-math{display:inline-block;vertical-align:-.14em;line-height:1.15;}
+.ai-out .md-math .katex{font-size:1.03em;}
+.ai-out .md-math-block{display:block;margin:6px 0;text-align:center;}
+.ai-out .md-math-block .katex-display{margin:0;}
 .ai-out code{font-family:var(--mono,'ui-monospace',Menlo,Consolas,monospace);font-size:12px;
     background:color-mix(in srgb,var(--text1) 8%,transparent);padding:1px 5px;border-radius:4px;}
 .ai-out ul,.ai-out ol{margin:2px 0 8px;padding-left:20px;}

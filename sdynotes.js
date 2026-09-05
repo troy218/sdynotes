@@ -445,6 +445,19 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
        #/##/### 제목 · **굵게** · *기울임* · \`코드\` · $수식$은 그대로 보존 ·
        -/1. 목록 · 링크 깡통 무시 · 나머지는 모두 이스케이프.
        XSS 방지 위해 태그·스크립트는 전부 이스케이프한다. */
+    /* $…$ / $$…$$ 한 조각 → KaTeX HTML. KaTeX 가 없거나 문법이 틀리면 원문 그대로. */
+    function mathHTML(src){
+      const raw=String(src||'');
+      const dbl=/^\$\$([\s\S]+)\$\$$/.exec(raw), sng=dbl?null:/^\$([\s\S]+)\$$/.exec(raw);
+      const body=(dbl?dbl[1]:(sng?sng[1]:'')).trim();
+      if(!body) return esc(raw);
+      try{
+        if(window.katex) return '<span class="md-math'+(dbl?' md-math-block':'')+'">'
+          +katex.renderToString(body,{displayMode:!!dbl,throwOnError:false,strict:'ignore',output:'html'})
+          +'</span>';
+      }catch(e){}
+      return esc(raw);
+    }
     function mdToHtml(s){
       s=String(s==null?'':s);
       // $...$ / $$...$$ 수식은 내부에 마크다운이 들어오지 않게 임시 치환
@@ -461,8 +474,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         t=t.replace(/(^|[\s(])\*([^*\n]+?)\*(?=[\s).,!?:;]|$)/g,'$1<em>$2</em>');
         // `코드`
         t=t.replace(/`([^`\n]+?)`/g,'<code>$1</code>');
-        // 수식 복원
-        t=t.replace(/\u0000(\d+)\u0000/g,(_,i)=>esc(maths[+i]||''));
+        // 수식 복원 — 14.29.2 · 문장 안에 섞인 $수식$ 도 KaTeX 로 그린다
+        //   (예전에는 $x^2$ 라는 맨 글자 그대로 보였다)
+        t=t.replace(/\u0000(\d+)\u0000/g,(_,i)=>mathHTML(maths[+i]||''));
         return t;
       };
       for(const raw of lines){
@@ -6945,7 +6959,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     if(c&&el.type==='text'&&el.fontSize){
                         c.style.fontSize=el.fontSize+'px';
                         // 상자 안에서 '이 단어만' 키워 둔 글자도 같은 배율로 함께
-                        if(scaleInlineFS(c,f)) el.html=stripWF(c.innerHTML);
+                        if(scaleInlineFS(c,f)) el.html=imathCollapse(stripWF(c.innerHTML));
                     }
                 }
             }
@@ -7760,6 +7774,151 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return box.innerHTML;
     }
 
+    /* ══ 14.29.2 · 해돌이가 쓴 글 → 노트 서식 ════════════════════════════
+       모델(제미나이 등)은 마크다운으로 말한다: "# 제목", "**중요어**",
+       "- 목록", 그리고 문장 안에 섞인 "$수식$". 예전에는 그 표시를 글자
+       그대로 넣어서
+         · **중요어** 의 별표가 노트에 그대로 보였고,
+         · 제목 줄이 섞이면 상자 '전체'가 크고 굵어져 본문까지 제목처럼 됐고,
+         · 문장 안 수식은 $x^2$ 라는 맨 글자로 남았다(따로 적은 수식만 인식).
+       이제 줄 단위로 제목과 본문을 가르고(제목 줄만 크게·굵게), 인라인은
+       굵게·기울임·수식으로 옮긴다. 본문은 보통 굵기 그대로 둔다.
+
+       ─ 저장 형식 ─ 인라인 수식은  <span class="imath" data-latex="…">$…$</span>.
+         화면과 내보내기에서만 KaTeX 로 펼치고(imathFill·imathExpandHtml),
+         저장할 때는 다시 접는다(imathCollapse) — 문서 데이터에는 언제나
+         짧은 원문($…$)만 남아 검색·단어분석·동기화가 그대로 동작한다. */
+    const AI_MD_H_FS=[30,24,20];                 // # / ## / ### 글자 크기(px)
+    function imathSpan(latex){
+        const src=String(latex||'').trim();
+        if(!src) return '';
+        return '<span class="imath" data-latex="'+esc(src).replace(/"/g,'&quot;')+'">'
+             + esc('$'+src+'$')+'</span>';
+    }
+    /* 한 줄 안의 인라인 표시(굵게·기울임·코드·수식)를 노트 HTML 로.
+       수식을 먼저 빼 두고 이스케이프하므로 수식 안의 *·_ 는 건드리지 않는다. */
+    function aiMdInline(raw){
+        let s=String(raw==null?'':raw);
+        const math=[];
+        s=s.replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\$([^$\n]+?)\$|\\\(([\s\S]+?)\\\)/g,
+            function(m,a,b,c,d){
+                const src=String(a||b||c||d||'').trim();
+                // "$5,000" 같은 돈 표기는 수식이 아니다 — 기호·글자가 있어야 수식으로 본다
+                if(!src||!/[\\^_{}=+\-*/<>a-zA-Z]/.test(src)) return m;
+                const i=math.length; math.push(src);
+                return '\u0001'+i+'\u0001';
+            });
+        s=esc(s);
+        s=s.replace(/\*\*\*([^*\n]+?)\*\*\*/g,'<b><i>$1</i></b>');
+        s=s.replace(/\*\*([^*\n]+?)\*\*/g,'<b>$1</b>');
+        s=s.replace(/__([^_\n]+?)__/g,'<b>$1</b>');
+        s=s.replace(/(^|[\s(\[，,])\*([^*\n]+?)\*(?=[\s)\].,!?:;]|$)/g,'$1<i>$2</i>');
+        s=s.replace(/`([^`\n]+?)`/g,'$1');       // 코드 표시는 글자만 남긴다
+        s=s.replace(/\u0001(\d+)\u0001/g,function(_,i){ return imathSpan(math[+i]||''); });
+        return s;
+    }
+    /* 여러 줄 글 → 상자 HTML. 제목 줄만 크고 굵은 span 으로 감싸고,
+       본문·목록은 보통 굵기로 둔다(줄바꿈은 이 앱의 저장 형식대로 <br>). */
+    function aiMdToHtml(src,baseFs){
+        const base=Math.max(8,Number(baseFs)||16);
+        const lines=String(src==null?'':src).split('\n');
+        const out=[];
+        for(const raw of lines){
+            const line=raw.replace(/\s+$/,'');
+            const h=/^\s{0,3}(#{1,6})\s+(.*)$/.exec(line);
+            if(h){
+                const lv=Math.min(3,h[1].length);
+                const fs=Math.max(base+2,AI_MD_H_FS[lv-1]);
+                out.push('<span style="font-size:'+fs+'px;font-weight:700;">'
+                    +aiMdInline(h[2].replace(/\s*#+\s*$/,''))+'</span>');
+                continue;
+            }
+            if(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)){ out.push(''); continue; }  // 구분선은 버린다
+            const li=/^(\s*)[-*+•]\s+(.*)$/.exec(line);
+            if(li){ out.push(esc(li[1])+'• '+aiMdInline(li[2])); continue; }
+            const ol=/^(\s*)(\d+)[.)]\s+(.*)$/.exec(line);
+            if(ol){ out.push(esc(ol[1])+esc(ol[2])+'. '+aiMdInline(ol[3])); continue; }
+            out.push(aiMdInline(line));
+        }
+        return out.join('<br>');
+    }
+    /* 새 상자용 — 글 전체가 제목 한 줄이면 '상자 서식'(크게·굵게·가운데)으로,
+       제목+본문이 섞였으면 줄 단위 서식으로 옮긴다. */
+    function aiMdBox(src,baseFs){
+        const body=String(src==null?'':src);
+        const lines=body.split('\n').filter(l=>l.trim());
+        const one=lines.length===1?/^\s{0,3}(#{1,3})\s+(.*)$/.exec(lines[0]):null;
+        if(one){
+            const lv=one[1].length;
+            return {html:'<b>'+aiMdInline(one[2].replace(/\s*#+\s*$/,''))+'</b>',
+                    fs:AI_MD_H_FS[lv-1], bold:true, align:lv===1?'center':'', level:lv};
+        }
+        return {html:aiMdToHtml(body,baseFs), fs:0, bold:false, align:'', level:0};
+    }
+    // 높이를 어림잡을 때 쓰는 '표시를 걷어낸' 글 (제목 줄은 크니 여유를 더한다)
+    function aiMdPlain(src){
+        return String(src==null?'':src)
+            .replace(/^\s{0,3}#{1,6}\s+/gm,'')
+            .replace(/\*\*\*|\*\*|__/g,'')
+            .replace(/`/g,'');
+    }
+    function aiMdTitleExtra(src,baseFs){
+        const base=Math.max(8,Number(baseFs)||16);
+        let extra=0;
+        String(src==null?'':src).split('\n').forEach(function(l){
+            const h=/^\s{0,3}(#{1,6})\s+\S/.exec(l);
+            if(h) extra+=Math.max(0,AI_MD_H_FS[Math.min(3,h[1].length)-1]-base)*1.6;
+        });
+        return Math.round(extra);
+    }
+    /* 화면용 — 상자 안의 인라인 수식을 KaTeX 로 채운다(원문은 data-latex 에 그대로).
+       KaTeX 가 아직 안 실려 있으면 몇 번만 다시 시도하고 조용히 포기한다. */
+    function imathFill(root,tries){
+        if(!root||!root.querySelectorAll) return;
+        const list=root.querySelectorAll('span.imath[data-latex]');
+        if(!list.length) return;
+        if(!window.katex){
+            const n=(tries||0)+1;
+            if(n<=6) setTimeout(function(){ imathFill(root,n); },400);
+            return;
+        }
+        list.forEach(function(sp){
+            if(sp.getAttribute('data-imath-on')==='1') return;
+            const src=sp.getAttribute('data-latex')||'';
+            if(!src) return;
+            try{
+                sp.innerHTML=katex.renderToString(src,
+                    {displayMode:false,throwOnError:false,strict:'ignore',output:'html'});
+            }catch(e){ return; }
+            sp.setAttribute('data-imath-on','1');
+            sp.setAttribute('contenteditable','false');
+        });
+    }
+    // 내보내기용 — HTML 문자열 안의 인라인 수식을 KaTeX 로 펼쳐 돌려준다.
+    function imathExpandHtml(html){
+        const s=String(html==null?'':html);
+        if(s.indexOf('imath')<0||!window.katex) return s;
+        const box=document.createElement('div'); box.innerHTML=s;
+        box.querySelectorAll('span.imath[data-latex]').forEach(function(sp){
+            try{
+                sp.innerHTML=katex.renderToString(sp.getAttribute('data-latex')||'',
+                    {displayMode:false,throwOnError:false,strict:'ignore',output:'html'});
+            }catch(e){}
+        });
+        return box.innerHTML;
+    }
+    // 저장용 — 화면에서 펼쳐진 KaTeX 를 다시 짧은 원문($…$)으로 접는다.
+    function imathCollapse(html){
+        const s=String(html==null?'':html);
+        if(s.indexOf('imath')<0) return s;
+        const box=document.createElement('div'); box.innerHTML=s;
+        box.querySelectorAll('span.imath[data-latex]').forEach(function(sp){
+            sp.removeAttribute('contenteditable');
+            sp.removeAttribute('data-imath-on');
+            sp.textContent='$'+(sp.getAttribute('data-latex')||'')+'$';
+        });
+        return box.innerHTML;
+    }
 
     // ── 14.18.2 · 부드러운 형광펜(하이라이트) 표시 레이어 ──────────────────
     // 저장 데이터·편집 엔진은 글자 span 의 background-color 를 그대로 쓴다
@@ -7942,6 +8101,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 돌아가는 경우가 있었다. decodeTextMarkup 은 각 요소의 속성을
         // 독립적으로 복원하므로 저장/재렌더링이 반복돼도 글자별 값이 유지된다.
         c.innerHTML=decodeTextMarkup(_normalizePaletteHtml(el.html||''));
+        imathFill(c);              // 14.29.2 · 문장 안에 섞인 $수식$ 그리기
         // 가져온(tight) 상자: 저장된 자간/띄어쓰기/줄간격 반영 + 자동 안겹침
         if(el.tight){
             if(el.ls) c.style.letterSpacing=el.ls+'px';
@@ -8066,7 +8226,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
         const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
         const c=w.querySelector('.tb-content');
-        el.html=stripWF(c.innerHTML); el.fontSize=parseInt(c.style.fontSize)||16;
+        el.html=imathCollapse(stripWF(c.innerHTML)); el.fontSize=parseInt(c.style.fontSize)||16;
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
         el.w=w.offsetWidth; el.h=w.offsetHeight;
         w.classList.toggle('empty',!String((c.innerText!=null?c.innerText:c.textContent)||'').trim());
@@ -8228,7 +8388,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!w) return;
             const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
             const c=w.querySelector('.tb-content');
-            el.html=stripWF(c.innerHTML); el.fontSize=parseInt(c.style.fontSize)||16;
+            el.html=imathCollapse(stripWF(c.innerHTML)); el.fontSize=parseInt(c.style.fontSize)||16;
             // 14.6 · 커밋된 편집분도 dirty 로 표시 → 가져온 문서(서버 보관본)에서
             //  나가기 직전 커밋된 글자가 슬라이스 저장에서 빠져 유실되지 않는다.
             try{ if(doc&&doc.pages[+w.dataset.pageIdx]) doc.pages[+w.dataset.pageIdx].__dirty=true; }catch(e){}
@@ -16431,7 +16591,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                   `text-align:${el.align||'left'};`;
             body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${el.w}px;height:${el.h}px;">`+
                   `<div style="${inner}">`+
-                  htmlToXhtml(fixDarkColors(el.html))+`</div></div>`;
+                  htmlToXhtml(fixDarkColors(imathExpandHtml(el.html)))+`</div></div>`;
             drew++;
         });
         formulas.forEach(el=>{
@@ -18296,7 +18456,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     if(!v) continue;
                     const cell=list.find(e=>e&&e.type==='text'&&e.tbl
                         &&e.tbl.tid===tid&&e.tbl.r===r&&e.tbl.c===c);
-                    if(cell) cell.html=esc(v).replace(/\n/g,'<br>');
+                    if(cell) cell.html=aiMdToHtml(v,cell.fontSize||16);   // 14.29.2 · 칸 안의 **굵게**·$수식$
                 }
                 touched.add(pi);
                 try{ if(renderedPages.has(pi)) renderTblDivs(pi); }catch(e){}
@@ -18348,7 +18508,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(!cell){ bad('표 칸을 찾지 못했어요'); return; }
                 if(cell.locked){ bad('잠긴 요소는 고칠 수 없어요'); return; }
                 beforeChange();
-                cell.html=html(op.text);
+                cell.html=aiMdToHtml(text(op.text),cell.fontSize||16);   // 14.29.2
                 delete cell.fit; delete cell.fitDown; delete cell.trFS; delete cell.trLS; delete cell.trFW;
                 touched.add(tf.pi); res.applied++; return;
             }
@@ -18374,12 +18534,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }
                 // 14.27.0 · auto 크기·자리 — 본문 너비를 따르고, 글이 넘치지
                 // 않을 만큼 높이를 잡은 뒤 겹치지 않는 첫 빈자리에 둔다.
-                const body=text(op.text);
+                const body=aiMdPlain(text(op.text));
                 const mg=aiEditMargins(pi);
                 const wide=Math.max(120,Math.min(size.w-2*AI_MARGIN,
                     (mg.width&&mg.width>=120)?mg.width:(size.w-2*AI_MARGIN)));
                 const bw=aiEditIsAuto(op.w)?wide:clamp(round(op.w),20,size.w);
-                const guess=aiEditGuessH(body,bw,fontSize);
+                const guess=aiEditGuessH(body,bw,fontSize)+aiMdTitleExtra(text(op.text),fontSize);
                 const bh=clamp(aiEditIsAuto(op.h)?guess
                     :Math.max(round(op.h),guess),20,size.h);
                 let p;
@@ -18389,17 +18549,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }else p=place(op.x,op.y,bw,bh,{pi:pi,snap:true,avoid:true});
                 beforeChange(); pg.els=pg.els||[];
                 const body0=text(op.text);
-                let useHtml=html(body0), useFs=fontSize, useFont=font, useAlign=null, useBold=false;
-                const titleMatch=/^(#{1,3})\s+/.exec(body0);
-                if(titleMatch){
-                    const level=titleMatch[1].length;
-                    const stripped=body0.replace(/^#{1,3}\s+/,'');
-                    useHtml='<b>'+esc(stripped).replace(/\n/g,'<br>')+'</b>';
-                    useFs=level===1?30:(level===2?24:20);
-                    useBold=true;
-                    if(level===1) useAlign='center';
-                }else if(pg.els.length===0&&pi===0&&body0.length<=60&&body0.indexOf('\n')<0&&p.y<=AI_MARGIN+AI_GRID+1){
-                    useHtml='<b>'+esc(body0).replace(/\n/g,'<br>')+'</b>';
+                // 14.29.2 · 제목과 본문을 상자 안에서 갈라 쓴다.
+                //   · 글 전체가 제목 한 줄이면 → 상자째 크게·굵게(가운데)
+                //   · 제목+본문이 섞여 오면 → 제목 줄만 크게·굵게, 본문은 보통 굵기
+                //   · **중요어** 는 그 낱말만 굵게, 문장 안 $수식$ 은 인라인 수식으로
+                const rich=aiMdBox(body0,fontSize);
+                let useHtml=rich.html, useFs=fontSize, useFont=font,
+                    useAlign=rich.align||null, useBold=!!rich.bold;
+                if(rich.level) useFs=rich.fs;
+                else if(pg.els.length===0&&pi===0&&body0.length<=60&&body0.indexOf('\n')<0
+                        &&p.y<=AI_MARGIN+AI_GRID+1){
+                    // 첫 쪽 맨 위 짧은 한 줄 = 노트 제목으로 본다(예전 규칙 유지)
+                    useHtml='<b>'+aiMdInline(body0)+'</b>';
                     useFs=28; useBold=true; useAlign='center';
                 }
                 const nel={type:'text',id:uid('t'),x:p.x,y:p.y,w:p.w,h:p.h,
@@ -18411,7 +18572,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     if(styleSrc.align) nel.align=styleSrc.align;
                     if(styleSrc.textColor) nel.textColor=styleSrc.textColor;
                     if(styleSrc.cellBg) nel.cellBg=styleSrc.cellBg;
-                    if(styleSrc.fontWeight) nel.fontWeight=styleSrc.fontWeight;
+                    // 14.29.2 · 본문 상자는 이웃의 '굵게'까지 물려받지 않는다 —
+                    //   제목 옆에 쓴 본문이 통째로 굵어져 제목과 안 구분되던 문제.
+                    if(styleSrc.fontWeight&&(rich.level||useBold)) nel.fontWeight=styleSrc.fontWeight;
                     if(styleSrc.fontStyle) nel.fontStyle=styleSrc.fontStyle;
                     if(styleSrc.textDecoration) nel.textDecoration=styleSrc.textDecoration;
                 }
@@ -18482,7 +18645,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(cmd==='tx'){
                 if(el.tbl){ bad('표 칸 내용은 @tcell로 바꿔 주세요'); return; }
                 if(el.type!=='text'){ bad('글상자만 내용을 바꿀 수 있어요'); return; }
-                beforeChange(); el.html=html(op.text);
+                // 14.29.2 · **중요어**·# 제목 줄·문장 안 $수식$ 을 노트 서식으로 옮긴다
+                beforeChange(); el.html=aiMdToHtml(text(op.text),el.fontSize||16);
                 delete el.fit; delete el.fitDown; delete el.trFS; delete el.trLS; delete el.trFW;
                 touched.add(pi); res.applied++; return;
             }
@@ -18513,7 +18677,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 const body=text(op.text);
                 if(!body.trim()){ bad('덧붙일 글이 비어 있어요'); return; }
                 const front=/^(앞|앞쪽|prepend|pre|start|top|first)/i.test(String(op.dir||'뒤'));
-                const piece=html(body);
+                const piece=aiMdToHtml(body,el.fontSize||16);   // 14.29.2 · 마크다운 표시를 서식으로
                 beforeChange();
                 el.html=!aiEditText(el).trim()?piece
                     :(front?piece+'<br>'+(el.html||''):(el.html||'')+'<br>'+piece);
@@ -20024,7 +20188,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                           `text-align:${el.align||'left'};`;
                     body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;">`+
                           `<div style="${inner}">`+
-                          htmlToXhtml(el.html)+`</div></div>`;
+                          htmlToXhtml(imathExpandHtml(el.html))+`</div></div>`;
                 });
                 formulas.forEach(el=>{
                     let mh;
@@ -29719,6 +29883,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      답이 길면 말풍선 본문(#aiSayBody)을 아래로 스크롤해서 전부 읽는다 —
      말하는 중엔 내가 끝을 보고 있을 때만 따라오고(위로 올려 보면 안 건드림),
      다 말한 답·기록에서 다시 연 답은 맨 위부터 보여 준다. */
+  /* 다 말한 답을 말풍선에 그릴 HTML. 마크다운 렌더러(mdToHtml)가 곁에 없으면
+     (조각만 떼어 돌리는 환경) 평문으로라도 반드시 보여 준다 — 말풍선이 통째로
+     터지는 것보다 낫다. */
+  function sayHtml(s){
+    try{ if(typeof mdToHtml==='function') return mdToHtml(s); }catch(e){}
+    var d=document.createElement('div');
+    d.textContent=String(s==null?'':s);
+    return '<span style="white-space:pre-wrap">'+d.innerHTML+'</span>';
+  }
   function out(t,cls){
     var o=$('aiOut'), say=$('aiSay'), ty=$('aiTyping'), body=$('aiSayBody');
     if(!o||!say) return;
@@ -29736,7 +29909,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(cls){
       o.textContent=s;
     }else{
-      o.innerHTML=mdToHtml(s);
+      o.innerHTML=sayHtml(s);
     }
     o.classList.toggle('busy',!!cls);
     say.hidden=false;
