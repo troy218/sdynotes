@@ -35,7 +35,8 @@ def log(*args):
 
 
 def notice(msg, title="drive-fetch"):
-    print(f"::notice title={title}::{msg}", flush=True)
+    enc = msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::notice title={title}::{enc}", flush=True)
 
 
 def git(*args, check=True):
