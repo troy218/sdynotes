@@ -1042,15 +1042,31 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         };
         if(!anyLazy()) return;
         d.__lazyLoading=d.__lazyLoading||new Set();
-        while(d.__lazyLoading.has(s0)) await new Promise(r=>setTimeout(r,120));
+        // 14.30.0 · 같은 슬라이스를 기다리는 다른 로더가 있으면 '무한정' 대기하지
+        //   않는다. 서버가 그 요청을 처리하다 멈췄을 때 뒤에 줄선 요청 전부가
+        //   영영 돌지 못하는(백지 쪽) 길을 막는다 — 상한만큼 기다린 뒤 직접 받는다.
+        if(d.__lazyLoading.has(s0)){
+            for(let w=0;w<80;w++){                 // 최대 120ms×80 ≈ 9.6초 대기
+                if(!d.__lazyLoading.has(s0)) break;
+                await new Promise(r=>setTimeout(r,120));
+                if(doc!==d||!anyLazy()) return;
+            }
+        }
         if(doc!==d||!anyLazy()) return;
         d.__lazyLoading.add(s0);
+        // 14.30.0 · 대화형(스크롤) 로드에도 타임아웃을 준다. fetchSlice 처럼
+        //   9초 안에 못 받으면 실패로 처리해 잠금을 풀고 한 번만 다시 시도한다.
+        //   (예전엔 fetch 가 멈추면 __lazyLoading 잠금이 남아 그 슬라이스를
+        //    다시 부르는 모든 경로가 while 에서 영영 대기 — '불러오는 중' 지속.)
         try{
-            const rr=await fetch('/api/import/docfile/'+encodeURIComponent(d.__ref)
-                +'?from='+s0+'&to='+(s0+LAZY_SLICE),SLICE_FETCH);
-            const dd=await rr.json().catch(()=>({}));
-            if(doc!==d) return;          // 14.9 · 그 사이 다른 노트를 열었으면 무시
-            if(rr.ok&&dd.ok!==false&&Array.isArray(dd.pages)){
+            let dd=null, ok=false;
+            for(let attempt=0;attempt<2&&!dd;attempt++){
+                if(doc!==d||!anyLazy()) break;
+                const rr=await fetchSlice(9000,d.__ref,s0,(d.pages||[]).length);
+                if(doc!==d) break;          // 14.9 · 그 사이 다른 노트를 열었으면 무시
+                if(rr&&Array.isArray(rr.pages)){ dd=rr; ok=true; break; }
+            }
+            if(doc===d&&ok&&Array.isArray(dd.pages)){
                 dd.pages.forEach((p,k)=>{
                     const i=s0+k; if(i>=n) return;
                     const cur=d.pages[i];
@@ -1066,9 +1082,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     d.pages[i]=p;
                 });
                 _importLoaded(d, curNB&&curNB.id);
+            }else if(doc===d){
+                // 받지 못한 슬라이스: 잠시 뒤 화면의 그 쪽을 다시 그려 재시도하게 한다.
+                // (직접 ensureLazyPage 를 부르면 실패 시 무한 재귀가 될 수 있다.)
+                setTimeout(()=>{
+                    try{ if(doc===d) ensureVisiblePagesRendered(); }catch(e){}
+                },2500);
             }
         }catch(e){ console.warn('배치 로드 실패',s0,e); }
-        if(doc===d) d.__lazyLoading.delete(s0);
+        finally{
+            if(doc===d) d.__lazyLoading.delete(s0);
+        }
     }
     function prefetchBatch(s0){
         if(!doc||!doc.__ref) return;
@@ -1083,7 +1107,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 현재 위치에서 먼 페이지는 메모리에서 내려놓는다(서버에 원본 있으니 안전)
     function evictFar(idx){
         if(!doc||!doc.__ref) return;
-        const R=40;
+        // 저사양 기기는 메모리에 붙잡는 쪽 수를 줄여 GC·저장 스캔 부담을 낮춘다.
+        const R=sdyLowEnd()?22:40;
         (doc.pages||[]).forEach((p,i)=>{
             if(Math.abs(i-idx)<=R) return;
             if(p&&p.__lazy==null&&!p.__dirty&&(p.els||[]).length){
@@ -1399,14 +1424,31 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 });
             }
         }catch(e){}
-        cfg.pages=d.pages;
-        // ★ 가져온 대용량 문서: 서버 보관본 참조를 반드시 함께 저장한다.
-        //   이걸 빠뜨리면 다시 열었을 때 아직 안 받은 쪽(lazy)을 받아올
-        //   주소가 사라져서 "첫 8쪽만 나오고 나머지는 전부 백지"가 된다.
         if(d.__ref){
+            // ★ 가져온 대용량 문서: 서버 보관본 참조를 반드시 함께 저장한다.
+            //   이걸 빠뜨리면 다시 열었을 때 아직 안 받은 쪽(lazy)을 받아올
+            //   주소가 사라져서 "첫 8쪽만 나오고 나머지는 전부 백지"가 된다.
             cfg.__ref=d.__ref;
             cfg.serverDoc=d.__ref;
             cfg.__loadedTo=d.__loadedTo||0;
+            // 14.30.0 · 로컬 저장은 '편집(더티) 쪽만 실제 내용'으로, 나머지는
+            //   lazy 스텁으로만 남긴다. 예전엔 d.pages 전체(프리필로 받은 전 쪽)
+            //   를 localStorage 에 통째로 써서 — 수 MB~수십 MB 문서를 열 때마다
+            //   저장이 쿼터에 걸리고, 저장 실패 처리(전 노트 훑기)까지 매번 돌아
+            //   타이핑마다 버벅였다. 열 때는 어차피 서버 슬라이스에서 다시 받는다.
+            cfg.pages=d.pages.map((pg,i)=>{
+                if(pg&&pg.__dirty&&pg.__lazy==null){
+                    const copy={id:pg.id,
+                        els:Array.isArray(pg.els)?pg.els.slice():[],
+                        tables:Array.isArray(pg.tables)?pg.tables.slice():[],
+                        notes:Array.isArray(pg.notes)?pg.notes.slice():[]};
+                    copy.__dirty=1;
+                    return copy;
+                }
+                return {id:(pg&&pg.id)||('lazy_'+i),els:[],tables:[],__lazy:1};
+            });
+        }else{
+            cfg.pages=d.pages;
         }
         cfg.favPages=Array.isArray(d.favPages)?d.favPages:[];
         cfg.tint=d.tint||'';
@@ -5626,6 +5668,24 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const _cfg=getCfg(nb.id);
         const _needLoad=!!(_cfg.lock&&_cfg.lock.enc) || !!_cfg.serverDoc;
         if(_needLoad) showEdLoading(isLocked(nb.id)?'잠금 해제 중…':'문서 불러오는 중…');
+        // 14.30.0 · 서버에서 여는 게 오래 걸리면 조용히 무한 대기하지 않게
+        //   12초 뒤 안내 문구로 바꿔 '여는 중' 상태임을 알린다. (문서가 커서
+        //   오래 걸리는 것인지, 멈춘 것인지 사용자가 알 수 있게)
+        if(_needLoad&&_cfg.serverDoc&&!(_cfg.lock&&_cfg.lock.enc)){
+            try{ clearTimeout(window._openLoadHintT); }catch(e){}
+            window._openLoadHintT=setTimeout(()=>{
+                try{ window._openLoadHintT=null; }catch(e){}
+                try{
+                    const _el=document.getElementById('edLoading');
+                    if(_el&&_el.classList.contains('show')
+                       &&document.getElementById('editorView')
+                       &&!document.getElementById('editorView').classList.contains('open')
+                       &&openSeq===_sdyOpenSeq){
+                        showEdLoading('문서 여는 중… 서버가 준비하고 있어요 · 조금만 더 기다려 주세요');
+                    }
+                }catch(e){}
+            },12000);
+        }
         try{ closeFind(); clearActiveTbl(); cancelTablePlacement(); closePanel(); closePin();
              if(wfOn) wfOff(); wfStats=[]; wfMap=null;
              if(pinMode) togglePinMode(); }catch(e){}
@@ -6047,7 +6107,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function queueSync(nbId){
         // 14.15 · 노트 교체 중에 이전 노트의 doc 이 새 노트 id 로 올라가지 않게
         if(_docId && _docId!==nbId) return;
-        pendingNB={id:nbId, memo:curMemo, d:doc?JSON.parse(JSON.stringify(doc)):loadDoc(nbId), title:(document.getElementById('edTitle').value||'').trim()};
+        // 14.30.0 · 가져온(서버 보관) 문서는 serializeDoc 이 참조 마커만 올리므로
+        //   doc 전체를 JSON 직렬화해 복제할 필요가 없다. 수십 MB 문서에서 매
+        //   동기화마다 통째로 복사하던 비용을 없앤다. (로컬 저장은 persistDoc 의
+        //   더티 쪽 선택 저장이 담당 — 여기 복제본은 동기화 페이로드용이다.)
+        let _syncD=null;
+        if(doc&&doc.__ref){
+            _syncD={__ref:doc.__ref,paper:doc.paper,sizePreset:doc.sizePreset,
+                    emoji:doc.emoji||'',glossary:doc.glossary||{}};
+        }else{
+            _syncD=doc?JSON.parse(JSON.stringify(doc)):loadDoc(nbId);
+        }
+        pendingNB={id:nbId, memo:curMemo, d:_syncD, title:(document.getElementById('edTitle').value||'').trim()};
         clearTimeout(syncTimer);
         syncTimer=setTimeout(flushSync,250);
     }
@@ -6142,6 +6213,35 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     const mountedShells=new Map();    // 화면에 올려 둔 종이 (pageIdx → .page-wrap)
     const HEAVY_ELS=120;              // 이보다 많으면 나눠 그린다
     const CHUNK=60;                   // 한 번에 채우는 개수
+    // 14.30.0 · 저사양 기기 감지 — 코어/메모리가 적으면 배경 작업을 줄이고
+    //   렌더 청크를 작게 해 '입력이 밀리는 버벅임'을 막는다.
+    //   (localStorage sdy_lowend = '1'/'0' 으로 강제할 수 있다. 감지가 애매한
+    //   기기에서는 실제 지연을 재서 한 번만 판정한다.)
+    let _lowEnd=null;
+    function sdyLowEnd(){
+        if(_lowEnd!==null) return _lowEnd;
+        let v=null;
+        try{ v=localStorage.getItem('sdy_lowend'); }catch(e){}
+        if(v==='1'){ _lowEnd=true; return _lowEnd; }
+        if(v==='0'){ _lowEnd=false; return _lowEnd; }
+        let score=0;
+        try{
+            const nav=navigator||{};
+            if(nav.hardwareConcurrency){
+                if(nav.hardwareConcurrency<=2) score+=2;
+                else if(nav.hardwareConcurrency<=4) score+=1;
+            }else score+=1;                     // 모름 → 보수적으로 취급
+            if(nav.deviceMemory){
+                if(nav.deviceMemory<=2) score+=2;
+                else if(nav.deviceMemory<=4) score+=1;
+            }
+            if(nav.platform&&/MacIntel|Win32|Linux x86_64/.test(nav.platform)&&!nav.deviceMemory&&score===0) score=0;
+        }catch(e){ score=1; }
+        // 성능 저하가 명백한 조합일 때만 켠다 (코어 2개 이하 또는 메모리 2GB 이하).
+        _lowEnd=score>=2;
+        return _lowEnd;
+    }
+    let _nbrTimer=null;               // 이웃 쪽 요소 렌더 지연 타이머 (현재 쪽 우선)
     const VIRTUAL_RENDER_RADIUS=1;    // 현재 쪽 + 위아래 한 쪽만 요소 렌더
     const VIRTUAL_KEEP_RADIUS=2;      // 두 쪽 밖의 무거운 요소 DOM은 즉시 회수
     const SHELL_PAD=2;                // 화면 위아래로 더 올려 두는 종이 수
@@ -6302,6 +6402,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!stage) return;
         Object.keys(chunkTimers).forEach(k=>{ clearTimeout(chunkTimers[k]); delete chunkTimers[k]; });
         clearTimeout(_virtualTimer); _virtualTimer=null;
+        clearTimeout(_nbrTimer); _nbrTimer=null;
         renderedPages.clear();
         mountedShells.clear();
         _tblGridDone=new Set();   // 표 격자선은 쪽을 그릴 때 다시 확인한다
@@ -6380,6 +6481,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         center=Math.max(0,Math.min(doc.pages.length-1,center|0));
         syncPageShells();
         clearTimeout(_virtualTimer); _virtualTimer=null;
+        clearTimeout(_nbrTimer); _nbrTimer=null;
         const fill=()=>{
             _lastFillAt=Date.now();
             if(!doc||!doc.pages||!doc.pages[center]) return;
@@ -6387,12 +6489,26 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             Array.from(renderedPages).forEach(i=>{
                 if(Math.abs(i-center)>VIRTUAL_KEEP_RADIUS) unloadPage(i);
             });
+            // 14.30.0 · 현재 쪽(지금 보이는 종이)을 먼저 그린다. 이웃 쪽은 짧은
+            //   지연 뒤에 채워 스크롤을 멈춘 첫 프레임이 현재 쪽에만 집중되게
+            //   한다. (무거운 이웃 쪽을 동시에 그리면 저사양 기기에서 버벅임)
             if(!renderedPages.has(center)) try{ renderPageEls(center); }catch(e){}
-            for(let d=1;d<=VIRTUAL_RENDER_RADIUS;d++){
-                [center-d,center+d].forEach(i=>{
-                    if(i>=0&&i<doc.pages.length&&!renderedPages.has(i))
-                        try{ renderPageEls(i); }catch(e){}
-                });
+            if(!_nbrTimer){
+                const gap=sdyLowEnd()?320:110;
+                _nbrTimer=setTimeout(()=>{
+                    _nbrTimer=null;
+                    try{
+                        if(!doc||!doc.pages||!doc.pages.length) return;
+                        if(window._renderVersion!==(doc&&doc.__rv)) return;
+                        const c=Math.max(0,Math.min(doc.pages.length-1,(curPageIdx|0)));
+                        for(let d=1;d<=VIRTUAL_RENDER_RADIUS;d++){
+                            [c-d,c+d].forEach(i=>{
+                                if(i>=0&&i<doc.pages.length&&!renderedPages.has(i))
+                                    try{ renderPageEls(i); }catch(e){}
+                            });
+                        }
+                    }catch(e){}
+                },gap);
             }
         };
         if(immediate) fill();
@@ -6441,14 +6557,23 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             seen.add(el.id);
             return true;
         });
+        // 14.30.0 · 겹침 제거는 서로 비교(O(n²))라서 요소가 아주 많은 쪽에서
+        //   처음 그릴 때 한 번에 수십만 회 돌면 저사양 기기에서 버벅인다.
+        //   일반 가져오기 문서는 쪽당 300~500개 언저리라 상한 안에 들어오고,
+        //   그 이상은 어차피 겹침이 구조적으로 거의 없으므로 건너뛴다.
+        if(out.length<=1500){
         const drop=new Set();
         // 표 셀은 서로 맞닿고 기존 글상자 위에 놓일 수도 있는 정상 구조다.
         // 일반 가져오기 중복 제거에 섞으면 작은 셀이 전부 사라져 선만 남는다.
         const texts=out.filter(e=>e.type==='text'&&!e.tbl&&e.x!=null&&(e.w||0)>2&&(e.h||0)>2);
         const latexs=out.filter(e=>e.type==='latex'&&e.x!=null);
+        // 글상자 수가 지나치게 많으면(O(n²) 폭발) 가까운 이웃(최대 60개)끼리만
+        //   비교한다 — PDF 행 단위 배치는 겹침 후보가 항상 가까이 있기 때문이다.
+        const many=texts.length>600;
         for(let i=0;i<texts.length;i++){
             const a=texts[i], A=_elBox(a), aa=Math.max(1,A.w*A.h);
-            for(let j=0;j<texts.length;j++){
+            const jmax=many?Math.min(texts.length,i+61):texts.length;
+            for(let j=0;j<jmax;j++){
                 if(i===j||drop.has(a.id)) continue;
                 const b=texts[j]; if(drop.has(b.id)) continue;
                 const oa=_boxOverlap(A,_elBox(b));
@@ -6461,6 +6586,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
         }
         if(drop.size) out=out.filter(e=>!drop.has(e.id));
+        }
         return out;
     }
     // 14.29.4 · 표 격자선 지연 생성.
@@ -6561,12 +6687,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             els.forEach(el=>put(el,bags)); flushBags(bags); finish(); return;
         }
         // 무거우면: 한 프레임의 요소를 fragment 세 개에 모아 레이어별 한 번만 삽입한다.
+        // 14.30.0 · 저사양 기기는 프레임당 채우는 개수를 줄여 청크 사이의
+        //   메인 스레드 점유를 낮춘다. (결과는 같고 더 많은 프레임에 걸칠 뿐)
+        const chunkN=sdyLowEnd()?Math.min(CHUNK,36):CHUNK;
         let at=0;
         const step=()=>{
             if(_pageRenderTok[idx]!==tok) return;
             // 14.12 · step 실행 중 노트가 전환되면 중단
             if(window._renderVersion !== (doc&&doc.__rv)) return;
-            const end=Math.min(els.length, at+CHUNK),bags=makeBags();
+            const end=Math.min(els.length, at+chunkN),bags=makeBags();
             for(;at<end;at++) put(els[at],bags);
             flushBags(bags);
             if(at<els.length){
@@ -18661,6 +18790,95 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 pg.els.push(nm);
                 touched.add(pi); res.applied++; return;
             }
+            // 14.30.0 · @img(→addimg) — 서버가 찾아 저장한 사진(/api/img/…)을 넣는다.
+            //   모델은 검색어만 주고(파서가 cmd:'img'로 바꿈), bridge.apply 가
+            //   /api/ai/imgadd 로 사진을 받아온 뒤 이 addimg 명령으로 바꿔 부른다.
+            if(cmd==='addimg'){
+                if(!finite(op.page)||!Number.isInteger(Number(op.page))){
+                    bad('사진을 넣을 쪽 번호가 올바르지 않아요'); return;
+                }
+                const page=round(op.page),pi=page-1,pg=doc.pages[pi];
+                if(page<1||page>doc.pages.length||!pg||pg.__lazy!=null){
+                    bad('해당 페이지를 찾거나 불러오지 못했어요'); return;
+                }
+                const url=String(op.url||'').trim();
+                if(!url||!/^(?:\/api\/img\/|https?:\/\/)/i.test(url)){
+                    bad('사진 주소가 올바르지 않아요'); return;
+                }
+                const natW=Math.max(1,Number(op.natW)||4), natH=Math.max(1,Number(op.natH)||3);
+                const mg=aiEditMargins(pi);
+                const wide=Math.max(140,Math.min(size.w-2*AI_MARGIN,
+                    (mg.width&&mg.width>=140)?mg.width:(size.w-2*AI_MARGIN)));
+                let bw,bh;
+                if(aiEditIsAuto(op.w)||aiEditIsAuto(op.h)){
+                    bw=Math.max(120,Math.min(Math.round(size.w*0.52),Math.round(wide*0.94)));
+                    bh=Math.round(bw*natH/natW);
+                    if(bh>size.h*0.55){ bh=Math.round(size.h*0.55); bw=Math.max(80,Math.round(bh*natW/natH)); }
+                    bw=clamp(bw,60,Math.max(60,size.w-8));
+                    bh=clamp(bh,40,Math.max(40,size.h-8));
+                }else{
+                    bw=clamp(round(op.w),40,size.w);
+                    bh=clamp(round(op.h),30,size.h);
+                }
+                let p;
+                if(aiEditIsAuto(op.x)||aiEditIsAuto(op.y)){
+                    p=aiEditFreeSpot(pi,bw,bh,aiEditIsAuto(op.y)?0:round(op.y));
+                }else p=place(op.x,op.y,bw,bh,{pi:pi,snap:true,avoid:true});
+                beforeChange(); pg.els=pg.els||[];
+                const nel={type:'image',id:uid('i'),url:url,
+                    x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:Math.round(p.h)};
+                if(op.public_id) nel.public_id=String(op.public_id);
+                pg.els.push(nel);
+                touched.add(pi); res.applied++; return;
+            }
+            // 14.30.0 · @draw op — SVG에서 만든 펜 획 묶음을 종이에 그린다.
+            //   좌표는 svg 좌표계라서 요청 크기(또는 기본 폭)로 스케일한 뒤
+            //   auto/지정 자리에 옮긴다. 획마다 별도 요소(실제 펜과 동일 모델).
+            if(cmd==='draw'){
+                const sts=Array.isArray(op&&op.strokes)
+                    ?op.strokes.filter(s=>s&&Array.isArray(s.pts)&&s.pts.length>=2):[];
+                if(!sts.length){ bad('그릴 그림 획을 만들지 못했어요'); return; }
+                let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
+                sts.forEach(s=>s.pts.forEach(pt=>{
+                    const px=Number(pt&&pt[0]),py=Number(pt&&pt[1]);
+                    if(!Number.isFinite(px)||!Number.isFinite(py)) return;
+                    if(px<x1)x1=px; if(py<y1)y1=py; if(px>x2)x2=px; if(py>y2)y2=py;
+                }));
+                if(!Number.isFinite(x1)||x2<=x1||y2<=y1){ bad('그릴 그림 좌표가 이상해요'); return; }
+                const rawW=x2-x1,rawH=y2-y1;
+                const aW=Math.max(80,size.w-2*AI_MARGIN), aH=Math.max(60,size.h-2*AI_MARGIN);
+                let tw;
+                if(finite(op.w)&&Number(op.w)>0) tw=clamp(round(op.w),60,aW);
+                else tw=Math.max(180,Math.min(aW,Math.round(aW*0.62)));
+                let th=tw*rawH/rawW;
+                if(th>aH){ tw=Math.max(60,Math.round(tw*aH/th)); th=tw*rawH/rawW; }
+                const tpi=(op.page!=null&&Number.isInteger(Number(op.page)))
+                    ?clamp(round(op.page)-1,0,doc.pages.length-1):(curPageIdx|0);
+                const tpg=doc.pages[tpi];
+                if(!tpg||tpg.__lazy!=null){ bad('그 페이지를 찾거나 불러오지 못했어요'); return; }
+                let p;
+                if(aiEditIsAuto(op.x)||aiEditIsAuto(op.y)||op.x==null||op.y==null){
+                    p=aiEditFreeSpot(tpi,Math.round(tw),Math.round(th),0);
+                }else p=place(op.x,op.y,tw,th,{pi:tpi,snap:true,avoid:true});
+                const k=tw/rawW;
+                const ox=(p.x||0)-x1*k, oy=(p.y||0)-y1*k;
+                const r1=v=>Math.round(v*10)/10;
+                beforeChange(); tpg.els=tpg.els||[];
+                let added=0;
+                sts.forEach(s=>{
+                    const sz=Math.max(0.7,Math.min(22,(Number(s.size)||3)*k));
+                    const pts=s.pts.map(pt=>[r1(Number(pt[0])*k+ox),r1(Number(pt[1])*k+oy)])
+                        .filter((pt,i,arr)=>i===0||pt[0]!==arr[i-1][0]||pt[1]!==arr[i-1][1]);
+                    if(pts.length<2) return;
+                    const col=String(s.color||'#1a1a1a').trim();
+                    tpg.els.push({type:'stroke',id:uid('s'),pts:pts,
+                        color:/^#[0-9a-fA-F]{3,8}$/.test(col)?col:'#1a1a1a',
+                        size:r1(sz),dx:0,dy:0});
+                    added++;
+                });
+                if(!added){ bad('그릴 획을 만들지 못했어요'); return; }
+                touched.add(tpi); res.applied++; return;
+            }
             const found=findAny(op&&op.id);
 
             if(!found){
@@ -18905,9 +19123,33 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 try{
                     const list=Array.isArray(ops)?ops:[];
                     const needsClip=list.some(o=>o&&(o.cmd==='clip'||o.cmd==='clipin'||o.cmd==='copy'));
-                    // 클립보드가 없으면 동기 그대로 — 있으면 한 번 읽어 @add·@ap로 바꾼 뒤 적용한다.
-                    if(!needsClip) return aiEditApply(list,revision);
+                    const needsImg=list.some(o=>o&&String(o.cmd||'').toLowerCase()==='img');
+                    // 클립보드·사진(@img)이 없으면 동기 그대로 — 있으면 읽어/받아
+                    // @add·@addimg로 바꾼 뒤 적용한다.
+                    if(!needsClip&&!needsImg) return aiEditApply(list,revision);
                     return (async()=>{
+                        let preFailed=0; const preNotes=[];
+                        // 14.30.0 · @img — 서버(/api/ai/imgadd)가 사진을 찾아
+                        //   저장소에 받아 주소를 돌려준다(캐시됨). 실패한 장만 센다.
+                        const imgOps=list.filter(o=>o&&String(o.cmd||'').toLowerCase()==='img');
+                        const imgGot={};
+                        for(const io of imgOps.slice(0,3)){
+                            try{
+                                const iq=String(io.q||'').trim().slice(0,160);
+                                if(!iq) throw new Error('찾을 사진 검색어가 비어 있어요');
+                                const ir=await fetch('/api/ai/imgadd',{method:'POST',
+                                    headers:{'Content-Type':'application/json'},
+                                    body:JSON.stringify({q:iq})});
+                                const ij=await ir.json().catch(()=>null);
+                                if(!ir.ok||!ij||!ij.ok||!ij.url)
+                                    throw new Error((ij&&ij.error)||'사진을 찾지 못했어요');
+                                imgGot[io]=ij;
+                            }catch(e){
+                                preFailed++;
+                                const em=String((e&&e.message)||e||'사진을 찾지 못했어요');
+                                if(preNotes.indexOf(em)<0&&preNotes.length<4) preNotes.push(em);
+                            }
+                        }
                         let clip='',clipErr='';
                         if(list.some(o=>o&&(o.cmd==='clip'||o.cmd==='clipin'))){
                             try{
@@ -18919,10 +19161,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                             if(!clip&&!clipErr) clipErr='클립보드가 비어 있어요 · 먼저 복사해 주세요';
                         }
                         const mapped=[];
-                        let preFailed=0; const preNotes=[];
                         const copies=[];
                         list.forEach(o=>{
                             const cmd=String(o&&o.cmd||'').toLowerCase();
+                            if(cmd==='img'){
+                                const jj=imgGot[o];
+                                if(!jj){ return; }          // 실패는 위에서 이미 세었다
+                                mapped.push({cmd:'addimg',page:o.page,x:o.x,y:o.y,w:o.w,h:o.h,
+                                    url:jj.url,public_id:jj.public_id||'',
+                                    natW:jj.width||null,natH:jj.height||null});
+                                return;
+                            }
                             if(cmd==='clip'){
                                 if(!clip){ preFailed++; if(preNotes.indexOf(clipErr)<0) preNotes.push(clipErr); return; }
                                 mapped.push({cmd:'add',page:o.page,x:o.x,y:o.y,w:o.w,h:o.h,
@@ -19418,6 +19667,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(doc===_d0) try{ repairLegacyImages(); }catch(e){}
     }
     async function startSlicePrefill(){
+        // 14.30.0 · 대화형 로드를 굶기지 않게 프리필을 '조용한 틈'마다 하나씩만
+        //   내려받는다. 예전엔 열자마자 4개 워커가 남은 슬라이스를 줄줄이 요청해,
+        //   단일 스레드 워커(또는 변환/태깅으로 바쁜 서버)에서는 그 프리필 큐가
+        //   사용자가 스크롤로 부르는 슬라이스까지 밀어내 '불러오는 중'이 길어졌다.
+        //   이제 ① idle(또는 300ms 틈)마다 1배치씩, ② 그 사이 사용자 로드가
+        //   먼저 처리된다. 끝나면 먼 쪽은 내려놓아(evictFar) 문서 전체가 메모리에
+        //   남아 모든 저장·동기화 패스가 느려지는 것도 막는다.
         const d=doc;                    // 14.9 · 노트 전환 후 이어지는 프리필을 차단
         if(!d||!d.__ref) return;
         try{
@@ -19430,12 +19686,35 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             (d.pages||[]).forEach((p,i)=>{
                 if(p.__lazy==null) loaded.add(Math.floor(i/LAZY_SLICE)*LAZY_SLICE); });
             const q=[]; for(let s=0;s<total;s+=LAZY_SLICE) if(!loaded.has(s)) q.push(s);
-            let k=0;
-            const worker=async()=>{
-                while(k<q.length){
-                    if(doc!==d) return; // 14.9 · 그 사이 다른 노트를 열었으면 중단
-                    const s=q[k++];
-                    try{
+            let k=0, inFlight=null;
+            const pause=()=>new Promise(r=>{
+                // ① 화면이 보일 때: 입력·스크롤 이벤트가 먼저 처리되게 최소
+                //   90ms 간격으로 양보. (예전처럼 한꺼번에 4개씩 쏘면 단일
+                //   스레드 워커의 큐를 사용자 로드가 기다리게 된다.)
+                // ② 탭이 숨겨져 있으면 UI 를 방해할 일이 없으므로 곧바로 간다.
+                let done=false;
+                const go=()=>{ if(done) return; done=true; r(); };
+                if(document&&document.hidden){ go(); return; }
+                try{ if(window.requestIdleCallback) requestIdleCallback(go,{timeout:sdyLowEnd()?700:260}); }
+                catch(e){}
+                setTimeout(go,sdyLowEnd()?400:90);
+            });
+            while(k<q.length){
+                if(doc!==d) return;     // 14.9 · 그 사이 다른 노트를 열었으면 중단
+                await pause();          // 입력·스크롤 이벤트가 먼저 처리되게 양보
+                if(doc!==d) return;
+                const s=q[k++];
+                inFlight=s;
+                try{
+                    // 같은 슬라이스를 지금 화면이 필요로 하면 fetchSlice 로
+                    // 이미 받아졌을 수 있다 → 다시 안 받는다.
+                    let need=false;
+                    for(let j=0;j<LAZY_SLICE;j++){
+                        const i=s+j;
+                        if(i<(d.pages||[]).length&&d.pages[i]&&d.pages[i].__lazy!=null
+                           &&!d.pages[i].__dirty){ need=true; break; }
+                    }
+                    if(need){
                         const dd=await fetchSlice(9000,d.__ref,s,(d.pages||[]).length);
                         if(doc!==d) return;
                         if(dd&&Array.isArray(dd.pages)){
@@ -19448,10 +19727,20 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                             });
                             _importLoaded(d, curNB&&curNB.id);
                         }
-                    }catch(e){}
-                }
-            };
-            await Promise.all(Array.from({length:Math.min(4,q.length)},worker));
+                    }
+                }catch(e){}
+                finally{ inFlight=null; }
+            }
+            // 전부 받은 뒤에는 문서 전체를 메모리에 붙잡지 않는다 — 화면 주변만
+            // 남기고 나머지는 lazy 로 돌려, 뒤의 저장·동기화가 전 쪽을 훑지 않게.
+            if(doc===d){
+                try{
+                    const cur=(curPageIdx|0)||0;
+                    evictFar(cur);
+                    if(renderedPages.has(cur)){ /* 현재 쪽은 유지 */ }
+                    else{ try{ ensureVisiblePagesRendered(); }catch(e){} }
+                }catch(e){}
+            }
         }catch(e){}
     }
     async function pullSync(init){
@@ -29914,7 +30203,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   if(window.__sdyAiInit) return; window.__sdyAiInit=true;
   var $=function(id){ return document.getElementById(id); };
   // 서버 AI_TASKS(outline·chat·edit)와 맞물린다 — outline 은 범위에 따라 딱지만 나뉜다.
-  var KIND={note:'노트 질문',free:'자유 질문',outlinePage:'이 페이지',outlineDoc:'전체 페이지',edit:'문서 편집',app:'앱 실행'};
+  var KIND={note:'노트 질문',free:'자유 질문',outlinePage:'이 페이지',outlineDoc:'전체 페이지',edit:'문서 편집',app:'앱 실행',search:'인터넷 검색',draw:'그림'};
   var ctl=null, enabled=false, closedByUser=false;
   var lastText='', lastKind='', lastQ='';
 
@@ -30077,10 +30366,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      표식 길이(8자)가 찰 때까지는 내용을 참는다. */
   function parseChat(acc){
     var s=String(acc==null?'':acc);
-    var m=/^\[\[(note|free|edit|app)\]\][ \t]*\r?\n?/.exec(s);
+    var m=/^\[\[(note|free|edit|app|search|draw)\]\][ \t]*\r?\n?/.exec(s);
     if(m) return {kind:m[1], text:s.slice(m[0].length)};
-    var head=s.slice(0,8);
-    if(s&&('[[note]]'.indexOf(head)===0||'[[free]]'.indexOf(head)===0||'[[edit]]'.indexOf(head)===0||'[[app]]'.indexOf(head)===0)) return {wait:true};
+    var head=s.slice(0,10);
+    if(s&&('[[note]]'.indexOf(head)===0||'[[free]]'.indexOf(head)===0||'[[edit]]'.indexOf(head)===0||'[[app]]'.indexOf(head)===0||'[[search]]'.indexOf(head)===0||'[[draw]]'.indexOf(head)===0)) return {wait:true};
     return {kind:'', text:s};                     // 표식이 없으면 딱지 없이 그대로
   }
 
@@ -30137,6 +30426,26 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   function editCtxText(){ return aiCtxText(); }
   window.sdyAiLooksLikeEdit=looksLikeEdit;   // 테스트·디버그용 말투 감지 노출
+  /* 14.30.0 · 해돌이 펜 그림 — /그림·/draw 접두사 또는 "그려 줘" 말투면
+     run('draw') 로 보낸다. 표·수식·그래프·차트처럼 문서 편집이 자연스러운
+     말은 편집으로 남겨 둔다. chat 서버가 [[draw]] 로 넘기는 경로도 있다. */
+  var DRAW_PRE=/^\s*(?:\/(?:draw|그림)(?=\s|$)|그림\s*[:：])\s*/;
+  function drawCmdOf(q){
+    if(!DRAW_PRE.test(q||'')) return null;
+    return String(q).replace(DRAW_PRE,'').trim();
+  }
+  var DRAW_HINT=/(그려 ?(줘|주|라|봐|줄래)|그려 ?달라|그림(을|을 ?그려| ?그려| ?하나| ?한 ?장)|스케치|캐리커처|일러스트|낙서)/;
+  var DRAW_NO=/(표|수식|그래프|차트|도표|다이어그램|순서도|플로우 ?차트|마인드 ?맵|타임라인|개체 ?관계)/;
+  function looksLikeDraw(q){
+    q=String(q||'');
+    if(!q||drawCmdOf(q)!=null) return false;
+    if(!canEdit()) return false;                 // 펜 그림은 노트가 열려 있어야 한다
+    if(QUESTION_HINT.test(q)) return false;      // 물어보는 말투는 질문으로
+    if(!DRAW_HINT.test(q)) return false;
+    if(DRAW_NO.test(q)) return false;            // 표·그래프 류는 문서 편집으로
+    return true;
+  }
+  window.sdyAiLooksLikeDraw=looksLikeDraw;   // 테스트·디버그용
 
   /* ── 14.26.0 · 해돌이 앱 실행 — 음악·타이머·노트·발표·내보내기·찾기·창 열기 ──
      /앱, /app, "앱:" 접두사는 앱 실행을 강제한다. 접두사가 없어도 앱 기능을
@@ -30342,6 +30651,392 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     return finish(null);
   }
 
+  /* 14.30.0 · 인터넷 검색 → 결과를 붙여 다시 질문 ([[search]] 뒤 한 번만)
+     검색 API 키가 필요 없다 — 서버가 무료 소스를 순서대로 시도한다. */
+  function searchThenChat(q,scope){
+    out('인터넷에서 찾아보는 중…',true);
+    var q2;
+    fetch('/api/ai/web?q='+encodeURIComponent(String(q||'').slice(0,180)),{
+      headers:{'x-sdy-auth':token()}
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if(!d||!d.ok||!d.results||!d.results.length){
+        q2=String(q||'')+'\n\n(방금 인터넷 검색을 시도했지만 결과를 찾지 못했어요. [[search]] 표식 없이 아는 대로 답하되, 최신 정보가 필요한 내용이면 최신 여부를 확실히 모른다고 솔직히 말해 줘.)';
+        run('chat',q2,scope,true);
+        return;
+      }
+      var lines=d.results.slice(0,8).map(function(it,i){
+        var sn=String(it.snippet||'').trim().replace(/\s+/g,' ').slice(0,220);
+        return (i+1)+'. '+String(it.title||'').trim()+' — '+String(it.url||'')+(sn?' · '+sn:'');
+      });
+      q2=String(q||'')+'\n\n[방금 가져온 인터넷 검색 결과]\n'+lines.join('\n')
+        +'\n\n이 검색 결과를 근거로 답해 줘. 이 결과에서 인용한 곳은 [1]처럼 결과 번호를 붙이고,'
+        +'답 마지막에 \"출처\" 목록으로 번호·제목·링크를 적어 줘. [[search]] 표식은 다시 쓰지 말고 바로 답해 줘.';
+      run('chat',q2,scope,true);
+    }).catch(function(){
+      q2=String(q||'')+'\n\n(인터넷 검색에 일시적으로 실패했어요. [[search]] 표식 없이 아는 대로 답해 줘.)';
+      run('chat',q2,scope,true);
+    });
+  }
+  function drawProgress(acc){
+    if(!acc) return '그림을 구상하는 중…';
+    if(String(acc).indexOf('<svg')>=0||String(acc).indexOf('<path')>=0) return '그림을 그리고 있어요…';
+    return '그림을 구상하는 중…';
+  }
+  /* 그림 마무리 — SVG 원문 → 펜 획 ops → bridge.apply (editApplyDone과 같은 모양).
+     @done 요약 줄이 없으므로 실제 획 수를 요약으로 쓴다. */
+  function drawApplyDone(raw,revision){
+    var parsed=window.sdyAiDrawParse
+      ?window.sdyAiDrawParse(raw):{ok:false,error:'그림을 해석하지 못했어요',ops:[]};
+    var finish=function(res){
+      res=res||{applied:0,failed:0,notes:[],stale:false};
+      if(res.stale){
+        return (res.notes&&res.notes[0])
+          ||'기다리는 동안 문서가 바뀌어서 그리지 않았어요 · 다시 요청해 주세요';
+      }
+      var applied=Number(res.applied||0),failed=Number(res.failed||0);
+      var output='';
+      if(applied&&parsed.strokes){
+        output='요청한 그림을 펜으로 '+parsed.strokes+'획 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+      }else if(applied){
+        output='요청한 그림을 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+      }else{
+        output=String(parsed.error||'그림을 그리지 못했어요 · 다시 시도해 주세요');
+      }
+      if(failed) output+='\n\n건너뜀 '+failed+'개';
+      if(res.notes&&res.notes.length) output+=(output?'\n':'')+res.notes.join('\n');
+      if(applied){
+        try{ if(window.toast) window.toast('해돌이가 그림을 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e){}
+      }
+      return output;
+    };
+    if(parsed.ops.length){
+      try{
+        var bridge=window.__sdyAiBridge;
+        if(bridge&&typeof bridge.apply==='function'){
+          var r=bridge.apply(parsed.ops,revision);
+          if(r&&typeof r.then==='function') return r.then(finish,finish);
+          return finish(r);
+        }
+        return finish({applied:0,failed:parsed.ops.length,stale:false,
+          notes:['그림 그리기 연결을 찾지 못했어요 · 페이지를 새로고침해 주세요']});
+      }catch(e){
+        return finish({applied:0,failed:parsed.ops.length,stale:false,
+          notes:['그림을 그리지 못했어요 · 다시 시도해 주세요']});
+      }
+    }
+    return finish(null);
+  }
+
+  /* 14.30.0 · SVG 선화 → 펜 획 변환기 (해돌이 그림).
+     모델이 만든 <svg>를 DOMParser 로 읽고, 각 path/도형을 폴리라인으로
+     평탄화한다. 그 뒤 같은 색 획끼리 '끝점이 (거의) 맞닿은 것'을 한 획으로
+     이어 붙인다 — 그림이 조각조각 분해돼 보이지 않게. 반환 op:
+       {cmd:'draw', strokes:[{pts:[[x,y],…],color:'#…',size:n}], svgW, svgH}
+     (실제 좌표는 적용기가 페이지 크기·빈자리에 맞춰 옮기고 스케일한다.) */
+  window.sdyAiDrawParse=function(raw){
+    var out={ok:false,error:'',ops:[],strokes:0,svgW:0,svgH:0};
+    var COLOR={black:'#1a1a1a',white:'#ffffff',gray:'#7f8c8d',grey:'#7f8c8d',
+      red:'#e74c3c',orange:'#e67e22',yellow:'#f1c40f',green:'#2ecc71',
+      blue:'#3498db',purple:'#9b59b6',pink:'#e84393',brown:'#795548',navy:'#34495e'};
+    function toHex(v){
+      var s=String(v==null?'':v).trim().toLowerCase();
+      if(!s||s==='none') return null;
+      if(COLOR[s]) return COLOR[s];
+      var m=/^#([0-9a-f]{3})$/i.exec(s);
+      if(m) return '#'+m[1].split('').map(function(c){return c+c;}).join('');
+      m=/^#([0-9a-f]{6})$/i.exec(s);
+      if(m) return s;
+      m=/^rgb\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)\s*\)$/.exec(s);
+      if(m) return '#'+[m[1],m[2],m[3]].map(function(n){ var x=Math.max(0,Math.min(255,Number(n))); return ('0'+x.toString(16)).slice(-2); }).join('');
+      return null;
+    }
+    function strokeInfo(el){
+      var st=toHex(el.getAttribute('stroke'))||'#1a1a1a';
+      var sw=parseFloat(el.getAttribute('stroke-width'));
+      sw=(Number.isFinite(sw)&&sw>0)?sw:3;
+      return {color:st,size:sw};
+    }
+    function src(){ return String(raw||'').replace(/```(?:xml|svg|html|json)?/gi,'').trim(); }
+    var html=src();
+    var mm=/<svg[\s\S]*?<\/svg>/i.exec(html);
+    if(!mm) { out.error='그림(SVG)을 만들지 못했어요 · 다시 시도해 주세요'; return out; }
+    var dom=null;
+    try{ dom=new DOMParser().parseFromString(mm[0],'image/svg+xml'); }
+    catch(e){}
+    if(!dom||dom.documentElement&&dom.documentElement.nodeName==='parsererror'){
+      try{ dom=new DOMParser().parseFromString(mm[0],'text/xml'); }catch(e2){}
+    }
+    if(!dom){ out.error='그림을 해석하지 못했어요 · 다시 시도해 주세요'; return out; }
+    var svg=dom.querySelector('svg')||dom.documentElement;
+    if(!svg){ out.error='그림(SVG)을 찾지 못했어요'; return out; }
+    // viewBox / 크기 — 좌표는 viewBox 기준으로 읽는다
+    var vb=String(svg.getAttribute('viewBox')||'').trim().split(/[\s,]+/).map(Number);
+    var W=0,H=0;
+    if(vb.length>=4&&vb.every(function(n){return Number.isFinite(n);})){ W=vb[2]; H=vb[3]; }
+    if(!W||!H){ W=parseFloat(svg.getAttribute('width'))||480; H=parseFloat(svg.getAttribute('height'))||360; }
+    W=Math.max(10,W); H=Math.max(10,H);
+    var polylines=[];      // {pts,color,size,closed}
+    function pushPts(pts,color,size,closed){
+      var arr=[];
+      for(var i=0;i<pts.length;i++){
+        var x=Number(pts[i]&&pts[i][0]),y=Number(pts[i]&&pts[i][1]);
+        if(!Number.isFinite(x)||!Number.isFinite(y)) continue;
+        arr.push([Math.round(x*10)/10,Math.round(y*10)/10]);
+      }
+      if(arr.length>=2) polylines.push({pts:arr,color:color,size:size,closed:!!closed});
+    }
+    // ---- path d → 폴리라인 (M/L/H/V/C/S/Q/T/A/Z 지원, 곡선은 4px 단위로 샘플) ----
+    function parsePath(d,color,size){
+      d=String(d||'');
+      var pcolor=color||'#1a1a1a', psize=(Number(size)||3);
+      var toks=[],m,re=/([AaCcHhLlMmQqSsTtVvZz])|(-?\d*\.?\d+(?:[eE][-+]?\d+)?)/g;
+      while((m=re.exec(d))!==null){
+        if(m[1]) toks.push(m[1]);
+        else if(m[2]!=='') toks.push(parseFloat(m[2]));
+      }
+      var i=0,cx=0,cy=0,sx=0,sy=0,px2=0,py2=0,prev='';
+      var cur=null,curObj=null;
+      function ensureCur(){
+        if(!cur){ cur=[]; curObj={pts:cur,color:pcolor,size:psize}; polylines.push(curObj); }
+      }
+      function nxt(n){
+        var out2=[];
+        for(var k=0;k<n;k++){ var v=toks[i]; if(typeof v!=='number') throw 0; out2.push(v); i++; }
+        return out2;
+      }
+      function lineTo(x,y){
+        ensureCur(); cur.push([x,y]); cx=x; cy=y; prev='L';
+      }
+      function cubic(x1,y1,x2,y2,x,y){
+        ensureCur();
+        var dist=Math.abs(x-cx)+Math.abs(y-cy)+Math.abs(x1-cx)+Math.abs(y1-cy)+Math.abs(x2-x)+Math.abs(y2-y);
+        var n=Math.max(6,Math.min(42,Math.ceil(dist/5)));
+        for(var k=1;k<=n;k++){
+          var t=k/n, it=1-t;
+          var a=it*it*it, b=3*it*it*t, c=3*it*t*t, dd=t*t*t;
+          cur.push([Math.round((a*cx+b*x1+c*x2+dd*x)*10)/10,Math.round((a*cy+b*y1+c*y2+dd*y)*10)/10]);
+        }
+        px2=x2; py2=y2; cx=x; cy=y; prev='C';
+      }
+      function quad(x1,y1,x,y){
+        ensureCur();
+        var dist=Math.abs(x-cx)+Math.abs(y-cy)+Math.abs(x1-cx)+Math.abs(y1-cy);
+        var n=Math.max(5,Math.min(34,Math.ceil(dist/5)));
+        for(var k=1;k<=n;k++){
+          var t=k/n,it=1-t;
+          cur.push([Math.round((it*it*cx+2*it*t*x1+t*t*x)*10)/10,Math.round((it*it*cy+2*it*t*y1+t*t*y)*10)/10]);
+        }
+        px2=x1; py2=y1; cx=x; cy=y; prev='Q';
+      }
+      function arcTo(rx,ry,rot,large,sweep,x,y){
+        ensureCur();
+        var x1=cx,y1=cy;
+        var phi=rot*Math.PI/180;
+        var cp=Math.cos(phi),sp=Math.sin(phi);
+        var dx=(x1-x)/2,dy=(y1-y)/2;
+        var xp=cp*dx+sp*dy, yp=-sp*dx+cp*dy;
+        var rx0=Math.abs(rx),ry0=Math.abs(ry);
+        var lam=xp*xp/(rx0*rx0)+yp*yp/(ry0*ry0);
+        if(lam>1){ var s2=Math.sqrt(lam); rx0*=s2; ry0*=s2; }
+        var num=rx0*rx0*ry0*ry0-rx0*rx0*yp*yp-ry0*ry0*xp*xp;
+        var den=rx0*rx0*yp*yp+ry0*ry0*xp*xp;
+        var coef=(num<0?0:num)/Math.max(1,den);
+        var rad=Math.sqrt(coef);
+        var sign=(large===sweep)?-1:1;
+        var cxp=sign*rad*rx0*yp/ry0, cyp=sign*rad*-ry0*xp/rx0;
+        var cxr=cp*cxp-sp*cyp+(x1+x)/2, cyr=sp*cxp+cp*cyp+(y1+y)/2;
+        function ang(ux,uy,vx,vy){
+          var dot=ux*vx+uy*vy, len=Math.sqrt((ux*ux+uy*uy)*(vx*vx+vy*vy))||1;
+          var a=Math.acos(Math.max(-1,Math.min(1,dot/len)));
+          if(ux*vy-uy*vx<0) a=-a;
+          return a;
+        }
+        var th1=ang(1,0,(xp-cxp)/rx0,(yp-cyp)/ry0);
+        var dth=ang((xp-cxp)/rx0,(yp-cyp)/ry0,(-xp-cxp)/rx0,(-yp-cyp)/ry0);
+        if(!sweep&&dth>0) dth-=2*Math.PI;
+        if(sweep&&dth<0) dth+=2*Math.PI;
+        var seg=Math.ceil(Math.abs(dth)/(Math.PI/36));
+        for(var k=1;k<=seg;k++){
+          var t=th1+dth*k/seg;
+          var px=cp*rx0*Math.cos(t)-sp*ry0*Math.sin(t)+cxr;
+          var py=sp*rx0*Math.cos(t)+cp*ry0*Math.sin(t)+cyr;
+          cur.push([Math.round(px*10)/10,Math.round(py*10)/10]);
+        }
+        cx=x; cy=y; prev='A';
+      }
+      try{
+        while(i<toks.length){
+          var c=toks[i];
+          if(typeof c==='string'){
+            i++;
+            var rel=c===c.toLowerCase();
+            var cmd=c.toUpperCase();
+            var rx,ry,rot,large,sweep,x,y,x1,y1,x2,y2;
+            if(cmd==='M'){
+              var p=nxt(2); if(rel){ x=cx+p[0]; y=cy+p[1]; } else { x=p[0]; y=p[1]; }
+              sx=x; sy=y; cur=null; curObj=null; lineTo(x,y); prev='M';
+              while(i<toks.length&&typeof toks[i]==='number'){
+                p=nxt(2); if(rel){ x=cx+p[0]; y=cy+p[1]; } else { x=p[0]; y=p[1]; }
+                lineTo(x,y);
+              }
+            }else if(cmd==='L'){
+              while(i<toks.length&&typeof toks[i]==='number'){
+                p=nxt(2); if(rel){ x=cx+p[0]; y=cy+p[1]; } else { x=p[0]; y=p[1]; }
+                lineTo(x,y);
+              }
+            }else if(cmd==='H'||cmd==='V'){
+              while(i<toks.length&&typeof toks[i]==='number'){
+                var v=nxt(1)[0]; if(cmd==='H'){ x=rel?cx+v:v; y=cy; } else { x=cx; y=rel?cy+v:v; }
+                lineTo(x,y);
+              }
+            }else if(cmd==='C'){
+              while(i<toks.length&&typeof toks[i]==='number'){
+                p=nxt(6);
+                if(rel){ x1=cx+p[0]; y1=cy+p[1]; x2=cx+p[2]; y2=cy+p[3]; x=cx+p[4]; y=cy+p[5]; }
+                else { x1=p[0]; y1=p[1]; x2=p[2]; y2=p[3]; x=p[4]; y=p[5]; }
+                cubic(x1,y1,x2,y2,x,y);
+              }
+            }else if(cmd==='S'){
+              while(i<toks.length&&typeof toks[i]==='number'){
+                p=nxt(4);
+                var cx2=rel?cx+p[0]:p[0], cy2=rel?cy+p[1]:p[1];
+                var ex=rel?cx+p[2]:p[2], ey=rel?cy+p[3]:p[3];
+                var dx1,dy1;
+                if(prev==='C'||prev==='S'){ dx1=cx-px2; dy1=cy-py2; }
+                else { dx1=0; dy1=0; }
+                cubic(cx+dx1,cy+dy1,cx2,cy2,ex,ey);
+              }
+            }else if(cmd==='Q'){
+              while(i<toks.length&&typeof toks[i]==='number'){
+                p=nxt(4);
+                if(rel){ x1=cx+p[0]; y1=cy+p[1]; x=cx+p[2]; y=cy+p[3]; }
+                else { x1=p[0]; y1=p[1]; x=p[2]; y=p[3]; }
+                quad(x1,y1,x,y);
+              }
+            }else if(cmd==='T'){
+              while(i<toks.length&&typeof toks[i]==='number'){
+                p=nxt(2);
+                if(rel){ x=cx+p[0]; y=cy+p[1]; } else { x=p[0]; y=p[1]; }
+                var rx1,ry1;
+                if(prev==='Q'||prev==='T'){ rx1=cx+(cx-px2); ry1=cy+(cy-py2); }
+                else { rx1=cx; ry1=cy; }
+                quad(rx1,ry1,x,y);
+              }
+            }else if(cmd==='A'){
+              while(i<toks.length&&typeof toks[i]==='number'){
+                p=nxt(7);
+                rx=p[0]; ry=p[1]; rot=p[2]; large=!!p[3]; sweep=!!p[4];
+                if(rel){ x=cx+p[5]; y=cy+p[6]; } else { x=p[5]; y=p[6]; }
+                arcTo(rx,ry,rot,large,sweep,x,y);
+              }
+            }else if(cmd==='Z'){
+              ensureCur(); if(cur&&cur.length){ cur.push([sx,sy]); }
+              cx=sx; cy=sy; cur=null; curObj=null; prev='Z';
+            }
+          }else break;
+        }
+      }catch(e){ /* 어긋난 d 는 지금까지 만든 획만 쓴다 */ }
+    }
+    // ---- SVG 요소 → 획 ----
+    var els=svg.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse');
+    for(var ei=0;ei<els.length;ei++){
+      var el=els[ei],info=strokeInfo(el),tag=String(el.tagName||'').toLowerCase();
+      try{
+        if(tag==='path'){ parsePath(el.getAttribute('d'),info.color,info.size); continue; }
+        if(tag==='line'){
+          var xa=parseFloat(el.getAttribute('x1')),ya=parseFloat(el.getAttribute('y1'));
+          var xb=parseFloat(el.getAttribute('x2')),yb=parseFloat(el.getAttribute('y2'));
+          if(Number.isFinite(xa)&&Number.isFinite(xb)) pushPts([[xa,ya],[xb,yb]],info.color,info.size,false);
+        }else if(tag==='polyline'||tag==='polygon'){
+          var pl=(el.getAttribute('points')||'').trim().split(/[\s,]+/).map(Number);
+          var pts=[];
+          for(var q=0;q+1<pl.length;q+=2) if(Number.isFinite(pl[q])) pts.push([pl[q],pl[q+1]]);
+          if(pts.length>=2) pushPts(pts,info.color,info.size,tag==='polygon');
+        }else if(tag==='rect'){
+          var rx0=parseFloat(el.getAttribute('x'))||0, ry0=parseFloat(el.getAttribute('y'))||0;
+          var rw=parseFloat(el.getAttribute('width'))||0, rh=parseFloat(el.getAttribute('height'))||0;
+          if(rw>0&&rh>0) pushPts([[rx0,ry0],[rx0+rw,ry0],[rx0+rw,ry0+rh],[rx0,ry0+rh],[rx0,ry0]],info.color,info.size,true);
+        }else if(tag==='circle'||tag==='ellipse'){
+          var cxx=parseFloat(el.getAttribute('cx'))||0, cyy=parseFloat(el.getAttribute('cy'))||0;
+          var rrx=parseFloat(tag==='circle'?el.getAttribute('r'):el.getAttribute('rx'))||0;
+          var rry=parseFloat(tag==='circle'?el.getAttribute('r'):el.getAttribute('ry'))||rrx;
+          if(rrx>0&&rry>0){
+            var pts2=[];
+            for(var w2=0;w2<64;w2++){ var ang2=w2/64*Math.PI*2; pts2.push([cxx+rrx*Math.cos(ang2),cyy+rry*Math.sin(ang2)]); }
+            pushPts(pts2,info.color,info.size,true);
+          }
+        }
+      }catch(e2){}
+    }
+    // ---- 끝점 정합 — 같은 색 획끼리 끝이 (거의) 맞닿으면 한 획으로 이어 붙인다.
+    //    (그림이 조각조각 분해돼 보이는 걸 막는다. 서로 다른 덩어리는 프롬프트상
+    //     10px 이상 떨어져 있어 병합되지 않는다.)
+    var diag=Math.hypot(W,H);
+    var eps=Math.max(1.2,Math.min(3.5,diag*0.006));
+    var guard=0;
+    for(;;){
+      var joined=false; guard++;
+      if(guard>polylines.length*3||polylines.length>400) break;
+      outer:
+      for(var a=0;a<polylines.length;a++){
+        for(var b=a+1;b<polylines.length;b++){
+          var A=polylines[a],B=polylines[b];
+          if(A.color!==B.color||!A.pts.length||!B.pts.length) continue;
+          var ah=A.pts[A.pts.length-1],at=A.pts[0],bh=B.pts[B.pts.length-1],bt=B.pts[0];
+          var best=null;
+          var d1=Math.hypot(ah[0]-bt[0],ah[1]-bt[1]);   // A끝-B시작
+          var d2=Math.hypot(at[0]-bh[0],at[1]-bh[1]);   // A시작-B끝
+          var d3=Math.hypot(ah[0]-bh[0],ah[1]-bh[1]);   // A끝-B끝
+          var d4=Math.hypot(at[0]-bt[0],at[1]-bt[1]);   // A시작-B시작
+          var bestD=Math.min(d1,d2,d3,d4);
+          if(bestD<=eps){
+            if(bestD===d1) best={pts:A.pts.concat(B.pts),closed:A.closed||B.closed};
+            else if(bestD===d2) best={pts:B.pts.concat(A.pts),closed:A.closed||B.closed};
+            else if(bestD===d3) best={pts:A.pts.concat(B.pts.slice().reverse()),closed:A.closed||B.closed};
+            else best={pts:B.pts.concat(A.pts.slice().reverse()),closed:A.closed||B.closed};
+            polylines[a]=best;
+            polylines.splice(b,1);
+            joined=true;
+            break outer;
+          }
+        }
+      }
+      if(!joined) break;
+    }
+    // ---- 걸러 내기: 너무 짧은 획·중복 점 제거 ----
+    var kept=[];
+    for(var k2=0;k2<polylines.length&&kept.length<220;k2++){
+      var S=polylines[k2];
+      if(!S||!S.pts||S.pts.length<2) continue;
+      var clean=[],total=0;
+      for(var p3=0;p3<S.pts.length;p3++){
+        var pt=S.pts[p3];
+        if(!pt) continue;
+        if(clean.length&&clean[clean.length-1][0]===pt[0]&&clean[clean.length-1][1]===pt[1]) continue;
+        clean.push(pt);
+        if(p3>0) total+=Math.hypot(pt[0]-S.pts[p3-1][0],pt[1]-S.pts[p3-1][1]);
+      }
+      if(clean.length<2||total<3) continue;
+      if(total>24000){ // 지나치게 긴 궤적은 절반 간격으로 추린다
+        var step=Math.max(1,Math.floor(clean.length/16000));
+        var th2=[];
+        for(var qq=0;qq<clean.length;qq+=step) th2.push(clean[qq]);
+        if(th2.length<2) th2=clean;
+        clean=th2;
+      }
+      kept.push({pts:clean,color:S.color,size:S.size});
+    }
+    if(!kept.length){
+      out.error='그림을 그리지 못했어요 · 다시 시도해 주세요(다른 그림을 부탁해 보세요)';
+      return out;
+    }
+    out.ok=true; out.strokes=kept.length;
+    out.svgW=Math.round(W*10)/10; out.svgH=Math.round(H*10)/10;
+    out.ops=[{cmd:'draw',page:null,x:'auto',y:'auto',w:null,h:null,
+      svgW:out.svgW,svgH:out.svgH,strokes:kept}];
+    return out;
+  };
+
   /* 모델 응답 파서. 허용 목록 밖의 줄은 버리고, 문서에는 HTML이 아니라 평문만
      전달한다. @tx의 빈 본문은 "상자 내용 비우기"라서 정상 명령으로 허용한다. */
   window.sdyAiEditParse=function(raw){
@@ -30489,6 +31184,18 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         return;
       }
       // @tbl — 표 만들기. 본문은 행(\n)·칸(|) 구분이라 통째로 넘긴다.
+      // @img — 인터넷에서 사진을 찾아 노트에 넣는다. 실제 사진은 서버가 찾아
+      //   저장하므로 검색어만 보낸다(@add와 같은 위치·크기 규칙, auto 지원).
+      if(head==='img'||head==='photo'||head==='picture'||head==='image'
+         ||head==='사진'||head==='이미지'){
+        var icut=cutN(rest,5);
+        var ipage=number(icut.cuts[0]),ix=numAuto(icut.cuts[1]),iy=numAuto(icut.cuts[2]);
+        var iw=numAuto(icut.cuts[3]),ih=numAuto(icut.cuts[4]),iq=decode(icut.rest);
+        if(icut.cuts.length===5&&nums([ipage,ix,iy,iw,ih])&&iq)
+          ops.push({cmd:'img',page:ipage,x:ix,y:iy,w:iw,h:ih,q:iq});
+        else dropped++;
+        return;
+      }
       if(head==='tbl'||head==='table'||head==='표'){
         var tcut=cutN(rest,5);
         var tpage=number(tcut.cuts[0]),tx=numAuto(tcut.cuts[1]),ty=numAuto(tcut.cuts[2]);
@@ -31060,6 +31767,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     q=String(q||'').trim();
     scope=(scope==='page')?'page':'doc';              // outline 의 범위 — chat/edit/app 은 문서 전체
     var editCapture=task==='edit'?aiCapture():null;
+    var drawRevision=task==='draw'?(function(){ try{ var c=aiCapture(); return c?c.revision:''; }catch(e){ return ''; } })():'';
     var appText=task==='app'?appCapture():'';
     var txt=editCapture?editCapture.text:(task==='app'?appText:noteText(task==='outline'?scope:'doc'));
     closedByUser=false;
@@ -31078,6 +31786,13 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(task==='app'&&(!q||!txt)){
       otterLine(!txt?'앱 상태를 읽지 못했어요 · 페이지를 새로고침해 주세요':'무엇을 실행할지 적어 줘 해돌~');
       return;
+    }
+    if(task==='draw'){
+      if(!q) return;
+      if(!canEdit()){
+        otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌~');
+        return;
+      }
     }
     // ① 정리 — 미리 준비해 둔 답이 있으면 기다림 없이 그 자리에서 바로
     if(task==='outline'){
@@ -31110,6 +31825,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         acc+=d;
         if(task==='edit'){ out(editProgress(acc),true); return; }
         if(task==='app'){ out(appProgress(acc),true); return; }
+        if(task==='draw'){ out(drawProgress(acc),true); return; }
         if(task==='chat'){
           var p=parseChat(acc);
           if(p.wait){ out('',true); return; }          // 표식이 채 안 왔으면 아직 생각 중
@@ -31121,6 +31837,16 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
           if(p.kind==='app'){                          // 서버가 앱 실행 요청이라 판단 — 넘기는 중
             kindChip('app');
             out('앱 실행 요청으로 보여서 넘기는 중…',true);
+            return;
+          }
+          if(p.kind==='search'){                       // 인터넷 검색이 필요한 질문 — 찾는 중
+            kindChip('search');
+            out('인터넷에서 찾아보는 중…',true);
+            return;
+          }
+          if(p.kind==='draw'){                         // 펜 그림 요청 — 넘기는 중
+            kindChip('draw');
+            out('그림 그리기로 넘기는 중…',true);
             return;
           }
           if(p.kind) kindChip(p.kind);
@@ -31143,6 +31869,16 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
             if(canEdit()){ ctl=null; moved=true; run('edit',q,scope,true); return; }
             kind='';
             text='편집 요청 같은데 · 노트를 연 다음에 다시 말해 줘 해돌~';
+          }
+          // 서버 [[search]] — 인터넷 검색을 실행한 뒤 결과를 붙여 한 번만 다시 묻는다.
+          if(kind==='search'&&!hopped){
+            ctl=null; moved=true; searchThenChat(q,scope); return;
+          }
+          // 서버 [[draw]] — 펜 그림으로 한 번만 넘긴다(노트가 열려 있을 때만).
+          if(kind==='draw'&&!hopped){
+            if(canEdit()){ ctl=null; moved=true; run('draw',q,scope,true); return; }
+            kind='';
+            text='그림은 노트를 연 다음에 그려 줄게요 해돌~';
           }
           // 서버 [[app]] — 앱 실행으로 한 번만 넘긴다(노트 밖에서도 된다).
           if(kind==='app'&&!hopped){
@@ -31182,10 +31918,19 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
             return;
           }
           doneAll(ran);
+        }else if(task==='draw'){
+          kind='draw';
+          var drew=drawApplyDone(text,drawRevision);     // SVG → 펜 획 → 한 번에 적용
+          if(drew&&typeof drew.then==='function'){
+            out('종이에 그리고 있는 중…',true);
+            drew.then(doneAll,function(){ doneAll('그림을 그리지 못했어요 · 다시 시도해 주세요'); });
+            return;
+          }
+          doneAll(drew);
         }else doneAll(text);
       }else{
         // 말하다 끊겼으면 그까지라도 남겨 둔다(복사·읽기는 되게)
-        lastText=(task==='edit'||task==='app')?'':(acc?(task==='chat'?(parseChat(acc).text||''):acc):'');
+        lastText=(task==='edit'||task==='app'||task==='draw')?'':(acc?(task==='chat'?(parseChat(acc).text||''):acc):'');
         kindChip('');
         out(String(d.error||'AI에 닿지 못했어요'),true);
         // 401/404 는 설정 문제 — 어디를 봐야 하는지 서버가 짚어 준 걸 그대로 띄운다.
@@ -31193,7 +31938,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
     }).catch(function(e){
       if(e&&e.name==='AbortError'&&closedByUser){ return; }   // 말풍선을 닫으며 멈춘 것
-      lastText=(task==='edit'||task==='app')?'':(acc?(task==='chat'?(parseChat(acc).text||''):acc):'');
+      lastText=(task==='edit'||task==='app'||task==='draw')?'':(acc?(task==='chat'?(parseChat(acc).text||''):acc):'');
       kindChip('');
       out((e&&e.name==='AbortError')?'멈췄어요.':'네트워크 오류 · 잠시 뒤 다시 시도해 주세요',true);
       meta('');
@@ -31213,6 +31958,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!q){ otterLine('뭐라도 적어 줘 해돌~'); return; }
     var editCommand=editCmdOf(q);
     var appCommand=appCmdOf(q);
+    var drawCommand=drawCmdOf(q);
     if(qEl){ qEl.value=''; aiQGrow(); }                 // 본 요청은 말풍선(과 기록)에 남으니 칸은 비운다
     if(editCommand!=null){
       if(!editCommand){ otterLine('! 뒤에 어떻게 고칠지 적어 줘 해돌~ · 예) !제목을 맨 위로 옮겨 줘'); return; }
@@ -31222,12 +31968,21 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       run('edit',editCommand); return;
     }
+    if(drawCommand!=null){
+      if(!drawCommand){ otterLine('/그림 뒤에 무엇을 그릴지 적어 줘 해돌~ · 예) /그림 웃는 얼굴'); return; }
+      if(!inNote()){ otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌~'); return; }
+      if(!(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function')){
+        otterLine('그림 그리기 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
+      }
+      run('draw',drawCommand); return;
+    }
     if(appCommand!=null){
       if(!appCommand){ otterLine('/앱 뒤에 무엇을 실행할지 적어 줘 해돌~ · 예) /앱 노래 틀어줘'); return; }
       run('app',appCommand); return;
     }
     if(looksLikeApp(q)){ run('app',q); return; }        // '시켜 달라'는 말이면 앱 실행으로
     if(looksLikeEdit(q)){ run('edit',q); return; }      // ! 없어도 '고쳐 달라'는 말이면 편집으로
+    if(looksLikeDraw(q)){ run('draw',q); return; }      // '그려 줘'는 말이면 펜 그림으로
     run('chat',q);
   };
   window.sdyAiOutline=function(scope){
