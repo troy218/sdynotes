@@ -303,41 +303,25 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     function paperSize(d){ const p=SIZE_PRESETS[(d||doc).sizePreset]||SIZE_PRESETS.a4_portrait; return {w:p.w,h:p.h}; }
 
-    const CLASSIC_DRAW_COLORS=['#111111','#a63f47','#3d6ea8','#2f7a5d','#b7792b','#7550a6'];
-    const CLASSIC_TEXT_COLORS=['#111111','#a63f47','#c06e34','#9a8527','#2f7a5d','#1c8a7a','#3d6ea8','#7550a6','#b44f7a','#5f6772'];
-    const CLASSIC_HL_COLORS=['#efd36a','#b7d97a','#83d7de','#d8ade8','#f2bcc5','#b7cdf7','#f2c796','#cfd4dd','#c5e1a5','#e6c15d'];
-    const DRAW_COLOR_ALIASES={
-        '#111':'#111111','#111111':'#111111','#888888':'#111111',
-        '#e74c3c':'#a63f47','#f3a69e':'#a63f47',
-        '#3498db':'#3d6ea8','#9acced':'#3d6ea8',
-        '#27ae60':'#2f7a5d','#93d7b0':'#2f7a5d',
-        '#f39c12':'#b7792b','#f9ce89':'#b7792b',
-        '#9b59b6':'#7550a6','#cdacdb':'#7550a6'
-    };
-    const TEXT_COLOR_ALIASES={
-        '#000':'#111111','#000000':'#111111','#111':'#111111','#111111':'#111111','#808080':'#111111',
-        '#e74c3c':'#a63f47','#f3a69e':'#a63f47',
-        '#e67e22':'#c06e34','#f3bf91':'#c06e34',
-        '#f1c40f':'#9a8527','#f8e287':'#9a8527',
-        '#2ecc71':'#2f7a5d','#97e6b8':'#2f7a5d',
-        '#1abc9c':'#1c8a7a','#8ddece':'#1c8a7a',
-        '#3498db':'#3d6ea8','#9acced':'#3d6ea8',
-        '#9b59b6':'#7550a6','#cdacdb':'#7550a6',
-        '#e84393':'#b44f7a','#f4a1c9':'#b44f7a',
-        '#7f8c8d':'#5f6772','#bfc6c6':'#5f6772'
-    };
-    const HL_COLOR_ALIASES={
-        '#ffff00':'#efd36a','#ffff80':'#efd36a',
-        '#00ff00':'#b7d97a','#80ff80':'#b7d97a',
-        '#00ffff':'#83d7de','#80ffff':'#83d7de',
-        '#ff00ff':'#d8ade8','#ff80ff':'#d8ade8',
-        '#ff9999':'#f2bcc5','#ffcccc':'#f2bcc5',
-        '#99ccff':'#b7cdf7','#cce6ff':'#b7cdf7',
-        '#ffcc99':'#f2c796','#ffe6cc':'#f2c796',
-        '#c0c0c0':'#cfd4dd','#e0e0e0':'#cfd4dd',
-        '#99ff99':'#c5e1a5','#ccffcc':'#c5e1a5',
-        '#ffd700':'#e6c15d','#ffeb80':'#e6c15d'
-    };
+    // 14.29.5 · 기본 팔레트를 '선명한 표준색'으로 되돌린다.
+    //   14.18.4 의 차분한(어두운) 톤은 종이 위에서 잘 안 보인다는 피드백.
+    //   글자색 · 펜색 · 형광펜 셋 다 눈에 잘 띄는 값으로 맞춘다.
+    //   각 배열의 [0] 이 아무것도 안 고른 초기 상태에서 쓰이는 기본색이다.
+    const CLASSIC_DRAW_COLORS=['#000000','#e74c3c','#3498db','#27ae60','#f39c12','#9b59b6'];
+    const CLASSIC_TEXT_COLORS=['#000000','#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c','#3498db','#9b59b6','#e84393','#7f8c8d'];
+    const CLASSIC_HL_COLORS=['#ffff00','#a8ff60','#7bfdff','#ff9cf5','#ffb3c1','#9cc9ff','#ffc98b','#dfe4ea','#b6ff8c','#ffd700'];
+    // 예전에는 이 표로 '저장된 색'을 그릴 때마다 어두운 톤으로 바꿔치기했다.
+    // 그래서 빨강으로 써 둔 글씨가 다시 열면 검붉게 보였다 — 사용자가 고른 색을
+    // 화면이 멋대로 바꾸는 셈이라, 표를 비워 **저장된 색을 그대로** 보여 준다.
+    // (표만 비우면 되고 호출부는 그대로다. 나중에 다시 매핑이 필요하면 여기에만
+    //  넣으면 된다. 비어 있으면 _classicPaletteColor 는 입력을 그대로 돌려준다.)
+    const DRAW_COLOR_ALIASES={};
+    const TEXT_COLOR_ALIASES={};
+    const HL_COLOR_ALIASES={};
+    // 매핑이 하나도 없으면 색 정규화는 통째로 건너뛴다 (여는 속도에도 이득).
+    const PALETTE_REMAP_ON=!!(Object.keys(DRAW_COLOR_ALIASES).length
+        ||Object.keys(TEXT_COLOR_ALIASES).length
+        ||Object.keys(HL_COLOR_ALIASES).length);
     function _paletteColorKey(v){
         v=String(v||'').trim().toLowerCase();
         if(!v||v==='inherit'||v==='initial') return '';
@@ -354,6 +338,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return v;
     }
     function _classicPaletteColor(kind,v){
+        if(!PALETTE_REMAP_ON) return v;      // 저장된 색을 그대로 쓴다
         const key=_paletteColorKey(v);
         const map=kind==='draw'?DRAW_COLOR_ALIASES:(kind==='text'?TEXT_COLOR_ALIASES:HL_COLOR_ALIASES);
         return key&&map[key]?map[key]:v;
@@ -366,6 +351,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     const _PAL_RE=/color|background|highlight/i;
     function _normalizePaletteHtml(html){
         if(!html||typeof document==='undefined') return html;
+        if(!PALETTE_REMAP_ON) return html;   // 바꿀 매핑이 없으면 파싱조차 하지 않는다
         if(!_PAL_RE.test(html)) return html;
         const box=document.createElement('div');
         box.innerHTML=String(html||'');
@@ -391,6 +377,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     function _normalizeDocPalette(d){
         if(!d||!Array.isArray(d.pages)) return d;
+        if(!PALETTE_REMAP_ON) return d;      // 저장된 색을 건드리지 않는다
         d.pages.forEach(pg=>{
             (pg&&pg.els||[]).forEach(el=>{
                 if(!el||typeof el!=='object') return;
@@ -17692,17 +17679,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // ── 14.25.0 · 똑똑한 해돌이 도우미 ──────────────────────────────────
     // 색이름 → 실제 팔레트. 화면의 글자색·형광펜·펜 목록(CLASSIC_*_COLORS)과
     // 같은 값이라, AI가 고른 색이 도구막대 색과 어긋나지 않는다.
-    const AI_TEXT_COLOR_NAMES={검정:'#111111',검은색:'#111111',까망:'#111111',
-        빨강:'#a63f47',빨간색:'#a63f47',주황:'#c06e34',주황색:'#c06e34',갈색:'#c06e34',
-        노랑:'#9a8527',노란색:'#9a8527',초록:'#2f7a5d',초록색:'#2f7a5d',녹색:'#2f7a5d',
-        청록:'#1c8a7a',파랑:'#3d6ea8',파란색:'#3d6ea8',남색:'#3d6ea8',하늘:'#3d6ea8',
-        보라:'#7550a6',보라색:'#7550a6',분홍:'#b44f7a',분홍색:'#b44f7a',핑크:'#b44f7a',
-        회색:'#5f6772',회색빛:'#5f6772',흰색:'#ffffff',하양:'#ffffff',하얀색:'#ffffff'};
-    const AI_HL_COLOR_NAMES={노랑:'#efd36a',노란색:'#efd36a',연두:'#b7d97a',연두색:'#b7d97a',
-        하늘:'#83d7de',하늘색:'#83d7de',파랑:'#b7cdf7',파란색:'#b7cdf7',
-        보라:'#d8ade8',보라색:'#d8ade8',분홍:'#f2bcc5',분홍색:'#f2bcc5',핑크:'#f2bcc5',
-        빨강:'#f2bcc5',빨간색:'#f2bcc5',주황:'#f2c796',주황색:'#f2c796',
-        초록:'#c5e1a5',초록색:'#c5e1a5',회색:'#cfd4dd',황금:'#e6c15d',금색:'#e6c15d'};
+    const AI_TEXT_COLOR_NAMES={검정:'#000000',검은색:'#000000',까망:'#000000',
+        빨강:'#e74c3c',빨간색:'#e74c3c',주황:'#e67e22',주황색:'#e67e22',갈색:'#e67e22',
+        노랑:'#f1c40f',노란색:'#f1c40f',초록:'#2ecc71',초록색:'#2ecc71',녹색:'#2ecc71',
+        청록:'#1abc9c',파랑:'#3498db',파란색:'#3498db',남색:'#3498db',하늘:'#3498db',
+        보라:'#9b59b6',보라색:'#9b59b6',분홍:'#e84393',분홍색:'#e84393',핑크:'#e84393',
+        회색:'#7f8c8d',회색빛:'#7f8c8d',흰색:'#ffffff',하양:'#ffffff',하얀색:'#ffffff'};
+    const AI_HL_COLOR_NAMES={노랑:'#ffff00',노란색:'#ffff00',연두:'#a8ff60',연두색:'#a8ff60',
+        하늘:'#7bfdff',하늘색:'#7bfdff',파랑:'#9cc9ff',파란색:'#9cc9ff',
+        보라:'#ff9cf5',보라색:'#ff9cf5',분홍:'#ffb3c1',분홍색:'#ffb3c1',핑크:'#ffb3c1',
+        빨강:'#ffb3c1',빨간색:'#ffb3c1',주황:'#ffc98b',주황색:'#ffc98b',
+        초록:'#b6ff8c',초록색:'#b6ff8c',회색:'#dfe4ea',황금:'#ffd700',금색:'#ffd700'};
     const AI_CLEAR_WORDS={없음:1,지우기:1,지워:1,투명:1,none:1,clear:1,off:1};
     function aiEditColor(value,hl){
         let v=String(value==null?'':value).trim().toLowerCase();
@@ -17874,7 +17861,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 못 건드렸기 때문이다. 이제 저장 포맷과 같은 글자 span(background-color)으로
     // 글귀 단위로 칠하고, 스냅샷에도 칠해진 곳을 ⟦…⟧ 로 보여 준다.
     const AI_HL_MARK=['\u27e6','\u27e7'];               // ⟦ ⟧ — 스냅샷의 형광펜 표시
-    const AI_HL_DEFAULT='#efd36a';                     // 색을 안 적으면 노랑 형광펜
+    const AI_HL_DEFAULT='#ffff00';                     // 색을 안 적으면 노랑 형광펜
     const AI_HL_BG_RE=/background(?:-color)?\s*:\s*[^;"']+\s*;?/gi;
     const AI_VOID_TAGS={br:1,hr:1,img:1,input:1,meta:1,link:1,area:1,base:1,col:1,
         embed:1,source:1,track:1,wbr:1};
