@@ -7918,9 +7918,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // data-* 포맷은 협업/구버전 저장물에서 들어올 수 있고, 기존 HTML style과
     // 함께 있을 때는 명시적인 data 값이 우선한다. 문자열을 직접 치환하지 않고
     // DOM에서 처리해 한 글자씩 나뉜 span, 링크, 줄바꿈을 훼손하지 않는다.
+    // 이 표식이 하나도 없는 html 은 풀어낼 것이 없다 → DOM 파싱을 건너뛴다.
+    //   ★ 14.30.1 성능 — 가져온 논문은 글상자마다 단어 span 이 수십 개인데,
+    //     대부분은 data-* 서식이나 <font> 가 전혀 없다. 그런데도 상자를 그릴
+    //     때마다 html 을 DOM 으로 파싱하고 전 노드를 훑었다(열기·스크롤 공통
+    //     비용 3위). 표식이 있을 때만 파싱하면 결과는 완전히 같다.
+    const _DEC_RE=/data-(?:font-family|font-size|font-weight|font-style|text-color|color|highlight|background-color|text-decoration)\s*=|<font\b/i;
     function decodeTextMarkup(html){
+        const src=String(html||'');
+        if(!src||!_DEC_RE.test(src)) return src;
         const box=document.createElement('div');
-        box.innerHTML=String(html||'');
+        box.innerHTML=src;
         const props={
             'data-font-family':'fontFamily','data-font-size':'fontSize',
             'data-font-weight':'fontWeight','data-font-style':'fontStyle',
@@ -8493,15 +8501,44 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     let selected=null, drag=null, resize=null;
     let textToolActive=false, tablePlace=null, curFontSize=16, _textPointerBlockUntil=0;
 
-    // 선택된 것이 항상 맨 앞으로 오도록 해당 레이어를 끌어올린다
+    // 선택된 것이 항상 맨 앞으로 오도록 해당 레이어를 끌어올린다.
+    //
+    // ★ 14.30.1 성능 — 예전에는 `#pagesStage 안의 모든 종이`를 훑으면서 종이마다
+    //   하위 선택자 3개(`.tb.sel,.tb.edit,.tb.msel` 등)를 **종이 subtree 전체**에
+    //   돌렸다. 논문처럼 글상자·단어 span 이 쪽당 수백~수천 개인 문서에서는 한 번
+    //   부를 때마다 수만 번의 선택자 대조가 일어나고, 아래 MutationObserver 가
+    //   렌더 중 생기는 모든 class 변경(empty·tight·형광펜 띠·현재 쪽 focused …)
+    //   마다 이걸 불러서 스크롤이 통째로 멎었다.
+    //   (프로파일: 무거운 논문 스크롤 시간의 90% 이상이 이 함수였다)
+    //
+    //   지금은 ① 화면에 올라와 있는 종이만 보고 ② 레이어의 **직계 자식**만
+    //   확인한다. `.tb`/`.paper-img`/`.stroke-g` 는 언제나 각 레이어의 직계
+    //   자식이므로 판정 결과는 예전과 완전히 같고, 비용만 subtree 크기와
+    //   무관해진다.
+    function _layerLift(layer){
+        if(!layer) return;
+        let on=false;
+        for(let n=layer.firstElementChild;n;n=n.nextElementSibling){
+            const cl=n.classList;
+            if(cl&&(cl.contains('sel')||cl.contains('edit')||cl.contains('msel'))){ on=true; break; }
+        }
+        const v=on?'50':'';
+        // 같은 값을 다시 쓰면 브라우저가 불필요하게 스타일을 무효화한다.
+        if(layer.style.zIndex!==v) layer.style.zIndex=v;
+    }
+    function _liftPaper(p){
+        if(!p) return;
+        _layerLift(p.querySelector('.layer-text'));
+        _layerLift(p.querySelector('.layer-img'));
+        _layerLift(p.querySelector('.layer-stroke'));
+    }
     function liftLayers(){
-        document.querySelectorAll('#pagesStage .paper').forEach(p=>{
-            const t=p.querySelector('.layer-text'), i=p.querySelector('.layer-img'),
-                  s=p.querySelector('.layer-stroke');
-            if(t) t.style.zIndex=p.querySelector('.tb.sel,.tb.edit,.tb.msel')?'50':'';
-            if(i) i.style.zIndex=p.querySelector('.paper-img.sel,.paper-img.msel')?'50':'';
-            if(s) s.style.zIndex=p.querySelector('.stroke-g.sel,.stroke-g.msel')?'50':'';
-        });
+        // 올라와 있는 종이는 mountedShells 가 O(1) 로 알고 있다 (가상화 규칙 4).
+        if(mountedShells&&mountedShells.size){
+            mountedShells.forEach(w=>{ try{ _liftPaper(w.querySelector('.paper')); }catch(e){} });
+            return;
+        }
+        document.querySelectorAll('#pagesStage .paper').forEach(_liftPaper);
     }
     // 세로 도구막대 · 가이드 상태 복원
     addEventListener('DOMContentLoaded',()=>{
@@ -8516,18 +8553,61 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
     });
     // 선택 상태가 바뀔 때마다 자동으로 정리
+    //
+    // ★ 14.30.1 성능 — 이 관찰자는 `#pagesStage` 아래 **모든** class 변경에
+    //   반응한다. 그런데 쪽을 그리는 동안에도 class 는 쉴 새 없이 바뀐다
+    //   (빈 상자 `empty`, 가져온 상자 `tight`, 형광펜 띠 `sdy-hl-band-on`,
+    //   현재 쪽 `focused` …). 예전에는 그 하나하나가 전체 종이 재스캔을
+    //   불러서, 쪽을 하나 그릴 때마다 수백 번의 전수 조사가 겹쳤다.
+    //   이제 ① 선택 상태와 무관한 변경은 즉시 버리고 ② 남은 것도 그 종이만
+    //   ③ 프레임당 한 번(rAF)으로 모아서 처리한다. 화면 결과는 동일하다.
     (function(){
-        const mo=new MutationObserver(()=>{ try{ liftLayers(); }catch(e){} });
+        const SEL_CLS=['sel','edit','msel'];
+        let pend=null,raf=0;
+        const flush=()=>{
+            raf=0;
+            const set=pend; pend=null;
+            if(!set) return;
+            set.forEach(p=>{ try{ if(p.isConnected) _liftPaper(p); }catch(e){} });
+        };
+        const mo=new MutationObserver(recs=>{
+            for(const r of recs){
+                const t=r.target;
+                if(!t||t.nodeType!==1) continue;
+                // 편집 상자 캐시(_activeEditBox)도 같은 신호로 무효화한다 —
+                // 'edit' 가 붙거나 떨어지는 순간을 여기서 전부 본다.
+                if(r.attributeName==='class'){
+                    const now=t.classList&&t.classList.contains('edit');
+                    const was=/(^|\s)edit(\s|$)/.test(r.oldValue||'');
+                    if(now||was) _editScanDirty=true;
+                }
+                // 선택 표시가 붙고 떨어지는 건 .tb / .paper-img / .stroke-g 뿐이다.
+                const cl=t.classList; if(!cl) continue;
+                if(!cl.contains('tb')&&!cl.contains('paper-img')&&!cl.contains('stroke-g')){
+                    // 지금 선택 클래스가 없더라도 '방금 떨어진' 경우가 있으므로
+                    // 이전 값(oldValue)에 선택 클래스가 있었는지도 본다.
+                    const ov=r.oldValue||'';
+                    if(!SEL_CLS.some(c=>ov.split(/\s+/).indexOf(c)>=0)) continue;
+                }
+                const p=t.closest&&t.closest('.paper');
+                if(!p) continue;
+                (pend||(pend=new Set())).add(p);
+            }
+            if(pend&&!raf) raf=requestAnimationFrame(flush);
+        });
         addEventListener('DOMContentLoaded',()=>{
             const st=document.getElementById('pagesStage');
-            if(st) mo.observe(st,{subtree:true,attributes:true,attributeFilter:['class']});
+            if(st){
+                mo.observe(st,{subtree:true,attributes:true,attributeFilter:['class'],attributeOldValue:true});
+                _editObsOn=true;   // 이제부터 편집 상자 캐시를 믿어도 된다
+            }
         });
     })();
 
     function deselectAll(keepTool){
         document.querySelectorAll('.tb.sel,.tb.edit').forEach(w=>{
             if(w.classList.contains('edit')) commitEditingText(w);
-            w.classList.remove('sel','edit');
+            w.classList.remove('sel','edit'); _editScanDirty=true;
             const c=w.querySelector('.tb-content');
             if(c){ c.contentEditable='false'; disableTextSelect(c); }
         });
@@ -8587,9 +8667,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         //   이걸 지우지 않으면 편집 중 색/형광펜을 칠할 때 엉뚱한 상자의
         //   선택이 복원되어 그쪽이 칠해진다.
         clearTextSelection();
-        document.querySelectorAll('.tb.edit').forEach(o=>{ if(o!==w){ commitEditingText(o); o.classList.remove('edit'); const c=o.querySelector('.tb-content'); if(c)c.contentEditable='false'; }});
+        document.querySelectorAll('.tb.edit').forEach(o=>{ if(o!==w){ commitEditingText(o); o.classList.remove('edit'); _editScanDirty=true; const c=o.querySelector('.tb-content'); if(c)c.contentEditable='false'; }});
         document.querySelectorAll('.tb.sel,.paper-img.sel,.stroke-g.sel').forEach(o=>{ if(o!==w) o.classList.remove('sel'); });
         w.classList.add('edit'); w.classList.remove('sel');
+        // MutationObserver 는 마이크로태스크라 같은 실행 흐름 안에서는 아직
+        // 오지 않는다 → 편집 상자 캐시를 지금 바로 확정한다.
+        _editBoxEl=w; _editScanDirty=false;
         selected={type:'text',el:w};
         markEditSnapshot();          // 18.9 · 이 상자를 고치기 '직전' 상태를 기억
         syncFSFromTarget();          // 편집에 들어간 상자의 글자 크기를 툴바에
@@ -8673,7 +8756,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 편집 종료 + 상자를 '선택' 상태로 유지 (Enter/Tab/Escape 커밋용)
     function exitEditKeepSel(w){
         commitEditingText(w);
-        w.classList.remove('edit');
+        w.classList.remove('edit'); _editScanDirty=true;
         const c=w.querySelector('.tb-content');
         if(c){ c.contentEditable='false'; disableTextSelect(c); }
         w.classList.add('sel');
@@ -9260,7 +9343,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const host=t.closest('.tb')||t.closest('.paper-img');
             if(host.classList.contains('edit')){
                 commitEditingText(host);
-                host.classList.remove('edit');
+                host.classList.remove('edit'); _editScanDirty=true;
                 const cc=host.querySelector('.tb-content');
                 if(cc) cc.contentEditable='false';
                 host.classList.add('sel');
@@ -9290,7 +9373,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // (이래야 Delete 키가 글자가 아니라 상자를 지운다)
             if(w.classList.contains('edit')){
                 commitEditingText(w);
-                w.classList.remove('edit');
+                w.classList.remove('edit'); _editScanDirty=true;
                 const cc=w.querySelector('.tb-content');
                 if(cc) cc.contentEditable='false';
             }
@@ -9765,11 +9848,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return tblCells(s.pageIdx,s.tid).filter(el=>
             el.tbl.r>=r0&&el.tbl.r<=r1&&el.tbl.c>=c0&&el.tbl.c<=c1);
     }
+    // 14.30.1 · 칠해 둔 표 칸을 기억한다. 예전에는 지울 때마다 `#pagesStage`
+    //   전체에서 `.tbl-cell-sel` 을 찾느라 (칸을 하나도 안 골랐을 때조차)
+    //   종이 subtree 를 통째로 훑었다 — 스크롤·렌더 경로에서 같이 불린다.
+    let _tblCellPainted=[];
     function paintTblCellSelection(){
-        document.querySelectorAll('#pagesStage .tb.tbl-cell-sel,#pagesStage .tb.tbl-cell-anchor').forEach(n=>{
-            n.classList.remove('tbl-cell-sel','tbl-cell-anchor');
-            n.removeAttribute('aria-selected');
-        });
+        if(_tblCellPainted.length){
+            _tblCellPainted.forEach(n=>{
+                try{
+                    if(!n.isConnected) return;
+                    n.classList.remove('tbl-cell-sel','tbl-cell-anchor');
+                    n.removeAttribute('aria-selected');
+                }catch(e){}
+            });
+            _tblCellPainted=[];
+        }
         const s=tblCellSelection;
         if(!s) return;
         const paper=paperAt(s.pageIdx); if(!paper) return;
@@ -9777,6 +9870,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const n=paper.querySelector(`.tb[data-id="${el.id}"]`); if(!n) return;
             n.classList.add('tbl-cell-sel'); n.setAttribute('aria-selected','true');
             if(el.tbl.r===s.r1&&el.tbl.c===s.c1) n.classList.add('tbl-cell-anchor');
+            _tblCellPainted.push(n);
         });
     }
     function clearTblCellSelection(){
@@ -19533,9 +19627,34 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
         }catch(e){}
     }
+    // 지금 편집 중인 글상자 (문서에 최대 하나)
+    //
+    // ★ 14.30.1 성능 — 동기화가 원격 op 를 처리할 때마다
+    //   `document.querySelector('#pagesStage .tb.edit[data-id=…]')` 로 종이
+    //   subtree 전체를 훑었다. 논문처럼 단어 span 이 수천 개인 문서에서는 op
+    //   하나당 수만 노드를 대조하는 셈이라, 남의 편집이 들어오거나 자기 op
+    //   에코가 돌아오는 동안 스크롤이 끊겼다.
+    //   편집 상자는 어차피 **한 개뿐**이므로 그 참조를 기억해 두고, class 가
+    //   바뀔 때만(아래 MutationObserver) 다시 찾는다. 결과는 같고 비용은 O(1).
+    let _editBoxEl=null,_editScanDirty=true,_editObsOn=false;
+    function _activeEditBox(){
+        if(_editObsOn&&!_editScanDirty){
+            const w=_editBoxEl;
+            if(!w) return null;
+            if(w.isConnected&&w.classList.contains('edit')) return w;
+        }
+        _editScanDirty=false;
+        _editBoxEl=document.querySelector('#pagesStage .tb.edit')||null;
+        return _editBoxEl;
+    }
+    function _activeEditBoxFor(id){
+        const w=_activeEditBox();
+        return (w&&w.dataset&&w.dataset.id===String(id))?w:null;
+    }
+    try{ window._sdyActiveEditBox=_activeEditBox; }catch(e){}
     // 편집 중인 상자 DOM 에 새 html 을 넣되, 내 커서를 최대한 보존한다
     function _tbApplyToActiveBox(id,newHtml){
-        const box=document.querySelector('#pagesStage .tb.edit[data-id="'+id+'"]');
+        const box=_activeEditBoxFor(id);
         if(!box) return false;
         const c=box.querySelector('.tb-content'); if(!c) return false;
         const off=_tbCaretTextOffset(c);
@@ -19578,7 +19697,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         ['fontSize','font','align','color','bg','ls','wsp','lg','tight','tbl','locked','fit','fitDown'].forEach(k=>{
             if(op.data[k]!==undefined) el[k]=op.data[k];
         });
-        const isActive=document.querySelector('#pagesStage .tb.edit[data-id="'+id+'"]')!==null;
+        const isActive=_activeEditBoxFor(id)!==null;
         if(merged!==mine){
             el.html=merged;
             if(isActive) _tbApplyToActiveBox(id,merged);
@@ -19962,11 +20081,36 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             doc.__lastHash.set(el.id,JSON.stringify(el)); }));
         doc.__lastPages=(doc.pages||[]).map(p=>p.id).join(',');
     }
+    // ★ 14.30.1 성능 — 요소 id 로 위치를 찾는 이 함수는 동기화 경로의 핵심이라
+    //   원격 op 하나마다 여러 번 불린다(_elById · _tbHasLocal · upsertEl …).
+    //   예전 구현은 그때마다 **문서 전체**(쪽 × 요소)를 훑었다. 논문 한 편이
+    //   500쪽 × 수백 요소면 조회 한 번이 수십만 번 비교라, 배경 동기화가 도는
+    //   동안 스크롤이 통째로 끊겼다(프로파일 2위).
+    //
+    //   이제 id → {i,k} 를 캐시하되, **돌려주기 전에 그 자리에 정말 그 요소가
+    //   있는지 확인**한다. 어긋나면(요소가 옮겨졌거나 지워졌으면) 예전처럼
+    //   전체를 훑어 다시 캐시한다. 캐시를 따로 무효화할 필요가 없으므로
+    //   요소를 옮기고 지우는 수많은 경로를 건드리지 않아도 결과가 항상 정확하다.
+    let _elLocCache=new Map(), _elLocDoc=null;
     function findElLoc(id){
-        for(let i=0;i<(doc.pages||[]).length;i++){
-            const els=doc.pages[i].els||[];
-            const k=els.findIndex(e=>e.id===id);
-            if(k>=0) return {i,k};
+        const pages=(doc&&doc.pages)||[];
+        if(_elLocDoc!==doc){ _elLocCache=new Map(); _elLocDoc=doc; }
+        const hit=_elLocCache.get(id);
+        if(hit){
+            const pg=pages[hit.i], els=pg&&pg.els;
+            const e=els&&els[hit.k];
+            if(e&&e.id===id) return hit;         // 캐시 적중 (검증 완료)
+            _elLocCache.delete(id);
+        }
+        for(let i=0;i<pages.length;i++){
+            const els=pages[i].els||[];
+            for(let k=0;k<els.length;k++){
+                if(els[k]&&els[k].id===id){
+                    const loc={i,k};
+                    _elLocCache.set(id,loc);
+                    return loc;
+                }
+            }
         }
         return null;
     }
@@ -20226,7 +20370,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 지금 하고 있는 일을 한 마디로 (다른 사람 화면에 함께 표시)
     function liveAct(){
         try{
-            if(document.querySelector('.tb.edit')) return '글 쓰는 중';
+            // 14.30.1 · 실시간 표시는 타이머로 자주 불린다 → 전체 훑기 대신 O(1) 캐시
+            if(_activeEditBox()) return '글 쓰는 중';
             if(typeof penActive!=='undefined'&&penActive) return '그리는 중';
             if(typeof eraserActive!=='undefined'&&eraserActive) return '지우는 중';
             if(typeof textToolActive!=='undefined'&&textToolActive) return '글상자 놓는 중';
@@ -20244,7 +20389,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     //   'type' : 글 입력 중 → 상대 화면에서 내 커서 대신 '깜빡이는 캐럿'이 보인다.
     function liveMode(){
         try{
-            if(document.querySelector('.tb.edit')) return 'type';
+            if(_activeEditBox()) return 'type';
             if(typeof penActive!=='undefined'&&penActive
                 &&!(typeof eraserActive!=='undefined'&&eraserActive)) return 'draw';
             return '';
