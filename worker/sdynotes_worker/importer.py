@@ -4662,7 +4662,7 @@ def _render_hi_bg(src, pno):
 #
 # 파일 이름은 (ref, pno, 폭) 으로 결정되는 순수 함수라, 한 번 구우면 영구
 # 캐시(max-age=1y)로 재사용된다. 같은 쪽에 요청이 겹쳐도 락으로 한 번만 굽는다.
-PREVIEW_WIDTHS = (900, 1600)     # 기본(읽기) / 확대했을 때
+PREVIEW_WIDTHS = (480, 900, 1600)     # 똥컴 모드 / 기본(읽기) / 확대했을 때
 _PREVIEW_LOCKS = {}
 _PREVIEW_LOCKS_GUARD = threading.Lock()
 

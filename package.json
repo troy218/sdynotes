@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.32.3",
+  "version": "14.33.0",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -62,6 +62,7 @@
     "test:translate": "node test/translate_contract.mjs && node test/translate_flow_runtime.mjs",
     "test:ai": "node test/ai_contract.mjs && node test/ai_providers_contract.mjs && node test/ai_model_chain_contract.mjs && node test/ai_ratelimit_contract.mjs && node test/ai_frontend_contract.mjs && node test/ai_edit_runtime.mjs && node test/ai_app_runtime.mjs && node test/ai_img_search_contract.mjs && node test/ai_img_pipeline_contract.mjs && node test/ai_draw_photo_runtime.mjs",
     "test:perf": "node test/perf_tuning_contract.mjs",
+    "test:lowend": "node test/perf_lowend_contract.mjs && node test/perf_lowend_runtime.mjs",
     "test:fmtv2": "node test/editor_inline_fmt_v2_runtime.mjs"
   },
   "dependencies": {

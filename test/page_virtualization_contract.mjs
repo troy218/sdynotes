@@ -39,9 +39,9 @@ ok('현재 페이지는 테두리·라벨·접근성 상태로도 확실히 구�
   && js.includes('aria-current'));
 
 // ── 셸 창 (종이 자체의 가상화) ─────────────────────────────────────────
-ok('셸 창 상수(여유분·상한)와 요소 창 상수를 함께 둔다',
-  /const SHELL_PAD=\d+/.test(js) && /const SHELL_MAX=\d+/.test(js)
-  && /VIRTUAL_RENDER_RADIUS=1/.test(js) && /VIRTUAL_KEEP_RADIUS=2/.test(js));
+ok('셸 창(여유분·상한)과 요소 창(반경)을 한 곳에서 계산한다',
+  /function shellPad\(\)/.test(js) && /function shellMax\(\)/.test(js)
+  && /function renderRadius\(\)/.test(js) && /function keepRadius\(\)/.test(js));
 ok('올라와 있는 종이를 쪽 번호로 관리한다 (배열 순서 인덱싱 금지)',
   /const mountedShells=new Map\(\)/.test(js)
   && !/document\.querySelectorAll\('\.page-wrap'\)\[/.test(js));
@@ -60,9 +60,9 @@ ok('스테이지 높이는 화면에 올린 쪽이 아니라 전체 쪽수로 �
 
 const syncSrc = fnSrc('syncPageShells');
 ok('셸 창은 스크롤 위치로 계산한 범위 ± 여유분이다',
-  /visiblePageRange\(\)/.test(syncSrc) && /SHELL_PAD/.test(syncSrc));
+  /visiblePageRange\(\)/.test(syncSrc) && /shellPad\(\)/.test(syncSrc));
 ok('셸 창에 상한을 둬 극단 축소·먼 점프에서도 DOM 이 폭발하지 않는다',
-  /last-first\+1>SHELL_MAX/.test(syncSrc));
+  /last-first\+1>max/.test(syncSrc) && /shellMax\(\)/.test(syncSrc));
 ok('창 밖 종이는 내리고 창 안 종이는 채운다',
   /unmountPageShell\(i\)/.test(syncSrc) && /ensurePageShell\(i\)/.test(syncSrc));
 
@@ -94,11 +94,12 @@ ok('요소 창을 맞추기 전에 종이부터 올린다',
   && mpwSrc.indexOf('syncPageShells()') < mpwSrc.indexOf('const fill'));
 ok('관성 스크롤 중에는 무거운 내용을 몰아 그리지 않되, 멈출 때까지 백지로 두지도 않는다',
   /if\(immediate\) fill\(\);/.test(mpwSrc)
-  && /Date\.now\(\)-_lastFillAt>=FILL_MAX_GAP\) fill\(\)/.test(mpwSrc)
-  && /setTimeout\(\(\)=>\{[^}]*fill\(\); \},FILL_IDLE\)/.test(mpwSrc)
-  && /const FILL_IDLE=\d+/.test(js) && /const FILL_MAX_GAP=\d+/.test(js));
+  && /Date\.now\(\)-_lastFillAt>=fillMaxGap\(\)\) fill\(\)/.test(mpwSrc)
+  && /setTimeout\(\(\)=>\{[^}]*fill\(\); \},fillIdle\(\)\)/.test(mpwSrc)
+  && /function fillIdle\(\)/.test(js) && /function fillMaxGap\(\)/.test(js));
 ok('현재 쪽 ±KEEP 밖 요소 DOM 은 회수한다',
-  /Math\.abs\(i-center\)>VIRTUAL_KEEP_RADIUS\) unloadPage\(i\)/.test(mpwSrc));
+  /Math\.abs\(i-center\)>keepR\) unloadPage\(i\)/.test(mpwSrc)
+  && /const keepR=keepRadius\(\)/.test(mpwSrc));
 
 const guardSrc = fnSrc('canUnloadPage');
 ok('편집·선택 중이거나 표·그리기가 살아 있는 쪽은 내리지 않는다',

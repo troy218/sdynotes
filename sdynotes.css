@@ -6689,6 +6689,68 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   22.0 · 저사양/똥컴 경량 모드 (body.sdy-turbo)
+
+   JS의 sdyLowEnd/sdyTurbo 판정이 켜면 body 에 .sdy-turbo 를 붙인다.
+   '읽기 우선(쪽 그림 한 장) + 셸 가상화' 결과는 그대로 유지하면서,
+   그 위에서 장식 비용(오로라·벽지·blur·애니메이션·box-shadow·집게)만 끊는다.
+   기능(편집·표·그림·검색·AI)은 하나도 닫지 않는다.
+   ═══════════════════════════════════════════════════════════════════ */
+body.sdy-turbo #sdyAmbient,
+body.sdy-turbo #wallLayer{display:none!important;}
+body.sdy-turbo #clawFx{display:none!important;}
+body.sdy-turbo .header,
+body.sdy-turbo .editor-toolbar,
+body.sdy-turbo .side-bar,
+body.sdy-turbo .toast,
+body.sdy-turbo .modal-bg,
+body.sdy-turbo .modal-box,
+body.sdy-turbo .ai-hist,
+body.sdy-turbo .ai-say,
+body.sdy-turbo .ai-askbar,
+body.sdy-turbo .mp,
+body.sdy-turbo .mpb,
+body.sdy-turbo #focusClock,
+body.sdy-turbo .fcard-win,
+body.sdy-turbo .sa-card,
+body.sdy-turbo .ypg-card,
+body.sdy-turbo .note-preview-frame{
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+body.sdy-turbo *,
+body.sdy-turbo *::before,
+body.sdy-turbo *::after{
+  animation-duration:0s!important;
+  animation-delay:0s!important;
+  transition-duration:0s!important;
+  transition-delay:0s!important;
+}
+body.sdy-turbo .note-card,
+body.sdy-turbo .folder-card,
+body.sdy-turbo .add-card,
+body.sdy-turbo .modal-box,
+body.sdy-turbo .fcard-win,
+body.sdy-turbo .mp,
+body.sdy-turbo .mpb,
+body.sdy-turbo .ai-hist,
+body.sdy-turbo .ai-say{
+  box-shadow:none!important;
+  text-shadow:none!important;
+}
+body.sdy-turbo .note-card:hover,
+body.sdy-turbo .folder-card:hover,
+body.sdy-turbo .add-card:hover,
+body.sdy-turbo .tool-btn:hover,
+body.sdy-turbo .tool-btn:active,
+body.sdy-turbo .ctx-item:hover,
+body.sdy-turbo .ctx-item:active{
+  transform:none!important;
+}
+body.sdy-turbo .paper,
+body.sdy-turbo .page-wrap{will-change:auto!important;}
+
+/* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 
    이 블록은 휴대폰 세로(폭 640px 이하)와 휴대폰 가로(낮은 화면 + coarse

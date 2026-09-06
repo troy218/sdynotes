@@ -1020,8 +1020,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const s0=Math.floor(idx/LAZY_SLICE)*LAZY_SLICE;
         await loadBatch(s0);
         if(doc!==d) return;
-        prefetchBatch(s0+LAZY_SLICE);   // 다음 배치는 백그라운드에서 미리
-        prefetchBatch(s0-LAZY_SLICE);
+        // 22.x · 똥컴 모드는 이웃 슬라이스 프리필도 생략하고 '그때 그때'만 받는다.
+        if(!sdyTurbo()){
+            prefetchBatch(s0+LAZY_SLICE);   // 다음 배치는 백그라운드에서 미리
+            prefetchBatch(s0-LAZY_SLICE);
+        }
         evictFar(idx);                  // 먼 쪽은 메모리에서 비움
     }
     async function loadBatch(s0){
@@ -1109,7 +1112,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function evictFar(idx){
         if(!doc||!doc.__ref) return;
         // 저사양 기기는 메모리에 붙잡는 쪽 수를 줄여 GC·저장 스캔 부담을 낮춘다.
-        const R=sdyLowEnd()?22:40;
+        const R=sdyTurbo()?12:(sdyLowEnd()?22:40);
         (doc.pages||[]).forEach((p,i)=>{
             if(Math.abs(i-idx)<=R) return;
             if(p&&p.__lazy==null&&!p.__dirty&&(p.els||[]).length){
@@ -6220,42 +6223,62 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     const CHUNK=60;                   // 한 번에 채우는 개수
     // 14.30.0 · 저사양 기기 감지 — 코어/메모리가 적으면 배경 작업을 줄이고
     //   렌더 청크를 작게 해 '입력이 밀리는 버벅임'을 막는다.
-    //   (localStorage sdy_lowend = '1'/'0' 으로 강제할 수 있다. 감지가 애매한
-    //   기기에서는 실제 지연을 재서 한 번만 판정한다.)
+    //   (localStorage sdy_lowend/sdy_perf = '1'/'0' 으로 강제할 수 있다.
+    //    감지가 애매한 기기에서는 실제 지연을 재서 한 번만 판정한다.)
     let _lowEnd=null;
     function sdyLowEnd(){
         if(_lowEnd!==null) return _lowEnd;
         let v=null;
-        try{ v=localStorage.getItem('sdy_lowend'); }catch(e){}
-        if(v==='1'){ _lowEnd=true; return _lowEnd; }
-        if(v==='0'){ _lowEnd=false; return _lowEnd; }
+        try{ v=localStorage.getItem('sdy_perf')||localStorage.getItem('sdy_lowend'); }catch(e){}
+        if(v==='1'||v==='turbo'){ _lowEnd=true; return _lowEnd; }
+        if(v==='0'||v==='off'){ _lowEnd=false; return _lowEnd; }
+        try{ if(/[?&]turbo=1/.test(location.search)){ _lowEnd=true; return _lowEnd; } }catch(e){}
         let score=0;
         try{
             const nav=navigator||{};
             if(nav.hardwareConcurrency){
-                if(nav.hardwareConcurrency<=2) score+=2;
-                else if(nav.hardwareConcurrency<=4) score+=1;
+                if(nav.hardwareConcurrency<=2) score+=4;
+                else if(nav.hardwareConcurrency<=4) score+=2;
+                else if(nav.hardwareConcurrency<=8) score+=1;
             }else score+=1;                     // 모름 → 보수적으로 취급
             if(nav.deviceMemory){
-                if(nav.deviceMemory<=2) score+=2;
-                else if(nav.deviceMemory<=4) score+=1;
+                if(nav.deviceMemory<=2) score+=5;
+                else if(nav.deviceMemory<=4) score+=3;
+                else if(nav.deviceMemory<=8) score+=1;
             }
             if(nav.platform&&/MacIntel|Win32|Linux x86_64/.test(nav.platform)&&!nav.deviceMemory&&score===0) score=0;
         }catch(e){ score=1; }
-        // 성능 저하가 명백한 조합일 때만 켠다 (코어 2개 이하 또는 메모리 2GB 이하).
-        _lowEnd=score>=2;
+        // 22.x · '아주 똥컴'도 바로 잡히도록 임계를 낮춘다: 2코어+2GB, 4코어+4GB
+        //   같은 주요 저성능 조합이면 자동으로 경량 모드가 켜진다.
+        _lowEnd=score>=5;
         return _lowEnd;
     }
+    // 저사양/경량 모드로 판정되면 추가로 UI 장식(오로라·집게 애니메이션·blur)을
+    //   끄고, 쪽 DOM·미리보기·프리필을 더 아낀다. '지난번(읽기 우선 + 셸 가상화)
+    //   의 결과를 유지하면서 그 창을 더 작게, 그리고 더 싸게' 하는 구조다.
+    function sdyTurbo(){ return sdyLowEnd(); }
+    try{ window.sdyTurbo=sdyTurbo; window.sdyLowEnd=sdyLowEnd; }catch(e){}
+    function _applyTurboMode(){
+        try{
+            const on=sdyTurbo();
+            document.body.classList.toggle('sdy-turbo',on);
+            if(on) document.documentElement.setAttribute('data-sdy-perf','turbo');
+            else document.documentElement.removeAttribute('data-sdy-perf');
+        }catch(e){}
+    }
+    try{ _applyTurboMode(); }catch(e){}
+    // 경량 모드의 셸/요소 창 상수는 '판정 후' 값이어야 한다 (고정 const 를
+    //   여러 곳에서 복사하지 않도록 함수 한 곳에서만 계산한다)
+    function shellPad(){ return sdyTurbo()?0:2; }
+    function shellMax(){ return sdyTurbo()?8:24; }
+    function renderRadius(){ return sdyTurbo()?0:1; }
+    function keepRadius(){ return sdyTurbo()?1:2; }
+    function fillIdle(){ return sdyTurbo()?70:90; }
+    function fillMaxGap(){ return sdyTurbo()?160:220; }
     let _nbrTimer=null;               // 이웃 쪽 요소 렌더 지연 타이머 (현재 쪽 우선)
-    const VIRTUAL_RENDER_RADIUS=1;    // 현재 쪽 + 위아래 한 쪽만 요소 렌더
-    const VIRTUAL_KEEP_RADIUS=2;      // 두 쪽 밖의 무거운 요소 DOM은 즉시 회수
-    const SHELL_PAD=2;                // 화면 위아래로 더 올려 두는 종이 수
-    const SHELL_MAX=24;               // 동시에 올려 두는 종이 상한(극단 축소 방어)
-    const FILL_IDLE=90;               // 스크롤이 멎고 이만큼 뒤에 내용을 채운다
-    const FILL_MAX_GAP=220;           // 스크롤이 이어져도 이 간격마다 한 번은 채운다
+    const UNLOAD_GRACE=1200;          // 방금 그린 쪽은 이 시간 안에 경계를 넘어도 바로 내리지 않는다
     const _pageRenderTok={};          // 같은 쪽을 다시 그리거나 비우면 이전 청크 루프를 버린다
     const _renderedAt={};             // 쪽별 마지막 요소 렌더 시각 — 회수 유예 판단용
-    const UNLOAD_GRACE=1200;          // 방금 그린 쪽은 이 시간 안에 경계를 넘어도 바로 내리지 않는다
     const chunkTimers={};
     let _virtualTimer=null;
     let _lastFillAt=0;
@@ -6397,12 +6420,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!doc||!doc.pages||!doc.pages.length) return _shellWin;
         const n=doc.pages.length, cur=Math.max(0,Math.min(n-1,curPageIdx|0));
         const vis=visiblePageRange();
-        let first=Math.max(0,Math.min(vis.first,cur)-SHELL_PAD);
-        let last =Math.min(n-1,Math.max(vis.last ,cur)+SHELL_PAD);
-        if(last-first+1>SHELL_MAX){          // 극단 축소·먼 점프 직후 방어
-            first=Math.max(0,cur-(SHELL_MAX>>1));
-            last =Math.min(n-1,first+SHELL_MAX-1);
-            first=Math.max(0,last-SHELL_MAX+1);
+        const pad=shellPad(), max=shellMax();
+        let first=Math.max(0,Math.min(vis.first,cur)-pad);
+        let last =Math.min(n-1,Math.max(vis.last ,cur)+pad);
+        if(last-first+1>max){          // 극단 축소·먼 점프 직후 방어
+            first=Math.max(0,cur-(max>>1));
+            last =Math.min(n-1,first+max-1);
+            first=Math.max(0,last-max+1);
         }
         if(first!==_shellWin.first||last!==_shellWin.last){
             mountedShells.forEach((w,i)=>{ if(i<first||i>last) unmountPageShell(i); });
@@ -6482,7 +6506,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     // 요소만 비운다 (종이는 그대로 — 찾기·형광 띠는 다시 그릴 때 복원된다)
     function unloadPage(i){
-        if(Math.abs(i-(curPageIdx|0))<=VIRTUAL_KEEP_RADIUS) return false;
+        if(Math.abs(i-(curPageIdx|0))<=keepRadius()) return false;
         // 18.13 · 방금 그린 쪽은 경계를 막 넘었어도 곧바로 회수하지 않는다. 요소
         //   회수는 즉시, 이웃 렌더는 지연이라 스크롤을 되돌렸을 때 같은 쪽을
         //   '내렸다가 다시 그리는' 왕복이 반복되던 지점. 짧은 유예를 두면
@@ -6514,8 +6538,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             _lastFillAt=Date.now();
             if(!doc||!doc.pages||!doc.pages[center]) return;
             // 먼저 먼 요소 DOM과 진행 중 청크를 회수해 메모리·프레임을 양보한다.
+            const keepR=keepRadius();
             Array.from(renderedPages).forEach(i=>{
-                if(Math.abs(i-center)>VIRTUAL_KEEP_RADIUS) unloadPage(i);
+                if(Math.abs(i-center)>keepR) unloadPage(i);
             });
             // 14.30.0 · 현재 쪽(지금 보이는 종이)을 먼저 그린다. 이웃 쪽은 짧은
             //   지연 뒤에 채워 스크롤을 멈춘 첫 프레임이 현재 쪽에만 집중되게
@@ -6537,7 +6562,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                         if(!doc||!doc.pages||!doc.pages.length) return;
                         if(window._renderVersion!==(doc&&doc.__rv)) return;
                         const c=Math.max(0,Math.min(doc.pages.length-1,(curPageIdx|0)));
-                        for(let d=1;d<=VIRTUAL_RENDER_RADIUS;d++){
+                        const rr=renderRadius();
+                        for(let d=1;d<=rr;d++){
                             [c-d,c+d].forEach(i=>{
                                 if(i<0||i>=doc.pages.length) return;
                                 if(!needEls(i)) return;      // 읽기 쪽은 그림만
@@ -6550,10 +6576,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
         };
         if(immediate) fill();
-        // 계속 스크롤하는 동안에도 FILL_MAX_GAP 마다 한 번은 채운다 —
+        // 계속 스크롤하는 동안에도 fillMaxGap() 마다 한 번은 채운다 —
         // 디바운스만 걸면 '손을 뗄 때까지 백지'가 되어 더 답답하다.
-        else if(Date.now()-_lastFillAt>=FILL_MAX_GAP) fill();
-        else _virtualTimer=setTimeout(()=>{ _virtualTimer=null; if(center===(curPageIdx|0)) fill(); },FILL_IDLE);
+        else if(Date.now()-_lastFillAt>=fillMaxGap()) fill();
+        else _virtualTimer=setTimeout(()=>{ _virtualTimer=null; if(center===(curPageIdx|0)) fill(); },fillIdle());
     }
 
     function clearPageEls(idx){
@@ -6726,6 +6752,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function previewWidth(){
         // 현재 배율에서 필요한 실제 픽셀 폭 (서버가 단계로 스냅한다)
         const w=paperSize().w*Math.max(1,pageScale)*(window.devicePixelRatio||1);
+        // 22.x · 똥컴 모드: 미리보기 그림을 더 작게(480) 구워 받는다. 읽기 화면에선
+        //   1장의 <img> 라 480 이면 충분하고, 디코드/풀레이아웃 비용만 크게 줄어든다.
+        if(sdyTurbo()) return pageScale>1.4?900:480;
         return w>1200?1600:900;
     }
     function previewURL(pi){
@@ -6890,7 +6919,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 무거우면: 한 프레임의 요소를 fragment 세 개에 모아 레이어별 한 번만 삽입한다.
         // 14.30.0 · 저사양 기기는 프레임당 채우는 개수를 줄여 청크 사이의
         //   메인 스레드 점유를 낮춘다. (결과는 같고 더 많은 프레임에 걸칠 뿐)
-        const chunkN=sdyLowEnd()?Math.min(CHUNK,36):CHUNK;
+        const chunkN=sdyTurbo()?Math.min(CHUNK,24):(sdyLowEnd()?Math.min(CHUNK,36):CHUNK);
         let at=0;
         const step=()=>{
             if(_pageRenderTok[idx]!==tok) return;
@@ -20223,6 +20252,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(doc===_d0) try{ repairLegacyImages(); }catch(e){}
     }
     async function startSlicePrefill(){
+        // 22.x · 똥컴 모드에서는 전체 프리필을 아예 하지 않는다. 어차피 스크롤로
+        //   보이는 슬라이스는 renderPageEls → ensureLazyPage 에서 그때 받고,
+        //   프리필을 생략하면 ① 첫 페인트가 네트워크/파싱과 경쟁하지 않고
+        //   ② 먼 쪽을 미리 다 받아 메모리·저장 스캔·동기화를 무겁게 만들지도
+        //   않는다. (번역·내보내기처럼 전 쪽이 필요한 기능은 loadAllLazyNoEvict
+        //   경로가 그때 그대로 모두 받는다.)
+        if(sdyTurbo()) return;
         // 14.30.0 · 대화형 로드를 굶기지 않게 프리필을 '조용한 틈'마다 하나씩만
         //   내려받는다. 예전엔 열자마자 4개 워커가 남은 슬라이스를 줄줄이 요청해,
         //   단일 스레드 워커(또는 변환/태깅으로 바쁜 서버)에서는 그 프리필 큐가
@@ -22654,6 +22690,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // ① 노트 추가: 크레인이 실제 노트를 잡고 내려와 카드가 놓인 자리에 두고 간다
     function playClawDrop(card, done){
+        if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote');
         if(!_clawEl('clawFx')||!head||!note){ if(done)done(); return; }
@@ -22749,6 +22786,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // ② 노트 삭제: 크레인이 빈 손으로 내려와 실제 노트를 집어 위로 끌어올려 던진다
     function playClawThrow(card, done){
+        if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote');
         if(!_clawEl('clawFx')||!head||!note){ if(done)done(); return; }
@@ -22824,6 +22862,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // ②-b 노트 1개를 폴더로: 삭제와 같은 단일 집게가 내려와 잡아 폴더로 넣는다
     function playClawToFolder(card, folderEl, done){
+        if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote'), wire=_clawEl('clawWire');
         if(!_clawEl('clawFx')||!head||!note||!wire){ if(done)done(); return; }
@@ -22900,6 +22939,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // ③ 여러 노트 삭제: 빈 집게 여러 대가 내려와 한꺼번에 잡아 던진다
     function playClawThrowMulti(cards, done){
+        if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const fx=_clawEl('clawFx');
         if(!fx){ if(done)done(); return; }
@@ -22990,6 +23030,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // ④ 여러 노트를 폴더로 끌어넣을 때: 빈 집게 여러 대가 내려와 잡고 해당 폴더 카드로 넣는 모션
     function playClawToFolderMulti(cards, folderEl, done){
+        if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
         const valid=(cards||[]).filter(c=>c);
         if(valid.length===1){ playClawToFolder(valid[0], folderEl, done); return; }
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
@@ -23155,6 +23196,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // 폴더 카드에 '노트가 새로 들어왔다'는 미니 애니메이션 (집게가 노트를 폴더에 넣는다)
     function playNoteIntoFolderAnim(fid){
+        if(sdyTurbo()) return;   // 22.x · 똥컴 모드는 장식 애니메이션 생략
         const fc=document.querySelector('.folder-card[data-folder-id="'+fid+'"]');
         if(!fc) return;
         const r=_clawRect(fc);
