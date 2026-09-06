@@ -105,10 +105,25 @@ try {
       window.HTMLCanvasElement.prototype.getContext = () => ({ clearRect(){}, drawImage(){}, fillRect(){},
         beginPath(){}, moveTo(){}, lineTo(){}, stroke(){}, arc(){}, fill(){}, save(){}, restore(){},
         scale(){}, translate(){}, setTransform(){}, measureText(){ return { width: 10 }; },
-        getImageData(){ return { data: new Uint8ClampedArray(4) }; }, putImageData(){} });
+        getImageData(){ return { data: new Uint8ClampedArray(4) }; }, putImageData(){},
+        createLinearGradient(){ return { addColorStop(){} }; } });
       window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/png;base64,';
       window.Audio = class { constructor(){ this.paused = true; } play(){ return Promise.resolve(); }
         pause(){} addEventListener(){} removeEventListener(){} };
+      window.AudioContext = class {
+        constructor() { this.destination = {}; this.currentTime = 0; }
+        createMediaElementSource() { return { connect() {} }; }
+        createBiquadFilter() {
+          return {
+            frequency: { value: 0 },
+            Q: { value: 0 },
+            gain: { value: 0, cancelScheduledValues() {}, setTargetAtTime() {} },
+            connect() {}
+          };
+        }
+        createAnalyser() { return { connect() {}, fftSize: 1024, frequencyBinCount: 512, smoothingTimeConstant: 0.5, minDecibels: -85, maxDecibels: -25, getByteFrequencyData() {} }; }
+        resume() { return Promise.resolve(); }
+      };
       window.URL.createObjectURL = () => 'blob:test';
       window.URL.revokeObjectURL = () => {};
       window.confirm = () => true; window.alert = () => {}; window.prompt = () => null;
@@ -197,6 +212,26 @@ try {
   check('큰 플레이어를 연다',
     r.applied === 1 && document.getElementById('mpBig').classList.contains('open'));
   window.sdyMusic.closeBig();
+
+  // ── 이퀄라이저: 켜기·끄기·프리셋·초기화·창 열기 ──
+  r = await run('@eq on\n@eq preset | 보컬 강조\n@done 보컬 강조로 켰어요');
+  check('이퀄라이저 켜기·보컬 강조 프리셋이 적용된다',
+    r.applied === 2 && r.failed === 0 && window.sdyEq.state().on === true && window.sdyEq.state().preset === 2,
+    JSON.stringify(window.sdyEq.state()));
+  r = await run('@eq preset | 베이스 부스트\n@done 베이스 부스트');
+  check('이퀄라이저 베이스 부스트 프리셋이 적용된다',
+    r.applied === 1 && r.failed === 0 && window.sdyEq.state().preset === 1,
+    JSON.stringify(window.sdyEq.state()));
+  r = await run('@eq reset\n@done 초기화');
+  check('이퀄라이저 초기화가 적용된다',
+    r.applied === 1 && r.failed === 0 && window.sdyEq.state().preset === 0 && window.sdyEq.state().gains.every(v => v === 0));
+  r = await run('@eq off\n@done 껐어요');
+  check('이퀄라이저 끄기가 적용된다',
+    r.applied === 1 && r.failed === 0 && window.sdyEq.state().on === false);
+  r = await run('@eq open\n@done 창 열기');
+  check('이퀄라이저 창이 열린다',
+    r.applied === 1 && r.failed === 0 && !document.getElementById('mpEqPop').hidden);
+  window.sdyEq.close();
 
   // ── 집중 화면: 타이머 시작·단위·거절·정지, 스톱워치·시계 ──
   r = await run('@timer 25 | 집중\n@done 시작');

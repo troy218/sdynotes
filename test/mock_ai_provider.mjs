@@ -51,6 +51,38 @@ function fakeAnswer(messages = []) {
     }
     return `@mv ${firstId} | 60 | 40\n@done 첫 요소를 위쪽으로 옮겼어요`;
   }
+  if (/앱 실행 엔진/.test(sys)) {
+    const appRequest = (user.match(/실행 요청: (.*)$/m) || [, ''])[1].trim();
+    if (/이퀄라이저|이큐|equalizer|\bEQ\b|베이스|보컬|팝|록|락|힙합|r&b|알앤비|클래식|재즈|일렉/.test(appRequest)) {
+      if (/끄|꺼|off/i.test(appRequest)) return '@eq off\n@done 이퀄라이저를 껐어요';
+      if (/열어|보여|창/i.test(appRequest)) return '@eq open\n@done 이퀄라이저 창을 열었어요';
+      if (/초기화|리셋|원음/i.test(appRequest)) return '@eq reset\n@done 이퀄라이저를 초기화했어요';
+      if (/보컬/i.test(appRequest)) return '@eq preset | 보컬 강조\n@done 이퀄라이저를 보컬 강조로 맞췄어요';
+      if (/베이스/i.test(appRequest)) return '@eq preset | 베이스 부스트\n@done 이퀄라이저를 베이스 부스트로 맞췄어요';
+      if (/팝/i.test(appRequest)) return '@eq preset | 팝\n@done 이퀄라이저를 팝으로 맞췄어요';
+      if (/록|락/i.test(appRequest)) return '@eq preset | 록\n@done 이퀄라이저를 록으로 맞췄어요';
+      if (/힙합/i.test(appRequest)) return '@eq preset | 힙합\n@done 이퀄라이저를 힙합으로 맞췄어요';
+      if (/r&b|알앤비|rnb/i.test(appRequest)) return '@eq preset | R&B\n@done 이퀄라이저를 R&B로 맞췄어요';
+      if (/클래식/i.test(appRequest)) return '@eq preset | 클래식\n@done 이퀄라이저를 클래식으로 맞췄어요';
+      if (/재즈/i.test(appRequest)) return '@eq preset | 재즈\n@done 이퀄라이저를 재즈로 맞췄어요';
+      if (/일렉/i.test(appRequest)) return '@eq preset | 일렉트로닉\n@done 이퀄라이저를 일렉트로닉으로 맞췄어요';
+      return '@eq on\n@done 이퀄라이저를 켰어요';
+    }
+    if (/틀어|재생/.test(appRequest)) return '@music play\n@done 노래를 틀었어요';
+    if (/멈춰|정지|일시 ?정지/.test(appRequest)) return '@music pause\n@done 노래를 멈췄어요';
+    if (/시계/.test(appRequest)) return '@clock\n@done 시계를 열었어요';
+    if (/타이머/.test(appRequest)) return '@timer 25\n@done 타이머를 시작했어요';
+    return '@done 요청대로 실행했어요';
+  }
+  if (/그림 엔진/.test(sys)) {
+    return '<svg viewBox="0 0 480 360" xmlns="http://www.w3.org/2000/svg">'
+      + '<path fill="none" stroke="#1a1a1a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"'
+      + ' d="M 120 90 C 180 50 300 50 360 90 C 390 180 370 260 300 300 C 240 330 180 330 120 290 C 70 240 80 150 120 90 Z"/>'
+      + '<path fill="none" stroke="#1a1a1a" stroke-width="3" d="M 170 170 C 170 150 190 150 190 170"/>'
+      + '<path fill="none" stroke="#1a1a1a" stroke-width="3" d="M 290 170 C 290 150 310 150 310 170"/>'
+      + '<path fill="none" stroke="#e74c3c" stroke-width="2.5" d="M 210 230 Q 240 260 270 230"/>'
+      + '</svg>';
+  }
   const sentences = body.split(/(?<=[.!?다요]\s)|\n+/).map((s) => s.trim()).filter(Boolean);
   const head = sentences.slice(0, 3).join(' ') || body.slice(0, 60);
   if (/개요\(목차\) 형식/.test(sys)) {

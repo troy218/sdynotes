@@ -25735,13 +25735,10 @@ function _eqBuildPop(){
   pop.querySelector('#mpEqPresets').addEventListener('click',e=>{
     const b=e.target.closest('[data-eqp]'); if(!b) return;
     const i=+b.dataset.eqp;
-    EQ.preset=i;
-    EQ_PRESETS[i][1].forEach((g,k)=>{ EQ.gains[k]=g; });
-    _eqSave(); eqApplyGains(); _eqPaintPop();
+    _eqSetPreset(i);
   });
   pop.querySelector('#mpEqSw').onclick=e=>{ e.stopPropagation(); _eqToggleOn(); };
-  pop.querySelector('#mpEqReset').onclick=e=>{ e.stopPropagation();
-    EQ.gains=EQ_FREQS.map(()=>0); EQ.preset=0; _eqSave(); eqApplyGains(); _eqPaintPop(); };
+  pop.querySelector('#mpEqReset').onclick=e=>{ e.stopPropagation(); _eqReset(); };
   return pop;
 }
 function _eqSave(){ try{ localStorage.setItem('mp_eq1',JSON.stringify(EQ)); }catch(e){} }
@@ -25761,53 +25758,175 @@ function _eqPaintPop(){
   const nm=pop.querySelector('#mpEqPName');
   if(nm) nm.textContent=!_eqBuilt?'연결 안 됨':EQ.on?(EQ.preset<0?'사용자 설정':EQ_PRESETS[EQ.preset][0]):'꺼짐';
 }
-async function _eqToggleOn(){
-  if(EQ.on){
-    EQ.on=false; eqApplyGains(); _eqSave(); _eqPaintPop();
-    toast('이퀄라이저 꺼짐 · 원음으로 들려드려요',1300);
-    return;
+
+function _eqFindPreset(nameOrIdx){
+  if(nameOrIdx == null) return -1;
+  if(typeof nameOrIdx === 'number'){
+    if(nameOrIdx >= 0 && nameOrIdx < EQ_PRESETS.length) return nameOrIdx;
+    return -1;
   }
-  const okk=await eqBuild();
+  const s = String(nameOrIdx).trim().toLowerCase().replace(/[\s\-_]/g, '');
+  if(!s) return -1;
+  const alias = {
+    '원음': 0, '플랫': 0, 'flat': 0, 'default': 0, '기본': 0, '초기화': 0, 'reset': 0, 'original': 0,
+    '베이스': 1, '베이스부스트': 1, '저음': 1, 'bass': 1, 'bassboost': 1, '저음강조': 1,
+    '보컬': 2, '보컬강조': 2, '목소리': 2, 'vocal': 2, 'vocalboost': 2,
+    '팝': 3, 'pop': 3,
+    '록': 4, '락': 4, 'rock': 4,
+    '힙합': 5, 'hiphop': 5, 'hip-hop': 5,
+    'r&b': 6, 'rnb': 6, '알앤비': 6, 'randb': 6,
+    '클래식': 7, 'classic': 7, 'classical': 7,
+    '재즈': 8, 'jazz': 8,
+    '일렉트로닉': 9, '일렉': 9, '전자음악': 9, 'electronic': 9, 'electro': 9
+  };
+  if(alias.hasOwnProperty(s)) return alias[s];
+  for(let i = 0; i < EQ_PRESETS.length; i++){
+    const pName = EQ_PRESETS[i][0].toLowerCase().replace(/[\s\-_]/g, '');
+    if(pName.indexOf(s) >= 0 || s.indexOf(pName) >= 0) return i;
+  }
+  return -1;
+}
+
+async function _eqTurnOn(){
+  if(EQ.on && _eqBuilt){
+    return true;
+  }
+  const okk = await eqBuild();
   if(!okk){
     _eqPaintPop();
-    const note=$('mpEqNote');
+    const note = $('mpEqNote');
     if(note){ note.textContent='외부 스트리밍 음원이나 이 브라우저에서는 이퀄라이저를 켤 수 없어요.'; note.classList.add('show'); }
-    return;
+    return false;
   }
-  const note=$('mpEqNote'); if(note) note.classList.remove('show');
-  if(_eqCtx&&_eqCtx.state==='suspended'){ try{ await _eqCtx.resume(); }catch(e){} }
-  EQ.on=true; eqApplyGains(); _eqSave(); _eqPaintPop();
-  toast('이퀄라이저 켜짐 · '+(EQ.preset>=0&&EQ_PRESETS[EQ.preset]?EQ_PRESETS[EQ.preset][0]:'사용자 설정'),1500);
+  const note = $('mpEqNote'); if(note) note.classList.remove('show');
+  if(_eqCtx && _eqCtx.state === 'suspended'){ try{ await _eqCtx.resume(); }catch(e){} }
+  EQ.on = true;
+  eqApplyGains();
+  _eqSave();
+  _eqPaintPop();
+  toast('이퀄라이저 켜짐 · ' + (EQ.preset >= 0 && EQ_PRESETS[EQ.preset] ? EQ_PRESETS[EQ.preset][0] : '사용자 설정'), 1500);
+  return true;
 }
+
+function _eqTurnOff(){
+  EQ.on = false;
+  eqApplyGains();
+  _eqSave();
+  _eqPaintPop();
+  toast('이퀄라이저 꺼짐 · 원음으로 들려드려요', 1300);
+  return true;
+}
+
+async function _eqToggleOn(){
+  if(EQ.on){
+    return _eqTurnOff();
+  }
+  return _eqTurnOn();
+}
+
+async function _eqSetPreset(nameOrIdx){
+  const idx = _eqFindPreset(nameOrIdx);
+  if(idx < 0) return false;
+  EQ.preset = idx;
+  EQ_PRESETS[idx][1].forEach((g, k) => { EQ.gains[k] = g; });
+  _eqSave();
+  if(!EQ.on || !_eqBuilt){
+    const okk = await eqBuild();
+    if(!okk){
+      _eqPaintPop();
+      const note = $('mpEqNote');
+      if(note){ note.textContent='외부 스트리밍 음원이나 이 브라우저에서는 이퀄라이저를 켤 수 없어요.'; note.classList.add('show'); }
+      return false;
+    }
+    const note = $('mpEqNote'); if(note) note.classList.remove('show');
+    if(_eqCtx && _eqCtx.state === 'suspended'){ try{ await _eqCtx.resume(); }catch(e){} }
+    EQ.on = true;
+  }
+  eqApplyGains();
+  _eqSave();
+  _eqPaintPop();
+  toast('이퀄라이저 · ' + EQ_PRESETS[idx][0], 1500);
+  return true;
+}
+
+function _eqReset(){
+  EQ.gains = EQ_FREQS.map(() => 0);
+  EQ.preset = 0;
+  _eqSave();
+  eqApplyGains();
+  _eqPaintPop();
+  toast('이퀄라이저 초기화 · 원음', 1300);
+  return true;
+}
+
+async function _eqOpenPop(){
+  const pop = _eqBuildPop();
+  if(!pop) return false;
+  pop.hidden = false;
+  requestAnimationFrame(() => pop.classList.add('show'));
+  _eqPaintPop();
+  if(EQ.on && !_eqBuilt && !_eqBusy){
+    _eqBusy = true;
+    try { await eqBuild(); } catch(err){}
+    if(!_eqBuilt) EQ.on = false;
+    _eqBusy = false;
+    _eqPaintPop();
+  }
+  eqViz();
+  return true;
+}
+
+function _eqClosePop(){
+  const pop = $('mpEqPop');
+  if(!pop || pop.hidden) return false;
+  pop.classList.remove('show');
+  setTimeout(() => { pop.hidden = true; }, 220);
+  return true;
+}
+
+function _eqGetState(){
+  return {
+    on: !!EQ.on,
+    preset: EQ.preset,
+    presetName: EQ.on ? (EQ.preset < 0 ? '사용자 설정' : (EQ_PRESETS[EQ.preset] ? EQ_PRESETS[EQ.preset][0] : '사용자 설정')) : '꺼짐',
+    gains: [...EQ.gains],
+    built: !!_eqBuilt
+  };
+}
+
+const sdyEqObj = {
+  on: _eqTurnOn,
+  off: _eqTurnOff,
+  toggle: _eqToggleOn,
+  preset: _eqSetPreset,
+  reset: _eqReset,
+  open: _eqOpenPop,
+  close: _eqClosePop,
+  state: _eqGetState,
+  findPreset: _eqFindPreset,
+  presets: EQ_PRESETS,
+  freqs: EQ_FREQS
+};
+window.sdyEq = sdyEqObj;
+
 // 팝오버 열고 닫기 — 이퀄라이저는 눌러야만 살짝 보인다
 (function(){
   const b=$('mpBEq'); if(!b) return;
   b.addEventListener('click',async e=>{
     e.stopPropagation();
-    const pop=_eqBuildPop(); if(!pop) return;
+    const pop=$('mpEqPop')||_eqBuildPop(); if(!pop) return;
     const willOpen=pop.hidden||!pop.classList.contains('show');
     if(willOpen){
-      pop.hidden=false;
-      requestAnimationFrame(()=>pop.classList.add('show'));
-      _eqPaintPop();
-      if(EQ.on&&!_eqBuilt&&!_eqBusy){                 // 저장된 켜짐 상태면 조용히 준비
-        _eqBusy=true;
-        try{ await eqBuild(); }catch(err){}
-        if(!_eqBuilt) EQ.on=false;
-        _eqBusy=false; _eqPaintPop();
-      }
-      eqViz();
+      _eqOpenPop();
     }else{
-      pop.classList.remove('show');
-      setTimeout(()=>{ pop.hidden=true; },220);
+      _eqClosePop();
     }
   });
   document.addEventListener('pointerdown',e=>{
     const pop=$('mpEqPop');
     if(!pop||pop.hidden) return;
     if(e.target.closest('#mpEqPop,#mpBEq')) return;
-    pop.classList.remove('show');
-    setTimeout(()=>{ pop.hidden=true; },220);
+    _eqClosePop();
   });
 })();
 // 자동재생 정책: 제스처 안에서만 그래프를 만든다 — 켜둔 상태라면 첫 재생 때 부활
@@ -25838,8 +25957,13 @@ function eqViz(){
   try{ ctx2=cv.getContext('2d'); }catch(e){}
   if(!ctx2) return;
   cancelAnimationFrame(_eqVizRaf);
-  let grad=ctx2.createLinearGradient(0,cv.height,0,0);
-  try{ grad.addColorStop(0,readAccent()); grad.addColorStop(1,'#8e5cf7'); }catch(e){}
+  let grad='#4f6ef7';
+  try{
+    if(typeof ctx2.createLinearGradient==='function'){
+      grad=ctx2.createLinearGradient(0,cv.height,0,0);
+      try{ grad.addColorStop(0,readAccent()); grad.addColorStop(1,'#8e5cf7'); }catch(e){}
+    }
+  }catch(e){}
   const N=64;
   if(!_eqEnv||_eqEnv.length!==N){
     _eqEnv=new Float32Array(N); _eqPeak=new Float32Array(N); _eqHold=new Float32Array(N);
@@ -25860,9 +25984,9 @@ function eqViz(){
         ctx2.fillRect(i*w+2,cv.height/2-h,w-4,h*2); }
       ctx2.globalAlpha=1; return;
     }
-    const binCount=_eqAnalyser.frequencyBinCount;
+    const binCount=_eqAnalyser.frequencyBinCount||1024;
     if(!_eqBuf||_eqBuf.length!==binCount){ _eqBuf=new Uint8Array(binCount); _eqFBuf=new Float32Array(binCount); }
-    _eqAnalyser.getByteFrequencyData(_eqBuf);
+    if(typeof _eqAnalyser.getByteFrequencyData==='function') _eqAnalyser.getByteFrequencyData(_eqBuf);
     for(let i=0;i<binCount;i++) _eqFBuf[i]=_eqBuf[i]/255;
     const sr=(_eqCtx&&_eqCtx.sampleRate)||44100;
     const nyq=Math.max(1000,sr/2);
@@ -28133,6 +28257,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                    // 14.26.0 · 해돌이 앱 실행용 — 일시정지·다음/이전 곡·볼륨·큰 화면 닫기
                    pause:()=>{ smoothPause(); }, next:()=>playNext(), prev:()=>playPrev(),
                    vol:v=>setVol(v), closeBig:()=>closeBig(),
+                   eq: sdyEqObj,
                    _state:()=>P};
 })();
 
@@ -31539,10 +31664,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!APP_PRE.test(q||'')) return null;
     return String(q).replace(APP_PRE,'').trim();
   };
-  // 앱 명사 — 노래·타이머·노트·발표·내보내기·찾기·창 열기 말투.
-  var APP_HINT=/(틀어|재생해|일시 ?정지|멈춰|정지해|다음 ?곡|이전 ?곡|노래|음악|BGM|랜덤 ?믹스|믹스로|플레이어|볼륨|소리 (키워|줄여|크게|작게)|타이머|스톱워치|스탑워치|집중 ?시계|시계 (열어|보여|틀어)|새 노트|노트를? (열어|닫아|만들어)|노트 (목록|열어|닫아|만들어)|다른 노트|발표(를| 모드| 시작| 해)|프레젠테이션|내보내|PDF로|피디에프|찾기 (열어|보여)|스티커|단어 ?카드|설정(을| 화면| 열어| 보여))/;
+  // 앱 명사 — 노래·타이머·노트·발표·내보내기·찾기·창 열기·이퀄라이저 말투.
+  var APP_HINT=/(틀어|재생해|일시 ?정지|멈춰|정지해|다음 ?곡|이전 ?곡|노래|음악|BGM|랜덤 ?믹스|믹스로|플레이어|볼륨|소리 (키워|줄여|크게|작게)|이퀄라이저|이큐|equalizer|\bEQ\b|베이스 ?부스트|보컬 ?강조|타이머|스톱워치|스탑워치|집중 ?시계|시계 (열어|보여|틀어)|새 노트|노트를? (열어|닫아|만들어)|노트 (목록|열어|닫아|만들어)|다른 노트|발표(를| 모드| 시작| 해)|프레젠테이션|내보내|PDF로|피디에프|찾기 (열어|보여)|스티커|단어 ?카드|설정(을| 화면| 열어| 보여))/;
   // 앱 동사 — 명사만 있고 이 동사가 없는데 문서 동사가 있으면 편집으로 둔다.
-  var APP_VERB=/(틀어|재생|멈춰|정지|일시정지|다음 ?곡|이전 ?곡|열어|보여|닫아|시작해|내보내|찾아|검색해|보여줘|켜줘|꺼줘|키워|줄여|맞춰|재줘)/;
+  var APP_VERB=/(틀어|재생|멈춰|정지|일시정지|다음 ?곡|이전 ?곡|열어|보여|닫아|시작해|내보내|찾아|검색해|보여줘|켜줘|꺼줘|켜|꺼|키워|줄여|맞춰|재줘|설정|바꿔|초기화|리셋)/;
   var APP_DOCVERB=/(만들|고치|바꾸|옮기|지우|삭제|추가|정리)/;
   /* 14.29.3 · 번역은 뜻이 둘이다.
        (가) "이 페이지(노트·문서)를 한국어로 바꿔 줘" → 노트에 있는 기능 그대로,
@@ -31681,6 +31806,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       lines.push('노래 목록 '+list.length+'곡: '+(songs.join(' / ')||'없음'));
     }catch(e){}
     try{
+      var eqSt=null;
+      if(window.sdyEq&&typeof window.sdyEq.state==='function') eqSt=window.sdyEq.state();
+      else if(window.sdyMusic&&window.sdyMusic.eq&&typeof window.sdyMusic.eq.state==='function') eqSt=window.sdyMusic.eq.state();
+      if(eqSt){
+        lines.push('이퀄라이저: '+(eqSt.on?'켜짐':'꺼짐')+' · 프리셋: '+(eqSt.presetName||'원음'));
+      }
+    }catch(e){}
+    try{
       var st=(window.sdyTimerState&&window.sdyTimerState())||null;
       if(st) lines.push('집중 화면: '+(st.open?'열림':'닫힘')+' · 모드 '+st.mode
         +(st.run?(' · 타이머 실행 중(약 '+Math.max(1,Math.round(st.left/60000))+'분 남음)'):''));
@@ -31689,7 +31822,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   window.sdyAiAppSnapshot=function(){ try{ return appCapture(); }catch(e){ return ''; } };
   function appProgress(acc){
-    var count=(String(acc||'').match(/^\s*@(music|note|timer|clock|sw|present|export|find|stickers|cards|settings)\b/gmi)||[]).length;
+    var count=(String(acc||'').match(/^\s*@(music|note|timer|clock|sw|present|export|find|translate|stickers|cards|settings|eq)\b/gmi)||[]).length;
     return count?('앱 실행안을 만드는 중… · 동작 '+count+'개'):'앱 상태를 살펴보는 중…';
   }
   // 앱 실행 마무리 — editApplyDone과 같은 모양. 음악 재생은 자동재생 확인을
@@ -31889,9 +32022,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       function cubic(x1,y1,x2,y2,x,y){
         ensureCur();
-        var dist=Math.abs(x-cx)+Math.abs(y-cy)+Math.abs(x1-cx)+Math.abs(y1-cy)+Math.abs(x2-x)+Math.abs(y2-y);
-        // 14.31.0 · 촘촘하게 샘플링 — 5px 간격은 곡선이 꺾은선처럼 보였다.
-        var n=Math.max(8,Math.min(72,Math.ceil(dist/3)));
+        var dist=Math.hypot(x1-cx,y1-cy)+Math.hypot(x2-x1,y2-y1)+Math.hypot(x-x2,y-y2);
+        // 부드럽고 유기적인 손그림 곡선을 위해 촘촘하고 매끄럽게 샘플링
+        var n=Math.max(10,Math.min(120,Math.ceil(dist/2)));
         for(var k=1;k<=n;k++){
           var t=k/n, it=1-t;
           var a=it*it*it, b=3*it*it*t, c=3*it*t*t, dd=t*t*t;
@@ -31901,8 +32034,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       function quad(x1,y1,x,y){
         ensureCur();
-        var dist=Math.abs(x-cx)+Math.abs(y-cy)+Math.abs(x1-cx)+Math.abs(y1-cy);
-        var n=Math.max(6,Math.min(56,Math.ceil(dist/3)));
+        var dist=Math.hypot(x1-cx,y1-cy)+Math.hypot(x-x1,y-y1);
+        var n=Math.max(8,Math.min(80,Math.ceil(dist/2)));
         for(var k=1;k<=n;k++){
           var t=k/n,it=1-t;
           cur.push([Math.round((it*it*cx+2*it*t*x1+t*t*x)*10)/10,Math.round((it*it*cy+2*it*t*y1+t*t*y)*10)/10]);
@@ -31936,7 +32069,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         var dth=ang((xp-cxp)/rx0,(yp-cyp)/ry0,(-xp-cxp)/rx0,(-yp-cyp)/ry0);
         if(!sweep&&dth>0) dth-=2*Math.PI;
         if(sweep&&dth<0) dth+=2*Math.PI;
-        var seg=Math.ceil(Math.abs(dth)/(Math.PI/36));
+        var seg=Math.max(8,Math.ceil(Math.abs(dth)/(Math.PI/48)));
         for(var k=1;k<=seg;k++){
           var t=th1+dth*k/seg;
           var px=cp*rx0*Math.cos(t)-sp*ry0*Math.sin(t)+cxr;
@@ -31986,6 +32119,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                 if(prev==='C'||prev==='S'){ dx1=cx-px2; dy1=cy-py2; }
                 else { dx1=0; dy1=0; }
                 cubic(cx+dx1,cy+dy1,cx2,cy2,ex,ey);
+                prev='S';
               }
             }else if(cmd==='Q'){
               while(i<toks.length&&typeof toks[i]==='number'){
@@ -32002,6 +32136,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                 if(prev==='Q'||prev==='T'){ rx1=cx+(cx-px2); ry1=cy+(cy-py2); }
                 else { rx1=cx; ry1=cy; }
                 quad(rx1,ry1,x,y);
+                prev='T';
               }
             }else if(cmd==='A'){
               while(i<toks.length&&typeof toks[i]==='number'){
@@ -32043,7 +32178,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
           var rry=parseFloat(tag==='circle'?el.getAttribute('r'):el.getAttribute('ry'))||rrx;
           if(rrx>0&&rry>0){
             var pts2=[];
-            for(var w2=0;w2<64;w2++){ var ang2=w2/64*Math.PI*2; pts2.push([cxx+rrx*Math.cos(ang2),cyy+rry*Math.sin(ang2)]); }
+            for(var w2=0;w2<=64;w2++){ var ang2=w2/64*Math.PI*2; pts2.push([cxx+rrx*Math.cos(ang2),cyy+rry*Math.sin(ang2)]); }
             pushPts(pts2,info.color,info.size,true);
           }
         }
@@ -32071,10 +32206,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
           var d4=Math.hypot(at[0]-bt[0],at[1]-bt[1]);   // A시작-B시작
           var bestD=Math.min(d1,d2,d3,d4);
           if(bestD<=eps){
-            if(bestD===d1) best={pts:A.pts.concat(B.pts),closed:A.closed||B.closed};
-            else if(bestD===d2) best={pts:B.pts.concat(A.pts),closed:A.closed||B.closed};
-            else if(bestD===d3) best={pts:A.pts.concat(B.pts.slice().reverse()),closed:A.closed||B.closed};
-            else best={pts:B.pts.concat(A.pts.slice().reverse()),closed:A.closed||B.closed};
+            if(bestD===d1) best={pts:A.pts.concat(B.pts.slice(1)),closed:A.closed||B.closed};
+            else if(bestD===d2) best={pts:B.pts.concat(A.pts.slice(1)),closed:A.closed||B.closed};
+            else if(bestD===d3) best={pts:A.pts.concat(B.pts.slice().reverse().slice(1)),closed:A.closed||B.closed};
+            else best={pts:B.pts.concat(A.pts.slice().reverse().slice(1)),closed:A.closed||B.closed};
             polylines[a]=best;
             polylines.splice(b,1);
             joined=true;
@@ -32402,7 +32537,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     src.split('\n').forEach(function(line){
       var t=String(line||'').trim();
       if(!t) return;
-      var m=/^@([a-z]+)\s*([\s\S]*)$/i.exec(t);
+      var m=/^@([a-z가-힣]+)\s*([\s\S]*)$/i.exec(t);
       if(!m){ dropped++; return; }
       var cmd=m[1].toLowerCase(), rest=String(m[2]||'').trim();
       if(cmd==='done'){ if(!say) say=decode(rest).slice(0,300); return; }
@@ -32417,6 +32552,45 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         }
         if(act==='mix'){ var n=v?number(v,1,200):20; if(n==null){ dropped++; return; } ops.push({cmd:'music',act:'mix',n:n}); return; }
         if(act==='vol'||act==='volume'){ var vv=number(v,0,100); if(vv==null){ dropped++; return; } ops.push({cmd:'music',act:'vol',v:vv}); return; }
+        if(act==='eq'||act==='equalizer'||act==='이퀄라이저'||act==='이큐'||/^(?:eq|equalizer|이퀄라이저|이큐)\b/i.test(act)){
+          var sub=act.replace(/^(?:eq|equalizer|이퀄라이저|이큐)\s*/i,'').trim();
+          var eqf=cutN(v||sub,1);
+          var eqAct=String(eqf.cuts.length?eqf.cuts[0]:(eqf.rest||sub)).toLowerCase().trim();
+          var eqV=eqf.cuts.length?decode(eqf.rest):'';
+          if(eqAct==='on'||eqAct==='켜기'||eqAct==='켜'||eqAct==='켜줘'){ ops.push({cmd:'eq',act:'on'}); return; }
+          if(eqAct==='off'||eqAct==='끄기'||eqAct==='꺼'||eqAct==='꺼줘'){ ops.push({cmd:'eq',act:'off'}); return; }
+          if(eqAct==='toggle'||eqAct==='토글'){ ops.push({cmd:'eq',act:'toggle'}); return; }
+          if(eqAct==='reset'||eqAct==='초기화'||eqAct==='리셋'||eqAct==='원음'){ ops.push({cmd:'eq',act:'reset'}); return; }
+          if(eqAct==='open'||eqAct==='show'||eqAct==='pop'||eqAct==='열기'||eqAct==='열어'||eqAct==='열어줘'||eqAct==='보여줘'){ ops.push({cmd:'eq',act:'open'}); return; }
+          if(eqAct==='close'||eqAct==='hide'||eqAct==='닫기'||eqAct==='닫아'||eqAct==='닫아줘'){ ops.push({cmd:'eq',act:'close'}); return; }
+          if(eqAct==='preset'||eqAct==='프리셋'){
+            if(!eqV){ dropped++; return; }
+            ops.push({cmd:'eq',act:'preset',preset:eqV.slice(0,50)}); return;
+          }
+          if(eqV||sub){ ops.push({cmd:'eq',act:'preset',preset:(eqV||sub).slice(0,50)}); return; }
+          ops.push({cmd:'eq',act:'open'}); return;
+        }
+        dropped++; return;
+      }
+      if(cmd==='eq'||cmd==='equalizer'||cmd==='이퀄라이저'||cmd==='이큐'){
+        var ef=cutN(rest,1);
+        var eact=String(ef.cuts.length?ef.cuts[0]:ef.rest).toLowerCase().trim();
+        var ev=ef.cuts.length?decode(ef.rest):'';
+        if(eact==='on'||eact==='켜기'||eact==='켜'||eact==='켜줘'){ ops.push({cmd:'eq',act:'on'}); return; }
+        if(eact==='off'||eact==='끄기'||eact==='꺼'||eact==='꺼줘'){ ops.push({cmd:'eq',act:'off'}); return; }
+        if(eact==='toggle'||eact==='토글'){ ops.push({cmd:'eq',act:'toggle'}); return; }
+        if(eact==='reset'||eact==='초기화'||eact==='리셋'||eact==='원음'){ ops.push({cmd:'eq',act:'reset'}); return; }
+        if(eact==='open'||eact==='show'||eact==='pop'||eact==='열기'||eact==='열어'||eact==='열어줘'||eact==='보여줘'){ ops.push({cmd:'eq',act:'open'}); return; }
+        if(eact==='close'||eact==='hide'||eact==='닫기'||eact==='닫아'||eact==='닫아줘'){ ops.push({cmd:'eq',act:'close'}); return; }
+        if(eact==='preset'||eact==='프리셋'||eact==='set'||eact==='설정'){
+          var pName = ev || eact;
+          if(!pName){ dropped++; return; }
+          ops.push({cmd:'eq',act:'preset',preset:pName.slice(0,50)}); return;
+        }
+        var directPreset=String(rest||'').trim();
+        if(directPreset){
+          ops.push({cmd:'eq',act:'preset',preset:directPreset.slice(0,50)}); return;
+        }
         dropped++; return;
       }
       if(cmd==='note'){
@@ -32520,6 +32694,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     (ops||[]).forEach(function(op){
       chain=chain.then(function(){
         if(op.cmd==='music') return musicOp(op);
+        if(op.cmd==='eq') return eqOp(op);
         if(op.cmd==='note') return noteOp(op);
         if(op.cmd==='timer') return timerOp(op);
         if(op.cmd==='clock'){ var f=needFn('openFocusClock'); if(!f){ bad('시계 화면을 열지 못했어요'); return; } f('clock'); ok(); return; }
@@ -32597,6 +32772,52 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         ok(); return;
       }
       bad('알 수 없는 음악 동작이에요');
+    }
+    function eqOp(op){
+      var eq=null;
+      try{
+        if(typeof window!=='undefined'&&window.sdyEq&&typeof window.sdyEq==='object') eq=window.sdyEq;
+        else if(typeof window!=='undefined'&&window.sdyMusic&&window.sdyMusic.eq) eq=window.sdyMusic.eq;
+      }catch(e){ eq=null; }
+      if(!eq){ bad('이퀄라이저 준비가 안 됐어요'); return Promise.resolve(); }
+      if(op.act==='on'){
+        return Promise.resolve().then(function(){ return eq.on(); }).then(function(res){
+          if(res===false){ bad('이 브라우저나 음원에서는 이퀄라이저를 켤 수 없어요'); return; }
+          ok();
+        },function(){ bad('이퀄라이저를 켜지 못했어요'); });
+      }
+      if(op.act==='off'){
+        try{ eq.off(); ok(); }catch(e){ bad('이퀄라이저를 끄지 못했어요'); }
+        return Promise.resolve();
+      }
+      if(op.act==='toggle'){
+        return Promise.resolve().then(function(){ return eq.toggle(); }).then(function(res){
+          if(res===false){ bad('이 브라우저나 음원에서는 이퀄라이저를 켤 수 없어요'); return; }
+          ok();
+        },function(){ bad('이퀄라이저를 전환하지 못했어요'); });
+      }
+      if(op.act==='reset'){
+        try{ eq.reset(); ok(); }catch(e){ bad('이퀄라이저를 초기화하지 못했어요'); }
+        return Promise.resolve();
+      }
+      if(op.act==='open'||op.act==='show'){
+        return Promise.resolve().then(function(){ return eq.open(); }).then(function(res){
+          if(res===false){ bad('이퀄라이저 창을 열지 못했어요'); return; }
+          ok();
+        },function(){ bad('이퀄라이저 창을 열지 못했어요'); });
+      }
+      if(op.act==='close'||op.act==='hide'){
+        try{ eq.close(); ok(); }catch(e){ bad('이퀄라이저 창을 닫지 못했어요'); }
+        return Promise.resolve();
+      }
+      if(op.act==='preset'){
+        return Promise.resolve().then(function(){ return eq.preset(op.preset); }).then(function(res){
+          if(res===false){ bad('‘'+op.preset+'’ 프리셋을 찾을 수 없거나 켤 수 없어요'); return; }
+          ok();
+        },function(){ bad('이퀄라이저 프리셋을 변경하지 못했어요'); });
+      }
+      bad('알 수 없는 이퀄라이저 동작이에요');
+      return Promise.resolve();
     }
     function noteOp(op){
       if(op.act==='new'){

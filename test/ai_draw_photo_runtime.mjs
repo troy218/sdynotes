@@ -223,6 +223,16 @@ try {
   const parsed = window.sdyAiDrawParse(SAMPLE_SVG);
   check('SVG 선화를 펜 획으로 바꾼다', parsed.ok && parsed.ops.length === 1 && parsed.strokes > 0,
     JSON.stringify({ ok: parsed.ok, strokes: parsed.strokes }));
+
+  // 유기적인 자유 곡선(3차 베지어 C·S·Q) 파싱 및 부드러운 샘플링 검증
+  const organicSvg = '<svg viewBox="0 0 480 360" xmlns="http://www.w3.org/2000/svg">'
+    + '<path fill="none" stroke="#1a1a1a" stroke-width="3" d="M 50 150 C 90 80 140 220 200 150 S 290 80 340 160 Q 390 240 440 150"/>'
+    + '</svg>';
+  const parsedOrganic = window.sdyAiDrawParse(organicSvg);
+  check('자유 곡선(C·S·Q)이 부드럽고 촘촘하게 샘플링된다',
+    parsedOrganic.ok && parsedOrganic.strokes === 1 && parsedOrganic.ops[0].strokes[0].pts.length >= 30,
+    JSON.stringify({ ptsCount: parsedOrganic.ops[0]?.strokes[0]?.pts?.length }));
+
   const before = boxesOf(window.__sdyAiBridge.capture().text, '그림획').length;
   const drawRes = window.__sdyAiBridge.apply(parsed.ops);
   await wait(200);
