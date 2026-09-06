@@ -1367,7 +1367,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 for(let i=s0;i<Math.min(n,s0+LAZY_SLICE);i++){
                     const pg=doc.pages[i];
                     if(!pg||pg.__lazy!=null){ incomplete=true; break; }
-                    chunk.push({id:pg.id, els:sanitizePageEls(pg.els||[]), tables:pg.tables||[], notes:pg.notes||[]});
+                    chunk.push({id:pg.id, els:sanitizePageEls(pg.els||[]), tables:pg.tables||[], notes:pg.notes||[],
+                                ...(pg.edited?{edited:1}:{})});
                 }
                 if(incomplete||!chunk.length) continue;
                 let ok=false;
@@ -1444,6 +1445,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                         tables:Array.isArray(pg.tables)?pg.tables.slice():[],
                         notes:Array.isArray(pg.notes)?pg.notes.slice():[]};
                     copy.__dirty=1;
+                    if(pg.edited) copy.edited=1;
                     return copy;
                 }
                 return {id:(pg&&pg.id)||('lazy_'+i),els:[],tables:[],__lazy:1};
@@ -6284,16 +6286,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         paper.dataset.pageIdx=i;
         paper.style.width=size.w+'px';
         paper.style.height=size.h+'px';
-        paper.innerHTML=`<div class="layer layer-img"></div>
+        paper.innerHTML=`<div class="layer layer-preview"></div>
+                         <div class="layer layer-img"></div>
                          <svg class="stroke-svg layer-stroke" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none"></svg>
                          <div class="layer layer-text"></div>
                          <div class="layer find-layer"></div>
                          <div class="layer layer-tbl"></div>
                          <div class="draw-surface"></div>`;
+        // 20.0 · 읽기 우선(어크로뱃 방식): 가져온 문서는 편집 DOM 을 만들기 전에
+        //   쪽 그림 한 장을 먼저 띄운다. 종이가 올라오는 즉시 내용이 보인다.
+        try{ mountPagePreview(paper,i); }catch(e){}
         // 메모 모드는 pointer 캡처 단계에서 먼저 받는다. 텍스트 상자·이미지
         // 위에서도 자식 선택/드래그 이벤트에 빼앗기지 않고 그 지점에 붙는다.
         const onPaperPlacementDown=e=>{
             if(e.button===2) return;   // 18.8 · 우클릭은 배치/메모 모드를 건드리지 않는다
+            try{ activatePage(i); }catch(_e){}   // 20.0 · 누른 쪽은 편집 상태로
             // 요소 배치 모드(그림·수식)도 캡처 단계에서 받는다 — 자식 요소가
             // 이벤트를 가로채도 누른 바로 그 지점(pageLocal 문서 좌표)에 놓인다.
             if(placeMode){
@@ -6349,6 +6356,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         mountedShells.set(i,wrap);
         positionPageWrap(wrap,i);
         stage.appendChild(wrap);
+        // 20.0 · 편집 도구가 켜져 있거나 이미 깨운 쪽이면, 새로 올라온 종이도
+        //   곧바로 편집 상태로 만든다(펜을 든 채 스크롤해도 빈 종이가 없다).
+        try{ if(activatedPages.has(i)||editingModeOn()) activatePage(i); }catch(e){}
         return wrap.querySelector('.paper');
     }
 
@@ -6409,6 +6419,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         clearTimeout(_nbrTimer); _nbrTimer=null;
         renderedPages.clear();
         mountedShells.clear();
+        // 20.0 · 노트를 바꾸면 읽기/편집 상태도 새 문서 기준으로 초기화한다.
+        activatedPages.clear(); _pvFailed.clear(); _pvUnsupported=false;
         for(const _k in _renderedAt) delete _renderedAt[_k];   // 18.13 · 노트 전환 시 유예 시각 초기화
         _tblGridDone=new Set();   // 표 격자선은 쪽을 그릴 때 다시 확인한다
         _shellWin={first:0,last:-1};
@@ -6482,6 +6494,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         clearPageEls(i);
         renderedPages.delete(i);
         delete _renderedAt[i];
+        // 20.0 · 요소를 회수해도 '한 번 건드린 쪽'은 편집 상태로 남긴다.
+        //   그림으로 되돌리면 그 쪽에 한 편집이 원본 그림에 가려질 수 있다.
+        //   (활성화는 클릭·도구 사용으로만 일어나므로 수가 늘지 않는다.
+        //    회수된 요소는 다시 보일 때 renderPageEls 로 그려진다.)
         return true;
     }
 
@@ -6503,7 +6519,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // 14.30.0 · 현재 쪽(지금 보이는 종이)을 먼저 그린다. 이웃 쪽은 짧은
             //   지연 뒤에 채워 스크롤을 멈춘 첫 프레임이 현재 쪽에만 집중되게
             //   한다. (무거운 이웃 쪽을 동시에 그리면 저사양 기기에서 버벅임)
-            if(!renderedPages.has(center)) try{ renderPageEls(center); }catch(e){}
+            // 20.0 · 읽기 중인 쪽은 그림만으로 충분하다 — 편집 DOM 은 만들지
+            //   않는다. 편집 도구가 켜져 있거나 이미 깨운 쪽만 요소를 그린다.
+            const needEls=i=>!previewCapable()||_pvFailed.has(i)||pageEdited(i)
+                              ||activatedPages.has(i)||editingModeOn();
+            if(needEls(center)){
+                if(editingModeOn()) activatedPages.add(center);
+                if(!renderedPages.has(center)) try{ renderPageEls(center); }catch(e){}
+            }
+            if(!needEls(center)) return;   // 이웃 쪽 예열도 필요 없다
             if(!_nbrTimer){
                 const gap=sdyLowEnd()?320:110;
                 _nbrTimer=setTimeout(()=>{
@@ -6514,7 +6538,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                         const c=Math.max(0,Math.min(doc.pages.length-1,(curPageIdx|0)));
                         for(let d=1;d<=VIRTUAL_RENDER_RADIUS;d++){
                             [c-d,c+d].forEach(i=>{
-                                if(i>=0&&i<doc.pages.length&&!renderedPages.has(i))
+                                if(i<0||i>=doc.pages.length) return;
+                                if(!needEls(i)) return;      // 읽기 쪽은 그림만
+                                if(!renderedPages.has(i))
                                     try{ renderPageEls(i); }catch(e){}
                             });
                         }
@@ -6673,6 +6699,118 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             });
         }catch(e){}
     }
+    // ============ 읽기 우선 레이어 (20.0 · '어크로뱃처럼') ============
+    // 논문 한 쪽은 글상자 수백 개 + 단어 span 수천 개다. 예전에는 그 DOM 을 다
+    // 만들어야 비로소 글자가 보였고, 그 비용이 곧 '여는 데 오래 걸림 / 스크롤이
+    // 안 됨'이었다. 쪽 수를 줄이는 가상화로는 잡히지 않는, 쪽 '안'의 비용이다.
+    //
+    // 그래서 순서를 뒤집는다.
+    //   ① 종이가 올라오면 서버가 구운 쪽 그림(<img> 하나)을 즉시 붙인다  → 읽기
+    //   ② 사용자가 그 쪽을 실제로 건드릴 때만 편집 요소 DOM 을 만든다   → 편집
+    // 읽는 동안 쪽당 DOM 은 노드 한 개라 500쪽이든 스크롤이 손끝을 따라온다.
+    //
+    // 규칙
+    //   · 문서 데이터(doc.pages)는 전혀 건드리지 않는다. 저장·동기화·내보내기·
+    //     AI·찾기는 예전 그대로 전 쪽 데이터를 쓴다.
+    //   · 그림을 못 받는 문서(가져오기가 아닌 노트, 원본이 지워진 문서)는
+    //     자동으로 예전 경로(요소 렌더)로 되돌아간다 — 기능 손실이 없다.
+    const activatedPages=new Set();   // 편집 DOM 까지 올린 쪽
+    const _pvFailed=new Set();        // 그림을 못 받은 쪽 → 요소 렌더로 폴백
+    let _pvUnsupported=false;         // 이 문서는 미리보기 자체가 없다
+
+    // 이 문서가 쪽 그림을 쓸 수 있는가 (서버에 원본이 남아 있는 가져온 문서)
+    function previewCapable(){
+        return !!(doc&&doc.__ref&&!_pvUnsupported&&!S.noPagePreview);
+    }
+    function previewWidth(){
+        // 현재 배율에서 필요한 실제 픽셀 폭 (서버가 단계로 스냅한다)
+        const w=paperSize().w*Math.max(1,pageScale)*(window.devicePixelRatio||1);
+        return w>1200?1600:900;
+    }
+    function previewURL(pi){
+        return '/api/import/page/'+encodeURIComponent(doc.__ref)+'/'+pi
+              +'?w='+previewWidth();
+    }
+    // 종이에 쪽 그림을 붙인다 (이미 편집 DOM 을 올린 쪽은 건드리지 않는다)
+    function mountPagePreview(paper,pi){
+        if(!paper||!previewCapable()) return false;
+        if(activatedPages.has(pi)||_pvFailed.has(pi)) return false;
+        if(pageEdited(pi)) return false;      // 편집된 쪽은 원본 그림을 쓰지 않는다
+        const layer=paper.querySelector('.layer-preview');
+        if(!layer||layer.firstChild) return false;
+        const img=document.createElement('img');
+        img.className='page-preview-img';
+        img.decoding='async';
+        img.loading='eager';
+        img.alt='';
+        img.draggable=false;
+        img.onerror=()=>{
+            // 원본이 없는 문서(또는 옛 서버)면 예전 경로로 조용히 되돌아간다.
+            _pvFailed.add(pi);
+            if(_pvFailed.size>=3) _pvUnsupported=true;
+            try{ layer.innerHTML=''; }catch(e){}
+            paper.classList.remove('preview-on');
+            try{ if(!renderedPages.has(pi)) renderPageEls(pi); }catch(e){}
+        };
+        img.src=previewURL(pi);
+        layer.appendChild(img);
+        paper.classList.add('preview-on');
+        return true;
+    }
+    // 이 쪽을 '편집 가능' 상태로 올린다 — 실제로 건드린 쪽에서만 부른다.
+    function activatePage(pi,opts){
+        pi=+pi;
+        if(!doc||!doc.pages||!doc.pages[pi]) return false;
+        if(activatedPages.has(pi)) return true;
+        activatedPages.add(pi);
+        const paper=paperAt(pi);
+        if(paper) paper.classList.add('page-active');
+        // 요소 DOM 을 그린 뒤에 그림을 걷어야 '깜빡임'이 없다 (renderPageEls 의
+        // finish() 가 걷는다). 아직 그려지지 않았으면 여기서 시작한다.
+        if(!renderedPages.has(pi)){ try{ renderPageEls(pi); }catch(e){} }
+        else dropPagePreview(pi);
+        if(opts&&opts.quiet!==true){ /* 확장 지점 */ }
+        return true;
+    }
+    function dropPagePreview(pi){
+        const layer=paperQ(pi,'.layer-preview');
+        if(layer&&layer.firstChild) layer.innerHTML='';
+        const paper=paperAt(pi);
+        if(paper) paper.classList.remove('preview-on');
+    }
+    // 편집 모드(펜·글상자·메모·배치·표)나 찾기·단어분석처럼 요소가 반드시
+    // 있어야 하는 상황에서는 보이는 쪽을 통째로 깨운다.
+    function activateVisiblePages(){
+        if(!doc||!doc.pages) return;
+        const vis=visiblePageRange();
+        for(let i=vis.first;i<=vis.last;i++) activatePage(i);
+    }
+    // 편집 도구가 켜져 있으면 새로 올라오는 쪽도 바로 편집 상태여야 한다.
+    function editingModeOn(){
+        try{
+            return !!(penActive||eraserActive||textToolActive||pinMode
+                      ||placeMode||tablePlace||findOpen||wfOn);
+        }catch(e){ return false; }
+    }
+    // 20.0 · 이 쪽은 원본 PDF 와 더 이상 같지 않다(편집·번역됨) → 쪽 그림을
+    //   쓰면 안 된다. 표시는 문서 데이터에 남아 저장·재열람까지 이어진다.
+    function markPageEdited(pi){
+        pi=+pi;
+        const pg=doc&&doc.pages&&doc.pages[pi];
+        if(!pg) return;
+        pg.__dirty=true;
+        if(!pg.edited){
+            pg.edited=1;
+            // 그림을 보고 있던 중이라면 즉시 진짜 요소로 교체한다.
+            try{ if(!activatedPages.has(pi)) activatePage(pi); }catch(e){}
+        }
+    }
+    function pageEdited(pi){
+        const pg=doc&&doc.pages&&doc.pages[pi];
+        return !!(pg&&(pg.edited||pg.__dirty));
+    }
+    try{ window.sdyActivatePage=activatePage; }catch(e){}
+
     function renderPageEls(idx){
         // 아직 안 가져온 슬라이스면 로드 후 렌더 (한 번에 다 열지 않는다)
         const pgz=doc&&doc.pages[idx];
@@ -6726,6 +6864,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const finish=()=>{
             // 14.12 · finish 도 renderVersion 검증을 통과해야 실행
             if(window._renderVersion !== (doc&&doc.__rv)) return;
+            // 20.0 · 요소가 다 올라온 뒤에 쪽 그림을 걷는다(깜빡임 없이 교대).
+            try{ if(activatedPages.has(idx)) dropPagePreview(idx); }catch(e){}
             try{ renderTblDivs(idx); }catch(e){}
             try{ renderPins(idx); }catch(e){}
             try{ if(findOpen) paintFindHits(); }catch(e){}
@@ -8567,7 +8707,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(doc&&doc.__rv!=null&&w._sdyRv!=null&&doc.__rv!==w._sdyRv) return;
         try{
             if(doc&&w&&w.dataset.pageIdx!=null&&doc.pages[+w.dataset.pageIdx])
-                doc.pages[+w.dataset.pageIdx].__dirty=true;   // 편집분: 에빅션 금지
+                markPageEdited(+w.dataset.pageIdx);   // 편집분: 에빅션 금지 + 원본 그림 해제
         }catch(e){}
         const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
         const c=w.querySelector('.tb-content');
@@ -8808,7 +8948,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             el.html=imathCollapse(stripWF(c.innerHTML)); el.fontSize=parseInt(c.style.fontSize)||16;
             // 14.6 · 커밋된 편집분도 dirty 로 표시 → 가져온 문서(서버 보관본)에서
             //  나가기 직전 커밋된 글자가 슬라이스 저장에서 빠져 유실되지 않는다.
-            try{ if(doc&&doc.pages[+w.dataset.pageIdx]) doc.pages[+w.dataset.pageIdx].__dirty=true; }catch(e){}
+            try{ markPageEdited(+w.dataset.pageIdx); }catch(e){}
             // 빈 상자도 남겨둔다 (연한 점선 + 안내 문구로 위치 표시)
             const plain=String((c.innerText!=null?c.innerText:c.textContent)||'');
             const isEmpty=!plain.trim()&&!c.querySelector('img');
@@ -9429,6 +9569,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!tablePlace && (Date.now()<_pinPointerBlockUntil||Date.now()<_textPointerBlockUntil)){
             e.preventDefault(); e.stopPropagation(); return;
         }
+        // 20.0 · 이 쪽을 실제로 건드렸다 → 지금부터 편집 가능 상태로 깨운다.
+        //   (읽기만 할 때는 쪽 그림 한 장이라 스크롤이 가볍다)
+        try{ activatePage(pageIdx); }catch(_e){}
         if(penActive) return;   // 그리기 모드는 draw-surface가 처리
         curPageIdx=pageIdx; updatePageInfo();
         const t=e.target;
@@ -10618,6 +10761,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function openFind(){
         if(!doc) return;
         findOpen=true;
+        // 20.0 · 찾기는 글자 DOM 위에 하이라이트를 칠한다 → 보이는 쪽을 깨운다.
+        try{ activateVisiblePages(); }catch(_e){}
         document.getElementById('findBar').classList.add('show');
         const i=document.getElementById('findInput');
         i.focus(); i.select();
@@ -13109,6 +13254,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     let pinMode=false, curPin=null, _pinPointerBlockUntil=0;
     function togglePinMode(){
         pinMode=!pinMode;
+        if(pinMode) try{ activateVisiblePages(); }catch(_e){}   // 20.0
         if(pinMode) cancelPlaceMode();
         document.body.classList.toggle('pin-mode',pinMode);
         document.querySelectorAll('.js-pin').forEach(b=>b.classList.toggle('active',pinMode));
@@ -13473,6 +13619,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     function wfPaint(){
         if(!doc||!wfMap) return;
+        try{ activateVisiblePages(); }catch(_e){}   // 20.0 · 색칠은 글자 DOM 이 필요하다
         // 500쪽을 전부 훑지 않는다 — 지금 화면에 올라와 있는 쪽만 칠하고,
         // 나머지는 그 쪽이 다시 그려질 때(renderPageEls) 자동으로 칠해진다.
         Array.from(mountedShells.keys()).forEach(pi=>wfPaintPage(pi));
@@ -13786,6 +13933,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function toggleTextTool(){ setTextTool(!textToolActive); }
     function setTextTool(on){
         textToolActive=!!on;
+        if(on) try{ activateVisiblePages(); }catch(_e){}   // 20.0
         if(on&&tablePlace) cancelTablePlacement();
         if(on) cancelPlaceMode();
         if(on&&penActive) finishDrawing();
@@ -14164,6 +14312,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         cancelPlaceMode();
         deselectAll();
         penActive=true; eraserActive=false; drawing=false; markerMode=!!asMarker;
+        try{ activateVisiblePages(); }catch(_e){}   // 20.0 · 펜을 들면 보이는 쪽을 편집 상태로
         const er=document.getElementById('eraserBtn'); if(er) er.classList.remove('active');
         const bar=document.getElementById('drawToolbar'); if(bar) bar.style.display='flex';
         editorPapers().forEach(p=>p.classList.add('drawing'));
@@ -16372,7 +16521,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         el.fontSize=fs;
         delete el.textColor; delete el.cellBg; delete el.font;
         delete el.fontWeight; delete el.fontStyle; delete el.textDecoration;
-        try{ if(doc&&doc.pages[+w.dataset.pageIdx]) doc.pages[+w.dataset.pageIdx].__dirty=true; }catch(e){}
+        try{ markPageEdited(+w.dataset.pageIdx); }catch(e){}
         syncTextEl(w);
     }
 
@@ -17651,7 +17800,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!out||!String(out).trim()) return false;
         o.el.tight=0; o.el.fit=0; delete o.el.fitDown;
         o.el.html=esc(out).replace(/\n/g,'<br>');
-        if(doc.pages[o.pi]) doc.pages[o.pi].__dirty=true;
+        try{ markPageEdited(o.pi); }catch(e){}
         try{
             syncState();
             const rev=Date.now()+Math.random();
@@ -19360,7 +19509,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         });
         if(res.applied>0){
             touched.forEach(pi=>{
-                try{ doc.pages[pi].__dirty=true; }catch(e){}
+                try{ markPageEdited(pi); }catch(e){}
                 try{ if(renderedPages.has(pi)) renderPageEls(pi); }catch(e){}
             });
             // @goto·@title은 화면·노트 이름만 건드린다 — 문서 저장은 실제 변경 때만.

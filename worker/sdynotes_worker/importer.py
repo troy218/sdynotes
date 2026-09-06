@@ -4651,6 +4651,85 @@ def _render_hi_bg(src, pno):
         doc.close()
 
 
+# ============ 쪽 미리보기(래스터) — '어크로뱃처럼 즉시 보이기' ============
+# 논문 한 쪽은 글상자 수백 개 + 단어 span 수천 개다. 편집 DOM 을 만들기 전에는
+# 아무것도 보이지 않으므로, 읽기만 할 때조차 그 비용을 다 치러야 했다.
+#
+# 여기서는 원본 PDF(.src)의 쪽을 **그대로 한 장의 그림으로** 구워 준다.
+#   · 브라우저는 <img> 하나만 붙이면 되므로 쪽당 DOM 비용이 노드 1개다.
+#   · 편집 요소는 사용자가 그 쪽을 실제로 건드릴 때만 올린다(프런트 담당).
+#   · redact 없이 원본 그대로 렌더한다 — 보이는 그림은 PDF 와 100% 같다.
+#
+# 파일 이름은 (ref, pno, 폭) 으로 결정되는 순수 함수라, 한 번 구우면 영구
+# 캐시(max-age=1y)로 재사용된다. 같은 쪽에 요청이 겹쳐도 락으로 한 번만 굽는다.
+PREVIEW_WIDTHS = (900, 1600)     # 기본(읽기) / 확대했을 때
+_PREVIEW_LOCKS = {}
+_PREVIEW_LOCKS_GUARD = threading.Lock()
+
+
+def _preview_name(ref, pno, width):
+    key = f"{ref}:{pno}:{width}".encode("utf-8")
+    return "pv_%s.jpg" % hashlib.sha1(key).hexdigest()[:20]
+
+
+def _preview_lock(name):
+    with _PREVIEW_LOCKS_GUARD:
+        lk = _PREVIEW_LOCKS.get(name)
+        if lk is None:
+            lk = _PREVIEW_LOCKS[name] = threading.Lock()
+        return lk
+
+
+def _render_preview(src, pno, width, out_path):
+    """원본 PDF 의 pno 쪽을 width 픽셀 폭 JPEG 로 굽는다 (원본 그대로)."""
+    doc = pymupdf.open(src)
+    try:
+        if pno < 0 or pno >= doc.page_count:
+            return False
+        page = doc[pno]
+        pw = page.rect.width or 1
+        zoom = max(0.2, min(6.0, float(width) / pw))
+        pm = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
+        tmp = "%s.tmp.%s" % (out_path, uuid.uuid4().hex[:8])
+        # 글자가 포함된 전체 쪽이라 품질을 배경(62)보다 높게 잡는다.
+        pm.save(tmp, jpg_quality=78)
+        pm = None
+        os.replace(tmp, out_path)
+        return True
+    finally:
+        doc.close()
+
+
+@app.route("/api/import/page/<ref>/<int:pno>", methods=["GET"])
+def import_page_preview(ref, pno):
+    """쪽 전체를 한 장의 그림으로 — 읽기 화면은 이것만으로 즉시 뜬다."""
+    ref = re.sub(r"[^0-9a-zA-Z_\-]", "", ref or "")[:40]
+    src = os.path.join(DOCS_DIR, f"{ref}.src")
+    if not ref or not os.path.exists(src):
+        return jsonify({"ok": False, "error": "원본 없음"}), 404
+    try:
+        width = int(request.args.get("w") or PREVIEW_WIDTHS[0])
+    except (TypeError, ValueError):
+        width = PREVIEW_WIDTHS[0]
+    # 임의의 폭으로 무한히 굽지 않도록 미리 정한 단계로 스냅한다(캐시 적중률).
+    width = min(PREVIEW_WIDTHS, key=lambda w: abs(w - width))
+
+    name = _preview_name(ref, pno, width)
+    path = os.path.join(IMG_DIR, name)
+    if not os.path.exists(path):
+        with _preview_lock(name):
+            if not os.path.exists(path):     # 락 대기 중 다른 스레드가 구웠나
+                try:
+                    if not _render_preview(src, pno, width, path):
+                        return jsonify({"ok": False, "error": "없는 쪽"}), 404
+                except Exception as e:
+                    print(f"[preview] {ref} {pno}쪽 실패: {e}")
+                    return jsonify({"ok": False, "error": str(e)}), 500
+    resp = send_from_directory(IMG_DIR, name)
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
+
+
 @app.route("/api/import/bg/<ref>/<int:pno>", methods=["GET"])
 def import_hibg(ref, pno):
     """특정 쪽 배경을 고해상도로 렌더해 URL 을 돌려준다 (읽는 중 점점 또렷해짐)."""
