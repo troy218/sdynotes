@@ -18394,6 +18394,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 겹치지 않는 첫 빈자리로 내린다. 명시 좌표(@mv·@bx)는 ①·②만 적용해
     // '옮겨 달라'는 요청을勝手に 뒤집지 않는다.
     const AI_GRID=8, AI_EDGE=28, AI_GAP=12, AI_MARGIN=40;
+    /* 14.31.0 · 펜 그림 기본 크기 — 예전엔 본문 폭의 62%로 그려 "그림이 너무
+       크다"는 말이 많았다. 이제 본문 폭의 40% · 최대 320px · 높이 360px 로
+       담백하게 잡는다(요청에 크기가 있으면 그 값을 쓴다). */
+    const AI_DRAW_W_RATIO=0.40, AI_DRAW_MAX_W=320, AI_DRAW_MIN_W=150, AI_DRAW_MAX_H=360;
     // 쪽에서 자리를 차지하는 상자들(표 테두리 획은 표 상자로 한 번만 센다).
     function aiEditOccupied(pi,skipId){
         const out=[];
@@ -18997,11 +19001,15 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(!Number.isFinite(x1)||x2<=x1||y2<=y1){ bad('그릴 그림 좌표가 이상해요'); return; }
                 const rawW=x2-x1,rawH=y2-y1;
                 const aW=Math.max(80,size.w-2*AI_MARGIN), aH=Math.max(60,size.h-2*AI_MARGIN);
+                // 14.31.0 · 쪽을 반이나 차지하지 않게 — 본문 폭의 40% · 최대
+                //   320px · 높이 360px. 요청에 폭이 있으면 그 값을 존중한다.
+                const capW=Math.min(aW,AI_DRAW_MAX_W), capH=Math.min(aH,AI_DRAW_MAX_H);
                 let tw;
                 if(finite(op.w)&&Number(op.w)>0) tw=clamp(round(op.w),60,aW);
-                else tw=Math.max(180,Math.min(aW,Math.round(aW*0.62)));
+                else tw=Math.max(AI_DRAW_MIN_W,Math.min(capW,Math.round(aW*AI_DRAW_W_RATIO)));
                 let th=tw*rawH/rawW;
-                if(th>aH){ tw=Math.max(60,Math.round(tw*aH/th)); th=tw*rawH/rawW; }
+                if(th>capH){ th=capH; tw=Math.max(AI_DRAW_MIN_W,Math.round(th*rawW/rawH)); }
+                if(tw>capW){ tw=capW; th=Math.round(tw*rawH/rawW); }
                 const tpi=(op.page!=null&&Number.isInteger(Number(op.page)))
                     ?clamp(round(op.page)-1,0,doc.pages.length-1):(curPageIdx|0);
                 const tpg=doc.pages[tpi];
@@ -30648,6 +30656,36 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   window.sdyAiLooksLikeDraw=looksLikeDraw;   // 테스트·디버그용
 
+  /* 14.31.0 · 해돌이 사진 넣기 — "○○ 사진 넣어 줘" 는 펜으로 그리는 일이
+     아니라 인터넷에서 찾은 **실제 사진**을 노트에 넣는 일이다.
+     '그려 줘'와 갈라야 하므로 ① 사진 낱말(사진·이미지·포토·짤)과
+     ② 넣어/추가해/찾아 달라는 말이 함께 있을 때만 사진으로 본다
+     ("고양이 사진 그려 줘" 처럼 '그리기' 동사가 있으면 펜 그림이다).
+     사진만 부탁하면 모델을 거치지 않고 곧바로 넣고(runPhoto),
+     글도 함께 부탁하면 편집기가 글(@add)과 사진(@img)을 함께 놓는다. */
+  var PHOTO_PRE=/^\s*(?:\/(?:img|photo|pic|이미지|사진)(?=\s|$)|(?:사진|이미지)\s*[:：])\s*/;
+  var PHOTO_NOUN=/(사진|이미지|포토|짤)/;
+  var PHOTO_VERB=/(넣|추가|찾|붙|삽입|올려|올리|실어|실고|집어 ?넣|첨부|가져|보여 ?줘)/;
+  // "설명하고 사진도" 처럼 글까지 부탁한 요청 — 편집기가 글 아래에 사진을 놓는다.
+  var PHOTO_WITH_TEXT=/(설명|정리|요약|소개|정의|개요|항목|특징|써 ?줘|적어|작성|만들어|글(도|을|을 ?써)|내용|아래에 ?(글|설명|정리)|위에 ?(글|설명))/;
+  // 편집기에 붙이는 한 줄 지침 — 모델이 사진을 '글로 적은 주소'로 대신하는 사고를 막는다.
+  var PHOTO_GUIDE='(사진은 반드시 @img 명령으로만 넣어 줘 — 사진 주소(URL)를 글로 적거나 [사진] 같은 빈 칸을 만들지 마. 글도 부탁했으면 @add로 글을 먼저 쓰고 그 아래 같은 쪽에 @img를 놓아 줘.)';
+  function photoCmdOf(q){
+    if(!PHOTO_PRE.test(q||'')) return null;
+    return String(q).replace(PHOTO_PRE,'').trim();
+  }
+  function looksLikePhoto(q){
+    q=String(q||'');
+    if(!q) return false;
+    if(!canEdit()) return false;                 // 사진을 넣을 노트가 열려 있어야 한다
+    if(QUESTION_HINT.test(q)) return false;      // 물어보는 말투는 질문으로
+    if(!PHOTO_NOUN.test(q)) return false;        // '사진·이미지' 낱말이 없으면 그림/편집이다
+    if(/그려|그리기|스케치|낙서|캐리커처/.test(q)) return false;   // '사진 그려 줘'는 펜 그림
+    if(!PHOTO_VERB.test(q)) return false;        // 넣어·추가해·찾아 달라는 말이 있어야 사진
+    return true;
+  }
+  window.sdyAiLooksLikePhoto=looksLikePhoto;   // 테스트·디버그용
+
   /* ── 14.26.0 · 해돌이 앱 실행 — 음악·타이머·노트·발표·내보내기·찾기·창 열기 ──
      /앱, /app, "앱:" 접두사는 앱 실행을 강제한다. 접두사가 없어도 앱 기능을
      시키는 말(아래 APP_HINT)이면 앱 실행으로 자동 라우팅하고, 애매하면
@@ -31011,7 +31049,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       function cubic(x1,y1,x2,y2,x,y){
         ensureCur();
         var dist=Math.abs(x-cx)+Math.abs(y-cy)+Math.abs(x1-cx)+Math.abs(y1-cy)+Math.abs(x2-x)+Math.abs(y2-y);
-        var n=Math.max(6,Math.min(42,Math.ceil(dist/5)));
+        // 14.31.0 · 촘촘하게 샘플링 — 5px 간격은 곡선이 꺾은선처럼 보였다.
+        var n=Math.max(8,Math.min(72,Math.ceil(dist/3)));
         for(var k=1;k<=n;k++){
           var t=k/n, it=1-t;
           var a=it*it*it, b=3*it*it*t, c=3*it*t*t, dd=t*t*t;
@@ -31022,7 +31061,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       function quad(x1,y1,x,y){
         ensureCur();
         var dist=Math.abs(x-cx)+Math.abs(y-cy)+Math.abs(x1-cx)+Math.abs(y1-cy);
-        var n=Math.max(5,Math.min(34,Math.ceil(dist/5)));
+        var n=Math.max(6,Math.min(56,Math.ceil(dist/3)));
         for(var k=1;k<=n;k++){
           var t=k/n,it=1-t;
           cur.push([Math.round((it*it*cx+2*it*t*x1+t*t*x)*10)/10,Math.round((it*it*cy+2*it*t*y1+t*t*y)*10)/10]);
@@ -31177,7 +31216,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var guard=0;
     for(;;){
       var joined=false; guard++;
-      if(guard>polylines.length*3||polylines.length>400) break;
+      if(guard>polylines.length*3||polylines.length>700) break;
       outer:
       for(var a=0;a<polylines.length;a++){
         for(var b=a+1;b<polylines.length;b++){
@@ -31206,7 +31245,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }
     // ---- 걸러 내기: 너무 짧은 획·중복 점 제거 ----
     var kept=[];
-    for(var k2=0;k2<polylines.length&&kept.length<220;k2++){
+    for(var k2=0;k2<polylines.length&&kept.length<320;k2++){
       var S=polylines[k2];
       if(!S||!S.pts||S.pts.length<2) continue;
       var clean=[],total=0;
@@ -31963,9 +32002,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      14.26.0 · chat 답이 [[edit]]·[[app]] 이면(서버가 편집·실행 요청이라 판단)
      스냅샷을 잡아 해당 일로 한 번만 자동 넘기기한다. edit·app 요청에는 직전
      1턴을 context 로 싣는다(@ask 되묻기 뒤의 짧은 답도 이어진다). */
-  function run(task,q,scope,hopped){
+  function run(task,q,scope,hopped,hint){
     if(ctl) return;                                   // 말하는 중엔 또 묻지 않는다
     q=String(q||'').trim();
+    // 14.31.0 · hint — 화면·기록에는 안 보이지만 모델에게만 붙이는 한 줄 지침
+    //   (예: '사진은 반드시 @img 로만 넣어 줘'). 요청 원문(q)은 그대로 남는다.
+    var askQ=hint?(q+'\n\n'+hint):q;
     scope=(scope==='page')?'page':'doc';              // outline 의 범위 — chat/edit/app 은 문서 전체
     var editCapture=task==='edit'?aiCapture():null;
     var drawRevision=task==='draw'?(function(){ try{ var c=aiCapture(); return c?c.revision:''; }catch(e){ return ''; } })():'';
@@ -32019,7 +32061,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     fetch('/api/ai/ask',{
       method:'POST', signal:ctl.signal,
       headers:{'Content-Type':'application/json','x-sdy-auth':token()},
-      body:JSON.stringify({task:task,text:txt,question:q,stream:true,
+      body:JSON.stringify({task:task,text:txt,question:askQ,stream:true,
         context:task==='edit'?editCtxText():(task==='app'?appCtxText():'')})
     }).then(function(r){
       return readSSE(r,function(d){
@@ -32149,6 +32191,68 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     });
   }
 
+  /* 14.31.0 · 사진 곧바로 넣기 — 모델을 거치지 않고 서버(/api/ai/imgadd)가
+     찾아 저장한 사진을 현재 쪽 빈자리에 넣는다.
+     왜 모델을 거치지 않나: "고양이 사진 넣어 줘" 처럼 사진만 부탁한 요청은
+     모델이 할 일이 @img 한 줄뿐인데, 그 한 줄을 빼먹으면 아무 일도 일어나지
+     않는다. 서버가 검색어까지 다듬어 주니(영어 번역·관련도 순위) 이 경로가
+     훨씬 빠르고 정확하다. 글도 함께 부탁한 요청은 편집기(run 'edit')가
+     글과 사진을 함께 놓는다 — sdyAiRun 이 갈라 준다. */
+  function runPhoto(q){
+    if(ctl) return;
+    if(!canEdit()){ otterLine('노트를 연 다음에 사진을 넣어 달라고 해 줘 해돌~'); return; }
+    var page=(typeof curPageIdx!=='undefined'?(curPageIdx|0)+1:1);
+    var what=photoCmdOf(q)!=null?photoCmdOf(q):q;
+    ctl=new AbortController();
+    busy(true); lastText=''; lastKind='edit'; lastQ=q;
+    kindChip('edit');
+    otterHide(); out('',true); meta('');
+    out('사진을 찾고 있어요…',true);
+    var finish=function(say,applied){
+      ctl=null; busy(false);
+      lastText=say; lastKind='edit'; kindChip('edit');
+      out(say); meta('');
+      if(applied){ try{ if(window.toast) window.toast('해돌이가 사진을 넣었어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e3){} }
+      histPush('edit',q,say);
+    };
+    fetch('/api/ai/imgadd',{method:'POST',signal:ctl.signal,
+      headers:{'Content-Type':'application/json','x-sdy-auth':token()},
+      body:JSON.stringify({q:String(what||'').slice(0,200)})})
+    .then(function(r){
+      return r.json().catch(function(){ return null; })
+        .then(function(j){ return {ok:r.ok,j:j}; });
+    })
+    .then(function(got){
+      var j=got&&got.j;
+      if(!got||!got.ok||!j||!j.ok||!j.url){
+        finish(String((j&&j.error)||'사진을 찾지 못했어요 · 무엇의 사진인지 조금 더 구체적으로 알려 줘 해돌~'),false);
+        return;
+      }
+      var ops=[{cmd:'addimg',page:page,x:'auto',y:'auto',w:'auto',h:'auto',
+        url:j.url,public_id:j.public_id||'',natW:j.width||null,natH:j.height||null}];
+      var applied=function(res){
+        res=res||{applied:0,notes:[],stale:false};
+        if(res.stale){ finish((res.notes&&res.notes[0])||'기다리는 동안 문서가 바뀌어 사진을 넣지 않았어요 · 다시 요청해 주세요',false); return; }
+        var say;
+        if(res.applied){
+          var nm=String(j.title||'').trim();
+          say='‘'+(nm?nm.slice(0,40):String(what).slice(0,40))+'’ 사진을 넣었어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+        }else say='사진을 넣지 못했어요 · 다시 시도해 주세요';
+        if(res.notes&&res.notes.length) say+='\n'+res.notes.join('\n');
+        finish(say,!!res.applied);
+      };
+      try{
+        var r2=window.__sdyAiBridge.apply(ops);
+        if(r2&&typeof r2.then==='function') r2.then(applied,applied); else applied(r2);
+      }catch(e){ applied(null); }
+    })
+    .catch(function(e){
+      if(e&&e.name==='AbortError'&&closedByUser) return;
+      finish('사진을 찾지 못했어요 · 잠시 뒤 다시 시도해 주세요',false);
+    });
+  }
+  window.sdyAiRunPhoto=function(q){ runPhoto(String(q||'').trim()); };
+
   /* 검색창 Enter → 바로 질문 (보내기 버튼 없음). 노트 질문인지 자유 질문인지는
      해돌이가 스스로 판단한다 — 사용자가 딱지를 고르는 일은 없다.
      14.26.0 · '시켜 달라'는 말투면 앱 실행으로, '고쳐 달라'는 말투면 편집으로
@@ -32177,13 +32281,30 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       run('draw',drawCommand); return;
     }
+    // 14.31.0 · /사진·/이미지 접두사 — 무조건 사진을 찾아 넣는다(펜 그림과 혼동 방지).
+    if(photoCmdOf(q)!=null){
+      var photoCommand=photoCmdOf(q);
+      if(!photoCommand){ otterLine('/사진 뒤에 무엇의 사진인지 적어 줘 해돌~ · 예) /사진 고양이'); return; }
+      if(!inNote()){ otterLine('노트를 연 다음에 사진을 넣어 달라고 해 줘 해돌~'); return; }
+      if(!(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function')){
+        otterLine('사진 넣기 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
+      }
+      runPhoto(photoCommand); return;
+    }
     if(appCommand!=null){
       if(!appCommand){ otterLine('/앱 뒤에 무엇을 실행할지 적어 줘 해돌~ · 예) /앱 노래 틀어줘'); return; }
       run('app',appCommand); return;
     }
     if(looksLikeApp(q)){ run('app',q); return; }        // '시켜 달라'는 말이면 앱 실행으로
-    if(looksLikeEdit(q)){ run('edit',q); return; }      // ! 없어도 '고쳐 달라'는 말이면 편집으로
+    // 14.31.0 · 사진과 그림을 먼저 가른다 — 둘 다 '넣어 줘'로 들리지만 완전히
+    //   다른 일이다(사진 = 인터넷에서 찾은 실제 사진, 그림 = 펜으로 그리는 선화).
+    if(looksLikePhoto(q)){                              // '사진 넣어 줘' → 사진
+      if(PHOTO_WITH_TEXT.test(q)) run('edit',q,'doc',false,PHOTO_GUIDE);  // 글 + 사진
+      else runPhoto(q);                                 // 사진만 → 곧바로 넣기
+      return;
+    }
     if(looksLikeDraw(q)){ run('draw',q); return; }      // '그려 줘'는 말이면 펜 그림으로
+    if(looksLikeEdit(q)){ run('edit',q); return; }      // ! 없어도 '고쳐 달라'는 말이면 편집으로
     run('chat',q);
   };
   window.sdyAiOutline=function(scope){
@@ -32253,11 +32374,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       // !, /편집, "편집:" — 또는 '고쳐 달라'·'시켜 달라'는 말투를 입력하는 동안
       // 모드를 색과 딱지로 즉시 알린다. 앱 실행은 같은 자리에 '앱 실행' 딱지.
-      var editOn=EDIT_PRE.test(q.value||'')||looksLikeEdit(q.value||'');
-      var appOn=!editOn&&(APP_PRE.test(q.value||'')||looksLikeApp(q.value||''));
-      var ask=$('aiAsk'); if(ask) ask.classList.toggle('edit-on',editOn||appOn);
+      // 14.31.0 · 문서를 고치는 일은 편집만이 아니다 — 사진을 넣는 것도,
+      // 펜으로 그림을 그리는 것도 결국 문서 편집이라 같은 보라색으로 알린다.
+      var v=q.value||'';
+      var photoOn=PHOTO_PRE.test(v)||looksLikePhoto(v);
+      var drawOn=!photoOn&&(DRAW_PRE.test(v)||looksLikeDraw(v));
+      var editOn=!photoOn&&!drawOn&&(EDIT_PRE.test(v)||looksLikeEdit(v));
+      var appOn=!photoOn&&!drawOn&&!editOn&&(APP_PRE.test(v)||looksLikeApp(v));
+      var modeOn=editOn||appOn||drawOn||photoOn;
+      var ask=$('aiAsk'); if(ask) ask.classList.toggle('edit-on',modeOn);
       var tag=$('aiEditTag');
-      if(tag){ tag.hidden=!(editOn||appOn); tag.textContent=appOn?'앱 실행':'편집'; }
+      if(tag){
+        tag.hidden=!modeOn;
+        tag.textContent=appOn?'앱 실행':(drawOn?'그림':(photoOn?'사진':'편집'));
+      }
     }catch(e){}
   }
   document.addEventListener('input',function(e){

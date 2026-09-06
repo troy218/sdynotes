@@ -434,6 +434,11 @@ async function translateCore(text, target) {
   throw limitedErr || lastErr || new Error('LibreTranslate 미설정');
 }
 
+// 14.31.0 · 서버 안에서 쓰는 번역 (사진 검색어를 영어로 바꿀 때).
+//   /api/translate 와 같은 엔진·쿨다운을 그대로 쓰고, 실패는 던진다 —
+//   부르는 쪽(aiTools)이 정제 검색어로 대체한다. 반환: [번역문, 엔진]
+export const translateFree = async (text, target) => translateCore(String(text == null ? '' : text), target || 'en');
+
 const TOK_RE = /\[\[\s*(\d+)\s*\]\]/g;
 
 function maskGloss(text, gloss) {
