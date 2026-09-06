@@ -85,6 +85,7 @@ for (const [method, url] of [
   ['GET', '/api/import/docfile/:jid'],
   ['GET', '/api/import/img/*'],
   ['GET', '/api/import/bg/:ref/:pno'],
+  ['GET', '/api/import/page/:ref/:pno'],   // 쪽 미리보기 래스터(읽기 화면 즉시 표시)
 ]) {
   app.route({ method, url, handler: (req, reply) => worker.proxy(req, reply) });
 }

@@ -40,7 +40,11 @@ assert.match(openBody, /doc=loadedDoc; _docId=nb\.id;/,
 // 18.10 렌더러가 저장 마크업을 decodeTextMarkup 으로 풀도록 바뀌었다(예전은
 // el.html 을 그대로 innerHTML 에 꽂았다). 소스 계약은 '반드시 남아야 할 가드'
 // 만 보는 것이므로, 이 렌더 호출 형태가 바뀌어도 아래 가드가 남아 있는지 검사한다.
-const buildText = js.match(/function buildTextEl\(el,pageIdx\)\{([\s\S]{0,2600}?)\n        c\.innerHTML=decodeTextMarkup\((?:_normalizePaletteHtml\()?el\.html\|\|''\)?\);/);
+//   · 14.29.2 에서 결과를 _tHtml 지역변수에 담아 imath 유무를 먼저 보도록
+//     바뀌었다(수식 없는 상자는 querySelectorAll 을 아예 건너뛴다). 곧바로
+//     innerHTML 에 꽂던 옛 형태와 둘 다 받아들인다 — 계약의 관심사는 아래
+//     가드(nbId·_sdyRv)이지 대입문의 모양이 아니다.
+const buildText = js.match(/function buildTextEl\(el,pageIdx\)\{([\s\S]{0,2600}?)\n        (?:const _tHtml=|c\.innerHTML=)decodeTextMarkup\((?:_normalizePaletteHtml\()?el\.html\|\|''\)?\);/);
 assert.ok(buildText, 'buildTextEl should exist');
 assert.match(buildText[1], /w\.dataset\.nbId=\(curNB&&curNB\.id\)\|\|'';/,
   'each text DOM must remember which notebook it was rendered for');

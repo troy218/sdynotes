@@ -1399,6 +1399,14 @@
         /* ===== 페이지 내부 레이어 ===== */
         .layer{position:absolute;inset:0;pointer-events:none;}
         .layer>*{pointer-events:auto;}
+        /* 20.0 · 읽기 우선 레이어 — 가져온 문서의 '쪽 그림' 한 장.
+           편집 요소보다 뒤(z-index:1)에 있어, 요소가 올라오는 동안에도
+           내용이 끊기지 않고 보이다가 renderPageEls 의 finish() 에서 걷힌다. */
+        .layer-preview{z-index:1;pointer-events:none;}
+        .page-preview-img{
+            position:absolute;inset:0;width:100%;height:100%;
+            object-fit:fill;display:block;user-select:none;-webkit-user-drag:none;
+        }
         /* 이미지가 가장 뒤, 그 위에 글자, 펜 그림이 가장 앞 */
         .layer-img{z-index:2;}
         .layer-text{z-index:3;}
