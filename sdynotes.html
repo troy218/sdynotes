@@ -792,7 +792,7 @@
                  · 해돌이에게 커서를 올리면 아이디어(전구)로 변신하고,
                    해돌이를 누르면 대화기록이 열린다.
                  ═══════════════════════════════════════════════════════════ -->
-            <div id="aiAsk" class="ai-askbar">
+            <div id="aiAsk" class="ai-askbar" tabindex="-1">
               <!-- 범위 버튼 둘 — 질문칸 바로 위 가운데에서 나란히 정렬한다 -->
               <div class="ai-outline-row">
                 <button id="aiOutlinePage" class="ai-outline" type="button" onclick="sdyAiOutline('page')"
@@ -812,7 +812,7 @@
                 <span class="ai-dot" id="aiDot" title="AI 키 아직 미등록"></span>
               </div>
             </div>
-            <div id="aiSay" class="ai-say" hidden>
+            <div id="aiSay" class="ai-say" tabindex="-1" hidden>
               <div class="ai-say-head">
                 <b class="ai-say-name">해돌이</b>
                 <span id="aiKind" class="ai-kind" hidden></span>
@@ -827,7 +827,7 @@
               </div>
               <div id="aiMeta" class="ai-meta"></div>
             </div>
-            <div id="aiHist" class="ai-hist" hidden>
+            <div id="aiHist" class="ai-hist" tabindex="-1" hidden>
               <div class="ai-hist-head">
                 <span class="ai-hist-ttl"><i class="ri-chat-history-line" aria-hidden="true"></i><b>해돌이와 나눈 이야기</b></span>
                 <button class="ai-mini" type="button" title="닫기" aria-label="대화기록 닫기" onclick="sdyAiHistToggle()"><i class="ri-close-line" aria-hidden="true"></i></button>
