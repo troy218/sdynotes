@@ -260,9 +260,16 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   check('빈 상자도 남겨둔다 (위치 표시 유지)', b.includes('빈 상자도 남겨둔다'));
 }
 {
-  const bUndo = body('undo'), bRedo = body('redo');
-  check('되돌리기/다시 실행이 문서 Map 을 되살려 동기화가 멈추지 않는다',
-    bUndo.includes('reviveDocMaps(keep)') && bRedo.includes('reviveDocMaps(keep)'));
+  // 20.3 · 되돌리기는 doc 객체를 교체하지 않고 바뀐 요소만 되돌린다.
+  //   → 동기화용 Map(__localRev/__lastHash/__base)이 애초에 사라지지 않고,
+  //     되돌린 결과도 queueOps 로 다른 기기에 반영된다.
+  const bApply = body('_histApply');
+  check('되돌리기/다시 실행이 문서 Map 을 지키고(교체 안 함) 동기화도 이어 간다',
+    bApply.includes('histRestore(entry)') && bApply.includes('syncState()')
+    && bApply.includes('queueOps()') && !bApply.includes('doc=JSON.parse'));
+  check('되돌리기는 다른 사람이 건드린 요소·쪽은 되돌리지 않는다',
+    /function histMarkRemote\(/.test(js) && /entry\.remote/.test(js)
+    && /op\.dev!==SYNC_DEV\) histMarkRemote/.test(js));
 }
 {
   const b = body('syncTextEl');
