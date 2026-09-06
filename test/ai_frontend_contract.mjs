@@ -19,6 +19,9 @@ const css = fs.readFileSync(path.join(REPO, 'sdynotes.css'), 'utf8');
 const html = fs.readFileSync(path.join(REPO, 'sdynotes.html'), 'utf8');
 const srv = fs.readFileSync(path.join(REPO, 'server/src/routes/ai.js'), 'utf8');
 
+// sdynotes.js 안의 사진 지침 원문 — 계약 검사에서 내용까지 확인한다.
+const PHOTO_GUIDE_SRC = (js.match(/var PHOTO_GUIDE='([^']*)'/) || [, ''])[1];
+
 let pass = 0;
 const check = (name, cond) => { assert.ok(cond, name); pass++; console.log('  ✓ ' + name); };
 
@@ -144,7 +147,33 @@ check('프런트: 집중시계에 타이머·스톱워치 손잡이를 노출한
   /window\.sdyTimerStart=/.test(js) && /window\.sdyTimerStop=/.test(js)
   && /window\.sdySwStart=/.test(js) && /window\.sdyTimerState=/.test(js));
 check('프런트: 앱 실행은 말투에 따라 앱 실행 딱지를 단다',
-  /tag\.textContent=appOn\?'앱 실행':'편집'/.test(js) && /app:'앱 실행'/.test(js));
+  /appOn\?'앱 실행'/.test(js) && /app:'앱 실행'/.test(js));
+// ── 14.31.0 · 사진 vs 그림 — 둘 다 문서 편집이라 같은 보라색으로 알린다 ──
+check('프런트: 사진·그림도 편집 모드(보라색)로 보고 딱지를 갈라 단다',
+  /var photoOn=PHOTO_PRE\.test\(v\)\|\|looksLikePhoto\(v\)/.test(js)
+  && /var drawOn=!photoOn&&\(DRAW_PRE\.test\(v\)\|\|looksLikeDraw\(v\)\)/.test(js)
+  && /ask\.classList\.toggle\('edit-on',modeOn\)/.test(js)
+  && /appOn\?'앱 실행':\(drawOn\?'그림':\(photoOn\?'사진':'편집'\)\)/.test(js));
+check('프런트: 사진은 사진 낱말 + 넣어/찾아 달라는 말이 함께일 때만 사진이다',
+  /var PHOTO_NOUN=\//.test(js) && /var PHOTO_VERB=\//.test(js)
+  && /if\(!PHOTO_NOUN\.test\(q\)\) return false;/.test(js)
+  && /if\(!PHOTO_VERB\.test\(q\)\) return false;/.test(js)
+  && /window\.sdyAiLooksLikePhoto=looksLikePhoto/.test(js));
+check('프런트: "사진 그려 줘"는 펜 그림, "사진 넣어 줘"는 사진으로 가른다',
+  /그려\|그리기\|스케치\|낙서\|캐리커처/.test(js));
+check('프런트: 사진만 부탁하면 모델 없이 곧바로 넣고, 글도 부탁하면 편집기가 @img 를 쓰게 한다',
+  /function runPhoto\(q\)\{/.test(js) && /\/api\/ai\/imgadd/.test(js)
+  && /PHOTO_WITH_TEXT\.test\(q\)/.test(js) && /run\('edit',q,'doc',false,PHOTO_GUIDE\)/.test(js)
+  && /@img 명령으로만 넣어 줘/.test(PHOTO_GUIDE_SRC));
+check('프런트: 편집 요청에만 붙는 지침(hint)은 대화기록 원문(q)을 더럽히지 않는다',
+  /function run\(task,q,scope,hopped,hint\)\{/.test(js) && /var askQ=hint\?\(q/.test(js)
+  && /question:askQ/.test(js) && /lastQ=q;/.test(js));
+check('프런트: 그림은 쪽을 반이나 차지하지 않게 담백한 크기로 들어간다',
+  /AI_DRAW_W_RATIO=0\.40, AI_DRAW_MAX_W=320/.test(js) && /AI_DRAW_MIN_W=150, AI_DRAW_MAX_H=360/.test(js)
+  && /tw=Math\.max\(AI_DRAW_MIN_W,Math\.min\(capW,Math\.round\(aW\*AI_DRAW_W_RATIO\)\)\)/.test(js));
+check('프런트: 꼼꼼한 그림을 위해 곡선을 촘촘히 샘플링하고 획 상한을 늘렸다',
+  /Math\.min\(72,Math\.ceil\(dist\/3\)\)/.test(js) && /Math\.min\(56,Math\.ceil\(dist\/3\)\)/.test(js)
+  && /kept\.length<320/.test(js));
 // ── 14.27.0 · 형광펜(글귀 단위)·표 삭제·보기 좋은 배치·여러 대화 문맥 ──
 check('서버: edit 프롬프트는 형광펜을 글귀 단위(@hl)로 시키고 상자 전체(@st hl)와 구분한다',
   /@hl 요소id \| 찾을 글 \| 색/.test(srv) && /중요한 글귀/.test(srv)
