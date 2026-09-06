@@ -5829,6 +5829,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     let _saveTimer=null;
     function saveDoc(){
         if(!curNB||!doc) return;
+        try{ bumpAiText(); }catch(e){}   // 20.1 · 문서가 바뀌었다 → 해돌이 글 캐시 무효화
         // 14.18.4 · 자동 저장은 너무 자주 일어나므로 '저장 중/저장됨'을 매번 띄우지 않는다.
         //   대신 문제 상황(불러오기 실패·오프라인·동기화 대기)만 조용히 알려 준다.
         // 14.15 · 현재 doc 가 열려 있는 노트의 것과 다르면 (노트 교체 로딩 중)
@@ -6799,6 +6800,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const pg=doc&&doc.pages&&doc.pages[pi];
         if(!pg) return;
         pg.__dirty=true;
+        try{ aiInvalidatePage(pi); }catch(e){}   // 20.2 · 고친 쪽 글만 다시 뽑는다
         if(!pg.edited){
             pg.edited=1;
             // 그림을 보고 있던 중이라면 즉시 진짜 요소로 교체한다.
@@ -17869,7 +17871,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         };
         (pg.els||[]).forEach(el=>{
             if(el.type!=='text'||el.locked) return;
-            let src=el.tight? tightTextFromHtml(el.html) : plainTextFromHtml(el.html);
+            // 20.1 · 글상자 하나의 글자 뽑기 결과를 상자에 붙여 둔다.
+            //   가져온 PDF(tight)는 상자마다 절대좌표 <span> 이 수백 개라
+            //   tightTextFromHtml 한 번이 innerHTML 파싱 + querySelectorAll + 정렬이다.
+            //   해돌이 warm/버튼 상태 갱신이 이걸 문서 전체로 매번 다시 돌려
+            //   스크롤 한 번에 수만 번씩 파싱하던 것이 '10초 멈춤'의 정체였다.
+            let src;
+            if(el.__txtSrc!=null && el.__txtHtml===el.html){
+                src=el.__txtSrc;
+            }else{
+                src=el.tight? tightTextFromHtml(el.html) : plainTextFromHtml(el.html);
+                src=(src||'').replace(/\s+/g,' ').trim();
+                try{
+                    Object.defineProperty(el,'__txtHtml',{value:el.html,writable:true,configurable:true,enumerable:false});
+                    Object.defineProperty(el,'__txtSrc',{value:src,writable:true,configurable:true,enumerable:false});
+                }catch(e){}
+            }
             src=(src||'').replace(/\s+/g,' ').trim();
             if(!src) return;
             if(isFigureText(el,src)||overImg(el)) return;   // 6.6: 피규어/캡션은 제외
@@ -19521,16 +19538,109 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return res;
     }
 
+    // 20.1 · 해돌이에게 넘길 노트 글 캐시.
+    //   text('doc') 는 문서 전체(논문이면 수백 쪽 × 상자 수백 개)를 훑는다.
+    //   해돌이의 warm 예약·버튼 상태 칠하기가 스크롤·DOM 변화마다 이걸 다시 부르면
+    //   메인 스레드가 통째로 잠긴다. 문서가 실제로 바뀔 때만 다시 만든다.
+    //
+    // 20.2 · 쪽 단위로 쪼개 캐시한다. 문서 전체 글은 '쪽 글'을 이어 붙인 것이므로
+    //   ① 한 쪽만 고쳐도 그 쪽만 다시 뽑으면 되고,
+    //   ② 처음 만들 때도 한 번에 다 하지 않고 조금씩 나눠 만들 수 있다.
+    let _aiTextSeq=0;
+    let _aiPageText=[];          // 쪽 글 (인덱스별) — 이 노트/이 seq 의 것
+    let _aiPageOwner='';         // 어느 노트·어느 seq 의 캐시인지
+    function _aiOwner(){ return (curNB&&curNB.id||'')+'|'+_aiTextSeq; }
+    function _aiReset(){ _aiPageText=[]; _aiPageOwner=_aiOwner(); }
+    function bumpAiText(){ _aiTextSeq++; _aiReset(); }
+    // 20.2 · 고친 쪽 하나만 버린다. 글자를 칠 때마다 문서 전체를 버리면
+    //   쪽 캐시를 둔 의미가 없다(논문에서 다시 전부 뽑게 된다).
+    function aiInvalidatePage(i){
+        if(_aiPageOwner!==_aiOwner()){ _aiReset(); return; }
+        i=+i; if(i>=0) _aiPageText[i]=null;
+    }
+    try{ window.__sdyBumpAiText=bumpAiText; }catch(e){}
+
+    // 쪽 하나의 글 — 캐시가 있으면 그대로, 없으면 뽑아서 저장.
+    function aiPageText(i){
+        if(_aiPageOwner!==_aiOwner()) _aiReset();
+        const c=_aiPageText[i];
+        if(c!=null) return c;
+        const out=[];
+        try{ collectPageEls(i).forEach(o=>{ if(o.src) out.push(o.src); }); }catch(e){}
+        const s=out.join('\n');
+        _aiPageText[i]=s;
+        return s;
+    }
+    // 아직 안 뽑은 쪽이 있나?
+    function aiTextPending(){
+        if(!doc||!doc.pages) return 0;
+        if(_aiPageOwner!==_aiOwner()) return doc.pages.length;
+        let n=0;
+        for(let i=0;i<doc.pages.length;i++) if(_aiPageText[i]==null) n++;
+        return n;
+    }
+    /* 20.2 · 문서 전체 글을 '조금씩' 만들어 둔다.
+       노트를 연 직후 해돌이가 전체 요약을 준비하려면 결국 모든 쪽을 읽어야 하는데,
+       그걸 한 번에 하면 논문에서 1초 가까이 메인 스레드가 잠긴다(첫 동작이 굼뜬 이유).
+       한 번에 몇 쪽씩만, 그것도 브라우저가 한가할 때만 뽑아 두면
+       버튼을 누를 즈음엔 이미 다 준비돼 있고 화면은 한 프레임도 멎지 않는다.
+       보고 있는 쪽 주변부터 채운다 — 사용자가 실제로 먼저 물어볼 곳이다. */
+    let _aiFillTok=0;
+    function aiFillDocText(){
+        const tok=++_aiFillTok;
+        const owner=_aiOwner();
+        const idle=(cb)=>{
+            if(typeof requestIdleCallback==='function') requestIdleCallback(cb,{timeout:2000});
+            else setTimeout(()=>cb({timeRemaining:()=>8}),32);
+        };
+        const step=(dl)=>{
+            if(tok!==_aiFillTok||!doc||!doc.pages||_aiOwner()!==owner) return;   // 노트가 바뀌었다 → 중단
+            const n=doc.pages.length;
+            // 보고 있는 쪽에서 바깥으로 퍼져 나가며 채운다
+            const cur=Math.max(0,Math.min(n-1,curPageIdx|0));
+            let did=0;
+            for(let r=0;r<n;r++){
+                for(const i of (r===0?[cur]:[cur-r,cur+r])){
+                    if(i<0||i>=n) continue;
+                    if(_aiPageText[i]!=null) continue;
+                    aiPageText(i); did++;
+                    // 한가한 시간이 남아 있는 동안만, 최대 4쪽씩 (프레임 예산 보호)
+                    const left=(dl&&typeof dl.timeRemaining==='function')?dl.timeRemaining():0;
+                    if(did>=4||left<3){ idle(step); return; }
+                }
+            }
+            if(did) paintOutlineReadySafe();      // 다 채워졌으면 버튼 표시를 한 번 갱신
+        };
+        idle(step);
+    }
+    function paintOutlineReadySafe(){
+        try{ if(typeof window.sdyAiPaintReady==='function') window.sdyAiPaintReady(); }catch(e){}
+    }
+    try{ window.__sdyAiFillText=aiFillDocText; window.__sdyAiTextPending=aiTextPending; }catch(e){}
     try{
         window.__sdyAiBridge={
             text:(scope)=>{
                 try{
                     if(!doc||!doc.pages||!doc.pages.length) return '';
-                    const idx=(scope==='page')?[curPageIdx|0]:doc.pages.map((p,i)=>i);
+                    if(scope==='page') return aiPageText(Math.max(0,Math.min(doc.pages.length-1,curPageIdx|0)));
                     const out=[];
-                    idx.forEach(i=>{ collectPageEls(i).forEach(o=>{ if(o.src) out.push(o.src); }); });
+                    for(let i=0;i<doc.pages.length;i++){
+                        const s=aiPageText(i);
+                        if(s) out.push(s);
+                    }
                     return out.join('\n');
                 }catch(e){ return ''; }
+            },
+            // 20.2 · 아직 안 뽑은 쪽이 없을 때만 문서 전체 글을 준다.
+            //   해돌이 warm(미리 준비)은 이걸 써서 '조용히 다 준비된 뒤'에만 서버로 간다 —
+            //   준비가 덜 됐으면 억지로 다 뽑지 않고(=멈춤 없이) 다음 기회로 미룬다.
+            textIfReady:(scope)=>{
+                try{
+                    if(!doc||!doc.pages||!doc.pages.length) return null;
+                    if(scope==='page') return aiPageText(Math.max(0,Math.min(doc.pages.length-1,curPageIdx|0)));
+                    if(aiTextPending()>0){ aiFillDocText(); return null; }
+                    return window.__sdyAiBridge.text('doc');
+                }catch(e){ return null; }
             },
             title:()=>String((document.getElementById('edTitle')||{}).value||'').trim(),
             snapshot:()=>{ try{ commitEditingText(); return aiEditSnapshot(); }catch(e){ return ''; } },
@@ -30749,6 +30859,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }catch(e){}
     return '';
   }
+  /* 20.2 · 멈추지 않는 글 읽기 — 아직 준비가 안 됐으면 null 을 돌려준다.
+     미리 준비(warm)·버튼 표시처럼 '지금 당장 필요하진 않은' 일에 쓴다.
+     null 이면 편집기가 한가할 때 조금씩 채워 두고, 다음 기회에 다시 묻는다.
+     (사용자가 버튼을 실제로 눌렀을 때는 noteText 로 곧바로 읽는다 — 그땐 기다려도 된다) */
+  function noteTextIfReady(scope){
+    try{
+      var b=window.__sdyAiBridge;
+      if(b&&typeof b.textIfReady==='function'){
+        var v=b.textIfReady(scope==='page'?'page':'doc');
+        return v==null?null:String(v);
+      }
+    }catch(e){}
+    return noteText(scope);
+  }
   function inNote(){
     var ev=$('editorView');
     return !ev||ev.classList.contains('open');       // 편집기가 없으면(=테스트/구버전) 노트 안으로 본다
@@ -32168,14 +32292,29 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var ks=Object.keys(warmCache);
     if(ks.length>24) delete warmCache[ks[0]];        // 오래된 것부터 버린다
   }
-  function paintOutlineReady(){
+  /* 20.1 · 버튼에 '준비됨' 표시를 칠하는 일은 노트 글 전체를 읽어야 알 수 있다.
+     예전엔 스크롤·렌더마다 이걸 곧바로 불러 문서 전체(논문 수백 쪽)를 훑었다 —
+     한 동작에 수 초씩 멎던 원인. 이제 한가할 때(idle) 한 번만 계산하고,
+     연달아 부르면 하나로 합친다. */
+  var paintTimer=null;
+  function paintOutlineReadyNow(){
     [['aiOutlinePage','page','지금 보고 있는 이 페이지를 정리해 줘요'],
      ['aiOutlineDoc','doc','전체 페이지를 한 번에 정리해 줘요']].forEach(function(it){
       var b=$(it[0]); if(!b) return;
-      var ready=!!(enabled&&warmGet(noteText(it[1])));
+      var ready=false;
+      if(enabled){
+        // 20.2 · 표시 하나 칠하려고 문서 전체를 뽑아 화면을 멎게 하지 않는다.
+        //   준비가 덜 됐으면 '아직 아님'으로 두고, 채워지면 다시 칠한다.
+        try{ var t=noteTextIfReady(it[1]); ready=(t!=null)&&!!warmGet(t); }catch(e){ ready=false; }
+      }
       b.classList.toggle('ready',ready);
       b.title=ready?'미리 준비해 뒀어요 · 누르면 바로 나와요':it[2];
     });
+  }
+  function paintOutlineReady(){
+    if(paintTimer) return;                     // 이미 예약됨 — 겹쳐 부르지 않는다
+    var run=function(){ paintTimer=null; paintOutlineReadyNow(); };
+    paintTimer=setTimeout(run,16)||1;          // 다음 틈에 한 번만 (연타를 하나로 합침)
   }
   function warmOne(txt){
     if(!enabled||!txt) return Promise.resolve(null);
@@ -32200,15 +32339,30 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!enabled||ctl) return;
     if(!inNote()) return;
     try{ if(document.visibilityState==='hidden') return; }catch(e){}
-    ['page','doc'].forEach(function(sc){          // 쪽이 하나뿐인 노트는 글이 같아 한 번만 간다
-      var txt=noteText(sc);
-      if(txt&&txt.length>=WARM_MIN) warmOne(txt);
-    });
+    // 20.1 · 문서 전체 글을 뽑는 건 논문에서 제일 비싼 한 방이다.
+    //   손가락이 움직이는 동안 하면 그대로 멈춤으로 보이므로, 브라우저가
+    //   한가해질 때까지 기다렸다 한다.
+    // 20.2 · 문서 전체 글이 아직 다 안 뽑혔으면 억지로 뽑지 않는다.
+    //   편집기가 한가할 때 몇 쪽씩 채워 두고(aiFillDocText), 채워지면 그때 준비한다.
+    var run=function(){
+      if(!enabled||ctl||!inNote()) return;
+      var again=false;
+      ['page','doc'].forEach(function(sc){      // 쪽이 하나뿐인 노트는 글이 같아 한 번만 간다
+        var txt=noteTextIfReady(sc);
+        if(txt==null){ again=true; return; }    // 아직 준비 중 — 다음 기회에
+        if(txt.length>=WARM_MIN) warmOne(txt);
+      });
+      if(again) scheduleWarm(1500);             // 다 채워질 때까지 느긋하게 다시 본다
+    };
+    if(typeof requestIdleCallback==='function') requestIdleCallback(run,{timeout:4000});
+    else run();
   }
   function scheduleWarm(delay){
     if(warmTimer) clearTimeout(warmTimer);
     warmTimer=setTimeout(function(){ warmTimer=null; warmAll(); },delay==null?900:delay);
   }
+  // 20.2 · 편집기가 쪽 글을 다 채우면 버튼 표시를 갱신해 달라고 부른다
+  window.sdyAiPaintReady=function(){ paintOutlineReady(); };
   // 테스트·디버그: 기다리지 말고 지금 바로 준비 / 준비해 둔 답 비우기
   window.sdyAiWarmNow=function(){ warmAll(); };
   window.sdyAiWarmReset=function(){ warmCache={}; warmPend={}; warmCount=0; paintOutlineReady(); };
@@ -32710,18 +32864,44 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var ed=$('editorView');
     if(ed&&typeof MutationObserver!=='undefined'){
       new MutationObserver(function(){
-        if(inNote()){ refreshStatus(); scheduleWarm(700); }
+        if(inNote()){
+          refreshStatus();
+          // 20.2 · 노트를 연 순간부터 한가한 틈에 쪽 글을 조금씩 뽑아 둔다.
+          //   버튼을 누를 즈음엔 이미 다 준비돼 있고, 화면은 한 프레임도 멎지 않는다.
+          try{ if(typeof window.__sdyAiFillText==='function') window.__sdyAiFillText(); }catch(e){}
+          scheduleWarm(700);
+        }
         else{
           sayHide();
           var h=$('aiHist'); if(h) h.hidden=true;
         }
       }).observe(ed,{attributes:true,attributeFilter:['class']});
     }
-    // 글을 고치면(타이핑 멈춘 뒤) 준비해 둔 정리를 다시 만든다
+    // 글을 고치면(타이핑 멈춘 뒤) 준비해 둔 정리를 다시 만든다.
+    // 20.1 · 예전엔 #pagesStage 아래 '모든' 변화에 반응했다. 그런데 쪽 가상화는
+    //   스크롤할 때마다 종이(.page-wrap)와 그 안 레이어를 통째로 넣었다 뺐다 한다 —
+    //   글을 한 글자도 안 고쳤는데 스크롤 내내 warm 예약이 다시 걸렸고, 그때마다
+    //   문서 전체 글을 다시 뽑아 한 동작이 수 초씩 멎었다. 이제 '사람이 글을 고친
+    //   변화'만 본다: 글자 바뀜(characterData)과 글상자(.tb) 안쪽 노드 변화.
     var stage=$('pagesStage');
     if(stage&&typeof MutationObserver!=='undefined'){
       var tt=null;
-      new MutationObserver(function(){
+      var isEdit=function(m){
+        if(m.type==='characterData') return true;
+        var t=m.target;
+        // 종이·레이어를 통째로 올리고 내리는 가상화 움직임은 편집이 아니다
+        if(t&&t.nodeType===1){
+          if(t.id==='pagesStage') return false;
+          if(t.classList&&(t.classList.contains('page-wrap')||t.classList.contains('paper')
+             ||t.classList.contains('layer'))) return false;
+          try{ if(t.closest&&t.closest('.tb')) return true; }catch(e){}
+        }
+        return false;
+      };
+      new MutationObserver(function(muts){
+        var edited=false;
+        for(var i=0;i<muts.length;i++){ if(isEdit(muts[i])){ edited=true; break; } }
+        if(!edited) return;                    // 스크롤로 종이만 오르내린 경우 — 무시
         if(tt) clearTimeout(tt);
         tt=setTimeout(function(){ scheduleWarm(1200); },1200);
       }).observe(stage,{childList:true,subtree:true,characterData:true});
