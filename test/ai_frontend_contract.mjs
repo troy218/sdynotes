@@ -124,7 +124,7 @@ check('서버: chat은 앱 실행 요청이면 [[app]] 표식으로 넘기라고
   /\[\[app\]\]/.test(srv) && /앱 실행기가 이어받는다/.test(srv));
 check('서버: app 프롬프트는 음악·노트·타이머·도구·되묻기를 문서화한다',
   ['@music play', '@note open', '@timer', '@clock', '@sw', '@present', '@export', '@find',
-    '@stickers', '@cards', '@settings', '@ask', '@done'].every((c) => srv.includes(c)));
+    '@stickers', '@cards', '@settings', '@ask', '@done', '@eq on', '@eq preset'].every((c) => srv.includes(c)));
 check('서버: app 후속 문맥(context)을 이전 대화로 전달한다',
   /task === 'app'/.test(srv) && /이전 대화:\\n/.test(srv));
 check('프런트: [[app]] 표식을 파싱해 앱 실행으로 넘긴다',
@@ -135,8 +135,8 @@ check('프런트: /앱 접두사는 앱 실행을 강제한다',
 check('프런트: 시켜 달라는 말투면 앱 실행으로 자동 라우팅한다',
   /function looksLikeApp\(q\)/.test(js) && /window\.sdyAiLooksLikeApp=looksLikeApp/.test(js)
   && /if\(looksLikeApp\(q\)\)\{ run\('app',q\); return; \}/.test(js));
-check('프런트: 앱 파서는 음악·노트·타이머·도구·되묻기를 읽는다',
-  /window\.sdyAiAppParse=function/.test(js) && /cmd:'music'/.test(js) && /cmd:'note'/.test(js)
+check('프런트: 앱 파서는 음악·노트·타이머·도구·되묻기·이퀄라이저를 읽는다',
+  /window\.sdyAiAppParse=function/.test(js) && /cmd:'music'/.test(js) && /cmd:'eq'/.test(js) && /cmd:'note'/.test(js)
   && /cmd:'timer'/.test(js) && /cmd:'clock'/.test(js) && /cmd:'sw'/.test(js)
   && /cmd:'present'/.test(js) && /cmd:'export'/.test(js) && /cmd:'find'/.test(js)
   && /cmd:'stickers'/.test(js) && /cmd:'cards'/.test(js) && /cmd:'settings'/.test(js)
@@ -172,7 +172,7 @@ check('프런트: 그림은 쪽을 반이나 차지하지 않게 담백한 크�
   /AI_DRAW_W_RATIO=0\.40, AI_DRAW_MAX_W=320/.test(js) && /AI_DRAW_MIN_W=150, AI_DRAW_MAX_H=360/.test(js)
   && /tw=Math\.max\(AI_DRAW_MIN_W,Math\.min\(capW,Math\.round\(aW\*AI_DRAW_W_RATIO\)\)\)/.test(js));
 check('프런트: 꼼꼼한 그림을 위해 곡선을 촘촘히 샘플링하고 획 상한을 늘렸다',
-  /Math\.min\(72,Math\.ceil\(dist\/3\)\)/.test(js) && /Math\.min\(56,Math\.ceil\(dist\/3\)\)/.test(js)
+  /Math\.min\(120,Math\.ceil\(dist\/2\)\)/.test(js) && /Math\.min\(80,Math\.ceil\(dist\/2\)\)/.test(js)
   && /kept\.length<320/.test(js));
 // ── 14.27.0 · 형광펜(글귀 단위)·표 삭제·보기 좋은 배치·여러 대화 문맥 ──
 check('서버: edit 프롬프트는 형광펜을 글귀 단위(@hl)로 시키고 상자 전체(@st hl)와 구분한다',
@@ -867,6 +867,27 @@ check('런타임: 비동기 적용이 끝나야 요약이 나온다',
     && p3c.ops[3].cmd === 'export' && p3c.ops[3].pdf === false
     && p3c.ops[4].cmd === 'find' && p3c.ops[4].q === '광합성'
     && p3c.ops[5].cmd === 'stickers' && p3c.ops[6].cmd === 'cards' && p3c.ops[7].cmd === 'settings');
+  const pEq = w.sdyAiAppParse([
+    '@eq on',
+    '@eq off',
+    '@eq toggle',
+    '@eq preset | 보컬 강조',
+    '@eq preset | 베이스 부스트',
+    '@eq reset',
+    '@eq open',
+    '@music eq on',
+    '@done 이퀄라이저 묶음',
+  ].join('\n'));
+  check('런타임: 이퀄라이저 명령을 파싱한다',
+    pEq.ops.length === 8 && pEq.dropped === 0 && pEq.say === '이퀄라이저 묶음'
+    && pEq.ops[0].cmd === 'eq' && pEq.ops[0].act === 'on'
+    && pEq.ops[1].cmd === 'eq' && pEq.ops[1].act === 'off'
+    && pEq.ops[2].cmd === 'eq' && pEq.ops[2].act === 'toggle'
+    && pEq.ops[3].cmd === 'eq' && pEq.ops[3].act === 'preset' && pEq.ops[3].preset === '보컬 강조'
+    && pEq.ops[4].cmd === 'eq' && pEq.ops[4].act === 'preset' && pEq.ops[4].preset === '베이스 부스트'
+    && pEq.ops[5].cmd === 'eq' && pEq.ops[5].act === 'reset'
+    && pEq.ops[6].cmd === 'eq' && pEq.ops[6].act === 'open'
+    && pEq.ops[7].cmd === 'eq' && pEq.ops[7].act === 'on');
   const p4 = w.sdyAiAppParse(new Array(12).fill('@clock').join('\n'));
   check('런타임: 앱 명령은 한 번에 10개까지만 받는다',
     p4.ops.length === 10 && p4.dropped === 2);
@@ -877,12 +898,18 @@ check('런타임: 시켜 달라는 말투는 앱 실행으로 본다',
   && w.sdyAiLooksLikeApp('새 노트 만들어줘') === true
   && w.sdyAiLooksLikeApp('회의록 노트 열어줘') === true
   && w.sdyAiLooksLikeApp('5분 타이머 맞춰줘') === true
-  && w.sdyAiLooksLikeApp('발표 시작해줘') === true);
+  && w.sdyAiLooksLikeApp('발표 시작해줘') === true
+  && w.sdyAiLooksLikeApp('이퀄라이저 켜줘') === true
+  && w.sdyAiLooksLikeApp('이퀄라이저 꺼줘') === true
+  && w.sdyAiLooksLikeApp('이퀄라이저 보컬 강조로 바꿔줘') === true
+  && w.sdyAiLooksLikeApp('베이스 부스트 켜줘') === true
+  && w.sdyAiLooksLikeApp('이퀄라이저 열어줘') === true);
 check('런타임: 문서 작업·물음은 앱 실행으로 보내지 않는다 (/앱은 강제라 제외)',
   w.sdyAiLooksLikeApp('발표 자료 만들어줘') === false
   && w.sdyAiLooksLikeApp('제목을 맨 위로 옮겨 줘') === false
   && w.sdyAiLooksLikeApp('노래 가사 알려줘') === false
   && w.sdyAiLooksLikeApp('타이머가 뭐야?') === false
+  && w.sdyAiLooksLikeApp('이퀄라이저가 뭐야?') === false
   && w.sdyAiLooksLikeApp('/앱 강제 실행') === false);
 
 // 앱 실행용 적용기 스텁 — 진짜 적용기는 런타임 파일에서 검증한다

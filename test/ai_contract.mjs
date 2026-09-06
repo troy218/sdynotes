@@ -195,7 +195,7 @@ ok('앱 실행 계획을 그대로 돌려준다', r.ok === true && r.task === 'a
 const appMessages = calls[0].body.messages;
 ok('앱 시스템 프롬프트는 음악·노트·타이머·도구·되묻기를 문서화한다',
   ['@music play', '@note open', '@timer', '@clock', '@sw', '@present', '@export', '@find',
-    '@stickers', '@cards', '@settings', '@ask', '@done'].every((c) => appMessages[0].content.includes(c)));
+    '@stickers', '@cards', '@settings', '@ask', '@done', '@eq on', '@eq preset'].every((c) => appMessages[0].content.includes(c)));
 ok('앱 상태와 실행 요청은 서로 다른 레이블로 모델에 전달한다',
   /앱 상태:\n<appstate>/.test(appMessages[1].content)
   && /실행 요청: 봄날 틀어줘/.test(appMessages[1].content));
