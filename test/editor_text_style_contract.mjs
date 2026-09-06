@@ -255,8 +255,15 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
 }
 {
   const b = body('commitEditingText');
+  // 22.1 · 커밋은 여전히 '화면 → el.html/폰트크기' 로 내용을 옮긴다. 다만 값을
+  //   먼저 비교해 실제로 바뀐 상자를 확인할 때만 쓴다(오토세이브 에코 루프 차단).
   check('커밋은 내용을 el.html/폰트크기로 옮긴다',
-    b.includes('el.html=imathCollapse(stripWF(c.innerHTML))') && b.includes('el.fontSize=parseInt(c.style.fontSize)||16'));
+    b.includes('imathCollapse(stripWF(c.innerHTML))') && b.includes('parseInt(c.style.fontSize)||16')
+    && b.includes('el.html=nh') && b.includes('el.fontSize=nfs'));
+  // (주석 제외) — '저장은 직전 단계에서 한다'는 설명이 한 줄에 붙어 있어서.
+  const bCommit = b.replace(/\s*\/\/[^\n]*/g, '');
+  check('22.1 · 바뀐 상자가 없으면 저장을 다시 예약하지 않는다',
+    /if\(changed\)\{\s*if\(_commitFromSave\)\{\s*try\{\s*bumpAiText\(\);\s*\}catch\(e\)\{\}\s*\}\s*else saveDoc\(\);/.test(bCommit));
   check('빈 상자도 남겨둔다 (위치 표시 유지)', b.includes('빈 상자도 남겨둔다'));
 }
 {

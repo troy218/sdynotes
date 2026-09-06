@@ -51,7 +51,9 @@ const enterEdit = js.match(/function enterEdit\(w,keepSel\)\{([\s\S]*?)\n       
 assert.ok(enterEdit, 'enterEdit should exist');
 assert.match(enterEdit[1], /syncFSFromTarget\(\);/,
   'entering a box must sync the toolbar to that box font size');
-const clickSel = js.match(/deselectAll\(true\); clearMulti\(\);\s*\n\s*tb\.classList\.add\('sel'\);\s*\n\s*selected=\{type:'text',el:tb\};\s*\n\s*syncFSFromTarget\(\);/);
+// 22.1 · 고른 상자에 장식을 붙이는 한 줄이 끼었다 — '그 상자의 크기를 툴바에
+//   심는다'는 순서(선택 → 동기화)가 그대로면 통과한다.
+const clickSel = js.match(/deselectAll\(true\); clearMulti\(\);[\s\S]{0,220}?tb\.classList\.add\('sel'\);[\s\S]{0,220}?selected=\{type:'text',el:tb\};[\s\S]{0,220}?syncFSFromTarget\(\);/);
 assert.ok(clickSel, 'clicking a text box must sync the toolbar to that box font size');
 
 // ── ② 글꼴 미리보기 문구 ────────────────────────────────────────────────

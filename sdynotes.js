@@ -1420,12 +1420,20 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         cfg.paper=d.paper; cfg.sizePreset=d.sizePreset; cfg.emoji=d.emoji;
         try{
             if(Array.isArray(d.pages)){
+                // 22.1 · 저장할 때마다 '전 쪽'을 다시 정리하지 않는다.
+                //   sanitize 는 겹침 O(n²) 비교를 포함하는데, 이 루프는 오토세이브
+                //   (400ms)마다 문서 전체 요소 ×쪽 수 만큼 돌아 '글상자를 두드리는
+                //   동안 계속' 밀렸다. 렌더/프리세니타이즈가 이미 정리한 쪽은
+                //   _sanDone 으로 알고 있으므로 건너뛰고, 정리가 필요한 쪽만 돌린다.
+                //   ★ 드롭이 없으면 배열 신원을 그대로 둔다 — 새 배열로 덮으면
+                //     WeakSet 캐시가 매번 어긋나 이 최적화가 무의미해진다.
                 d.pages.forEach(pg=>{
-                    if(pg&&pg.els){
-                        const n=sanitizePageEls(pg.els);
-                        if(n.length!==pg.els.length) pg.__dirty=true;
-                        pg.els=n;
-                    }
+                    if(!pg||!Array.isArray(pg.els)||!pg.els.length) return;
+                    const keep=pg.els;
+                    if(_sanDone.has(keep)) return;
+                    const n=sanitizePageEls(keep);
+                    _sanDone.add(n); _sanDone.add(keep);
+                    if(n.length!==keep.length){ pg.__dirty=true; pg.els=n; }
                 });
             }
         }catch(e){}
@@ -5830,6 +5838,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 큰 문서에서 요소를 옮기거나 글을 쓸 때마다 매번 localStorage 전체 직렬화 +
     // 전체 딥카피가 돌아 버벅였다. 이제 한 번으로 합치고, 나가기 직전엔 즉시 저장.
     let _saveTimer=null;
+    // 22.1 · 오토세이브(flushSaveDoc) 안의 commitEditingText 는 '마지막 편집분을
+    //   디스크에 담기 위한' 커밋이다. 여기서 다시 saveDoc() 을 걸면
+    //   save → commit → save → … 400ms 에코 루프가 돌아, 아무것도 치지 않아도
+    //   직렬화·sanitize·동기화가 계속 돈다(똥컴 편집 렉). 플래그로 한 바퀴만 막는다.
+    let _commitFromSave=false;
     function saveDoc(){
         if(!curNB||!doc) return;
         try{ bumpAiText(); }catch(e){}   // 20.1 · 문서가 바뀌었다 → 해돌이 글 캐시 무효화
@@ -5856,7 +5869,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(_docId && _docId!==curNB.id){ _saveNoteId=null; return; }
         _saveNoteId=null;
         if(doc.__loadFailed){ _armBlockedImportRetry(); return; }
-        try{ commitEditingText(); }catch(e){}
+        try{ _commitFromSave=true; commitEditingText(); }catch(e){} finally{ _commitFromSave=false; }
         // 14.14 · 본문이 비어 보이는데 디스크/서버에는 내용이 있는 상태면
         //   빈 문서로 덮어쓰지 않는다. (IO 미렌더·pages op 미스매치로 doc.pages 가
         //   비워진 직후 노트 전환/닫기가 일어나면 영구 유실되던 경로)
@@ -6123,10 +6136,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(doc&&doc.__ref){
             _syncD={__ref:doc.__ref,paper:doc.paper,sizePreset:doc.sizePreset,
                     emoji:doc.emoji||'',glossary:doc.glossary||{}};
-        }else{
-            _syncD=doc?JSON.parse(JSON.stringify(doc)):loadDoc(nbId);
         }
-        pendingNB={id:nbId, memo:curMemo, d:_syncD, title:(document.getElementById('edTitle').value||'').trim()};
+        // 22.1 · 일반 문서는 여기서 doc 을 통째로 복제하지 않는다.
+        //   예전엔 save 한 번(=타이핑 중에는 400ms 한 번)마다
+        //   JSON.parse(JSON.stringify(doc)) 이 돌아, 500쪽 논문에서 입력창이
+        //   열려 있는 내내 직렬화 두 번이 이어졌다. 디바운스가 여러 save 를
+        //   한 페이로드로 합치는 만큼, '보내기 직전'에 한 번만 굽는 게
+        //   비용에도 정확성에도 맞는다(가장 최신 상태를 보낸다).
+        pendingNB={id:nbId, memo:curMemo, d:_syncD,
+                   _snap:_syncD?null:'1',
+                   title:(document.getElementById('edTitle').value||'').trim()};
         clearTimeout(syncTimer);
         syncTimer=setTimeout(flushSync,250);
     }
@@ -6136,6 +6155,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         clearTimeout(syncTimer);
         const p=pendingNB; pendingNB=null;
         if(!p) return;
+        if(p._snap){
+            // 위에서 미뤄 둔 '동기화 페이로드용 스냅샷'을 여기서 한 번만 만든다.
+            try{
+                p.d=(doc&&_docId===p.id&&!doc.__loadFailed&&!doc.__ref)
+                    ?JSON.parse(JSON.stringify(doc)):loadDoc(p.id);
+            }catch(e){ try{ p.d=loadDoc(p.id); }catch(_e){} }
+        }
         if(!SB||String(p.id).startsWith('local_')){
             if(manual) setSaveState('저장됨 ✓',2000);
             return;
@@ -7689,6 +7715,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
         if(multiSel.length===1){ multiSel[0].node.classList.remove('msel'); multiSel[0].node.classList.add('sel');
             if(clipboardEls[0].type==='image') _ensureImgControls(multiSel[0].node);
+            else _ensureTbControls(multiSel[0].node);
             selected={type:clipboardEls[0].type==='image'?'image':clipboardEls[0].type,el:multiSel[0].node}; multiSel=[]; }
         toast(`${made.length}개 붙여넣음`,1200);
     }
@@ -7892,12 +7919,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         eb.addEventListener('pointerdown',e=>e.stopPropagation());
         eb.addEventListener('click',e=>{e.stopPropagation();openLatexModal(el.id,pageIdx);});
         w.appendChild(eb);
-        ['top','bottom','left','right'].forEach(side=>{
-            const eg=document.createElement('div');eg.className='tb-edge '+side;eg.title='끌어서 이동';w.appendChild(eg);
-        });
-        ['h-nw','h-ne','h-sw','h-se','h-n','h-s','h-w','h-e'].forEach(cls=>{
-            const h=document.createElement('div');h.className='handle '+cls;h.dataset.dir=cls;w.appendChild(h);
-        });
+        // 22.1 · 테두리·손잡이는 수식을 고를 때 만든다 (글상자와 같은 규칙).
         return w;
     }
 
@@ -7930,6 +7952,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const h=document.createElement('div'); h.className='handle '+c; h.dataset.dir=c; im.appendChild(h);
         });
         return im;
+    }
+    // 22.1 · 글상자(·수식)의 테두리/손잡이도 이미지와 같은 방식으로 늦게 만든다.
+    //   쪽당 글상자가 수백 개인 논문에서 이 두 종류 장식이 요소 수를 13배로
+    //   늘렸다(상자당 테두리 4 + 손잡이 8 = 12개). CSS 는 이미 '고른 상자와
+    //   편집 중인 상자'에만 보이도록(.tb.sel/.edit) 규정하고, 히트 테스트도 그
+    //   상자를 건드릴 때만 의미를 갖는다 → 선택되는 순간에 만들면 된다.
+    //   (표 칸은 손잡이를 쓰지 않는다 — .tb.in-tbl .handle{display:none!important})
+    function _ensureTbControls(w){
+        if(!w||w._ctl) return w;
+        // SVG 안(그려진 획·stroke-g)에 HTML 장식을 넣지 않는다. (안전망)
+        try{ if(w.namespaceURI&&w.namespaceURI!=='http://www.w3.org/1999/xhtml') { w._ctl=1; return w; } }catch(e){}
+        w._ctl=1;
+        if(w.classList.contains('in-tbl')) return w;
+        ['top','bottom','left','right'].forEach(side=>{
+            const eg=document.createElement('div');
+            eg.className='tb-edge '+side; eg.title='끌어서 이동';
+            w.appendChild(eg);
+        });
+        ['h-nw','h-ne','h-sw','h-se','h-n','h-s','h-w','h-e'].forEach(cls=>{
+            const h=document.createElement('div');
+            h.className='handle '+cls; h.dataset.dir=cls;
+            w.appendChild(h);
+        });
+        return w;
     }
     function buildImageEl(el,pageIdx){
         const w=document.createElement('div');
@@ -8117,7 +8163,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!_tightQueue.length) return;
         // 스크롤 중이면 이번 프레임은 읽지 않고 다음 프레임으로 미룬다.
         if(_isScrolling()){ _tightRaf=requestAnimationFrame(_drainTightQueue); return; }
-        let budget=96;                      // 한 프레임에 맞출 상자 수 상한(나머지는 다음 프레임)
+        // 22.1 · 똥컴은 프레임당 맞춤 상자를 더 줄인다. (클릭 직후 렌더된 쪽의
+        //   단어 폭을 다시 재는 일이 한 프레임에 몰려 캐럿이 늦게 뜨는 일을 막는다)
+        let budget=sdyTurbo()?32:96;        // 한 프레임에 맞출 상자 수 상한(나머지는 다음 프레임)
         while(_tightQueue.length&&budget-->0){
             const item=_tightQueue.shift();
             if(!item.c.isConnected) continue;   // 아직 안 붙었으면 이번엔 건너뜀(재렌더 시 재요청됨)
@@ -8220,7 +8268,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(kind==='lg')   el.lg=Math.max(0.7,Math.min(1.8,+(((el.lg||1)+delta).toFixed(2))));
         if(kind==='reset'){ delete el.ls; delete el.wsp; delete el.lg; }
         const nw=buildTextEl(el,+w.dataset.pageIdx);
-        w.replaceWith(nw); nw.classList.add('sel');
+        w.replaceWith(nw); nw.classList.add('sel'); _ensureTbControls(nw);
         updateTightBar(); saveDoc();
     }
 
@@ -8507,9 +8555,45 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         return bands;
     }
+    // 22.1 · 형광펜 띠를 '다시 잴 가치'가 있는 상자인가?
+    //   띠는 저장 HTML 과 무관한 표시 전용 레이어라, 배경색이 하나도 없는 상자는
+    //   재든 아니든 결과가 '아무 것도 안 그림'이다. 글상자 수백 개인 쪽에서
+    //   이 판정 하나가 레이아웃 읽기(상자 × 텍스트 노드)를 통째로 없앤다.
+    //   편집 중인 상자는 글자마다 배경이 생길 수 있으니 항상 계산 대상.
+    function _hlMayHave(c,w){
+        try{
+            if(w.classList&&w.classList.contains('edit')) return true;
+            const el=(w.dataset&&w.dataset.id!=null)?findEl(+w.dataset.pageIdx,w.dataset.id):null;
+            if(el&&(el.cellBg||el.hl)) return true;
+            if(c.style&&c.style.backgroundColor) return true;
+            return /background/i.test((el&&el.html)||'');
+        }catch(e){ return true; }
+    }
+    // 22.1 · 웹폰트 로드는 한 번만 기다린다. 예전엔 글상자·표시 레이어마다
+    //   document.fonts.ready.then(...) 을 걸어, 쪽 하나를 그릴 때 수백 개의
+    //   Promise 와 그만큼의 재측정이 쌓였다. 이제 단일 구독 + 콜백 목록.
+    const _fontsReadyCbs=[];
+    let _fontsReadyArmed=false;
+    function _onFontsReady(cb){
+        try{
+            if(!(document.fonts&&document.fonts.ready)){ cb(); return; }
+            if(document.fonts.status!=='loading'){ cb(); return; }   // 이미 떠 있으면 즉시
+            _fontsReadyCbs.push(cb);
+            if(_fontsReadyArmed) return;
+            _fontsReadyArmed=true;
+            document.fonts.ready.then(()=>{
+                _fontsReadyArmed=false;
+                const list=_fontsReadyCbs.splice(0);
+                list.forEach(f=>{ try{ f(); }catch(e){} });
+            }).catch(()=>{ _fontsReadyArmed=false; _fontsReadyCbs.length=0; });
+        }catch(e){ try{ cb(); }catch(_e){} }
+    }
     function _hlSchedule(c,w){
         if(!c||!w||!c.isConnected) return;
         if(c._sdyHlT) return;
+        // 22.1 · 이미 띠 레이어가 있는 상자는(지금은 배경이 없어도) 지워 주려면
+        //   계산이 필요하므로 통과시킨다.
+        if(!_hlMayHave(c,w)&&!(w.querySelector&&w.querySelector(':scope > .sdy-hl-layer'))) return;
         c._sdyHlT=setTimeout(()=>{ c._sdyHlT=0; try{ _hlPaint(c,w); }catch(_e){} },60);
     }
     function _hlWatch(c,w){
@@ -8540,8 +8624,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             w.classList.remove('sdy-hl-band-on');
             const old=w.querySelector(':scope > .sdy-hl-layer');
             if(old){ try{ old.remove(); }catch(_e){} }
+            // 22.1 · 칠할 띠가 남지 않은 상자는 관찰도 멈춘다. (형광펜을 지운
+            //   상자에서 글자마다 레이아웃을 다시 재지 않게)
+            if(c._sdyHlMO){ try{ c._sdyHlMO.disconnect(); }catch(_e){} c._sdyHlMO=null; }
             return;
         }
+        // 22.1 · 띠가 실제로 필요한 상자만 이때부터 관찰한다. 렌더 시점에 상자마다
+        //   관찰자를 붙이던 것의 대체 — 형광펜을 방금 칠한 상자도 이 경로로
+        //   관찰자가 붙으므로 서식 변경 후 재그림은 예전대로 동작한다.
+        if(!c._sdyHlMO){ try{ _hlWatch(c,w); }catch(_e){} }
         // 레이아웃을 아직 못 재는 순간(숨김·폰트 로딩 전)에는 다음 사이클에서
         const crect=c.getBoundingClientRect();
         if(!crect||(!crect.width&&!crect.height)) return;
@@ -8632,13 +8723,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             //   → 이것도 큐로 모아 한 번에 돌린다(폰트 로드 직후 상자마다 rAF 가
             //     터지는 걸 막는다). 폰트 상태가 바뀌면 _tightFitHit 캐시가
             //     어긋나므로 자동으로 재측정된다.
-            try{
-                if(_fontState()==='P'&&document.fonts&&document.fonts.ready){
-                    document.fonts.ready.then(()=>{
-                        if(w.isConnected) _queueTightFit(c,el);
-                    }).catch(()=>{});
-                }
-            }catch(_e){};
+            // 22.1 · 상자마다 Promise 를 걸지 않고, 폰트 로드는 한 번만 기다린다.
+            try{ _onFontsReady(()=>{ if(w.isConnected) _queueTightFit(c,el); }); }catch(_e){}
         }
         // 14.14 · innerText 는 일부 환경(구형 WebView·테스트 DOM)에서 undefined.
         //   .trim() 이 그대로 터지면 텍스트 상자 전체가 안 그려져 빈 종이가 된다.
@@ -8659,6 +8745,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                (e.key.length===1||e.key==='Enter')) _ensurePendingTypingSpan(c);
         });
         c.addEventListener('input',()=>{
+            w._caretV=(w._caretV||0)+1;   // 22.1 · 실시간 캐럿 좌표 캐시를 무효화하는 신호
             if(w.classList.contains('edit')) commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
             _scriptEditUndoable=false;        // 실제 타이핑 뒤 Ctrl+Z 는 브라우저 기본 undo 를 우선
             const em=!_tbPlain().trim();
@@ -8688,25 +8775,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 이동 버튼과 X 버튼은 두지 않는다.
         //  · 이동 → 테두리를 잡고 끌기 (또는 Alt+드래그)
         //  · 삭제 → 선택 후 Delete 키
-        // 테두리를 잡으면 이동 (꼭짓점·변중앙 손잡이는 이 위에 그려진다)
-        ['top','bottom','left','right'].forEach(side=>{
-            const eg=document.createElement('div');
-            eg.className='tb-edge '+side; eg.title='끌어서 이동';
-            w.appendChild(eg);
-        });
-        // 크기 조절 손잡이: 네 꼭짓점 + 네 변의 중앙
-        ['h-nw','h-ne','h-sw','h-se','h-n','h-s','h-w','h-e'].forEach(cls=>{
-            const h=document.createElement('div');
-            h.className='handle '+cls; h.dataset.dir=cls;
-            w.appendChild(h);
-        });
-        // 14.18.2 · 부드러운 형광펜 표시 레이어 — 입력/서식 변경은 MutationObserver
-        // 가 받아서 다시 그린다. 웹폰트가 늦게 뜨는 경우에도 한 번 더 그린다.
-        try{ _hlWatch(c,w); _hlSchedule(c,w); }catch(_e){}
-        try{
-            if(document.fonts&&document.fonts.ready)
-                document.fonts.ready.then(()=>{ if(w.isConnected) _hlSchedule(c,w); }).catch(()=>{});
-        }catch(_e){}
+        // 22.1 · 테두리·손잡이는 여기서 만들지 않는다(위 _ensureTbControls).
+        //   상자를 고르거나 편집에 들어가는 순간에 붙이며, 붙이는 곳은
+        //   선택 경로 전부 + 아래 쪽(stage) MutationObserver 안전망이다.
+        // 14.18.2 · 부드러운 형광펜 표시 레이어 — 형광펜이 있는 상자만 다시 잰다.
+        //   관찰자(MutationObserver)는 띠가 실제로 그려질 때 _hlPaint 가 붙인다.
+        //   웹폰트가 늦게 뜨는 경우에도 한 번 더 그린다.
+        try{ _hlSchedule(c,w); }catch(_e){}
+        _onFontsReady(()=>{ if(w.isConnected) _hlSchedule(c,w); });
         return w;
     }
 
@@ -8715,15 +8791,75 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   Ctrl+Z 를 눌러도 방금 적은 글이 되돌아가지 않았다(브라우저 기본 undo 는
     //   편집 중일 때만 듣는다). 편집을 시작할 때 '적기 전' 문서를 기억해 두고,
     //   그 세션에서 처음 글자가 바뀌는 순간 한 번만 기록한다.
+    //
+    // ★ 22.1 · 똥컴에서 '글상자를 누르는 순간' 멈추던 핵심이 여기 있었다.
+    //   예전 기록은 doc 전체 JSON.stringify — 논문처럼 쪽이 많은 문서에서
+    //   편집에 들어갈 때마다 수백 KB~수십 MB 를 직렬화했고(동작이 끝나기 전까지
+    //   화면이 얼음), 그 문자열을 60개까지 쌓아 두어 GC 까지 무거웠다.
+    //   글자 편집이 바꿀 수 있는 것은 **그 상자 하나**뿐이므로, 그 상자의
+    //   필드만 기억하는 '쪽 패치' 기록으로 바꾼다. 비용은 문서 크기(쪽 500개)가
+    //   아니라 상자 크기(수백 바이트)이고, 되돌리기/다시 실행도 같은 패치로 처리한다.
     let _editSnap=null, _editSnapUsed=true;
-    function markEditSnapshot(){
-        try{ _editSnap=doc?JSON.stringify(doc):null; _editSnapUsed=false; }catch(e){ _editSnap=null; _editSnapUsed=true; }
+    const _EDIT_PATCH='"__sdyEdit"';
+    function histMax(){
+        // 기록은 통째 직렬화(doc)라 한 장이 아주 크다. 저사양·대용량 문서에서는
+        // 깊이를 줄여 기억에 붙드는 문자열 총량(= GC 부담)을 아낀다.
+        try{
+            if(sdyTurbo()) return 12;
+            const n=(doc&&doc.pages)?doc.pages.length:0;
+            return n>120?24:60;
+        }catch(e){ return 60; }
+    }
+    // 요소의 '지금 상태' 얕은 복사 — 중첩 객체(표 셀 정보 등)만 본따서 복제한다.
+    function _snapEl(el){
+        const o={};
+        if(!el) return o;
+        for(const k in el){
+            const v=el[k];
+            if(typeof v==='function') continue;
+            if(v&&typeof v==='object'){
+                try{ o[k]=JSON.parse(JSON.stringify(v)); }catch(e){ o[k]=v; }
+            }else o[k]=v;
+        }
+        return o;
+    }
+    function _editPatchStr(pi,id,before){
+        try{ return JSON.stringify({__sdyEdit:1,pi:+pi,id,before}); }catch(e){ return null; }
+    }
+    function _editPatchOf(s){
+        // 패치 기록은 항상 작다. 큰 문자열(문서 통째 기록)은 파싱조차 하지 않는다.
+        if(typeof s!=='string'||s.length>262144||s.indexOf(_EDIT_PATCH)<0) return null;
+        try{ const o=JSON.parse(s); return (o&&o.__sdyEdit===1)?o:null; }catch(e){ return null; }
+    }
+    // 패치를 문서에 입히고, 반대 방향 기록에 쓸 '바뀌기 직전 상태'를 돌려준다.
+    function _applyEditPatch(pt){
+        const pg=doc&&doc.pages&&doc.pages[pt.pi];
+        if(!pg||!Array.isArray(pg.els)) return null;
+        const el=pg.els.find(e=>e&&e.id===pt.id);
+        if(!el) return null;
+        const cur=_snapEl(el);
+        const b=pt.before||{};
+        for(const k in el){ if(!(k in b)) delete el[k]; }
+        for(const k in b) el[k]=b[k];
+        try{ markPageEdited(pt.pi); }catch(e){}
+        return cur;
+    }
+    function markEditSnapshot(w){
+        _editSnap=null; _editSnapUsed=true;
+        try{
+            if(!doc||!w||!w.dataset) return;
+            const pi=+w.dataset.pageIdx, id=w.dataset.id;
+            if(!doc.pages||!doc.pages[pi]||id==null) return;
+            const el=findEl(pi,id); if(!el) return;
+            _editSnap=_editPatchStr(pi,id,_snapEl(el));
+            _editSnapUsed=!_editSnap;
+        }catch(e){ _editSnap=null; _editSnapUsed=true; }
     }
     function commitEditSnapshot(){
         if(_editSnapUsed||!_editSnap) return;
         _editSnapUsed=true;
         history.push(_editSnap);
-        if(history.length>60) history.shift();
+        if(history.length>histMax()) history.shift();
         redoStack=[];
         _histT=Date.now();
     }
@@ -8773,7 +8909,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         _histT=now;
         const snap=JSON.stringify(doc);
         history.push(snap);
-        if(history.length>60) history.shift();
+        if(history.length>histMax()) history.shift();
         redoStack=[];                       // 새 작업이 생기면 다시 실행 기록은 무효
         return snap;
     }
@@ -8796,12 +8932,37 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(keep&&keep.__ref){ doc.__ref=keep.__ref; doc.__loadedTo=keep.__loadedTo||0; }
         try{ rehashAll(); }catch(e){}     // 현재 내용으로 해시 재작성 → 변경분만 전송
     }
+    // 쪽 패치 기록을 되돌리거나 다시 실행한다. 문서 전체를 파싱·재렌더하는 대신
+    //   그 상자(그리고 그 쪽)만 원상복구 한다 — 되돌리기 자체가 렉이 되지 않게.
+    //   stack: 반대편 스택(history ↔ redoStack). 성공 여부 반환.
+    function _applyPatchEntry(pt,stack,undoLabel){
+        const applied=_applyEditPatch(pt);
+        if(!applied) return false;
+        const back=_editPatchStr(pt.pi,pt.id,applied);
+        if(back){ stack.push(back); if(stack.length>histMax()) stack.shift(); }
+        _undoGuardUntil=Date.now()+30000;   // 내 op 에코가 되돌리기를 덮지 않게
+        selected=null; clearMulti();
+        // 표 안에 있던 상자라면 표 레이어도 같이 다시 얹는다 (다른 sync 경로와 동일).
+        try{ if(renderedPages.has(pt.pi)){ renderPageEls(pt.pi); renderTblDivs(pt.pi); } }catch(e){}
+        saveDoc();
+        toast(undoLabel,900);
+        return true;
+    }
     function undo(){
         if(!history.length){ toast('되돌릴 작업이 없습니다',900); return; }
         const s=history.pop();
+        const pt=_editPatchOf(s);
+        if(pt){
+            if(_applyPatchEntry(pt,redoStack,penActive?'그리기 되돌림':'되돌림')) return;
+            // 쪽·상자가 이미 사라진 기록 → 문서 통째 복원으로 되돌리면 안 된다
+            //   (패치 문자열은 doc 이 아니다). 스택만 원위치 하고 조용히 알린다.
+            history.push(s);
+            toast('되돌릴 수 없는 기록입니다',1200);
+            return;
+        }
         const keep=doc;
         redoStack.push(JSON.stringify(doc));
-        if(redoStack.length>60) redoStack.shift();
+        if(redoStack.length>histMax()) redoStack.shift();
         try{ doc=JSON.parse(s); }catch(e){ doc=keep; return; }
         _docId=(curNB&&curNB.id)||null;
         reviveDocMaps(keep);
@@ -8818,8 +8979,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function redo(){
         if(!redoStack.length){ toast('다시 실행할 작업이 없습니다',900); return; }
         const s=redoStack.pop();
+        const pt=_editPatchOf(s);
+        if(pt){
+            if(_applyPatchEntry(pt,history,penActive?'그리기 다시 실행':'다시 실행')) return;
+            redoStack.push(s);
+            toast('다시 실행할 수 없는 기록입니다',1200);
+            return;
+        }
         const keep=doc;
         history.push(JSON.stringify(doc));
+        if(history.length>histMax()) history.shift();
         try{ doc=JSON.parse(s); }catch(e){ doc=keep; return; }
         _docId=(curNB&&curNB.id)||null;
         reviveDocMaps(keep);
@@ -8914,6 +9083,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     const now=t.classList&&t.classList.contains('edit');
                     const was=/(^|\s)edit(\s|$)/.test(r.oldValue||'');
                     if(now||was) _editScanDirty=true;
+                    // 22.1 · 테두리·손잡이는 '고려진 상자'에만 만든다. 위 선택 경로들을
+                    //   지나치지 않고 class 만 바뀌는 경로(찾기·AI 서식·테이블 셀 등)도
+                    //   여기 걸린다. 렌더 중에 붙이는 게 아니라 고를 때만 붙인다.
+                    if(now||t.classList&&(t.classList.contains('sel')||t.classList.contains('msel'))){
+                        if(t.classList&&(t.classList.contains('tb')||t.classList.contains('latex-box'))){
+                            try{ _ensureTbControls(t); }catch(_e){}
+                        }
+                    }
                 }
                 // 선택 표시가 붙고 떨어지는 건 .tb / .paper-img / .stroke-g 뿐이다.
                 const cl=t.classList; if(!cl) continue;
@@ -8972,21 +9149,33 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(sidePanel==='words') renderPanel();
             }catch(e){}
         },60);
+        // 22.1 · '실제로 바뀐 상자'만 문서를 더럽히고 저장을 다시 예약한다.
+        //   예전에는 오토세이브(flushSaveDoc)가 커밋을 부르고, 커밋이 또 saveDoc 을
+        //   걸어 400ms 주기가 편집 중 계속 도는 에코 루프였다 — 글자 하나 안 쳐도
+        //   직렬화·동기화·전수 sanitize 가 되풀이됐고, 그게 똥컴 편집 렉의 일부였다.
+        let changed=false;
         list.forEach(w=>{
             if(!w) return;
             const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
             const c=w.querySelector('.tb-content');
-            el.html=imathCollapse(stripWF(c.innerHTML)); el.fontSize=parseInt(c.style.fontSize)||16;
-            // 14.6 · 커밋된 편집분도 dirty 로 표시 → 가져온 문서(서버 보관본)에서
-            //  나가기 직전 커밋된 글자가 슬라이스 저장에서 빠져 유실되지 않는다.
-            try{ markPageEdited(+w.dataset.pageIdx); }catch(e){}
+            const nh=imathCollapse(stripWF(c.innerHTML));
+            const nfs=parseInt(c.style.fontSize)||16;
+            if(nh!==el.html||nfs!==el.fontSize){
+                el.html=nh; el.fontSize=nfs; changed=true;
+                // 14.6 · 커밋된 편집분도 dirty 로 표시 → 가져온 문서(서버 보관본)에서
+                //  나가기 직전 커밋된 글자가 슬라이스 저장에서 빠져 유실되지 않는다.
+                try{ markPageEdited(+w.dataset.pageIdx); }catch(e){}
+            }
             // 빈 상자도 남겨둔다 (연한 점선 + 안내 문구로 위치 표시)
             const plain=String((c.innerText!=null?c.innerText:c.textContent)||'');
             const isEmpty=!plain.trim()&&!c.querySelector('img');
             w.classList.toggle('empty',isEmpty);
             if(isEmpty) c.setAttribute('data-empty','true');
         });
-        saveDoc();
+        if(changed){
+            if(_commitFromSave){ try{ bumpAiText(); }catch(e){} }   // 저장은 직전 단계에서 한다
+            else saveDoc();
+        }
     }
 
     function enterEdit(w,keepSel){
@@ -9004,11 +9193,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.querySelectorAll('.tb.edit').forEach(o=>{ if(o!==w){ commitEditingText(o); o.classList.remove('edit'); _editScanDirty=true; const c=o.querySelector('.tb-content'); if(c)c.contentEditable='false'; }});
         document.querySelectorAll('.tb.sel,.paper-img.sel,.stroke-g.sel').forEach(o=>{ if(o!==w) o.classList.remove('sel'); });
         w.classList.add('edit'); w.classList.remove('sel');
+        _ensureTbControls(w);            // 22.1 · 장식은 지금 이 순간 붙인다
         // MutationObserver 는 마이크로태스크라 같은 실행 흐름 안에서는 아직
         // 오지 않는다 → 편집 상자 캐시를 지금 바로 확정한다.
         _editBoxEl=w; _editScanDirty=false;
         selected={type:'text',el:w};
-        markEditSnapshot();          // 18.9 · 이 상자를 고치기 '직전' 상태를 기억
+        markEditSnapshot(w);         // 18.9 · 이 상자를 고치기 '직전' 상태를 기억 (22.1 · 상자 하나만 — doc 전체 직렬화 아님)
         syncFSFromTarget();          // 편집에 들어간 상자의 글자 크기를 툴바에
         // 18.8 · 툴바 글꼴도 이 상자의 글꼴로 맞춘다 (툴바 = 지금 입력될 글꼴)
         try{
@@ -9057,7 +9247,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const node=paperQ(pi,'.tb[data-id="'+id+'"]');
         if(!node) return false;
         deselectAll(true); clearMulti();
-        node.classList.add('sel');
+        node.classList.add('sel'); _ensureTbControls(node);
         selected={type:'text',el:node};
         return true;
     }
@@ -9093,7 +9283,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         w.classList.remove('edit'); _editScanDirty=true;
         const c=w.querySelector('.tb-content');
         if(c){ c.contentEditable='false'; disableTextSelect(c); }
-        w.classList.add('sel');
+        w.classList.add('sel'); _ensureTbControls(w);
         selected={type:'text',el:w};
     }
     // 커밋 후 다른 셀로 선택 이동
@@ -9197,25 +9387,40 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return x>r.left+m && x<r.right-m && y>r.top+m && y<r.bottom-m;
     }
     // 파란 하이라이트 + 저장된 선택 범위를 모두 비운다
+    // 22.1 · '글자 선택을 임시로 허용한' 상자 목록 — clearTextSelection 을 O(1) 로
+    //   만들 때 쓴다. (함수보다 먼저 선언해야 초기 로드 경로에서도 안전하다)
+    const _selOnHosts=new Set();
     function clearTextSelection(){
         try{
             const sel=window.getSelection();
             if(sel&&sel.rangeCount) sel.removeAllRanges();
         }catch(e){}
         savedRange=null; savedHost=null; textSel=null; savedCaret=null; _typingSpan=null; _pendingTyping=null;
-        document.querySelectorAll('#pagesStage .tb-content').forEach(c=>{
-            if(!c.closest('.tb').classList.contains('edit')) disableTextSelect(c);
+        // 22.1 · 예전엔 '화면의 모든 글상자'를 훑어 userSelect 를 지웠다. 글상자
+        //   수백 개인 쪽에서 상자를 하나 누를 때마다 수백 개 요소에 inline 스타일을
+        //   다시 쓰는 셈이라, 편집 진입 직전 프레임이 통째로 밀렸다(측정 결과: 
+        //   enterEdit 안에서만 이 루프가 14ms). 실제로 선택 허락을 받은 상자는
+        //   아래 Set 이 알고 있으므로 그 것만 되돌린다.
+        _selOnHosts.forEach(c=>{
+            if(!c||!c.isConnected){ _selOnHosts.delete(c); return; }
+            const box=c.closest?c.closest('.tb'):null;
+            if(box&&box.classList.contains('edit')) return;   // 편집 상자는 선택 허용 유지
+            disableTextSelect(c);
         });
     }
 
     // 편집 모드가 아니어도 드래그로 글자를 고를 수 있게 임시 허용
     function enableTextSelect(c){
+        if(!c) return;
+        _selOnHosts.add(c);
         c.style.userSelect='text';
         c.style.webkitUserSelect='text';
         c.style.cursor='text';
     }
     function disableTextSelect(c){
         if(!c) return;
+        _selOnHosts.delete(c);
+        if(!c.style) return;
         c.style.userSelect='';
         c.style.webkitUserSelect='';
         c.style.cursor='';
@@ -9683,7 +9888,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 host.classList.remove('edit'); _editScanDirty=true;
                 const cc=host.querySelector('.tb-content');
                 if(cc) cc.contentEditable='false';
-                host.classList.add('sel');
+                host.classList.add('sel'); _ensureTbControls(host);
                 selected={type:'text',el:host};
             }
             pushHistory();
@@ -9716,6 +9921,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             if(!w.classList.contains('sel')){ deselectAll(true); w.classList.add('sel'); }
             else { w.classList.add('sel'); }
+            _ensureTbControls(w);
             selected={type:w.classList.contains('paper-img')?'image':'text',el:w};
             drag={el:w,pageIdx,sx:e.clientX,sy:e.clientY,
                   ox:parseFloat(w.style.left)||0,oy:parseFloat(w.style.top)||0,pending:true};
@@ -9726,7 +9932,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(t.closest('.tb-move')){
             e.preventDefault();
             const w=t.closest('.tb');
-            deselectAll(); w.classList.add('sel'); selected={type:'text',el:w};
+            deselectAll(); w.classList.add('sel'); _ensureTbControls(w); selected={type:'text',el:w};
             syncFSFromTarget();
             drag={el:w,pageIdx,sx:e.clientX,sy:e.clientY,
                   ox:parseFloat(w.style.left)||0,oy:parseFloat(w.style.top)||0,pending:true};
@@ -9775,7 +9981,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const latexHost=t.closest('.latex-box');
         if(latexHost){
             e.preventDefault();
-            deselectAll(true); clearMulti(); latexHost.classList.add('sel');
+            deselectAll(true); clearMulti(); latexHost.classList.add('sel'); _ensureTbControls(latexHost);
             selected={type:'text',el:latexHost};
             // 10.4 · 수식은(잠긴 것도) 누른 채 바로 끌어 옮긴다.
             //   원래는 테두리/손잡이를 잡아야만 움직일 수 있었다.
@@ -9819,7 +10025,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     enterEdit(tb,true);
                 }else{
                     deselectAll(true); clearMulti();
-                    tb.classList.add('sel');
+                    tb.classList.add('sel'); _ensureTbControls(tb);
                     selected={type:'text',el:tb};
                     syncFSFromTarget();          // 툴바 글자 크기를 이 상자 값으로
                 }
@@ -9850,7 +10056,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             // 여기까지 왔다면 Alt+드래그 또는 테두리 → 이동
             e.preventDefault();
-            deselectAll(true); tb.classList.add('sel');
+            deselectAll(true); tb.classList.add('sel'); _ensureTbControls(tb);
             selected={type:'text',el:tb};
             syncFSFromTarget();
             drag={el:tb,pageIdx,sx:e.clientX,sy:e.clientY,ox:parseFloat(tb.style.left)||0,oy:parseFloat(tb.style.top)||0,pending:true};
@@ -17073,7 +17279,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             renderPageEls(pt.pageIdx);
             saveDoc();
             const node=paperQ(pt.pageIdx,`.tb[data-id="${el.id}"]`);
-            if(node){ deselectAll(); node.classList.add('sel'); selected={type:'text',el:node}; }
+            if(node){ deselectAll(); node.classList.add('sel'); _ensureTbControls(node); selected={type:'text',el:node}; }
             toast('텍스트 붙여넣음',1200);
             return;
         }
@@ -20790,6 +20996,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     // 내 마우스가 멈췄다고 polling까지 4초 멈추면 움직이는 상대 커서가 내 화면에서
     // 4초씩 얼어 보였던 것이 '현재 위치가 바로 안 오는' 핵심 원인이었다.
     const LIVE_RATE_MS=40, LIVE_DISCOVER_MS=600, LIVE_HEARTBEAT_MS=4000;
+    // 22.1 · '글 쓰는 중'에는 상대가 없어도 매 틱(40ms)마다 울렸다. 편집 중에는
+    //   캐럿 좌표를 다시 재야 하는데(종이 레이아웃 읽기) 그 진동이 그대로 입력
+    //   지연이 됐다. → 글자 크기가 섞인 문서에서도 눈에 띄지 않는 간격으로 늘린다.
+    const LIVE_EDIT_MS=(typeof sdyTurbo==='function'&&sdyTurbo())?700:250;
     const LIVE_MOVE_EVENT=('PointerEvent' in window)?'pointermove':'mousemove';
     const livePeerCount={};        // 노트별 동시 접속자 수
 
@@ -20825,7 +21035,17 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!liveOn||!curNB) return;
         const now=performance.now();
         const hasPeer=(livePeerCount[curNB.id]||1)>1;
-        if(!liveMoved && !hasPeer && !liveAct() && now-_liveLastPoll<LIVE_DISCOVER_MS) return;
+        const act=liveAct();
+        // 22.1 · 진동 간격을 '지금 내가 무엇을 하나'로 정한다.
+        //   · 마우스를 움직였다 → 즉시 (커서가 뚝뚝 끊기지 않게)
+        //   · 상대가 보는 중   → 평소처럼 빠르게, 단 편집 중엔 캐럿을 다시 재는
+        //     비용(레이아웃 읽기)이 매 40ms 들어오니 LIVE_EDIT_MS 로 줄인다.
+        //   · 아무도 없고 가만히 → 발견 주기(600ms)로만 확인.
+        let need=LIVE_DISCOVER_MS;
+        if(hasPeer) need=act?LIVE_EDIT_MS:LIVE_RATE_MS;
+        else if(liveMoved) need=LIVE_RATE_MS;
+        else if(act) need=LIVE_EDIT_MS;
+        if(!liveMoved && now-_liveLastPoll<need) return;
         liveMoved=false; _liveLastPoll=now;
         livePing();
     }
@@ -20870,6 +21090,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     // 편집 중인 캐럿의 위치를 종이 좌표로 — 상대에게 '마우스'가 아니라
     // '지금 글이 쓰이는 곳'을 보내야 깜빡이 캐럿이 제자리에 보인다.
+    let _caretKey='', _caretVal=null;
     function liveCaretPos(){
         try{
             const sel=getSelection();
@@ -20877,21 +21098,36 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const anc=sel.getRangeAt(0).commonAncestorContainer;
             const cEl=anc.nodeType===1?anc:anc.parentElement;
             const content=cEl&&cEl.closest&&cEl.closest('.tb-content');
-            if(!content||!content.closest('.tb.edit')) return null;
+            const box=content&&content.closest('.tb.edit');
+            if(!content||!box) return null;
+            // 22.1 · 선택이 하나도 안 바뀌었으면(같은 노드·같은 오프셋) 지난 값을
+            //   그대로 쓴다. 예전엔 편집 중 틱마다 Range 사각형과 종이 사각형을
+            //   다시 쟀고, 특히 '종이 전부 훑기'가 문제였다(종이마다 레이아웃 읽기).
+            //   열쇠는 '캐럿이 실제로 움직인 사건'만 본다 — 선택 객체를 문자열로
+            //   굽는 것(getSelection().toString())은 문서 전체를 훑는 일이라
+            //   이 경로에서 절대 쓰지 않는다. 상자 안 입력은 input 리스너가
+            //   box._caretV 를 올린다(아래 buildTextEl ), 배율은 pageScale 로 잡힌다.
+            const key=(sel.anchorOffset||0)+':'+(sel.focusOffset||0)+':'+(box._caretV||0)
+                      +':'+box.dataset.id+':'+pageScale;
+            if(key===_caretKey&&_caretVal) return _caretVal;
             let r=null;
             try{ r=sel.getRangeAt(0).getBoundingClientRect(); }catch(e){}
             if(!r||(r.top===0&&r.bottom===0)) r=content.getBoundingClientRect();
-            const papers=editorPapers();
-            for(let i=0;i<papers.length;i++){
-                const pr=papers[i].getBoundingClientRect();
+            let out=null;
+            const own=content.closest('.paper');       // 편집 상자가 올라탄 종이 한 장만 재면 된다
+            const cand=own?[own]:editorPapers();
+            for(let i=0;i<cand.length;i++){
+                const pr=cand[i].getBoundingClientRect();
                 if(r.left>=pr.left-2&&r.left<=pr.right+2&&r.bottom>=pr.top-2&&r.bottom<=pr.bottom+2){
                     const ps=paperSize();
-                    return {x:(r.left-pr.left)*(ps.w/Math.max(1,pr.width)),
-                            y:(r.bottom-pr.top)*(ps.h/Math.max(1,pr.height)),
-                            page:+papers[i].dataset.pageIdx||0};
+                    out={x:(r.left-pr.left)*(ps.w/Math.max(1,pr.width)),
+                         y:(r.bottom-pr.top)*(ps.h/Math.max(1,pr.height)),
+                         page:+cand[i].dataset.pageIdx||0};
+                    break;
                 }
             }
-            return null;
+            _caretKey=key; _caretVal=out;
+            return out;
         }catch(e){ return null; }
     }
     // 그리고 있는 획의 '지금까지' 모양 — 완성을 기다리지 않고 실시간으로 보낸다.
@@ -21024,6 +21260,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const stage=document.getElementById('pagesStage');
         if(!stage) return;
         const seen=new Set(), rows=[];
+        // 22.1 · 혼자 보는 노트에서 매 틱마다 '.live-cur' 를 찾고 범례를 다시
+        //   그리던 일은 전부 헛수고였다. 보여 줄 커서도, 이미 떠 있는 커서도
+        //   없는 상태라면 DOM 을 아예 건드리지 않고 나간다.
+        //   (남의 커서는 전부 #liveLayer 안에 뜨므로, 레이어·범례가 둘 다
+        //   없으면 지울 것도 그릴 것이 없다는 뜻이다 — class 로 문서 전체를
+        //   훑는 것(.live-cur)은 오히려 이 경로에서 가장 비싼 조사였다.)
+        if((!peers||!peers.length)
+           &&!document.getElementById('liveLayer')&&!document.getElementById('liveLegend')) return;
         peers.forEach(p=>{
             if(p.x==null||p.y==null) return;
             seen.add(p.uid);
@@ -21643,7 +21887,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const inMulti=multiSel.some(m=>m.node===host);
             deselectAll(true);
             if(!inMulti) clearMulti();
-            if(kind==='img') _ensureImgControls(host);
+            if(kind==='img') _ensureImgControls(host); else _ensureTbControls(host);   // 수식은 .tb 라 같은 장식
             host.classList.add('sel');
             selected={type:kind==='img'?'image':(kind==='stroke'?'stroke':'text'),el:host};
             ctxTarget={kind:'el',pageIdx,el:host,elKind:kind};
