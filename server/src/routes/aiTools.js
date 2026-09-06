@@ -639,7 +639,133 @@ async function storeImage(buf) {
   };
 }
 
-// ── ③ 라우트 ────────────────────────────────────────────────────────────────
+// ── ③ 해돌이 그림 참고 일러스트 ────────────────────────────────────────────
+// 14.33.1 · \"그림을 그려 줘\"가 흐트러지는 건 텍스트 모델이 좌표를 머릿속으로
+//   찍기 때문이다. 그러니 그리기 전에 '그릴 대상의 참고 일러스트'를 하나 찾아
+//   멀티모달 모델(제미나이 등)에게 이미지로 보여 주고 \"이 윤곽을 따라 귀엽게
+//   선화로 다시 그려\"라고 시킨다 — 사진(이미지 생성)이 아니라 형태가 잡힌
+//   참고를 보고 그리는 방식이라 윤곽이 훨씬 안정된다.
+//
+//   참고 그림은 모델 입력(보기)에만 쓰고 어디에도 저장하지 않는다. 그러므로
+//   사진처럼 노트에 저장되는 imgadd 와 달리 저장 라이선스 걱정이 없고,
+//   외부 그림은 공개 소스(위키미디어 커먼즈·오픈버스)만 받아온다.
+//   검색/내려받기가 실패하거나 대상을 못 찾으면 null → 부르는 쪽이
+//   '참고 없이 그리기'(예전 그대로)로 자연 폴백한다.
+const DRAW_REF_EDGE = 960;              // 참고로 보여 줄 최대 가로·세로 (모델 입력용 축소)
+const DRAW_REF_MAX = 12 * 1024 * 1024;  // 그보다 큰 원본은 받지 않는다
+
+// 원본 버퍼의 이미지 종류를 시그니처로 맞힌다 (data URL 라벨용).
+function sniffMime(buf) {
+  if (!buf || buf.length < 8) return '';
+  const h = Array.prototype.slice.call(buf, 0, 12);
+  const hex = h.map((b) => b.toString(16).padStart(2, '0')).join('');
+  if (hex.slice(0, 8) === 'ffd8ffe0' || hex.slice(0, 8) === 'ffd8ffdb' || hex.slice(0, 6) === 'ffd8ff') return 'image/jpeg';
+  if (hex.slice(0, 8) === '89504e47') return 'image/png';
+  if (hex.slice(0, 8) === '52494646' && hex.slice(16, 24) === '57454250') return 'image/webp';
+  if (hex.slice(0, 6) === '474946') return 'image/gif';
+  if (hex.slice(0, 2) === '42' && hex.slice(2, 4) === '4d') return 'image/bmp';
+  return '';
+}
+
+// 요청 문장에서 '그릴 대상' 낱말을 뽑아 영어 검색어를 만든다.
+//   imgQueries 는 그대로 쓸 수 있다 — 한국어를 (imgq AI → 무료 번역 → 정제)
+//   순으로 영어 3단계로 만들어 준다. 사진 전용 stopword 처리라 '그려 줘' 류가
+//   이미 빠진 상태로 '대상'만 남는다.
+async function drawRefEnglish(raw) {
+  let cleaned = cleanImgQuery(raw);
+  try {
+    const { queries } = await imgQueries(raw);
+    const en = (queries || []).find((q) => q && /^[A-Za-z0-9 ,.'\-]{2,}$/.test(q) && !looksKorean(q));
+    if (en) return en.trim();
+  } catch (e) { /* AI·번역 실패 → 정제 검색어로 */ }
+  // 한글 그대로면 영문 소스를 못 쓰므로 대략 영어로 돌려 본다(최선).
+  if (cleaned && looksKorean(cleaned)) {
+    try {
+      const [tr] = await withTimeout(translateFree(cleaned, 'en'), IMG_TRANSLATE_MS, 'translate');
+      const en = String(tr || '').replace(/["'`]/g, '').replace(/\s+/g, ' ').trim();
+      if (en && !looksKorean(en)) cleaned = en;
+    } catch (e) { /* 실패 → 정제값 */ }
+  }
+  return cleaned || '';
+}
+
+// 참고 일러스트 후보를 넓혀 가며 '그리기 참고로 쓸' 한 장을 찾는다.
+//   대상 검색어에 illustration / drawing / line art 를 붙여 선화·그림 위주로
+//   고른다(사진 그대로를 추적하면 잡음만 많아진다). 그래도 사진이면 모델이
+//   형태만 참고하도록 아래 지침에서 다시 못 박는다.
+async function drawRefFind(query, signal) {
+  const cands = [`${query} illustration`, `${query} drawing`, `${query} coloring page`, `${query} line art`, query];
+  let ranked = [];
+  for (const cq of cands) {
+    if (signal && signal.aborted) return null;
+    const terms = imgTerms(cq);
+    const got = await searchImagesRanked(cq, terms).catch(() => ({ results: [] }));
+    const top = got.results && got.results[0];
+    if (top && top.score >= IMG_MIN_SCORE) { ranked = got.results; break; }   // 잘 맞는 그림
+    if (!ranked.length && top) ranked = got.results;                          // 최선의 후보 보관
+  }
+  const top = ranked[0];
+  if (!top || Number(top.score || 0) < IMG_MIN_SCORE) return null;
+  return top;
+}
+
+// 후보를 내려받아 멀티모달 입력용 data URL 로 만든다 (저장 안 함 · 실패 시 null).
+async function drawRefDataUrl(cand, signal) {
+  const urls = [cand.url];
+  if (cand.full && cand.full !== cand.url) urls.push(cand.full);
+  for (const u of urls) {
+    try {
+      const buf = await downloadImage(u);
+      if (!buf || buf.length > DRAW_REF_MAX) continue;
+      let out = buf; let mime = 'image/jpeg';
+      try {
+        // EXIF 회전 반영 + 모델 입력용으로 적당히 줄여 가벼운 JPEG 로 통일한다.
+        out = await sharp(buf).rotate()
+          .resize({ width: DRAW_REF_EDGE, height: DRAW_REF_EDGE, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 86 }).toBuffer();
+        mime = 'image/jpeg';
+      } catch (e) {
+        // sharp 실패(깨진/특수 파일) 시 원본을 쓰되, data URL 라벨은 실제로 맞춘다.
+        mime = sniffMime(buf) || 'image/jpeg';
+      }
+      return { dataUrl: `data:${mime};base64,` + out.toString('base64') };
+    } catch (e) { /* 깨진 후보 → 다음 주소로 */ }
+  }
+  return null;
+}
+
+// 외부에서 부르는 참고 찾기 — 성공 시 { dataUrl, title, page, license, source },
+// 아니면 null. 오류는 모두 삼킨다(그림이 실패하지 않게 부르는 쪽이 폴백).
+export async function fetchDrawReference(raw, signal) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return null;
+  const ck = 'ref:' + s.toLowerCase();
+  const hit = cacheGet(ck);
+  if (hit) return hit.data;                       // TTL 안의 같은 요청은 재검색 안 함
+  if (signal && signal.aborted) return null;
+  let out = null;
+  try {
+    const query = await drawRefEnglish(s);
+    if (query) {
+      const cand = await drawRefFind(query, signal);
+      if (cand) {
+        const img = await drawRefDataUrl(cand, signal);
+        if (img) {
+          out = Object.assign({}, img, {
+            query,
+            title: cand.title, page: cand.page, license: cand.license, source: cand.source,
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[ai/drawref]', e && e.message);
+  }
+  cachePut(ck, out);
+  return out;
+}
+
+// ── ④ 라우트 ────────────────────────────────────────────────────────────────
 function qOf(req) {
   return String((req.query && (req.query.q || req.query.query)) || '').trim().slice(0, 200);
 }
