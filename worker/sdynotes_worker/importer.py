@@ -4690,7 +4690,14 @@ def _render_preview(src, pno, width, out_path):
         pw = page.rect.width or 1
         zoom = max(0.2, min(6.0, float(width) / pw))
         pm = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
-        tmp = "%s.tmp.%s" % (out_path, uuid.uuid4().hex[:8])
+        # ★ 임시 이름도 반드시 .jpg 로 끝내야 한다 — Pixmap.save 는 '확장자'로
+        #   저장 형식을 정하므로 (out_path 뒤에 붙인) .tmp.<난수> 꼬리가 붙으면
+        #   "Image format ... not in (…'jpg'…)" 로 항상 실패했다. 그 덕에 쪽
+        #   미리보기는 단 한 번도 성공한 적이 없었고, 클라이언트는 3쪽 실패
+        #   (_pvFailed ≥3 → _pvUnsupported) 뒤 미리보기를 포기해 가져온 논문을
+        #   전부 무거운 '요소 DOM 경로'(쪽당 수백 글상자 × 수천 span)로 그렸다.
+        #   읽기 스크롤이 버벅이던 1순위 원인.
+        tmp = "%s.tmp.%s.jpg" % (out_path, uuid.uuid4().hex[:8])
         # 글자가 포함된 전체 쪽이라 품질을 배경(62)보다 높게 잡는다.
         pm.save(tmp, jpg_quality=78)
         pm = None
