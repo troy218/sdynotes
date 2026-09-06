@@ -7841,7 +7841,40 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // ===== 가져온 텍스트 자동 안겹침 + 간격 조절 =====
     // 브라우저 글꼴이 PDF 글꼴보다 넓게 그려져도 다음 단어 자리를 침범하지 않게
     // 자간(약간 넘칠 때) 또는 글자 크기(많이 넘칠 때)를 자동 압축한다.
+    //
+    // ★ 성능 — 가져온 논문은 글상자마다 단어 span 이 수십 개다. 맞춤은 글자
+    //   폭을 실제 레이아웃(offsetLeft/scrollWidth)으로 재는 일이라, 같은 상자를
+    //   스크롤로 다시 그릴 때마다 되풀이하면 그게 곧 렉이 된다.
+    //   · 결과는 상자 내용(html)·위치(el.x/y 는 관여 안 함)·크기·웹폰트 로드
+    //     상태로만 결정되므로, 그 값들이 같으면 다시 잴 필요가 없다.
+    //   · 그래서 맞춤 결과를 세션 캐시(WeakMap — doc 데이터에 안 섞임)에 두고,
+    //     같은 상태로 다시 그릴 때는 저장된 결과만 적용한다. 내용/크기가
+    //     바뀌거나 폰트가 늦게 로드되면(상태가 바뀌면) 자동으로 다시 잰다.
+    //   · el.html/해시 갱신도 '실제로 바뀌었을 때만' 한다 — 매 렌더마다
+    //     똑같은 문자열로 저장·동기화 상태를 뒤엎지 않는다(결과 동일).
+    const _tightFitCache=new WeakMap();      // el → 마지막 맞춤 결과 (세션 한정)
+    function _fontState(){                   // 'P'=웹폰트 로딩 중, 'L'=확정(또는 폰트 없음)
+        try{
+            if(document.fonts&&document.fonts.status==='loading') return 'P';
+        }catch(e){}
+        return 'L';
+    }
+    // 이미 맞춘 적 있는 상자면 저장된 확장 크기만 적용하고 true (재측정 생략)
+    function _tightFitHit(c,el){
+        const w=c.parentElement;
+        if(!el||!w) return false;
+        const rec=_tightFitCache.get(el);
+        if(!rec) return false;
+        if(rec.html!==el.html||rec.w!==(el.w||0)||rec.h!==(el.h||0)
+           ||rec.fs!==(el.fontSize||0)||rec.ls!==(el.ls||0)||rec.wsp!==(el.wsp||0)
+           ||rec.lg!==(el.lg||1)||rec.fonts!==_fontState()) return false;
+        if(rec.growR>0){ c.style.width=rec.growR+'px'; w.style.width=rec.growR+'px'; }
+        if(rec.growB>0){ c.style.height=rec.growB+'px'; w.style.height=rec.growB+'px'; }
+        return true;
+    }
     function fitTightSpans(c,el){
+        // 같은 상태로 이미 맞춘 상자(스크롤로 다시 그린 쪽)는 다시 재지 않는다.
+        if(_tightFitHit(c,el)) return;
         // data-j(양쪽 정렬) 줄은 서버가 위치를 확정했으므로 일절 건드리지 않는다.
         // 그 외 줄만, 브라우저 글꼴이 더 넓어 다음 단어와 붙을 때만
         // 자간(약간)/크기(많이)로 압축 — 높이는 항상 균일.
@@ -7872,22 +7905,35 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 s.style.letterSpacing='';
             }
         });
-        // 조정된 화면 상태를 el.html 에 굽는다 → 내보내기가 화면과 동일해지고
-        // 해시도 같이 갱신돼 동기화 핑퐁이 생기지 않는다
-        if(el){
-            el.html=c.innerHTML;
-            if(doc&&doc.__lastHash) doc.__lastHash.set(el.id,JSON.stringify(el));
-        }
         // 글자는 그대로, 상자를 렌더된 실제 크기만큼 늘려 넘침 방지
         const w=c.parentElement;
+        let maxR=0,maxB=0;
         if(w){
-            let maxR=0,maxB=0;
             sps.forEach(s=>{
                 maxR=Math.max(maxR,s.offsetLeft+s.scrollWidth);
                 maxB=Math.max(maxB,s.offsetTop+s.offsetHeight);
             });
             if(maxR>c.clientWidth){ c.style.width=maxR+'px'; w.style.width=maxR+'px'; }
             if(maxB>c.clientHeight){ c.style.height=maxB+'px'; w.style.height=maxB+'px'; }
+        }
+        // 이번 맞춤으로 실제로 화면(→저장 html)이 달라졌을 때만 굽는다.
+        // (내보내기·동기화가 화면과 같아지도록; 같으면 저장/해시를 건드리지 않는다)
+        const newHtml=c.innerHTML;
+        if(el&&el.html!==newHtml){
+            el.html=newHtml;
+            if(doc&&doc.__lastHash) doc.__lastHash.set(el.id,JSON.stringify(el));
+        }
+        if(el){
+            try{
+                // '방금 맞춘 화면 상태'를 통째로 기억한다: 다시 그릴 때 저장된
+                // 상자 확장(growR/growB)까지 그대로 복원하면 재측정 없이 같아진다.
+                const gR=parseFloat(c.style.width)||0, gB=parseFloat(c.style.height)||0;
+                _tightFitCache.set(el,{
+                    html:el.html, w:el.w||0, h:el.h||0, fs:el.fontSize||0,
+                    ls:el.ls||0, wsp:el.wsp||0, lg:el.lg||1, fonts:_fontState(),
+                    growR:gR, growB:gB
+                });
+            }catch(e){}
         }
     }
 
@@ -8298,13 +8344,23 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     });
                 }
             }
+            // ★ 성능 — fitTightSpans 진입점이 세션 캐시로 이미 맞춘 상자를
+            //   거른다. 스크롤로 같은 쪽을 다시 그릴 때 rAF 는 상자마다 돌지만
+            //   (아주 쌈), 단어 폭 레이아웃 재측정·html 재굽기는 내용/크기/폰트
+            //   상태가 그대로면 생략된다. (상자가 아직 DOM 에 안 붙은 시점엔
+            //   캐시 비교가 의미 없으므로 스케줄은 항상 하고, 진입점에서 잰다.)
             requestAnimationFrame(()=>{ if(w.isConnected) fitTightSpans(c,el); });
-            // 글꼴(웹폰트/폴백)이 늦게 확정돼도 양쪽정렬이 맞게 재실행
-            if(document.fonts&&document.fonts.ready){
-                document.fonts.ready.then(()=>{
-                    if(w.isConnected) fitTightSpans(c,el);
-                }).catch(()=>{});
-            }
+            // 웹폰트가 아직 로딩 중일 때 처음 그린 상자는 로드가 끝난 뒤 한 번
+            // 더 맞춘다(이미 떠 있으면 rAF 한 번으로 충분 — 예전엔 상자마다
+            // 항상 두 번을 돌려 폭 레이아웃을 이중으로 재고 html 까지 두 번
+            // 굽고, 그 결과가 이제는 캐시에 남아 로드 후 재측정도 한 번뿐).
+            try{
+                if(_fontState()==='P'&&document.fonts&&document.fonts.ready){
+                    document.fonts.ready.then(()=>{
+                        if(w.isConnected) fitTightSpans(c,el);
+                    }).catch(()=>{});
+                }
+            }catch(_e){};
         }
         // 14.14 · innerText 는 일부 환경(구형 WebView·테스트 DOM)에서 undefined.
         //   .trim() 이 그대로 터지면 텍스트 상자 전체가 안 그려져 빈 종이가 된다.
