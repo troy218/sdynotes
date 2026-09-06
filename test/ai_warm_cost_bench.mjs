@@ -41,12 +41,40 @@ const check = (name, cond, extra = '') => {
     /el\.__txtHtml===el\.html/.test(js));
   check('캐시 필드는 열거되지 않는다 (저장·동기화 payload 오염 방지)',
     /enumerable:false/.test(js.slice(js.indexOf('__txtSrc') - 600, js.indexOf('__txtSrc') + 900)));
-  check('노트 글 전체(text) 에도 캐시가 있다 (_aiTextCache)',
-    /_aiTextCache/.test(js) && /_aiTextSeq/.test(js));
+  check('노트 글은 쪽 단위로 캐시한다 (_aiPageText)',
+    /_aiPageText/.test(js) && /_aiTextSeq/.test(js));
   check('문서를 저장할 때 글 캐시를 무효화한다',
     /bumpAiText\(\)/.test(js) && js.indexOf('bumpAiText()') > js.indexOf('function saveDoc'));
   check('버튼 ready 칠하기는 곧바로 돌지 않고 한 번으로 합친다',
     /paintOutlineReadyNow/.test(js) && /if\(paintTimer\) return;/.test(js));
+
+  // ── 20.2 · 남은 '첫 1회' 비용을 잘게 쪼갰는가 ──
+  check('20.2: 고친 쪽 하나만 캐시에서 버린다 (전체를 버리지 않는다)',
+    /function aiInvalidatePage/.test(js)
+    && /aiInvalidatePage\(pi\)/.test(js.slice(js.indexOf('function markPageEdited'), js.indexOf('function markPageEdited') + 700)));
+  check('20.2: 문서 글을 한가할 때 몇 쪽씩 나눠 채운다 (aiFillDocText)',
+    /function aiFillDocText/.test(js) && /requestIdleCallback/.test(js.slice(js.indexOf('function aiFillDocText'), js.indexOf('function aiFillDocText') + 1600)));
+  check('20.2: 채우기는 보고 있는 쪽에서 바깥으로 퍼진다',
+    /cur-r,cur\+r/.test(js));
+  check('20.2: 한 번에 무한정 돌지 않는다 (프레임 예산 · 쪽 수 상한)',
+    /did>=4\|\|left<3/.test(js));
+  check('20.2: 노트가 바뀌면 채우기를 중단한다 (토큰 · owner)',
+    /tok!==_aiFillTok/.test(js) && /_aiOwner\(\)!==owner/.test(js));
+  check('20.2: 준비 안 됐으면 null 을 주는 길이 있다 (textIfReady)',
+    /textIfReady/.test(js) && /function noteTextIfReady/.test(js));
+  check('20.2: warm 은 textIfReady 를 쓴다 (억지로 다 뽑지 않는다)',
+    /noteTextIfReady\(sc\)/.test(js));
+  check('20.2: 버튼 표시도 textIfReady 를 쓴다',
+    /noteTextIfReady\(it\[1\]\)/.test(js));
+  check('20.2: 준비가 덜 됐으면 다음 기회에 다시 본다',
+    /if\(again\) scheduleWarm/.test(js));
+  check('20.2: 노트를 열면 배경 채우기를 시작한다',
+    /__sdyAiFillText/.test(js));
+  // 사용자가 실제로 버튼을 눌렀을 때는 기다려서라도 전부 준다
+  check('20.2: 실제 질문 경로(noteText)는 여전히 문서 전체를 준다',
+    /function noteText\(scope\)/.test(js)
+    && /b\.text\(/.test(js.slice(js.indexOf('window.__sdyAiBridge={'), js.indexOf('window.__sdyAiBridge={') + 400))
+       || /__sdyAiBridge\.text\(/.test(js));
 }
 
 // ── ② 실측 — collectPageEls / bridge.text 비용 ───────────────────────────
@@ -121,6 +149,48 @@ check('캐시를 써도 뽑아낸 글자는 똑같다',
 newPages[0].els[0].html = mkHtml() + '<span style="left:0px;top:40px">추가</span>';
 check('글이 바뀐 상자는 캐시를 무시하고 다시 뽑는다',
   /추가/.test(collectNew(newPages[0])[0]));
+
+// ── ③ 20.2 · 첫 1회 비용을 잘게 쪼갰는지 실측 ─────────────────────────────
+// 남아 있던 문제: 노트를 연 직후 '문서 전체 글'을 한 번에 만들면 그 한 방이
+// 그대로 긴 멈춤이 된다. 쪽 단위로 나눠 한가할 때만 채우면, 총합은 같아도
+// '한 번에 멎는 시간'이 프레임 예산 안으로 들어온다.
+{
+  const pages = mkPages();
+  const cache = new Array(pages.length).fill(null);
+  const pageText = (i) => {
+    if (cache[i] != null) return cache[i];
+    return (cache[i] = collectNew(pages[i]).filter(Boolean).join('\n'));
+  };
+
+  // (a) 예전처럼 한 방에
+  const bulkPages = mkPages();
+  const bulkMs = timeIt(() => bulkPages.map((p) => collectNew(p).filter(Boolean).join('\n')).join('\n'));
+
+  // (b) 20.2 처럼 쪽씩 (한 슬라이스 = 최대 4쪽)
+  const SLICE = 4;
+  const sliceMs = [];
+  for (let i = 0; i < pages.length; i += SLICE)
+    sliceMs.push(timeIt(() => { for (let k = i; k < Math.min(pages.length, i + SLICE); k++) pageText(k); }));
+  const worstSlice = Math.max(...sliceMs);
+  const totalSlice = sliceMs.reduce((a, b) => a + b, 0);
+
+  console.log(`    · [20.2] 한 방에: ${bulkMs}ms (이만큼 화면이 멎었다)`);
+  console.log(`    · [20.2] 쪽씩 ${SLICE}장: 조각 ${sliceMs.length}개 · 최악 조각 ${worstSlice}ms · 합계 ${totalSlice}ms`);
+
+  check(`한 번에 멎는 시간이 크게 줄었다 (한 방 ${bulkMs}ms → 최악 조각 ${worstSlice}ms)`,
+    worstSlice * 4 < bulkMs || worstSlice <= 50, `bulk=${bulkMs}ms worst=${worstSlice}ms`);
+  check('쪽씩 채워도 결과는 한 방과 똑같다',
+    pages.map((p, i) => pageText(i)).join('\n') === bulkPages.map((p) => collectNew(p).filter(Boolean).join('\n')).join('\n'));
+
+  // 이미 채운 뒤 전체 글을 다시 달라고 해도 공짜다 (버튼 눌렀을 때)
+  const reuseMs = timeIt(() => { for (let f = 0; f < 20; f++) pages.map((p, i) => pageText(i)).join('\n'); });
+  check(`다 채운 뒤 전체 글 20번 재조립이 거의 공짜다 (${reuseMs}ms)`, reuseMs < 100, `${reuseMs}ms`);
+
+  // 한 쪽만 고치면 그 쪽만 다시
+  cache[7] = null;
+  const oneMs = timeIt(() => pageText(7));
+  check(`한 쪽만 고치면 그 쪽만 다시 뽑는다 (${oneMs}ms)`, oneMs * 8 < bulkMs || oneMs <= 40, `${oneMs}ms vs bulk ${bulkMs}ms`);
+}
 
 console.log(`\n해돌이 준비 비용 벤치: PASS ${pass}${fail ? ' / FAIL ' + fail : ''}`);
 assert.equal(fail, 0);
