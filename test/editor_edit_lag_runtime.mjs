@@ -212,17 +212,26 @@ try {
   content.dispatchEvent(new window.InputEvent('input', { bubbles: true }));
   await wait(420);        // syncTextEl 의 300ms 디바운스가 지난 뒤에 문서 데이터를 본다
   const top = ev(`(function(){
-      const s = history[history.length - 1];
-      if (!s) return null;
-      try { const o = JSON.parse(s); return JSON.stringify({ t: o.__sdyEdit === 1, pi: o.pi, id: o.id, len: s.length, html: o.before && o.before.html }); }
-      catch (e) { return 'notjson:' + String(s).slice(0, 16); }
+      const e = history[history.length - 1];
+      if (!e) return null;
+      const p = e.patch || null;
+      return JSON.stringify({ t: !!(p && p.__sdyEdit === 1), nosnap: !e.snap, pi: p && p.pi, id: p && p.id,
+                              len: JSON.stringify(e).length, html: p && p.before && p.before.html });
     })()`);
   check('③ 첫 타이핑 때 되돌리기 기록이 쌓인다', ev('history.length') > hist0, `n=${ev('history.length')} old=${hist0}`);
   const patchEntry = top ? JSON.parse(top) : null;
   check('③ 기록은 문서 통째가 아니라 글상자 패치다',
-    !!(patchEntry && patchEntry.t === true && patchEntry.id === 't0_3' && patchEntry.pi === 0), String(top));
+    !!(patchEntry && patchEntry.t === true && patchEntry.nosnap === true
+       && patchEntry.id === 't0_3' && patchEntry.pi === 0), String(top));
   check('③ 기록 크기가 상자 하나 분량이다 (문서 전체 직렬화가 아니다)',
     !!patchEntry && patchEntry.len < 4096, `len=${patchEntry && patchEntry.len}`);
+  // 20.3 의 '타자 쉬면 새 되돌리기 지점' 체크포인트도 같은 패치를 쓴다 —
+  //   편집 중 1.2초마다 문서 통째 직렬화가 돌면 렉이 그대로 살아 있는 셈이다.
+  ev('markEditSnapshot()');
+  const ckSnap = (M().measure = true, M().docSnap, ev('markEditSnapshot()'), M().docSnap);
+  M().measure = false;
+  check('③ 타이핑 체크포인트도 문서 전체를 직렬화하지 않는다', ckSnap[1] === ckSnap[0], `docSnap=${ckSnap[1]-ckSnap[0]}`);
+  check('③ 체크포인트가 기억하는 것도 편집 상자 패치다', ev(`!!(_editSnap && _editSnap.__sdyEdit === 1 && _editSnap.id === 't0_3')`));
   check('③ 패치 이후 문서 데이터에 입력이 반영됐다',
     ev(`findEl(0,'t0_3').html`).includes('추가'), ev(`findEl(0,'t0_3').html`).slice(0, 40));
   ev('undo()');

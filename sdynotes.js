@@ -8746,8 +8746,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
         c.addEventListener('input',()=>{
             w._caretV=(w._caretV||0)+1;   // 22.1 · 실시간 캐럿 좌표 캐시를 무효화하는 신호
-            if(w.classList.contains('edit')) commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
+            if(w.classList.contains('edit')){
+                commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
+                _armTypingCheckpoint(w);// 20.3 · 타자를 잠깐 쉬면 새 되돌리기 지점
+            }
             _scriptEditUndoable=false;        // 실제 타이핑 뒤 Ctrl+Z 는 브라우저 기본 undo 를 우선
+            _lastTypeT=Date.now();            // 20.3 · 앱/브라우저 undo 판정용
             const em=!_tbPlain().trim();
             if(em) c.setAttribute('data-empty','true'); else c.removeAttribute('data-empty');
             w.classList.toggle('empty',em);
@@ -8800,7 +8804,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   필드만 기억하는 '쪽 패치' 기록으로 바꾼다. 비용은 문서 크기(쪽 500개)가
     //   아니라 상자 크기(수백 바이트)이고, 되돌리기/다시 실행도 같은 패치로 처리한다.
     let _editSnap=null, _editSnapUsed=true;
-    const _EDIT_PATCH='"__sdyEdit"';
     function histMax(){
         // 기록은 통째 직렬화(doc)라 한 장이 아주 크다. 저사양·대용량 문서에서는
         // 깊이를 줄여 기억에 붙드는 문자열 총량(= GC 부담)을 아낀다.
@@ -8823,45 +8826,63 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         return o;
     }
-    function _editPatchStr(pi,id,before){
-        try{ return JSON.stringify({__sdyEdit:1,pi:+pi,id,before}); }catch(e){ return null; }
-    }
-    function _editPatchOf(s){
-        // 패치 기록은 항상 작다. 큰 문자열(문서 통째 기록)은 파싱조차 하지 않는다.
-        if(typeof s!=='string'||s.length>262144||s.indexOf(_EDIT_PATCH)<0) return null;
-        try{ const o=JSON.parse(s); return (o&&o.__sdyEdit===1)?o:null; }catch(e){ return null; }
-    }
-    // 패치를 문서에 입히고, 반대 방향 기록에 쓸 '바뀌기 직전 상태'를 돌려준다.
-    function _applyEditPatch(pt){
+    function _editPatch(pi,id,before){ return {__sdyEdit:1,pi:+pi,id,before}; }
+    // 패치를 그 상자에 입히고, 반대 방향 기록에 쓸 '바뀌기 직전 상태'를 돌려준다.
+    //   remote = 그 사이 남(다른 기기·다른 탭)이 고친 요소 id 표시(20.3 계약) →
+    //   남의 작업을 되돌리기가 덮어쓰지 않는다. 이미 그 상태라면 다시 그리지도 않는다.
+    function _applyEditPatch(pt,remote){
         const pg=doc&&doc.pages&&doc.pages[pt.pi];
         if(!pg||!Array.isArray(pg.els)) return null;
         const el=pg.els.find(e=>e&&e.id===pt.id);
         if(!el) return null;
+        if(remote&&remote.has(pt.id)) return null;
         const cur=_snapEl(el);
+        let now='', want='';
+        try{ now=JSON.stringify(cur); want=JSON.stringify(pt.before||{}); }catch(e){}
+        if(now===want) return {cur:cur,changed:false};
         const b=pt.before||{};
         for(const k in el){ if(!(k in b)) delete el[k]; }
         for(const k in b) el[k]=b[k];
         try{ markPageEdited(pt.pi); }catch(e){}
-        return cur;
+        return {cur:cur,changed:true};
     }
     function markEditSnapshot(w){
         _editSnap=null; _editSnapUsed=true;
         try{
-            if(!doc||!w||!w.dataset) return;
+            if(!doc) return;
+            if(!w) w=_activeEditBox();   // 20.3 · 인자 없이 불리면 '지금 편집 중인 상자'
+            if(!w||!w.dataset) return;
             const pi=+w.dataset.pageIdx, id=w.dataset.id;
             if(!doc.pages||!doc.pages[pi]||id==null) return;
             const el=findEl(pi,id); if(!el) return;
-            _editSnap=_editPatchStr(pi,id,_snapEl(el));
+            _editSnap=_editPatch(pi,id,_snapEl(el));
             _editSnapUsed=!_editSnap;
         }catch(e){ _editSnap=null; _editSnapUsed=true; }
     }
+    // 20.3 · 긴 타이핑이 되돌리기 한 칸이 되지 않게, 1.2초 이상 멈추면 그때까지
+    //   친 글을 하나의 되돌리기 지점으로 확정한다(워드프로세서와 같은 감각).
+    //   예전에는 상자 하나를 열어 한참 쓰고 나오면 Ctrl+Z 한 번에 그 글이 통째로
+    //   날아가거나(브라우저 기본 undo 가 안 듣는 환경) 아예 안 되돌아갔다.
+    let _typingCkT=null;
+    function _armTypingCheckpoint(w){
+        clearTimeout(_typingCkT);
+        _typingCkT=setTimeout(()=>{
+            _typingCkT=null;
+            try{
+                if(!doc||!w||!w.isConnected||!w.classList.contains('edit')) return;
+                syncTextEl(w);              // DOM → 문서 확정
+                markEditSnapshot();         // 다음 타이핑의 '적기 전' 상태
+            }catch(e){}
+        },1200);
+    }
     function commitEditSnapshot(){
-        if(_editSnapUsed||!_editSnap) return;
+        if(_editSnapUsed||!_editSnap) return false;
         _editSnapUsed=true;
-        history.push(_editSnap);
+        history.push(_histEntry(null,_editSnap));   // 22.1 · 글상자 패치 한 칸(문서 통째 아님)
         if(history.length>histMax()) history.shift();
         redoStack=[];
         _histT=Date.now();
+        return true;
     }
 
     function syncTextEl(w){
@@ -8885,7 +8906,105 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         saveDoc();
     }
 
-    let _histT=0, _scriptEditUndoable=false;
+    let _histT=0, _lastTypeT=0, _scriptEditUndoable=false;
+    // ── 20.3 · 되돌리기 재설계 ───────────────────────────────────────────────
+    //  예전 문제 ①  undo 가 문서를 스냅샷으로 **통째 교체**했다. 그래서 같이
+    //    편집 중이던 다른 사람이 그 사이에 적은 글·그림이 통째로 사라졌다
+    //    ("여러 명이 편집하면 되돌리기가 남의 작업을 먹는다").
+    //  예전 문제 ②  되돌린 뒤 reviveDocMaps 가 rehashAll 로 '이미 보낸 것' 표를
+    //    현재 내용으로 새로 써 버려서, 되돌린 결과가 **서버로 전송되지 않았다**.
+    //    서버에는 되돌리기 전 내용이 남아 있으니 다음 pull 이 그걸 도로 끌고 와
+    //    "되돌렸는데 잠시 뒤 되살아난다 / 해돌이 작업은 되돌리기가 안 먹는다"
+    //    처럼 보였다(30초 에코 가드는 글자 서식만 막아 줬다).
+    //  이제 되돌리기는 doc 객체를 그대로 두고 **바뀐 요소만 골라 되돌린다**.
+    //   · 스냅샷 이후 원격(다른 기기/사람)이 건드린 요소는 건드리지 않는다.
+    //   · 원격이 새로 만든 요소·쪽은 지우지 않는다.
+    //   · 해시 표를 유지하므로 되돌린 내용이 정상적으로 동기화된다.
+    // 히스토리 한 칸 = {snap, remote:Set(원격이 건드린 요소 id), remotePages}
+    //   22.1 · 글상자 한 칸 편집은 snap 대신 patch 를 담는다 — 그 상자의 '적기 전'
+    //   필드뿐이라 문서 크기(쪽 500개)가 아니라 상자 크기(수백 바이트)다.
+    function _histEntry(snap,patch){ return {snap:patch?null:snap,patch:patch||null,remote:new Set(),remotePages:false}; }
+    // 원격 동기화가 요소를 건드리면 쌓여 있는 모든 되돌리기 지점에 표시한다.
+    function histMarkRemote(id){
+        if(!id) return;
+        try{
+            history.forEach(e=>{ if(e&&e.remote) e.remote.add(id); });
+            redoStack.forEach(e=>{ if(e&&e.remote) e.remote.add(id); });
+        }catch(e){}
+    }
+    function histMarkRemotePages(){
+        try{
+            history.forEach(e=>{ if(e) e.remotePages=true; });
+            redoStack.forEach(e=>{ if(e) e.remotePages=true; });
+        }catch(e){}
+    }
+    // 스냅샷 문서에 그 id 의 요소가 있는지 (쪽을 옮겼을 수도 있어 전체를 본다)
+    function _snapElIds(T){
+        const s=new Set();
+        ((T&&T.pages)||[]).forEach(pg=>((pg&&pg.els)||[]).forEach(el=>{ if(el&&el.id) s.add(el.id); }));
+        return s;
+    }
+    // 한 쪽 병합: 스냅샷의 요소로 되돌리되, 원격이 건드린 요소는 지금 것을 남긴다.
+    function _histMergePage(livePage,tPage,remote,tIds){
+        const live=(livePage.els||[]);
+        const liveById=new Map(); live.forEach(el=>{ if(el&&el.id) liveById.set(el.id,el); });
+        const out=[]; const done=new Set();
+        ((tPage&&tPage.els)||[]).forEach(tel=>{
+            if(!tel||!tel.id) return;
+            done.add(tel.id);
+            if(remote.has(tel.id)){
+                // 그 사이 남이 고친 요소 — 되돌리지 않고 지금 내용을 지킨다.
+                const cur=liveById.get(tel.id);
+                if(cur) out.push(cur);          // 남이 지웠으면 되살리지도 않는다
+                return;
+            }
+            out.push(JSON.parse(JSON.stringify(tel)));
+        });
+        // 스냅샷에 없던 요소 = 그 뒤에 생긴 것. 남이 만든 것만 남긴다.
+        live.forEach(el=>{
+            if(!el||!el.id||done.has(el.id)) return;
+            if(tIds.has(el.id)) return;          // 다른 쪽으로 옮겨간 요소는 위에서 처리됨
+            if(remote.has(el.id)) out.push(el);
+        });
+        livePage.els=out;
+        if(tPage&&tPage.tables) livePage.tables=JSON.parse(JSON.stringify(tPage.tables));
+        else if(livePage.tables) livePage.tables=[];
+        if(tPage&&tPage.__lazy!=null) livePage.__lazy=tPage.__lazy; else delete livePage.__lazy;
+        return livePage;
+    }
+    // 스냅샷을 '지금 문서 위에' 되돌려 붙인다 (doc 객체는 그대로 둔다).
+    function histRestore(entry){
+        if(!doc||!entry) return false;
+        let T=null;
+        if(!entry.snap) return false;          // 22.1 · 패치 칸은 문서 스냅샷이 없다
+        try{ T=JSON.parse(entry.snap); }catch(e){ return false; }
+        if(!T) return false;
+        const remote=entry.remote||new Set();
+        const tIds=_snapElIds(T);
+        const livePages=(doc.pages||[]).slice();
+        const byId=new Map(); livePages.forEach(p=>{ if(p&&p.id) byId.set(p.id,p); });
+        const used=new Set(); const outPages=[];
+        ((T.pages)||[]).forEach((tp,i)=>{
+            if(!tp) return;
+            let lp=byId.get(tp.id);
+            if(!lp){
+                // 그 사이 남이 지운 쪽은 되살리지 않는다 (원격 쪽 변경이 있었을 때만)
+                if(entry.remotePages) return;
+                lp={id:tp.id,els:[],tables:[]};
+            }
+            used.add(tp.id);
+            outPages.push(_histMergePage(lp,tp,remote,tIds));
+        });
+        // 스냅샷 뒤에 생긴 쪽 — 남이 만든 것이면 지우지 않는다.
+        livePages.forEach(p=>{ if(p&&!used.has(p.id)&&entry.remotePages) outPages.push(p); });
+        doc.pages=outPages.length?outPages:[blankPage()];
+        // 문서 수준 설정(용지·크기·이모지·용어집·즐겨찾기 쪽…)은 스냅샷 값으로
+        Object.keys(T).forEach(k=>{
+            if(k==='pages'||k.indexOf('__')===0) return;
+            doc[k]=T[k];
+        });
+        return true;
+    }
     // 14.25.0 · 되돌리기 에코 가드. since=0 풀은 방금 되돌린 내 op 를 다시 들고
     //   오는데, html 은 3-way 병합이 지켜 주지만 _tbMergeRemote 가 서식
     //   (fontSize·font…)은 원격 값으로 덮어써 서식 되돌리기가 풀려 보였다.
@@ -8898,6 +9017,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // "결국 아무 변화가 없던 제스처"의 스냅샷을 도로 치울 때 쓴다.
     function pushHistory(force){
         if(!doc) return null;
+        // 18.9/20.3 · 편집 중 상자가 있으면 '적기 전' 스냅샷을 먼저 사다리에
+        //   올린다. (타이핑 → 툴바 서식 순서일 때 타이핑분이 통째로 빠지던 문제)
+        //   이때는 250ms 묶음도 건너뛴다 — 방금 올린 '적기 전'과 지금 상태는
+        //   서로 다른 되돌리기 지점이어야 한다.
+        try{ if(commitEditSnapshot()) force=true; }catch(e){}
         // 편집 중 툴바/우클릭 메뉴가 스크립트로 DOM 을 바꾼 작업은 브라우저 기본
         // contenteditable undo 스택에 안 들어가는 환경이 있다. 이 경우 바로 Ctrl+Z 를
         // 누르면 앱 히스토리로 되돌릴 수 있게 표시해 둔다. 실제 타이핑 input 이 오면
@@ -8907,8 +9031,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 잦은 변화는 한 덩어리로 묶는다 (큰 문서에서 JSON.stringify 폭주 방지)
         if(!force&&now-_histT<250){ redoStack=[]; return null; }
         _histT=now;
+        // 20.3 · 편집 중이던 글자는 아직 DOM 에만 있을 수 있다 → 스냅샷 전에 확정.
+        //   (안 그러면 되돌리기 지점이 '방금 친 글자가 빠진 상태'로 찍혀,
+        //    되돌리면 엉뚱하게 글자가 되살아나거나 사라진다)
+        try{ commitEditingText(); }catch(e){}
         const snap=JSON.stringify(doc);
-        history.push(snap);
+        history.push(_histEntry(snap));
         if(history.length>histMax()) history.shift();
         redoStack=[];                       // 새 작업이 생기면 다시 실행 기록은 무효
         return snap;
@@ -8932,72 +9060,103 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(keep&&keep.__ref){ doc.__ref=keep.__ref; doc.__loadedTo=keep.__loadedTo||0; }
         try{ rehashAll(); }catch(e){}     // 현재 내용으로 해시 재작성 → 변경분만 전송
     }
-    // 쪽 패치 기록을 되돌리거나 다시 실행한다. 문서 전체를 파싱·재렌더하는 대신
-    //   그 상자(그리고 그 쪽)만 원상복구 한다 — 되돌리기 자체가 렉이 되지 않게.
-    //   stack: 반대편 스택(history ↔ redoStack). 성공 여부 반환.
-    function _applyPatchEntry(pt,stack,undoLabel){
-        const applied=_applyEditPatch(pt);
-        if(!applied) return false;
-        const back=_editPatchStr(pt.pi,pt.id,applied);
-        if(back){ stack.push(back); if(stack.length>histMax()) stack.shift(); }
-        _undoGuardUntil=Date.now()+30000;   // 내 op 에코가 되돌리기를 덮지 않게
-        selected=null; clearMulti();
-        // 표 안에 있던 상자라면 표 레이어도 같이 다시 얹는다 (다른 sync 경로와 동일).
-        try{ if(renderedPages.has(pt.pi)){ renderPageEls(pt.pi); renderTblDivs(pt.pi); } }catch(e){}
-        saveDoc();
-        toast(undoLabel,900);
-        return true;
-    }
-    function undo(){
-        if(!history.length){ toast('되돌릴 작업이 없습니다',900); return; }
-        const s=history.pop();
-        const pt=_editPatchOf(s);
-        if(pt){
-            if(_applyPatchEntry(pt,redoStack,penActive?'그리기 되돌림':'되돌림')) return;
-            // 쪽·상자가 이미 사라진 기록 → 문서 통째 복원으로 되돌리면 안 된다
-            //   (패치 문자열은 doc 이 아니다). 스택만 원위치 하고 조용히 알린다.
-            history.push(s);
-            toast('되돌릴 수 없는 기록입니다',1200);
-            return;
-        }
-        const keep=doc;
-        redoStack.push(JSON.stringify(doc));
-        if(redoStack.length>histMax()) redoStack.shift();
-        try{ doc=JSON.parse(s); }catch(e){ doc=keep; return; }
+    // 20.3 · undo/redo 공통 — doc 을 교체하지 않고 '바뀐 것만' 되돌린다.
+    //   되돌린 결과는 __lastHash 를 그대로 두고 saveDoc/queueOps 로 올라가므로
+    //   서버에도 반영된다(예전에는 rehashAll 이 전송을 막아 도로 되살아났다).
+    // 22.1 · '글상자 패치' 칸은 여기서 한 걸 더 들어간다 — 문서 전체를
+    //   직렬화·파싱·재렌더하지 않고 그 상자와 그 쪽만 되돌린다. 되돌리기 자체가
+    //   렉이 되지 않게 하기 위한 것으로, 저사양에서는 한 칸이 더 늘어나는 일도 없다.
+    //   반환: null = 이 칸은 되돌릴 수 없다(사다리에서 건너뜀)
+    //         {back, changed, patch?} = 되돌림 성공(back 은 반대 방향 기록)
+    function _histApply(entry,label){
+        const isPatch=!!(entry&&entry.patch);
+        // 22.1 · 패치 칸에서는 JSON.stringify(doc) 를 아예 하지 않는다.
+        const before=isPatch?null:JSON.stringify(doc);
+        try{ commitEditingText(); }catch(e){}
+        // 편집 중이던 상자는 되돌린 내용이 DOM 에 다시 그려져야 하므로 편집 종료
+        try{ document.querySelectorAll('.tb.edit').forEach(o=>{
+            o.classList.remove('edit');
+            const c=o.querySelector('.tb-content'); if(c) c.contentEditable='false';
+        }); _editScanDirty=true; _editBoxEl=null; }catch(e){}
+        _editSnap=null; _editSnapUsed=true;
+        if(isPatch) return _histApplyPatch(entry);
+        if(!histRestore(entry)) return null;
         _docId=(curNB&&curNB.id)||null;
-        reviveDocMaps(keep);
+        try{ syncState(); }catch(e){}
         _undoGuardUntil=Date.now()+30000;   // 14.25.0 · 내 에코가 되돌리기를 덮지 않게
         selected=null; clearMulti();
+        try{ clearActiveTbl(); }catch(e){}
+        if(!doc.pages.length) doc.pages=[blankPage()];
         if(curPageIdx>=doc.pages.length) curPageIdx=doc.pages.length-1;
-        renderPages(); saveDoc();
+        if(curPageIdx<0) curPageIdx=0;
+        try{ doc.__rv=(doc.__rv||0)+1; }catch(e){}
+        renderPages();
+        try{ updatePageInfo(); }catch(e){}
+        saveDoc();
+        try{ queueOps(); }catch(e){}        // 되돌린 내용을 다른 기기에도 반영
         // 되돌리기가 종이를 통째로 다시 그리므로, 펜 모드 중이었다면 그리기
         // 레이어(.drawing)를 새 종이에 다시 붙여야 한다. 예전엔 이게 빠져
         // 되돌린 뒤 펜이 먹통 → 펜을 끄고 다시 켜야 하는 불편이 있었다.
         if(penActive){ editorPapers().forEach(pp=>pp.classList.add('drawing')); try{ updateToolCursor(); }catch(e){} }
-        toast(penActive?'그리기 되돌림':'되돌림',900);
+        return {back:before,changed:JSON.stringify(doc)!==before};
     }
-    function redo(){
-        if(!redoStack.length){ toast('다시 실행할 작업이 없습니다',900); return; }
-        const s=redoStack.pop();
-        const pt=_editPatchOf(s);
-        if(pt){
-            if(_applyPatchEntry(pt,history,penActive?'그리기 다시 실행':'다시 실행')) return;
-            redoStack.push(s);
-            toast('다시 실행할 수 없는 기록입니다',1200);
+    // 쪽 패치 칸 하나를 되돌린다 — 상자만 원상복구, 그 쪽만 다시 그린다.
+    //   쪽·상자가 이미 없어진 칸(남이 지운 뒤 등)은 null → 사다리에서 건너뛴다.
+    function _histApplyPatch(entry){
+        const pt=entry.patch;
+        const r=_applyEditPatch(pt,entry.remote);
+        if(!r) return null;
+        if(!r.changed) return {back:null,changed:false};
+        const back=_editPatch(pt.pi,pt.id,r.cur);
+        _docId=(curNB&&curNB.id)||null;
+        _undoGuardUntil=Date.now()+30000;
+        selected=null; clearMulti();
+        try{ clearActiveTbl(); }catch(e){}
+        // 쪽 하나만 다시 그린다 — renderPageEls 가 .drawing 층도 같이 챙긴다.
+        try{ if(renderedPages.has(pt.pi)){ renderPageEls(pt.pi); renderTblDivs(pt.pi); } }catch(e){}
+        saveDoc();
+        try{ queueOps(); }catch(e){}        // 되돌린 내용이 다른 기기에도 반영
+        return {back:back,changed:true,patch:true};
+    }
+    // 사다리에서 '지금과 다른' 지점이 나올 때까지 내려간다.
+    //   같이 편집하던 중 남이 내 변경을 이미 덮었거나, 아무 변화가 없던 제스처가
+    //   섞여 있으면 예전에는 Ctrl+Z 가 헛돌았다("눌러도 아무 일도 안 일어난다").
+    function _histStep(from,to,label){
+        if(!doc){ toast('열린 노트가 없습니다',900); return; }
+        let tries=0;
+        while(from.length&&tries<60){
+            tries++;
+            const entry=from.pop();
+            const r=_histApply(entry,label);
+            if(!r) continue;                                   // 되돌릴 수 없는 칸
+            if(!r.changed) continue;                           // 실질 변화 없음 → 한 칸 더
+            const back=r.patch?_histEntry(null,r.back):_histEntry(r.back);
+            back.remote=entry.remote; back.remotePages=entry.remotePages;
+            to.push(back);
+            if(to.length>histMax()) to.shift();
+            toast(penActive?(label==='되돌림'?'그리기 되돌림':'그리기 다시 실행'):label,900);
             return;
         }
-        const keep=doc;
-        history.push(JSON.stringify(doc));
-        if(history.length>histMax()) history.shift();
-        try{ doc=JSON.parse(s); }catch(e){ doc=keep; return; }
-        _docId=(curNB&&curNB.id)||null;
-        reviveDocMaps(keep);
-        _undoGuardUntil=Date.now()+30000;   // 14.25.0 · undo 와 같은 에코 가드
-        selected=null; clearMulti();
-        if(curPageIdx>=doc.pages.length) curPageIdx=doc.pages.length-1;
-        renderPages(); saveDoc();
-        if(penActive){ editorPapers().forEach(pp=>pp.classList.add('drawing')); try{ updateToolCursor(); }catch(e){} }
-        toast(penActive?'그리기 다시 실행':'다시 실행',900);
+        toast(label==='되돌림'?'되돌릴 작업이 없습니다':'다시 실행할 작업이 없습니다',900);
+    }
+    function undo(){ _histStep(history,redoStack,'되돌림'); }
+    function redo(){ _histStep(redoStack,history,'다시 실행'); }
+    // 20.3 · Ctrl+Z 를 앱 히스토리로 처리할지 판단한다.
+    //   글상자에 커서를 두고 **글자를 치는 중**일 때만 브라우저 기본 undo 에
+    //   양보한다. 그 밖에는(문서 편집·해돌이 편집·번역·서식·표·그림…) 앱이 받는다.
+    //   예전에는 '편집 상자에 포커스가 있다'는 이유만으로 무조건 양보해서,
+    //   해돌이가 고친 내용이나 스크립트로 바꾼 서식이 되돌아가지 않았다.
+    function _useAppUndo(){
+        try{
+            const editing=document.querySelector('.tb.edit');
+            const inBox=editing&&document.activeElement&&document.activeElement.classList
+                &&document.activeElement.classList.contains('tb-content');
+            if(!inBox) return true;
+            if(_scriptEditUndoable) return true;
+            // 마지막 타이핑보다 뒤에 생긴 앱 되돌리기 지점이 있으면 앱이 처리한다.
+            if(history.length&&_histT>_lastTypeT) return true;
+            return false;
+        }catch(e){ return true; }
     }
 
     // ============ 선택/드래그 ============
@@ -13315,9 +13474,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         let l=await cpGetAll(curNB.id);
         const c=l[i]; if(!c) return;
         if(!confirm('이 시점으로 되돌릴까요? 지금 내용은 되돌리기(Ctrl+Z)로 복구할 수 있습니다.')) return;
-        pushHistory();
-        try{ doc=JSON.parse(c.data); }catch(e){ toast('복원할 수 없습니다',2000); return; }
+        pushHistory(true);
+        const keep=doc;
+        try{ doc=JSON.parse(c.data); }catch(e){ doc=keep; toast('복원할 수 없습니다',2000); return; }
         _docId=(curNB&&curNB.id)||null;
+        reviveDocMaps(keep);      // 20.3 · 동기화용 Map 복원(없으면 이후 동기화가 멈춘다)
         curPageIdx=Math.min(c.pg||0,(doc.pages||[]).length-1);
         renderPages(); saveDoc(); closeCheckpoints();
         // 저장해 둔 쪽으로 스크롤 이동 (노트 전환 뒤에는 새 노트를 건드리지 않는다)
@@ -14514,16 +14675,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             return;
         }
         if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){
-            const editContent=document.querySelector('.tb.edit')&&document.activeElement&&document.activeElement.classList&&document.activeElement.classList.contains('tb-content');
-            if(editContent&&!_scriptEditUndoable) return;
+            if(!_useAppUndo()) return;      // 20.3 · 글자 타이핑은 브라우저 기본 undo 우선
             e.preventDefault();
             _scriptEditUndoable=false;
             if(e.shiftKey) redo(); else undo();
             return;
         }
         if((e.ctrlKey||e.metaKey)&&(e.key==='y'||e.key==='Y')){
-            const editContent=document.querySelector('.tb.edit')&&document.activeElement&&document.activeElement.classList&&document.activeElement.classList.contains('tb-content');
-            if(editContent&&!_scriptEditUndoable) return;
+            if(!_useAppUndo()) return;
             e.preventDefault(); _scriptEditUndoable=false; redo(); return;
         }
     });
@@ -14867,7 +15026,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     let _eraseRemoved=false;  // 이번 지우개 제스처에서 실제로 지운 획이 있는가
     function _dropDrawSnap(){
         if(_drawSnap==null) return;
-        if(history.length&&history[history.length-1]===_drawSnap) history.pop();
+        const top=history[history.length-1];
+        if(top&&top.snap===_drawSnap) history.pop();
         _drawSnap=null;
     }
     function drawStart(e,pageIdx){
@@ -17793,7 +17953,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(trCancel) throw new Error(TR_CANCEL);
             const out=await apiTranslate(src,target,doc.glossary);
             learnGlossary([src],target).then(n=>{ if(n){ try{ saveDoc(); queueOps(); }catch(e){} } }).catch(()=>{});
-            pushHistory();
+            pushHistory(true);        // 20.3 · 오래 걸린 뒤라도 확실히 되돌리기 지점을 남긴다
             if(isTight){
                 // 가지런한 일반 텍스트 상자로 전환 (찌부됨 방지)
                 el.tight=0; el.align='left'; delete el.fitDown;
@@ -17847,7 +18007,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         try{
             const out=await apiTranslate(txt,target);
             if(!out||!String(out).trim()){ toast('번역 결과가 비어 있습니다',2000); return; }
-            pushHistory();
+            pushHistory(true);        // 20.3 · 비동기 결과 적용은 항상 되돌릴 수 있게
             // 편집 상태여야 execCommand 가 먹는다
             if(w&&!w.classList.contains('edit')){
                 enterEdit(w,true); enableTextSelect(host);
@@ -18154,7 +18314,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         let q=[];
         try{
             showTrProg(0,label+' · 번역 준비… · 중단하려면 [중단]/Esc');
-            pushHistory();                                 // 되돌리기 한 번으로 전체 복구
+            pushHistory(true);                             // 되돌리기 한 번으로 전체 복구
             const jobs=list.filter(o=>{
                 if(trLooksTarget(o.src,target)){ okCnt++; return false; }
                 return true;
@@ -20591,6 +20751,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(op.id==='__pages__'){
                     if((op.rev||0)>(doc.__pagesRev||0)){
                         applyPagesOp(op);
+                        if(op.dev!==SYNC_DEV) histMarkRemotePages();   // 20.3
                         // 14.15 · 방금 받은 페이지 목록을 '_lastPages' 에 반영해
                         //   같은 목록을 곧장 재푸시(pages rev 소모)하지 않는다.
                         if(doc) doc.__lastPages=(doc.pages||[]).map(p=>p.id).join(',');
@@ -20629,6 +20790,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         continue;
                     }
                     if(removeElById(op.id)){ changed=true; chPages.add(op.page||0);
+                        // 20.3 · 남이 지운 요소는 내 되돌리기가 되살리지 않는다
+                        if(op.dev!==SYNC_DEV) histMarkRemote(op.id);
                         doc.__lastHash.delete(op.id);
                         doc.__base.delete(op.id); doc.__baseRev.delete(op.id); }
                 }else if(op.data){
@@ -20656,9 +20819,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     }
                     if(isText&&(activeBox||hasLocal)&&_elById(op.data.id)){
                         // 14.9 · 협업 병합: 내/상대 편집을 모두 남긴다
-                        if(_tbMergeRemote(op)){ changed=true; chPages.add(op.page||0); queueOps(); }
+                        if(_tbMergeRemote(op)){ changed=true; chPages.add(op.page||0);
+                            if(op.dev!==SYNC_DEV) histMarkRemote(op.data.id);
+                            queueOps(); }
                     }else if(await upsertEl(op.data,op.page||0)){
                         changed=true; chPages.add(op.page||0);
+                        // 20.3 · 남이 만들거나 고친 요소는 내 되돌리기가 건드리지 않는다
+                        if(op.dev!==SYNC_DEV) histMarkRemote(op.data.id);
                         doc.__lastHash.set(op.data.id,JSON.stringify(op.data));
                         if(isText){
                             doc.__base.set(op.data.id, op.data.html||'');

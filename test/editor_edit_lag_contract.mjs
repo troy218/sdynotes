@@ -53,24 +53,45 @@ console.log('\n편집 진입 렉 제거 계약 (22.1)');
 {
   const b = code(body('markEditSnapshot'));
   ok('편집 진입 스냅샷은 doc 전체를 직렬화하지 않는다', !!b && !/JSON\.stringify\(doc\)/.test(b));
-  ok('편집 스냅샷은 눌러 준 그 상자의 필드만 복사한다', b.includes('_snapEl(el)') && b.includes('_editPatchStr'));
-  ok('_snapEl 은 중첩 객체(표 셀 정보 등)만 본따서 복제한다', /function _snapEl\(el\)[\s\S]{0,600}JSON\.parse\(JSON\.stringify\(v\)\)/.test(js));
+  ok('편집 스냅샷은 눌러 준 그 상자의 필드만 복사한다', b.includes('_snapEl(el)') && b.includes('_editPatch('));
+  ok('_snapEl 은 중첩 객체(표 셀 정보 등)만 본따서 복제한다',
+    /function _snapEl\(el\)[\s\S]{0,600}JSON\.parse\(JSON\.stringify\(v\)\)/.test(js));
+  ok('인자 없이 불리면(20.3 · 타이핑 체크포인트) 지금 편집 중인 상자를 기억한다',
+    /_activeEditBox\(\)/.test(b));
   const be = body('enterEdit');
   ok('enterEdit 가 스냅샷에 자기 상자를 넘긴다', /markEditSnapshot\(w\)/.test(be));
-  ok('패치 기록은 작을 때만 파싱한다 (큰 문서 기록은 파싱 비용 자체가 렉)', /_editPatchOf/.test(js) && /s\.length>262144/.test(js));
-  const bu = code(body('undo')), br = code(body('redo'));
-  ok('되돌리기가 패치 기록을 알아보고 쪽만 고친다', /_editPatchOf\(s\)/.test(bu) && /_applyPatchEntry\(pt,redoStack/.test(bu));
-  ok('다시 실행도 같은 패치 경로를 쓴다', /_editPatchOf\(s\)/.test(br) && /_applyPatchEntry\(pt,history/.test(br));
-  ok('패치를 적용할 수 없으면 문서를 통째로 덮어쓰지 않는다 (손실 방지)',
-    /되돌릴 수 없는 기록입니다/.test(bu) && !/doc=JSON\.parse\(s2\)/.test(bu));
+  // 히스토리 한 칸 = {snap, patch, remote, remotePages}. 20.3 은 협업 안전성을,
+  //   22.1 은 그 칸의 크기를 담당한다 — 글상자 편집은 snap 대신 patch 만 담긴다.
+  ok('히스토리 칸은 스냅샷과 패치를 같이 담는 그릇이다',
+    /function _histEntry\(snap,patch\)\{ return \{snap:patch\?null:snap,patch:patch\|\|null,/.test(js));
+  const bc = code(body('commitEditSnapshot'));
+  ok('첫 타이핑 기록은 문서 스냅샷 대신 패치 칸으로 쌓인다',
+    /history\.push\(_histEntry\(null,_editSnap\)\)/.test(bc) && /return true;/.test(bc));
+  const ba = code(body('_histApply')), bp = code(body('_histApplyPatch'));
+  ok('되돌리기가 패치 칸을 알아보고 전용 경로로 보낸다',
+    /const isPatch=!!\(entry&&entry\.patch\)/.test(ba) && /if\(isPatch\) return _histApplyPatch\(entry\)/.test(ba));
+  ok('패치 칸을 되돌릴 때는 문서 전체를 직렬화하지 않는다',
+    /const before=isPatch\?null:JSON\.stringify\(doc\)/.test(ba) && !/JSON\.stringify\(doc\)/.test(bp));
+  ok('되돌린 쪽만 다시 그리고 동기화 큐에 올린다 (저장·전송은 그대로)',
+    /renderPageEls\(pt\.pi\)/.test(bp) && /queueOps\(\)/.test(bp));
+  ok('되돌리기 실패(쪽·상자 소실)는 문서를 통째로 덮어쓰지 않고 칸을 건너뛴다',
+    /if\(!r\) return null;/.test(bp) && /if\(!r\) continue;/.test(code(body('_histStep'))));
+  ok('다시 실행도 같은 사다리를 올라간다',
+    /function undo\(\)\{ _histStep\(history,redoStack,'되돌림'\); \}/.test(js)
+    && /function redo\(\)\{ _histStep\(redoStack,history,'다시 실행'\); \}/.test(js));
   const bap = code(body('_applyEditPatch'));
   ok('패치 적용은 쪽·상자가 없으면 조용히 실패한다 (없으면 되돌리지 않는다)',
     /if\(!pg\|\|!Array\.isArray\(pg\.els\)\) return null;/.test(bap) && /if\(!el\) return null;/.test(bap));
+  ok('그 사이 남이 고친 상자는 되돌리기가 덮어쓰지 않는다 (20.3 협업 안전성)',
+    /if\(remote&&remote\.has\(pt\.id\)\) return null;/.test(bap));
+  ok('이미 그 상태라면 헛되이 다시 그리지 않는다', /changed:false/.test(bap));
   ok('패치 적용은 쪽을 더러움 표시하고 반대 방향 상태를 돌려준다',
-    /markPageEdited\(pt\.pi\)/.test(bap) && /return cur;/.test(bap));
+    /markPageEdited\(pt\.pi\)/.test(bap) && /cur:cur,changed:true/.test(bap));
   ok('되돌리기 기록 깊이가 문서·기기에 맞게 줄어든다 (GC·메모리)',
     /function histMax\(\)/.test(js) && /history\.length>histMax\(\)/.test(js) && /history\.length>60/.test(js) === false);
-  ok('pushHistory 도 같은 상한을 쓴다', /if\(history\.length>histMax\(\)\) history\.shift\(\);/.test(code(body('pushHistory'))));
+  ok('pushHistory · 다시 실행 스택도 같은 상한을 쓴다',
+    /if\(history\.length>histMax\(\)\) history\.shift\(\);/.test(code(body('pushHistory')))
+    && /to\.length>histMax\(\)/.test(code(body('_histStep'))));
 }
 
 /* ── ② 오토세이브 에코 루프 ─────────────────────────────────────────── */
