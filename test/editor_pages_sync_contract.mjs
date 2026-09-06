@@ -27,7 +27,10 @@ assert.match(js, /liveRateTimer=setInterval\(liveFastTick,LIVE_RATE_MS\)/,
 assert.match(js, /function liveFastTick\(\)\{/, 'liveFastTick must exist');
 assert.match(js, /const hasPeer=.*livePeerCount/,
   'liveFastTick must detect whether a peer is present');
-assert.match(js, /!liveMoved && !hasPeer && !liveAct\(\)/,
+// 22.1 · 조건문 하나가 '필요 간격(need)' 계산으로 대체됐다. 약속은 같다 —
+//   · 상대가 보는 중이면 내가 가만히 있어도 계속 보낸다 (편집 중엔 LIVE_EDIT_MS)
+//   · 아무도 없고 가만히면 저빈도 발견 주기만 돈다
+assert.match(js, /let need=LIVE_DISCOVER_MS;\s*if\(hasPeer\) need=act\?LIVE_EDIT_MS:LIVE_RATE_MS;\s*else if\(liveMoved\) need=LIVE_RATE_MS;\s*else if\(act\) need=LIVE_EDIT_MS;\s*if\(!liveMoved && now-_liveLastPoll<need\) return;/,
   'liveFastTick must keep polling while a peer moves even if my pointer is still');
 assert.match(js, /if\(_liveBusy\)\{ _liveQueued=true; return; \}/,
   'livePing must serialize overlapping requests so cursors do not jump backwards');

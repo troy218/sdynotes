@@ -64,7 +64,10 @@ for (const [i, rig] of ctx2.result.entries()) {
 // 상대 커서는 내가 멈춰도 계속 받아야 하며 left/top 대신 합성 transform으로 이동한다.
 assert.match(js, /const LIVE_RATE_MS=40, LIVE_DISCOVER_MS=600/,
   '상대가 있을 때 25fps, 혼자일 때 저빈도 탐색');
-assert.match(js, /const hasPeer=.*livePeerCount[\s\S]*?!liveMoved && !hasPeer/,
+// 22.1 · '멈췄으면 안 보낸다'는 조건 문장이 '언제 보내나'를 계산하는 문장으로
+//   바뀌었다(편집 중에는 간격을 늘린다). 상대가 보는 중이면 내 마우스가
+//   멈춰도 계속 보낸다는 약속은 그대로다.
+assert.match(js, /const hasPeer=\(livePeerCount\[curNB\.id\]\|\|1\)>1;[\s\S]*?if\(hasPeer\) need=act\?LIVE_EDIT_MS:LIVE_RATE_MS;[\s\S]*?if\(!liveMoved && now-_liveLastPoll<need\) return;/,
   '내 마우스가 멈춰도 상대가 있으면 polling 유지');
 assert.match(js, /getCoalescedEvents/, '고주사율 포인터의 최신 합쳐진 이벤트 사용');
 assert.match(css, /\.live-cur[\s\S]*?translate3d\(var\(--live-x,0\),var\(--live-y,0\),0\)/,
