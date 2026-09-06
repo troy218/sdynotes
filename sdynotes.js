@@ -31652,6 +31652,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         for(var b=a+1;b<polylines.length;b++){
           var A=polylines[a],B=polylines[b];
           if(A.color!==B.color||!A.pts.length||!B.pts.length) continue;
+          if(Math.abs((Number(A.size)||3)-(Number(B.size)||3))>0.05) continue;   // 굵기가 다르면 다른 획
           var ah=A.pts[A.pts.length-1],at=A.pts[0],bh=B.pts[B.pts.length-1],bt=B.pts[0];
           var best=null;
           var d1=Math.hypot(ah[0]-bt[0],ah[1]-bt[1]);   // A끝-B시작
@@ -31664,6 +31665,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
             else if(bestD===d2) best={pts:B.pts.concat(A.pts),closed:A.closed||B.closed};
             else if(bestD===d3) best={pts:A.pts.concat(B.pts.slice().reverse()),closed:A.closed||B.closed};
             else best={pts:B.pts.concat(A.pts.slice().reverse()),closed:A.closed||B.closed};
+            // 14.34.0 · 이어 붙인 획도 색·굵기를 그대로 — 예전엔 여기서 빠져 검정·기본 굵기로 돌아갔다
+            best.color=A.color; best.size=A.size;
             polylines[a]=best;
             polylines.splice(b,1);
             joined=true;
@@ -31674,6 +31677,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       if(!joined) break;
     }
     // ---- 걸러 내기: 너무 짧은 획·중복 점 제거 ----
+    //   14.34.0 · 긴 직선은 3.5px 간격으로 점을 채운다 — 종이 위 획은 점 사이를
+    //   곡선(Q)으로 매끈하게 잇기 때문에, 꼭짓점만 있는 직선(집·상자)은 모서리가
+    //   둥글게 뭉개졌다. 점이 촘촘하면 모서리가 그대로 산다.
+    var DENS=3.5;
     var kept=[];
     for(var k2=0;k2<polylines.length&&kept.length<320;k2++){
       var S=polylines[k2];
@@ -31682,9 +31689,20 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       for(var p3=0;p3<S.pts.length;p3++){
         var pt=S.pts[p3];
         if(!pt) continue;
-        if(clean.length&&clean[clean.length-1][0]===pt[0]&&clean[clean.length-1][1]===pt[1]) continue;
+        var prevPt=clean.length?clean[clean.length-1]:null;
+        if(prevPt&&prevPt[0]===pt[0]&&prevPt[1]===pt[1]) continue;
+        if(prevPt){
+          var segLen=Math.hypot(pt[0]-prevPt[0],pt[1]-prevPt[1]);
+          total+=segLen;
+          if(segLen>DENS*1.5){
+            var nseg=Math.min(400,Math.ceil(segLen/DENS));
+            for(var si=1;si<nseg;si++){
+              var tt=si/nseg;
+              clean.push([Math.round((prevPt[0]+(pt[0]-prevPt[0])*tt)*10)/10,Math.round((prevPt[1]+(pt[1]-prevPt[1])*tt)*10)/10]);
+            }
+          }
+        }
         clean.push(pt);
-        if(p3>0) total+=Math.hypot(pt[0]-S.pts[p3-1][0],pt[1]-S.pts[p3-1][1]);
       }
       if(clean.length<2||total<3) continue;
       if(total>24000){ // 지나치게 긴 궤적은 절반 간격으로 추린다
@@ -32578,8 +32596,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
             ctl=null; moved=true; searchThenChat(q,scope); return;
           }
           // 서버 [[draw]] — 펜 그림으로 한 번만 넘긴다(노트가 열려 있을 때만).
+          //   14.34.0 · 참고 일러스트 경로(runDraw)가 먼저, 없으면 모델 직접 그리기.
           if(kind==='draw'&&!hopped){
-            if(canEdit()){ ctl=null; moved=true; run('draw',q,scope,true); return; }
+            if(canEdit()){ ctl=null; moved=true; runDraw(q,true); return; }
             kind='';
             text='그림은 노트를 연 다음에 그려 줄게요 해돌~';
           }
@@ -32713,6 +32732,79 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   window.sdyAiRunPhoto=function(q){ runPhoto(String(q||'').trim()); };
 
+  /* 14.34.0 · 참고 일러스트를 따라 그리기 — 그림 요청의 1순위 경로.
+     "그림 수준이 너무 떨어진다"는 원인은 모델이 좌표를 즉석에서 지어내는 데
+     있었다. 이제 서버(/api/ai/refdraw)가 잘 그려진 선화(OpenMoji, CC BY-SA)
+     묶음에서 요청에 맞는 참고 그림을 찾아(후보가 여럿이면 모델이 번호로 고름)
+     그 윤곽을 SVG 로 돌려주고, 브라우저는 그것을 펜 획으로 옮겨 그린다 —
+     사람이 그림을 배울 때 트레이싱하듯 윤곽이 원본 그대로라 퀄리티가 보장된다.
+     참고 그림이 없는 주제(404 nomatch)일 때만 예전처럼 모델이 직접 그린다
+     (run 'draw'). 사용자에게는 어느 경로였는지 말풍선 한 줄로 알려 준다. */
+  function runDraw(q,hopped){
+    if(ctl) return;
+    q=String(q||'').trim();
+    if(!q) return;
+    if(!canEdit()){ otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌~'); return; }
+    var revision=(function(){ try{ var c=aiCapture(); return c?c.revision:''; }catch(e){ return ''; } })();
+    ctl=new AbortController();
+    busy(true); lastText=''; lastKind='draw'; lastQ=q;
+    kindChip('draw');
+    otterHide(); out('',true); meta('');
+    out('참고할 그림을 찾고 있어요…',true);
+    var fallback=function(){                          // 참고 그림이 없다 → 모델이 직접 그린다
+      ctl=null; busy(false);
+      run('draw',q,'doc',!!hopped);
+    };
+    var finish=function(say,applied){
+      ctl=null; busy(false);
+      lastText=say; lastKind='draw'; kindChip('draw');
+      out(say); meta('');
+      if(applied){ try{ if(window.toast) window.toast('해돌이가 그림을 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e3){} }
+      histPush('draw',q,say);
+    };
+    fetch('/api/ai/refdraw',{method:'POST',signal:ctl.signal,
+      headers:{'Content-Type':'application/json','x-sdy-auth':token()},
+      body:JSON.stringify({q:q.slice(0,200)})})
+    .then(function(r){
+      return r.json().catch(function(){ return null; })
+        .then(function(j){ return {ok:r.ok,status:r.status,j:j}; });
+    })
+    .then(function(got){
+      var j=got&&got.j;
+      if(!got||!got.ok||!j||!j.ok||!j.svg){
+        // 404(nomatch·noterms) 는 '못 찾음' — 모델이 직접 그리는 길로 내려간다.
+        // 그 밖(429·5xx) 도 그림을 아예 못 그리는 것보다는 직접 그리기가 낫다.
+        fallback(); return;
+      }
+      out('참고 그림을 따라 그리는 중…',true);
+      var parsed=window.sdyAiDrawParse?window.sdyAiDrawParse(j.svg):{ok:false,ops:[]};
+      if(!parsed.ok||!parsed.ops.length){ fallback(); return; }
+      var name=String(j.name||'').trim();
+      var applied=function(res){
+        res=res||{applied:0,notes:[],stale:false};
+        if(res.stale){ finish((res.notes&&res.notes[0])||'기다리는 동안 문서가 바뀌어서 그리지 않았어요 · 다시 요청해 주세요',false); return; }
+        var say;
+        if(res.applied){
+          say='‘'+(name?name.slice(0,30):q.slice(0,30))+'’ 참고 그림의 윤곽을 따라 펜으로 '+parsed.strokes+'획 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요'
+            +'\n(참고: '+String(j.credit||'OpenMoji · CC BY-SA 4.0')+')';
+        }else say=String((res.notes&&res.notes[0])||'그림을 그리지 못했어요 · 다시 시도해 주세요');
+        if(res.applied&&res.notes&&res.notes.length) say+='\n'+res.notes.join('\n');
+        finish(say,!!res.applied);
+      };
+      try{
+        var bridge=window.__sdyAiBridge;
+        if(!(bridge&&typeof bridge.apply==='function')){ finish('그림 그리기 연결을 찾지 못했어요 · 페이지를 새로고침해 주세요',false); return; }
+        var r2=bridge.apply(parsed.ops,revision);
+        if(r2&&typeof r2.then==='function') r2.then(applied,applied); else applied(r2);
+      }catch(e){ applied(null); }
+    })
+    .catch(function(e){
+      if(e&&e.name==='AbortError'&&closedByUser){ ctl=null; busy(false); return; }
+      fallback();                                     // 네트워크 문제 — 모델 직접 그리기로
+    });
+  }
+  window.sdyAiRunDraw=function(q){ runDraw(String(q||'').trim()); };
+
   /* 검색창 Enter → 바로 질문 (보내기 버튼 없음). 노트 질문인지 자유 질문인지는
      해돌이가 스스로 판단한다 — 사용자가 딱지를 고르는 일은 없다.
      14.26.0 · '시켜 달라'는 말투면 앱 실행으로, '고쳐 달라'는 말투면 편집으로
@@ -32739,7 +32831,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       if(!(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function')){
         otterLine('그림 그리기 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
       }
-      run('draw',drawCommand); return;
+      runDraw(drawCommand); return;                     // 14.34.0 · 참고 그림 → 없으면 모델
     }
     // 14.31.0 · /사진·/이미지 접두사 — 무조건 사진을 찾아 넣는다(펜 그림과 혼동 방지).
     if(photoCmdOf(q)!=null){
@@ -32763,7 +32855,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       else runPhoto(q);                                 // 사진만 → 곧바로 넣기
       return;
     }
-    if(looksLikeDraw(q)){ run('draw',q); return; }      // '그려 줘'는 말이면 펜 그림으로
+    if(looksLikeDraw(q)){ runDraw(q); return; }         // '그려 줘'는 말이면 펜 그림으로(참고 그림 → 모델)
     if(looksLikeEdit(q)){ run('edit',q); return; }      // ! 없어도 '고쳐 달라'는 말이면 편집으로
     run('chat',q);
   };

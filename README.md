@@ -1,4 +1,4 @@
-# SDYnotes 14.33.0 — Fastify + Python worker + Oracle 자체 저장소
+# SDYnotes 14.34.0 — Fastify + Python worker + Oracle 자체 저장소
 
 기존 단일 `app.py`(약 11,000줄)를 **"빠른 부분은 Node, 무거운 부분만 Python"** 으로
 재설계한 백엔드입니다. **14.12 부터 모든 데이터(상태·파일)는 이 Oracle VM 디스크에
@@ -9,6 +9,20 @@
 
 프런트(`sdynotes.html`)의 주요 변화:
 
+- **14.34.0 해돌이가 참고 일러스트를 따라 그린다** (`AI.md` 상단):
+  - "○○ 그려 줘"는 이제 모델이 맨손으로 좌표를 찍지 않는다. 서버에 담아 둔 OpenMoji
+    검정 선화 1,600여 장(`server/assets/haedol_refs.json.gz`, 0.6MB)에서 **부탁한 대상의
+    참고 그림을 먼저 찾고, 그 윤곽을 펜 획으로 따라 그린다**(`POST /api/ai/refdraw`).
+    참고 그림이 있으면 모델을 부르지 않아 빠르고, 결과는 알아볼 수 있는 그림이 보장된다.
+  - 한국어 검색은 CLDR 한국어 주석 + 자체 별칭(강아지→개, 커피→뜨거운 음료, 해돌이→수달…).
+    1·2위가 비슷할 때만 서버 전용 `refpick` 과제로 모델에게 번호 하나를 묻는다.
+    `고양이와 강아지`·`사과, 바나나, 포도` 는 나란히(최대 3개), `빨간 하트` 는 그 색 펜으로.
+  - 번들에 없는 대상만 예전 모델 직접 그리기(`task=draw`)로 내려간다. 되돌리기(Ctrl+Z)·
+    크기 규약(본문 폭 40%·최대 320px)은 그대로.
+  - 출처: 말풍선에 `(참고: OpenMoji · CC BY-SA 4.0)`. 라이선스 안내
+    `server/assets/haedol_refs.LICENSE.txt`. 번들 재생성 `npm run build:refs`.
+  - 검증 `npm run test:refdraw` (계약 57 + 런타임 38, `test/ai_refdraw_contract.mjs`,
+    `test/ai_draw_photo_runtime.mjs`).
 - **14.33.0 '아주 똥컴' 전용 경량 모드(`body.sdy-turbo`)**:
   - 이전 20.0(읽기 우선·쪽 그림 1장)과 14.29~14.30(셸/요소 가상화)을 **그대로 유지**한 채,
     저성능 기기에는 세 가지를 더 아낀다.
