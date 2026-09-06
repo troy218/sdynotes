@@ -46,7 +46,9 @@ ok('미리보기는 원본 그대로 렌더한다 (redact 없이)',
   && !/add_redact_annot/.test(py.slice(py.indexOf('def _render_preview'),
                                        py.indexOf('def import_page_preview'))));
 ok('구운 그림은 원자적으로 저장한다 (반쯤 쓴 파일이 캐시되지 않게)',
-  /tmp = "%s\.tmp\.%s" % \(out_path/.test(py) && /os\.replace\(tmp, out_path\)/.test(py));
+  // 14.32.3 · 임시 이름도 반드시 .jpg 로 끝나야 한다 — Pixmap.save 는 '확장자'로
+  //   저장 형식을 정하므로 확장자 없는 tmp 꼬리는 항상 500 이었다(미리보기 전멸).
+  /tmp = "%s\.tmp\.%s\.jpg" % \(out_path/.test(py) && /os\.replace\(tmp, out_path\)/.test(py));
 ok('미리보기는 영구 캐시 헤더로 나간다',
   /public, max-age=31536000, immutable/.test(py));
 ok('메인 서버가 미리보기 경로를 워커로 프록시한다',
