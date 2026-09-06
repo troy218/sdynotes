@@ -354,7 +354,7 @@ function rateHit(key, now = Date.now(), n = AI_RATE_N) {
 //   14.27.0 · 직전 1턴이 아니라 최근 대화 여러 턴(질문·편집·실행 전부)을
 //   묶어 싣는다 — "아까 그 상자", "방금 만든 표" 같은 이어서 하기를 알아듣게.
 //   상한은 AI_MAX_CONTEXT. 본문·요청과 레이블을 분리해 모델이 혼동하지 않게 한다.
-export function aiMessages(task, text, question, context) {
+export function aiMessages(task, text, question, context, ref) {
   const spec = AI_TASKS[task] || AI_TASKS.outline;
   const user = [];
   const textLabel = task === 'edit' ? '문서 상태' : (task === 'app' ? '앱 상태' : '노트 본문');
@@ -371,11 +371,84 @@ export function aiMessages(task, text, question, context) {
   }
   const ctx = String(context == null ? '' : context).trim().slice(0, AI_MAX_CONTEXT);
   if ((task === 'edit' || task === 'app') && ctx) user.push('이전 대화:\n' + ctx);
-  if (spec.needQuestion || (task === 'chat' && question)) user.push(questionLabel + ': ' + question);
+  if (spec.needQuestion || (task === 'chat' && question)) {
+    user.push(questionLabel + ': ' + question);
+  }
+  // 14.33.1 · 해돌이 그림 — 참고 일러스트가 있으면 그 그림을 이미지로 같이
+  //   보여 주며 \"윤곽을 따라 그려라\"고 시킨다. 멀티모달 모델이 텍스트만으로
+  //   좌표를 찍을 때보다 형태가 훨씬 안정된다. 그 외 요청(ref 없음)은 예전처럼
+  //   user 메시지 내용이 평문 문자열 하나다.
+  const userText = user.join('\n\n');
+  const content = (task === 'draw' && ref)
+    ? [
+        { type: 'text', text: userText + (userText ? '\n\n' : '') + '[참고 일러스트]\n'
+          + '아래 이미지가 이번에 그릴 대상의 참고 그림이다. '
+          + '이 참고의 주인공 구도·자세·덩어리·윤곽을 **그대로 베끼지 말고**, 형태가 알아보이도록 '
+          + '귀엽고 단순한 선화(윤곽선만)로 **다시 그려서** <svg>로 출력한다. '
+          + '참고 그림의 배경·색칠·잡음·명암은 무시하고, 참고의 윤곽선만 따라 그린다.' },
+        { type: 'image_url', image_url: { url: ref } },
+      ]
+    : userText;
   return [
     { role: 'system', content: spec.system },
-    { role: 'user', content: user.join('\n\n') },
+    { role: 'user', content },
   ];
+}
+
+// 14.33.1 · 멀티모달(참고 일러스트 보기)로 그려도 되는지 — 그림 요청의 참고
+//   추적은 이미지를 받는 모델에서만 의미가 있다. 로컬 Ollama 나 qwen/llama 처럼
+//   텍스트 전용 모델이면 참고를 찾지 않아 매 요청 지연·비용이 안 나게 한다.
+function drawRefAllowed() {
+  if (!AI_READY || !AI_PROVIDERS.length) return false;
+  return AI_PROVIDERS.some((p) => {
+    const m = String(p.model || '').toLowerCase();
+    const name = String(p.name || '').toLowerCase();
+    if (/(ollama|local|lmstudio|llama\.cpp)/.test(name)) return false;
+    if (/(^|[/_.-])(qwen|llama|gemma|mistral|phi|deepseek|command|falcon)([/_.-]|$)/.test(m)) return false;
+    if (/(^|\/)(qwen|llama|gemma|mistral|phi|deepseek)/.test(m)) return false;
+    return true;
+  });
+}
+
+// 참고 일러스트를 (동적 import 로) 찾는다 — 그림이 실패하지 않게 오류는 삼킨다.
+async function loadDrawRef(question, signal) {
+  if (!drawRefAllowed()) return null;
+  try {
+    const mod = await import('./aiTools.js');
+    if (mod && typeof mod.fetchDrawReference === 'function') {
+      return await mod.fetchDrawReference(question, signal);
+    }
+  } catch (e) {
+    console.error('[draw/ref]', e && e.message);
+  }
+  return null;
+}
+
+// 그림 요청 실행 — 참고가 있으면 그걸 보고 그리고, 참고가 없거나 모델이
+//   이미지 입력을 못 주면(400·형식 오류) '참고 없이' 예전 그대로 그린다.
+//   stream 이면 onDelta 로 조각을 흘리고, 아니면 한 방에 받는다.
+async function runDrawJob({ text, question, context, stream, onDelta, signal }) {
+  const emit = stream ? (onDelta || (() => {})) : null;
+  const attempt = (messages, tried) => (stream
+    ? callChainStream(messages, emit, signal, tried)
+    : callChain(messages, tried || [], signal));
+  const baseMsg = () => aiMessages('draw', text, question, context, null);
+  let ref = null;
+  try { ref = await loadDrawRef(question, signal); } catch (e) { ref = null; }
+  if (!ref || !ref.dataUrl) return attempt(baseMsg());
+  const refMsg = aiMessages('draw', text, question, context, ref.dataUrl);
+  try {
+    return await attempt(refMsg, []);
+  } catch (e) {
+    // 이미지 입력을 못 주는 모델이면(400·형식 오류) 참고 없이 예전 그대로 그린다.
+    //   체인은 조각이 나가기 시작하면 바로 성공으로 끝나고, 여기서 잡히는 오류는
+    //   전부 '아무 조각도 안 나간' 실패라 안전하게 텍스트로 재시도할 수 있다.
+    if (e && (e.status === 400
+        || /image|vision|multimodal|not supported|unsupported|image.*url|content.*image/i.test(String(e.message || '')))) {
+      return attempt(baseMsg(), []);
+    }
+    throw e;
+  }
 }
 
 // 공통 요청 본문 — 스트림이냐 아니냐만 다르다.
@@ -891,6 +964,13 @@ export function registerAi(app) {
         // 분할 명령은 조각끼리 한 줄이 섞이지 않도록 병렬 수집 후 한 번에 보낸다.
         out = await callEditParts(job.text, job.question, job.context, ac.signal);
         if (out.text) send('delta', { t: out.text });
+      } else if (job.task === 'draw') {
+        // 14.33.1 · 그림은 참고 일러스트를 찾아 보고(멀티모달) 그리거나,
+        //   없으면 예전처럼 텍스트로 그린다(runDrawJob 이 폴백까지 한다).
+        out = await runDrawJob({
+          text: job.text, question: job.question, context: job.context,
+          stream: true, onDelta: (d) => send('delta', { t: d }), signal: ac.signal,
+        });
       } else {
         out = await callChainStream(
           aiMessages(job.task, job.text, job.question, job.context),
@@ -925,7 +1005,19 @@ export function registerAi(app) {
     if (b.stream === true) { streamReply(req, reply, job); return; }
 
     try {
-      const { text: out, cached, provider, model } = await aiCore(job.task, job.text, job.question, job.context);
+      // 14.33.1 · 그림(비스트림)도 참고 일러스트를 보고 그린다(runDrawJob 이
+      //   참고 폴백까지). 그 외 일은 예전처럼 aiCore(캐시·인플라이트 공유)로.
+      let res;
+      if (job.task === 'draw') {
+        const o = await runDrawJob({
+          text: job.text, question: job.question, context: job.context,
+          stream: false, signal: undefined,
+        });
+        res = { text: o.text, cached: false, provider: o.provider || '', model: o.model || '' };
+      } else {
+        res = await aiCore(job.task, job.text, job.question, job.context);
+      }
+      const { text: out, cached, provider, model } = res;
       return reply.send({
         ok: true, task: job.task, text: out, model: model || AI_MODEL, provider: provider || '',
         cached, truncated: job.fit.truncated, chars: job.fit.chars, note_chars: job.fit.noteChars,
