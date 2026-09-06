@@ -1082,6 +1082,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     d.pages[i]=p;
                 });
                 _importLoaded(d, curNB&&curNB.id);
+                if(doc===d) schedulePresanitize();   // 18.13 · 새로 받은 쪽을 미리 정리
             }else if(doc===d){
                 // 받지 못한 슬라이스: 잠시 뒤 화면의 그 쪽을 다시 그려 재시도하게 한다.
                 // (직접 ensureLazyPage 를 부르면 실패 시 무한 재귀가 될 수 있다.)
@@ -5753,6 +5754,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         //   (ensureTableGrid) — 화면·저장 결과는 완전히 같다.
         _tblGridDone=new Set();
         renderPages();
+        schedulePresanitize();   // 18.13 · 쪽 중복 정리(O(n²))를 유휴 시간에 미리 돌려 스크롤 첫 프레임을 가볍게
         hideEdLoading();
         updateLockUI();
         document.getElementById('editorView').classList.add('open');
@@ -6249,6 +6251,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     const FILL_IDLE=90;               // 스크롤이 멎고 이만큼 뒤에 내용을 채운다
     const FILL_MAX_GAP=220;           // 스크롤이 이어져도 이 간격마다 한 번은 채운다
     const _pageRenderTok={};          // 같은 쪽을 다시 그리거나 비우면 이전 청크 루프를 버린다
+    const _renderedAt={};             // 쪽별 마지막 요소 렌더 시각 — 회수 유예 판단용
+    const UNLOAD_GRACE=1200;          // 방금 그린 쪽은 이 시간 안에 경계를 넘어도 바로 내리지 않는다
     const chunkTimers={};
     let _virtualTimer=null;
     let _lastFillAt=0;
@@ -6405,6 +6409,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         clearTimeout(_nbrTimer); _nbrTimer=null;
         renderedPages.clear();
         mountedShells.clear();
+        for(const _k in _renderedAt) delete _renderedAt[_k];   // 18.13 · 노트 전환 시 유예 시각 초기화
         _tblGridDone=new Set();   // 표 격자선은 쪽을 그릴 때 다시 확인한다
         _shellWin={first:0,last:-1};
         // 14.12 · 노트 전환 시 기존 DOM과 비동기 콜백이 새 노트에 영향을 주지 못하게
@@ -6465,12 +6470,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 요소만 비운다 (종이는 그대로 — 찾기·형광 띠는 다시 그릴 때 복원된다)
     function unloadPage(i){
         if(Math.abs(i-(curPageIdx|0))<=VIRTUAL_KEEP_RADIUS) return false;
+        // 18.13 · 방금 그린 쪽은 경계를 막 넘었어도 곧바로 회수하지 않는다. 요소
+        //   회수는 즉시, 이웃 렌더는 지연이라 스크롤을 되돌렸을 때 같은 쪽을
+        //   '내렸다가 다시 그리는' 왕복이 반복되던 지점. 짧은 유예를 두면
+        //   되돌아왔을 때 이미 그려진 그대로라 재렌더가 없다.
+        if(Date.now()-(_renderedAt[i]||0)<UNLOAD_GRACE) return false;
         if(!renderedPages.has(i)||!canUnloadPage(i)) return false;
         // setTimeout뿐 아니라 이미 RAF 큐에 들어간 step도 토큰으로 무효화한다.
         _pageRenderTok[i]=(_pageRenderTok[i]||0)+1;
         clearTimeout(chunkTimers[i]); delete chunkTimers[i];
         clearPageEls(i);
         renderedPages.delete(i);
+        delete _renderedAt[i];
         return true;
     }
 
@@ -6548,6 +6559,59 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return !!(u && !/^blob:/i.test(u));
     }
     const _sanDone=new WeakSet();   // 이미 중복 정리를 끝낸 els 배열
+    // 18.13 성능 — 쪽의 중복 정리(겹침 제거)는 O(n²)라서 그 쪽을 '처음 그리는
+    //   프레임'에 동기로 들어가면 스크롤 버벅임이 된다. 그래서:
+    //   ① 결과는 한 번만 계산(_sanDone)하고,
+    //   ② 쪽이 메모리에 들어오는 즉시(열기·슬라이스 로드 뒤) 백그라운드에서
+    //      미리 돌려 둔다. → 스크롤로 도착했을 땐 이미 정리돼 있어 skip.
+    function _ensureSanitized(idx){
+        const pg=doc&&doc.pages&&doc.pages[idx];
+        if(!pg) return [];
+        let els=pg.els||[];
+        if(!_sanDone.has(els)){
+            const cleaned=sanitizePageEls(els);
+            if(cleaned!==els && cleaned.length!==els.length) pg.els=cleaned;
+            els=pg.els||[];
+            _sanDone.add(els);
+        }
+        return els;
+    }
+    let _presanTimer=null, _presanFrom=0;
+    function _presanitizeDoc(){
+        // 메모리에 이미 올라와 있는 쪽의 중복 정리를, 화면·스크롤을 막지 않게
+        // 유휴 시간에 나눠서 미리 돌린다(lazy 쪽은 아직 데이터가 없으니 제외).
+        const d=doc;
+        if(!d||!Array.isArray(d.pages)) return;
+        let any=false;
+        const n=d.pages.length;
+        let i=_presanFrom, guard=0;
+        for(;i<n&&guard<24;i++,guard++){     // 한 번에 최대 24쪽(무거운 쪽은 그 자체가 큼)
+            const pg=d.pages[i];
+            if(!pg||pg.__lazy!=null) continue;
+            const els=pg.els||[];
+            if(_sanDone.has(els)) continue;
+            any=true;
+            const cleaned=sanitizePageEls(els);
+            if(cleaned!==els && cleaned.length!==els.length) pg.els=cleaned;
+            _sanDone.add(pg.els||[]);
+        }
+        _presanFrom=i;
+        if(any && i<n){                     // 남았으면 다음 유휴 틱으로
+            try{
+                if(window.requestIdleCallback) _presanTimer=window.requestIdleCallback(_presanitizeDoc,{timeout:sdyLowEnd()?900:600});
+                else _presanTimer=setTimeout(_presanitizeDoc,sdyLowEnd()?120:40);
+            }catch(e){}
+        }
+    }
+    function schedulePresanitize(){
+        if(!doc||!Array.isArray(doc.pages)) return;
+        _presanFrom=0;
+        if(_presanTimer){ try{ if(window.cancelIdleCallback) window.cancelIdleCallback(_presanTimer); else clearTimeout(_presanTimer); }catch(e){} _presanTimer=null; }
+        try{
+            if(window.requestIdleCallback) _presanTimer=window.requestIdleCallback(_presanitizeDoc,{timeout:sdyLowEnd()?900:600});
+            else _presanTimer=setTimeout(_presanitizeDoc,sdyLowEnd()?120:40);
+        }catch(e){}
+    }
     function sanitizePageEls(els){
         if(!els||!els.length) return els||[];
         const seen=new Set();
@@ -6625,6 +6689,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // renderVersion 이 다르면 (노트가 전환됐으면) 건드리지 않는다
         if(window._renderVersion !== (doc&&doc.__rv)) return;
         renderedPages.add(idx);
+        _renderedAt[idx]=Date.now();   // 18.13 · 회수 유예 판단용 렌더 시각
         const tok=_pageRenderTok[idx]=(_pageRenderTok[idx]||0)+1;
         const size=paperSize();
         const imgL=paper.querySelector('.layer-img');
@@ -6638,13 +6703,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 스크롤로 같은 쪽을 다시 그릴 때마다 되풀이하면 그게 곧 렉이므로
         // '이 배열은 이미 정리했다'를 WeakSet 으로 기억해 한 번만 돌린다.
         ensureTableGrid(idx);       // 이 쪽 표의 격자선(없으면 지금 만든다)
-        let els=doc.pages[idx].els||[];
-        if(!_sanDone.has(els)){
-            const cleaned=sanitizePageEls(els);
-            if(cleaned!==els && cleaned.length!==els.length) doc.pages[idx].els=cleaned;
-            els=doc.pages[idx].els||[];
-            _sanDone.add(els);
-        }
+        const els=_ensureSanitized(idx);
         const makeBags=()=>({img:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()});
         const flushBags=b=>{
             if(_pageRenderTok[idx]!==tok) return;
@@ -6926,6 +6985,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     let _scrRaf=0;
     document.getElementById('editorBody').addEventListener('scroll',()=>{
         if(!doc||_scrRaf) return;
+        _markScrolling();                              // 무거운 단어 맞춤·레이아웃 읽기를 미룬다
         _scrRaf=requestAnimationFrame(()=>{ _scrRaf=0; onEditorScroll(); });
     },{passive:true});
     // ===== 읽는 동안 배경 점점 고화질 (대용량 가져온 문서) =====
@@ -7457,6 +7517,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(node){ node.classList.add('msel'); multiSel.push({id:el.id,pageIdx:pi,node}); }
         });
         if(multiSel.length===1){ multiSel[0].node.classList.remove('msel'); multiSel[0].node.classList.add('sel');
+            if(clipboardEls[0].type==='image') _ensureImgControls(multiSel[0].node);
             selected={type:clipboardEls[0].type==='image'?'image':clipboardEls[0].type,el:multiSel[0].node}; multiSel=[]; }
         toast(`${made.length}개 붙여넣음`,1200);
     }
@@ -7682,6 +7743,23 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
     });
 
+    // 18.13 성능 — 이미지 한 장당 테두리 4 + 손잡이 8 = 13개 노드가 그릴 때마다
+    //   생겼다. 그림이 많은 가져온 문서에서 이 노드 폭증이 렌더·레이아웃 비용을
+    //   크게 키웠다. 테두리·손잡이는 '선택했을 때'에만 보이므로(display:none),
+    //   지금은 선택되는 순간에 한 번만 붙인다(_ensureImgControls).
+    function _ensureImgControls(im){
+        if(!im||im._ctl) return im;
+        im._ctl=1;
+        ['top','bottom','left','right'].forEach(side=>{
+            const eg=document.createElement('div');
+            eg.className='tb-edge '+side; eg.title='끌어서 이동';
+            im.appendChild(eg);
+        });
+        ['h-nw','h-ne','h-sw','h-se','h-n','h-s','h-w','h-e'].forEach(c=>{
+            const h=document.createElement('div'); h.className='handle '+c; h.dataset.dir=c; im.appendChild(h);
+        });
+        return im;
+    }
     function buildImageEl(el,pageIdx){
         const w=document.createElement('div');
         w.className='paper-img'; w.dataset.id=el.id; w.dataset.pageIdx=pageIdx;
@@ -7707,16 +7785,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         //   그림은 한 번 눌러 선택 → 테두리/손잡이가 뜬 상태에서 바로 이동·크기 조절한다.
         //   (크게 보기는 우클릭 메뉴의 '크게 보기'나 스페이스바 등 별도 동작으로만 열리게 한다.)
         w.appendChild(img);
-        // 테두리를 잡으면 이동 (손잡이는 이 위에 그려진다)
-        ['top','bottom','left','right'].forEach(side=>{
-            const eg=document.createElement('div');
-            eg.className='tb-edge '+side; eg.title='끌어서 이동';
-            w.appendChild(eg);
-        });
-        // 꼭짓점 4개 = 비율 유지 / 변 중앙 4개 = 자유 조절
-        ['h-nw','h-ne','h-sw','h-se','h-n','h-s','h-w','h-e'].forEach(c=>{
-            const h=document.createElement('div'); h.className='handle '+c; h.dataset.dir=c; w.appendChild(h);
-        });
+        // ★ 18.13 · 테두리·손잡이는 선택 순간 _ensureImgControls 가 한 번만 붙인다.
         // 비율 고정 배지와 X 버튼은 없앤다.
         //  · 비율 고정 전환 → 우클릭 메뉴
         //  · 삭제 → Delete 키
@@ -7853,6 +7922,38 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   · el.html/해시 갱신도 '실제로 바뀌었을 때만' 한다 — 매 렌더마다
     //     똑같은 문자열로 저장·동기화 상태를 뒤엎지 않는다(결과 동일).
     const _tightFitCache=new WeakMap();      // el → 마지막 맞춤 결과 (세션 한정)
+
+    // ★ 18.13 성능 — tight(가져온) 상자의 단어 맞춤(fitTightSpans)은 스팬마다
+    //   offsetTop/offsetLeft/scrollWidth 를 읽고 transform/width 를 쓰는 레이아웃
+    //   무거운 작업이다. 예전엔 상자 하나당 rAF 를 하나씩 걸어서, 요소가 많은 큰
+    //   페이지를 처음 열 때 수백 개의 rAF 가 한 프레임에 몰려 레이아웃 쓰래싱을
+    //   일으켰다(스크롤 버벅임의 1순위). → 큐에 모아 프레임당 한 번만 돌리고,
+    //   스크롤 중에는 아예 미룬다(레이아웃 읽기를 스크롤 프레임에 섞지 않는다).
+    //   상자가 DOM 에 아직 안 붙은 채로 차례가 오면 그 프레임은 건너뛴다 —
+    //   원래 rAF 버전과 같은 의미(연결 안 됐으면 맞추지 않는다).
+    let _scrollUntil=0;                     // 이 시각(ms)까지는 '스크롤 중'으로 본다
+    function _isScrolling(){ return Date.now()<_scrollUntil; }
+    function _markScrolling(ms){ _scrollUntil=Math.max(_scrollUntil,Date.now()+(ms||250)); }
+    const _tightQueue=[];                   // {c, el} — 아직 단어 맞춤을 안 한 tight 상자
+    let _tightRaf=0;
+    function _queueTightFit(c,el){
+        if(!c||!el) return;
+        _tightQueue.push({c,el});
+        if(!_tightRaf) _tightRaf=requestAnimationFrame(_drainTightQueue);
+    }
+    function _drainTightQueue(){
+        _tightRaf=0;
+        if(!_tightQueue.length) return;
+        // 스크롤 중이면 이번 프레임은 읽지 않고 다음 프레임으로 미룬다.
+        if(_isScrolling()){ _tightRaf=requestAnimationFrame(_drainTightQueue); return; }
+        let budget=96;                      // 한 프레임에 맞출 상자 수 상한(나머지는 다음 프레임)
+        while(_tightQueue.length&&budget-->0){
+            const item=_tightQueue.shift();
+            if(!item.c.isConnected) continue;   // 아직 안 붙었으면 이번엔 건너뜀(재렌더 시 재요청됨)
+            fitTightSpans(item.c,item.el);
+        }
+        if(_tightQueue.length) _tightRaf=requestAnimationFrame(_drainTightQueue);
+    }
     function _fontState(){                   // 'P'=웹폰트 로딩 중, 'L'=확정(또는 폰트 없음)
         try{
             if(document.fonts&&document.fonts.status==='loading') return 'P';
@@ -8328,8 +8429,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 값만 보이거나(특히 구형 <font> 데이터) 일부 글자가 기본값으로
         // 돌아가는 경우가 있었다. decodeTextMarkup 은 각 요소의 속성을
         // 독립적으로 복원하므로 저장/재렌더링이 반복돼도 글자별 값이 유지된다.
-        c.innerHTML=decodeTextMarkup(_normalizePaletteHtml(el.html||''));
-        imathFill(c);              // 14.29.2 · 문장 안에 섞인 $수식$ 그리기
+        const _tHtml=decodeTextMarkup(_normalizePaletteHtml(el.html||''));
+        c.innerHTML=_tHtml;
+        // 14.29.2 · 문장 안에 섞인 $수식$ 그리기 — 수식 표식(imath)이 없으면
+        //   querySelectorAll 조차 돌리지 않는다(대부분의 가져온 상자는 수식이 없다).
+        if(_tHtml.indexOf('imath')>=0) imathFill(c);
         // 가져온(tight) 상자: 저장된 자간/띄어쓰기/줄간격 반영 + 자동 안겹침
         if(el.tight){
             if(el.ls) c.style.letterSpacing=el.ls+'px';
@@ -8349,15 +8453,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             //   (아주 쌈), 단어 폭 레이아웃 재측정·html 재굽기는 내용/크기/폰트
             //   상태가 그대로면 생략된다. (상자가 아직 DOM 에 안 붙은 시점엔
             //   캐시 비교가 의미 없으므로 스케줄은 항상 하고, 진입점에서 잰다.)
-            requestAnimationFrame(()=>{ if(w.isConnected) fitTightSpans(c,el); });
+            _queueTightFit(c,el);
             // 웹폰트가 아직 로딩 중일 때 처음 그린 상자는 로드가 끝난 뒤 한 번
             // 더 맞춘다(이미 떠 있으면 rAF 한 번으로 충분 — 예전엔 상자마다
             // 항상 두 번을 돌려 폭 레이아웃을 이중으로 재고 html 까지 두 번
             // 굽고, 그 결과가 이제는 캐시에 남아 로드 후 재측정도 한 번뿐).
+            //   → 이것도 큐로 모아 한 번에 돌린다(폰트 로드 직후 상자마다 rAF 가
+            //     터지는 걸 막는다). 폰트 상태가 바뀌면 _tightFitHit 캐시가
+            //     어긋나므로 자동으로 재측정된다.
             try{
                 if(_fontState()==='P'&&document.fonts&&document.fonts.ready){
                     document.fonts.ready.then(()=>{
-                        if(w.isConnected) fitTightSpans(c,el);
+                        if(w.isConnected) _queueTightFit(c,el);
                     }).catch(()=>{});
                 }
             }catch(_e){};
@@ -9586,7 +9693,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 return;
             }
             if(!im.classList.contains('sel')){          // 1차 클릭 = 선택만
-                deselectAll(); im.classList.add('sel'); selected={type:'image',el:im};
+                deselectAll(); _ensureImgControls(im); im.classList.add('sel'); selected={type:'image',el:im};
                 drag=null;
                 return;
             }
@@ -13929,7 +14036,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         {
             const _ae=document.activeElement, _tag=(_ae&&_ae.tagName)||'';
             const _inField=(_tag==='INPUT'||_tag==='TEXTAREA'||_tag==='SELECT')
-                ||!!(_ae&&_ae.isContentEditable&&!_ae.classList.contains('tb-content'));
+                ||!!(_ae&&_ae.isContentEditable&&!_ae.classList.contains('tb-content'))
+                // 18.13 · 해돌이 대화 UI(#aiAsk·#aiSay·#aiHist) 안쪽을 누르면
+                //   편집기 단축키(Ctrl+A/Z·Delete 등)를 가로채지 않는다 — 말풍선·
+                //   기록은 input 이 아니라 예전엔 포커스가 그대로 노트에 남아
+                //   Ctrl+A 가 답변 글 대신 노트 전체를 골랐다. 말풍선·기록에
+                //   tabindex 를 줘 클릭으로 포커스가 들어오게 하고, 여기서 그
+                //   포커스를 '바깥 입력칸'처럼 다룬다. (Ctrl+S 저장은 예외)
+                ||!!(_ae&&_ae.closest&&_ae.closest('#aiAsk,#aiSay,#aiHist'));
             if(_inField&&!((e.ctrlKey||e.metaKey)&&(e.key==='s'||e.key==='S'))) return;
         }
         // 요소 복사 / 잘라내기 / 붙여넣기 / 복제
@@ -21234,6 +21348,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const inMulti=multiSel.some(m=>m.node===host);
             deselectAll(true);
             if(!inMulti) clearMulti();
+            if(kind==='img') _ensureImgControls(host);
             host.classList.add('sel');
             selected={type:kind==='img'?'image':(kind==='stroke'?'stroke':'text'),el:host};
             ctxTarget={kind:'el',pageIdx,el:host,elKind:kind};

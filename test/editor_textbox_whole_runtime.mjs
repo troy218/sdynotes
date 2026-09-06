@@ -489,6 +489,63 @@ try {
     check('입력칸 밖에서는 Ctrl+A 가 예전대로 노트 전체를 고른다',
       evA2.defaultPrevented === true && document.querySelectorAll('#pagesStage .msel').length >= 2,
       document.querySelectorAll('#pagesStage .msel').length);
+    // 다중 선택을 풀되 노트는 닫지 않는다 — 빈 종이를 눌러 해제한다.
+    //   (Escape 는 아무 창도 안 열려 있으면 노트까지 닫아 버리므로 여기선 안 쓴다.)
+    const p0 = document.querySelector('#pagesStage .paper[data-page-idx="0"]');
+    if (p0) {
+      p0.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 700, clientY: 1000 }));
+      document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
+      await wait(120);
+    }
+  }
+
+  // ── ⑩ 해돌이 말풍선(#aiSay)·기록(#aiHist)도 클릭(포커스)하면 단축키가 그쪽으로만 간다 ──
+  //   말풍선·기록은 input 이 아니라서 예전엔 클릭해도 포커스가 노트에 남아
+  //   Ctrl+A 가 답변 글 대신 노트 전체를 골랐다. tabindex 를 줘 클릭으로 포커스가
+  //   들어오게 하고, 편집기 keydown 가드가 그 포커스를 '바깥 입력칸'처럼 다룬다.
+  {
+    const before = document.querySelectorAll('#pagesStage .tb').length;
+    const say = document.getElementById('aiSay');
+    assert.ok(say, '해돌이 말풍선(#aiSay)이 있다');
+    say.hidden = false;          // 말풍선을 띄운 상태
+    say.focus();
+    check('말풍선에 포커스가 가면 activeElement 가 #aiSay 다', document.activeElement === say);
+    const evA = new window.KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(evA);
+    await wait(150);
+    check('말풍선에서 Ctrl+A 는 노트를 전체 선택하지 않는다',
+      evA.defaultPrevented === false && document.querySelectorAll('#pagesStage .msel').length === 0);
+    const evDel = new window.KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true });
+    document.dispatchEvent(evDel);
+    await wait(150);
+    check('말풍선에서 Delete 는 노트 요소를 지우지 않는다',
+      evDel.defaultPrevented === false && document.querySelectorAll('#pagesStage .tb').length === before);
+    const evZ = new window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(evZ);
+    await wait(150);
+    check('말풍선에서 Ctrl+Z 는 노트를 되돌리지 않는다',
+      evZ.defaultPrevented === false && document.querySelectorAll('#pagesStage .tb').length === before);
+    // 대화기록도 동일하게
+    const hist = document.getElementById('aiHist');
+    assert.ok(hist, '대화기록(#aiHist)이 있다');
+    say.blur();
+    hist.hidden = false;
+    hist.focus();
+    check('기록에 포커스가 가면 activeElement 가 #aiHist 다', document.activeElement === hist);
+    const evA2 = new window.KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(evA2);
+    await wait(150);
+    check('기록에서 Ctrl+A 도 노트를 전체 선택하지 않는다',
+      evA2.defaultPrevented === false && document.querySelectorAll('#pagesStage .msel').length === 0);
+    hist.blur();
+    say.hidden = true; hist.hidden = true;
+    blur(window);
+    const evA3 = new window.KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(evA3);
+    await wait(150);
+    check('말풍선·기록 밖(종이)에서는 Ctrl+A 가 예전대로 노트 전체를 고른다',
+      evA3.defaultPrevented === true && document.querySelectorAll('#pagesStage .msel').length >= 2,
+      document.querySelectorAll('#pagesStage .msel').length);
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await wait(120);
   }
