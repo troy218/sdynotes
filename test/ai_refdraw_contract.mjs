@@ -102,6 +102,11 @@ const svg = R.refSvg(cat);
 check('참고 그림 → SVG(480×360 viewBox)', /^<svg viewBox="0 0 480 360"/.test(svg));
 check('모든 path 가 fill="none" 윤곽선이다(펜 획 규약)', (svg.match(/<path/g) || []).length >= 4
   && (svg.match(/fill="none"/g) || []).length === (svg.match(/<path/g) || []).length);
+const autoColors = [...svg.matchAll(/stroke="(#[0-9a-f]{6})"/gi)].map((m) => m[1].toLowerCase());
+check('색 요청이 없어도 검정 일색 대신 대상별 자동 컬러 팔레트를 쓴다', /data-color-mode="auto"/.test(svg)
+  && !autoColors.includes('#1a1a1a') && new Set(autoColors).size >= 2, [...new Set(autoColors)].join(','));
+check('자연물은 초록 주색과 따뜻한 디테일 색을 쓴다', R.refPaletteOf(R.refByHex('1F33B')).main === '#2ecc71'
+  && R.refPaletteOf(R.refByHex('1F33B')).detail === '#e67e22');
 const dAttrs = [...svg.matchAll(/\sd="([^"]*)"/g)].map((m) => m[1]);
 check('경로는 절대좌표 M/L/C/Z 만 쓴다', dAttrs.length > 0 && dAttrs.every((d) => /^[MLCZ0-9.\s-]+$/.test(d) && /^M /.test(d)),
   dAttrs.find((d) => !/^[MLCZ0-9.\s-]+$/.test(d)) || '');
@@ -112,7 +117,11 @@ check('채움 도형(눈동자)은 윤곽 + 빗금 획으로 옮긴다', /data-f
 const multiSvg = R.refSvg([R.refByHex('1F408'), R.refByHex('1F415')]);
 check('두 그림을 한 장에 나란히 놓는다', /data-ref="1F408\+1F415"/.test(multiSvg)
   && (multiSvg.match(/<path/g) || []).length > (svg.match(/<path/g) || []).length);
-check('색을 주면 그 색으로 그린다', /stroke="#e74c3c"/.test(R.refSvg(cat, { color: '#e74c3c' })));
+const redSvg = R.refSvg(cat, { color: '#e74c3c' });
+check('색을 주면 자동 짝색 없이 요청한 색 하나로 그린다', /data-color-mode="requested"/.test(redSvg)
+  && [...redSvg.matchAll(/stroke="(#[0-9a-f]{6})"/gi)].every((m) => m[1].toLowerCase() === '#e74c3c'));
+check('검정을 명시하면 자동 컬러 대신 검정 펜 요청을 존중한다', R.refColorOf('검은 고양이 그려줘') === '#1a1a1a'
+  && /stroke="#1a1a1a"/.test(R.refSvg(cat, { color: '#1a1a1a' })));
 check('모델이 고른 번호를 읽는다("2번"→2, "없음"→0, "9"(범위 밖)→0)',
   R.refParsePick('2번', 5) === 2 && R.refParsePick('없음', 5) === 0 && R.refParsePick('9', 5) === 0 && R.refParsePick('3. 고양이', 5) === 3);
 

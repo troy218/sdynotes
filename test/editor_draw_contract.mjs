@@ -242,6 +242,42 @@ try {
   check('길게 누른 자유선은 사각형/원/타원 같은 도형으로 모핑 저장된다',
     !!lastStroke && ['rect', 'square', 'ellipse', 'circle', 'triangle', 'diamond', 'line'].includes(lastStroke.shape || ''));
 
+  // ── 5.5) 페인트 채우기 + 선택 요소 회전 ──────────────────
+  window.togglePaint();
+  await wait(60);
+  check('페인트 버튼이 형광펜 옆의 독립 도구로 켜진다',
+    document.getElementById('paintBtn').classList.contains('active') &&
+    document.getElementById('highlighterBtn').nextElementSibling === document.getElementById('paintBtn'));
+  const paintDraw = refit().draw;
+  paintDraw.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 350, clientY: 340 }));
+  await wait(180);
+  check('닫힌 획 내부를 누르면 경계선 아래 채움 레이어에 색이 생긴다',
+    !!document.querySelector('#pagesStage .layer-fill .stroke-fill'));
+  window.finishDrawing();
+  await wait(60);
+
+  const target = [...document.querySelectorAll('#pagesStage .stroke-g')].at(-1);
+  target.querySelector('.stroke-vis').dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 350, clientY: 300 }));
+  await wait(50);
+  document.getElementById('editorBody').dispatchEvent(new window.WheelEvent('wheel', {
+    bubbles: true, cancelable: true, altKey: true, shiftKey: true, deltaY: 100,
+  }));
+  await wait(520);
+  const rotated = document.querySelector('#pagesStage .stroke-g[transform*="rotate"]');
+  const rotatedFill = document.querySelector('#pagesStage .stroke-fill[transform*="rotate"]');
+  check('Alt+Shift+휠은 선택 획과 채움을 같은 각도로 회전한다',
+    !!rotated && !!rotatedFill && rotated.getAttribute('transform') === rotatedFill.getAttribute('transform'));
+  window.undo(); await wait(180);
+  check('회전도 되돌리기로 취소된다', !document.querySelector('#pagesStage .stroke-g[transform*="rotate"]'));
+  window.redo(); await wait(180);
+  check('다시 실행하면 저장된 회전이 돌아온다', !!document.querySelector('#pagesStage .stroke-g[transform*="rotate"]'));
+  await wait(1300);
+  const savedRows = await q({ table: 'memos', op: 'select', values: [], filters: [{ field: 'notebook_id', op: 'eq', value: String(id) }], limit: 1, single: true });
+  const savedRow = Array.isArray(savedRows?.data) ? savedRows.data[0] : savedRows?.data;
+  const savedDoc = savedRow?.content ? JSON.parse(savedRow.content) : null;
+  const savedPaint = (savedDoc?.pages?.[0]?.els || []).find((e) => e.type === 'stroke' && e.fillColor && e.rotation);
+  check('채움 색과 회전 각도가 서버 문서에 함께 저장돼 재열기에도 유지된다', !!savedPaint);
+
   // ── 6) 되돌리기 버튼 + 종료 ──────────────────────────────
   const undoBtn = document.getElementById('drawToolbar').querySelector('button[title*="되돌리기"], button[title*="실행 취소"]');
   check('툴바에 되돌리기 버튼이 존재한다', !!undoBtn);

@@ -89,12 +89,12 @@ const KO_ALIAS = {
 // 그림 대상이 하나도 안 남았을 때 — "해돌이 그려 줘"·"너 그려 줘" 는 해돌이(수달) 자신이다
 const SELF_RE = /(해돌|수달|해달|너\s*자신|네\s*모습|니\s*모습|자화상|셀카|자기\s*소개)/;
 const KO_COLORS = [
-  [/(빨간|빨강|붉은|레드)/, '#e74c3c'], [/(주황|오렌지)/, '#e67e22'], [/(노란|노랑|옐로)/, '#f1c40f'],
+  [/(검은|검정|검정색|까만)/, '#1a1a1a'], [/(빨간|빨강|붉은|레드)/, '#e74c3c'], [/(주황|오렌지)/, '#e67e22'], [/(노란|노랑|옐로)/, '#f1c40f'],
   [/(초록|녹색|그린)/, '#2ecc71'], [/(파란|파랑|푸른|블루)/, '#3498db'], [/(보라|퍼플)/, '#9b59b6'],
   [/(분홍|핑크)/, '#e84393'], [/(갈색|브라운)/, '#795548'], [/(회색|그레이)/, '#7f8c8d'],
 ];
 const EN_COLORS = [
-  [/\bred\b/, '#e74c3c'], [/\borange\b/, '#e67e22'], [/\byellow\b/, '#f1c40f'], [/\bgreen\b/, '#2ecc71'],
+  [/\bblack\b/, '#1a1a1a'], [/\bred\b/, '#e74c3c'], [/\borange\b/, '#e67e22'], [/\byellow\b/, '#f1c40f'], [/\bgreen\b/, '#2ecc71'],
   [/\bblue\b/, '#3498db'], [/\bpurple\b/, '#9b59b6'], [/\bpink\b/, '#e84393'], [/\bbrown\b/, '#795548'], [/\b(gray|grey)\b/, '#7f8c8d'],
 ];
 export function refColorOf(q) {
@@ -310,8 +310,39 @@ function scanX(poly, y) {
 }
 const escAttr = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
+// 색을 따로 말하지 않은 그림도 더는 검정 펜 하나로만 그리지 않는다. 참고 번들에는
+// OpenMoji black 선화의 좌표만 있으므로 원본의 색을 복원할 수는 없다. 대신 이름·태그를
+// 보고 대상에 어울리는 밝은 주색을 고르고, 눈·단추 같은 작은 디테일에는 짝색을 쓴다.
+// 같은 대상은 언제나 같은 색이라 재요청할 때 그림 분위기가 갑자기 바뀌지 않는다.
+const AUTO_PALETTES = {
+  love:      { main: '#e84393', detail: '#9b59b6' },
+  nature:    { main: '#2ecc71', detail: '#e67e22' },
+  sky:       { main: '#3498db', detail: '#9b59b6' },
+  warm:      { main: '#e67e22', detail: '#e84393' },
+  animal:    { main: '#e67e22', detail: '#34495e' },
+  person:    { main: '#9b59b6', detail: '#e84393' },
+  transport: { main: '#3498db', detail: '#e67e22' },
+  object:    { main: '#2f9e9e', detail: '#9b59b6' },
+};
+const AUTO_FALLBACK = [AUTO_PALETTES.object, AUTO_PALETTES.warm, AUTO_PALETTES.sky, AUTO_PALETTES.person, AUTO_PALETTES.nature];
+export function refPaletteOf(item, offset = 0) {
+  const s = [item && item.ko, item && item.en, item && item.tags, ...((item && item.kw) || [])].join(' ').toLowerCase();
+  if (/하트|사랑|애정|로맨|꽃다발|\b(heart|love|kiss|rose)\b/.test(s)) return AUTO_PALETTES.love;
+  if (/꽃|나무|잎|식물|숲|새싹|\b(flower|tree|leaf|plant|forest|herb|sunflower)\b/.test(s)) return AUTO_PALETTES.nature;
+  // '동물' 속의 '물', birthday 속의 'day'처럼 우연히 든 글자에 색이 끌려가지
+  // 않도록 짧은 한국어 단어는 피하고 영어 이름은 낱말 경계를 지킨다.
+  if (/동물|애완|\b(animal|animals|pet|cat|dog|bird|fish|bear|rabbit|otter)\b/.test(s)) return AUTO_PALETTES.animal;
+  if (/(?:^|[ ,])(?:해|별|불)(?:$|[ ,])|태양|케이크|음식|과일|디저트|\b(sun|star|fire|cake|food|fruit|dessert|sweet)\b/.test(s)) return AUTO_PALETTES.warm;
+  if (/사람|남자|여자|어린이|아기|교사|\b(person|people|man|woman|child|baby|teacher)\b/.test(s)) return AUTO_PALETTES.person;
+  if (/자동차|버스|기차|비행기|자전거|로켓|\b(car|bus|train|plane|bicycle|ship|rocket|vehicle)\b/.test(s)) return AUTO_PALETTES.transport;
+  if (/하늘|구름|눈송이|바다|물결|물방울|초승달|\b(weather|cloud|rain|snow|ocean|water|moon)\b/.test(s)) return AUTO_PALETTES.sky;
+  let hash = Number(offset) || 0;
+  for (let i = 0; i < s.length; i++) hash = ((hash * 31) + s.charCodeAt(i)) >>> 0;
+  return AUTO_FALLBACK[hash % AUTO_FALLBACK.length];
+}
+
 // 그림 하나를 (ox, oy) 자리에 k 배로 놓은 <path> 목록
-function refPaths(item, color, k, ox, oy) {
+function refPaths(item, palette, k, ox, oy, monochrome) {
   const tx = (x) => f1(x * k + ox); const ty = (y) => f1(y * k + oy);
   const out = [];
   for (const [w0, filled, d] of item.p || []) {
@@ -331,11 +362,17 @@ function refPaths(item, color, k, ox, oy) {
     if (!seg.length) continue;
     // 선 굵기: 원본 2 → 노트 기준 3 (원본 굵기에 비례, 1.5~5 사이)
     const sw = Math.max(1.5, Math.min(5, (w0 || 1.2) * 1.5));
-    out.push(`<path d="${seg.join(' ')}" fill="none" stroke="${color}" stroke-width="${f1(sw)}" stroke-linecap="round" stroke-linejoin="round"${filled ? ' data-fill="1"' : ''}/>`);
+    let x1 = Infinity; let y1 = Infinity; let x2 = -Infinity; let y2 = -Infinity;
+    for (const [x, y] of poly) { x1 = Math.min(x1, x); y1 = Math.min(y1, y); x2 = Math.max(x2, x); y2 = Math.max(y2, y); }
+    const bw = x2 - x1; const bh = y2 - y1;
+    // 작은 디테일 부품(눈·단추·꽃술 등)만 짝색으로 잡아, 무지개처럼 산만하지
+    // 않으면서도 실루엣과 디테일이 또렷하게 나뉘게 한다.
+    const smallDetail = (item.p || []).length <= 12 && poly.length >= 3
+      && Number.isFinite(bw) && Number.isFinite(bh) && bw <= 12 && bh <= 12 && bw * bh <= 120;
+    const pathColor = monochrome ? palette.main : ((filled || smallDetail) ? palette.detail : palette.main);
+    out.push(`<path d="${seg.join(' ')}" fill="none" stroke="${pathColor}" stroke-width="${f1(sw)}" stroke-linecap="round" stroke-linejoin="round"${filled ? ' data-fill="1"' : ''}/>`);
     if (filled && poly.length >= 3) {
-      let x1 = Infinity; let y1 = Infinity; let x2 = -Infinity; let y2 = -Infinity;
-      for (const [x, y] of poly) { x1 = Math.min(x1, x); y1 = Math.min(y1, y); x2 = Math.max(x2, x); y2 = Math.max(y2, y); }
-      const bw = x2 - x1; const bh = y2 - y1;
+      const hatchColor = monochrome ? palette.main : palette.detail;
       if (bw > 0.6 && bh > 0.6 && bw * bh <= 220) {               // 큰 면(배경 판 등)은 채우지 않는다
         const step = Math.max(0.55, Math.min(1.2, Math.min(bw, bh) / 3));
         const lines = [];
@@ -346,7 +383,7 @@ function refPaths(item, color, k, ox, oy) {
             lines.push(`M ${tx(xs[j])} ${ty(yy)} L ${tx(xs[j + 1])} ${ty(yy)}`);
           }
         }
-        if (lines.length) out.push(`<path d="${lines.join(' ')}" fill="none" stroke="${color}" stroke-width="${f1(Math.max(1.6, step * k * 0.95))}" stroke-linecap="round" stroke-linejoin="round" data-hatch="1"/>`);
+        if (lines.length) out.push(`<path d="${lines.join(' ')}" fill="none" stroke="${hatchColor}" stroke-width="${f1(Math.max(1.6, step * k * 0.95))}" stroke-linecap="round" stroke-linejoin="round" data-hatch="1"/>`);
       }
     }
   }
@@ -355,7 +392,7 @@ function refPaths(item, color, k, ox, oy) {
 export function refSvg(items, opt = {}) {
   const list = (Array.isArray(items) ? items : [items]).filter((it) => it && Array.isArray(it.p) && it.p.length).slice(0, 3);
   if (!list.length) return '';
-  const color = /^#[0-9a-f]{6}$/i.test(String(opt.color || '')) ? String(opt.color) : '#1a1a1a';
+  const requestedColor = /^#[0-9a-f]{6}$/i.test(String(opt.color || '')) ? String(opt.color).toLowerCase() : '';
   const n = list.length;
   const gap = n > 1 ? 16 : 0;
   const cellW = (VIEW_W - 2 * PAD - gap * (n - 1)) / n;
@@ -365,10 +402,14 @@ export function refSvg(items, opt = {}) {
   const totalW = drawW * n + gap * (n - 1);
   const x0 = (VIEW_W - totalW) / 2; const oy = (VIEW_H - drawW) / 2;
   const paths = [];
-  list.forEach((it, i) => { for (const p of refPaths(it, color, k, x0 + i * (drawW + gap), oy)) paths.push(p); });
+  list.forEach((it, i) => {
+    const auto = refPaletteOf(it, i);
+    const palette = requestedColor ? { main: requestedColor, detail: requestedColor } : auto;
+    for (const p of refPaths(it, palette, k, x0 + i * (drawW + gap), oy, !!requestedColor)) paths.push(p);
+  });
   if (!paths.length) return '';
   const names = list.map((it) => it.ko || it.en).join(', ');
-  return `<svg viewBox="0 0 ${VIEW_W} ${VIEW_H}" xmlns="http://www.w3.org/2000/svg" data-ref="${escAttr(list.map((it) => it.h).join('+'))}" data-name="${escAttr(names)}">${paths.join('')}</svg>`;
+  return `<svg viewBox="0 0 ${VIEW_W} ${VIEW_H}" xmlns="http://www.w3.org/2000/svg" data-ref="${escAttr(list.map((it) => it.h).join('+'))}" data-name="${escAttr(names)}" data-color-mode="${requestedColor ? 'requested' : 'auto'}">${paths.join('')}</svg>`;
 }
 
 // ── ③ 모델이 고를 후보 목록 문구 · 답 읽기 ──────────────────────────────────

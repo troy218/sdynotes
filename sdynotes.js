@@ -1203,7 +1203,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const strokes=[];
         (page.els||[]).forEach(el=>{
             if(el.type==='image'){
-                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:2px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;">`+
+                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:2px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
                       `<img src="${el.url||el.localURL||''}" style="width:100%;height:100%;object-fit:fill;display:block;border-radius:2px;"></div>`;
             }else if(el.type==='legacyDraw'){
                 html+=`<img src="${el.url}" style="position:absolute;left:0;top:0;width:${size.w}px;height:${size.h}px;z-index:3;">`;
@@ -1212,9 +1212,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(strokes.length){
             html+=`<svg viewBox="0 0 ${size.w} ${size.h}" width="${size.w}" height="${size.h}" `+
                   `style="position:absolute;left:0;top:0;z-index:3;overflow:visible;pointer-events:none;">`+
-                  strokes.map(s=>`<path d="${strokePath(s.pts,s.sharp&&!isEllipsePts(s.pts))}" fill="none" stroke="${_classicPaletteColor('draw',s.color)}" stroke-width="${s.size}" `+
-                  `${s.opacity!=null?`stroke-opacity="${s.opacity}" `:''}`+
-                  `stroke-linecap="round" stroke-linejoin="round" transform="translate(${s.dx||0},${s.dy||0})"/>`).join('')+
+                  strokes.map(s=>{
+                      const tr=strokeTransform(s);
+                      const d=strokePath(s.pts,s.sharp&&!isEllipsePts(s.pts));
+                      return (s.fillColor?`<path d="${d}" fill="${_classicPaletteColor('draw',s.fillColor)}" fill-opacity="${s.fillOpacity==null?0.58:s.fillOpacity}" fill-rule="evenodd"${tr?` transform="${tr}"`:''}/>`:'')+
+                      `<path d="${d}" fill="none" stroke="${_classicPaletteColor('draw',s.color)}" stroke-width="${s.size}" `+
+                      `${s.opacity!=null?`stroke-opacity="${s.opacity}" `:''}`+
+                      `stroke-linecap="round" stroke-linejoin="round"${tr?` transform="${tr}"`:''}/>`;
+                  }).join('')+
                   `</svg>`;
         }
         (page.els||[]).forEach(el=>{
@@ -1223,7 +1228,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 const imp=!!el.imported;
                 const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;
                 html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${bw}px;height:${bh}px;`+
-                      `z-index:5;display:flex;align-items:${imp?'center':(el.displayMath?'center':'flex-end')};${el.displayMath?'justify-content:center;':''}`+
+                      `z-index:5;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;display:flex;align-items:${imp?'center':(el.displayMath?'center':'flex-end')};${el.displayMath?'justify-content:center;':''}`+
                       `font-size:${el.fontSize||20}px;line-height:1.05;color:var(--text1);overflow:hidden;">${latexHTML(el.latex||'',!!el.displayMath)}</div>`;
                 return;
             }
@@ -1236,7 +1241,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                   `box-sizing:border-box;font-size:${el.fontSize||16}px;line-height:1.5;color:var(--text1);`+
                   `font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`+
                   `white-space:pre-wrap;word-break:break-word;overflow:hidden;`;
-            html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;z-index:4;">`+
+            html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;z-index:4;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
                   `<div style="${inner}">${el.html||''}</div></div>`;
         });
         // .ppv = 미리보기 전용 컨테이너 (에디터 .paper 스크립트와 충돌 방지)
@@ -6342,6 +6347,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         paper.style.height=size.h+'px';
         paper.innerHTML=`<div class="layer layer-preview"></div>
                          <div class="layer layer-img"></div>
+                         <svg class="stroke-svg layer-fill" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none" aria-hidden="true"></svg>
                          <svg class="stroke-svg layer-stroke" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none"></svg>
                          <div class="layer layer-text"></div>
                          <div class="layer find-layer"></div>
@@ -6616,11 +6622,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function clearPageEls(idx){
         const paper=paperAt(idx); if(!paper) return;
         const imgL=paper.querySelector('.layer-img');
+        const fill=paper.querySelector('.layer-fill');
         const svg=paper.querySelector('.layer-stroke');
         const txtL=paper.querySelector('.layer-text');
         const tbl=paper.querySelector('.layer-tbl');
         const pin=paper.querySelector('.layer-pin');
         if(imgL) imgL.innerHTML='';
+        if(fill) fill.innerHTML='';
         if(svg)  svg.innerHTML='';
         if(txtL) txtL.innerHTML='';
         if(tbl)  tbl.innerHTML='';
@@ -7083,10 +7091,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             job.loading=false;
             const size=paperSize();
-            const imgL=paper.querySelector('.layer-img'), svg=paper.querySelector('.layer-stroke'),
-                txtL=paper.querySelector('.layer-text');
+            const imgL=paper.querySelector('.layer-img'), fillL=paper.querySelector('.layer-fill'),
+                svg=paper.querySelector('.layer-stroke'), txtL=paper.querySelector('.layer-text');
             _dropPageTightFits(paper);
-            imgL.innerHTML=''; svg.innerHTML=''; txtL.innerHTML='';
+            imgL.innerHTML=''; if(fillL) fillL.innerHTML=''; svg.innerHTML=''; txtL.innerHTML='';
+            if(fillL) fillL.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
             svg.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
             ensureTableGrid(idx);
             const els=_ensureSanitized(idx);
@@ -7107,7 +7116,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(!_pageJobLive(job)||_pageRenderTok[idx]!==tok){ _cancelPageRender(idx); return; }
                 // 데이터가 교체됐으면 오래된 청크를 새 문서 위에 붙이지 않는다.
                 if(d.pages[idx]!==pg||(pg.els&&pg.els!==els)){ renderPageEls(idx); return; }
-                const bags={img:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()};
+                const bags={img:document.createDocumentFragment(),fill:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()};
                 let weight=0;
                 do{
                     const el=els[at++];
@@ -7117,14 +7126,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                         const im=document.createElementNS('http://www.w3.org/2000/svg','image');
                         im.setAttribute('href',el.url); im.setAttribute('x',0); im.setAttribute('y',0);
                         im.setAttribute('width',size.w); im.setAttribute('height',size.h); bags.svg.appendChild(im);
-                    }else if(el.type==='stroke') bags.svg.appendChild(buildStrokeEl(el,idx));
+                    }else if(el.type==='stroke'){
+                        if(el.fillColor&&fillL) bags.fill.appendChild(buildStrokeFillEl(el,idx));
+                        bags.svg.appendChild(buildStrokeEl(el,idx));
+                    }
                     else if(el.type==='text') bags.txt.appendChild(buildTextEl(el,idx));
                     else if(el.type==='latex') bags.txt.appendChild(buildLatexEl(el,idx));
                     weight+=256+(el.html||'').length+(el.pts||[]).length*24;
                     // DOM 삽입 뒤 브라우저가 할 스타일/레이아웃 비용도 제한한다.
                     // 글상자 36개라도 단어가 2160개면 '가벼운 쪽'이 아니다.
                 }while(at<els.length&&performance.now()<until&&weight<12000);
-                const flushBags=()=>{ imgL.appendChild(bags.img); svg.appendChild(bags.svg); txtL.appendChild(bags.txt); };
+                const flushBags=()=>{ imgL.appendChild(bags.img); if(fillL) fillL.appendChild(bags.fill); svg.appendChild(bags.svg); txtL.appendChild(bags.txt); };
                 flushBags();
                 if(at>=els.length) finish();
             };
@@ -7195,12 +7207,20 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     // Ctrl(⌘) + 휠 → 커서 위치 기준 확대/축소
     // Alt + 휠 : 선택한 것들을 비율 그대로 크게/작게 (묶음처럼 함께)
-    let sclTimer=null;
+    let sclTimer=null,rotTimer=null;
     document.getElementById('editorBody').addEventListener('wheel',e=>{
         if(!e.altKey||e.ctrlKey||e.metaKey||!doc) return;
         const items=selEntries();
         if(!items.length) return;
         e.preventDefault(); e.stopPropagation();
+        // Alt+휠은 기존 크기 조절, Alt+Shift+휠은 선택 요소 회전.
+        if(e.shiftKey){
+            if(!rotTimer) pushHistory();
+            clearTimeout(rotTimer);
+            rotTimer=setTimeout(()=>{ rotTimer=null; saveDoc(); },400);
+            rotateSelection(e.deltaY<0?-5:5,items);
+            return;
+        }
         if(!sclTimer) pushHistory();
         clearTimeout(sclTimer);
         sclTimer=setTimeout(()=>{ sclTimer=null; saveDoc(); },400);
@@ -7558,6 +7578,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(node){
                     const d=strokePath(el.pts,el.sharp&&!isEllipsePts(el.pts));
                     node.querySelectorAll('path').forEach(pn=>pn.setAttribute('d',d));
+                    const fp=paperQ(it.pageIdx,`.stroke-fill[data-for="${el.id}"]`); if(fp) fp.setAttribute('d',d);
+                    syncStrokeTransform(el,node,it.pageIdx);
                     const vis=node.querySelector('.stroke-vis');
                     if(vis) vis.setAttribute('stroke-width',el.size);
                     const halo=node.querySelector('.stroke-halo');
@@ -7593,6 +7615,29 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 방금 바뀐 글자 크기를 툴바에도 옮겨 둔다 → 이어서 '+' 를 눌러도
         //   지금 보이는 크기에서 더 커진다 (작아지지 않는다).
         if(lastFS) setToolbarFS(lastFS);
+        return true;
+    }
+    function rotateSelection(delta,items){
+        items=items||selEntries();
+        if(!items.length) return false;
+        items.forEach(it=>{
+            const el=findEl(it.pageIdx,it.id); if(!el) return;
+            el.rotation=normalizedRotation((Number(el.rotation)||0)+delta);
+            markPageEdited(it.pageIdx);
+            if(el.type==='stroke') syncStrokeTransform(el,it.node,it.pageIdx);
+            else if(it.node) applyBoxRotation(it.node,el);
+        });
+        return true;
+    }
+    function rotateSelectionTo(angle,items){
+        items=items||selEntries();
+        if(!items.length) return false;
+        items.forEach(it=>{
+            const el=findEl(it.pageIdx,it.id); if(!el) return;
+            el.rotation=normalizedRotation(angle); markPageEdited(it.pageIdx);
+            if(el.type==='stroke') syncStrokeTransform(el,it.node,it.pageIdx);
+            else if(it.node) applyBoxRotation(it.node,el);
+        });
         return true;
     }
 
@@ -8126,6 +8171,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         w.className='tb latex-box'+(el.displayMath?' display-math':'')+(el.imported?' imported':'');
         w.dataset.id=el.id; w.dataset.pageIdx=pageIdx;
         w.style.cssText=`left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`;
+        applyBoxRotation(w,el);
         const c=document.createElement('div'); c.className='latex-content';
         paintLatex(c,el); w.appendChild(c);
         // 가져온 수식은 위치 보호만 유지하고 자물쇠 배지는 표시하지 않는다.
@@ -8198,6 +8244,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const w=document.createElement('div');
         w.className='paper-img'; w.dataset.id=el.id; w.dataset.pageIdx=pageIdx;
         w.style.cssText=`left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`;
+        applyBoxRotation(w,el);
         const img=document.createElement('img');
         img.draggable=false;
         img.loading='lazy'; img.decoding='async';
@@ -8226,6 +8273,43 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return w;
     }
 
+    function normalizedRotation(v){
+        let n=Number(v)||0;
+        n=((n+180)%360+360)%360-180;
+        return Math.abs(n)<0.01?0:Math.round(n*10)/10;
+    }
+    function applyBoxRotation(node,el){
+        const a=normalizedRotation(el&&el.rotation);
+        node.style.transform=a?`rotate(${a}deg)`:'';
+        node.style.transformOrigin='50% 50%';
+    }
+    function strokeTransform(el){
+        const dx=Number(el&&el.dx)||0, dy=Number(el&&el.dy)||0;
+        const a=normalizedRotation(el&&el.rotation);
+        let tr=(dx||dy)?`translate(${dx} ${dy})`:'';
+        if(a){
+            const bb=strokeBBox(el), cx=Math.round((bb.x+bb.w/2)*10)/10, cy=Math.round((bb.y+bb.h/2)*10)/10;
+            tr+=(tr?' ':'')+`rotate(${a} ${cx} ${cy})`;
+        }
+        return tr;
+    }
+    function buildStrokeFillEl(el,pageIdx){
+        const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+        p.setAttribute('class','stroke-fill'); p.dataset.for=el.id; p.dataset.pageIdx=pageIdx;
+        p.setAttribute('d',strokePath(el.pts,el.sharp&&!isEllipsePts(el.pts)));
+        p.setAttribute('fill',_classicPaletteColor('draw',el.fillColor));
+        p.setAttribute('fill-opacity',el.fillOpacity==null?0.58:el.fillOpacity);
+        p.setAttribute('fill-rule','evenodd');
+        const tr=strokeTransform(el); if(tr) p.setAttribute('transform',tr);
+        return p;
+    }
+    function syncStrokeTransform(el,node,pageIdx){
+        const tr=strokeTransform(el);
+        if(node){ if(tr) node.setAttribute('transform',tr); else node.removeAttribute('transform'); }
+        const f=paperQ(pageIdx,`.stroke-fill[data-for="${el.id}"]`);
+        if(f){ if(tr) f.setAttribute('transform',tr); else f.removeAttribute('transform'); }
+    }
+
     // 펜 획: 얇은 선만 정확히 잡히도록 hit 영역을 선 두께 기반으로 좁게 잡는다
     function buildStrokeEl(el,pageIdx){
         const g=document.createElementNS('http://www.w3.org/2000/svg','g');
@@ -8247,7 +8331,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         hit.setAttribute('stroke-width',Math.max(8,(el.size||2)+6));
         hit.setAttribute('stroke-linecap','round'); hit.setAttribute('stroke-linejoin','round');
         g.appendChild(halo); g.appendChild(vis); g.appendChild(hit);
-        if(el.dx||el.dy) g.setAttribute('transform',`translate(${el.dx||0},${el.dy||0})`);
+        const tr=strokeTransform(el); if(tr) g.setAttribute('transform',tr);
         return g;
     }
 
@@ -14735,6 +14819,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         return false;
     }
 
+    // 해돌이 입력/말풍선에 포커스가 남은 채로 종이 요소를 눌러도 요소 선택 로직이
+    // mousedown 기본 동작을 막기 때문에 포커스가 검색창에 계속 남을 수 있었다.
+    // 그러면 선택은 그림에 보이는데 Delete·Ctrl+Z는 'AI UI 안'으로 판정돼 무시된다.
+    // 종이 본문을 누르는 순간 키보드 소유권을 노트로 되돌린다. 말풍선은 그대로 둔다.
+    function focusNoteFromAi(e){
+        const t=e&&e.target;
+        if(!(t&&t.closest&&t.closest('#pagesStage'))) return;
+        const ae=document.activeElement;
+        if(ae&&ae.closest&&ae.closest('#aiAsk,#aiSay,#aiHist')&&ae.blur) ae.blur();
+    }
+    document.addEventListener('pointerdown',focusNoteFromAi,true);
+    document.addEventListener('mousedown',focusNoteFromAi,true); // PointerEvent 없는 환경·런타임 테스트
+
     document.addEventListener('keydown',e=>{
         // 발표 모드 조작
         if(presentOn){
@@ -14854,7 +14951,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 markPageEdited(pi);
                 if(el.type==='stroke'){
                     el.dx=(el.dx||0)+dx; el.dy=(el.dy||0)+dy;
-                    node.setAttribute('transform',`translate(${el.dx},${el.dy})`);
+                    syncStrokeTransform(el,node,pi);
                 }else{
                     const c=clampEl(el.x+dx,el.y+dy,el.w,el.h);
                     el.x=Math.round(c.x); el.y=Math.round(c.y);
@@ -14958,6 +15055,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const id=lid, pi=lpi;
             const gone=(doc.pages[pi].els||[]).filter(x=>x.id===id);
             doc.pages[pi].els=doc.pages[pi].els.filter(x=>x.id!==id);
+            const sf=paperQ(pi,`.stroke-fill[data-for="${id}"]`); if(sf) sf.remove();
             selected.el.remove(); selected=null; markPageEdited(pi); saveDoc();
             purgeElements(gone);
         }
@@ -15003,7 +15101,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     });
 
     // ============ 펜 / 지우개 ============
-    let penActive=false, eraserActive=false, drawColor=CLASSIC_DRAW_COLORS[0], drawSize=2;
+    let penActive=false, eraserActive=false, paintMode=false, drawColor=CLASSIC_DRAW_COLORS[0], drawSize=2;
     let shapeMode='free', markerMode=false;
     let drawing=false, curPts=null, curPathNode=null, drawPageIdx=0;
     const ERASER_MULT=6;   // 지우개 반경 = drawSize * ERASER_MULT
@@ -15013,16 +15111,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function syncDrawModeButtons(){
         const p=document.getElementById('penBtn');
         const h=document.getElementById('highlighterBtn');
-        if(p) p.classList.toggle('active',!!penActive&&!markerMode);
-        if(h) h.classList.toggle('active',!!penActive&&!!markerMode);
+        const f=document.getElementById('paintBtn');
+        if(p) p.classList.toggle('active',!!penActive&&!markerMode&&!paintMode);
+        if(h) h.classList.toggle('active',!!penActive&&!!markerMode&&!paintMode);
+        if(f) f.classList.toggle('active',!!penActive&&!!paintMode);
         const legacy=document.getElementById('markerBtn');
         if(legacy) legacy.classList.toggle('active',!!markerMode);
     }
-    function startDrawMode(asMarker){
+    function startDrawMode(asMarker,asPaint){
         setTextTool(false);
         cancelPlaceMode();
         deselectAll();
-        penActive=true; eraserActive=false; drawing=false; markerMode=!!asMarker;
+        penActive=true; eraserActive=false; drawing=false; markerMode=!!asMarker; paintMode=!!asPaint;
         try{ activateVisiblePages(); }catch(_e){}   // 20.0 · 펜을 들면 보이는 쪽을 편집 상태로
         const er=document.getElementById('eraserBtn'); if(er) er.classList.remove('active');
         const bar=document.getElementById('drawToolbar'); if(bar) bar.style.display='flex';
@@ -15032,18 +15132,23 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         try{ saveDrawCfg(); }catch(e){}
     }
     function togglePen(){
-        if(penActive&&!markerMode){ finishDrawing(); return; }
-        startDrawMode(false);
+        if(penActive&&!markerMode&&!paintMode){ finishDrawing(); return; }
+        startDrawMode(false,false);
         toast('펜 모드',900);
     }
     function toggleHighlighter(){
-        if(penActive&&markerMode){ finishDrawing(); return; }
-        startDrawMode(true);
+        if(penActive&&markerMode&&!paintMode){ finishDrawing(); return; }
+        startDrawMode(true,false);
         toast('형광펜 모드 (반투명·굵게)',1100);
+    }
+    function togglePaint(){
+        if(penActive&&paintMode){ finishDrawing(); return; }
+        startDrawMode(false,true);
+        toast('페인트 모드 · 닫힌 그림 안쪽을 눌러 채우세요',1600);
     }
     function finishDrawing(){
         clearMorphTimer();
-        penActive=false; eraserActive=false; drawing=false;
+        penActive=false; eraserActive=false; paintMode=false; drawing=false;
         syncDrawModeButtons();
         const er=document.getElementById('eraserBtn'); if(er) er.classList.remove('active');
         const bar=document.getElementById('drawToolbar'); if(bar) bar.style.display='none';
@@ -15052,7 +15157,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         saveDoc();
     }
     function setShape(m){
-        shapeMode=m; eraserActive=false;
+        shapeMode=m; eraserActive=false; paintMode=false; markerMode=false;
         document.getElementById('eraserBtn').classList.remove('active');
         document.querySelectorAll('.shp').forEach(b=>b.classList.remove('active'));
         const map={free:'shpFree',line:'shpLine',arrow:'shpArrow',rect:'shpRect',ellipse:'shpEllipse'};
@@ -15132,7 +15237,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     function toggleEraser(){
         eraserActive=!eraserActive;
+        if(eraserActive){ paintMode=false; markerMode=false; }
         document.getElementById('eraserBtn').classList.toggle('active',eraserActive);
+        syncDrawModeButtons();
         updateToolCursor();
     }
 
@@ -15140,10 +15247,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function updateToolCursor(){
         const tc=document.getElementById('toolCursor');
         if(!penActive){ tc.style.display='none'; return; }
-        const d=(eraserActive? eraserRadius()*2 : effSize())*pageScale;
-        const px=Math.max(eraserActive?10:4, d);
+        const d=(eraserActive? eraserRadius()*2 : (paintMode?12:effSize()))*pageScale;
+        const px=Math.max(eraserActive?10:(paintMode?12:4), d);
         tc.style.width=px+'px'; tc.style.height=px+'px';
-        tc.className='tool-cursor '+(eraserActive?'eraser':(markerMode?'marker':'pen'));
+        tc.className='tool-cursor '+(eraserActive?'eraser':(paintMode?'paint':(markerMode?'marker':'pen')));
         // 펜에서 설정한 인라인 색이 지우개에 남지 않도록 매번 초기화
         if(eraserActive){ tc.style.background=''; tc.style.borderColor=''; }
         else { tc.style.background=hexA(drawColor,.35); tc.style.borderColor=drawColor; }
@@ -15345,6 +15452,49 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(top&&top.snap===_drawSnap) history.pop();
         _drawSnap=null;
     }
+    function pointInPoly(p,pts){
+        let inside=false;
+        for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+            const a=pts[i],b=pts[j];
+            const cross=((a[1]>p.y)!==(b[1]>p.y)) &&
+                (p.x < (b[0]-a[0])*(p.y-a[1])/((b[1]-a[1])||1e-9)+a[0]);
+            if(cross) inside=!inside;
+        }
+        return inside;
+    }
+    function paintLocalPoint(p,el){
+        let x=p.x-(el.dx||0), y=p.y-(el.dy||0);
+        const a=-normalizedRotation(el.rotation)*Math.PI/180;
+        if(a){
+            const bb=strokeBBox(el),cx=bb.x+bb.w/2,cy=bb.y+bb.h/2;
+            const dx=x-cx,dy=y-cy;
+            x=cx+dx*Math.cos(a)-dy*Math.sin(a);
+            y=cy+dx*Math.sin(a)+dy*Math.cos(a);
+        }
+        return {x,y};
+    }
+    function paintAt(p,pageIdx){
+        const els=(doc.pages[pageIdx]&&doc.pages[pageIdx].els)||[];
+        let best=null,bestArea=Infinity;
+        for(let i=els.length-1;i>=0;i--){
+            const el=els[i];
+            if(!el||el.type!=='stroke'||el.tbl||!Array.isArray(el.pts)||el.pts.length<3) continue;
+            const first=el.pts[0],last=el.pts[el.pts.length-1];
+            const closed=!!el.closed||Math.hypot(first[0]-last[0],first[1]-last[1])<=Math.max(5,(el.size||2)*2);
+            if(!closed) continue;
+            const q=paintLocalPoint(p,el);
+            if(!pointInPoly(q,el.pts)) continue;
+            const bb=strokeBBox(el),area=Math.max(1,bb.w*bb.h);
+            if(area<bestArea){ best=el; bestArea=area; }
+        }
+        if(!best){ toast('닫힌 선 안쪽을 눌러 주세요',1300); return false; }
+        if(String(best.fillColor||'').toLowerCase()===String(drawColor).toLowerCase()) return false;
+        pushHistory(true);
+        best.closed=1; best.fillColor=drawColor; best.fillOpacity=0.58;
+        markPageEdited(pageIdx); renderPageEls(pageIdx); saveDoc();
+        toast('안쪽을 채웠습니다',900);
+        return true;
+    }
     function drawStart(e,pageIdx){
         if(!penActive) return;
         if(e.type==='touchstart'&&_pagePointerIntent&&_pagePointerIntent.ink){ e.preventDefault(); return; }
@@ -15352,6 +15502,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         curPageIdx=pageIdx; updatePageInfo();
         drawPageIdx=pageIdx;
         const p=surfacePos(e,pageIdx);
+        if(paintMode){ paintAt(p,pageIdx); return; }
         if(eraserActive){
             drawing=true; lastErase=null; _eraseRemoved=false;
             _drawSnap=pushHistory(true);      // 지우기 '전' 상태부터 보존
@@ -15529,6 +15680,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 els.splice(i,1);
                 const g=paperQ(pageIdx,`.stroke-g[data-id="${el.id}"]`);
                 if(g) g.remove();
+                const f=paperQ(pageIdx,`.stroke-fill[data-for="${el.id}"]`); if(f) f.remove();
                 removed=true;
             }
         }
@@ -17940,15 +18092,19 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 // SVG 는 <img> 로 열면 외부 그림을 못 가져오므로 data: 로 인라인한다
                 const href=await toDataURL(el.url);
                 if(!href) continue;
+                const ia=normalizedRotation(el.rotation), icx=el.x+el.w/2, icy=el.y+el.h/2;
                 imgs+=`<image x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}"`+
+                      (ia?` transform="rotate(${ia} ${icx} ${icy})"`:'')+
                       ` href="${escXml(href)}" xlink:href="${escXml(href)}"/>`;
                 drew++;
             }else if(el.type==='stroke'){
                 const d=strokePath(el.pts, el.sharp&&!isEllipsePts(el.pts));
                 if(!d) continue;
+                const tr=strokeTransform(el);
+                if(el.fillColor) paths+=`<path d="${d}" fill="${escXml(el.fillColor)}" fill-opacity="${el.fillOpacity==null?0.58:el.fillOpacity}" fill-rule="evenodd"${tr?` transform="${tr}"`:''}/>`;
                 paths+=`<path d="${d}" fill="none" stroke="${escXml(el.color||'#111111')}"`+
                        ` stroke-width="${el.size||2}" stroke-linecap="round" stroke-linejoin="round"`+
-                       ((el.dx||el.dy)?` transform="translate(${el.dx||0},${el.dy||0})"`:'')+
+                       (tr?` transform="${tr}"`:'')+
                        (el.opacity!=null?` opacity="${el.opacity}"`:'')+`/>`;
                 drew++;
             }
@@ -17966,7 +18122,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                   `font-size:${el.fontSize||16}px;line-height:1.5;color:${el.__c||'#111111'};white-space:pre-wrap;`+
                   `word-break:break-word;overflow:hidden;font-family:${fontCSS(el.font||'pretendard')};`+
                   `text-align:${el.align||'left'};`;
-            body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${el.w}px;height:${el.h}px;">`+
+            body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${el.w}px;height:${el.h}px;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
                   `<div style="${inner}">`+
                   htmlToXhtml(fixDarkColors(imathExpandHtml(el.html)))+`</div></div>`;
             drew++;
@@ -17980,7 +18136,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const k=imp?Math.min(1,(latexFitScale(el)||1)):1;
             const fs=Math.max(6,(el.fontSize||20)*k);
             body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${bw}px;height:${bh}px;`+
-                  `display:flex;align-items:center;${el.displayMath?'justify-content:center;':''}font-size:${fs}px;`+
+                  `transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;display:flex;align-items:center;${el.displayMath?'justify-content:center;':''}font-size:${fs}px;`+
                   `line-height:1.05;font-family:'Times New Roman',serif;color:#111;`+
                   `overflow:${imp?'hidden':'visible'};">${htmlToXhtml(mh)}</div>`;
             drew++;
@@ -20099,7 +20255,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     const col=String(s.color||'#1a1a1a').trim();
                     tpg.els.push({type:'stroke',id:uid('s'),pts:pts,
                         color:/^#[0-9a-fA-F]{3,8}$/.test(col)?col:'#1a1a1a',
-                        size:r1(sz),dx:0,dy:0});
+                        size:r1(sz),dx:0,dy:0,closed:s.closed?1:0});
                     added++;
                 });
                 if(!added){ bad('그릴 획을 만들지 못했어요'); return; }
@@ -21264,6 +21420,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         const paper=paperAt(idx); if(!paper) return;
         const txtL=paper.querySelector('.layer-text');
         const svg=paper.querySelector('.layer-stroke');
+        const fillL=paper.querySelector('.layer-fill');
         const imgL=paper.querySelector('.layer-img');
         const els=(doc.pages&&doc.pages[idx]&&doc.pages[idx].els)||[];
         els.forEach(el=>{
@@ -21277,10 +21434,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     const src=(remote&&!/^blob:/i.test(remote))?remote:(local&&!/^blob:/i.test(local)?local:'');
                     if(im&&im.getAttribute('src')!==src) im.src=src;
                     domEl.classList.toggle('pending',!!el.pending&&!remote);
-                    domEl.classList.toggle('failed',!!el.failed);
-                }else if(el.type==='text'){
+                    domEl.classList.toggle('failed',!!el.failed); applyBoxRotation(domEl,el);
+                }else if(el.type==='stroke'){
+                    const d=strokePath(el.pts,el.sharp&&!isEllipsePts(el.pts));
+                    domEl.querySelectorAll('path').forEach(p=>p.setAttribute('d',d));
+                    syncStrokeTransform(el,domEl,idx);
+                    let fp=fillL&&fillL.querySelector(`.stroke-fill[data-for="${el.id}"]`);
+                    if(el.fillColor&&!fp&&fillL){ fp=buildStrokeFillEl(el,idx); fillL.appendChild(fp); }
+                    else if(!el.fillColor&&fp) fp.remove();
+                    else if(fp){ fp.setAttribute('fill',_classicPaletteColor('draw',el.fillColor)); fp.setAttribute('fill-opacity',el.fillOpacity==null?0.58:el.fillOpacity); }
+                }else if(el.type==='text'||el.type==='latex'){
                     domEl.style.left=el.x+'px'; domEl.style.top=el.y+'px';
-                    domEl.style.width=el.w+'px'; domEl.style.height=el.h+'px';
+                    domEl.style.width=el.w+'px'; domEl.style.height=el.h+'px'; applyBoxRotation(domEl,el);
                     const c=domEl.querySelector('.tb-content');
                     if(c&&domEl._sdyModelHtml!==el.html){
                         c.innerHTML=decodeTextMarkup(_normalizePaletteHtml(el.html||''));
@@ -21290,7 +21455,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 }
             }else{
                 if(el.type==='text'&&txtL) txtL.appendChild(buildTextEl(el,idx));
-                else if(el.type==='stroke'&&svg) svg.appendChild(buildStrokeEl(el,idx));
+                else if(el.type==='stroke'&&svg){ if(el.fillColor&&fillL) fillL.appendChild(buildStrokeFillEl(el,idx)); svg.appendChild(buildStrokeEl(el,idx)); }
                 else if(el.type==='image'&&imgL) imgL.appendChild(buildImageEl(el,idx));
                 else if(el.type==='latex'&&txtL) txtL.appendChild(buildLatexEl(el,idx));
             }
@@ -21929,7 +22094,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(el.type==='image'&&el.url){
                 try{
                     const im=await loadImg(el.url);
-                    ctx.drawImage(im,el.x,el.y,el.w,el.h);
+                    const a=normalizedRotation(el.rotation);
+                    if(a){ ctx.save(); ctx.translate(el.x+el.w/2,el.y+el.h/2); ctx.rotate(a*Math.PI/180); ctx.drawImage(im,-el.w/2,-el.h/2,el.w,el.h); ctx.restore(); }
+                    else ctx.drawImage(im,el.x,el.y,el.w,el.h);
                 }catch(e){ console.warn('이미지 건너뜀',e); }
             }else if(el.type==='legacyDraw'&&el.url){
                 try{
@@ -21979,7 +22146,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     const k=imp?Math.min(1,(latexFitScale(el)||1)):1;
                     const fs=Math.max(6,(el.fontSize||20)*k);
                     body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${bw}px;height:${bh}px;`+
-                          `display:flex;align-items:center;${el.displayMath?'justify-content:center;':''}font-size:${fs}px;`+
+                          `transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;display:flex;align-items:center;${el.displayMath?'justify-content:center;':''}font-size:${fs}px;`+
                           `line-height:1.05;font-family:'Times New Roman',serif;color:#111;`+
                           `overflow:${imp?'hidden':'visible'};">${htmlToXhtml(mh)}</div>`;
                 });
@@ -22027,8 +22194,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!pts.length) return;
         ctx.save();
         ctx.translate(st.dx||0, st.dy||0);
+        const a=normalizedRotation(st.rotation);
+        if(a){ const bb=strokeBBox(st),cx=bb.x+bb.w/2,cy=bb.y+bb.h/2; ctx.translate(cx,cy);ctx.rotate(a*Math.PI/180);ctx.translate(-cx,-cy); }
         ctx.strokeStyle=st.color; ctx.lineWidth=st.size;
-        if(st.opacity!=null) ctx.globalAlpha=st.opacity;
         ctx.lineCap='round'; ctx.lineJoin='round';
         ctx.beginPath();
         ctx.moveTo(pts[0][0],pts[0][1]);
@@ -22042,6 +22210,10 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const last=pts[pts.length-1];
             ctx.lineTo(last[0],last[1]);
         }
+        if(st.fillColor){
+            ctx.save(); ctx.globalAlpha=st.fillOpacity==null?0.58:st.fillOpacity; ctx.fillStyle=st.fillColor; ctx.fill('evenodd'); ctx.restore();
+        }
+        if(st.opacity!=null) ctx.globalAlpha=st.opacity;
         ctx.stroke();
         ctx.restore();
     }
@@ -22537,6 +22709,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 tr.push({a:'trdoc-en', i:'ri-book-open-line', t:'문서 전체 → 영어'});
                 items.push({sub:'번역', i:'ri-translate-2', items:tr});
             }
+            items.push({sub:'회전', i:'ri-clockwise-2-line', items:[
+                {a:'el-rot-left',  i:'ri-anticlockwise-2-line', t:'왼쪽으로 15°', k:'Alt+Shift+휠'},
+                {a:'el-rot-right', i:'ri-clockwise-2-line',     t:'오른쪽으로 15°'},
+                {a:'el-rot-reset', i:'ri-restart-line',         t:'각도 초기화'},
+            ]});
             if(multi){
                 items.push({sub:'여러 개 맞춤', i:'ri-align-item-left-line', items:[
                     {a:'al-left',    i:'ri-align-item-left-line',     t:'왼쪽 맞춤'},
@@ -22712,10 +22889,18 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         else if(a==='color'){ applyTextColor(currentTextColor); }
         else if(a==='hl'){ applyHighlight(currentHlColor); }
         else if(a==='clear'){ clearFmt(); }
+        else if(a==='el-rot-left'||a==='el-rot-right'||a==='el-rot-reset'){
+            const items=selEntries(); if(!items.length) return;
+            pushHistory();
+            if(a==='el-rot-reset') rotateSelectionTo(0,items);
+            else rotateSelection(a==='el-rot-left'?-15:15,items);
+            saveDoc(); toast(a==='el-rot-reset'?'각도를 초기화했습니다':(a==='el-rot-left'?'왼쪽으로 15° 회전':'오른쪽으로 15° 회전'),1100);
+        }
         else if(a==='el-del'){
             pushHistory();
             const gone=(doc.pages[pi].els||[]).filter(x=>x.id===t.el.dataset.id);
             doc.pages[pi].els=doc.pages[pi].els.filter(x=>x.id!==t.el.dataset.id);
+            const sf=paperQ(pi,`.stroke-fill[data-for="${t.el.dataset.id}"]`); if(sf) sf.remove();
             t.el.remove(); selected=null; saveDoc();
             purgeElements(gone);
         }
@@ -32690,7 +32875,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         if(th2.length<2) th2=clean;
         clean=th2;
       }
-      kept.push({pts:clean,color:S.color,size:S.size});
+      kept.push({pts:clean,color:S.color,size:S.size,closed:S.closed?1:0});
     }
     if(!kept.length){
       out.error='그림을 그리지 못했어요 · 다시 시도해 주세요(다른 그림을 부탁해 보세요)';
@@ -33814,7 +33999,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     busy(true); lastText=''; lastKind='draw'; lastQ=q;
     kindChip('draw');
     otterHide(); out('',true); meta('');
-    out('참고할 그림을 찾고 있어요…',true);
+    out('그릴 모양을 고르고 있어요…',true);
     var fallback=function(){                          // 참고 그림이 없다 → 모델이 직접 그린다
       ctl=null; busy(false);
       run('draw',q,'doc',!!hopped);
@@ -33840,7 +34025,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         // 그 밖(429·5xx) 도 그림을 아예 못 그리는 것보다는 직접 그리기가 낫다.
         fallback(); return;
       }
-      out('참고 그림을 따라 그리는 중…',true);
+      out('컬러 펜으로 그리는 중…',true);
       var parsed=window.sdyAiDrawParse?window.sdyAiDrawParse(j.svg):{ok:false,ops:[]};
       if(!parsed.ok||!parsed.ops.length){ fallback(); return; }
       var name=String(j.name||'').trim();
@@ -33849,8 +34034,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         if(res.stale){ finish((res.notes&&res.notes[0])||'기다리는 동안 문서가 바뀌어서 그리지 않았어요 · 다시 요청해 주세요',false); return; }
         var say;
         if(res.applied){
-          say='‘'+(name?name.slice(0,30):q.slice(0,30))+'’ 참고 그림의 윤곽을 따라 펜으로 '+parsed.strokes+'획 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요'
-            +'\n(참고: '+String(j.credit||'OpenMoji · CC BY-SA 4.0')+')';
+          say='‘'+(name?name.slice(0,30):q.slice(0,30))+'’ 그림을 컬러 펜으로 '+parsed.strokes+'획 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
         }else say=String((res.notes&&res.notes[0])||'그림을 그리지 못했어요 · 다시 시도해 주세요');
         if(res.applied&&res.notes&&res.notes.length) say+='\n'+res.notes.join('\n');
         finish(say,!!res.applied);
