@@ -8,8 +8,15 @@ const musicPy = fs.readFileSync(new URL('../worker/sdynotes_worker/music.py', im
 const musicCloudPy = fs.readFileSync(new URL('../worker/sdynotes_worker/music_cloud.py', import.meta.url), 'utf8');
 assert.match(musicPy, /def _music_dedupe_recognized\(mid\):/, '로컬 음원 인식 중복 자동 정리 시스템이 있어야 한다');
 assert.match(musicPy, /recog_mbid/, '인식된 곡은 MBID를 저장해 완전 동일곡 판정에 쓴다');
-assert.match(musicCloudPy, /def _cloud_dedupe_recognized\(mid\):/, '클라우드 음원도 인식 중복 자동 정리를 수행해야 한다');
+assert.match(musicCloudPy, /def _cloud_dedupe_recognized\(mid, local_path=None\):/, '클라우드 음원도 인식 중복 자동 정리를 수행해야 한다');
+// 14.37.1 · 인식 키(mbid/제목+가수+앨범)가 같다는 것만으로 파일을 지우면 안 된다 —
+//   실제 소리 대조(_same_audio: 해시 → 길이 → raw 지문 비트 일치율)를 거쳐야 한다.
+assert.match(musicPy, /def _same_audio\(path_a, path_b, cache=None\):/, '두 음원의 소리가 같은지 대조하는 함수가 있어야 한다');
+assert.match(musicPy, /def _music_dedupe_recognized\(mid\):[\s\S]{0,1600}_recog_confirm_same\(/, '로컬 중복 정리는 삭제 전에 소리 대조를 거쳐야 한다');
+assert.match(musicCloudPy, /def _cloud_dedupe_recognized\([\s\S]{0,2400}_recog_confirm_same\(/, '클라우드 중복 정리도 삭제 전에 소리 대조를 거쳐야 한다');
+assert.doesNotMatch(musicPy, /same = \[k for k, v in m\.items\(\) if _recog_dup_key\(v\) == key\]/, '인식 키만 같은 곡을 곧바로 같은 곡으로 묶던 예전 코드가 남아 있으면 안 된다');
 assert.match(js, /duplicate_removed[\s\S]{0,360}중복 음원을 자동으로 정리/, '프론트엔드는 중복 자동 삭제 응답을 사용자에게 알려야 한다');
+assert.match(js, /kept_apart/, '프론트엔드는 소리가 달라 남긴 곡(kept_apart)을 안내해야 한다');
 const fullHtml = html.includes('<script src="sdynotes.js')
   ? html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, () => '<script>' + js.replace(/<\/script/gi, '<\\/script>') + '</script>')
   : html;
