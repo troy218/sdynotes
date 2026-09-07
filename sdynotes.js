@@ -8578,7 +8578,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const sps=job.sps;
         while(job.readAt<sps.length){
             const i=job.readAt++, s=sps[i];
-            const m={i,x:parseFloat(s.style.left)||0,y:parseFloat(s.style.top)||0,w:s.scrollWidth,h:s.offsetHeight,
+            const m={i,x:parseFloat(s.style.left)||0,y:parseFloat(s.dataset.origTop||s.style.top)||0,w:s.scrollWidth,h:s.offsetHeight,
                 fs:parseFloat(s.dataset.fs)||parseFloat(s.style.fontSize)||14,
                 pdfW:parseFloat(s.dataset.pdfW),pdfBase:parseFloat(s.dataset.pdfBase)};
             if(m.pdfW>0&&Number.isFinite(m.pdfBase)){
@@ -8644,7 +8644,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         while((fit.writeAt||0)<sps.length&&count<max){
             const i=fit.writeAt||0, s=sps[i], v=rec.transforms[i];
             fit.writeAt=i+1; count++;
-            if(rec.tops&&rec.tops[i]!=null) s.style.top=rec.tops[i]+'px';
+            if(rec.tops&&rec.tops[i]!=null){
+                const baseTop=rec.tops[i];
+                const t0=(rec.tops&&rec.tops.length)?Math.min(...rec.tops.filter(x=>x!=null)):0;
+                const scaledTop=(el.lg&&Math.abs(el.lg-1)>0.001)?(t0+(baseTop-t0)*el.lg):baseTop;
+                s.style.top=scaledTop.toFixed(3)+'px';
+            }
             if(v!==null){
                 if(s.style.transform!==v) s.style.transform=v;
                 if(v&&s.style.transformOrigin!=='left center') s.style.transformOrigin='left center';
@@ -9128,10 +9133,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(el.lg&&Math.abs(el.lg-1)>0.001){
                 const sps=Array.from(c.querySelectorAll(':scope>span'));
                 if(sps.length){
-                    const t0=Math.min(...sps.map(s=>parseFloat(s.style.top)||0));
+                    const t0=Math.min(...sps.map(s=>parseFloat(s.dataset.origTop||s.style.top)||0));
                     sps.forEach(s=>{
-                        const t=parseFloat(s.style.top)||0;
-                        s.style.top=(t0+(t-t0)*el.lg).toFixed(1)+'px';
+                        const origTop=parseFloat(s.dataset.origTop||s.style.top)||0;
+                        if(!s.dataset.origTop) s.dataset.origTop=origTop.toFixed(1);
+                        s.style.top=(t0+(origTop-t0)*el.lg).toFixed(1)+'px';
                     });
                 }
             }
@@ -16155,6 +16161,12 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     const FMT_PROPS=['fontWeight','fontStyle','textDecoration','color','backgroundColor','fontFamily','fontSize','verticalAlign'];
     const INLINE_STYLE_PROPS=FMT_PROPS;          // 하위 호환 이름
     const FMT_BLOCK_TAGS=new Set(['DIV','P','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','PRE','UL','OL','TABLE','TR','TD','TH','SECTION','ARTICLE']);
+    function _isPosSpan(el){
+        if(!el||el.nodeType!==1||el.tagName!=='SPAN') return false;
+        if(el.dataset&&(el.dataset.pdfW!=null||el.dataset.fs!=null||el.dataset.origTop!=null)) return true;
+        if(el.style&&(el.style.position==='absolute'||(el.style.left&&el.style.top))) return true;
+        return false;
+    }
     const FMT_ATOMIC_TAGS=new Set(['IMG','SVG','CANVAS','VIDEO','AUDIO','IFRAME','HR','INPUT','TEXTAREA','SELECT','BUTTON','OBJECT','EMBED']);
     let _fmtBusy=false;    // 재구축 중 selectionchange 가 저장 선택을 덮지 않게 하는 잠금
 
@@ -16356,7 +16368,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     function _fmtLeafBlock(node,host){
         let p=(node.nodeType===3)?node.parentElement:node;
         while(p&&p!==host){
-            if(FMT_BLOCK_TAGS.has(p.tagName)) return p;
+            if(FMT_BLOCK_TAGS.has(p.tagName)||_isPosSpan(p)) return p;
             p=p.parentElement;
         }
         return host;
@@ -16385,7 +16397,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 if(k.nodeType===3){ tokens.push({t:'text',node:k,link:link||null}); continue; }
                 if(k.nodeType!==1) continue;
                 const tag=k.tagName;
-                if(block===host&&FMT_BLOCK_TAGS.has(tag)) continue;
+                if(block===host&&(FMT_BLOCK_TAGS.has(tag)||_isPosSpan(k))) continue;
                 if(tag==='BR'){ tokens.push({t:'br',node:k}); continue; }
                 if(FMT_ATOMIC_TAGS.has(tag)){ tokens.push({t:'atom',node:k,link:link||null}); continue; }
                 const hasInner=!!(String(k.textContent||'').length
@@ -16489,7 +16501,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 while(p&&p.parentNode!==host) p=p.parentNode;
                 return kids.indexOf(p);
             };
-            const isBlk=n=>n.nodeType===1&&FMT_BLOCK_TAGS.has(n.tagName);
+            const isBlk=n=>n.nodeType===1&&(FMT_BLOCK_TAGS.has(n.tagName)||_isPosSpan(n));
             i0=topIdx(g.first); i1=topIdx(g.last);
             if(i0<0||i1<0||i1<i0) return false;
             while(i0>0&&!isBlk(kids[i0-1])) i0--;
