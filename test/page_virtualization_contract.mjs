@@ -124,7 +124,9 @@ ok('페이지 번호 Enter는 goToPage로 이동하고 입력을 끝내면 현�
   /__sdyPageJumpBound/.test(pageInfoSrc)
   && /addEventListener\('keydown',e=>/.test(pageInfoSrc)
   && /e\.key!==\x27Enter\x27/.test(pageInfoSrc)
-  && /goToPage\(n\)/.test(pageInfoSrc)
+  && /e\.isComposing/.test(pageInfoSrc) && /e\.keyCode===229/.test(pageInfoSrc)
+  && /Number\.isFinite\(n\)/.test(pageInfoSrc) && /goToPage\(n\)/.test(pageInfoSrc)
+  && /updatePageInfo\(\);/.test(pageInfoSrc) && /pn\.blur\(\)/.test(pageInfoSrc)
   && /addEventListener\('blur',restoreCurrentPage\)/.test(pageInfoSrc)
   && /addEventListener\('change',restoreCurrentPage\)/.test(pageInfoSrc));
 ok('페이지 바로가기와 찾기 이동은 스크롤 전에 목적 쪽을 올린다',
