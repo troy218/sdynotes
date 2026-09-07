@@ -55,6 +55,15 @@ const ASSETS = {
   '/assets/fonts/tinos-LICENSE.txt': { file: 'server/assets/fonts/tinos-LICENSE.txt', type: 'text/plain; charset=utf-8' },
   '/assets/fonts/arimo-LICENSE.txt': { file: 'server/assets/fonts/arimo-LICENSE.txt', type: 'text/plain; charset=utf-8' },
   '/assets/fonts/computer-modern-LICENSE.txt': { file: 'server/assets/fonts/computer-modern-LICENSE.txt', type: 'text/plain; charset=utf-8' },
+  '/src/focus-clock.js': { file: 'src/focus-clock.js', type: 'text/javascript; charset=utf-8' },
+  '/src/live-updates.js': { file: 'src/live-updates.js', type: 'text/javascript; charset=utf-8' },
+  '/src/idle-worker.js': { file: 'src/idle-worker.js', type: 'text/javascript; charset=utf-8' },
+  '/src/mobile-viewport.js': { file: 'src/mobile-viewport.js', type: 'text/javascript; charset=utf-8' },
+  '/src/auth.js': { file: 'src/auth.js', type: 'text/javascript; charset=utf-8' },
+  '/src/music-player.js': { file: 'src/music-player.js', type: 'text/javascript; charset=utf-8' },
+  '/src/ai-assistant.js': { file: 'src/ai-assistant.js', type: 'text/javascript; charset=utf-8' },
+  '/src/chat.js': { file: 'src/chat.js', type: 'text/javascript; charset=utf-8' },
+  '/src/translate.js': { file: 'src/translate.js', type: 'text/javascript; charset=utf-8' },
 };
 // 14.13.5 · sdynotes.js/css 는 항상 ?v= 버전과 함께 불러오므로 URL 자체가 버전
 // 스탬프다 → 브라우저가 장기 캐시(immutable)해도 배포 시 새 버전 URL 로 갱신된다.

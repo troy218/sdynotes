@@ -19,6 +19,7 @@ const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-txtclip-'));
 process.env.SDY_BASE_DIR = TMP;
 for (const f of ['sdynotes.html', 'sdynotes.js', 'sdynotes.css']) fs.copyFileSync(path.join(ROOT, f), path.join(TMP, f));
+  fs.mkdirSync(path.join(TMP, 'src'), { recursive: true }); for (const f of fs.readdirSync(path.join(REPO, 'src'))) fs.copyFileSync(path.join(REPO, 'src', f), path.join(TMP, 'src', f));
 
 let pass = 0;
 const check = (name, cond, extra = '') => {

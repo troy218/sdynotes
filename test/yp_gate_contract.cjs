@@ -16,7 +16,10 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 
 const ROOT = path.join(__dirname, '..');
 const htmlAll = fs.readFileSync(path.join(ROOT, 'sdynotes.html'), 'utf8');
-const jsAll = fs.readFileSync(path.join(ROOT, 'sdynotes.js'), 'utf8');
+const jsAll = [
+  'sdynotes.js', 'src/music-player.js', 'src/focus-clock.js', 'src/live-updates.js',
+  'src/idle-worker.js', 'src/mobile-viewport.js', 'src/auth.js', 'src/ai-assistant.js', 'src/chat.js',
+].map(f => { try { return fs.readFileSync(path.join(ROOT, f), 'utf8'); } catch { return ''; } }).join('\n');
 const cssAll = fs.readFileSync(path.join(ROOT, 'sdynotes.css'), 'utf8');
 
 // ── HTML 조각: 로그인 모달 + 게이트 + 엽스코드 앱 ──
@@ -25,12 +28,9 @@ const he = htmlAll.indexOf('</body>', hs);
 if (hs < 0 || he < 0) throw new Error('로그인/엽스코드 HTML 블록을 찾지 못했습니다');
 const htmlBlock = htmlAll.slice(hs, he);
 
-// ── JS 조각: yp 블록(10) + 로그인 블록(12) ──
-const b10 = jsAll.indexOf('/* === script block 10 === */');
-const b11 = jsAll.indexOf('/* === script block 11 === */');
-const b12 = jsAll.indexOf('/* === script block 12 === */');
-if (b10 < 0 || b11 < 0 || b12 < 0) throw new Error('스크립트 블록 경계를 찾지 못했습니다');
-const jsBlock = jsAll.slice(b10, b11) + '\n' + jsAll.slice(b12);
+// ── JS 조각: yp 블록(chat.js) + 로그인 블록(auth.js) ──
+const jsBlock = fs.readFileSync(path.join(ROOT, 'src', 'chat.js'), 'utf8')
+  + '\n' + fs.readFileSync(path.join(ROOT, 'src', 'auth.js'), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { cond ? pass++ : fail++; console.log((cond ? '✅ ' : '❌ ') + name); };

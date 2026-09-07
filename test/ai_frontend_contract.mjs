@@ -14,7 +14,18 @@ import path from 'node:path';
 import jsdom from 'jsdom';
 
 const REPO = path.resolve(new URL('..', import.meta.url).pathname);
-const js = fs.readFileSync(path.join(REPO, 'sdynotes.js'), 'utf8');
+const js = [
+  'sdynotes.js',
+  'src/music-player.js',
+  'src/focus-clock.js',
+  'src/live-updates.js',
+  'src/idle-worker.js',
+  'src/mobile-viewport.js',
+  'src/auth.js',
+  'src/ai-assistant.js',
+  'src/chat.js',
+  'src/translate.js',
+].map(f => { try { return fs.readFileSync(path.join(REPO, f), 'utf8'); } catch { return ''; } }).join('\n');
 const css = fs.readFileSync(path.join(REPO, 'sdynotes.css'), 'utf8');
 const html = fs.readFileSync(path.join(REPO, 'sdynotes.html'), 'utf8');
 const srv = fs.readFileSync(path.join(REPO, 'server/src/routes/ai.js'), 'utf8');

@@ -8,11 +8,12 @@
  * 실행: node test/phone_layout_contract.mjs
  */
 import fs from 'node:fs';
+import { readAllJS } from './_frontend.mjs';
 import * as csstree from 'css-tree';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../sdynotes.css', import.meta.url), 'utf8');
-const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const js = readAllJS();
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {

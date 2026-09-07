@@ -36,6 +36,7 @@ async function freePort() {
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-imgx-'));
 process.env.SDY_BASE_DIR = TMP;
 { const REPO = path.resolve(new URL('..', import.meta.url).pathname); for (const f of ['sdynotes.html', 'sdynotes.js', 'sdynotes.css']) fs.copyFileSync(path.join(REPO, f), path.join(TMP, f)); }
+  fs.mkdirSync(path.join(TMP, 'src'), { recursive: true }); for (const f of fs.readdirSync(path.join(REPO, 'src'))) fs.copyFileSync(path.join(REPO, 'src', f), path.join(TMP, 'src', f));
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['server/src/index.js'], {

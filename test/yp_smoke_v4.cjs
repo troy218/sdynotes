@@ -19,11 +19,7 @@ if (found) {
 // JSDOM(string)은 외부 <script src="sdynotes.js"> 를 자동으로 가져오지 않는다.
 // 실제 앱의 엽스코드 코드와 CSS만 인라인으로 넣어 스모크가 현재 소스를 검증하게 한다.
 block = block.replace(/<script\b[^>]*src=["']sdynotes\.js[^>]*><\/script>\s*/i, '');
-const fullJs = fs.readFileSync(path.join(ROOT, 'sdynotes.js'), 'utf8');
-const yps = fullJs.indexOf('/* === script block 10 === */');
-const ype = fullJs.indexOf('/* === script block 11 === */', yps);
-if (yps < 0 || ype < 0) throw new Error('엽스코드 스크립트 블록을 찾지 못했습니다');
-const ypScript = fullJs.slice(yps, ype);
+const ypScript = fs.readFileSync(path.join(ROOT, 'src', 'chat.js'), 'utf8');
 const ypCss = fs.readFileSync(path.join(ROOT, 'sdynotes.css'), 'utf8').replace(/<\/style/gi, '<\/style');
 
 const errors = [];

@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { readAllJS } from './_frontend.mjs';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 // ═══ ① 백엔드 추천 엔진 ═══
@@ -50,7 +51,7 @@ for (const g of reco.groups) {
 
 // ═══ 프런트 (jsdom) ═══
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
-const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const js = readAllJS();
 const fullHtml = html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, () => '<script>' + js.replace(/<\/script>/g, '<\\/script>') + '</script>');
 
 // 서버 목록: 30곡 (부팅 자동 대기열 검사용)

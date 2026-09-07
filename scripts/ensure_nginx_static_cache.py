@@ -33,7 +33,12 @@ def asset_blocks(app_dir: str) -> str:
         '        add_header Cache-Control "public, max-age=31536000, immutable";\n'
         "        access_log off;\n"
         "    }\n"
-    ) % (app_dir, app_dir)
+        "    location /src/ {\n"
+        "        root %s;\n"
+        '        add_header Cache-Control "public, max-age=31536000, immutable";\n'
+        "        access_log off;\n"
+        "    }\n"
+    ) % (app_dir, app_dir, app_dir)
 
 
 def server_spans(text: str) -> list[tuple[int, int]]:

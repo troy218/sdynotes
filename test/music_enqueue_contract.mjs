@@ -6,10 +6,11 @@
    3) '전체 비우기'는 재생 중인 곡만 남겨 '다음 곡'이 라이브러리로 새지 않게 한다. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { readAllJS } from './_frontend.mjs';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
-const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const js = readAllJS();
 const css = fs.readFileSync(new URL('../sdynotes.css', import.meta.url), 'utf8');
 const fullHtml = html.includes('<script src="sdynotes.js')
   ? html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, () => '<script>' + js.replace(/<\/script/gi, '<\\/script>') + '</script>')

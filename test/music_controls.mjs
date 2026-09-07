@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM, VirtualConsole } from 'jsdom';
+import { readAllJS } from './_frontend.mjs';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
-const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const js = readAllJS();
 const musicPy = fs.readFileSync(new URL('../worker/sdynotes_worker/music.py', import.meta.url), 'utf8');
 const musicCloudPy = fs.readFileSync(new URL('../worker/sdynotes_worker/music_cloud.py', import.meta.url), 'utf8');
 assert.match(musicPy, /def _music_dedupe_recognized\(mid\):/, '로컬 음원 인식 중복 자동 정리 시스템이 있어야 한다');
