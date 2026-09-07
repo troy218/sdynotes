@@ -898,13 +898,24 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(dd){
                 _nbClearBlocked(nbId);
                 const total=dd.total||dd.pages.length;
-                const pages=dd.pages.slice();
-                for(let i=pages.length;i<total;i++)
+                // 14.38 · 받아 온 슬라이스는 문서 맨 앞이 아니라 **제 자리**에 둔다.
+                //   마지막으로 보던 쪽이 9쪽 이상이면 firstSlice>0 인데, 예전엔 이
+                //   슬라이스를 cfg.pages[0..] 에 그대로 놓아 문서 앞쪽 쪽들이 전부
+                //   엉뚱한 내용으로 열렸다. 잘못 놓인 쪽은 lazy 표시가 아니라 다시
+                //   받아 오지도 않고, 그 슬라이스가 반쯤 lazy인 채 loadBatch 되면
+                //   id 보강 병합이 **다른 쪽의 글상자를 이어 붙여** 두 쪽의 내용이
+                //   한 종이 위에 겹쳐진 채 저장되는 사고(사용자 보고)로 이어졌다.
+                const pages=[];
+                for(let i=0;i<total;i++)
                     pages.push({id:'lazy_'+i,els:[],tables:[],__lazy:1});
+                dd.pages.forEach((p,k)=>{
+                    const i=firstSlice+k;
+                    if(i<total) pages[i]=p;
+                });
                 cfg.pages=pages;
                 if(dd.sizePreset) cfg.sizePreset=dd.sizePreset;
                 cfg.__ref=cfg.serverDoc;
-                cfg.__loadedTo=dd.pages.length;
+                cfg.__loadedTo=firstSlice+dd.pages.length;
                 try{ setCfg(nbId,cfg); }catch(e){}   // 옛 빈화면 캐시 덮어쓰기
             }else{
                 // 본문을 못 받으면 빈 화면 역저장을 막되, 영구 차단 대신
@@ -1078,6 +1089,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     // 14.4 · 번역/편집된 쪽은 서버 원본으로 덮지 않는다.
                     if(cur&&cur.__dirty) return;
                     if(cur&&cur.__lazy==null&&(cur.els||[]).length){
+                        // 14.38 · id 보강 병합은 '같은 쪽'일 때만 한다. 쪽 신원(id)이
+                        //   다르면 지금 메모리에 있는 이 쪽은 서버의 이 쪽이 아니다
+                        //   (슬라이스가 어긋난 자리에 적재된 적 있음). 이어 붙이면
+                        //   두 쪽의 글상자가 한 쪽에 겹쳐진 채 저장된다. 편집되지
+                        //   않은(__dirty 아님) 쪽은 서버 본문이 항상 옳으니 교체한다.
+                        if(cur.id&&p.id&&cur.id!==p.id){ d.pages[i]=p; return; }
                         // 이미 있는 내용은 id 기준으로만 보강 (원본이 번역을 지우지 않게)
                         const have=new Set((cur.els||[]).map(e=>e.id));
                         const extra=(p.els||[]).filter(e=>e&&e.id&&!have.has(e.id));
@@ -5554,6 +5571,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     let _lastPosT=0;
+    let _posHydrated=true;   // 14.38 · 열림 직후 restoreLastPos 전에 '0'이 저장되는 것을 막는다
     function saveLastPos(){
         if(!curNB||!doc) return;
         const now=Date.now();
@@ -5752,6 +5770,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 14.15 · 로드가 끝나기 전에 다른 노트를 열었으면 이 doc 은 버린다.
         if(openSeq!==_sdyOpenSeq||!curNB||curNB.id!==openedId) return;
         doc=loadedDoc; _docId=nb.id;
+        // 14.38 · 이 문서의 '마지막 위치 복구'(아래 460ms 타이머)가 끝나기 전에는
+        //   열리는 길목의 updatePageInfo(renderPages 안에서도 불린다)가
+        //   curPageIdx(아직 0)로 lastpg 를 덮어쓰지 못하게 막는다. 복구 전에 0이
+        //   먼저 기록되면 복구가 항상 1쪽으로 풀리고, loadDocAsync 만 마지막
+        //   슬라이스를 먼저 받아 '화면은 1쪽 · 데이터는 그 슬라이스'로 꼬인다.
+        //   (renderPages 등 다른 경로에서는 이 플래그를 건드리지 않는다 —
+        //    되돌리기·쪽 추가가 위치 저장을 막으면 안 되므로.)
+        _posHydrated=false;
+        setTimeout(()=>{ try{ restoreLastPos(); ensureVisiblePagesRendered(); }finally{ _posHydrated=true; } },460);
         setTimeout(async()=>{
             try{ await initSync(); }catch(e){}
             // 14.29.4 · 나머지 슬라이스 미리 받기는 '첫 화면이 다 그려진 뒤'에
@@ -5787,7 +5814,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const _paint=()=>{ try{ layoutPages(); ensureVisiblePagesRendered(); }catch(e){} };
         requestAnimationFrame(_paint);
         setTimeout(_paint,420);
-        setTimeout(()=>{ try{ restoreLastPos(); ensureVisiblePagesRendered(); }catch(e){} },460);
         scheduleHiBg();                                                // 보는 쪽 배경을 점점 고화질로
         openNav(closeEditor);                                          // 뒤로가기 → 에디터 닫기
     }
@@ -7302,7 +7328,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const pt=document.getElementById('pgTot');
         if(pt) pt.textContent=`/ ${doc.pages.length}`;
         // 마지막 보던 쪽을 기억해 둔다 (다시 열면 그 자리로 복구)
-        if(curNB&&doc) saveLastPos();
+        // 14.38 · 복구(restoreLastPos, 열림 +460ms) 가 끝나기 전에는 저장하지
+        //   않는다. 예전엔 열리는 길목의 updatePageInfo 가 curPageIdx(아직 0)를
+        //   먼저 기록해 두어 복구가 항상 1쪽으로 풀렸고, loadDocAsync 만 마지막
+        //   슬라이스를 받아 와 '정작 화면은 1쪽 · 데이터는 그 슬라이스'로 뒤엉켰다.
+        if(curNB&&doc&&_posHydrated) saveLastPos();
         const jp=document.getElementById('pageJump');
         if(jp&&document.activeElement!==jp) jp.value=curPageIdx+1;
         const fb=document.getElementById('favBtn');
