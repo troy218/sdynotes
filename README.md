@@ -1,4 +1,4 @@
-# SDYnotes 14.34.0 — Fastify + Python worker + Oracle 자체 저장소
+# SDYnotes 14.34.1 — Fastify + Python worker + Oracle 자체 저장소
 
 기존 단일 `app.py`(약 11,000줄)를 **"빠른 부분은 Node, 무거운 부분만 Python"** 으로
 재설계한 백엔드입니다. **14.12 부터 모든 데이터(상태·파일)는 이 Oracle VM 디스크에

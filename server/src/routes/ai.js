@@ -454,6 +454,7 @@ async function runDrawJob({ text, question, context, stream, onDelta, signal }) 
     //   전부 '아무 조각도 안 나간' 실패라 안전하게 텍스트로 재시도할 수 있다.
     if (e && (e.status === 400
         || /image|vision|multimodal|not supported|unsupported|image.*url|content.*image/i.test(String(e.message || '')))) {
+      console.error('[draw/ref] 모델이 참고 이미지를 거부해 예전 방식(참고 없이 그리기)으로 그립니다 ·', e && e.message);
       return attempt(baseMsg(), []);
     }
     throw e;
