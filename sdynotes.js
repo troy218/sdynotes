@@ -2,9 +2,9 @@
 /* AUTO-GENERATED — 직접 고치지 말고 src/app/ 파트를 수정한 뒤 bundle 하라 */
 
 /* === src/app/00-boot.js ===
-   script block 1–2 · 글꼴 지연로드 · FLOAT-BOUNDS · 음악 칩
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+   글꼴 지연로드 · FLOAT-BOUNDS · 음악 칩
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
 /* APP-PART:00-boot.js:BEGIN */
 /* 분리된 JS */
 
@@ -160,13 +160,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 })();
 
 
-
 /* APP-PART:00-boot.js:END */
 
 /* === src/app/01-core.js ===
-   sandbox · SDB · 문서모델 · 팔레트 · toast/esc
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+   sandbox · SDB · 문서모델 · 팔레트 · toast/esc/uid
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
 /* APP-PART:01-core.js:BEGIN */
 /* === script block 3 === */
 
@@ -558,11 +557,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
 /* APP-PART:01-core.js:END */
 
-/* === src/app/02-home.js ===
-   홈 · 설정동기화 · 검색 · 폴더 · 휴지통 · 멀티선택
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:02-home.js:BEGIN */
+/* === src/app/02a-home-shell.js ===
+   홈 배경 · 앱설정 · 동기화 로딩바 · 슬라이스 로드
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:02a-home-shell.js:BEGIN */
     // ===== 9.4 · 홈 화면 배경 사진 =====
     function wallIsVideo(){
         return S.wallVideo===true || /\.(mp4|webm|mov)([?#]|$)/i.test(S.wall||'') || /\/video\/upload\//.test(S.wall||'');
@@ -1188,6 +1187,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
     }
 
+/* APP-PART:02a-home-shell.js:END */
+
+/* === src/app/02b-search.js ===
+   스트로크 SVG · 검색/이모지 · 노트 목록
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:02b-search.js:BEGIN */
     // ============ 스트로크 → SVG path (에디터/미리보기/내보내기 공용) ============
     function strokePath(pts,sharp){
         if(!pts||pts.length<2) return pts&&pts.length===1?`M ${pts[0][0]} ${pts[0][1]} l 0.01 0`:'';
@@ -1851,6 +1857,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const n=prompt('폴더 이름',t?t.name:'');
         if(n&&n.trim()){ t.name=n.trim(); saveFolders(f); renderGrid(); toast('이름 변경됨'); }
     }
+/* APP-PART:02b-search.js:END */
+
+/* === src/app/02c-home-stack.js ===
+   폴더 잠금 · 홈 스택 · 드래그 폴더
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:02c-home-stack.js:BEGIN */
     // ===== 폴더 잠금 =====
     const unlockedFolders=new Set();     // 이번 접속에서 연 폴더 (탭 닫으면 초기화)
     function folderById(fid){ return getFolders().find(f=>f.id===fid)||null; }
@@ -2575,6 +2588,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&lift) endLift(); });
 
 
+/* APP-PART:02c-home-stack.js:END */
+
+/* === src/app/02d-settings-sync.js ===
+   북마크 · 재생목록 · 설정 LWW · 집게 애니
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:02d-settings-sync.js:BEGIN */
     // ============ 자주 가는 링크 ============
     const DEFAULT_LINKS=[{name:'내 블로그',url:'https://blog.naver.com/troy218'}];
     const SETTINGS_TITLE='__sdy_settings__';
@@ -3630,6 +3650,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         toast('링크 추가됨 ✓',1300);
     }
 
+/* APP-PART:02d-settings-sync.js:END */
+
+/* === src/app/02e-folders.js ===
+   스냅정렬 · 멀티선택 · 폴더 · 휴지통 · escrow
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:02e-folders.js:BEGIN */
     // ============ 스마트 정렬 (스냅 가이드) ============
     // 다른 요소의 가장자리/중심, 그리고 종이 중앙에 가까워지면 딱 붙는다.
     const SNAP_TOL=6;            // 스냅이 걸리는 거리 (종이 좌표 기준)
@@ -4421,13 +4448,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
-/* APP-PART:02-home.js:END */
+/* APP-PART:02e-folders.js:END */
 
-/* === src/app/03-admin.js ===
-   관리자 모드 · 파일 보관함
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:03-admin.js:BEGIN */
+/* === src/app/03a-admin.js ===
+   관리자 모드
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:03a-admin.js:BEGIN */
     // ============ 관리자 모드 ============
     // 비밀번호 검증과 IP 차단은 서버(app.py)에서 처리한다. 프런트는 토큰만 보관.
     let adminMode=false, adminToken=null;
@@ -4680,6 +4707,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
     }
 
+/* APP-PART:03a-admin.js:END */
+
+/* === src/app/03b-vault.js ===
+   파일 보관함 · 링크/복사 · 설정 옵션
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:03b-vault.js:BEGIN */
     // ============ 파일 보관함 (관리자 전용) ============
     let vaultFiles=[], vaultTotal=0, vaultStorage='';
     let vaultSel=null;
@@ -5132,13 +5166,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
-/* APP-PART:03-admin.js:END */
+/* APP-PART:03b-vault.js:END */
 
-/* === src/app/04-import-lock.js ===
-   문서 가져오기 · 노트 잠금
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:04-import-lock.js:BEGIN */
+/* === src/app/04a-import.js ===
+   PDF/Word 가져오기
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:04a-import.js:BEGIN */
     // ============ 문서 가져오기 (PDF / Word → 편집 가능한 노트) ============
     // 진행률은 '절대 뒤로 가지 않게' 한 곳에서만 만진다.
     // (예전엔 업로드 10% → 변환 0% 로 되돌아가 보였다)
@@ -5409,6 +5443,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
+/* APP-PART:04a-import.js:END */
+
+/* === src/app/04b-note-lock.js ===
+   노트 잠금 AES-GCM
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:04b-note-lock.js:BEGIN */
     // ============ 노트 잠금 (AES-GCM 256 실제 암호화) ============
     // 비밀번호는 저장하지 않는다. PBKDF2(210k)로 키를 유도하고,
     // 검증은 복호화 성공 여부로만 판단한다 → 비번 없으면 내용 복구 불가.
@@ -5708,13 +5749,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
-/* APP-PART:04-import-lock.js:END */
+/* APP-PART:04b-note-lock.js:END */
 
-/* === src/app/05-editor-shell.js ===
-   에디터 열기/닫기 · 저장 · 동기화 · 아웃박스
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:05-editor-shell.js:BEGIN */
+/* === src/app/05a-editor-open.js ===
+   에디터 열기/닫기 · saveDoc
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:05a-editor-open.js:BEGIN */
     // ============ Editor: 열기/닫기 ============
     async function openNB(nb){
         if(window._closeEdT){ clearTimeout(window._closeEdT); window._closeEdT=null; }
@@ -6016,6 +6057,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
     }
 
+/* APP-PART:05a-editor-open.js:END */
+
+/* === src/app/05b-sync-outbox.js ===
+   서버 동기화 · 오프라인 아웃박스
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:05b-sync-outbox.js:BEGIN */
     // ============ 서버 동기화 ============
     let syncTimer=null, pendingNB=null;
     // 14.15 · 동기화 직전 이미지 요소 정리: blob URL 은 다른 기기·새로고침 뒤에
@@ -6318,13 +6366,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
-/* APP-PART:05-editor-shell.js:END */
+/* APP-PART:05b-sync-outbox.js:END */
 
-/* === src/app/06-pages.js ===
-   페이지 렌더 · 가상화 · 읽기우선 · 다중선택
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:06-pages.js:BEGIN */
+/* === src/app/06a-page-virtual.js ===
+   페이지 렌더 · 셸 가상화 · 유동 로딩
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:06a-page-virtual.js:BEGIN */
     // ============ 페이지 렌더 · 셸 가상화 ============
     // 500쪽이 넘는 문서를 열어도 한 번에 500장의 종이를 만들지 않는다.
     //   ① 스테이지 높이만 전체 쪽수로 잡아 스크롤 막대 길이는 정확히 유지한다.
@@ -6853,6 +6901,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             });
         }catch(e){}
     }
+/* APP-PART:06a-page-virtual.js:END */
+
+/* === src/app/06b-read-layer.js ===
+   읽기 우선 레이어 · 고화질 배경 · 자원 정리
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:06b-read-layer.js:BEGIN */
     // ============ 읽기 우선 레이어 (20.0 · '어크로뱃처럼') ============
     // 논문 한 쪽은 글상자 수백 개 + 단어 span 수천 개다. 예전에는 그 DOM 을 다
     // 만들어야 비로소 글자가 보였고, 그 비용이 곧 '여는 데 오래 걸림 / 스크롤이
@@ -7591,7 +7646,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
-
     // ============ 삭제된 요소의 서버 자원 정리 ============
     // 이미지가 지워지면 Cloudinary 원본과 images 테이블 행도 함께 제거한다.
     function publicIdFromURL(url){
@@ -7645,6 +7699,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }finally{ syncEnd(); }
     }
 
+/* APP-PART:06b-read-layer.js:END */
+
+/* === src/app/06c-el-select-ops.js ===
+   드래그 다중선택 · 그룹 · 요소 클립보드
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:06c-el-select-ops.js:BEGIN */
     // ============ 드래그 다중 선택 (완전히 포함된 객체만) ============
     let marquee=null, multiSel=[];
 
@@ -7822,7 +7883,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
         return multiSel.length>1;
     }
-
 
 
     function clearMulti(){
@@ -8147,13 +8207,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
-/* APP-PART:06-pages.js:END */
+/* APP-PART:06c-el-select-ops.js:END */
 
-/* === src/app/07-elements.js ===
-   요소 빌더 · 형광펜 레이어 · 되돌리기
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:07-elements.js:BEGIN */
+/* === src/app/07a-el-builder.js ===
+   요소 빌더 · 가져온 텍스트 안겹침
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:07a-el-builder.js:BEGIN */
     // ============ 요소 빌더 ============
     function findEl(pageIdx,id){ return (doc.pages[pageIdx].els||[]).find(e=>e.id===id); }
 
@@ -8990,6 +9050,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return box.innerHTML;
     }
 
+/* APP-PART:07a-el-builder.js:END */
+
+/* === src/app/07b-hl-band.js ===
+   부드러운 형광펜 표시 레이어
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:07b-hl-band.js:BEGIN */
     // ── 14.18.2 · 부드러운 형광펜(하이라이트) 표시 레이어 ──────────────────
     // 저장 데이터·편집 엔진은 글자 span 의 background-color 를 그대로 쓴다
     // (동기화·되돌리기·툴바 판정·계약 테스트 불변). 대신 '화면 표시'만 실제
@@ -9424,6 +9491,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     let _histT=0, _lastTypeT=0, _scriptEditUndoable=false;
+/* APP-PART:07b-hl-band.js:END */
+
+/* === src/app/07c-undo.js ===
+   되돌리기 재설계
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:07c-undo.js:BEGIN */
     // ── 20.3 · 되돌리기 재설계 ───────────────────────────────────────────────
     //  예전 문제 ①  undo 가 문서를 스냅샷으로 **통째 교체**했다. 그래서 같이
     //    편집 중이던 다른 사람이 그 사이에 적은 글·그림이 통째로 사라졌다
@@ -9681,13 +9755,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
-/* APP-PART:07-elements.js:END */
+/* APP-PART:07c-undo.js:END */
 
-/* === src/app/08-selection-table.js ===
-   선택/드래그 · 표 · 스프레드시트 셀
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:08-selection-table.js:BEGIN */
+/* === src/app/08a-selection.js ===
+   선택/드래그 · 스프레드시트 셀
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:08a-selection.js:BEGIN */
     // ============ 선택/드래그 ============
     let selected=null, drag=null, resize=null;
     let textToolActive=false, tablePlace=null, curFontSize=16, _textPointerBlockUntil=0;
@@ -11032,6 +11106,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         saveDoc();
         return node;
     }
+/* APP-PART:08a-selection.js:END */
+
+/* === src/app/08b-table.js ===
+   표 · 쪽 북마크 드래그
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:08b-table.js:BEGIN */
     // ===== 표 만들기 =====
     // 칸마다 텍스트 상자를 놓고 선을 둘러 표처럼 보이게 한다.
     // 각 칸을 바로 클릭해 글자를 넣을 수 있고, 통째로 옮기도록 묶어 둔다.
@@ -12058,12 +12139,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 14.38+ · src/server-status.js 로 분리 (openSrvPop · toggleNotifications · srvStart …)
 
 
-/* APP-PART:08-selection-table.js:END */
+/* APP-PART:08b-table.js:END */
 
 /* === src/app/09-tools-ui.js ===
-   더보기 서랍 · 세로도구 · 체크포인트 등
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+   더보기 서랍 · 체크포인트 · 패널
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
 /* APP-PART:09-tools-ui.js:BEGIN */
     // ===== 더보기 서랍 =====
     function openMore(tab){
@@ -13179,11 +13260,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
 /* APP-PART:09-tools-ui.js:END */
 
-/* === src/app/10-input-pen.js ===
-   배치모드 · 히스토리키 · 펜/지우개 · 핀치
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:10-input-pen.js:BEGIN */
+/* === src/app/10a-place-keys.js ===
+   배치 모드 · 뒤로가기 · 단축키
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:10a-place-keys.js:BEGIN */
     // ============ 요소 배치 모드 (그림·수식) ============
     // 예전엔 텍스트 상자·표만 '누른 자리 = 생기는 자리' 보정(pageLocal)이 돼 있었고
     //  · 그림은 도구막대에서 넣으면 늘 쪽 한가욵데에,
@@ -13681,6 +13762,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
     });
 
+/* APP-PART:10a-place-keys.js:END */
+
+/* === src/app/10b-pen.js ===
+   펜/지우개 · 그리기 undo · 핀치
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:10b-pen.js:BEGIN */
     // ============ 펜 / 지우개 ============
     let penActive=false, eraserActive=false, paintMode=false, drawColor=CLASSIC_DRAW_COLORS[0], drawSize=2;
     let shapeMode='free', markerMode=false;
@@ -14402,13 +14490,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     })();
 
 
-/* APP-PART:10-input-pen.js:END */
+/* APP-PART:10b-pen.js:END */
 
-/* === src/app/11-text-format.js ===
-   글자색/형광펜 · 인라인 서식 · 종이크기
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:11-text-format.js:BEGIN */
+/* === src/app/11a-text-style.js ===
+   글자색/형광펜 팔레트 · 글꼴 · 상자 서식
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:11a-text-style.js:BEGIN */
     // ============ 워드식 글자색 / 형광펜 ============
     // 14.18.4 · 글자색/형광펜 팔레트는 파스텔보다 조금 더 세련된 진한 톤으로 맞춘다.
     //   예전 기본색/파스텔값이 저장돼 있어도 렌더링 때 아래 팔레트 계열로 자연스럽게 맞춘다.
@@ -14858,6 +14946,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return {sel:s,range:r,host};
     }
 
+/* APP-PART:11a-text-style.js:END */
+
+/* === src/app/11b-inline-fmt.js ===
+   인라인 서식 엔진 (오프셋·토큰·실행기)
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:11b-inline-fmt.js:BEGIN */
     // ── ① 문자 오프셋 지도 ─────────────────────────────────────────
     //   host 안 모든 텍스트 노드를 문서 순으로 [start,end) 절대 오프셋과 함께.
     function _fmtTextMap(host){
@@ -15792,6 +15887,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         saveDoc();
         toast(({left:'왼쪽',center:'가운데',right:'오른쪽'})[dir]+' 정렬',1000);
     }
+/* APP-PART:11b-inline-fmt.js:END */
+
+/* === src/app/11c-caret-paper.js ===
+   캐럿 서식 · 종이/크기
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:11c-caret-paper.js:BEGIN */
     // ── 편집 중 '캐럿' 서식 ─────────────────────────────────────────
     // 글자 선택 없이 상자 안에서 입력 중일 때 색/글꼴/크기/볼드 등을 바꾸면
     // '상자 전체'가 아니라 '앞으로 입력될 글자'에만 적용한다.
@@ -16186,13 +16288,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
-/* APP-PART:11-text-format.js:END */
+/* APP-PART:11c-caret-paper.js:END */
 
-/* === src/app/12-media.js ===
-   이미지 · 내보내기 · 스티커 · 해돌이 문서브릿지
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:12-media.js:BEGIN */
+/* === src/app/12a-image.js ===
+   이미지 업로드·배치·레거시 복구
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:12a-image.js:BEGIN */
     // ============ 이미지 ============
     let _imgPickAnchor=null;   // 우클릭 '사진 넣기'로 연 경우: 그 지점(문서 좌표)
     function triggerImgUpload(anchor){
@@ -16521,6 +16623,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(clipboardEls.length){ e.preventDefault(); pasteElements(); }
     });
 
+/* APP-PART:12a-image.js:END */
+
+/* === src/app/12b-export-sticker.js ===
+   내보내기 · 스티커 만들기/보관함
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:12b-export-sticker.js:BEGIN */
     // ============ 내보내기 ============
     const dataUrlCache=new Map();
     async function toDataURL(url){
@@ -16921,6 +17030,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){ toast('삭제 실패',1800); }
     }
 
+/* APP-PART:12b-export-sticker.js:END */
+
+/* === src/app/12c-ai-colors.js ===
+   해돌이 색이름·팔레트 매핑
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:12c-ai-colors.js:BEGIN */
     // ── 14.25.0 · 똑똑한 해돌이 도우미 ──────────────────────────────────
     // 색이름 → 실제 팔레트. 화면의 글자색·형광펜·펜 목록(CLASSIC_*_COLORS)과
     // 같은 값이라, AI가 고른 색이 도구막대 색과 어긋나지 않는다.
@@ -17101,6 +17217,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return {html:out,count:spans.length};
     }
 
+/* APP-PART:12c-ai-colors.js:END */
+
+/* === src/app/12d-ai-hl-layout.js ===
+   해돌이 형광펜 부분강조
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:12d-ai-hl-layout.js:BEGIN */
     // ── 14.27.0 · 형광펜(부분 강조) ──────────────────────────────────────
     // 해돌이가 형광펜을 못 알아듣던 이유는 '상자 전체 배경(el.cellBg)'밖에
     // 못 건드렸기 때문이다. 이제 저장 포맷과 같은 글자 span(background-color)으로
@@ -17354,6 +17477,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return {html:aiEditDropEmptyTags(out),count:touched};
     }
 
+/* APP-PART:12d-ai-hl-layout.js:END */
+
+/* === src/app/12e-ai-ops.js ===
+   해돌이 배치·쪽/@명령·문서브릿지
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:12e-ai-ops.js:BEGIN */
     // ── 14.27.0 · 사람이 보기 좋은 배치 ────────────────────────────────
     // 모델이 준 좌표를 그대로 쓰면 상자마다 왼쪽 끝이 다르고 서로 겹친다.
     // 그래서 ① 8px 격자에 맞추고 ② 이웃·본문 왼쪽 끝에 붙이고 ③ 새 요소는
@@ -18459,13 +18589,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     });
 
 
-/* APP-PART:12-media.js:END */
+/* APP-PART:12e-ai-ops.js:END */
 
-/* === src/app/13-collab.js ===
-   실시간 동기화 · 커서 공유
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:13-collab.js:BEGIN */
+/* === src/app/13a-collab-sync.js ===
+   적응형 폴링 · 요소 LWW
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:13a-collab-sync.js:BEGIN */
     // ============ 여러 기기 실시간 반영 (적응형 폴링) ============
     // 예전엔 20초 고정이라 다른 기기의 변경이 한참 뒤에 보였다.
     // 지금은 '방금 뭔가 오갔으면 빠르게(1.2초), 조용하면 천천히(15초)'.
@@ -19449,6 +19579,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{ queueImportedSave(); }catch(e){}
     }
 
+/* APP-PART:13a-collab-sync.js:END */
+
+/* === src/app/13b-cursors.js ===
+   실시간 커서 공유
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:13b-cursors.js:BEGIN */
     // ============ 실시간 커서 공유 ============
     // 같은 노트를 여러 사람이 열면 서로의 마우스를 색깔 화살표로 보여준다.
     const LIVE_ME=(()=>{ try{
@@ -20238,14 +20375,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
+/* APP-PART:13b-cursors.js:END */
 
-/* APP-PART:13-collab.js:END */
-
-/* === src/app/14-menus-init.js ===
-   우클릭 메뉴 · 삭제 · Init · 노트목록 동기화 · block4
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
-/* APP-PART:14-menus-init.js:BEGIN */
+/* === src/app/14a-ctx-menu.js ===
+   우클릭 메뉴 · 카드 컨텍스트 · 삭제
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:14a-ctx-menu.js:BEGIN */
     // ============ 에디터 우클릭 메뉴 ============
     let ctxTarget=null;   // {kind:'blank'|'el'|'text', pageIdx, x, y, el}
     // ── 우클릭 메뉴 ────────────────────────────────────────
@@ -21156,6 +21292,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     document.getElementById('pwModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closePwModal(null);});
     window.addEventListener('beforeunload',()=>{ if(pendingNB) flushSync(); });
 
+/* APP-PART:14a-ctx-menu.js:END */
+
+/* === src/app/14b-init.js ===
+   Init · 크레인 애니 · 노트목록 동기화
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:14b-init.js:BEGIN */
     // ============ Init ============
     resetStaleBrowserSettings();
     _stCacheReset=true;   // 성공한 첫 pull 뒤에만 false가 된다
@@ -22056,5 +22199,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 /* === script block 4 === */
 (function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2a781b7af7de89c',t:'MTc4NjYyMTg3Mw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();
 
-/* APP-PART:14-menus-init.js:END */
+
+/* APP-PART:14b-init.js:END */
 

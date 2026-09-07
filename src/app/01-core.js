@@ -1,7 +1,7 @@
 /* === src/app/01-core.js ===
-   sandbox · SDB · 문서모델 · 팔레트 · toast/esc
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+   sandbox · SDB · 문서모델 · 팔레트 · toast/esc/uid
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
 /* APP-PART:01-core.js:BEGIN */
 /* === script block 3 === */
 

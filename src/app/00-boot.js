@@ -1,7 +1,7 @@
 /* === src/app/00-boot.js ===
-   script block 1–2 · 글꼴 지연로드 · FLOAT-BOUNDS · 음악 칩
-   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
-    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+   글꼴 지연로드 · FLOAT-BOUNDS · 음악 칩
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
 /* APP-PART:00-boot.js:BEGIN */
 /* 분리된 JS */
 
@@ -155,7 +155,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
   document.body.appendChild(chip);
   chip.style.display='flex';
 })();
-
 
 
 /* APP-PART:00-boot.js:END */
