@@ -7,6 +7,8 @@
  *   ② 입력 즉시 보라색 — 사진·그림도 문서 편집이라 같은 색으로 알린다
  *   ③ 그림 크기 — 쪽을 반이나 차지하지 않는지(본문 폭의 40%·최대 320px)
  *   ④ 사진 넣기 — /api/ai/imgadd 응답이 실제 사진 요소로 들어가는지
+ *   ⑤ 14.36.0 · 참고 일러스트 따라 그리기 — /api/ai/refdraw(진짜 번들)의 선화가
+ *      펜 획으로 들어가고, 참고 그림이 없을 때만 모델 직접 그리기로 내려가는지
  *
  *   AI 모델·외부 사진 소스는 부르지 않는다(가짜 응답만 쓴다). */
 import assert from 'node:assert/strict';
@@ -283,6 +285,63 @@ try {
     JSON.stringify(photoBoxes[photoBoxes.length - 1] || null));
   const said = String((document.getElementById('aiOut') || {}).textContent || '');
   check('사진을 넣었다고 말해 준다', /사진을 넣었어요/.test(said), said.slice(0, 80));
+  window.fetch = realFetch;
+
+  // ── ⑤ 14.36.0 · 참고 일러스트를 따라 그리기 — 실제 서버 번들 → 펜 획 ───────
+  //   "고양이 그려 줘"는 모델을 부르기 전에 /api/ai/refdraw(진짜 서버·진짜 번들)로
+  //   참고 선화를 받아 그 윤곽을 펜 획으로 옮긴다. 모델(/api/ai/ask)은 부르지 않는다.
+  const askCalls = [];
+  const refCalls = [];
+  window.fetch = (input, init) => {
+    const url = typeof input === 'string' ? input : String((input && input.url) || input);
+    if (url.indexOf('/api/ai/ask') >= 0) {
+      askCalls.push(JSON.parse(String((init && init.body) || '{}')));
+      // 모델 직접 그리기(대체 경로)에 대한 가짜 답 — SAMPLE_SVG 를 SSE 로 흘린다
+      const body = `event: meta\ndata: {"cached":false}\n\nevent: delta\ndata: ${JSON.stringify({ t: SAMPLE_SVG })}\n\nevent: done\ndata: ${JSON.stringify({ text: SAMPLE_SVG, task: 'draw' })}\n\n`;
+      const enc = new TextEncoder().encode(body);
+      let sent = false;
+      return Promise.resolve({ ok: true, status: 200, headers: { get: () => 'text/event-stream' },
+        body: { getReader: () => ({ read: () => Promise.resolve(sent ? { done: true } : (sent = true, { done: false, value: enc })) }) } });
+    }
+    if (url.indexOf('/api/ai/refdraw') >= 0) refCalls.push(JSON.parse(String((init && init.body) || '{}')));
+    return realFetch(input, init);
+  };
+  const strokesBefore = boxesOf(window.__sdyAiBridge.capture().text, '그림획').length;
+  qEl.value = '귀여운 고양이 그려 줘';
+  qEl.dispatchEvent(new window.Event('input', { bubbles: true }));
+  window.sdyAiRun();
+  const refDeadline = Date.now() + 8_000;
+  while (Date.now() < refDeadline) {
+    if (boxesOf(window.__sdyAiBridge.capture().text, '그림획').length > strokesBefore) break;
+    await wait(80);
+  }
+  await wait(150);
+  const refStrokes = boxesOf(window.__sdyAiBridge.capture().text, '그림획');
+  check('"고양이 그려 줘"는 먼저 참고 그림(/api/ai/refdraw)을 찾는다', refCalls.length === 1 && /고양이/.test(String(refCalls[0].q || '')),
+    JSON.stringify(refCalls));
+  check('참고 그림이 있으면 모델(/api/ai/ask)은 부르지 않는다', askCalls.length === 0, JSON.stringify(askCalls.map(a => a.task)));
+  check('참고 선화의 윤곽이 펜 획으로 문서에 들어간다', refStrokes.length > strokesBefore, `${strokesBefore} → ${refStrokes.length}`);
+  const refBox = boundingBox(refStrokes.slice(strokesBefore));
+  check('따라 그린 그림도 크기 규약(폭 ≤ 320px)을 지킨다', refBox && refBox.w <= 320 && refBox.h <= 362, JSON.stringify(refBox));
+  const saidRef = String((document.getElementById('aiOut') || {}).textContent || '');
+  check('무엇을 따라 그렸는지·출처를 말해 준다', /고양이/.test(saidRef) && /따라/.test(saidRef) && /OpenMoji/.test(saidRef), saidRef.slice(0, 120));
+  check('그림 딱지가 붙는다', (document.getElementById('aiKind') || {}).textContent === '그림');
+
+  // 참고 그림이 없는 주제 → 예전처럼 모델이 직접 그린다(대체 경로)
+  const fbBefore = boxesOf(window.__sdyAiBridge.capture().text, '그림획').length;
+  refCalls.length = 0; askCalls.length = 0;
+  qEl.value = '/그림 zzqq 존재하지 않는 것';
+  qEl.dispatchEvent(new window.Event('input', { bubbles: true }));
+  window.sdyAiRun();
+  const fbDeadline = Date.now() + 8_000;
+  while (Date.now() < fbDeadline) {
+    if (boxesOf(window.__sdyAiBridge.capture().text, '그림획').length > fbBefore) break;
+    await wait(80);
+  }
+  await wait(150);
+  check('참고 그림이 없으면(404) 모델 직접 그리기(task=draw)로 내려간다',
+    refCalls.length === 1 && askCalls.length === 1 && askCalls[0].task === 'draw', JSON.stringify(askCalls.map(a => a.task)));
+  check('대체 경로에서도 그림이 문서에 들어간다', boxesOf(window.__sdyAiBridge.capture().text, '그림획').length > fbBefore);
   window.fetch = realFetch;
 
   check('실제 그리기·사진 넣기 중 치명적 브라우저 오류가 없다', errors.length === 0,

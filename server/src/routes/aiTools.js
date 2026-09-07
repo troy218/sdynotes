@@ -4,6 +4,9 @@
 //  - GET  /api/ai/imgs?q=...   → 사진 후보 목록 (위키미디어 커먼즈)
 //  - POST /api/ai/imgadd       → {q} 사진을 찾아 이 서버 저장소에 받아 노트용
 //                                주소(/api/img/…)로 돌려준다 (upload와 같은 파이프라인)
+//  - GET  /api/ai/refs?q=...   → 14.36.0 · 참고 일러스트 후보 목록 (서버 번들, 인터넷 없음)
+//  - POST /api/ai/refdraw      → 14.36.0 · {q} 요청에 맞는 참고 일러스트를 찾아(필요하면
+//                                모델이 후보 중 하나를 고름) 펜 획용 SVG 로 돌려준다
 //
 // 설계 원칙 (ai.js 와 같다)
 //  · API 키가 없는 무료 엔드포인트만 쓴다 → .env 를 건드릴 필요가 없다.
@@ -20,6 +23,10 @@ import { uploadStream } from '../lib/cloudinary.js';
 import { requireUser } from '../lib/userauth.js';
 import { translateFree } from './translate.js';
 import { aiQuickText } from './ai.js';
+import {
+  refsReady, refsInfo, refSearch, refByHex, refSvg, refColorOf,
+  refChoicesText, refParsePick, REF_MIN_SCORE, REF_CREDIT,
+} from '../lib/haedolRefs.js';
 
 const WEB_TTL = 10 * 60 * 1000;      // 검색 결과 캐시 10분
 const IMG_TTL = 10 * 60 * 1000;      // 사진 후보 캐시 10분
@@ -639,7 +646,72 @@ async function storeImage(buf) {
   };
 }
 
-// ── ③ 해돌이 그림 참고 일러스트 ────────────────────────────────────────────
+// ── ③ 14.36.0 · 참고 일러스트 그리기 — "찾아서 윤곽을 따라 그린다" ─────────
+//   모델이 좌표를 지어내던 예전 방식은 그림 수준이 들쭉날쭉했다. 이제는
+//   ① 요청 문장에서 그림 대상 낱말을 뽑아 서버 번들(OpenMoji 선화 1,600여 장)
+//      에서 후보를 찾고,
+//   ② 후보가 둘 이상이고 1위가 압도적이지 않으면 모델(refpick)에게 번호로
+//      고르게 하고(모델이 없거나 실패하면 1위),
+//   ③ 그 선화를 480×360 SVG 로 조립해 돌려준다 — 브라우저가 펜 획으로 옮긴다.
+//   대상이 여럿("고양이와 강아지")이면 대상별 1위를 나란히 한 장에 놓는다.
+//   못 찾으면 ok:false·reason:'nomatch' 로 알리고, 브라우저는 예전처럼 모델이
+//   직접 그리는 경로(task=draw)로 내려간다.
+const REF_PICK_MS = 9000;          // 모델이 후보를 고르는 데 기다리는 상한
+const REF_CLEAR_MARGIN = 12;       // 1위가 2위보다 이만큼 앞서면 모델에게 묻지 않는다
+
+async function pickWithModel(q, results) {
+  const list = results.slice(0, 6);
+  if (list.length < 2) return { idx: 0, how: 'single' };
+  if (list[0].score - list[1].score >= REF_CLEAR_MARGIN) return { idx: 0, how: 'clear' };
+  try {
+    const prompt = '그림 요청: ' + String(q).slice(0, 200) + '\n\n후보:\n' + refChoicesText(list) + '\n\n가장 잘 맞는 후보의 번호 하나만 답하라(없으면 0).';
+    const out = await withTimeout(aiQuickText('refpick', prompt), REF_PICK_MS, 'refpick');
+    const k = refParsePick(out, list.length);
+    if (k === 0 && /^\s*0\b/.test(String(out || ''))) return { idx: -1, how: 'ai-none' };
+    return { idx: k > 0 ? k - 1 : 0, how: k > 0 ? 'ai' : 'ai-fallback' };
+  } catch (e) {
+    return { idx: 0, how: (e && e.aiOff) ? 'ai-off' : 'ai-fail' };
+  }
+}
+
+export async function refDraw(q) {
+  if (!refsReady()) return { ok: false, reason: 'nobundle', error: '참고 그림 묶음을 읽지 못했어요 · ' + (refsInfo().error || 'server/assets/haedol_refs.json.gz') };
+  const found = refSearch(q, 6);
+  if (!found.terms.length) return { ok: false, reason: 'noterms', terms: [], error: '무엇을 그릴지 알아듣지 못했어요' };
+  const color = refColorOf(q);
+  // 대상이 여럿 — 대상마다 1위를 나란히(모델을 부르지 않는다: 대상별 1위는 대개 분명하다)
+  if (found.subjects.length >= 2 && found.tops.length >= 2) {
+    const items = found.tops.map((t) => refByHex(t.h)).filter(Boolean);
+    const svg = refSvg(items, { color });
+    if (svg) {
+      return { ok: true, q, terms: found.terms, how: 'multi', color: color || '',
+        picks: found.tops.map((t) => ({ h: t.h, e: t.e, ko: t.ko, en: t.en, score: t.score })),
+        name: found.tops.map((t) => t.ko || t.en).join(', '), credit: REF_CREDIT, svg };
+    }
+  }
+  const results = found.results;
+  if (!results.length || results[0].score < REF_MIN_SCORE) {
+    return { ok: false, reason: 'nomatch', terms: found.terms, error: '‘' + found.terms.join(' ') + '’ 참고 그림이 없어요',
+      candidates: results.slice(0, 3).map((r) => ({ h: r.h, ko: r.ko, en: r.en, score: r.score })) };
+  }
+  const picked = await pickWithModel(q, results);
+  if (picked.idx < 0) {
+    return { ok: false, reason: 'nomatch', terms: found.terms, how: picked.how, error: '‘' + found.terms.join(' ') + '’ 에 딱 맞는 참고 그림이 없어요',
+      candidates: results.slice(0, 3).map((r) => ({ h: r.h, ko: r.ko, en: r.en, score: r.score })) };
+  }
+  const top = results[picked.idx] || results[0];
+  const item = refByHex(top.h);
+  const svg = refSvg(item, { color });
+  if (!svg) return { ok: false, reason: 'nomatch', terms: found.terms, error: '참고 그림을 옮기지 못했어요' };
+  return { ok: true, q, terms: found.terms, how: picked.how, color: color || '',
+    picks: [{ h: top.h, e: top.e, ko: top.ko, en: top.en, score: top.score }],
+    name: top.ko || top.en, credit: REF_CREDIT, svg };}
+
+// 14.33.1(업스트림)의 참고 사진 찾기 — 위 refDraw(번들 선화 따라 그리기)가 nomatch 로
+//   끝나 브라우저가 모델 직접 그리기(task=draw)로 내려갔을 때, ai.js 의 runDrawJob 이
+//   멀티모달 모델에게 보여 줄 참고 사진을 여기서 찾는다. 두 단계가 겹치지 않는다:
+//   번들에 있는 대상은 모델을 부르지 않고, 없는 대상만 이 경로로 온다.
+// ── ④ 해돌이 그림 참고 일러스트(모델 폴백용) ────────────────────────────────────────────
 // 14.33.1 · \"그림을 그려 줘\"가 흐트러지는 건 텍스트 모델이 좌표를 머릿속으로
 //   찍기 때문이다. 그러니 그리기 전에 '그릴 대상의 참고 일러스트'를 하나 찾아
 //   멀티모달 모델(제미나이 등)에게 이미지로 보여 주고 \"이 윤곽을 따라 귀엽게
@@ -770,7 +842,7 @@ export async function fetchDrawReference(raw, signal) {
   return out;
 }
 
-// ── ④ 라우트 ────────────────────────────────────────────────────────────────
+// ── ⑤ 라우트 ────────────────────────────────────────────────────────────────
 function qOf(req) {
   return String((req.query && (req.query.q || req.query.query)) || '').trim().slice(0, 200);
 }
@@ -817,6 +889,36 @@ export function registerAiTools(app) {
     } catch (e) {
       console.error('[ai/imgs]', e && e.message);
       return replyErr(reply, 502, '사진 검색에 닿지 못했어요 · 잠시 뒤 다시 시도해 주세요');
+    }
+  });
+
+  // 14.36.0 · 참고 일러스트 후보 — 어떤 그림이 있는지 본다(디버그·미리보기용, 모델 없음)
+  app.get('/api/ai/refs', async (req, reply) => {
+    const q = qOf(req);
+    if (q.length < 1) return replyErr(reply, 400, '무엇을 그릴지 적어 주세요');
+    if (!refsReady()) return replyErr(reply, 503, '참고 그림 묶음을 읽지 못했어요 · ' + (refsInfo().error || ''));
+    const got = refSearch(q, 8);
+    return reply.send({ ok: true, q, terms: got.terms, subjects: got.subjects, credit: REF_CREDIT,
+      results: got.results.map((r) => ({ h: r.h, e: r.e, ko: r.ko, en: r.en, score: r.score, paths: r.paths })) });
+  });
+
+  // 14.36.0 · 참고 일러스트를 찾아 펜 획용 SVG 로 — 그림 요청의 1순위 경로
+  app.post('/api/ai/refdraw', async (req, reply) => {
+    const b = (req.body && typeof req.body === 'object') ? req.body : {};
+    const q = String(b.q || b.query || '').trim().slice(0, 200);
+    if (q.length < 1) return replyErr(reply, 400, '무엇을 그릴지 적어 주세요');
+    const rl = rateHit(rlKey(req, 'refdraw'));
+    if (!rl.ok) return replyErr(reply, 429, `잠시 뒤에 다시 시도해 주세요 · ${RATE_N}번/${Math.round(RATE_WINDOW / 1000)}초`);
+    try {
+      const got = await refDraw(q);
+      if (!got.ok) {
+        // 못 찾은 건 오류가 아니다 — 브라우저가 모델 직접 그리기로 내려간다.
+        return reply.code(404).send(Object.assign({ ok: false }, got));
+      }
+      return reply.send(got);
+    } catch (e) {
+      console.error('[ai/refdraw]', e && e.message);
+      return replyErr(reply, 502, '참고 그림을 찾지 못했어요 · 잠시 뒤 다시 시도해 주세요');
     }
   });
 
