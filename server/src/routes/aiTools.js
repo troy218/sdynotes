@@ -741,7 +741,11 @@ export async function fetchDrawReference(raw, signal) {
   if (!s) return null;
   const ck = 'ref:' + s.toLowerCase();
   const hit = cacheGet(ck);
-  if (hit) return hit.data;                       // TTL 안의 같은 요청은 재검색 안 함
+  // cacheGet 은 저장된 데이터 자체를 돌려 준다({dataUrl,…} 또는 null).
+  //   예전엔 여기서 hit.data 를 다시 읽어 undefined 가 나와, 캐시에 든 참고를
+  //   못 쓰고 '예전 방식(참고 없이 그리기)'로 폴백했다 — 같은 요청의 두 번째
+  //   그림부터 윤곽선 따기가 절대 안 되던 원인.
+  if (hit) return hit;                            // TTL 안의 같은 요청은 재검색 안 함
   if (signal && signal.aborted) return null;
   let out = null;
   try {
@@ -761,6 +765,7 @@ export async function fetchDrawReference(raw, signal) {
   } catch (e) {
     console.error('[ai/drawref]', e && e.message);
   }
+  if (!out) console.error('[ai/drawref] 참고 일러스트를 못 찾아 예전 방식(참고 없이 그리기)으로 그립니다 ·', s);
   cachePut(ck, out);
   return out;
 }
