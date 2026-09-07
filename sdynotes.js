@@ -7322,6 +7322,29 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 9.1 · 제목줄의 쪽 이동칸 (입력 중에는 건드리지 않는다)
         const pn=document.getElementById('pgNow');
         if(pn){
+            // 페이지 번호 입력은 일반 숫자칸이라 기본 Enter 동작만으로는
+            // 스크롤 위치를 바꾸지 않는다. 한 번만 직접 이동을 연결하고,
+            // Enter 없이 입력을 끝내면(blur/change) 실제 현재 쪽을 되돌려
+            // 입력 중인 숫자가 화면의 현재 쪽과 어긋나지 않게 한다.
+            if(!pn.__sdyPageJumpBound){
+                pn.__sdyPageJumpBound=true;
+                const restoreCurrentPage=()=>{
+                    if(document.activeElement===pn) pn.blur();
+                    updatePageInfo();
+                    // 테스트 DOM/구형 웹뷰처럼 blur가 activeElement를 바꾸지
+                    // 못해도 입력칸은 반드시 실제 현재 쪽을 보여야 한다.
+                    if(document.activeElement===pn) pn.value=curPageIdx+1;
+                };
+                pn.addEventListener('keydown',e=>{
+                    if(e.key!=='Enter'||e.isComposing||e.keyCode===229) return;
+                    e.preventDefault();
+                    const n=parseInt(String(pn.value||''),10);
+                    if(Number.isFinite(n)) goToPage(n);
+                    restoreCurrentPage();
+                });
+                pn.addEventListener('blur',restoreCurrentPage);
+                pn.addEventListener('change',restoreCurrentPage);
+            }
             pn.max=doc.pages.length;
             if(document.activeElement!==pn) pn.value=curPageIdx+1;
         }

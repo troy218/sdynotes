@@ -82,6 +82,50 @@ def make_paper(path):
     return Path(path)
 
 
+def make_math_paper(path):
+    """A tiny vector-only math paper used for importer regression coverage.
+
+    It intentionally uses ordinary Times text plus explicit fraction rules rather
+    than a downloaded/copyrighted paper.  That exercises the same PDF geometry
+    decisions as the target article: a label at the far right, nested fractions,
+    and adjacent aligned rows that must not be swallowed by prose.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page(width=612, height=792)
+    page.insert_text((38, 55), "Formula reconstruction fixture", fontname="tibo", fontsize=14)
+    page.insert_text((38, 82), "The nearby sentence stays editable and is not part of the display.",
+                     fontname="tiro", fontsize=9)
+
+    # E = mc^2 with an equation number separated by hfill-like geometry.
+    page.insert_text((60, 120), "E = mc", fontname="tiro", fontsize=16)
+    page.insert_text((112, 114), "2", fontname="tiro", fontsize=10)
+    page.insert_text((300, 120), "(2.14)", fontname="tiro", fontsize=12)
+
+    # 1 + a/b over 2: two rules in one band, so the 2-D path must produce a
+    # nested \frac instead of a flat reading-order string.
+    page.insert_text((80, 170), "1 +", fontname="tiro", fontsize=14)
+    page.insert_text((115, 162), "a", fontname="tiro", fontsize=10)
+    page.draw_line((112, 168), (132, 168), color=(0, 0, 0), width=.8)
+    page.insert_text((118, 183), "b", fontname="tiro", fontsize=10)
+    page.draw_line((75, 197), (155, 197), color=(0, 0, 0), width=.8)
+    page.insert_text((105, 218), "2", fontname="tiro", fontsize=14)
+
+    # A two-row aligned-style display.  The rows remain separate editable math
+    # elements rather than being merged with the fixture prose.
+    page.insert_text((250, 280), "A = B + C", fontname="tiro", fontsize=14)
+    page.insert_text((250, 305), "D = E + F", fontname="tiro", fontsize=14)
+
+    # A positioned subscript/superscript pair for the text-vs-math classifier.
+    page.insert_text((60, 365), "Q", fontname="tiro", fontsize=16)
+    page.insert_text((69, 371), "i", fontname="tiro", fontsize=9)
+    page.insert_text((96, 355), "2", fontname="tiro", fontsize=9)
+    page.insert_text((112, 365), " = R", fontname="tiro", fontsize=16)
+
+    doc.save(path)
+    doc.close()
+    return Path(path)
+
+
 if __name__ == "__main__":
     import sys
     make_paper(sys.argv[1])

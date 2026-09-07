@@ -119,6 +119,16 @@ ok('가져오기 중복 정리(O(n^2))는 쪽마다 한 번만 돌린다',
   /const _sanDone=new WeakSet\(\)/.test(js) && /if\(!_sanDone\.has\(els\)\)/.test(js));
 
 // ── 이동 경로 ─────────────────────────────────────────────────────────
+const pageInfoSrc = js.slice(js.indexOf('function updatePageInfo'), js.indexOf('function scrollPageIntoView'));
+ok('페이지 번호 Enter는 goToPage로 이동하고 입력을 끝내면 현재 쪽을 복원한다',
+  /__sdyPageJumpBound/.test(pageInfoSrc)
+  && /addEventListener\('keydown',e=>/.test(pageInfoSrc)
+  && /e\.key!==\x27Enter\x27/.test(pageInfoSrc)
+  && /e\.isComposing/.test(pageInfoSrc) && /e\.keyCode===229/.test(pageInfoSrc)
+  && /Number\.isFinite\(n\)/.test(pageInfoSrc) && /goToPage\(n\)/.test(pageInfoSrc)
+  && /updatePageInfo\(\);/.test(pageInfoSrc) && /pn\.blur\(\)/.test(pageInfoSrc)
+  && /addEventListener\('blur',restoreCurrentPage\)/.test(pageInfoSrc)
+  && /addEventListener\('change',restoreCurrentPage\)/.test(pageInfoSrc));
 ok('페이지 바로가기와 찾기 이동은 스크롤 전에 목적 쪽을 올린다',
   /function goToPage\(n\)[\s\S]*?maintainPageWindow\(i,true\)[\s\S]*?_scrollBodyTo/.test(js)
   && /function revealHit\(hit,soft\)[\s\S]*?maintainPageWindow\(hit\.pageIdx,true\)/.test(js));

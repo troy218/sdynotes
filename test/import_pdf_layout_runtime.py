@@ -19,7 +19,7 @@ from PIL import Image
 from sdynotes_worker import importer
 from sdynotes_worker.pdf_layout import font_map, text_elements, overlap, detect_regions
 from sdynotes_worker.pdf_paint import filter_glyphs, SVG, _transform, _compose
-from import_pdf_fixture import make_paper
+from import_pdf_fixture import make_math_paper, make_paper
 
 
 def plain(page):
@@ -38,11 +38,14 @@ class PdfLayoutRuntime(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix="sdy-pdf-layout-")
         cls.dir = Path(cls.temp.name)
         cls.pdf = make_paper(cls.dir / "paper.pdf")
+        cls.math_pdf = make_math_paper(cls.dir / "math-paper.pdf")
         cls.img_patch = patch.object(importer, "IMG_DIR", str(cls.dir))
         cls.docs_patch = patch.object(importer, "DOCS_DIR", str(cls.dir))
         cls.img_patch.start(); cls.docs_patch.start()
         with pymupdf.open(cls.pdf) as doc:
             cls.pages = [importer._pdf_one_page(doc, i, None) for i in range(len(doc))]
+        with pymupdf.open(cls.math_pdf) as doc:
+            cls.math_page = importer._pdf_one_page(doc, 0, None)
 
     @classmethod
     def tearDownClass(cls):
@@ -140,6 +143,55 @@ class PdfLayoutRuntime(unittest.TestCase):
         equations = [e for e in self.pages[0]["els"] if e["type"] == "latex"]
         self.assertTrue(equations)
         self.assertTrue(any("mc" in e["latex"].replace(" ", "") for e in equations))
+
+    def test_display_equation_label_is_not_inside_the_editable_formula(self):
+        def ch(c, x):
+            return {"c": c, "origin": (x, 10), "bbox": (x, 2, x + 5, 12)}
+        chars = []
+        x = 0
+        for c in "E = mc":
+            chars.append(ch(c, x)); x += 7 if c != " " else 6
+        # TeX's hfill equation number can share a raw span without a space glyph.
+        x += 50
+        for c in "(2.14)":
+            chars.append(ch(c, x)); x += 7
+        line = {"spans": [{"font": "CMR10", "size": 10, "chars": chars}]}
+        reg = importer._display_region_of_line(line)
+        self.assertIsNotNone(reg)
+        self.assertLess(reg[2], 80)
+        self.assertNotIn("2.14", reg[4])
+
+    def test_vector_math_fixture_preserves_nested_fraction_rows_and_label(self):
+        formulas = [e["latex"] for e in self.math_page["els"] if e["type"] == "latex"]
+        self.assertIn(r"\frac{1 + \frac{a}{b}}{2}", formulas)
+        self.assertIn("A = B + C", formulas)
+        self.assertIn("D = E + F", formulas)
+        text = plain(self.math_page)
+        self.assertIn("(2.14)", text)
+        self.assertIn("nearby sentence stays editable", text)
+        self.assertTrue(all("(2.14)" not in formula for formula in formulas))
+
+    def test_tex_math_font_styles_and_accents_survive_reconstruction(self):
+        def span(font, text):
+            chars = []
+            x = 0
+            for c in text:
+                chars.append({"c": c, "origin": (x, 10), "bbox": (x, 2, x + 5, 12)})
+                x += 6
+            return {"font": font, "size": 10, "chars": chars}
+        tex = importer._spans_to_clean_latex([
+            span("CMSY10", "O"), span("MSBM10", "R"), span("RSFS10", "I"),
+            span("CMMIB10", "x"), span("CMR10", "AdS"),
+        ])
+        self.assertIn(r"\mathcal{O}", tex)
+        self.assertIn(r"\mathbb{R}", tex)
+        self.assertIn(r"\mathscr{I}", tex)
+        self.assertIn(r"\boldsymbol{x}", tex)
+        self.assertIn(r"\mathrm{AdS}", tex)
+        self.assertEqual(importer._pdf_text_to_latex("ˆs"), r"\hat{s}")
+        self.assertEqual(importer._pdf_text_to_latex("˜u"), r"\widetilde{u}")
+        self.assertEqual(importer.classify_glyph("circumflex"), ("accent", r"\hat"))
+        self.assertEqual(importer.classify_glyph("integraldisplay"), ("op", r"\int"))
 
     def test_original_pdf_is_not_mutated_by_conversion(self):
         with pymupdf.open(self.pdf) as doc:
