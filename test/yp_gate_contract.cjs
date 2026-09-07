@@ -19,6 +19,7 @@ const htmlAll = fs.readFileSync(path.join(ROOT, 'sdynotes.html'), 'utf8');
 const jsAll = [
   'sdynotes.js', 'src/music-player.js', 'src/focus-clock.js', 'src/live-updates.js',
   'src/idle-worker.js', 'src/mobile-viewport.js', 'src/auth.js', 'src/ai-assistant.js', 'src/chat.js',
+  'src/translate.js', 'src/cards.js',
 ].map(f => { try { return fs.readFileSync(path.join(ROOT, f), 'utf8'); } catch { return ''; } }).join('\n');
 const cssAll = fs.readFileSync(path.join(ROOT, 'sdynotes.css'), 'utf8');
 

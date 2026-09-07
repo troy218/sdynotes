@@ -64,6 +64,8 @@ const ASSETS = {
   '/src/ai-assistant.js': { file: 'src/ai-assistant.js', type: 'text/javascript; charset=utf-8' },
   '/src/chat.js': { file: 'src/chat.js', type: 'text/javascript; charset=utf-8' },
   '/src/translate.js': { file: 'src/translate.js', type: 'text/javascript; charset=utf-8' },
+  '/src/cards.js': { file: 'src/cards.js', type: 'text/javascript; charset=utf-8' },
+  '/src/server-status.js': { file: 'src/server-status.js', type: 'text/javascript; charset=utf-8' },
 };
 // 14.13.5 · sdynotes.js/css 는 항상 ?v= 버전과 함께 불러오므로 URL 자체가 버전
 // 스탬프다 → 브라우저가 장기 캐시(immutable)해도 배포 시 새 버전 URL 로 갱신된다.

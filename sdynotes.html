@@ -11,10 +11,10 @@
          ② package-lock.json "version" 2곳 (최상단 + packages."")
          ③ server/src/lib/config.js APP_VERSION
          ④ worker/sdynotes_worker/common.py APP_VERSION
-         ⑤ 여기(<meta application-version>) + sdynotes.css?v= + sdynotes.js?v=
-         · 위 2줄의 sdynotes.css?v= 와 본문 끝의 sdynotes.js?v= 가 이 값과
+         ⑤ 여기(<meta application-version>) + sdynotes.css?v= + sdynotes.js?v= + src/*.js?v=
+         · css/js 와 본문 끝 src 모듈들의 ?v= 가 이 값과
            다르면 apply.sh 가 배포를 중단한다.
-         · 이 파일·sdynotes.js·sdynotes.css 를 고쳤으면 ?v= 도 꼭 올려라.
+         · 이 파일·sdynotes.js·sdynotes.css·src 모듈을 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
     <meta name="application-version" content="14.38.0">
@@ -2561,5 +2561,7 @@
 <script src="src/ai-assistant.js?v=14.38.0" defer></script>
 <script src="src/chat.js?v=14.38.0" defer></script>
 <script src="src/translate.js?v=14.38.0" defer></script>
+<script src="src/cards.js?v=14.38.0" defer></script>
+<script src="src/server-status.js?v=14.38.0" defer></script>
 </body>
 </html>

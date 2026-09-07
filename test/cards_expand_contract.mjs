@@ -12,10 +12,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM, VirtualConsole } from 'jsdom';
+import { readAllJS } from './_frontend.mjs';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../sdynotes.css', import.meta.url), 'utf8');
-const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const js = readAllJS();
 
 /* ── 정적 계약 ─────────────────────────────────────────────────────────── */
 assert.match(html,
@@ -51,12 +52,12 @@ assert.match(js, /function fcardMaxSet\(on\)\{/,
   'fcardMaxSet 이 정의돼 있어야 한다');
 assert.match(js, /function _fcardMaxFill\(\)\{[\s\S]{0,300}sdyViewportBox/,
   '확장 크기는 창 이동범위와 같은 실측(sdyViewportBox)으로 재야 한다');
-const maxSetBody = (js.match(/function fcardMaxSet\(on\)\{[\s\S]*?\n    \}\n/) || [''])[0];
+const maxSetBody = (js.match(/function fcardMaxSet\(on\)\{[\s\S]*?\n\s*\}\n/) || [''])[0];
 assert.ok(maxSetBody.length > 100, 'fcardMaxSet 본문을 잘라 낼 수 있어야 한다');
 assert.ok(!/requestFullscreen|webkitRequestFullscreen/.test(maxSetBody),
   'fcardMaxSet 본문에 Fullscreen API 호출이 없어야 한다');
 assert.ok(!/requestFullscreen|webkitRequestFullscreen/.test(
-  (js.match(/function fcardToggleMax\([\s\S]*?\n    \}\n/) || [''])[0]),
+  (js.match(/function fcardToggleMax\([\s\S]*?\n\s*\}\n/) || [''])[0]),
   'fcardToggleMax 에도 Fullscreen API 호출이 없어야 한다');
 
 assert.match(js, /ri-fullscreen-exit-line[\s\S]{0,80}ri-fullscreen-line/,
