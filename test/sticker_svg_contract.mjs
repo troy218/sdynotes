@@ -25,7 +25,7 @@ const check = (name, cond) => { assert.ok(cond, name); pass++; console.log('  �
 const fnBody = (src, name) => {
   const m = src.match(new RegExp(`function ${name}\\([^)]*\\)\\s*\\{`));
   assert.ok(m, `${name} 함수가 존재해야 한다`);
-  return src.slice(m.index, m.index + 4200);
+  return src.slice(m.index, m.index + 5600);
 };
 
 // ── ① 벡터 조립 ─────────────────────────────────────────────────────────
@@ -46,6 +46,9 @@ const fnBody = (src, name) => {
   check('획 색·굵기·반올림 끝모양이 화면 규칙을 따른다',
     b.includes("el.color||'#111111'") && b.includes('el.size||2')
     && b.includes("stroke-linecap=\"round\"") && b.includes("stroke-linejoin=\"round\""));
+  check('페인트 채움과 회전도 벡터 스티커에 보존된다',
+    b.includes('el.fillColor') && b.includes('fill-opacity') && b.includes('strokeTransform(el)')
+    && b.includes('normalizedRotation(el.rotation)'));
 }
 
 // ── ③④ 폴백 · 보관함 저장 ──────────────────────────────────────────────

@@ -1438,8 +1438,9 @@
            잠깐의 자리 채움이라, 준비 배지를 따로 띄우지 않는다. */
         /* 이미지가 가장 뒤, 그 위에 글자, 펜 그림이 가장 앞 */
         .layer-img{z-index:2;}
-        .layer-text{z-index:3;}
-        .layer-stroke{z-index:4;}
+        .layer-fill{z-index:3;pointer-events:none;}
+        .layer-text{z-index:4;}
+        .layer-stroke{z-index:5;}
         /* 레이어는 선택 여부와 무관하게 항상 보인다. 이미지 선택을 감시하는
            .paper:has(...) 후손 규칙은 쓰지 않는다. 무거운 쪽의 .sel 변경마다
            글자 수천 개의 스타일을 다시 계산하던 중복 안전망이었다. */
@@ -1857,6 +1858,7 @@
         }
         .tool-cursor.pen{border:1.5px solid rgba(0,0,0,.65);background:rgba(0,0,0,.12);}
         .tool-cursor.marker{border:1.5px solid currentColor;background:rgba(255,235,59,.22);}
+        .tool-cursor.paint{border:2px solid currentColor;background:currentColor;opacity:.55;border-radius:3px 55% 55% 55%;transform:translate3d(var(--cursor-x,0),var(--cursor-y,0),0) translate(-50%,-50%) rotate(45deg);}
         .dark .tool-cursor.pen{border-color:rgba(255,255,255,.8);}
         .dark .tool-cursor.marker{border-color:rgba(255,255,255,.8);}
         .tool-cursor.eraser{border:2px dashed #ef4444;background:rgba(239,68,68,.1);}

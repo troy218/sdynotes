@@ -324,8 +324,32 @@ try {
   const refBox = boundingBox(refStrokes.slice(strokesBefore));
   check('따라 그린 그림도 크기 규약(폭 ≤ 320px)을 지킨다', refBox && refBox.w <= 320 && refBox.h <= 362, JSON.stringify(refBox));
   const saidRef = String((document.getElementById('aiOut') || {}).textContent || '');
-  check('무엇을 따라 그렸는지·출처를 말해 준다', /고양이/.test(saidRef) && /따라/.test(saidRef) && /OpenMoji/.test(saidRef), saidRef.slice(0, 120));
+  check('완료 말풍선은 참고 대상·출처 표시 없이 그린 결과만 알려 준다', /고양이/.test(saidRef)
+    && /컬러 펜/.test(saidRef) && !/참고|OpenMoji|CC BY/.test(saidRef), saidRef.slice(0, 120));
   check('그림 딱지가 붙는다', (document.getElementById('aiKind') || {}).textContent === '그림');
+
+  // 말풍선이 떠 있고 질문칸 포커스가 남아 있어도 종이의 그림을 누르는 순간
+  // 키보드 소유권은 노트로 돌아와야 한다. 그래야 Delete/Ctrl+Z가 대화칸이 아닌
+  // 방금 고른 그림에 적용된다.
+  qEl.focus();
+  const drawnNodes = [...document.querySelectorAll('#pagesStage .stroke-g')];
+  const pickedStroke = drawnNodes[strokesBefore];
+  assert.ok(pickedStroke, '방금 그린 펜 획 노드가 있다');
+  const hit = pickedStroke.querySelector('.stroke-hit') || pickedStroke;
+  hit.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 1, clientX: 180, clientY: 180 }));
+  document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, clientX: 180, clientY: 180 }));
+  await wait(80);
+  check('말풍선이 떠 있어도 그림을 누르면 해돌이 입력 포커스가 빠진다', document.activeElement !== qEl
+    && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('#aiAsk,#aiSay,#aiHist')));
+  const selectedCount = boxesOf(window.__sdyAiBridge.capture().text, '그림획').length;
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+  await wait(150);
+  check('그림 선택 뒤 Delete는 노트의 해당 그림 획을 지운다',
+    boxesOf(window.__sdyAiBridge.capture().text, '그림획').length === selectedCount - 1);
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }));
+  await wait(180);
+  check('종이를 누른 뒤 Ctrl+Z도 대화가 아니라 노트 편집을 되돌린다',
+    boxesOf(window.__sdyAiBridge.capture().text, '그림획').length === selectedCount);
 
   // 참고 그림이 없는 주제 → 예전처럼 모델이 직접 그린다(대체 경로)
   const fbBefore = boxesOf(window.__sdyAiBridge.capture().text, '그림획').length;
