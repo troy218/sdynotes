@@ -20,7 +20,7 @@ assert.ok(saveDoc, 'saveDoc should exist');
 assert.equal(saveDoc[1].includes("setSaveState('저장 중...')"), false,
   'autosave should not flash a saving banner on every change');
 
-const sync = html.match(/async function flushSync\(\)\{([\s\S]*?)\n    \}\n\n    \/\/ ============ 페이지 렌더/);
+const sync = html.match(/async function flushSync\(\)\{([\s\S]*?)\n    \}\n(?:[\s\S]*?)\/\/ ============ 페이지 렌더/);
 assert.ok(sync, 'flushSync should exist');
 const durableAt = sync[1].indexOf('jobs.forEach(enqueue);');
 const onlineAt = sync[1].indexOf('if(!isOnline())');

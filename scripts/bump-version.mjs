@@ -10,7 +10,7 @@
 //   ② package-lock.json                "version" 2곳 (최상단 + packages."")
 //   ③ server/src/lib/config.js         APP_VERSION
 //   ④ worker/sdynotes_worker/common.py APP_VERSION
-//   ⑤ sdynotes.html                    <meta application-version> + ?v= 2곳
+//   ⑤ sdynotes.html                    <meta application-version> + ?v= (css/js + src 모듈)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +31,8 @@ const targets = (v) => [
   { file: 'package-lock.json',                needle: `"version": "${v}"`,     want: 2 },
   { file: 'server/src/lib/config.js',         needle: `APP_VERSION = '${v}'`,  want: 1 },
   { file: 'worker/sdynotes_worker/common.py', needle: `APP_VERSION = "${v}"`,  want: 1 },
-  { file: 'sdynotes.html',                    needle: `?v=${v}`,               want: 2 },
+  // 메인 번들(css/js) + src/*.js 모듈 전부. 모듈을 추가하면 이 숫자가 늘어난다.
+  { file: 'sdynotes.html',                    needle: `?v=${v}`,               want: 13 },
   { file: 'sdynotes.html',                    needle: `content="${v}"`,        want: 1 },
 ];
 

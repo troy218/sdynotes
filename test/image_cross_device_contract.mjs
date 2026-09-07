@@ -36,7 +36,12 @@ async function freePort() {
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-imgx-'));
 process.env.SDY_BASE_DIR = TMP;
 { const REPO = path.resolve(new URL('..', import.meta.url).pathname); for (const f of ['sdynotes.html', 'sdynotes.js', 'sdynotes.css']) fs.copyFileSync(path.join(REPO, f), path.join(TMP, f)); }
-  fs.mkdirSync(path.join(TMP, 'src'), { recursive: true }); for (const f of fs.readdirSync(path.join(REPO, 'src'))) fs.copyFileSync(path.join(REPO, 'src', f), path.join(TMP, 'src', f));
+  fs.mkdirSync(path.join(TMP, 'src'), { recursive: true });
+  for (const f of fs.readdirSync(path.join(REPO, 'src'))) {
+    const from = path.join(REPO, 'src', f), to = path.join(TMP, 'src', f);
+    if (fs.statSync(from).isDirectory()) continue; // src/app 메가파트는 번들된 sdynotes.js 로만 제공
+    fs.copyFileSync(from, to);
+  }
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['server/src/index.js'], {

@@ -65,7 +65,11 @@ ok(changed === true && deck.cards[0].answer === 1 && deck.cards[2].answer === 0,
    `덱 치유: changed=${changed}, answers=${deck.cards.map(x=>x.answer).join(',')}`);
 
 // 6) 클라이언트 채점은 data-i(원본 인덱스) 기반이어야 섞임에 강하다
-const js = fs.readFileSync(path.join(root,'sdynotes.js'),'utf8');
+//    (암기 카드는 src/cards.js 로 분리됨)
+const js = [
+  fs.readFileSync(path.join(root,'sdynotes.js'),'utf8'),
+  fs.readFileSync(path.join(root,'src','cards.js'),'utf8'),
+].join('\n');
 ok(js.indexOf('data-i="${oi}"')>=0 && js.indexOf('pickOpt(${oi},this)')>=0,
    '클라이언트: 보기 버튼이 원본 인덱스(oi)를 data-i/onclick 으로 넘긴다');
 ok(/pickText===ansText|pickText\s*===?\s*ansText/.test(js),

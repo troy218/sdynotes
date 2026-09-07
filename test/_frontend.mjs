@@ -15,6 +15,8 @@ const PARTS = [
   '../src/ai-assistant.js',
   '../src/chat.js',
   '../src/translate.js',
+  '../src/cards.js',
+  '../src/server-status.js',
 ];
 
 export function readAllJS() {
