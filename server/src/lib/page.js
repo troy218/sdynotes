@@ -52,6 +52,9 @@ export function servePage(req, reply) {
 const ASSETS = {
   '/sdynotes.js': { file: 'sdynotes.js', type: 'text/javascript; charset=utf-8' },
   '/sdynotes.css': { file: 'sdynotes.css', type: 'text/css; charset=utf-8' },
+  '/assets/fonts/tinos-LICENSE.txt': { file: 'server/assets/fonts/tinos-LICENSE.txt', type: 'text/plain; charset=utf-8' },
+  '/assets/fonts/arimo-LICENSE.txt': { file: 'server/assets/fonts/arimo-LICENSE.txt', type: 'text/plain; charset=utf-8' },
+  '/assets/fonts/computer-modern-LICENSE.txt': { file: 'server/assets/fonts/computer-modern-LICENSE.txt', type: 'text/plain; charset=utf-8' },
 };
 // 14.13.5 · sdynotes.js/css 는 항상 ?v= 버전과 함께 불러오므로 URL 자체가 버전
 // 스탬프다 → 브라우저가 장기 캐시(immutable)해도 배포 시 새 버전 URL 로 갱신된다.
@@ -61,7 +64,8 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
 const assetCache = new Map(); // path -> {mtime, raw, gz, etag}
 
 export function serveAsset(req, reply, urlPath) {
-  const a = ASSETS[urlPath];
+  const font = /^\/assets\/fonts\/([a-z0-9-]+\.woff2)$/.exec(urlPath);
+  const a = ASSETS[urlPath] || (font && { file: `server/assets/fonts/${font[1]}`, type: 'font/woff2' });
   if (!a) return false;
   const full = `${BASE_DIR}/${a.file}`;
   let c = assetCache.get(urlPath);

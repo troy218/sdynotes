@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.37.0",
+  "version": "14.37.1",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -69,7 +69,9 @@
     "test:editlag": "node test/editor_edit_lag_contract.mjs && node test/editor_edit_lag_runtime.mjs",
     "test:fmtv2": "node test/editor_inline_fmt_v2_runtime.mjs",
     "test:activation": "node test/page_activation_runtime.mjs",
-    "bench:activation": "node test/page_activation_browser.mjs"
+    "bench:activation": "node test/page_activation_browser.mjs",
+    "test:pdf": "node test/import_pdf_frontend_runtime.mjs && python3 test/import_pdf_layout_runtime.py",
+    "bench:import": "node scripts/import-pdf-browser.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",
