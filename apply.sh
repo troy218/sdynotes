@@ -12,8 +12,11 @@
 #                                      예전 클라우드 모드: SDY_STORAGE=cloud
 #
 #  zip 안에  apply.sh · package.json · sdynotes.html · sdynotes.css · sdynotes.js ·
-#  server/ · worker/ · scripts/ 를 폴더 없이 넣어 보내고, 서버에서 이것만 실행하면 됩니다.
+#  src/ · server/ · worker/ · scripts/ 를 폴더 없이 넣어 보내고, 서버에서 이것만 실행하면 됩니다.
 #      bash apply.sh
+#  ※ src/ 는 HTML 이 ?v= 와 함께 따로 받는 '브라우저 분리 JS' 모듈 폴더다 (14.38).
+#     해돌이 AI(src/ai-assistant.js) · 서버 상태 계기판/알림(src/server-status.js) 등이
+#     여기 있다 — 이 폴더를 안 옮기면 그 기능들의 상태 불이 전부 꺼진 채로 보인다.
 #
 #  처음 실행 → Node/파이썬/서비스/nginx 까지 자동 설치
 #  두번째부터 → 파일만 교체하고 재시작 (설치 과정 건너뜀)
@@ -39,15 +42,27 @@ die(){ echo -e "\n\033[1;31m✗ $*\033[0m"; exit 1; }
 [ -f "$SRC/sdynotes.html" ]      || die "sdynotes.html 이 없습니다 (현재 위치: $SRC)"
 [ -f "$SRC/sdynotes.css" ]       || die "sdynotes.css 가 없습니다 — HTML이 참조하는 스타일 파일입니다 (현재 위치: $SRC)"
 [ -f "$SRC/sdynotes.js" ]        || die "sdynotes.js 가 없습니다 — HTML이 참조하는 스크립트 파일입니다 (현재 위치: $SRC)"
+[ -d "$SRC/src" ]                || die "src/ 폴더가 없습니다 — HTML이 src/*.js 를 ?v= 와 함께 따로 받습니다 (분리 JS, 배포 필수)"
 [ -f "$SRC/package.json" ]       || die "package.json 이 없습니다"
 [ -f "$SRC/server/src/index.js" ] || die "server/src/index.js 가 없습니다 — zip에 server/ 폴더를 통째로 넣어 주세요"
 [ -f "$SRC/worker/run.py" ]      || die "worker/run.py 가 없습니다 — zip에 worker/ 폴더를 통째로 넣어 주세요"
+
+# HTML 이 <script src="src/...js"> 로 따로 받는 모듈 — 배포 목록에서 하나라도 빠지면
+# 그 모듈이 통째로 404 나서 해돌이 AI 점·서버 상태 계기판 등이 켜지지 않는다.
+SRC_JS=$(sed -n 's/.*src="src\/\([^"]*\.js\)[^"]*".*/\1/p' "$SRC/sdynotes.html" | sort -u)
+[ -n "$SRC_JS" ] || die "sdynotes.html 에서 src/*.js 참조를 찾지 못했습니다 — HTML 구조를 확인해 주세요"
+for f in $SRC_JS; do
+    [ -f "$SRC/src/$f" ] || die "sdynotes.html 이 참조하는 src/$f 가 없습니다"
+done
 
 # 실행 중인 서버에 잘린 JS가 노출되기 전에 문법부터 검사한다. Node가 아직 없는
 # 최초 설치에서는 3단계 설치 후 서비스 기동 검사가 대신 맡는다.
 if command -v node >/dev/null 2>&1; then
     node --check "$SRC/sdynotes.js" >/dev/null || die "sdynotes.js 문법 오류 — 배포를 중단합니다"
     node --check "$SRC/server/src/index.js" >/dev/null || die "server/src/index.js 문법 오류 — 배포를 중단합니다"
+    for f in $SRC_JS; do
+        node --check "$SRC/src/$f" >/dev/null || die "src/$f 문법 오류 — 배포를 중단합니다"
+    done
 fi
 # HTML과 서버 버전이 어긋나면 브라우저가 이전 JS/CSS를 계속 조합할 수 있다.
 # (작업 후 버전을 올릴 때 함께 바꿔야 하는 5곳 = package.json · package-lock.json
@@ -66,6 +81,7 @@ say "0/6  배포 파일 확인"
 echo "  sdynotes.html  $(du -h "$SRC/sdynotes.html" | cut -f1)  ($(date -r "$SRC/sdynotes.html" '+%m-%d %H:%M'))"
 echo "  sdynotes.css   $(du -h "$SRC/sdynotes.css"  | cut -f1)  ($(date -r "$SRC/sdynotes.css"  '+%m-%d %H:%M'))"
 echo "  sdynotes.js    $(du -h "$SRC/sdynotes.js"   | cut -f1)  ($(date -r "$SRC/sdynotes.js"   '+%m-%d %H:%M'))"
+echo "  src/           $(find "$SRC/src" -name '*.js' 2>/dev/null | wc -l) 개 브라우저 분리 JS ($(for f in $SRC_JS; do echo -n "$f "; done))"
 echo "  server/        $(find "$SRC/server" -name '*.js' | wc -l) 개 JS 모듈"
 echo "  worker/        $(find "$SRC/worker" -name '*.py' | wc -l) 개 PY 모듈"
 
@@ -101,10 +117,21 @@ rm -rf "$APP_DIR/server" "$APP_DIR/worker" "$APP_DIR/scripts"
 cp -r "$SRC/server" "$APP_DIR/server"
 cp -r "$SRC/worker" "$APP_DIR/worker"
 [ -d "$SRC/scripts" ] && cp -r "$SRC/scripts" "$APP_DIR/scripts"
+
+# 브라우저 분리 JS(src/*.js) — 브라우저가 배포 중간에 '반쯤 쓰인 파일'을 받지
+# 않도록 새 폴더에 완성한 뒤 통째로 바꾼다 (배포 실패로 이 단계가 끊겨도 다음
+# 실행이 src.old/src.new 를 정리하고 다시 만든다).
+if [ -d "$SRC/src" ]; then
+    rm -rf "$APP_DIR/src.new" "$APP_DIR/src.old"
+    cp -r "$SRC/src" "$APP_DIR/src.new"
+    if [ -d "$APP_DIR/src" ]; then mv "$APP_DIR/src" "$APP_DIR/src.old"; fi
+    mv "$APP_DIR/src.new" "$APP_DIR/src"
+    rm -rf "$APP_DIR/src.old"
+fi
 sudo chown -R "$USER:$USER" "$APP_DIR"
 
 ok "sdynotes.html / .css / .js 배포됨 ($(du -h "$APP_DIR/sdynotes.html" | cut -f1), $(du -h "$APP_DIR/sdynotes.css" | cut -f1), $(du -h "$APP_DIR/sdynotes.js" | cut -f1))"
-ok "server/ + worker/ + package.json"
+ok "src/ (브라우저 분리 JS $(find "$APP_DIR/src" -maxdepth 1 -name '*.js' 2>/dev/null | wc -l)개) + server/ + worker/ + package.json"
 
 # ── Node 의존성 설치 ────────────────────────────────────────
 if [ -f "$APP_DIR/package.json" ] && [ ! -d "$APP_DIR/node_modules" ] || [ "$APP_DIR/package.json" -nt "$APP_DIR/node_modules/.sdy-deps" ]; then
@@ -424,6 +451,11 @@ server {
         access_log off;
     }
     location = /sdynotes.css {
+        root $APP_DIR;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        access_log off;
+    }
+    location /src/ {
         root $APP_DIR;
         add_header Cache-Control "public, max-age=31536000, immutable";
         access_log off;

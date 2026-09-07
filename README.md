@@ -691,6 +691,11 @@ sdynotes-fast/
 ├── sdynotes.html         프런트 마크업
 ├── sdynotes.css          프런트 스타일시트 (HTML이 참조 — 배포 필수)
 ├── sdynotes.js           프런트 스크립트 (HTML이 참조 — 배포 필수)
+├── src/                  브라우저 분리 JS (HTML이 ?v= 와 함께 따로 받음 — 배포 필수)
+│   ├── ai-assistant.js   해돌이(노트 AI 도우미) — AI 점(#aiDot)·검색창·말풍선
+│   ├── server-status.js  서버 상태 계기판 + 알림 센터
+│   ├── music-player.js · chat.js · translate.js · cards.js · auth.js … 분리 모듈
+│   └── app/              sdynotes.js 의 소스 조각 (scripts/bundle-frontend.mjs 가 이어 붙임)
 ├── apply.sh              배포 스크립트 (★서버에서 실행 — 최초 1회 데이터 자동 이전)
 ├── docs/
 │   └── ci-workflow.yml              CI 워크플로 — .github/workflows/ 로 옮기면 활성화
@@ -788,10 +793,13 @@ python3 worker/run.py
 
 ```bash
 # zip에 apply.sh · package.json · sdynotes.html · sdynotes.css · sdynotes.js ·
-# server/ · worker/ · scripts/ 를 모두 넣고
+# src/ · server/ · worker/ · scripts/ 를 모두 넣고
 bash apply.sh
 ```
 
+- `apply.sh` 는 **`src/` 도 `/var/www/memo/` 로 복사한다** — HTML이 `src/*.js`
+  (해돌이 AI · 서버 상태 계기판/알림 · 음악/채팅 등 분리 모듈)를 따로 받으므로
+  이 폴더가 빠지면 해당 기능들의 상태 불이 꺼진 채로 보인다.
 - `/var/www/memo/` 에 배포, systemd 서비스 2개:
   - `sdynotes`        (Node, :5000, 단일 프로세스)
   - `sdynotes-worker` (Python, 127.0.0.1:5100, 단일 프로세스)
