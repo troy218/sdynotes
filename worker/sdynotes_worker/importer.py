@@ -1,7 +1,7 @@
 """PDF/Word import engine + import endpoints.
 
-KEPT VERBATIM from the original backend (14.8.0) - the PDF pipeline is
-intentionally untouched. Only cross-module names are imported.
+Formula reconstruction is kept separate from the geometry/typography layer.
+Import and high-resolution backgrounds share an immutable per-page paint plan.
 """
 import base64
 import hashlib
@@ -25,6 +25,10 @@ from .cloud import _publish_live
 from .common import BASE_DIR, DOCS_DIR, IMG_DIR, JOBS_DIR, UPLOAD_DIR
 from .core import app
 from .notify import _notify_add
+from .pdf_paint import filter_glyphs as _pdf_filter_glyphs
+from .pdf_layout import (contained as _pdf_contained, intersects as _pdf_intersects,
+                         font_map as _pdf_font_map, detect_regions,
+                         text_elements as _pdf_text_elements)
 
 
 # ============ 문서 가져오기 (PDF / Word → 편집 가능한 요소) ============
@@ -2301,7 +2305,7 @@ def _big_math_bands(page, avoid=None):
             continue
         for ln in blk.get("lines", []):
             bb = ln.get("bbox")
-            if not bb or _is_prose(ln):
+            if not bb or _is_prose(ln) or _pdf_intersects(bb, avoid):
                 continue
             has_ext = False
             for sp in ln.get("spans", []):
@@ -2508,7 +2512,7 @@ def _big_math_bands(page, avoid=None):
     return bands, rules, gtables
 
 
-def _pdf_page_lines(page, avoid=None):
+def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=False):
     """한 페이지에서 단어를 뽑는다 (rawdict, 문자 단위 좌표 기반).
 
     반환: (lines, math_regions)
@@ -2523,6 +2527,26 @@ def _pdf_page_lines(page, avoid=None):
 
     lines = []
     math_regions = []
+    prose_glyphs = []
+    for block in rd.get("blocks", []):
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                name = span.get("font", "").lower()
+                if any(f in name for f in MATH_FONTS):
+                    continue
+                words = re.findall(r"[A-Za-z]{2,}", _span_text(span))
+                if not any(w.lower() in _COMMON_PROSE or (len(w) >= 3 and w.lower() not in _MATH_WORDS) for w in words):
+                    continue
+                for ch in span.get("chars", []):
+                    if ch.get("c", "").isalpha():
+                        bb = ch["bbox"]
+                        prose_glyphs.append(((bb[0]+bb[2])/2, (bb[1]+bb[3])/2))
+
+    def _touches_prose(bb):
+        # Small contaminated bands are not safe merely because they overlap
+        # less than the old 40pt threshold. Even one swallowed body glyph can
+        # produce a garbage equation and a hole in a paragraph.
+        return any(bb[0] <= x <= bb[2] and bb[1] <= y <= bb[3] for x, y in prose_glyphs)
 
 # ── 9.3 · 큰 수식 먼저 ────────────────────────────────────
     # 키 큰 적분/시그마, 큰 분수, 대입 기호가 있는 영역은 일반 줄 판정에
@@ -2532,9 +2556,20 @@ def _pdf_page_lines(page, avoid=None):
     _gt = {}
     _rules = []
     try:
-        bands, _rules, _gt = _big_math_bands(page, avoid=avoid)
+        bands, _rules, _gt = _big_math_bands(page, avoid=(avoid or []) + (math_avoid or []))
         doc = page.parent
-        for bb in bands:
+        bands = [bb for bb in bands if not _touches_prose(bb)
+                 and not _pdf_intersects(bb, (avoid or []) + (math_avoid or []))]
+        for bi, bb in enumerate(bands):
+            # Overlapping reconstructed bands can steal each other's limits or
+            # subscripts. Keep those ambiguous equations in the original vector
+            # layer; independently reconstructed, non-overlapping math is intact.
+            if preserve_math_glyphs and any(i != bi and _pdf_intersects(bb, [other])
+                                             for i, other in enumerate(bands)):
+                avoid = list(avoid or []) + [bb]
+                continue
+            if _pdf_intersects(bb, (avoid or []) + (math_avoid or [])) or _touches_prose(bb):
+                continue
             if (bb[2] - bb[0]) < 6 or (bb[3] - bb[1]) < 6:
                 continue
             try:
@@ -2542,6 +2577,9 @@ def _pdf_page_lines(page, avoid=None):
             except Exception:
                 tex = ""
             if not tex or len(tex) > 1200 or not _latex_is_sane(tex):
+                continue
+            if preserve_math_glyphs and r"\begin{aligned}" in tex:
+                avoid = list(avoid or []) + [bb]
                 continue
             # 10.4 · 그림 안 글자가 수식으로 오인된 쓰레기 버림
             if _tex_is_figure_junk(tex):
@@ -2562,7 +2600,7 @@ def _pdf_page_lines(page, avoid=None):
                         for sp in ln.get("spans", []):
                             if _span_text(sp).strip():
                                 szs.append(float(sp.get("size") or 10))
-            msz = sorted(szs)[len(szs) // 2] if szs else 10.0
+            msz = max(szs) if szs else 10.0
             math_regions.append({"x0": bb[0], "y0": bb[1], "x1": bb[2], "y1": bb[3],
                                  "display": True, "text": tex, "size": msz,
                                  "big": True})
@@ -2581,29 +2619,28 @@ def _pdf_page_lines(page, avoid=None):
                 return True
         return False
 
-    def _ln_in_avoid(bb):
-        if not avoid:
-            return False
-        la = max(1e-6, (bb[2] - bb[0]) * (bb[3] - bb[1]))
-        for a in avoid:
-            ox = min(bb[2], a[2]) - max(bb[0], a[0])
-            oy = min(bb[3], a[3]) - max(bb[1], a[1])
-            if ox > 0 and oy > 0 and (ox * oy) / la >= 0.5:
+    seen_chars = {}
+    def _duplicate_char(c, bb, font, flags, color):
+        # Deduplicate actual coincident glyphs, including PDFs with invisible
+        # OCR/overprint copies. Do not delete real repeated words nearby.
+        key = (c, font, flags, color, round(bb[0]), round(bb[1]))
+        for old in seen_chars.get(key, []):
+            if max(abs(bb[i] - old[i]) for i in range(4)) <= .25:
                 return True
+        seen_chars.setdefault(key, []).append(bb)
         return False
 
     for bi, blk in enumerate(rd.get("blocks", [])):
         if blk.get("type") != 0:
             continue
         blines = blk.get("lines", [])
-        # 회전된 글자는 배경에 원본 모습 그대로 둔다
-        if any(abs((ln.get("dir") or (1, 0))[0]) < 0.98 for ln in blines):
-            continue
         # 8.20: 블록 일부를 수식으로 잘라내지 않는다. 각 줄을 아래에서
         # "줄 전체 LaTeX" 또는 "줄 전체 텍스트" 중 하나로만 결정한다.
         for ln in blines:
             # 10.4 · 표 안 글자는 칸 텍스트로 옮겨지므로 줄 경로에서는 뺀다
-            if _ln_in_avoid(ln.get("bbox") or [0, 0, 0, 0]):
+            if (ln.get("dir") or (1, 0))[0] < .98:
+                continue
+            if _pdf_contained(ln.get("bbox") or [0, 0, 0, 0], avoid, tolerance=0):
                 continue
             # 9.3 · 큰 수식 밴드에 이미 들어간 줄은 건너뛴다.
             # (같은 글자가 LaTeX 와 텍스트 두 겹으로 나오는 것을 막는다)
@@ -2611,7 +2648,8 @@ def _pdf_page_lines(page, avoid=None):
                 continue
             _sanitize_line_glyphs(ln, _gt)   # 10.1 · 확장글꼴 글자 정리
             # 독립 수식으로 확실한 줄만 줄 전체를 LaTeX로 보존한다.
-            if _is_display_formula_line(ln):
+            if (not _pdf_intersects(ln.get("bbox", (0, 0, 0, 0)), (avoid or []) + (math_avoid or []))
+                    and _is_display_formula_line(ln)):
                 try:
                     # 9.0 · 줄 bbox 를 통째로 쓰지 않는다. 식 번호 '(3)' 을 떼고
                     #       식 본체 영역만 LaTeX 로 잡아야 폭이 부풀지 않아
@@ -2624,7 +2662,8 @@ def _pdf_page_lines(page, avoid=None):
                         ls=[float(s.get("size") or 10) for s in ln.get("spans",[]) if _span_text(s).strip()]
                         mtext="".join(_span_text(s) for s in ln.get("spans", [])).strip()
                         msz=sorted(ls)[len(ls)//2] if ls else 10
-                    if x1 > x0 and y1 > y0 and mtext and not _tex_is_figure_junk(mtext):
+                    if (x1 > x0 and y1 > y0 and mtext and not _tex_is_figure_junk(mtext)
+                            and not _touches_prose((x0, y0, x1, y1))):
                         math_regions.append({"x0": x0, "y0": y0, "x1": x1, "y1": y1,
                                              "display": True, "text": mtext, "size": msz})
                         # 식 번호는 아래 일반 텍스트 경로가 알아서 상자로 만든다.
@@ -2638,9 +2677,19 @@ def _pdf_page_lines(page, avoid=None):
             # 9.0 · 이 줄에서 수식 본체를 이미 떼어냈으면 남은 글자(식 번호 등)는
             #       단어 단위로 정밀 redact 해야 배경에 잔상이 안 남는다.
             ln_has_math = [bool(ln.get("_math_cut"))]
+            pending_space = False
             for sp in ln.get("spans", []):
+                if sp.get("alpha", 255) == 0:
+                    continue  # invisible OCR is not another visible text layer
                 size = sp.get("size") or 10
                 fname = (sp.get("font") or "").lower()
+                if preserve_math_glyphs and any(f in fname for f in MATH_FONTS):
+                    # A math-only font has a different encoding/shape from a
+                    # browser text font. If not reconstructed above, leave its
+                    # ORIGINAL glyph paths on the background; do not invent a
+                    # replacement symbol or rasterize neighbouring prose.
+                    pending_space = True
+                    continue
                 flags = sp.get("flags", 0)
                 bold = bool(flags & 16) or "bold" in fname
                 ital = bool(flags & 2) or "italic" in fname or "oblique" in fname
@@ -2649,12 +2698,20 @@ def _pdf_page_lines(page, avoid=None):
                     c = ch.get("c") or ""
                     bb = ch.get("bbox")
                     if not c.strip() or not bb:
-                        continue          # 공백은 아래 간격 판정으로 처리
+                        pending_space = pending_space or bool(c and c.isspace())
+                        continue
+                    if _pdf_contained(bb, avoid, tolerance=0):
+                        pending_space = True
+                        continue
+                    if _duplicate_char(c, bb, fname, flags, col):
+                        continue
                     chars.append({
                         "c": c, "b": bb,
                         "o": ch.get("origin") or (bb[0], bb[3]),
                         "sz": size, "bold": bold, "ital": ital, "col": col,
+                        "font": sp.get("font", ""), "flags": flags, "break": pending_space,
                     })
+                    pending_space = False
                     fcount[fname] = fcount.get(fname, 0) + 1
             if not chars:
                 continue
@@ -2668,7 +2725,7 @@ def _pdf_page_lines(page, avoid=None):
                     gap = ch["b"][0] - prev["b"][2]
                     thr = max(prev["sz"], ch["sz"]) * WORD_GAP_RATIO
                     dy = abs(ch["o"][1] - prev["o"][1])
-                    if gap > thr or dy > ch["sz"] * SUP_SUB_DY:
+                    if ch.get("break") or gap > thr or dy > ch["sz"] * SUP_SUB_DY:
                         if cur:
                             words.append(cur)
                         cur = []
@@ -3011,17 +3068,8 @@ def _mark_justify(lines, page_w):
             ln["j_right"] = c1
 
 
-def _font_map(name):
-    """PDF 원본 글꼴 이름 → 모양/자간이 가장 비슷한 앱 글꼴."""
-    n = (name or "").lower()
-    if any(k in n for k in ("times", "roman", "serif", "georgia", "garamond",
-                            "batang", "myeongjo", "myungjo", "바탕", "명조")):
-        return "times"
-    if any(k in n for k in ("courier", "mono", "consolas")):
-        return "mono"
-    if any(k in n for k in ("helv", "arial", "roboto", "sans")):
-        return "inter"   # 산세리프는 Inter 로 → 원본과 자폭 유사
-    return "noto"
+def _font_map(name, flags=0):
+    return _pdf_font_map(name, flags)
 
 
 def _line_aligns(lines, page_w):
@@ -3105,117 +3153,113 @@ def _word_html(wd, base_sz, base_y):
 
 
 def detect_page_figures_and_tables(page, pw, ph):
-    """13.4 · 피규어(도표/그림) 및 표(Table) 영역 정밀 감지.
-    2단 논문 칼럼 경계 자동 인식 및 피규어/표/수식 중복 추출 방지.
+    return detect_regions(page, pw, ph)
+
+
+def _pdf_raster_rect(rect, page_rect, dpi):
+    # get_pixmap rounds the clip outwards to device pixels. Use those SAME
+    # bounds for element placement/ownership so the crop is not rescaled/shifted.
+    import math
+    z = dpi / 72
+    r = pymupdf.Rect(rect) & page_rect
+    return pymupdf.Rect(math.floor(r.x0*z)/z, math.floor(r.y0*z)/z,
+                        math.ceil(r.x1*z)/z, math.ceil(r.y1*z)/z) & page_rect
+
+
+def _pdf_save_png(pm):
+    # Antialiased plots can have >700 colors; that does not make them photos.
+    # Tables/line art must never pass through the old quality=62 JPEG heuristic.
+    name = f"{uuid.uuid4().hex[:16]}.png"
+    pm.save(os.path.join(IMG_DIR, name))
+    return f"/api/import/img/{name}"
+
+
+def _pdf_save_snapshot(page, rect):
+    # Remove crossing glyphs ONLY when the text builder can paint them live.
+    # Rotated/math-only glyphs remain native: the crop holds the inside part,
+    # the background holds the outside part. Erasing them here would lose ink
+    # under the background's crop mask, with no live text to replace it.
+    crossing = []
+    for block in page.get_text("rawdict").get("blocks", []):
+        for line in block.get("lines", []):
+            if (line.get("dir") or (1, 0))[0] < .98:
+                continue
+            for span in line.get("spans", []):
+                if span.get("alpha", 255) == 0 or any(f in span.get("font", "").lower() for f in MATH_FONTS):
+                    continue
+                for ch in span.get("chars", []):
+                    bb = ch["bbox"]
+                    if _pdf_intersects(bb, [rect]) and not _pdf_contained(bb, [rect], tolerance=0):
+                        crossing.append([*ch["origin"], ch["c"]])
+    if not crossing:
+        return _pdf_save_png(page.get_pixmap(clip=rect, dpi=300, alpha=False))
+    svg, _ = _pdf_filter_glyphs(page.get_svg_image(text_as_path=True), crossing)
+    with pymupdf.open(stream=svg.encode(), filetype="svg") as cropped:
+        return _pdf_save_png(cropped[0].get_pixmap(clip=rect, dpi=300, alpha=False))
+
+
+def _pdf_save_background(doc, pno, plan, dpi, max_pixels, prefer_vector=True):
+    """Subtract exactly the emitted glyphs, preserving ALL other original paths.
+
+    The same immutable glyph/region plan is used for low/high resolution. This
+    also keeps unsupported inline math in its exact source shape without baking
+    an adjacent paragraph into a picture or erasing radicals via bbox redaction.
     """
-    blocks = page.get_text("blocks")
-    drawings = page.get_drawings()
-    images = page.get_image_info()
+    page = doc[pno]
+    svg, remaining = _pdf_filter_glyphs(page.get_svg_image(text_as_path=True),
+                                       plan.get("glyphs", []), plan.get("regions", []))
+    if not remaining and not page.get_images() and not page.get_drawings():
+        return None
+    if prefer_vector and len(svg) < 6 * 1024 * 1024:
+        url = _save_import_svg(svg)
+        if url:
+            return url
+    area = page.rect.width * page.rect.height / 72**2
+    dpi = min(dpi, max(72, int((max_pixels / max(area, 1e-6))**.5)))
+    with pymupdf.open(stream=svg.encode(), filetype="svg") as bgdoc:
+        return _pdf_save_png(bgdoc[0].get_pixmap(dpi=dpi, alpha=False))
 
-    tab_caps = []
-    fig_caps = []
-    for b in blocks:
-        text = b[4].strip()
-        if b[3] > ph * 0.97 or b[1] < ph * 0.03:
+
+def _store_pdf_bg_plans(pages, ref):
+    """Plans are immutable server-side data, not thousands of DOM/sync fields."""
+    import gzip
+    for page in pages:
+        plan = page.pop("pdfBg", None)
+        if not plan:
             continue
-        is_fig_cap = bool(re.match(r"^(?:Fig(?:ure|\.)?|FIG(?:URE|\.)?)\s*\d+\s*[:.]", text, re.IGNORECASE))
-        is_tab_cap = bool(re.match(r"^(?:Tab(?:le|\.)?|TABLE)\s*[\d\w.\-]+\s*[:.]", text, re.IGNORECASE)) or bool(re.match(r"^TABLE\s+[IVXLCDM\d]+", text))
+        name = os.path.join(DOCS_DIR, f"{ref}.bg{int(plan['sourcePage'])}.gz")
+        tmp = name + ".tmp"
+        try:
+            with gzip.open(tmp, "wt", encoding="utf-8") as fp:
+                json.dump(plan, fp, ensure_ascii=False, separators=(",", ":"))
+            os.replace(tmp, name)
+            for el in page["els"]:
+                if el.get("pdfBg") == 2:
+                    el["pdfRef"] = ref
+        except OSError as e:
+            # High-res upgrades are optional. Do not fail a good import because
+            # the additional plan cannot be saved; retain its existing pixels.
+            print(f"[import] background upgrade disabled: {e}")
+            for el in page["els"]:
+                el.pop("pdfBg", None)
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
-        if is_tab_cap:
-            tab_caps.append({"rect": pymupdf.Rect(b[:4]), "text": text})
-        elif is_fig_cap:
-            fig_caps.append({"rect": pymupdf.Rect(b[:4]), "text": text})
 
-    figure_boxes = []
-    table_boxes = []
-    avoid = []
-
-    # 1. Figures: 캡션 상단에 위치한 그래픽 요소(드로잉/이미지) 클러스터링 (칼럼 경계 보호)
-    for fc in fig_caps:
-        cr = fc["rect"]
-        is_full_width = (cr.width > pw * 0.6) or (cr.x0 < pw * 0.3 and cr.x1 > pw * 0.7)
-        col_left = 0 if is_full_width else (0 if cr.x1 <= pw * 0.55 else pw * 0.45)
-        col_right = pw if is_full_width else (pw * 0.55 if cr.x1 <= pw * 0.55 else pw)
-
-        fig_cluster = None
-        for d in drawings:
-            r = d.get("rect")
-            if not r: continue
-            if abs(r.y1 - r.y0) <= 2.5 and (r.x1 - r.x0) < 60: continue
-            if r.y1 <= cr.y0 + 4 and r.y0 >= cr.y0 - 450:
-                if r.x0 >= col_left - 10 and r.x1 <= col_right + 10:
-                    dr_box = pymupdf.Rect(r.x0, r.y0, r.x1, r.y1 if r.y1 > r.y0 else r.y0 + 1)
-                    fig_cluster = dr_box if fig_cluster is None else (fig_cluster | dr_box)
-        for im in images:
-            ir = pymupdf.Rect(im["bbox"])
-            if ir.y1 <= cr.y0 + 4 and ir.y0 >= cr.y0 - 450:
-                if ir.x0 >= col_left - 10 and ir.x1 <= col_right + 10:
-                    fig_cluster = ir if fig_cluster is None else (fig_cluster | ir)
-
-        if fig_cluster and not fig_cluster.is_empty:
-            for b in blocks:
-                br = pymupdf.Rect(b[:4])
-                if br.y1 <= cr.y0 + 2 and br.y0 >= fig_cluster.y0 - 8:
-                    if br.x0 >= col_left - 10 and br.x1 <= col_right + 10:
-                        if br.intersects(pymupdf.Rect(fig_cluster.x0 - 20, fig_cluster.y0 - 15, fig_cluster.x1 + 25, fig_cluster.y1 + 15)):
-                            if len(b[4].strip().split('\n')) <= 3 and len(b[4].strip()) < 180:
-                                fig_cluster = fig_cluster | br
-
-            r = pymupdf.Rect(max(0, fig_cluster.x0 - 2), max(0, fig_cluster.y0 - 2),
-                             min(pw, fig_cluster.x1 + 2), min(ph, fig_cluster.y1 + 2))
-            if r.width >= 25 and r.height >= 25:
-                figure_boxes.append({"rect": r, "caption": fc["text"]})
-                avoid.append([r.x0, r.y0, r.x1, r.y1])
-
-    # 2. Booktabs Tables: Table 캡션 하단에 위치한 가로 규칙선(Rules) 기반 감지
-    for tc in tab_caps:
-        tcr = tc["rect"]
-        is_full_width = (tcr.width > pw * 0.6) or (tcr.x0 < pw * 0.3 and tcr.x1 > pw * 0.7)
-        col_left = 0 if is_full_width else (0 if tcr.x1 <= pw * 0.55 else pw * 0.45)
-        col_right = pw if is_full_width else (pw * 0.55 if tcr.x1 <= pw * 0.55 else pw)
-
-        tab_lines = []
-        for d in drawings:
-            r = d.get("rect")
-            if not r: continue
-            if (r.x1 - r.x0) >= 40 and abs(r.y1 - r.y0) <= 3.0:
-                if r.y0 >= tcr.y1 - 5 and r.y0 <= tcr.y1 + 400:
-                    if r.x0 >= col_left - 10 and r.x1 <= col_right + 10:
-                        tab_lines.append(r)
-        if len(tab_lines) >= 2:
-            tbox = pymupdf.Rect(min(r.x0 for r in tab_lines) - 2,
-                                tcr.y0 - 2,
-                                max(r.x1 for r in tab_lines) + 2,
-                                max(r.y1 for r in tab_lines) + 2)
-            if not any(tbox.intersects(pymupdf.Rect(a)) for a in avoid):
-                table_boxes.append({"rect": tbox, "type": "booktabs", "caption": tc["text"]})
-                avoid.append([tbox.x0, tbox.y0, tbox.x1, tbox.y1])
-
-    # 3. Grid Tables: 명시적 표 캡션이 있거나 진짜 격자 구조를 가진 경우만 추출
-    try:
-        tbl_finder = page.find_tables()
-        for t in (tbl_finder.tables if tbl_finder else []):
-            tb = pymupdf.Rect(t.bbox)
-            if tb.width < 30 or tb.height < 12: continue
-            if any(tb.intersects(pymupdf.Rect(a)) for a in avoid): continue
-            grid = t.extract() or []
-            filled = [c for r in grid for c in (r or []) if c and str(c).strip()]
-            has_tab_cap = any(abs(tc["rect"].y1 - tb.y0) < 60 or abs(tc["rect"].y0 - tb.y1) < 40 for tc in tab_caps)
-            if len(grid) >= 2 and len(grid[0] or []) >= 2 and (has_tab_cap or (len(filled) >= 6 and len(filled) / max(1, len(grid)*len(grid[0])) >= 0.4)):
-                table_boxes.append({"rect": tb, "type": "grid", "table": t})
-                avoid.append([tb.x0, tb.y0, tb.x1, tb.y1])
-    except Exception:
-        pass
-
-    # 4. Standalone raster images (캡션이 없는 독립 사진/다이어그램)
-    for im in images:
-        ir = pymupdf.Rect(im["bbox"])
-        if ir.width >= 120 and ir.height >= 90:
-            if not any(ir.intersects(pymupdf.Rect(a)) for a in avoid):
-                figure_boxes.append({"rect": ir, "caption": "Image"})
-                avoid.append([ir.x0, ir.y0, ir.x1, ir.y1])
-
-    return figure_boxes, table_boxes, avoid
+def _pdf_fallback_page(doc, pno, target_w, target_h):
+    """Last resort: one faithful original page, never a blank or doubled page."""
+    page = doc[pno]
+    scale = min(target_w / page.rect.width, target_h / page.rect.height)
+    area = page.rect.width * page.rect.height / 72**2
+    dpi = min(150, max(24, int((10_000_000 / max(area, 1e-6))**.5)))
+    url = _pdf_save_png(page.get_pixmap(dpi=dpi, alpha=False))
+    return {"id": _imp_uid("p"), "tables": [], "importMode": "snapshot-fallback",
+            "els": [{"type": "image", "id": _imp_uid("i"), "url": url,
+                     "x": round((target_w-page.rect.width*scale)/2, 3), "y": 0,
+                     "w": round(page.rect.width*scale, 3), "h": round(page.rect.height*scale, 3),
+                     "isBg": 1, "locked": True}]}
 
 
 def _pdf_one_page(doc, pno, on_page_done, cache=None,
@@ -3223,6 +3267,20 @@ def _pdf_one_page(doc, pno, on_page_done, cache=None,
     """1쪽 변환: 추출 → 글자 제거 → 배경 저장 → 단어 상자. (13.4 고정밀 피규어/표/수식 분리)"""
     try:
         page = doc[pno]
+        if page.rotation:
+            # Bake /Rotate into a private page. Text extraction and SVG origins
+            # then share the same displayed coordinate system, without mutating
+            # the source. Retain the original page identity for later upgrades.
+            with pymupdf.open() as normalized:
+                normalized.insert_pdf(doc, from_page=pno, to_page=pno)
+                normalized[0].remove_rotation()
+                out = _pdf_one_page(normalized, 0, None, target_w=target_w, target_h=target_h)
+            if out.get("pdfBg"):
+                out["pdfBg"]["sourcePage"] = pno
+            for el in out["els"]:
+                if el.get("pdfBg") == 2:
+                    el["pdfPage"] = pno
+            return out
         pw, ph = page.rect.width, page.rect.height
         if pw <= 0 or ph <= 0:
             return {"id": _imp_uid("p"), "els": [], "tables": []}
@@ -3236,149 +3294,34 @@ def _pdf_one_page(doc, pno, on_page_done, cache=None,
             return _px(v * sc)
 
         fig_table_els = []
-        tbl_els, tbl_meta = [], []
-
-        # ── 13.4 · 피규어 및 표 정밀 감지 ──────────────────────────
-        figure_boxes, table_boxes, avoid = detect_page_figures_and_tables(page, pw, ph)
-
-        # 1) 피규어 영역을 고화질(200 DPI) 독립 이미지 요소로 분리
-        for fb in figure_boxes:
+        figure_boxes, table_boxes, _ = detect_page_figures_and_tables(page, pw, ph)
+        avoid, removed_regions = [], []
+        # Only successfully saved snapshots are removed from the background.
+        # If a crop/save fails, its original pixels remain there, with no text
+        # overlay. Never silently lose an entire figure on an I/O failure.
+        for region, role in ([(f, "figure") for f in figure_boxes]
+                             + [(t, "table") for t in table_boxes if t.get("snapshot")]):
+            r = _pdf_raster_rect(region["rect"], page.rect, 300)
+            avoid.append(list(r))
             try:
-                r = fb["rect"]
-                pm = page.get_pixmap(clip=r, dpi=200, alpha=False)
-                furl = _save_pixmap_bg(pm)
-                pm = None
-                if furl:
+                url = _pdf_save_snapshot(page, r)
+                if url:
+                    removed_regions.append(list(r))
                     fig_table_els.append({
-                        "type": "image", "id": _imp_uid("i"), "url": furl,
-                        "x": X(r.x0), "y": Y(r.y0),
-                        "w": max(10, _px(r.width * sc)), "h": max(10, _px(r.height * sc)),
-                        "imported": 1, "locked": True,
+                        "type": "image", "id": _imp_uid("i"), "url": url,
+                        "x": round(r.x0 * sc + offx, 3), "y": round(r.y0 * sc, 3),
+                        "w": round(r.width * sc, 3), "h": round(r.height * sc, 3),
+                        "imported": 1, "locked": True, "pdfRole": role,
                     })
             except Exception as e:
-                print(f"[import] 피규어 추출 실패: {e}")
-
-        # 2) 표(Table) 처리: Booktabs는 고화질 이미지로, Grid 표는 앱 표 요소로 추출
-        for tb_info in table_boxes:
-            r = tb_info["rect"]
-            if tb_info.get("type") == "booktabs":
-                try:
-                    pm = page.get_pixmap(clip=r, dpi=200, alpha=False)
-                    turl = _save_pixmap_bg(pm)
-                    pm = None
-                    if turl:
-                        fig_table_els.append({
-                            "type": "image", "id": _imp_uid("i"), "url": turl,
-                            "x": X(r.x0), "y": Y(r.y0),
-                            "w": max(10, _px(r.width * sc)), "h": max(10, _px(r.height * sc)),
-                            "imported": 1, "locked": True,
-                        })
-                except Exception as e:
-                    print(f"[import] 북탭 표 추출 실패: {e}")
-            elif tb_info.get("type") == "grid":
-                tab = tb_info["table"]
-                try:
-                    tb = tab.bbox
-                    grid = tab.extract() or []
-                    ex = []
-                    for row in tab.rows:
-                        for c in (row.cells or []):
-                            if c: ex.extend([c[0], c[2]])
-                    if ex:
-                        ex.sort()
-                        edges = [ex[0]]
-                        for v in ex[1:]:
-                            if v - edges[-1] > 2.5: edges.append(v)
-                        if len(edges) >= 3:
-                            cw = [max(6.0, edges[k + 1] - edges[k]) for k in range(len(edges) - 1)]
-                            ch = []
-                            for row in tab.rows:
-                                cs = [c for c in (row.cells or []) if c]
-                                ch.append(max(6.0, (max(c[3] for c in cs) - min(c[1] for c in cs))) if cs else 10.0)
-                            tid = _imp_uid("tb")
-                            tbl_meta.append({"id": tid, "x": X(tb[0]), "y": Y(tb[1]),
-                                             "cw": [_px(w * sc) for w in cw],
-                                             "ch": [_px(h * sc) for h in ch],
-                                             "color": "#d1d5db", "lw": 1, "bg": 1})
-                            for ri, row in enumerate(tab.rows):
-                                for ci, c in enumerate(row.cells or []):
-                                    if not c: continue
-                                    txt = ""
-                                    if ri < len(grid) and ci < len(grid[ri] or []):
-                                        txt = str(grid[ri][ci] or "").strip()
-                                    if not txt: continue
-                                    xc = (c[0] + c[2]) / 2.0
-                                    col = min(range(len(edges) - 1),
-                                              key=lambda k: abs((edges[k] + edges[k + 1]) / 2 - xc))
-                                    html = (txt.replace("&", "&amp;").replace("<", "&lt;")
-                                                .replace(">", "&gt;").replace("\n", "<br>"))
-                                    fs = round(max(6.0, min(15.0, min(9.0, ch[ri] * 0.66) * sc)), 1)
-                                    tbl_els.append({
-                                        "type": "text", "id": _imp_uid("t"), "html": html,
-                                        "x": X(edges[col]) + 3, "y": Y(c[1]) + 2,
-                                        "w": max(14, _px((edges[col + 1] - edges[col]) * sc) - 6),
-                                        "h": max(10, _px(ch[ri] * sc) - 3),
-                                        "fontSize": fs, "align": "left",
-                                        "tbl": {"tid": tid, "r": ri, "c": col},
-                                    })
-                except Exception:
-                    pass
-
-        lines, math_regions = _pdf_page_lines(page, avoid=avoid)
-        # 표/피규어 영역에 밴드가 이미 만들어졌다면 한 번 더 정리
-        if avoid and math_regions:
-            def _mr_in_avoid(m):
-                cx, cy = (m["x0"] + m["x1"]) / 2.0, (m["y0"] + m["y1"]) / 2.0
-                return any(a[0] - 1 <= cx <= a[2] + 1 and a[1] - 1 <= cy <= a[3] + 1
-                           for a in avoid)
-            math_regions = [m for m in math_regions if not _mr_in_avoid(m)]
-
-        # ── 반복 구조 예측 캐시 ──
-        sig = None
-        if cache is not None:
-            try:
-                head = "".join(
-                    f"{round(ln['x0'])},{round(ln['y0'])}," +
-                    "".join(ch["c"] for wd in ln["words"] for ch in wd["chars"])
-                    for ln in lines[:80])
-                math_sig = "|".join((r.get("text") or "") for r in math_regions)
-                sig = hashlib.md5(
-                    (head + "|M:" + math_sig + f"|{len(lines)}|{round(pw)}x{round(ph)}")
-                    .encode("utf-8")).hexdigest()
-                if tbl_meta or fig_table_els:
-                    sig = None
-                hit = cache.get(sig)
-                if hit:
-                    els = []
-                    for el in hit:
-                        ne = dict(el)
-                        ne["id"] = _imp_uid("t" if ne["type"] == "text" else "m" if ne["type"] == "latex" else "i")
-                        els.append(ne)
-                    if on_page_done:
-                        on_page_done()
-                    return {"id": _imp_uid("p"), "els": els, "tables": []}
-            except Exception:
-                sig = None
+                print(f"[import] {role} snapshot kept in background: {e}")
+        # Table glyphs use original positioned text over the original rules and
+        # fills. Do not invent gray borders, padding, fonts or merged-cell grids.
+        table_rects = [list(t["rect"]) for t in table_boxes]
+        lines, math_regions = _pdf_page_lines(page, avoid=avoid, math_avoid=table_rects,
+                                              preserve_math_glyphs=True)
 
         _line_aligns(lines, pw)
-        _mark_justify(lines, pw)
-
-        # 중복 제거: 같은 자리의 같은 글자·인용 번호가 두 겹인 PDF 대응
-        seen = {}
-        for ln in lines:
-            kept = []
-            for wd in ln["words"]:
-                text = "".join(ch["c"] for ch in wd["chars"]).strip()
-                box = (wd["x0"], wd["y0"], wd["x1"], wd["y1"])
-                dup = any(max(abs(box[i] - old[i]) for i in range(4)) <= 1.25
-                          for old in seen.get(text, []))
-                if dup:
-                    continue
-                seen.setdefault(text, []).append(box)
-                kept.append(wd)
-            ln["words"] = kept
-        lines = [ln for ln in lines if ln["words"]]
-
         # 수식 영역 안에 남은 일반 텍스트 조각을 한 번 더 제거
         if math_regions:
             for ln in lines:
@@ -3404,6 +3347,7 @@ def _pdf_one_page(doc, pno, on_page_done, cache=None,
 
         # ── ⓪ 수식은 LaTeX 요소 하나로 만든다 ──
         math_els = []
+        rendered_math = []
         for mr in math_regions:
             try:
                 rx0, ry0, rx1, ry1 = mr["x0"], mr["y0"], mr["x1"], mr["y1"]
@@ -3419,6 +3363,7 @@ def _pdf_one_page(doc, pno, on_page_done, cache=None,
                 fs = round(max(6.0, min(52.0, float(mr.get("size") or 10) * sc)), 1)
                 ink_h = _px((y1 - y0) * sc)
                 hh = max(8, ink_h if ink_h >= _px(fs * 0.75) else _px(fs * (1.15 if display else 1.05)))
+                rendered_math.append([x0, y0, x1, y1])
                 math_els.append({
                     "type": "latex", "id": _imp_uid("m"), "latex": latex,
                     "x": X(x0), "y": Y(y0),
@@ -3431,191 +3376,35 @@ def _pdf_one_page(doc, pno, on_page_done, cache=None,
             except Exception as e:
                 print(f"[import] {pno+1}쪽 LaTeX 변환 실패: {e}")
 
-        # ── ① 배경: 지우고 래스터화 ──
+        # Capture exact glyph identities for converted equations, including
+        # large brackets whose INK extends beyond their nominal region bbox.
+        math_glyphs = []
+        for block in page.get_text("rawdict").get("blocks", []):
+            for ln in block.get("lines", []):
+                for sp in ln.get("spans", []):
+                    for ch in sp.get("chars", []):
+                        bb = ch["bbox"]
+                        cx, cy = (bb[0]+bb[2])/2, (bb[1]+bb[3])/2
+                        if any(r[0]-.2 <= cx <= r[2]+.2 and r[1]-.2 <= cy <= r[3]+.2 for r in rendered_math):
+                            math_glyphs.append([round(ch["origin"][0], 4), round(ch["origin"][1], 4), ch["c"]])
+        # One immutable ownership plan is reused when upgrading the background.
+        plan = {"v": 2, "sourcePage": pno,
+                "glyphs": [[round(ch["o"][0], 4), round(ch["o"][1], 4), ch["c"]]
+                           for ln in lines for wd in ln["words"] for ch in wd["chars"]] + math_glyphs,
+                "regions": removed_regions + rendered_math}
         bg_els = []
-        try:
-            has_img = False
-            try:
-                has_img = len(page.get_images(full=False)) > 0
-            except Exception:
-                pass
-            need_bg = True
-            try:
-                if not has_img and not page.get_drawings():
-                    need_bg = False
-            except Exception:
-                pass
-            if not need_bg:
-                raise _NoBackground
-
-            # 피규어 및 표 영역 지우기 (배경 잔상/중복 방지)
-            for a in avoid:
-                try:
-                    page.add_redact_annot(pymupdf.Rect(
-                        a[0] - 0.3, a[1] - 0.5, a[2] + 0.3, a[3] + 0.5))
-                except Exception:
-                    pass
-            # 수식 영역 지우기
-            for mr in math_regions:
-                try:
-                    page.add_redact_annot(pymupdf.Rect(
-                        mr["x0"] - 0.3, mr["y0"] - 0.5,
-                        mr["x1"] + 0.3, mr["y1"] + 0.5))
-                except Exception:
-                    pass
-            # 텍스트 줄 지우기
-            for ln in lines:
-                if ln.get("has_math"):
-                    for wd in ln["words"]:
-                        page.add_redact_annot(pymupdf.Rect(
-                            wd["x0"] - 0.3, wd["y0"] - 0.5,
-                            wd["x1"] + 0.3, wd["y1"] + 0.5))
-                else:
-                    page.add_redact_annot(pymupdf.Rect(
-                        ln["x0"] - 0.3, ln["y0"] - 0.6,
-                        ln["x1"] + 0.3, ln["y1"] + 0.6))
-
-            kw = {"images": getattr(pymupdf, "PDF_REDACT_IMAGE_PIXELS",
-                                   pymupdf.PDF_REDACT_IMAGE_NONE)}
-            touched = getattr(pymupdf, "PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED", None)
-            if touched is not None:
-                kw["graphics"] = touched
-            try:
-                page.apply_redactions(**kw)
-            except TypeError:
-                try:
-                    page.apply_redactions(images=kw["images"])
-                except Exception:
-                    page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
-
-            bg_url = None
-            try:
-                dpi = BG_DPI_CUR
-                area_in2 = (pw / 72.0) * (ph / 72.0)
-                if area_in2 * dpi * dpi > BG_PX_CUR:
-                    dpi = max(96, int((BG_PX_CUR / max(1e-6, area_in2)) ** 0.5))
-                pm = page.get_pixmap(dpi=dpi, alpha=False)
-                try:
-                    zoom = dpi / 72.0
-                    wipes = []
-                    for mr in math_regions:
-                        wipes.append((mr["x0"] - 1.8, mr["y0"] - 1.8,
-                                      mr["x1"] + 1.8, mr["y1"] + 1.8))
-                    for a in (avoid or []):
-                        wipes.append((a[0] - 1.0, a[1] - 1.0, a[2] + 1.0, a[3] + 1.0))
-                    try:
-                        for rr in page_rules(page):
-                            wipes.append((rr[0] - 0.8, rr[1] - 1.4,
-                                          rr[2] + 0.8, rr[3] + 1.4))
-                    except Exception:
-                        pass
-                    for x0, y0, x1, y1 in wipes:
-                        pr = pymupdf.Rect(x0 * zoom, y0 * zoom, x1 * zoom, y1 * zoom)
-                        try:
-                            pm.set_rect(pr, (255, 255, 255))
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-                bg_url = _save_pixmap_bg(pm)
-                pm = None
-            except Exception as e:
-                print(f"[import] {pno+1}쪽 래스터 실패: {e}")
-
-            if not bg_url and not has_img:
-                try:
-                    svg = page.get_svg_image(text_as_path=True)
-                    if svg and len(svg) < 6 * 1024 * 1024:
-                        bg_url = _save_import_svg(svg)
-                except Exception as e:
-                    print(f"[import] {pno+1}쪽 SVG 실패: {e}")
-
-            if bg_url:
-                bg_els.append({
-                    "type": "image", "id": _imp_uid("i"), "url": bg_url,
-                    "x": _px(offx), "y": 0,
-                    "w": _px(pw * sc), "h": _px(ph * sc),
-                    "isBg": 1, "locked": True,
-                })
-        except _NoBackground:
-            pass
-        except Exception as e:
-            print(f"[import] {pno+1}쪽 배경 실패: {e}")
-
-        # ── 문단 단위 글상자 (단어는 내부 절대좌표 스팬) ──
-        text_els = []
-        groups, by_id = [], {}
-        for ln in lines:
-            k = ln.get("blk", id(ln))
-            if k not in by_id:
-                by_id[k] = []
-                groups.append(by_id[k])
-            by_id[k].append(ln)
-
-        for glines in groups:
-            x0 = min(l["x0"] for l in glines); y0 = min(l["y0"] for l in glines)
-            x1 = max(l["x1"] for l in glines); y1 = max(l["y1"] for l in glines)
-            aligns = [l.get("align", "left") for l in glines]
-            align = max(set(aligns), key=aligns.count)
-            pad = 1.0
-            x = X(x0 - pad)
-            y = Y(y0 - pad)
-            w = max(10, _px((x1 - x0 + pad * 2) * sc))
-            h = max(10, _px((y1 - y0 + pad * 2) * sc))
-            el_fs = round(max(
-                5.0, max(wd["size"] for l in glines for wd in l["words"]) * sc), 1)
-            fcnt = {}
-            for l in glines:
-                fn = l.get("font") or ""
-                if fn:
-                    fcnt[fn] = fcnt.get(fn, 0) + 1
-            el_font = _font_map(max(fcnt, key=fcnt.get) if fcnt else "")
-
-            spans = []
-            for ln in glines:
-                fs_ln = max(wd["size"] for wd in ln["words"])
-                vs = max(2.0, fs_ln * sc * 0.15)
-                ltop = _px((ln["y0"] - y0 + pad) * sc - vs)
-                lh = max(6, _px((ln["y1"] - ln["y0"]) * sc) + int(round(vs * 2)))
-                just = ln.get("just", False)
-                jattr = ' data-j="1"' if just else ""
-                jpos = None
-                if just and len(ln["words"]) > 1:
-                    wpts = [w["x1"] - w["x0"] for w in ln["words"]]
-                    first_x = ln["words"][0]["x0"]
-                    gap_pts = max(0.5, (ln["j_right"] - first_x - sum(wpts))
-                                  / (len(wpts) - 1))
-                    jpos = []
-                    cx_ = first_x
-                    for k_ in range(len(wpts)):
-                        jpos.append(cx_)
-                        cx_ += wpts[k_] + gap_pts
-                for wi, wd in enumerate(ln["words"]):
-                    wx = jpos[wi] if jpos is not None else wd["x0"]
-                    lx = _px((wx - x0 + pad) * sc)
-                    fs = round(max(5.0, wd["size"] * sc), 1)
-                    inner = _word_html(wd, wd["size"], ln["base"])
-                    spans.append(
-                        f'<span data-fs="{fs}"{jattr} style="position:absolute;'
-                        f'left:{lx}px;top:{ltop}px;line-height:{lh}px;'
-                        f'font-size:{fs}px;white-space:nowrap">'
-                        f'{inner}<i class="zsp"> </i></span>')
-            text_els.append({
-                "type": "text", "id": _imp_uid("t"),
-                "html": "".join(spans),
-                "x": x, "y": y, "w": w, "h": h,
-                "fontSize": el_fs, "font": el_font,
-                "align": align, "tight": 1,
-            })
-
-        els = bg_els + fig_table_els + math_els + text_els + tbl_els
-        if sig is not None:
-            cache[sig] = [dict(e) for e in els]
-        return {"id": _imp_uid("p"), "els": els,
-                "tables": tbl_meta if tbl_meta else []}
+        bg_url = _pdf_save_background(doc, pno, plan, BG_DPI_CUR, BG_PX_CUR)
+        if bg_url:
+            bg_els.append({"type": "image", "id": _imp_uid("i"), "url": bg_url,
+                           "x": round(offx, 3), "y": 0,
+                           "w": round(pw * sc, 3), "h": round(ph * sc, 3),
+                           "isBg": 1, "locked": True, "pdfBg": 2, "pdfPage": pno})
+        text_els = _pdf_text_elements(lines, sc, offx, _imp_uid)
+        els = bg_els + fig_table_els + math_els + text_els
+        return {"id": _imp_uid("p"), "els": els, "tables": [], "pdfBg": plan}
     except Exception as e:
-        print(f"[import] {pno+1}쪽 변환 실패, 건너: {e}")
-        return {"id": _imp_uid("p"), "els": [], "tables": []}
+        print(f"[import] {pno+1}쪽 원본 보존 폴백: {e}")
+        return _pdf_fallback_page(doc, pno, target_w, target_h)
     finally:
         if on_page_done:
             try:
@@ -3711,7 +3500,11 @@ def _pdf_to_pages_safe(data, on_page=None, target_w=PAGE_W, target_h=PAGE_H):
 
 
 def _pdf_one_page_safe(doc, pno, target_w=PAGE_W, target_h=PAGE_H):
-    """최소 변환: 배경 없이 단어 상자만. 자식 프로세스가 죽었을 때 쓰는 안전 모드."""
+    """Resource-failure retry: retain the original page before trying text only."""
+    try:
+        return _pdf_fallback_page(doc, pno, target_w, target_h)
+    except Exception:
+        pass
     try:
         page = doc[pno]
         pw, ph = page.rect.width, page.rect.height
@@ -3765,77 +3558,7 @@ def _pdf_one_page_safe(doc, pno, target_w=PAGE_W, target_h=PAGE_H):
                 seen_words.setdefault(tx,[]).append(bb); keep.append(wd)
             ln["words"]=keep
         lines=[ln for ln in lines if ln["words"]]
-        groups, by_id = [], {}
-        for ln in lines:
-            k = ln.get("blk", id(ln))
-            if k not in by_id:
-                by_id[k] = []
-                groups.append(by_id[k])
-            by_id[k].append(ln)
-        for glines in groups:
-            x0 = min(l["x0"] for l in glines); y0 = min(l["y0"] for l in glines)
-            x1 = max(l["x1"] for l in glines); y1 = max(l["y1"] for l in glines)
-            aligns = [l.get("align", "left") for l in glines]
-            align = max(set(aligns), key=aligns.count)
-            pad = 1.0
-            x = _px((x0 - pad) * sc + offx)
-            y = _px((y0 - pad) * sc)
-            w = max(10, _px((x1 - x0 + pad * 2) * sc))
-            h = max(10, _px((y1 - y0 + pad * 2) * sc))
-            # 대표 크기·글꼴 (5.2 렌더 유지 + 글꼴 매핑만 부가)
-            el_fs = round(max(
-                5.0, max(wd["size"] for l in glines for wd in l["words"]) * sc), 1)
-            fcnt = {}
-            for l in glines:
-                fn = l.get("font") or ""
-                if fn:
-                    fcnt[fn] = fcnt.get(fn, 0) + 1
-            el_font = _font_map(max(fcnt, key=fcnt.get) if fcnt else "")
-
-            # ── 5.2 그대로: 단어는 원본 좌표 절대 배치, 픽셀 크기,
-            #    세로는 줄 전체 잉크 기준(높이 균일), 끝에 일반 공백 한 칸.
-            # 양쪽 정렬 판별은 페이지 단위(_mark_justify)에서 완료됨.
-
-            spans = []
-            for ln in glines:
-                # 줄 상자에 상하 숨통: 브라우저 글꼴의 디센더(g,y,p 꼬리)와
-                # 어센더가 줄 잉크보다 깊어도 잘리지·겹치지 않게.
-                fs_ln = max(wd["size"] for wd in ln["words"])
-                vs = max(2.0, fs_ln * sc * 0.15)
-                ltop = _px((ln["y0"] - y0 + pad) * sc - vs)
-                lh = max(6, _px((ln["y1"] - ln["y0"]) * sc) + int(round(vs * 2)))
-                just = ln.get("just", False)
-                jattr = ' data-j="1"' if just else ""
-                # 양쪽 정렬 줄: 서버가 PDF 좌표만으로 균등 간격을 구해 굽는다.
-                # (클라이언트는 이 줄을 일절 수정 안 함 → 환경 차이·키 흔들림 제로)
-                jpos = None
-                if just and len(ln["words"]) > 1:
-                    wpts = [w["x1"] - w["x0"] for w in ln["words"]]
-                    first_x = ln["words"][0]["x0"]
-                    gap_pts = max(0.5, (ln["j_right"] - first_x - sum(wpts))
-                                  / (len(wpts) - 1))
-                    jpos = []
-                    cx_ = first_x
-                    for k_ in range(len(wpts)):
-                        jpos.append(cx_)
-                        cx_ += wpts[k_] + gap_pts
-                for wi, wd in enumerate(ln["words"]):
-                    wx = jpos[wi] if jpos is not None else wd["x0"]
-                    lx = _px((wx - x0 + pad) * sc)
-                    fs = round(max(5.0, wd["size"] * sc), 1)
-                    inner = _word_html(wd, wd["size"], ln["base"])
-                    spans.append(
-                        f'<span data-fs="{fs}"{jattr} style="position:absolute;'
-                        f'left:{lx}px;top:{ltop}px;line-height:{lh}px;'
-                        f'font-size:{fs}px;white-space:nowrap">'
-                        f'{inner}<i class="zsp"> </i></span>')
-            els.append({
-                "type": "text", "id": _imp_uid("t"),
-                "html": "".join(spans),
-                "x": x, "y": y, "w": w, "h": h,
-                "fontSize": el_fs, "font": el_font,
-                "align": align, "tight": 1,
-            })
+        els.extend(_pdf_text_elements(lines, sc, offx, _imp_uid))
         return {"id": _imp_uid("p"), "els": els, "tables": []}
     except Exception as e:
         print(f"[import] {pno+1}쪽 최소 변환 실패: {e}")
@@ -3844,7 +3567,7 @@ def _pdf_one_page_safe(doc, pno, target_w=PAGE_W, target_h=PAGE_H):
 
 # ── 격리 변환: 변환은 '별도 프로세스'에서 ────────────────────
 # 자식이 세그폴트/OOM 으로 죽어도 메인 서버는 절대 죽지 않는다.
-# 죽으면 안전 모드(텍스트만)로 해당 청크를 재시도하고,
+# 죽으면 안전 모드(원본 스냅샷 우선)로 해당 청크를 재시도하고,
 # 그것도 죽으면 빈 쪽으로 채워 '무조건 끝까지' 완료한다.
 # 메모리/동시성은 배포 시 RAM 에 맞춰 apply.sh 가 주입한다
 # (SDY_IMP_MAX_CONCURRENT, SDY_IMP_CHILD_MEM_MB).
@@ -4287,6 +4010,9 @@ def _imp_worker(jid, src, name, kind):
         if not pages:
             pages = [{"id": _imp_uid("p"), "els": [], "tables": []}]
 
+        if kind == "pdf":
+            _store_pdf_bg_plans(pages, jid)
+
         # 그림은 서버에 파일로 두고 문서에는 주소만 넣는다 (용량 문제 해결)
         for pg_ in pages:
             for el in pg_.get("els", []):
@@ -4571,84 +4297,32 @@ _HIBG_CACHE = {}          # (ref, pno) -> url
 _HIBG_LOCK = threading.Lock()
 
 
-def _render_hi_bg(src, pno):
-    """원본 PDF 의 pno 쪽 배경을 고해상도(300dpi)로 렌더해 URL 을 돌려준다."""
-    import pymupdf
-    doc = pymupdf.open(src)
-    try:
-        page = doc[pno]
-        pw, ph = page.rect.width, page.rect.height
-        if pw <= 0 or ph <= 0:
-            return None
-        lines, math_regions = _pdf_page_lines(page)
-        # 글자·수식 영역을 redact 해 순수 배경만 남긴다
-        try:
-            for mr in math_regions:
-                page.add_redact_annot(pymupdf.Rect(
-                    mr["x0"] - 0.3, mr["y0"] - 0.5,
-                    mr["x1"] + 0.3, mr["y1"] + 0.5))
-            for ln in lines:
-                if ln.get("has_math"):
-                    for wd in ln["words"]:
-                        page.add_redact_annot(pymupdf.Rect(
-                            wd["x0"] - 0.3, wd["y0"] - 0.5,
-                            wd["x1"] + 0.3, wd["y1"] + 0.5))
-                else:
-                    page.add_redact_annot(pymupdf.Rect(
-                        ln["x0"] - 0.3, ln["y0"] - 0.6,
-                        ln["x1"] + 0.3, ln["y1"] + 0.6))
-            kw = {"images": getattr(pymupdf, "PDF_REDACT_IMAGE_PIXELS",
-                                   pymupdf.PDF_REDACT_IMAGE_NONE)}
-            touched = getattr(pymupdf, "PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED", None)
-            if touched is not None:
-                kw["graphics"] = touched
-            try:
-                page.apply_redactions(**kw)
-            except TypeError:
-                try:
-                    page.apply_redactions(images=kw["images"])
-                except Exception:
-                    page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
-        except Exception:
-            pass
-        # 고해상도 렌더 (픽셀 상한으로 과도한 메모리 방지)
-        dpi = 300
-        area_in2 = (pw / 72.0) * (ph / 72.0)
-        max_px = 18_000_000
-        if area_in2 * dpi * dpi > max_px:
-            dpi = max(220, int((max_px / max(1e-6, area_in2)) ** 0.5))
-        pm = page.get_pixmap(dpi=dpi, alpha=False)
-        try:
-            zoom = dpi / 72.0
-            wipes = []
-            for mr in math_regions:
-                wipes.append((mr["x0"] - 1.8, mr["y0"] - 1.8,
-                              mr["x1"] + 1.8, mr["y1"] + 1.8))
-            try:
-                for rr in page_rules(page):
-                    wipes.append((rr[0] - 0.8, rr[1] - 1.4,
-                                  rr[2] + 0.8, rr[3] + 1.4))
-            except Exception:
-                pass
-            for x0, y0, x1, y1 in wipes:
-                pr = pymupdf.Rect(x0 * zoom, y0 * zoom, x1 * zoom, y1 * zoom)
-                try:
-                    pm.set_rect(pr, (255, 255, 255))
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        raw = pm.tobytes("png")
-        pm = None
-        d_url = _img_data_url(raw, keep_big=True)
-        if not d_url:
-            return None
-        return _save_import_img(d_url)
-    except Exception as e:
-        print(f"[hibg] {pno}쪽 렌더 실패: {e}")
+def _render_hi_bg(src, pno, plan=None):
+    """Upgrade with the SAME ownership plan, never re-detect an edited page.
+
+    Legacy documents have no plan. Keep their existing background rather than
+    replacing it with differently segmented pixels (which can duplicate figures).
+    """
+    if not plan or plan.get("v") != 2:
         return None
-    finally:
-        doc.close()
+    with pymupdf.open(src) as doc:
+        source_page = int(plan.get("sourcePage", pno))
+        if doc[source_page].rotation:
+            with pymupdf.open() as normalized:
+                normalized.insert_pdf(doc, from_page=source_page, to_page=source_page)
+                normalized[0].remove_rotation()
+                return _pdf_save_background(normalized, 0, plan, 300, 18_000_000, prefer_vector=False)
+        return _pdf_save_background(doc, source_page, plan, 300, 18_000_000,
+                                    prefer_vector=False)
+
+
+def _load_pdf_bg_plan(ref, pno):
+    import gzip
+    try:
+        with gzip.open(os.path.join(DOCS_DIR, f"{ref}.bg{pno}.gz"), "rt", encoding="utf-8") as fp:
+            return json.load(fp)
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 # ============ 쪽 미리보기(래스터) — '어크로뱃처럼 즉시 보이기' ============
@@ -4744,12 +4418,16 @@ def import_hibg(ref, pno):
     src = os.path.join(DOCS_DIR, f"{ref}.src")
     if not ref or not os.path.exists(src):
         return jsonify({"ok": False, "error": "원본 없음"}), 404
-    key = (ref, pno)
+    plan = _load_pdf_bg_plan(ref, pno)
+    if not plan or plan.get("v") != 2:
+        return jsonify({"ok": False, "error": "기존 배경 유지 (레이아웃 정보 없음)"}), 404
+    digest = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()[:16]
+    key = (ref, pno, digest)
     with _HIBG_LOCK:
         if key in _HIBG_CACHE:
             return jsonify({"ok": True, "url": _HIBG_CACHE[key]})
     try:
-        url = _render_hi_bg(src, pno)
+        url = _render_hi_bg(src, pno, plan)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
     if not url:

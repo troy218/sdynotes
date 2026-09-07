@@ -267,7 +267,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         {id:'poor',   label:'푸어스토리',   css:"'Poor Story','Pretendard Variable',cursive"},
         {id:'blackhan',label:'검은고딕',    css:"'Black Han Sans','Pretendard Variable',sans-serif"},
         {id:'myeongjo',label:'나눔명조',    css:"'Nanum Myeongjo',serif"},
-        {id:'times',  label:'Times New Roman', css:"'Times New Roman','Nanum Myeongjo',serif"},
+        {id:'times',  label:'Times New Roman', css:"'SDY Times','Times New Roman','Liberation Serif','Nanum Myeongjo',serif"},
+        {id:'cmroman',label:'Computer Modern',css:"'SDY Computer Modern','Latin Modern Roman','Times New Roman',serif"},
+        {id:'arial',label:'Arial / Helvetica',css:"'SDY Helvetica',Arial,'Liberation Sans',sans-serif"},
         {id:'coding', label:'코딩체',      css:"'Nanum Gothic Coding',monospace"},
         {id:'inter',  label:'Inter',      css:"'Inter','Pretendard Variable',sans-serif"},
         {id:'playfair',label:'Playfair',  css:"'Playfair Display',serif"},
@@ -6710,7 +6712,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const drop=new Set();
         // 표 셀은 서로 맞닿고 기존 글상자 위에 놓일 수도 있는 정상 구조다.
         // 일반 가져오기 중복 제거에 섞으면 작은 셀이 전부 사라져 선만 남는다.
-        const texts=out.filter(e=>e.type==='text'&&!e.tbl&&e.x!=null&&(e.w||0)>2&&(e.h||0)>2);
+        const texts=out.filter(e=>e.type==='text'&&!e.tbl&&!e.pdfText&&e.x!=null&&(e.w||0)>2&&(e.h||0)>2);
+        // PDF paragraphs can geometrically contain separate equation numbers,
+        // captions or another fragment. Their glyphs were already deduplicated
+        // by the importer; bbox containment must not delete different words.
         const latexs=out.filter(e=>e.type==='latex'&&e.x!=null);
         // 글상자 수가 지나치게 많으면(O(n²) 폭발) 가까운 이웃(최대 60개)끼리만
         //   비교한다 — PDF 행 단위 배치는 겹침 후보가 항상 가까이 있기 때문이다.
@@ -7377,9 +7382,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const paper=paperAt(pi);
         const bg=paper&&paper.querySelector('.paper-img.pdf-bg img');
         if(!bg) return;
+        const bgEl=(page.els||[]).find(e=>e.type==='image'&&e.isBg);
+        if(!bgEl||bgEl.pdfBg!==2||/\.svg(?:[?#]|$)/i.test(bg.getAttribute('src')||'')){
+            _hiBgDone.add(pi); return;
+        }
+        const sourcePage=Number.isInteger(bgEl.pdfPage)?bgEl.pdfPage:pi;
+        const sourceRef=bgEl.pdfRef||doc.__ref;
         _hiBgBusy.add(pi);
         try{
-            const r=await fetch('/api/import/bg/'+encodeURIComponent(doc.__ref)+'/'+pi,{cache:'no-store'});
+            const r=await fetch('/api/import/bg/'+encodeURIComponent(sourceRef)+'/'+sourcePage,{cache:'no-store'});
             const d=await r.json().catch(()=>({}));
             if(doc!==d0||window._renderVersion!==rv) return;
             if(d0.pages[pi]!==page){ _hiBgBusy.delete(pi); return; }
@@ -7389,6 +7400,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(el) el.url=d.url;
                 if(bg.isConnected) bg.src=d.url;         // 화면에 보이면 즉시 교체
                 _hiBgDone.add(pi);
+            }else if(r.status===404||r.status===410){
+                _hiBgDone.add(pi); // expired source/missing legacy plan: no retry storm
             }
         }catch(e){}
         if(doc===d0&&window._renderVersion===rv) _hiBgBusy.delete(pi);
@@ -7585,6 +7598,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     // 상자 안에 '부분적으로만' 지정된 글자 크기(span style="font-size")가 있으면
     // 상자 배율과 같은 비율로 함께 키우고, 실제로 바꾼 것이 있으면 true 를 준다.
+    function _scalePdfSpan(sp,f,v){
+        if(!sp.dataset||!(parseFloat(sp.dataset.pdfW)>0)) return false;
+        // Resize source geometry together, not just its painted font.
+        const fs=Math.max(1,+(v*f).toFixed(3));
+        for(const key of ['pdfW','pdfBase']){
+            const old=parseFloat(sp.dataset[key]);
+            if(Number.isFinite(old)) sp.dataset[key]=String(+(old*f).toFixed(3));
+        }
+        for(const key of ['left','top']){
+            const old=parseFloat(sp.style[key]);
+            if(Number.isFinite(old)) sp.style[key]=(old*f).toFixed(3)+'px';
+        }
+        sp.dataset.fs=String(fs); sp.style.lineHeight=fs+'px'; sp.style.fontSize=fs+'px';
+        return true;
+    }
     function scaleInlineFS(c,f){
         if(!c||!f) return false;
         let spans=null;
@@ -7593,6 +7621,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         let n=0;
         spans.forEach(sp=>{
             const v=parseFloat(sp.style.fontSize); if(!v) return;
+            if(_scalePdfSpan(sp,f,v)){ n++; return; }
             sp.style.fontSize=Math.max(2,Math.round(v*f))+'px'; n++;
         });
         return n>0;
@@ -7995,6 +8024,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             _fitProbe.style.fontSize=(el.fontSize||20)+'px';
             _fitProbe.style.lineHeight='1.05';
             _fitProbe.innerHTML=latexHTML(el.latex||'',!!el.displayMath);
+            // Match the actual imported .latex-box, not KaTeX's default 1.21em
+            // font and 1em display margins (which shrank export-only formulas).
+            const k=_fitProbe.querySelector('.katex'), d=_fitProbe.querySelector('.katex-display');
+            if(k){ k.style.fontSize='1em'; k.style.lineHeight='1.05'; }
+            if(d) d.style.margin='0';
             const rw=Math.max(1,_fitProbe.scrollWidth), rh=Math.max(1,_fitProbe.scrollHeight);
             return Math.max(.35,Math.min(1,Math.min(bw/rw,bh/rh)));
         }catch(e){ return 1; }
@@ -8391,6 +8425,31 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             &&rec.ls===(el.ls||0)&&rec.wsp===(el.wsp||0)&&rec.lg===(el.lg||1)
             &&rec.fonts===_fontState()&&rec.epoch===_tightFontEpoch?rec:null;
     }
+    let _pdfMeasureCtx;
+    const _pdfBaselineMetrics=new Map();
+    function _pdfSpanMetrics(s,c,fs){
+        try{
+            // Inline edits/highlights can introduce mixed fonts inside a run.
+            // Canvas with ONE font is only exact for the original flat markup.
+            if(s.children&&Array.from(s.children).some(n=>!n.classList.contains('zsp'))) return null;
+            _pdfMeasureCtx=_pdfMeasureCtx||document.createElement('canvas').getContext('2d');
+            if(!_pdfMeasureCtx) return null;
+            const font=[s.style.fontStyle||c.style.fontStyle||'normal',s.style.fontWeight||c.style.fontWeight||'400',fs+'px',
+                s.style.fontFamily||c.style.fontFamily].join(' ');
+            const ctx=_pdfMeasureCtx; ctx.font=font;
+            // The zero-width copy/search spacer must not participate in width.
+            const text=(s.textContent||'').trimEnd(), measured=ctx.measureText(text);
+            let baseline=_pdfBaselineMetrics.get(font);
+            if(baseline==null){
+                const fm=ctx.measureText('Hg');
+                baseline=Number.isFinite(fm.fontBoundingBoxAscent)&&Number.isFinite(fm.fontBoundingBoxDescent)
+                    ?(fs+fm.fontBoundingBoxAscent-fm.fontBoundingBoxDescent)/2:fs*.8;
+                _pdfBaselineMetrics.set(font,baseline);
+            }
+            const ls=parseFloat(c.style.letterSpacing)||0;
+            return {w:measured.width+Math.max(0,text.length-1)*ls,baseline};
+        }catch(e){ return null; }
+    }
     function _measureTightSpans(c,el,job,until){
         job=job||{readAt:0}; until=until==null?Infinity:until;
         if(!job.sps){
@@ -8405,9 +8464,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const sps=job.sps;
         while(job.readAt<sps.length){
             const i=job.readAt++, s=sps[i];
-            const m={i,x:s.offsetLeft,y:s.offsetTop,w:s.scrollWidth,h:s.offsetHeight,
+            const m={i,x:parseFloat(s.style.left)||0,y:parseFloat(s.style.top)||0,w:s.scrollWidth,h:s.offsetHeight,
                 fs:parseFloat(s.dataset.fs)||parseFloat(s.style.fontSize)||14,
-                justified:s.hasAttribute('data-j')};
+                pdfW:parseFloat(s.dataset.pdfW),pdfBase:parseFloat(s.dataset.pdfBase)};
+            if(m.pdfW>0&&Number.isFinite(m.pdfBase)){
+                m.fs=parseFloat(s.style.fontSize)||parseFloat(c.style.fontSize)||m.fs;
+                const metrics=_pdfSpanMetrics(s,c,m.fs);
+                if(metrics&&metrics.w>0){ m.w=metrics.w; m.baseline=metrics.baseline; }
+                else{
+                    // Respect actually rendered nested styles. Undo our previous
+                    // scale, and the page/UI zoom, for a fractional natural width.
+                    m.baseline=null;
+                    try{
+                        if(!job.pxScale){
+                            const css=getComputedStyle(c).width;
+                            const cw=css.endsWith('px')?parseFloat(css):c.clientWidth;
+                            job.pxScale=c.getBoundingClientRect().width/cw||1;
+                        }
+                        const match=(s.style.transform||'').match(/scaleX\(([^)]+)\)/);
+                        const sx=match?Math.abs(parseFloat(match[1]))||1:1;
+                        const natural=s.getBoundingClientRect().width/job.pxScale/sx;
+                        if(natural>0) m.w=natural;
+                    }catch(e){}
+                }
+            }
             if(!job.groups.has(m.y)) job.groups.set(m.y,[]);
             job.groups.get(m.y).push(m);
             job.maxR=Math.max(job.maxR,m.x+m.w); job.maxB=Math.max(job.maxB,m.y+m.h);
@@ -8416,23 +8496,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!job.rows){
             job.rows=Array.from(job.groups.values()); job.rowAt=0;
             job.transforms=new Array(sps.length).fill(null);
+            job.tops=new Array(sps.length).fill(null);
         }
         while(job.rowAt<job.rows.length){
             const group=job.rows[job.rowAt++];
             group.sort((a,b)=>a.x-b.x);
             group.forEach((m,i)=>{
-                if(m.justified) return;
+                if(m.pdfW>0&&Number.isFinite(m.pdfBase)){
+                    // PDF already specifies each run's exact advance and baseline.
+                    // Fit justified runs too; never impose an 84% compression floor.
+                    job.transforms[m.i]=m.w>0?'scaleX('+(m.pdfW/m.w).toFixed(5)+')':'';
+                    if(m.baseline!=null) job.tops[m.i]=+(m.pdfBase-m.baseline).toFixed(3);
+                    return;
+                }
                 const next=group[i+1], avail=(next?next.x:job.cw)-m.x-0.5;
-                const space=Math.max(1.5,m.fs*0.25);
+                const space=Math.max(1,m.fs*0.12);
                 job.transforms[m.i]=m.w>avail-space&&m.w>0
-                    ?'scaleX('+Math.max(0.84,(avail-space)/m.w).toFixed(3)+')':'';
+                    ?'scaleX('+Math.max(0.01,(avail-space)/m.w).toFixed(4)+')':'';
             });
             if(performance.now()>=until) return;
         }
         return {c,el,sps,writeAt:0,rec:{html:el.html,w:el.w||0,h:el.h||0,fs:el.fontSize||0,
             font:el.font,weight:el.fontWeight,style:el.fontStyle,epoch:_tightFontEpoch,
-            ls:el.ls||0,wsp:el.wsp||0,lg:el.lg||1,fonts:_fontState(),transforms:job.transforms,
-            growR:job.maxR>job.cw?job.maxR:0,growB:job.maxB>job.ch?job.maxB:0}};
+            ls:el.ls||0,wsp:el.wsp||0,lg:el.lg||1,fonts:_fontState(),transforms:job.transforms,tops:job.tops,
+            growR:!el.pdfText&&job.maxR>job.cw?job.maxR:0,growB:!el.pdfText&&job.maxB>job.ch?job.maxB:0}};
     }
     function _applyTightFit(fit,until,max){
         const {c,el,sps,rec}=fit;
@@ -8443,6 +8530,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         while((fit.writeAt||0)<sps.length&&count<max){
             const i=fit.writeAt||0, s=sps[i], v=rec.transforms[i];
             fit.writeAt=i+1; count++;
+            if(rec.tops&&rec.tops[i]!=null) s.style.top=rec.tops[i]+'px';
             if(v!==null){
                 if(s.style.transform!==v) s.style.transform=v;
                 if(v&&s.style.transformOrigin!=='left center') s.style.transformOrigin='left center';
@@ -8468,6 +8556,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     try{ if(document.fonts&&document.fonts.addEventListener) document.fonts.addEventListener('loadingdone',()=>{
         _tightFontEpoch++;
+        _pdfBaselineMetrics.clear();
         mountedShells.forEach(wrap=>{
             const layer=wrap.querySelector('.layer-text');
             if(!layer) return;
@@ -8976,6 +9065,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
         if(el.tbl) w.classList.add('in-tbl');
         if(el.tight) w.classList.add('tight');
+        if(el.pdfText) w.classList.add('pdf-text');
         w.appendChild(c);
         if(el.fit||el.fitDown) fitTextToBox(w,c,el);
         else if(el.trFit&&!el.trPending){            // 6.1: 번역 맞춤값 적용
@@ -17728,7 +17818,81 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             .replace(/"/g,'&quot;');
     }
 
+    // SVG <img> documents cannot use the editor's loaded web fonts. Bundle only
+    // the PDF families actually referenced, using same-origin cached WOFF2 data.
+    const _pdfSvgFonts=new Map();
+    async function _pdfSvgFontCSS(svg){
+        const rules=[];
+        for(const sheet of document.styleSheets){
+            let list; try{ list=sheet.cssRules; }catch(e){ continue; }
+            for(const rule of list||[]){
+                if(rule.type!==5) continue;
+                const family=rule.style.fontFamily.replace(/['"]/g,'');
+                if(!family.startsWith('SDY ')||!svg.includes(family)) continue;
+                const text=rule.cssText, match=text.match(/url\(["']?([^"')]+)["']?\)/);
+                if(!match) continue;
+                const url=new URL(match[1],sheet.href||location.href).href;
+                if(!_pdfSvgFonts.has(url)) _pdfSvgFonts.set(url,toDataURL(url));
+                const data=await _pdfSvgFonts.get(url);
+                if(data) rules.push(text.replace(match[0], 'url("'+data+'")'));
+            }
+        }
+        return rules.join('\n');
+    }
+    async function _pdfLoadExportFonts(els){
+        if(!document.fonts) return;
+        const faces=new Map();
+        for(const el of els){
+            if(!el.pdfText||!el.tight) continue;
+            const c=document.createElement('div'); c.innerHTML=el.html||'';
+            for(const s of c.querySelectorAll(':scope > span[data-pdf-w]')){
+                const st=s.style, fs=parseFloat(st.fontSize)||el.fontSize||parseFloat(s.dataset.fs)||14;
+                const font=[st.fontStyle||'normal',st.fontWeight||'400',fs+'px',st.fontFamily||fontCSS(el.font)].join(' ');
+                if(!faces.has(font)) faces.set(font,new Set());
+                const chars=faces.get(font);
+                for(const ch of s.textContent||'') if(chars.size<1024) chars.add(ch);
+            }
+        }
+        await Promise.all([...faces].map(([font,chars])=>document.fonts.load(font,[...chars].join('')).catch(()=>{})));
+    }
+    function _pdfStaticHtml(el){
+        if(!el.pdfText||!el.tight) return el.html||'';
+        const c=document.createElement('div'); c.innerHTML=el.html||'';
+        c.style.fontFamily=fontCSS(el.font||'times');
+        for(const s of c.querySelectorAll(':scope > span[data-pdf-w]')){
+            const fs=parseFloat(s.style.fontSize)||el.fontSize||parseFloat(s.dataset.fs)||14;
+            const m=_pdfSpanMetrics(s,c,fs), width=parseFloat(s.dataset.pdfW), base=parseFloat(s.dataset.pdfBase);
+            if(m&&m.w>0&&width>0){ s.style.transform='scaleX('+(width/m.w)+')'; s.style.transformOrigin='left center'; }
+            if(m&&Number.isFinite(base)) s.style.top=(base-m.baseline)+'px';
+        }
+        c.querySelectorAll('.zsp').forEach(n=>n.style.fontSize='0px');
+        return c.innerHTML;
+    }
+    let _katexSvgFonts;
+    async function _katexSvgCSS(){
+        if(_katexSvgFonts) return _katexSvgFonts;
+        _katexSvgFonts=(async()=>{
+            const link=document.querySelector('link[rel="stylesheet"][href*="katex"]');
+            if(!link) return '';
+            const response=await fetch(link.href,{cache:'force-cache'});
+            if(!response.ok) return '';
+            let css=await response.text();
+            const faces=[...css.matchAll(/@font-face\s*\{[^}]+\}/g)].map(m=>m[0]);
+            const embedded=await Promise.all(faces.map(async face=>{
+                const m=face.match(/url\(["']?([^"')]+\.woff2)["']?\)/);
+                if(!m) return '';
+                const data=await toDataURL(new URL(m[1],link.href).href);
+                return data?face.replace(/src:[^;}]*/, 'src:url("'+data+'") format("woff2")'):'';
+            }));
+            faces.forEach((face,i)=>css=css.replace(face,embedded[i]));
+            return css+'\n.katex{font-size:1em;line-height:1.05}.katex-display{margin:0}';
+        })().catch(()=>{ _katexSvgFonts=null; return ''; });
+        return _katexSvgFonts;
+    }
     async function svgToImage(svg){
+        const fonts=(svg.includes('SDY ')?await _pdfSvgFontCSS(svg):'')+
+                    (svg.includes('katex')?await _katexSvgCSS():'');
+        if(fonts) svg=svg.replace(/(<svg\b[^>]*>)/,'$1<style><![CDATA['+fonts+']]></style>');
         const url='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
         const img=new Image();
         await new Promise((res,rej)=>{
@@ -21741,8 +21905,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         opt=opt||{};
         const size=paperSize();
         const page=JSON.parse(JSON.stringify(doc.pages[pageIdx]));
+        await _pdfLoadExportFonts(page.els||[]);
         if(opt.onlyIds) page.els=(page.els||[]).filter(e=>opt.onlyIds.has(e.id));
-        (page.els||[]).forEach(el=>{ if(el.type==='text') el.html=fixDarkColors(el.html); });
+        (page.els||[]).forEach(el=>{ if(el.type==='text'&&!el.pdfText) el.html=fixDarkColors(el.html); });
         for(const el of page.els||[]){
             if(el.type==='image'||el.type==='legacyDraw') el.url=await toDataURL(el.url);
         }
@@ -21799,7 +21964,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                           `text-align:${el.align||'left'};`;
                     body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;">`+
                           `<div style="${inner}">`+
-                          htmlToXhtml(imathExpandHtml(el.html))+`</div></div>`;
+                          htmlToXhtml(imathExpandHtml(_pdfStaticHtml(el)))+`</div></div>`;
                 });
                 formulas.forEach(el=>{
                     let mh;
@@ -21887,6 +22052,22 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         tmp.innerHTML=(el.html||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/(div|p)>/gi,'\n');
         const text=(tmp.textContent||'').replace(/\u00a0/g,' ');
         if(!text.trim()) return;
+        if(el.pdfText&&el.tight){
+            for(const s of tmp.querySelectorAll(':scope > span[data-pdf-w]')){
+                const st=s.style, fs=parseFloat(st.fontSize)||el.fontSize||parseFloat(s.dataset.fs)||14;
+                const text=(s.textContent||'').trimEnd(), width=parseFloat(s.dataset.pdfW);
+                const baseline=parseFloat(s.dataset.pdfBase);
+                if(!(width>0)||!Number.isFinite(baseline)) continue;
+                ctx.save();
+                ctx.font=[st.fontStyle||'normal',st.fontWeight||'400',fs+'px',st.fontFamily||fontCSS(el.font)].join(' ');
+                ctx.fillStyle=st.color||'#111'; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+                const natural=ctx.measureText(text).width;
+                ctx.translate(el.x+(parseFloat(st.left)||0),el.y+baseline);
+                if(natural>0) ctx.scale(width/natural,1);
+                ctx.fillText(text,0,0); ctx.restore();
+            }
+            return;
+        }
         // 단어 상자(tight): 패딩·줄바꿈 없이 상자 중앙에 한 줄로
         if(el.tight){
             const fs=el.fontSize||16;

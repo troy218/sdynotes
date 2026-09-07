@@ -1,0 +1,102 @@
+[
+  {
+    "file": "arimo-greek-400-italic.woff2",
+    "bytes": 10120,
+    "sha256": "6e9803689ced5e508a3b28a7fdd28c6913cfc3d0b48ee23d52230f8b8f5352d9"
+  },
+  {
+    "file": "arimo-greek-400-normal.woff2",
+    "bytes": 9092,
+    "sha256": "4754a2265adc3b539670d996a1b5d19d7e5168b10bd6803ccac03d7a0b982da7"
+  },
+  {
+    "file": "arimo-greek-700-italic.woff2",
+    "bytes": 10132,
+    "sha256": "1724e5cafe03779f05bff08b1b7173ab14135ea6986179dc61487f0e0d4fac0c"
+  },
+  {
+    "file": "arimo-greek-700-normal.woff2",
+    "bytes": 9048,
+    "sha256": "0b6b8cb692d8ab819ccf9c866d9d879f8a115a6cbec74b730f0c8e2eceeb4d9d"
+  },
+  {
+    "file": "arimo-latin-400-italic.woff2",
+    "bytes": 12380,
+    "sha256": "56da61898ceaf4ffec05922232ef957515d6debdae5bcb952667a46b6af5cd08"
+  },
+  {
+    "file": "arimo-latin-400-normal.woff2",
+    "bytes": 11456,
+    "sha256": "c1f056f51c99a65aca53a0a80e71e67916dd7a8ed2423cd11f52193241440b20"
+  },
+  {
+    "file": "arimo-latin-700-italic.woff2",
+    "bytes": 12392,
+    "sha256": "585caa2d533eff8554785869fc41a802a6865c243a83e1b5d210eb18125c032a"
+  },
+  {
+    "file": "arimo-latin-700-normal.woff2",
+    "bytes": 11484,
+    "sha256": "181215e08de9ce411e8c9e628eea6ea8bfa45de2a955ee57fc970dd8a080a3f6"
+  },
+  {
+    "file": "cmunbi.woff2",
+    "bytes": 108424,
+    "sha256": "de2445e04efeb6d62d76ea4d7c79d290fa38507a955318609ecb06b52a1b5bd2"
+  },
+  {
+    "file": "cmunbx.woff2",
+    "bytes": 84992,
+    "sha256": "6e87a52f2e513e05a876970fef3b664f0f999ba91cd399a83824838e60228e37"
+  },
+  {
+    "file": "cmunrm.woff2",
+    "bytes": 86236,
+    "sha256": "7d91b8d6a848079ad2ec6fb39a8be52654ee2e54c516a985248f96a627de8189"
+  },
+  {
+    "file": "cmunti.woff2",
+    "bytes": 113404,
+    "sha256": "b9971509a091e395bf6f9e89d435aaa48c96402ec4682e7ad8170d0d3e3a2996"
+  },
+  {
+    "file": "tinos-greek-400-italic.woff2",
+    "bytes": 15620,
+    "sha256": "7990fca0cfdec041abd96e20bff6b7092e5b08f5d30080b870e3e03f33cd6241"
+  },
+  {
+    "file": "tinos-greek-400-normal.woff2",
+    "bytes": 14868,
+    "sha256": "29ab2eb1c91ca16ad9e767437eb205ff7b15c423b45e13e192b023b782c4a1b5"
+  },
+  {
+    "file": "tinos-greek-700-italic.woff2",
+    "bytes": 16260,
+    "sha256": "ccda246a60ee0d5dab48a5fda365388cced8ac127d8e40db08dc79418b1f4ad4"
+  },
+  {
+    "file": "tinos-greek-700-normal.woff2",
+    "bytes": 15420,
+    "sha256": "b5d67a19f36193728ac4d5d61865a026a2b78ef58b6799b30c56a33005a12006"
+  },
+  {
+    "file": "tinos-latin-400-italic.woff2",
+    "bytes": 18756,
+    "sha256": "55fe58e551b07fc6586e4e632d10ebf50339fe1f0f4ec97cb55a2abc7d18ff79"
+  },
+  {
+    "file": "tinos-latin-400-normal.woff2",
+    "bytes": 17848,
+    "sha256": "18505b57c8a016326da164a1e9a14e8d1c5081ae78e9fe7b57bb66a330ea4ef9"
+  },
+  {
+    "file": "tinos-latin-700-italic.woff2",
+    "bytes": 18868,
+    "sha256": "6b199a846d3766e7d35961162b6dc399cda36ff60d3f26ef022be685b609425e"
+  },
+  {
+    "file": "tinos-latin-700-normal.woff2",
+    "bytes": 18900,
+    "sha256": "4132bff0c1156d037289c3372cab59f16e4b0967b71d6cd219ce67619d02de73"
+  }
+]

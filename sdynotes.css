@@ -10,6 +10,30 @@
         /* 옛 노트에 인라인으로 박혀 있는 'Noto Sans KR' 지정이 흐트러지지 않게
            같은 글꼴(프리텐다드)을 가리키는 별칭만 남긴다 (설치 안 됐으면 다음 폴백 폰트로). */
         @font-face{font-family:'Noto Sans KR';src:local('Pretendard Variable'),local('Pretendard');}
+
+/* PDF typography — bundled, SIL OFL fonts, independent of OS/CDN fonts.
+   Normalized line metrics anchor the PDF baseline before the fitting pass. */
+@font-face{font-family:'SDY Times';font-weight:400;font-style:normal;font-display:swap;src:url('/assets/fonts/tinos-greek-400-normal.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF;}
+@font-face{font-family:'SDY Times';font-weight:400;font-style:normal;font-display:swap;src:url('/assets/fonts/tinos-latin-400-normal.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'SDY Times';font-weight:400;font-style:italic;font-display:swap;src:url('/assets/fonts/tinos-greek-400-italic.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF;}
+@font-face{font-family:'SDY Times';font-weight:400;font-style:italic;font-display:swap;src:url('/assets/fonts/tinos-latin-400-italic.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'SDY Times';font-weight:700;font-style:normal;font-display:swap;src:url('/assets/fonts/tinos-greek-700-normal.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF;}
+@font-face{font-family:'SDY Times';font-weight:700;font-style:normal;font-display:swap;src:url('/assets/fonts/tinos-latin-700-normal.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'SDY Times';font-weight:700;font-style:italic;font-display:swap;src:url('/assets/fonts/tinos-greek-700-italic.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF;}
+@font-face{font-family:'SDY Times';font-weight:700;font-style:italic;font-display:swap;src:url('/assets/fonts/tinos-latin-700-italic.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'SDY Helvetica';font-weight:400;font-style:normal;font-display:swap;src:url('/assets/fonts/arimo-greek-400-normal.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF;}
+@font-face{font-family:'SDY Helvetica';font-weight:400;font-style:normal;font-display:swap;src:url('/assets/fonts/arimo-latin-400-normal.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'SDY Helvetica';font-weight:400;font-style:italic;font-display:swap;src:url('/assets/fonts/arimo-greek-400-italic.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF;}
+@font-face{font-family:'SDY Helvetica';font-weight:400;font-style:italic;font-display:swap;src:url('/assets/fonts/arimo-latin-400-italic.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'SDY Helvetica';font-weight:700;font-style:normal;font-display:swap;src:url('/assets/fonts/arimo-greek-700-normal.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF;}
+@font-face{font-family:'SDY Helvetica';font-weight:700;font-style:normal;font-display:swap;src:url('/assets/fonts/arimo-latin-700-normal.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'SDY Helvetica';font-weight:700;font-style:italic;font-display:swap;src:url('/assets/fonts/arimo-greek-700-italic.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF;}
+@font-face{font-family:'SDY Helvetica';font-weight:700;font-style:italic;font-display:swap;src:url('/assets/fonts/arimo-latin-700-italic.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'SDY Computer Modern';font-weight:400;font-style:normal;font-display:swap;src:url('/assets/fonts/cmunrm.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;}
+@font-face{font-family:'SDY Computer Modern';font-weight:400;font-style:italic;font-display:swap;src:url('/assets/fonts/cmunti.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;}
+@font-face{font-family:'SDY Computer Modern';font-weight:700;font-style:normal;font-display:swap;src:url('/assets/fonts/cmunbx.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;}
+@font-face{font-family:'SDY Computer Modern';font-weight:700;font-style:italic;font-display:swap;src:url('/assets/fonts/cmunbi.woff2') format('woff2');ascent-override:80%;descent-override:20%;line-gap-override:0%;}
+
         /* 데스크톱은 사용자가 늘 브라우저 90% 배율에서 보던 정보 밀도로 시작한다.
            루트 zoom은 고정 레이어까지 한 번에 축소해 개별 화면마다 크기가 달라지지
            않게 하며, 폰은 가독성과 기존 터치 배치를 위해 100%를 유지한다. */
@@ -1799,6 +1823,11 @@
             white-space:normal;word-break:normal;overflow-wrap:normal;
             position:relative;   /* overflow는 visible 유지 — 글자 절대 안 잘림 */
         }
+        /* The global * rule sets a UI font on EVERY span. Imported words must
+           inherit the document font unless they explicitly carry a source face. */
+        .tb.tight .tb-content :where(span,b,i,sup,sub){font-family:inherit;}
+        .tb.pdf-text .tb-content{border-width:0;border-radius:0;}
+        .tb.pdf-text.sel .tb-content,.tb.pdf-text.edit .tb-content{outline:1px solid var(--accent);}
         .tb.tight.edit .tb-content{white-space:pre-wrap;line-height:1.4;}
         /* 안 보이는 스페이스바: 시각적 차지 0, 선택/복사/번역/검색에만 잡힘 */
         .tb.tight .zsp{font-size:0;letter-spacing:0;font-style:normal;}
