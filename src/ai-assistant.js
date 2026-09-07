@@ -29,7 +29,7 @@
   if(window.__sdyAiInit) return; window.__sdyAiInit=true;
   var $=function(id){ return document.getElementById(id); };
   // 서버 AI_TASKS(outline·chat·edit)와 맞물린다 — outline 은 범위에 따라 딱지만 나뉜다.
-  var KIND={note:'노트 질문',free:'자유 질문',outlinePage:'이 페이지',outlineDoc:'전체 페이지',edit:'문서 편집',app:'앱 실행',search:'인터넷 검색',draw:'그림'};
+  var KIND={note:'노트 질문',free:'자유 질문',outlinePage:'이 페이지',outlineDoc:'전체 페이지',edit:'문서 편집',app:'앱 실행',search:'인터넷 검색',draw:'그림',bug:'버그 신고'};
   var ctl=null, enabled=false, closedByUser=false;
   var lastText='', lastKind='', lastQ='';
 
@@ -367,6 +367,35 @@
   // 실행 문맥도 같은 대화 뭉치를 쓴다 — @ask 되묻기 뒤의 짧은 답도 이어진다.
   function appCtxText(){ return aiCtxText(); }
   window.sdyAiLooksLikeApp=looksLikeApp;   // 테스트·디버그용 말투 감지 노출
+
+  /* 14.39.0 · 버그 일지 — 앱에서 겪은 문제를 말로 알려 주면 서버(task=bug)가
+     정리하고 설정 → 버그 일지에 기록한다(누구나 볼 수 있는 일지).
+     명시적 신고(/버그·버그 신고:·신고:…)뿐 아니라 '버그·오류·에러·고장' 낱말,
+     또는 기능 이름 + '안 돼/멈춰/겹쳐…' 불만이면 신고로 알아듣는다.
+     문서를 고치는 부탁('버그 단어 지워 줘')은 버그 신고가 아니라 편집이다. */
+  var BUG_PRE=/^\s*(?:\/(?:bug|버그|신고)(?=\s|$)|(?:버그\s*신고|신고|버그)\s*[:：])\s*/;
+  function bugCmdOf(q){
+    if(!BUG_PRE.test(q||'')) return null;
+    return String(q).replace(BUG_PRE,'').trim();
+  }
+  window.sdyAiBugCmdOf=bugCmdOf;                 // 테스트·디버그용
+  var BUG_WORD=/(?:버그|오류|에러|고장|렉|버벅|말썽)/;
+  var BUG_THING=/(?:표|글(?:자|상자)?|사진|이미지|그림|페이지|쪽|노트|저장|동기화|붙여넣기|복사|붙이기|이동|삭제|폴더|휴지통|음악|노래|소리|재생|타이머|알람|검색|내보내기|가져오기|발표|스티커|단어 ?카드|설정|배경(?:화면)?|글꼴|크기|스크롤|확대|축소|펜|지우개|링크|북마크|재생 ?목록|미리보기|업로드|채팅|친구|로그인|화면|버튼|창|입력|타이핑|줄바꿈|모드|기능|동작|방식|영상|동영상|이상)/;
+  var BUG_BAD=/(?:안|못|자꾸|계속|갑자기)\s*(?:돼|되는데|되네|먹혀|들어가|넘어가|보여|나와|열려|눌러|지워|저장|받아|붙어|움직여|사라져|튀어|멈춰|꺼져|닫혀|겹쳐|깨져|느려|떠|나가|켜져)|(?:멈춰|멈춰 ?버려|멈추(?:네|는데|었)?|튕겨|튕김|다운 ?(?:돼|됨|먹어))|겹쳐 ?(?:보여|서|요)?|겹치(?:네|는데|고|더라)|사라져 ?(?:요|버려)?|안 보여|안 열려|안 눌러|안 지워|안 움직여|깨지(?:네|는데)|느려 ?(?:요|지|진)?|렉 ?(?:이|이)? ?걸려|이상(?:해(?:요)?|한데|하게|하네)/;
+  var BUG_EDIT_ASK=/(?:지워 ?줘|삭제해 ?줘|없애 ?줘|넣어 ?줘|추가해 ?줘|바꿔 ?줘|고쳐 ?줘|지워 ?주세요|삭제해 ?주세요)/;
+  function looksLikeBug(q){
+    q=String(q||'');
+    if(!q||bugCmdOf(q)!=null) return false;
+    if(QUESTION_HINT.test(q)) return false;
+    if(BUG_WORD.test(q)){
+      // '문서에서 버그라는 단어를 지워 줘' 류는 노트 편집 부탁이지 신고가 아니다
+      if(!BUG_BAD.test(q)&&BUG_EDIT_ASK.test(q)) return false;
+      return true;
+    }
+    return BUG_THING.test(q)&&BUG_BAD.test(q);
+  }
+  window.sdyAiLooksLikeBug=looksLikeBug;   // 테스트·디버그용
+
   function aiCapture(){
     try{
       var bridge=window.__sdyAiBridge;
@@ -2101,6 +2130,70 @@
   }
   window.sdyAiRunDraw=function(q){ runDraw(String(q||'').trim()); };
 
+  /* 14.39.0 · 버그 일지 신고 — 사용자가 말한 버그를 서버(task=bug)가
+     제목·증상·재현 방법·기대 동작·메모로 정리해 돌려주고, 02f 의 sdyBuglogAdd
+     가 설정 → 버그 일지에 기록한다. 기록되면 말풍선에 정리본과 안내를 띄운다. */
+  function runBug(q){
+    if(ctl){ meta('다 말하고 나서 말해 주세요 해돌~'); return; }
+    q=String(q||'').trim();
+    if(!q){ otterLine('어떤 버그인지 알려 줘 해돌~ · 예) /버그 표를 만들면 글자가 겹쳐요'); return; }
+    closedByUser=false;
+    ctl=new AbortController();
+    busy(true); lastText=''; lastKind='bug'; lastQ=q;
+    kindChip('bug');
+    otterHide();
+    out('버그를 정리해서 일지에 적는 중…',true); meta('');
+    var acc='';
+    fetch('/api/ai/ask',{
+      method:'POST', signal:ctl.signal,
+      headers:{'Content-Type':'application/json','x-sdy-auth':token()},
+      body:JSON.stringify({task:'bug', question:q, stream:false})
+    }).then(function(r){
+      return readSSE(r,function(){});        // 비스트림 — 서버가 JSON 한 방으로 준다
+    }).then(function(res){
+      var d=res.d||{};
+      if(d.ok){
+        var text=String(d.text||acc||'').trim();
+        var m=/^제목[:：]\s*(.+)$/m.exec(text);
+        var stored=null;
+        if(window.sdyBuglogAdd){
+          try{
+            var who='';
+            try{ var u=window.sdyUser&&window.sdyUser(); if(u&&u.nick) who=String(u.nick); }catch(e){}
+            var ver=((document.querySelector('meta[name="application-version"]')||{}).content)||'';
+            stored=window.sdyBuglogAdd({
+              title:m?m[1].trim():'',
+              text:text,
+              raw:q,
+              who:who,
+              ver:ver
+            });
+          }catch(e){}
+        }
+        lastText=text+(stored
+          ?'\n\n— 버그 일지에 기록했어요 · 설정 → 버그 일지에서 볼 수 있어요 해돌~'
+          :'');
+        lastKind='bug';
+        kindChip('bug');
+        out(lastText);
+        meta('');
+        histPush('bug',q,lastText);
+      }else{
+        lastText=''; kindChip('');
+        out(String(d.error||'AI에 닿지 못했어요'),true);
+        meta(d.hint?String(d.hint):(d.retry_after?('약 '+d.retry_after+'초 뒤에 다시 시도해 주세요'):'버그 일지를 적지 못했어요 · 잠시 뒤 다시 말해 줘 해돌~'));
+      }
+    }).catch(function(e){
+      if(e&&e.name==='AbortError'&&closedByUser){ return; }   // 말풍선을 닫으며 멈춘 것
+      lastText=''; kindChip('');
+      out((e&&e.name==='AbortError')?'멈췄어요.':'네트워크 오류 · 잠시 뒤 다시 시도해 주세요',true);
+      meta('');
+    }).then(function(){
+      ctl=null; busy(false);
+    });
+  }
+  window.sdyAiRunBug=function(q){ runBug(String(q||'').trim()); };
+
   /* 검색창 Enter → 바로 질문 (보내기 버튼 없음). 노트 질문인지 자유 질문인지는
      해돌이가 스스로 판단한다 — 사용자가 딱지를 고르는 일은 없다.
      14.26.0 · '시켜 달라'는 말투면 앱 실행으로, '고쳐 달라'는 말투면 편집으로
@@ -2110,6 +2203,7 @@
     if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
     if(!q){ otterLine('뭐라도 적어 줘 해돌~'); return; }
     var editCommand=editCmdOf(q);
+    var bugCommand=bugCmdOf(q);
     var appCommand=appCmdOf(q);
     var drawCommand=drawCmdOf(q);
     if(qEl){ qEl.value=''; aiQGrow(); }                 // 본 요청은 말풍선(과 기록)에 남으니 칸은 비운다
@@ -2120,6 +2214,11 @@
         otterLine('문서 편집 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
       }
       run('edit',editCommand); return;
+    }
+    // 14.39.0 · 명시적 버그 신고(/버그·버그 신고:·신고:) — 정리해 일지에 기록
+    if(bugCommand!=null){
+      if(!bugCommand){ otterLine('/버그 뒤에 어떤 버그인지 적어 줘 해돌~ · 예) /버그 표를 만들면 글이 겹쳐요'); return; }
+      runBug(bugCommand); return;
     }
     if(drawCommand!=null){
       if(!drawCommand){ otterLine('/그림 뒤에 무엇을 그릴지 적어 줘 해돌~ · 예) /그림 웃는 얼굴'); return; }
@@ -2143,6 +2242,9 @@
       if(!appCommand){ otterLine('/앱 뒤에 무엇을 실행할지 적어 줘 해돌~ · 예) /앱 노래 틀어줘'); return; }
       run('app',appCommand); return;
     }
+    // 14.39.0 · 말로 하는 버그 신고 — '버그가 있어요', '○○가 안 돼요' 류는
+    //   편집·실행보다 먼저 가른다(사진 넣기·그리기·문서 고치기와 헷갈리지 않게).
+    if(looksLikeBug(q)){ runBug(q); return; }
     if(looksLikeApp(q)){ run('app',q); return; }        // '시켜 달라'는 말이면 앱 실행으로
     // 14.31.0 · 사진과 그림을 먼저 가른다 — 둘 다 '넣어 줘'로 들리지만 완전히
     //   다른 일이다(사진 = 인터넷에서 찾은 실제 사진, 그림 = 펜으로 그리는 선화).
@@ -2225,16 +2327,17 @@
       // 14.31.0 · 문서를 고치는 일은 편집만이 아니다 — 사진을 넣는 것도,
       // 펜으로 그림을 그리는 것도 결국 문서 편집이라 같은 보라색으로 알린다.
       var v=q.value||'';
-      var photoOn=PHOTO_PRE.test(v)||looksLikePhoto(v);
-      var drawOn=!photoOn&&(DRAW_PRE.test(v)||looksLikeDraw(v));
-      var editOn=!photoOn&&!drawOn&&(EDIT_PRE.test(v)||looksLikeEdit(v));
-      var appOn=!photoOn&&!drawOn&&!editOn&&(APP_PRE.test(v)||looksLikeApp(v));
-      var modeOn=editOn||appOn||drawOn||photoOn;
+      var bugOn=looksLikeBug(v)&&bugCmdOf(v)==null;
+      var photoOn=!bugOn&&(PHOTO_PRE.test(v)||looksLikePhoto(v));
+      var drawOn=!bugOn&&!photoOn&&(DRAW_PRE.test(v)||looksLikeDraw(v));
+      var editOn=!bugOn&&!photoOn&&!drawOn&&(EDIT_PRE.test(v)||looksLikeEdit(v));
+      var appOn=!bugOn&&!photoOn&&!drawOn&&!editOn&&(APP_PRE.test(v)||looksLikeApp(v));
+      var modeOn=editOn||appOn||drawOn||photoOn||bugOn;
       var ask=$('aiAsk'); if(ask) ask.classList.toggle('edit-on',modeOn);
       var tag=$('aiEditTag');
       if(tag){
         tag.hidden=!modeOn;
-        tag.textContent=appOn?'앱 실행':(drawOn?'그림':(photoOn?'사진':'편집'));
+        tag.textContent=bugOn?'버그 신고':(appOn?'앱 실행':(drawOn?'그림':(photoOn?'사진':'편집')));
       }
     }catch(e){}
   }

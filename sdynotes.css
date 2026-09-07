@@ -7370,3 +7370,28 @@ body.sdy-turbo .page-wrap{will-change:auto!important;}
   }
 }
 
+
+/* ════════════════════════════════════════════════════════════════════
+   14.39.0 · 버그 일지 — 설정 [보기] 목록 (항목마다 X 로 그 기록만 지운다)
+   ════════════════════════════════════════════════════════════════════ */
+.buglog-item{padding:12px 6px;border-bottom:1px solid var(--border);}
+.buglog-item:last-child{border-bottom:none;}
+.buglog-head{display:flex;align-items:flex-start;gap:9px;}
+.buglog-head>i{flex:none;font-size:17px;color:#e74c3c;margin-top:2px;}
+.buglog-title{flex:1;font-size:14px;font-weight:700;color:var(--text1);line-height:1.45;word-break:break-word;padding-top:1px;}
+.buglog-x{flex:none;width:26px;height:26px;display:flex;align-items:center;justify-content:center;
+  border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text3);
+  font-size:15px;cursor:pointer;padding:0;margin:-2px -2px 0 0;}
+.buglog-x:hover{border-color:rgba(231,76,60,.35);color:#e74c3c;background:rgba(231,76,60,.07);}
+.buglog-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text3);margin:2px 0 6px 26px;}
+.buglog-who{color:var(--accent);}
+.buglog-ver{opacity:.75;}
+.buglog-body{margin:2px 0 2px 10px;padding:6px 4px 8px 13px;border-left:2px solid var(--border);
+  background:var(--bg2);border-radius:0 8px 8px 0;}
+.buglog-line{display:flex;gap:8px;font-size:12.5px;line-height:1.7;color:var(--text1);word-break:break-word;}
+.buglog-line b{flex:none;min-width:66px;font-weight:600;color:var(--accent);}
+.buglog-raw{margin:6px 0 0 26px;font-size:11.5px;color:var(--text3);white-space:pre-wrap;word-break:break-word;line-height:1.6;}
+@media (max-width:560px){
+  .buglog-line{flex-direction:column;gap:0;}
+  .buglog-line b{min-width:0;}
+}

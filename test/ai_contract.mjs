@@ -3,7 +3,7 @@
 //
 // 이 파일이 지키려는 계약
 //   1) 모델 키는 Authorization 헤더로만 나가고 응답·본문에는 절대 새지 않는다
-//   2) task 화이트리스트(outline/chat/edit/app, 14.26.0) 밖의 일은 400 으로 거절한다 (임의 프롬프트 주입 차단)
+//   2) task 화이트리스트(outline/chat/edit/app/draw/bug) 밖의 일은 400 으로 거절한다 (임의 프롬프트 주입 차단)
 //   3) 같은 입력 재요청은 외부 호출 없이 캐시로 답한다 / 동시에 온 중복은 하나로 합친다
 //   4) 본문은 상한만큼만 잘라 보낸다 (truncated=true 로 클라이언트에 알린다)
 //   5) 429 를 맞아도 서버 쪽 쿨다운은 없다 — 다음 요청은 곧바로 다시 외부로 나간다
@@ -70,9 +70,10 @@ let g = await get('/api/ai/status');
 let j = JSON.parse(g.body);
 ok('status: enabled=true', g.status === 200 && j.enabled === true);
 ok('status: 모델명을 알려 준다', j.model === 'test-model-x');
-ok('status: 할 일 5종(outline/chat/edit/app/draw)', Array.isArray(j.tasks) && j.tasks.length === 5
-  && j.tasks.map((t) => t.id).join(',') === 'outline,chat,edit,app,draw'
-  && j.tasks.some((t) => t.id === 'draw' && t.label === '그림 그리기'));
+ok('status: 할 일 6종(outline/chat/edit/app/draw/bug)', Array.isArray(j.tasks) && j.tasks.length === 6
+  && j.tasks.map((t) => t.id).join(',') === 'outline,chat,edit,app,draw,bug'
+  && j.tasks.some((t) => t.id === 'draw' && t.label === '그림 그리기')
+  && j.tasks.some((t) => t.id === 'bug' && t.label === '버그 일지'));
 ok('status: 키가 응답에 새지 않는다', !g.body.includes(FAKE_KEY) && !g.body.includes(FAKE_KEY.slice(3)));
 
 // ── 2) 개요 정리: OpenAI 호환 본문으로 나가고 키는 헤더에만 ──
@@ -212,6 +213,22 @@ ok('요청 없는 실행은 외부 호출 없이 400', r.status === 400 && /무�
 r = await post('/api/ai/ask', { ...appBody, context: '이전 요청: 봄날 틀어줘\n이전 결과: 틀었어요' });
 ok('실행 후속 문맥(context)도 이전 대화 레이블로 모델에 전달한다',
   r.ok === true && /이전 대화:\n이전 요청: 봄날 틀어줘/.test(calls[calls.length - 1].body.messages[1].content));
+
+// ── 3-4) 버그 일지 (14.39.0): 해돌이에게 말한 버그를 일지 한 건으로 정리 ──
+calls = [];
+extFetch = () => chatOk('제목: 표를 만들면 글자가 겹쳐 보여요\n'
+  + '증상: 표를 만들면 글자가 겹쳐 보여요\n'
+  + '재현 방법: 1. 표를 만든다\n기대 동작: 글자가 안 겹쳐야 해요\n메모: 없음');
+r = await post('/api/ai/ask', { task: 'bug', question: '표를 만들면 글자가 겹쳐 보여요' });
+ok('버그 정리 성공 (task=bug)', r.ok === true && r.task === 'bug'
+  && /^제목: /.test(r.text || '') && /재현 방법:/.test(r.text || ''));
+ok('버그 보고 내용이 user 메시지에 담긴다', /질문: 표를 만들면/.test(calls[0].body.messages[1].content));
+ok('버그 정리는 노트 본문을 보내지 않는다', !/노트 본문:/.test(calls[0].body.messages[1].content));
+r = await post('/api/ai/ask', { task: 'bug', question: '표를 만들면 글자가 겹쳐 보여요' });
+ok('같은 버그 보고도 캐시하지 않고 매번 새로 정리한다', r.ok === true && r.cached === false && calls.length === 2);
+r = await post('/api/ai/ask', { task: 'bug', question: '   ' });
+ok('내용 없는 버그 보고는 외부 호출 없이 400', r.status === 400
+  && /적어 주세요/.test(r.error || '') && calls.length === 2);
 
 // ── 4) task 화이트리스트 ──
 calls = [];
