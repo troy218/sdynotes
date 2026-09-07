@@ -9,11 +9,12 @@
    엽스코드의 여는 위치는 건드리지 않는다. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { readAllJS } from './_frontend.mjs';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../sdynotes.css', import.meta.url), 'utf8');
-const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const js = readAllJS();
 
 /* ── 정적 계약 ─────────────────────────────────────────────────────────── */
 assert.match(html,

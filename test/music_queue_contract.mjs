@@ -7,10 +7,11 @@
 //   ④ 섞기를 켜면 대기열 순서가 통째로 뒤집히고, 껐을 때 원래 순서를 잃는다
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { readAllJS } from './_frontend.mjs';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
-const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const js = readAllJS();
 const css = fs.readFileSync(new URL('../sdynotes.css', import.meta.url), 'utf8');
 const fullHtml = html.includes('<script src="sdynotes.js')
   ? html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, () => '<script>' + js.replace(/<\/script/gi, '<\\/script>') + '</script>')

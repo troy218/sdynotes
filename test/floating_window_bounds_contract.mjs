@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import { readAllJS } from './_frontend.mjs';
 
-const js=fs.readFileSync(new URL('../sdynotes.js',import.meta.url),'utf8');
+const js=readAllJS();
 const css=fs.readFileSync(new URL('../sdynotes.css',import.meta.url),'utf8');
 
 assert.match(js,/window\.sdyClampFloatingRect\s*=\s*function/,'shared floating-window clamp must exist');

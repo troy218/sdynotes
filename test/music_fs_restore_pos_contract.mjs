@@ -8,7 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
-const js = fs.readFileSync(path.join(root,'sdynotes.js'),'utf8');
+const js = ['sdynotes.js','src/music-player.js','src/focus-clock.js','src/live-updates.js','src/idle-worker.js','src/mobile-viewport.js','src/auth.js','src/ai-assistant.js','src/chat.js','src/translate.js']
+  .map(f => { try { return fs.readFileSync(path.join(root,f),'utf8'); } catch { return ''; } }).join('\n');
 
 let fail=0;
 function ok(cond,msg){ if(!cond){ fail++; console.error('  ✗',msg);} else console.log('  ✓',msg); }

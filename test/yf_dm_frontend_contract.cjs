@@ -25,15 +25,9 @@ function extractHtml() {
   const e2 = htmlFull.indexOf('</div>', e);
   return htmlFull.slice(s, e2 + 6);
 }
-// ── 필요한 script block 만 추출 (다른 블록은 음악 등 무관한 DOM 을 많이 탐) ──
-function extractBlock(name, next) {
-  const s = jsFull.indexOf(`/* === script block ${name} === */`);
-  if (s < 0) throw new Error(`script block ${name} 을 찾지 못했습니다`);
-  const e = jsFull.indexOf(`/* === script block ${next} === */`);
-  return jsFull.slice(s, e < 0 ? jsFull.length : e);
-}
-const block10 = extractBlock('10', '11');
-const block12 = extractBlock('12', null);
+// ── 분리된 모듈 파일에서 직접 읽기 ──
+const block10 = fs.readFileSync(path.join(root, 'src', 'chat.js'), 'utf8');
+const block12 = fs.readFileSync(path.join(root, 'src', 'auth.js'), 'utf8');
 if (!/var YF=/.test(block10)) throw new Error('block 10 에 16.3(YF) 코드가 없습니다');
 if (!/ypFrBtn/.test(block10)) throw new Error('친구 버튼 배선이 block 10 에 없습니다');
 

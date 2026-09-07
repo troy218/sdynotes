@@ -1,9 +1,10 @@
 // 전체화면·이퀄라이저·서랍 스모크 (jsdom) — 운영 번들을 고치지 않고 검증만 한다.
 import { readFileSync } from 'node:fs';
+import { readAllJS } from './_frontend.mjs';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const html = readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
-const js = readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
+const js = readAllJS();
 const fullHtml = html.includes('<script src="sdynotes.js')
   ? html.replace(/<script src="sdynotes\.js(?:\?[^"]*)?"[^>]*><\/script>/, () => '<script>' + js.replace(/<\/script/gi, '<\\/script>') + '</script>')
   : html;

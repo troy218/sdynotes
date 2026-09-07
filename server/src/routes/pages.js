@@ -32,6 +32,9 @@ export function registerPages(app) {
   // 16.2 · 정적 에셋 (운영은 nginx 가 먼저 준다 — 여기는 개발/미리보기 경로)
   app.get('/sdynotes.js', (req, reply) => { if (!serveAsset(req, reply, '/sdynotes.js')) reply.code(404).send(); });
   app.get('/sdynotes.css', (req, reply) => { if (!serveAsset(req, reply, '/sdynotes.css')) reply.code(404).send(); });
+  app.get('/src/:file', (req, reply) => {
+    if (!serveAsset(req, reply, '/src/' + req.params.file)) reply.code(404).send();
+  });
   app.get('/assets/fonts/:file', (req, reply) => {
     if (!serveAsset(req, reply, '/assets/fonts/' + req.params.file)) reply.code(404).send();
   });
