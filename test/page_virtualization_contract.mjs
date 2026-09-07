@@ -31,6 +31,8 @@ assert.equal(mostVisible(700, 800, 5, 1100, 40, 1, 0), 0, '1쪽이 400px로 더 
 assert.equal(mostVisible(760, 800, 5, 1100, 40, 1, 0), 1, '2쪽이 420px로 더 많이 보이면 2쪽');
 assert.equal(mostVisible(720, 800, 5, 1100, 40, 1, 0), 0, '동률이면 기존 1쪽 유지');
 assert.equal(mostVisible(720, 800, 5, 1100, 40, 1, 1), 1, '동률이면 기존 2쪽 유지');
+assert.equal(mostVisible(22000, 900, 40, 1100, 40, .15, 39), 39, '축소/문서 축소 직후 scrollTop이 범위를 넘어도 마지막 쪽으로 제한');
+assert.equal(mostVisible(-100, 900, 40, 1100, 40, 1, 0), 0, '음수 overscroll에서도 첫 쪽');
 ok('현재 페이지를 기준점이 아니라 실제 노출 면적으로 판정한다',
   visSrc.includes('Math.min(bottom,pb)-Math.max(top,pt)')
   && !js.includes('Math.round((body.scrollTop+body.clientHeight*0.35)'));

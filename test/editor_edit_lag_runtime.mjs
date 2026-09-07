@@ -165,11 +165,11 @@ try {
   const tbs = () => document.querySelectorAll('#pagesStage .tb').length;
   const chrome = () => document.querySelectorAll('#pagesStage .tb .handle').length
                       + document.querySelectorAll('#pagesStage .tb .tb-edge').length;
-  { // 청크 렌더(똥컴은 프레임당 24개)가 끝날 때까지 기다린다
+  { // 이미 렌더된 DOM의 편집 비용을 재는 테스트. 부분 렌더를 완료로 오인하지 않는다
     const renderUntil = Date.now() + 15_000;
-    while (Date.now() < renderUntil && tbs() < 100) await wait(100);
+    while (Date.now() < renderUntil && !ev('pageReady(0)')) await wait(100);
   }
-  check('무거운 쪽이 그려진다', tbs() >= 100, `tb=${tbs()}`);
+  check('무거운 쪽이 그려진다', ev('pageReady(0)') && tbs() >= 100, `tb=${tbs()}`);
   check('① 쪽을 그릴 때 글상자 장식은 하나도 만들지 않는다', chrome() === 0, `chrome=${chrome()} / tb=${tbs()}`);
 
   const paper0 = document.querySelector('#pagesStage .paper[data-page-idx="0"]');

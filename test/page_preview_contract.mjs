@@ -62,8 +62,8 @@ ok('미리보기 레이어는 편집 요소보다 뒤에 깔린다',
   && /\.page-preview-img\{/.test(css));
 
 const mount = fnSrc('mountPagePreview');
-ok('미리보기는 가져온 문서에서만, 이미 깨운 쪽에는 붙이지 않는다',
-  /previewCapable\(\)/.test(mount) && /activatedPages\.has\(pi\)/.test(mount));
+ok('미리보기는 가져온 문서에서만, 편집 준비 완료된 쪽에는 붙이지 않는다',
+  /previewCapable\(\)/.test(mount) && /paper\._sdyReady/.test(mount));
 ok('편집된 쪽에는 원본 그림을 절대 붙이지 않는다',
   /if\(pageEdited\(pi\)\) return false;/.test(mount));
 ok('그림을 못 받으면 예전 요소 렌더로 자동 폴백한다',
@@ -85,11 +85,11 @@ const act = fnSrc('activatePage');
 ok('쪽을 깨우면 편집 요소를 그린다',
   /activatedPages\.add\(pi\)/.test(act) && /renderPageEls\(pi\)/.test(act));
 ok('그림은 요소가 다 올라온 뒤에 걷는다 (깜빡임 없이 교대)',
-  /if\(activatedPages\.has\(idx\)\) dropPagePreview\(idx\)/.test(js));
+  /paper\._sdyReady=true;[\s\S]{0,180}dropPagePreview\(idx\)/.test(js));
 
 ok('종이를 누르면 그 쪽이 편집 상태가 된다',
-  /try\{ activatePage\(pageIdx\); \}catch\(_e\)\{\}/.test(js)
-  && /try\{ activatePage\(i\); \}catch\(_e\)\{\}/.test(js));
+  /deferPagePointer\(e,pageIdx\)/.test(js)
+  && /deferPagePointer\(e,i\)/.test(js));
 ok('새로 올라오는 종이도 편집 도구가 켜져 있으면 편집 상태를 물려받는다',
   /if\(activatedPages\.has\(i\)\|\|editingModeOn\(\)\) activatePage\(i\)/.test(js));
 ok('펜·글상자·메모·찾기·단어분석은 보이는 쪽을 깨운다',
@@ -102,8 +102,8 @@ ok('편집한 쪽은 문서 데이터에 표시가 남는다 (재열람에도 �
   && /\.\.\.\(pg\.edited\?\{edited:1\}:\{\}\)/.test(js));
 ok('편집 커밋 경로가 __dirty 직접 대입 대신 markPageEdited 를 쓴다',
   !/doc\.pages\[\+w\.dataset\.pageIdx\]\.__dirty=true/.test(js));
-ok('한 번 깨운 쪽은 요소를 회수해도 그림으로 되돌아가지 않는다',
-  !/activatedPages\.delete\(/.test(js));
+ok('읽기만 했던 쪽은 회수하고, 실제 편집한 쪽은 원본 그림 복귀를 금지한다',
+  /if\(!pageEdited\(pi\)\) activatedPages\.delete\(pi\)/.test(fnSrc('releasePageActivation')));
 
 // ── 안전: 문서 데이터 불변 ────────────────────────────────────────────
 for (const fn of ['mountPagePreview', 'dropPagePreview', 'previewURL', 'previewWidth']) {

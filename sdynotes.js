@@ -1114,7 +1114,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 저사양 기기는 메모리에 붙잡는 쪽 수를 줄여 GC·저장 스캔 부담을 낮춘다.
         const R=sdyTurbo()?12:(sdyLowEnd()?22:40);
         (doc.pages||[]).forEach((p,i)=>{
-            if(Math.abs(i-idx)<=R) return;
+            if(Math.abs(i-idx)<=R||!canUnloadPage(i)||_pageRenderJobs.has(i)) return;
             if(p&&p.__lazy==null&&!p.__dirty&&(p.els||[]).length){
                 // 원래 자리(index)로 다시 받아오므로 id 는 lazy_N 으로 통일한다.
                 // → 저장/복원 어느 경로로 돌아와도 '안 받은 쪽'으로 인식된다.
@@ -3693,7 +3693,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 else   { put(o,o.bb.x,cur); cur+=o.bb.h+gap; }
             });
         }
-        saveDoc();
+        markPageEdited(pi); saveDoc();
         toast('정렬 완료',1000);
     }
 
@@ -5814,6 +5814,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.getElementById('editorView').classList.remove('open');
         document.documentElement.classList.remove('in-editor');
         document.body.classList.remove('in-editor');
+        resetPageWork();
         document.getElementById('pagesStage').innerHTML='';
         if(window._closeEdT) clearTimeout(window._closeEdT);
         window._closeEdT=setTimeout(async()=>{
@@ -6245,8 +6246,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   지금은 스크롤 위치에서 창을 '계산'하므로 놓칠 콜백 자체가 없다.
     const renderedPages=new Set();    // 요소까지 그려 둔 쪽
     const mountedShells=new Map();    // 화면에 올려 둔 종이 (pageIdx → .page-wrap)
-    const HEAVY_ELS=120;              // 이보다 많으면 나눠 그린다
-    const CHUNK=60;                   // 한 번에 채우는 개수
     // 14.30.0 · 저사양 기기 감지 — 코어/메모리가 적으면 배경 작업을 줄이고
     //   렌더 청크를 작게 해 '입력이 밀리는 버벅임'을 막는다.
     //   (localStorage sdy_lowend/sdy_perf = '1'/'0' 으로 강제할 수 있다.
@@ -6305,7 +6304,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     const UNLOAD_GRACE=1200;          // 방금 그린 쪽은 이 시간 안에 경계를 넘어도 바로 내리지 않는다
     const _pageRenderTok={};          // 같은 쪽을 다시 그리거나 비우면 이전 청크 루프를 버린다
     const _renderedAt={};             // 쪽별 마지막 요소 렌더 시각 — 회수 유예 판단용
-    const chunkTimers={};
+    // 준비 중과 준비 완료를 구분한다. renderedPages 는 DOM을 가진 쪽(부분 렌더 포함),
+    // _pageRenderJobs 는 진행 중 작업이다. 활성화는 요청이지 완료 신호가 아니다.
+    const _pageRenderJobs=new Map();
+    let _pageRenderFrame=0;
     let _virtualTimer=null;
     let _lastFillAt=0;
     let _shellWin={first:0,last:-1};
@@ -6350,7 +6352,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 위에서도 자식 선택/드래그 이벤트에 빼앗기지 않고 그 지점에 붙는다.
         const onPaperPlacementDown=e=>{
             if(e.button===2) return;   // 18.8 · 우클릭은 배치/메모 모드를 건드리지 않는다
-            try{ activatePage(i); }catch(_e){}   // 20.0 · 누른 쪽은 편집 상태로
+            if(deferPagePointer(e,i)) return;
             // 요소 배치 모드(그림·수식)도 캡처 단계에서 받는다 — 자식 요소가
             // 이벤트를 가로채도 누른 바로 그 지점(pageLocal 문서 좌표)에 놓인다.
             if(placeMode){
@@ -6418,9 +6420,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!wrap) return false;
         if(!canUnloadPage(i)) return false;
         _pageRenderTok[i]=(_pageRenderTok[i]||0)+1;   // 예약된 청크 렌더까지 취소
-        clearTimeout(chunkTimers[i]); delete chunkTimers[i];
+        _cancelPageRender(i);
         renderedPages.delete(i);
         mountedShells.delete(i);
+        _dropPageTightFits(wrap.querySelector('.paper'));
+        releasePageActivation(i);
         try{ wrap.remove(); }catch(e){}
         return true;
     }
@@ -6465,7 +6469,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function renderPages(){
         const stage=document.getElementById('pagesStage');
         if(!stage) return;
-        Object.keys(chunkTimers).forEach(k=>{ clearTimeout(chunkTimers[k]); delete chunkTimers[k]; });
+        resetPageWork();
         clearTimeout(_virtualTimer); _virtualTimer=null;
         clearTimeout(_nbrTimer); _nbrTimer=null;
         renderedPages.clear();
@@ -6509,10 +6513,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const i=Math.max(0,Math.min(doc.pages.length-1,curPageIdx|0));
         // 이미 그렸다고 표시됐지만 DOM이 빈 경우(노트 전환 경쟁)를 현재 쪽만 복구한다.
         try{
-            if(renderedPages.has(i)){
+            if(renderedPages.has(i)&&!_pageRenderJobs.has(i)){
                 const paper=paperAt(i),txt=paper&&paper.querySelector('.layer-text');
                 const els=((doc.pages[i]||{}).els)||[];
-                if(!paper||(els.length&&txt&&!txt.childElementCount)) renderedPages.delete(i);
+                if(!paper||(els.some(e=>e.type==='text'||e.type==='latex')&&txt&&!txt.childElementCount)) renderedPages.delete(i);
             }
         }catch(e){}
         maintainPageWindow(i,true);
@@ -6541,14 +6545,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!renderedPages.has(i)||!canUnloadPage(i)) return false;
         // setTimeout뿐 아니라 이미 RAF 큐에 들어간 step도 토큰으로 무효화한다.
         _pageRenderTok[i]=(_pageRenderTok[i]||0)+1;
-        clearTimeout(chunkTimers[i]); delete chunkTimers[i];
+        _cancelPageRender(i);
         clearPageEls(i);
         renderedPages.delete(i);
         delete _renderedAt[i];
-        // 20.0 · 요소를 회수해도 '한 번 건드린 쪽'은 편집 상태로 남긴다.
-        //   그림으로 되돌리면 그 쪽에 한 편집이 원본 그림에 가려질 수 있다.
-        //   (활성화는 클릭·도구 사용으로만 일어나므로 수가 늘지 않는다.
-        //    회수된 요소는 다시 보일 때 renderPageEls 로 그려진다.)
+        releasePageActivation(i);
+        try{ mountPagePreview(paperAt(i),i); }catch(e){}
         return true;
     }
 
@@ -6620,6 +6622,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(txtL) txtL.innerHTML='';
         if(tbl)  tbl.innerHTML='';
         if(pin)  pin.innerHTML='';
+        paper._sdyReady=false;
     }
 
     function _elBox(el){
@@ -6661,21 +6664,19 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 유휴 시간에 나눠서 미리 돌린다(lazy 쪽은 아직 데이터가 없으니 제외).
         const d=doc;
         if(!d||!Array.isArray(d.pages)) return;
-        let any=false;
-        const n=d.pages.length;
+        const n=d.pages.length, until=performance.now()+5;
         let i=_presanFrom, guard=0;
-        for(;i<n&&guard<24;i++,guard++){     // 한 번에 최대 24쪽(무거운 쪽은 그 자체가 큼)
+        for(;i<n&&guard<24&&performance.now()<until;i++,guard++){     // 한 번에 최대 24쪽(무거운 쪽은 그 자체가 큼)
             const pg=d.pages[i];
             if(!pg||pg.__lazy!=null) continue;
             const els=pg.els||[];
             if(_sanDone.has(els)) continue;
-            any=true;
             const cleaned=sanitizePageEls(els);
             if(cleaned!==els && cleaned.length!==els.length) pg.els=cleaned;
             _sanDone.add(pg.els||[]);
         }
         _presanFrom=i;
-        if(any && i<n){                     // 남았으면 다음 유휴 틱으로
+        if(i<n){                     // 남았으면 다음 유휴 틱으로
             try{
                 if(window.requestIdleCallback) _presanTimer=window.requestIdleCallback(_presanitizeDoc,{timeout:sdyLowEnd()?900:600});
                 else _presanTimer=setTimeout(_presanitizeDoc,sdyLowEnd()?120:40);
@@ -6767,7 +6768,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //     AI·찾기는 예전 그대로 전 쪽 데이터를 쓴다.
     //   · 그림을 못 받는 문서(가져오기가 아닌 노트, 원본이 지워진 문서)는
     //     자동으로 예전 경로(요소 렌더)로 되돌아간다 — 기능 손실이 없다.
-    const activatedPages=new Set();   // 편집 DOM 까지 올린 쪽
+    const activatedPages=new Set();   // 편집 활성화 요청(준비/완료는 별도)
     const _pvFailed=new Set();        // 그림을 못 받은 쪽 → 요소 렌더로 폴백
     let _pvUnsupported=false;         // 이 문서는 미리보기 자체가 없다
 
@@ -6775,58 +6776,104 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function previewCapable(){
         return !!(doc&&doc.__ref&&!_pvUnsupported&&!S.noPagePreview);
     }
-    function previewWidth(){
-        // 현재 배율에서 필요한 실제 픽셀 폭 (서버가 단계로 스냅한다)
-        const w=paperSize().w*Math.max(1,pageScale)*(window.devicePixelRatio||1);
-        // 22.x · 똥컴 모드: 미리보기 그림을 더 작게(480) 구워 받는다. 읽기 화면에선
-        //   1장의 <img> 라 480 이면 충분하고, 디코드/풀레이아웃 비용만 크게 줄어든다.
-        if(sdyTurbo()) return pageScale>1.4?900:480;
-        return w>1200?1600:900;
+    let _previewTimer=null;
+    const _previewUpgrades=new WeakMap();
+    function previewWidth(draft){
+        // 저사양 판정은 초벌 그림의 크기만 줄인다. 읽기 화질을 영구적으로 낮추지 않는다.
+        if(draft&&sdyTurbo()) return 480;
+        const w=paperSize().w*pageScale*(window.devicePixelRatio||1);
+        return w<=480?480:(w>900?1600:900);
     }
-    function previewURL(pi){
+    function previewURL(pi,width){
         return '/api/import/page/'+encodeURIComponent(doc.__ref)+'/'+pi
-              +'?w='+previewWidth();
+              +'?w='+(width||previewWidth());
     }
-    // 종이에 쪽 그림을 붙인다 (이미 편집 DOM 을 올린 쪽은 건드리지 않는다)
     function mountPagePreview(paper,pi){
-        if(!paper||!previewCapable()) return false;
-        if(activatedPages.has(pi)||_pvFailed.has(pi)) return false;
-        if(pageEdited(pi)) return false;      // 편집된 쪽은 원본 그림을 쓰지 않는다
+        if(!paper||!previewCapable()||_pvFailed.has(pi)) return false;
+        if(pageEdited(pi)) return false;
         const layer=paper.querySelector('.layer-preview');
-        if(!layer||layer.firstChild) return false;
-        const img=document.createElement('img');
-        img.className='page-preview-img';
-        img.decoding='async';
-        img.loading='eager';
-        img.alt='';
-        img.draggable=false;
+        if(!layer||layer.firstChild||paper._sdyReady) return false;
+        const d=doc, img=document.createElement('img');
+        img.className='page-preview-img'; img.decoding='async'; img.loading='eager';
+        img.alt=''; img.draggable=false; img.dataset.width=previewWidth(true);
+        const live=()=>doc===d&&paper.isConnected&&paperAt(pi)===paper&&layer.firstChild===img;
+        img.onload=()=>{ if(live()) schedulePreviewQuality(); };
         img.onerror=()=>{
-            // 원본이 없는 문서(또는 옛 서버)면 예전 경로로 조용히 되돌아간다.
+            // 노트 전환/언마운트 뒤 늦게 도착한 오류는 새 노트를 폴백시키면 안 된다.
+            if(!live()) return;
             _pvFailed.add(pi);
             if(_pvFailed.size>=3) _pvUnsupported=true;
-            try{ layer.innerHTML=''; }catch(e){}
-            paper.classList.remove('preview-on');
-            try{ if(!renderedPages.has(pi)) renderPageEls(pi); }catch(e){}
+            layer.innerHTML=''; paper.classList.remove('preview-on');
+            if(!renderedPages.has(pi)) renderPageEls(pi);
         };
-        img.src=previewURL(pi);
-        layer.appendChild(img);
-        paper.classList.add('preview-on');
+        img.src=previewURL(pi,+img.dataset.width);
+        layer.appendChild(img); paper.classList.add('preview-on');
         return true;
     }
+    function upgradePagePreview(pi){
+        const paper=paperAt(pi), layer=paper&&paper.querySelector('.layer-preview');
+        const old=layer&&layer.firstElementChild;
+        if(!old||pageEdited(pi)||!previewCapable()) return;
+        const width=previewWidth(), pending=_previewUpgrades.get(old);
+        if(+old.dataset.width>=width||(pending&&pending.width>=width)) return;
+        const d=doc, rv=window._renderVersion, next=document.createElement('img');
+        const job={width,next}; _previewUpgrades.set(old,job);
+        next.className='page-preview-img'; next.decoding='async'; next.alt=''; next.draggable=false;
+        next.dataset.width=width;
+        const live=()=>doc===d&&window._renderVersion===rv&&paper.isConnected
+            &&paperAt(pi)===paper&&layer.firstChild===old&&!pageEdited(pi)
+            &&_previewUpgrades.get(old)===job;
+        next.onload=async()=>{
+            try{ if(next.decode) await next.decode(); }catch(e){ return; }
+            if(!live()) return;
+            // 새 그림이 실제로 준비되기 전에는 기존 그림을 건드리지 않는다.
+            layer.replaceChild(next,old);
+            _previewUpgrades.delete(old);
+        };
+        // 선명한 그림만 실패했다면 읽을 수 있는 초벌 그림은 그대로 둔다.
+        next.onerror=()=>{};
+        next.src=previewURL(pi,width);
+    }
+    function schedulePreviewQuality(){
+        clearTimeout(_previewTimer);
+        const d=doc, rv=window._renderVersion;
+        if(!d||!d.__ref) return;
+        _previewTimer=setTimeout(()=>{
+            _previewTimer=null;
+            if(doc!==d||window._renderVersion!==rv) return;
+            if(_isScrolling()){ schedulePreviewQuality(); return; }
+            const vis=visiblePageRange(), batches=new Set();
+            for(let i=vis.first;i<=vis.last;i++){
+                upgradePagePreview(i);
+                if(d.pages[i]&&d.pages[i].__lazy!=null) batches.add(Math.floor(i/LAZY_SLICE)*LAZY_SLICE);
+            }
+            // 편집 DOM 없이, 지금 읽는 쪽의 데이터만 미리 받는다. 클릭 때 네트워크를
+            // 처음 시작하지 않으며 저사양에서도 문서 전체 프리필로 확장하지 않는다.
+            batches.forEach(s0=>loadBatch(s0).then(()=>{
+                if(doc!==d||window._renderVersion!==rv) return;
+                // 데이터 예열도 제한된 창만 유지한다(읽으며 문서 전체를 붙잡지 않음).
+                evictFar(curPageIdx|0);
+                for(let i=vis.first;i<=vis.last;i++) if(pageEdited(i)&&paperAt(i)){
+                    dropPagePreview(i); activatePage(i);
+                }
+            }));
+        },180);
+    }
     // 이 쪽을 '편집 가능' 상태로 올린다 — 실제로 건드린 쪽에서만 부른다.
-    function activatePage(pi,opts){
+    function pageReady(pi){
+        const paper=paperAt(pi);
+        return !!(paper&&paper._sdyReady&&renderedPages.has(pi)&&!_pageRenderJobs.has(pi));
+    }
+    function activatePage(pi){
         pi=+pi;
-        if(!doc||!doc.pages||!doc.pages[pi]) return false;
-        if(activatedPages.has(pi)) return true;
+        if(!doc||!doc.pages||!doc.pages[pi]) return Promise.resolve(false);
         activatedPages.add(pi);
         const paper=paperAt(pi);
         if(paper) paper.classList.add('page-active');
-        // 요소 DOM 을 그린 뒤에 그림을 걷어야 '깜빡임'이 없다 (renderPageEls 의
-        // finish() 가 걷는다). 아직 그려지지 않았으면 여기서 시작한다.
-        if(!renderedPages.has(pi)){ try{ renderPageEls(pi); }catch(e){} }
-        else dropPagePreview(pi);
-        if(opts&&opts.quiet!==true){ /* 확장 지점 */ }
-        return true;
+        const job=_pageRenderJobs.get(pi);
+        if(job) return job.promise;                 // 중복 클릭·도구 전환도 같은 작업을 기다린다
+        if(pageReady(pi)) return Promise.resolve(true);
+        return renderPageEls(pi);                   // 내려갔다 돌아온 쪽도 다시 준비한다
     }
     function dropPagePreview(pi){
         const layer=paperQ(pi,'.layer-preview');
@@ -6862,106 +6909,257 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             try{ if(!activatedPages.has(pi)) activatePage(pi); }catch(e){}
         }
     }
+    function releasePageActivation(pi){
+        // 단순 선택/열람은 편집이 아니다. 실제로 고친 쪽만 원본 그림으로 복귀 금지.
+        if(!pageEdited(pi)) activatedPages.delete(pi);
+    }
     function pageEdited(pi){
         const pg=doc&&doc.pages&&doc.pages[pi];
         return !!(pg&&(pg.edited||pg.__dirty));
     }
     try{ window.sdyActivatePage=activatePage; }catch(e){}
 
+    // 미리보기에서 누른 첫 동작을 버리지 않는다. 준비가 끝난 같은 종이의 같은
+    // 좌표에 전달한다. 스크롤/드래그 취소/다른 노트/다른 도구 뒤에는 절대 재생하지 않는다.
+    let _pagePointerIntent=null, _lastPageTap=null;
+    function cancelPagePointer(){ _pagePointerIntent=null; _lastPageTap=null; }
+    function _pagePointerMode(){ return [penActive,eraserActive,textToolActive,pinMode,placeMode,tablePlace,shapeMode]; }
+    function _pagePointerScrolled(it){
+        return it.body.scrollTop!==it.scrollTop||it.body.scrollLeft!==it.scrollLeft;
+    }
+    function _pagePointerValid(it){
+        return _pagePointerIntent===it&&!_pagePointerScrolled(it)&&it.scale===pageScale&&doc===it.doc&&window._renderVersion===it.rv
+            &&it.paper.isConnected&&paperAt(it.pi)===it.paper
+            &&it.mode.every((v,i)=>v===_pagePointerMode()[i]);
+    }
+    function _pagePointerCopy(e,detail){
+        return {bubbles:true,cancelable:true,button:0,buttons:1,detail:detail||1,
+            clientX:e.clientX,clientY:e.clientY,ctrlKey:!!e.ctrlKey,metaKey:!!e.metaKey,
+            shiftKey:!!e.shiftKey,altKey:!!e.altKey,pointerId:e.pointerId||1,
+            pointerType:e.pointerType||'mouse',isPrimary:true};
+    }
+    function _pagePointerTarget(it){
+        if(it.ink) return it.paper.querySelector('.draw-surface');
+        const hit=document.elementFromPoint&&document.elementFromPoint(it.event.clientX,it.event.clientY);
+        if(hit&&it.paper.contains(hit)) return hit;
+        // DOM을 배치하지 않는 테스트/구형 WebView의 좌표 폴백. 배경 이미지는 선택 대상 아님.
+        const p=pageLocal(it.event,it.pi), els=it.doc.pages[it.pi].els||[];
+        for(let i=els.length-1;i>=0;i--){
+            const el=els[i]; if(el.isBg) continue;
+            const b=elBBox(el);
+            if(b&&p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h){
+                const node=paperQ(it.pi,'[data-id="'+el.id+'"]');
+                if(node) return node.querySelector('.tb-content')||node;
+            }
+        }
+        return it.paper;
+    }
+    function _replayPagePointer(it){
+        if(!_pagePointerValid(it)){ if(_pagePointerIntent===it) cancelPagePointer(); return; }
+        if(!it.ready||(!it.up&&!it.ink)) return;
+        const target=_pagePointerTarget(it);
+        if(!target) return;
+        _pagePointerIntent=null;
+        const EventType=window.PointerEvent||window.MouseEvent;
+        // 기존 선택/표/배치/그리기 핸들러를 그대로 탄다. 별도 편집 엔진을 만들지 않는다.
+        target.dispatchEvent(new EventType('pointerdown',it.event));
+        if(it.ink){
+            for(const point of it.moves) drawMove({...point,preventDefault(){}});
+        }
+        if(it.up) document.dispatchEvent(new EventType('pointerup',{...it.event,buttons:0}));
+    }
+    function _preparePagePointer(it){
+        activatePage(it.pi).then(ok=>{
+            if(!_pagePointerValid(it)){ if(_pagePointerIntent===it) cancelPagePointer(); return; }
+            if(!ok&&!pageReady(it.pi)){
+                if(_pageRenderJobs.has(it.pi)) _preparePagePointer(it); // 원격 변경으로 교체된 작업을 따라감
+                else cancelPagePointer();
+                return;
+            }
+            it.ready=true; _replayPagePointer(it);
+        });
+    }
+    function deferPagePointer(e,pi){
+        if(e.button!==0||pageReady(pi)) return false;
+        if(e.isPrimary===false){ cancelPagePointer(); e.stopImmediatePropagation(); return true; }
+        // 작은 일반 노트는 동기로 준비되므로 기존 네이티브 이벤트를 그대로 보낸다.
+        const touch=e.pointerType==='touch'&&!penActive&&!textToolActive&&!pinMode&&!placeMode&&!tablePlace;
+        if(!touch){ activatePage(pi); if(pageReady(pi)) return false; }
+        const now=Date.now(), prev=_lastPageTap;
+        const detail=e.detail>=2||prev&&prev.doc===doc&&prev.pi===pi&&now-prev.at<450
+            &&Math.hypot(e.clientX-prev.x,e.clientY-prev.y)<8?2:1;
+        _lastPageTap={doc,pi,at:now,x:e.clientX,y:e.clientY};
+        const body=document.getElementById("editorBody");
+        const it={doc,rv:window._renderVersion,paper:paperAt(pi),pi,
+            body,scrollTop:body.scrollTop,scrollLeft:body.scrollLeft,scale:pageScale,
+            event:_pagePointerCopy(e,detail),mode:_pagePointerMode(),ink:!!penActive,
+            moves:[],up:false,ready:false,touch};
+        _pagePointerIntent=it;
+        if(!touch) _preparePagePointer(it);       // 터치 스크롤은 편집 활성화가 아니다
+        if(!touch) e.preventDefault();
+        e.stopImmediatePropagation();
+        return true;
+    }
+    sdyAddPointerCompat(document,'pointerdown',e=>{
+        const p=e.target.closest&&e.target.closest('#pagesStage .paper');
+        if(!p){ cancelPagePointer(); return; }
+        deferPagePointer(e,+p.dataset.pageIdx);
+    },true);
+    sdyAddPointerCompat(document,'pointermove',e=>{
+        const it=_pagePointerIntent;
+        if(!it||it.up) return;
+        if(it.ink){
+            // 준비 동안 들어온 첫 펜 획도 버리지 않는다(예열이 끝나면 실시간 그리기로 인계).
+            if(it.moves.length>=512) it.moves=it.moves.filter((_,i)=>i%2===0);
+            it.moves.push(_pagePointerCopy(e));
+        }else if(Math.hypot(e.clientX-it.event.clientX,e.clientY-it.event.clientY)>8) cancelPagePointer();
+    },{capture:true,passive:true});
+    sdyAddPointerCompat(document,'pointerup',()=>{
+        const it=_pagePointerIntent; if(!it) return;
+        it.up=true;
+        if(it.touch) _preparePagePointer(it);
+        else _replayPagePointer(it);
+    },true);
+    document.addEventListener('dblclick',e=>{
+        const it=_pagePointerIntent;
+        if(it&&it.paper.contains(e.target)){
+            it.event.detail=2; e.preventDefault(); e.stopImmediatePropagation();
+        }
+    },true);
+    document.addEventListener('pointercancel',cancelPagePointer,true);
+    document.getElementById('editorBody').addEventListener('wheel',cancelPagePointer,{passive:true});
+    document.getElementById('editorBody').addEventListener('scroll',()=>{
+        // A scroll event queued BEFORE this down must not discard a tap on the
+        // already-settled page. Cancel only if its captured viewport moved.
+        if(!_pagePointerIntent||_pagePointerScrolled(_pagePointerIntent)) cancelPagePointer();
+    },{passive:true});
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape') cancelPagePointer(); },true);
+
+    function _cancelPageRender(idx){
+        const job=_pageRenderJobs.get(idx);
+        if(!job) return;
+        _pageRenderJobs.delete(idx);
+        job.paper.classList.remove('page-preparing');
+        job.paper.removeAttribute('aria-busy');
+        job.resolve(false);
+    }
+    function resetPageWork(){
+        cancelAnimationFrame(_pageRenderFrame); _pageRenderFrame=0;
+        Array.from(_pageRenderJobs.keys()).forEach(_cancelPageRender);
+        cancelAnimationFrame(_tightRaf); _tightRaf=0;
+        clearTimeout(_tightWait); _tightWait=0; _tightQueue.clear();
+        cancelPagePointer();
+        clearTimeout(_previewTimer); _previewTimer=null;
+        clearTimeout(_hiBgTimer); _hiBgTimer=null; _hiBgDone.clear(); _hiBgBusy.clear();
+    }
+    function _pageJobLive(job){
+        return _pageRenderJobs.get(job.idx)===job&&doc===job.doc
+            &&window._renderVersion===job.rv&&job.doc.__rv===job.rv
+            &&job.paper.isConnected&&paperAt(job.idx)===job.paper;
+    }
+    function _queuePageRender(){
+        if(!_pageRenderFrame) _pageRenderFrame=requestAnimationFrame(_drainPageRenders);
+    }
+    function _drainPageRenders(){
+        _pageRenderFrame=0;
+        // 여러 쪽을 동시에 깨워도 쪽마다 타이머/청크 예산이 곱해지지 않는다.
+        const until=performance.now()+5;
+        const jobs=Array.from(_pageRenderJobs.values()).filter(j=>!j.loading);
+        jobs.sort((a,b)=>(b.idx===curPageIdx)-(a.idx===curPageIdx));
+        for(const job of jobs){
+            if(!_pageJobLive(job)){ _cancelPageRender(job.idx); continue; }
+            try{ job.step(until); }catch(e){
+                console.warn('페이지 렌더 실패',job.idx,e);
+                _cancelPageRender(job.idx); renderedPages.delete(job.idx);
+            }
+            if(performance.now()>=until) break;
+        }
+        if(Array.from(_pageRenderJobs.values()).some(j=>!j.loading)) _queuePageRender();
+    }
     function renderPageEls(idx){
-        // 아직 안 가져온 슬라이스면 로드 후 렌더 (한 번에 다 열지 않는다)
-        const pgz=doc&&doc.pages[idx];
-        if(pgz&&pgz.__lazy!=null){
-            const _d=doc;   // 14.9 · 로드가 끝나도 같은 노트일 때만 그린다
-            ensureLazyPage(idx).then(()=>{ if(doc===_d && window._renderVersion===_d.__rv) renderPageEls(idx); });
-            return;
-        }
-        const paper=paperAt(idx);
-        // 14.12 · DOM에 없거나 다른 노트의 요소라면 무시
-        // 14.14 · paper 가 아직 없으면 renderedPages 에 넣지 않는다.
-        //   (예전에 먼저 add 해 버려, 이후 ensureVisible 재시도가 영영 스킵됐다)
-        if(!paper || !paper.parentNode) return;
-        // renderVersion 이 다르면 (노트가 전환됐으면) 건드리지 않는다
-        if(window._renderVersion !== (doc&&doc.__rv)) return;
-        renderedPages.add(idx);
-        _renderedAt[idx]=Date.now();   // 18.13 · 회수 유예 판단용 렌더 시각
+        const d=doc, paper=paperAt(idx), rv=window._renderVersion;
+        if(!d||!d.pages[idx]||!paper||!paper.isConnected||rv!==d.__rv)
+            return Promise.resolve(false);
+        _cancelPageRender(idx);                     // 명시적 재렌더는 이전 작업을 교체
         const tok=_pageRenderTok[idx]=(_pageRenderTok[idx]||0)+1;
-        const size=paperSize();
-        const imgL=paper.querySelector('.layer-img');
-        const svg=paper.querySelector('.layer-stroke');
-        const txtL=paper.querySelector('.layer-text');
-        imgL.innerHTML=''; svg.innerHTML=''; txtL.innerHTML='';
-        svg.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
-        clearTimeout(chunkTimers[idx]); delete chunkTimers[idx];
+        const job={idx,doc:d,paper,rv,loading:false,step:null,resolve:null,promise:null};
+        job.promise=new Promise(resolve=>{ job.resolve=resolve; });
+        _pageRenderJobs.set(idx,job);
+        renderedPages.add(idx);
+        _renderedAt[idx]=Date.now();
+        paper._sdyReady=false;
+        paper.classList.add('page-preparing'); paper.setAttribute('aria-busy','true');
 
-        // 가져오기 중복 제거는 겹침 넓이를 서로 비교하는 O(n^2) 작업이다.
-        // 스크롤로 같은 쪽을 다시 그릴 때마다 되풀이하면 그게 곧 렉이므로
-        // '이 배열은 이미 정리했다'를 WeakSet 으로 기억해 한 번만 돌린다.
-        ensureTableGrid(idx);       // 이 쪽 표의 격자선(없으면 지금 만든다)
-        const els=_ensureSanitized(idx);
-        const makeBags=()=>({img:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()});
-        const flushBags=b=>{
-            if(_pageRenderTok[idx]!==tok) return;
-            imgL.appendChild(b.img); svg.appendChild(b.svg); txtL.appendChild(b.txt);
-        };
-        const put=(el,b)=>{
-            if(_pageRenderTok[idx]!==tok) return;
-            const to=b||{img:imgL,svg:svg,txt:txtL};
-            if(el.type==='image') to.img.appendChild(buildImageEl(el,idx));
-            else if(el.type==='legacyDraw'){
-                const im=document.createElementNS('http://www.w3.org/2000/svg','image');
-                im.setAttribute('href',el.url); im.setAttribute('x',0); im.setAttribute('y',0);
-                im.setAttribute('width',size.w); im.setAttribute('height',size.h);
-                to.svg.appendChild(im);
+        const begin=()=>{
+            if(!_pageJobLive(job)) return;
+            const pg=d.pages[idx];
+            if(!pg||pg.__lazy!=null){               // 요청 실패를 재귀 렌더/재요청으로 바꾸지 않는다
+                _cancelPageRender(idx); renderedPages.delete(idx); return;
             }
-            else if(el.type==='stroke') to.svg.appendChild(buildStrokeEl(el,idx));
-            else if(el.type==='text') to.txt.appendChild(buildTextEl(el,idx));
-            else if(el.type==='latex') to.txt.appendChild(buildLatexEl(el,idx));
+            job.loading=false;
+            const size=paperSize();
+            const imgL=paper.querySelector('.layer-img'), svg=paper.querySelector('.layer-stroke'),
+                txtL=paper.querySelector('.layer-text');
+            _dropPageTightFits(paper);
+            imgL.innerHTML=''; svg.innerHTML=''; txtL.innerHTML='';
+            svg.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
+            ensureTableGrid(idx);
+            const els=_ensureSanitized(idx);
+            let at=0;
+            const finish=()=>{
+                if(!_pageJobLive(job)||_pageRenderTok[idx]!==tok) return;
+                _pageRenderJobs.delete(idx);
+                paper._sdyReady=true;
+                paper.classList.remove('page-preparing'); paper.removeAttribute('aria-busy');
+                dropPagePreview(idx);              // 준비 도중 두 번째 클릭이 그림을 걷지 못한다
+                try{ renderTblDivs(idx); renderPins(idx); }catch(e){}
+                try{ if(findOpen) paintFindHits(); }catch(e){}
+                try{ if(wfOn) wfPaintPage(idx); }catch(e){}
+                scheduleHiBg();
+                job.resolve(true);
+            };
+            job.step=until=>{
+                if(!_pageJobLive(job)||_pageRenderTok[idx]!==tok){ _cancelPageRender(idx); return; }
+                // 데이터가 교체됐으면 오래된 청크를 새 문서 위에 붙이지 않는다.
+                if(d.pages[idx]!==pg||(pg.els&&pg.els!==els)){ renderPageEls(idx); return; }
+                const bags={img:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()};
+                let weight=0;
+                do{
+                    const el=els[at++];
+                    if(!el) break;
+                    if(el.type==='image') bags.img.appendChild(buildImageEl(el,idx));
+                    else if(el.type==='legacyDraw'){
+                        const im=document.createElementNS('http://www.w3.org/2000/svg','image');
+                        im.setAttribute('href',el.url); im.setAttribute('x',0); im.setAttribute('y',0);
+                        im.setAttribute('width',size.w); im.setAttribute('height',size.h); bags.svg.appendChild(im);
+                    }else if(el.type==='stroke') bags.svg.appendChild(buildStrokeEl(el,idx));
+                    else if(el.type==='text') bags.txt.appendChild(buildTextEl(el,idx));
+                    else if(el.type==='latex') bags.txt.appendChild(buildLatexEl(el,idx));
+                    weight+=256+(el.html||'').length+(el.pts||[]).length*24;
+                    // DOM 삽입 뒤 브라우저가 할 스타일/레이아웃 비용도 제한한다.
+                    // 글상자 36개라도 단어가 2160개면 '가벼운 쪽'이 아니다.
+                }while(at<els.length&&performance.now()<until&&weight<12000);
+                const flushBags=()=>{ imgL.appendChild(bags.img); svg.appendChild(bags.svg); txtL.appendChild(bags.txt); };
+                flushBags();
+                if(at>=els.length) finish();
+            };
+            const cheap=els.length<=120&&els.reduce((n,e)=>n+256+(e.html||'').length+(e.pts||[]).length*24,0)<6000;
+            if(cheap) job.step(performance.now()+5); // 작은 일반 노트/표는 기존 동기 동작 유지
+            if(_pageJobLive(job)) _queuePageRender();
         };
-        const finish=()=>{
-            // 14.12 · finish 도 renderVersion 검증을 통과해야 실행
-            if(window._renderVersion !== (doc&&doc.__rv)) return;
-            // 20.0 · 요소가 다 올라온 뒤에 쪽 그림을 걷는다(깜빡임 없이 교대).
-            try{ if(activatedPages.has(idx)) dropPagePreview(idx); }catch(e){}
-            try{ renderTblDivs(idx); }catch(e){}
-            try{ renderPins(idx); }catch(e){}
-            try{ if(findOpen) paintFindHits(); }catch(e){}
-            // 가상화로 내려갔다 돌아온 쪽도 단어 분석 색칠을 되찾는다
-            try{ if(wfOn) wfPaintPage(idx); }catch(e){}
-            try{
-                if((doc.pages[idx].els||[]).length===0&&doc.__ref){
-                    doc.__retry=doc.__retry||{};
-                    const n=doc.__retry[idx]||0;
-                    if(n<2){ doc.__retry[idx]=n+1;
-                        setTimeout(()=>retryPage(idx),300); }   // 자동 복구
-                }
-            }catch(e){}
-        };
-
-        if(els.length<=HEAVY_ELS){          // 가벼우면 한 번에
-            const bags=makeBags();
-            els.forEach(el=>put(el,bags)); flushBags(bags); finish(); return;
+        if(d.pages[idx].__lazy!=null){
+            job.loading=true;
+            ensureLazyPage(idx).then(begin,()=>{
+                if(_pageJobLive(job)){ _cancelPageRender(idx); renderedPages.delete(idx); }
+            });
+        }else{
+            // 무거운 쪽의 sanitize/DOM 생성은 포인터 핸들러 바깥에서 시작한다.
+            const els=d.pages[idx].els||[];
+            const cheap=els.length<=120&&els.reduce((n,e)=>n+256+(e.html||'').length+(e.pts||[]).length*24,0)<6000;
+            if(cheap) begin();
+            else{ job.step=begin; _queuePageRender(); }
         }
-        // 무거우면: 한 프레임의 요소를 fragment 세 개에 모아 레이어별 한 번만 삽입한다.
-        // 14.30.0 · 저사양 기기는 프레임당 채우는 개수를 줄여 청크 사이의
-        //   메인 스레드 점유를 낮춘다. (결과는 같고 더 많은 프레임에 걸칠 뿐)
-        const chunkN=sdyTurbo()?Math.min(CHUNK,24):(sdyLowEnd()?Math.min(CHUNK,36):CHUNK);
-        let at=0;
-        const step=()=>{
-            if(_pageRenderTok[idx]!==tok) return;
-            // 14.12 · step 실행 중 노트가 전환되면 중단
-            if(window._renderVersion !== (doc&&doc.__rv)) return;
-            const end=Math.min(els.length, at+chunkN),bags=makeBags();
-            for(;at<end;at++) put(els[at],bags);
-            flushBags(bags);
-            if(at<els.length){
-                chunkTimers[idx]=setTimeout(()=>requestAnimationFrame(step),0);
-            }else{
-                delete chunkTimers[idx];
-                finish();
-            }
-        };
-        step();
+        return job.promise;
     }
 
     function layoutPages(){
@@ -6990,7 +7188,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 올라와 있는 종이만 다시 놓는다 (자리는 쪽 번호로 계산 — 배열 순서가 아니다)
         mountedShells.forEach((w,i)=>positionPageWrap(w,i));
         // 배율이 바뀌면 화면에 걸치는 쪽 수도 달라진다 → 셸 창을 다시 맞춘다
-        try{ syncPageShells(); }catch(e){}
+        try{ syncPageShells(); schedulePreviewQuality(); }catch(e){}
         const zone=document.getElementById('addPageZone');
         if(zone){
             zone.style.top=(doc.pages.length*(size.h+PAGE_GAP)*pageScale)+'px';
@@ -7192,7 +7390,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     async function upgradeHiBg(pi){
         if(!doc||!doc.__ref) return;                     // 가져온(서버 보관) 문서만
         if(_hiBgDone.has(pi)||_hiBgBusy.has(pi)) return;
-        const page=doc.pages[pi];
+        const d0=doc, rv=window._renderVersion;
+        const page=d0.pages[pi];
         if(!page||page.__lazy!=null) return;             // 아직 안 불린 쪽은 제외
         // 이 쪽에 저화질 배경(가져오기 배경)이 있는지 확인
         const paper=paperAt(pi);
@@ -7202,6 +7401,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{
             const r=await fetch('/api/import/bg/'+encodeURIComponent(doc.__ref)+'/'+pi,{cache:'no-store'});
             const d=await r.json().catch(()=>({}));
+            if(doc!==d0||window._renderVersion!==rv) return;
+            if(d0.pages[pi]!==page){ _hiBgBusy.delete(pi); return; }
             if(d&&d.ok&&d.url){
                 // 저장된 요소 URL 도 갱신해 다음 열 때부터 고화질 유지
                 const el=(page.els||[]).find(e=>e.type==='image'&&e.isBg);
@@ -7210,7 +7411,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 _hiBgDone.add(pi);
             }
         }catch(e){}
-        _hiBgBusy.delete(pi);
+        if(doc===d0&&window._renderVersion===rv) _hiBgBusy.delete(pi);
     }
     function scheduleHiBg(){
         clearTimeout(_hiBgTimer);
@@ -7230,8 +7431,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const step=(pageH+gap)*scale,ph=pageH*scale;
         if(!(step>0)||!(ph>0)) return Math.max(0,Math.min(count-1,current|0));
         const top=Math.max(0,Number(scrollTop)||0),bottom=top+Math.max(0,Number(viewportH)||0);
-        const first=Math.max(0,Math.floor((top-ph)/step));
-        const last=Math.min(count-1,Math.floor(bottom/step));
+        const first=Math.max(0,Math.min(count-1,Math.floor((top-ph)/step)));
+        const last=Math.max(first,Math.min(count-1,Math.floor(bottom/step)));
         let best=Math.max(first,Math.min(last,current|0)),bestSeen=-1;
         for(let i=first;i<=last;i++){
             const pt=i*step,pb=pt+ph;
@@ -7253,7 +7454,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 종이(셸)는 매 프레임 값싸게 맞추고, 무거운 내용은 스크롤이 멎은 뒤에 채운다.
         syncPageShells();
         maintainPageWindow(idx,false);
-        scheduleHiBg();                                    // 보는 쪽을 점점 고화질로
+        scheduleHiBg();
+        schedulePreviewQuality();                          // 읽기 화질과 편집 준비는 별개
         try{ positionTblBar(); }catch(e){}
         const zone=document.getElementById('addPageZone');
         if(zone){
@@ -7423,7 +7625,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(items.length<2){ toast('두 개 이상 선택해 주세요',1800); return; }
         pushHistory();
         const gid='g_'+Math.random().toString(36).slice(2,9);
-        items.forEach(it=>{ const el=findEl(it.pageIdx,it.id); if(el) el.group=gid; });
+        items.forEach(it=>{ const el=findEl(it.pageIdx,it.id); if(el){ el.group=gid; markPageEdited(it.pageIdx); } });
         saveDoc();
         toast(`${items.length}개를 묶었습니다`,1600);
     }
@@ -7433,7 +7635,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         pushHistory();
         let cnt=0;
         items.forEach(it=>{ const el=findEl(it.pageIdx,it.id);
-            if(el&&el.group){ delete el.group; cnt++; } });
+            if(el&&el.group){ delete el.group; cnt++; markPageEdited(it.pageIdx); } });
         saveDoc();
         toast(cnt?`묶음을 해제했습니다`:'묶인 항목이 없습니다',1600);
     }
@@ -7672,7 +7874,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const ids=els.map(x=>x.id);
             doc.pages[pi].els=(doc.pages[pi].els||[]).filter(x=>!ids.includes(x.id));
             clearMulti(); deselectAll();
-            renderPageEls(pi); saveDoc();
+            markPageEdited(pi); renderPageEls(pi); saveDoc();
             if(singleImg) osCopyImageToClipboard(els[0], true);
             else toast(`${els.length}개 잘라냄`,1200);
         }else{
@@ -7705,7 +7907,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             doc.pages[pi].els.push(el); made.push(el);
         });
-        renderPageEls(pi); saveDoc();
+        markPageEdited(pi); renderPageEls(pi); saveDoc();
         clearMulti(); deselectAll(true);
         // 붙여넣은 것들을 선택 상태로
         const paper=paperAt(pi);
@@ -7762,6 +7964,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const tableGroups=new Set(pageTables(pi).filter(t=>tableIds.has(t.id)).map(t=>t.group).filter(Boolean));
         const shouldRemove=el=>ids.has(el.id)||tableIds.has(tblOf(el))||(el.group&&tableGroups.has(el.group));
         const removed=all.filter(shouldRemove);
+        if(removed.length) markPageEdited(pi);
         doc.pages[pi].els=all.filter(el=>!shouldRemove(el));
         const activeTableRemoved=!!(activeTbl&&activeTbl.pageIdx===pi&&tableIds.has(activeTbl.tid));
         if(tableIds.size) doc.pages[pi].tables=pageTables(pi).filter(t=>!tableIds.has(t.id));
@@ -7882,7 +8085,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             el.latex=src; el.displayMath=display?1:0; el.fontSize=el.fontSize||20;
             closeLatexModal();
             if(renderedPages.has(pi)) renderPageEls(pi);
-            saveDoc(); toast('수식을 수정했습니다',1300);
+            markPageEdited(pi); saveDoc(); toast('수식을 수정했습니다',1300);
             return;
         }
         // ② 우클릭 '수식 넣기' — 눌렀던 바로 그 지점(문서 좌표)에
@@ -7896,7 +8099,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 x:Math.round(c.x),y:Math.round(c.y),w,h,
                 fontSize:display?22:18,displayMath:display?1:0});
             if(renderedPages.has(anchor.pageIdx)) renderPageEls(anchor.pageIdx);
-            saveDoc(); toast('수식을 넣었습니다',1300);
+            markPageEdited(anchor.pageIdx); saveDoc(); toast('수식을 넣었습니다',1300);
             return;
         }
         // ③ 도구막대 '수식 넣기' — 상자·표처럼 고스트를 보여 주고 누른 자리에 넣는다.
@@ -8128,134 +8331,173 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 브라우저 글꼴이 PDF 글꼴보다 넓게 그려져도 다음 단어 자리를 침범하지 않게
     // 자간(약간 넘칠 때) 또는 글자 크기(많이 넘칠 때)를 자동 압축한다.
     //
-    // ★ 성능 — 가져온 논문은 글상자마다 단어 span 이 수십 개다. 맞춤은 글자
-    //   폭을 실제 레이아웃(offsetLeft/scrollWidth)으로 재는 일이라, 같은 상자를
-    //   스크롤로 다시 그릴 때마다 되풀이하면 그게 곧 렉이 된다.
-    //   · 결과는 상자 내용(html)·위치(el.x/y 는 관여 안 함)·크기·웹폰트 로드
-    //     상태로만 결정되므로, 그 값들이 같으면 다시 잴 필요가 없다.
-    //   · 그래서 맞춤 결과를 세션 캐시(WeakMap — doc 데이터에 안 섞임)에 두고,
-    //     같은 상태로 다시 그릴 때는 저장된 결과만 적용한다. 내용/크기가
-    //     바뀌거나 폰트가 늦게 로드되면(상태가 바뀌면) 자동으로 다시 잰다.
-    //   · el.html/해시 갱신도 '실제로 바뀌었을 때만' 한다 — 매 렌더마다
-    //     똑같은 문자열로 저장·동기화 상태를 뒤엎지 않는다(결과 동일).
-    const _tightFitCache=new WeakMap();      // el → 마지막 맞춤 결과 (세션 한정)
-
-    // ★ 18.13 성능 — tight(가져온) 상자의 단어 맞춤(fitTightSpans)은 스팬마다
-    //   offsetTop/offsetLeft/scrollWidth 를 읽고 transform/width 를 쓰는 레이아웃
-    //   무거운 작업이다. 예전엔 상자 하나당 rAF 를 하나씩 걸어서, 요소가 많은 큰
-    //   페이지를 처음 열 때 수백 개의 rAF 가 한 프레임에 몰려 레이아웃 쓰래싱을
-    //   일으켰다(스크롤 버벅임의 1순위). → 큐에 모아 프레임당 한 번만 돌리고,
-    //   스크롤 중에는 아예 미룬다(레이아웃 읽기를 스크롤 프레임에 섞지 않는다).
-    //   상자가 DOM 에 아직 안 붙은 채로 차례가 오면 그 프레임은 건너뛴다 —
-    //   원래 rAF 버전과 같은 의미(연결 안 됐으면 맞추지 않는다).
-    let _scrollUntil=0;                     // 이 시각(ms)까지는 '스크롤 중'으로 본다
+    // 단어 맞춤은 표시 작업이다. 읽기/편집 전환 중 원문·동기화 해시를 쓰지 않는다.
+    // 모든 폭을 먼저 읽고, 그 다음 스타일을 쓴다. 단어마다 read→write 를 섞으면
+    // 36문단/2160단어에서 강제 레이아웃이 2천 번 발생해 한 프레임이 수 초 멎는다.
+    const _tightFitCache=new WeakMap();
+    let _tightFontEpoch=0;
+    let _scrollUntil=0;
     function _isScrolling(){ return Date.now()<_scrollUntil; }
     function _markScrolling(ms){ _scrollUntil=Math.max(_scrollUntil,Date.now()+(ms||250)); }
-    const _tightQueue=[];                   // {c, el} — 아직 단어 맞춤을 안 한 tight 상자
-    let _tightRaf=0;
+    const _tightQueue=new Map();             // content → resumable job
+    let _tightRaf=0, _tightWait=0;
+    function _tightKey(el){
+        return [el.w,el.h,el.fontSize,el.font,el.fontWeight,el.fontStyle,
+            el.ls,el.wsp,el.lg,_fontState(),_tightFontEpoch].join('|');
+    }
     function _queueTightFit(c,el){
         if(!c||!el) return;
-        _tightQueue.push({c,el});
-        if(!_tightRaf) _tightRaf=requestAnimationFrame(_drainTightQueue);
+        const old=_tightQueue.get(c), key=_tightKey(el);
+        if(!old||old.el!==el||old.html!==el.html||old.key!==key)
+            _tightQueue.set(c,{c,el,html:el.html,key,readAt:0,fit:null});
+        if(!_tightRaf&&!_tightWait) _tightRaf=requestAnimationFrame(_drainTightQueue);
+    }
+    function _dropPageTightFits(paper){
+        const layer=paper&&paper.querySelector('.layer-text');
+        if(layer) for(const w of layer.children){
+            const c=w.querySelector('.tb-content');
+            if(c) _tightQueue.delete(c);
+        }
+    }
+    function _tightFitLive(c,el){
+        const w=c&&c.parentElement;
+        return !!(w&&w.isConnected&&!w.classList.contains('edit')
+            &&w._sdyRv===(doc&&doc.__rv)&&findEl(+w.dataset.pageIdx,w.dataset.id)===el);
     }
     function _drainTightQueue(){
         _tightRaf=0;
-        if(!_tightQueue.length) return;
-        // 스크롤 중이면 이번 프레임은 읽지 않고 다음 프레임으로 미룬다.
-        if(_isScrolling()){ _tightRaf=requestAnimationFrame(_drainTightQueue); return; }
-        // 22.1 · 똥컴은 프레임당 맞춤 상자를 더 줄인다. (클릭 직후 렌더된 쪽의
-        //   단어 폭을 다시 재는 일이 한 프레임에 몰려 캐럿이 늦게 뜨는 일을 막는다)
-        let budget=sdyTurbo()?32:96;        // 한 프레임에 맞출 상자 수 상한(나머지는 다음 프레임)
-        while(_tightQueue.length&&budget-->0){
-            const item=_tightQueue.shift();
-            if(!item.c.isConnected) continue;   // 아직 안 붙었으면 이번엔 건너뜀(재렌더 시 재요청됨)
-            fitTightSpans(item.c,item.el);
+        if(!_tightQueue.size) return;
+        if(_isScrolling()||_pageRenderJobs.size){
+            _tightWait=setTimeout(()=>{ _tightWait=0; _queueTightDrain(); },80);
+            return;
         }
-        if(_tightQueue.length) _tightRaf=requestAnimationFrame(_drainTightQueue);
+        const until=performance.now()+5;
+        // 한 프레임은 읽기 또는 쓰기만 한다. 한 문단 안에서도 재개 가능해야
+        // 수천 단어짜리 단일 상자가 '상자 수 예산'을 뚫지 못한다.
+        const writing=Array.from(_tightQueue.values()).some(j=>j.fit);
+        let writes=0;
+        for(const [c,job] of _tightQueue){
+            const el=job.el;
+            if(!_tightFitLive(c,el)||job.html!==el.html||job.key!==_tightKey(el)){
+                _tightQueue.delete(c); continue;
+            }
+            if(writing){
+                if(!job.fit) continue;
+                const before=job.fit.writeAt||0;
+                const done=_applyTightFit(job.fit,until,80-writes);
+                writes+=(job.fit.writeAt||0)-before;
+                if(done) _tightQueue.delete(c);
+                if(writes>=80) break;       // 다음 페인트의 스타일 계산량도 제한
+            }else{
+                const fit=_measureTightSpans(c,el,job,until);
+                if(fit===null) _tightQueue.delete(c);
+                else if(fit) job.fit=fit;
+            }
+            if(performance.now()>=until) break;
+        }
+        if(_tightQueue.size) _queueTightDrain();
     }
-    function _fontState(){                   // 'P'=웹폰트 로딩 중, 'L'=확정(또는 폰트 없음)
-        try{
-            if(document.fonts&&document.fonts.status==='loading') return 'P';
-        }catch(e){}
+    function _queueTightDrain(){
+        if(_tightQueue.size&&!_tightRaf) _tightRaf=requestAnimationFrame(_drainTightQueue);
+    }
+    function _fontState(){
+        try{ if(document.fonts&&document.fonts.status==='loading') return 'P'; }catch(e){}
         return 'L';
     }
-    // 이미 맞춘 적 있는 상자면 저장된 확장 크기만 적용하고 true (재측정 생략)
     function _tightFitHit(c,el){
-        const w=c.parentElement;
-        if(!el||!w) return false;
         const rec=_tightFitCache.get(el);
-        if(!rec) return false;
-        if(rec.html!==el.html||rec.w!==(el.w||0)||rec.h!==(el.h||0)
-           ||rec.fs!==(el.fontSize||0)||rec.ls!==(el.ls||0)||rec.wsp!==(el.wsp||0)
-           ||rec.lg!==(el.lg||1)||rec.fonts!==_fontState()) return false;
-        if(rec.growR>0){ c.style.width=rec.growR+'px'; w.style.width=rec.growR+'px'; }
-        if(rec.growB>0){ c.style.height=rec.growB+'px'; w.style.height=rec.growB+'px'; }
-        return true;
+        return rec&&rec.html===el.html&&rec.w===(el.w||0)&&rec.h===(el.h||0)
+            &&rec.fs===(el.fontSize||0)&&rec.font===el.font&&rec.weight===el.fontWeight&&rec.style===el.fontStyle
+            &&rec.ls===(el.ls||0)&&rec.wsp===(el.wsp||0)&&rec.lg===(el.lg||1)
+            &&rec.fonts===_fontState()&&rec.epoch===_tightFontEpoch?rec:null;
+    }
+    function _measureTightSpans(c,el,job,until){
+        job=job||{readAt:0}; until=until==null?Infinity:until;
+        if(!job.sps){
+            job.sps=Array.from(c.children).filter(s=>s.tagName==='SPAN');
+            const cached=_tightFitHit(c,el);
+            if(cached&&cached.transforms.length===job.sps.length)
+                return {c,el,sps:job.sps,rec:cached,writeAt:0};
+            job.cw=c.clientWidth; job.ch=c.clientHeight;
+            if(!job.cw&&!job.ch) return null;
+            job.groups=new Map(); job.maxR=0; job.maxB=0;
+        }
+        const sps=job.sps;
+        while(job.readAt<sps.length){
+            const i=job.readAt++, s=sps[i];
+            const m={i,x:s.offsetLeft,y:s.offsetTop,w:s.scrollWidth,h:s.offsetHeight,
+                fs:parseFloat(s.dataset.fs)||parseFloat(s.style.fontSize)||14,
+                justified:s.hasAttribute('data-j')};
+            if(!job.groups.has(m.y)) job.groups.set(m.y,[]);
+            job.groups.get(m.y).push(m);
+            job.maxR=Math.max(job.maxR,m.x+m.w); job.maxB=Math.max(job.maxB,m.y+m.h);
+            if(performance.now()>=until) return;   // 다음 프레임에서 이 단어 다음부터
+        }
+        if(!job.rows){
+            job.rows=Array.from(job.groups.values()); job.rowAt=0;
+            job.transforms=new Array(sps.length).fill(null);
+        }
+        while(job.rowAt<job.rows.length){
+            const group=job.rows[job.rowAt++];
+            group.sort((a,b)=>a.x-b.x);
+            group.forEach((m,i)=>{
+                if(m.justified) return;
+                const next=group[i+1], avail=(next?next.x:job.cw)-m.x-0.5;
+                const space=Math.max(1.5,m.fs*0.25);
+                job.transforms[m.i]=m.w>avail-space&&m.w>0
+                    ?'scaleX('+Math.max(0.84,(avail-space)/m.w).toFixed(3)+')':'';
+            });
+            if(performance.now()>=until) return;
+        }
+        return {c,el,sps,writeAt:0,rec:{html:el.html,w:el.w||0,h:el.h||0,fs:el.fontSize||0,
+            font:el.font,weight:el.fontWeight,style:el.fontStyle,epoch:_tightFontEpoch,
+            ls:el.ls||0,wsp:el.wsp||0,lg:el.lg||1,fonts:_fontState(),transforms:job.transforms,
+            growR:job.maxR>job.cw?job.maxR:0,growB:job.maxB>job.ch?job.maxB:0}};
+    }
+    function _applyTightFit(fit,until,max){
+        const {c,el,sps,rec}=fit;
+        if(!_tightFitLive(c,el)||el.html!==rec.html) return true;
+        const w=c.parentElement;
+        until=until==null?Infinity:until; max=max==null?Infinity:max;
+        let count=0;
+        while((fit.writeAt||0)<sps.length&&count<max){
+            const i=fit.writeAt||0, s=sps[i], v=rec.transforms[i];
+            fit.writeAt=i+1; count++;
+            if(v!==null){
+                if(s.style.transform!==v) s.style.transform=v;
+                if(v&&s.style.transformOrigin!=='left center') s.style.transformOrigin='left center';
+                if(s.style.letterSpacing) s.style.letterSpacing='';
+            }
+            if(performance.now()>=until) break;
+        }
+        const done=(fit.writeAt||0)>=sps.length;
+        if(done){
+            if(rec.growR>0){ c.style.width=rec.growR+'px'; w.style.width=rec.growR+'px'; }
+            if(rec.growB>0){ c.style.height=rec.growB+'px'; w.style.height=rec.growB+'px'; }
+            _tightFitCache.set(el,rec);
+        }
+        // 도중에 사용자가 편집해도 지금까지의 표시용 변화는 원문 수정이 아니다.
+        w._sdyViewHtml=c.innerHTML;
+        return done;
     }
     function fitTightSpans(c,el){
-        // 같은 상태로 이미 맞춘 상자(스크롤로 다시 그린 쪽)는 다시 재지 않는다.
-        if(_tightFitHit(c,el)) return;
-        // data-j(양쪽 정렬) 줄은 서버가 위치를 확정했으므로 일절 건드리지 않는다.
-        // 그 외 줄만, 브라우저 글꼴이 더 넓어 다음 단어와 붙을 때만
-        // 자간(약간)/크기(많이)로 압축 — 높이는 항상 균일.
-        const sps=Array.from(c.querySelectorAll(':scope>span'));
-        const groups=new Map();
-        sps.forEach(s=>{
-            const k=s.offsetTop;
-            if(!groups.has(k)) groups.set(k,[]);
-            groups.get(k).push(s);
-        });
-        groups.forEach(group=>{
-            // 한글/워드처럼: 글자 가로폭을 '아주 살짝' 줄여서
-            // 띄어쓰기가 눈에 보일 정도(약 0.22em)로 적당히 확보. 겹침도 방지.
-            for(let i2=0;i2<group.length;i2++){
-                const s=group[i2];
-                const nx=group[i2+1];
-                const avail=(nx?nx.offsetLeft:c.clientWidth)-s.offsetLeft-0.5;
-                const fs=parseFloat(s.dataset.fs)||parseFloat(s.style.fontSize)||14;
-                const minSpace=Math.max(1.5,fs*0.25);
-                const rw=s.scrollWidth;
-                if(rw>avail-minSpace){
-                    const scale=Math.max(0.84,(avail-minSpace)/rw);
-                    s.style.transform='scaleX('+scale.toFixed(3)+')';
-                    s.style.transformOrigin='left center';
-                }else{
-                    s.style.transform='';
-                }
-                s.style.letterSpacing='';
+        if(!_tightFitLive(c,el)) return;
+        const rec=_measureTightSpans(c,el);
+        if(rec) _applyTightFit(rec);
+    }
+
+    try{ if(document.fonts&&document.fonts.addEventListener) document.fonts.addEventListener('loadingdone',()=>{
+        _tightFontEpoch++;
+        mountedShells.forEach(wrap=>{
+            const layer=wrap.querySelector('.layer-text');
+            if(!layer) return;
+            for(const w of layer.children){
+                if(!w.classList.contains('tight')) continue;
+                const c=w.querySelector('.tb-content'), el=findEl(+w.dataset.pageIdx,w.dataset.id);
+                if(c&&el) _queueTightFit(c,el);
             }
         });
-        // 글자는 그대로, 상자를 렌더된 실제 크기만큼 늘려 넘침 방지
-        const w=c.parentElement;
-        let maxR=0,maxB=0;
-        if(w){
-            sps.forEach(s=>{
-                maxR=Math.max(maxR,s.offsetLeft+s.scrollWidth);
-                maxB=Math.max(maxB,s.offsetTop+s.offsetHeight);
-            });
-            if(maxR>c.clientWidth){ c.style.width=maxR+'px'; w.style.width=maxR+'px'; }
-            if(maxB>c.clientHeight){ c.style.height=maxB+'px'; w.style.height=maxB+'px'; }
-        }
-        // 이번 맞춤으로 실제로 화면(→저장 html)이 달라졌을 때만 굽는다.
-        // (내보내기·동기화가 화면과 같아지도록; 같으면 저장/해시를 건드리지 않는다)
-        const newHtml=c.innerHTML;
-        if(el&&el.html!==newHtml){
-            el.html=newHtml;
-            if(doc&&doc.__lastHash) doc.__lastHash.set(el.id,JSON.stringify(el));
-        }
-        if(el){
-            try{
-                // '방금 맞춘 화면 상태'를 통째로 기억한다: 다시 그릴 때 저장된
-                // 상자 확장(growR/growB)까지 그대로 복원하면 재측정 없이 같아진다.
-                const gR=parseFloat(c.style.width)||0, gB=parseFloat(c.style.height)||0;
-                _tightFitCache.set(el,{
-                    html:el.html, w:el.w||0, h:el.h||0, fs:el.fontSize||0,
-                    ls:el.ls||0, wsp:el.wsp||0, lg:el.lg||1, fonts:_fontState(),
-                    growR:gR, growB:gB
-                });
-            }catch(e){}
-        }
-    }
+    }); }catch(e){}
 
     function tightAdj(kind,delta){
         const w=document.querySelector('#pagesStage .tb.sel.tight');
@@ -8269,7 +8511,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(kind==='reset'){ delete el.ls; delete el.wsp; delete el.lg; }
         const nw=buildTextEl(el,+w.dataset.pageIdx);
         w.replaceWith(nw); nw.classList.add('sel'); _ensureTbControls(nw);
-        updateTightBar(); saveDoc();
+        markPageEdited(+w.dataset.pageIdx); updateTightBar(); saveDoc();
     }
 
     // 9.3 · 자간/줄간 막대는 없앴다. (상자를 고를 때마다 떠서 방해가 됐다)
@@ -8710,28 +8952,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     });
                 }
             }
-            // ★ 성능 — fitTightSpans 진입점이 세션 캐시로 이미 맞춘 상자를
-            //   거른다. 스크롤로 같은 쪽을 다시 그릴 때 rAF 는 상자마다 돌지만
-            //   (아주 쌈), 단어 폭 레이아웃 재측정·html 재굽기는 내용/크기/폰트
-            //   상태가 그대로면 생략된다. (상자가 아직 DOM 에 안 붙은 시점엔
-            //   캐시 비교가 의미 없으므로 스케줄은 항상 하고, 진입점에서 잰다.)
-            _queueTightFit(c,el);
-            // 웹폰트가 아직 로딩 중일 때 처음 그린 상자는 로드가 끝난 뒤 한 번
-            // 더 맞춘다(이미 떠 있으면 rAF 한 번으로 충분 — 예전엔 상자마다
-            // 항상 두 번을 돌려 폭 레이아웃을 이중으로 재고 html 까지 두 번
-            // 굽고, 그 결과가 이제는 캐시에 남아 로드 후 재측정도 한 번뿐).
-            //   → 이것도 큐로 모아 한 번에 돌린다(폰트 로드 직후 상자마다 rAF 가
-            //     터지는 걸 막는다). 폰트 상태가 바뀌면 _tightFitHit 캐시가
-            //     어긋나므로 자동으로 재측정된다.
-            // 22.1 · 상자마다 Promise 를 걸지 않고, 폰트 로드는 한 번만 기다린다.
-            try{ _onFontsReady(()=>{ if(w.isConnected) _queueTightFit(c,el); }); }catch(_e){}
+            _queueTightFit(c,el);  // 단어 단위 재개 가능 큐; 늦은 웹폰트는 공용 loadingdone에서 갱신
         }
         // 14.14 · innerText 는 일부 환경(구형 WebView·테스트 DOM)에서 undefined.
         //   .trim() 이 그대로 터지면 텍스트 상자 전체가 안 그려져 빈 종이가 된다.
         const _tbPlain=()=>String((c.innerText!=null?c.innerText:c.textContent)||'');
-        if(!_tbPlain().trim()){ c.setAttribute('data-empty','true'); w.classList.add('empty'); }
+        if(!String(c.textContent||'').trim()){ c.setAttribute('data-empty','true'); w.classList.add('empty'); }
         if(el.locked) w.classList.add('el-lock');
-        c.addEventListener('dblclick',e=>{ e.stopPropagation(); if(!w.classList.contains('edit')) enterEdit(w,true); });
+        c.addEventListener('dblclick',e=>{ e.stopPropagation(); if(pageReady(pageIdx)&&!w.classList.contains('edit')) enterEdit(w,true); });
         // 활성 캐럿 서식은 실제 입력 직전에 wrapper를 확인한다. 빈 span을 브라우저가
         // 정리했더라도 beforeinput 단계에서 복구되므로 첫 글자부터 서식이 빠지지 않는다.
         c.addEventListener('beforeinput',e=>{
@@ -8787,6 +9015,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         //   웹폰트가 늦게 뜨는 경우에도 한 번 더 그린다.
         try{ _hlSchedule(c,w); }catch(_e){}
         _onFontsReady(()=>{ if(w.isConnected) _hlSchedule(c,w); });
+        w._sdyViewHtml=c.innerHTML; w._sdyModelHtml=el.html;
+        w._sdyModelKey=JSON.stringify(el);
         return w;
     }
 
@@ -8893,15 +9123,20 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!w||!w.isConnected) return;
         if(curNB&&w.dataset.nbId&&curNB.id!==w.dataset.nbId) return;
         if(doc&&doc.__rv!=null&&w._sdyRv!=null&&doc.__rv!==w._sdyRv) return;
-        try{
-            if(doc&&w&&w.dataset.pageIdx!=null&&doc.pages[+w.dataset.pageIdx])
-                markPageEdited(+w.dataset.pageIdx);   // 편집분: 에빅션 금지 + 원본 그림 해제
-        }catch(e){}
         const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
-        const c=w.querySelector('.tb-content');
-        el.html=imathCollapse(stripWF(c.innerHTML)); el.fontSize=parseInt(c.style.fontSize)||16;
+        const c=w.querySelector('.tb-content'); if(!c) return;
+        const viewOnly=c.innerHTML===w._sdyViewHtml;
+        const html=viewOnly?el.html:imathCollapse(stripWF(c.innerHTML));
+        const fs=parseFloat(c.style.fontSize)||16;
+        // Formatting commands may have changed model-only fields (font, align,
+        // cellBg, etc.) before calling us. Those edits still need a dirty page;
+        // only a genuinely unchanged view/model pair can take the no-op path.
+        if(html===el.html&&fs===el.fontSize&&w._sdyModelKey===JSON.stringify(el)) return;
+        markPageEdited(+w.dataset.pageIdx);
+        el.html=html; el.fontSize=fs;
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
         el.w=w.offsetWidth; el.h=w.offsetHeight;
+        w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
         w.classList.toggle('empty',!String((c.innerText!=null?c.innerText:c.textContent)||'').trim());
         saveDoc();
     }
@@ -8948,7 +9183,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function _histMergePage(livePage,tPage,remote,tIds){
         const live=(livePage.els||[]);
         const liveById=new Map(); live.forEach(el=>{ if(el&&el.id) liveById.set(el.id,el); });
-        const out=[]; const done=new Set();
+        const out=[]; const done=new Set(); let changed=false;
         ((tPage&&tPage.els)||[]).forEach(tel=>{
             if(!tel||!tel.id) return;
             done.add(tel.id);
@@ -8958,7 +9193,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(cur) out.push(cur);          // 남이 지웠으면 되살리지도 않는다
                 return;
             }
-            out.push(JSON.parse(JSON.stringify(tel)));
+            const h=JSON.stringify(tel);
+            if(h!==JSON.stringify(liveById.get(tel.id))) changed=true;
+            out.push(JSON.parse(h));
         });
         // 스냅샷에 없던 요소 = 그 뒤에 생긴 것. 남이 만든 것만 남긴다.
         live.forEach(el=>{
@@ -8966,6 +9203,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(tIds.has(el.id)) return;          // 다른 쪽으로 옮겨간 요소는 위에서 처리됨
             if(remote.has(el.id)) out.push(el);
         });
+        if(out.length!==live.length||JSON.stringify(livePage.tables||[])!==JSON.stringify((tPage&&tPage.tables)||[])) changed=true;
+        if(changed&&(!tPage||tPage.__lazy==null)){ livePage.__dirty=true; livePage.edited=1; }
         livePage.els=out;
         if(tPage&&tPage.tables) livePage.tables=JSON.parse(JSON.stringify(tPage.tables));
         else if(livePage.tables) livePage.tables=[];
@@ -9317,10 +9556,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!w) return;
             const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
             const c=w.querySelector('.tb-content');
-            const nh=imathCollapse(stripWF(c.innerHTML));
-            const nfs=parseInt(c.style.fontSize)||16;
+            const nh=c.innerHTML===w._sdyViewHtml?el.html:imathCollapse(stripWF(c.innerHTML));
+            const nfs=parseFloat(c.style.fontSize)||16;
             if(nh!==el.html||nfs!==el.fontSize){
                 el.html=nh; el.fontSize=nfs; changed=true;
+                w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
                 // 14.6 · 커밋된 편집분도 dirty 로 표시 → 가져온 문서(서버 보관본)에서
                 //  나가기 직전 커밋된 글자가 슬라이스 저장에서 빠져 유실되지 않는다.
                 try{ markPageEdited(+w.dataset.pageIdx); }catch(e){}
@@ -9964,9 +10204,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!tablePlace && (Date.now()<_pinPointerBlockUntil||Date.now()<_textPointerBlockUntil)){
             e.preventDefault(); e.stopPropagation(); return;
         }
-        // 20.0 · 이 쪽을 실제로 건드렸다 → 지금부터 편집 가능 상태로 깨운다.
-        //   (읽기만 할 때는 쪽 그림 한 장이라 스크롤이 가볍다)
-        try{ activatePage(pageIdx); }catch(_e){}
+        if(deferPagePointer(e,pageIdx)) return;
         if(penActive) return;   // 그리기 모드는 draw-surface가 처리
         curPageIdx=pageIdx; updatePageInfo();
         const t=e.target;
@@ -10034,7 +10272,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             pushHistory();
             const gone=(doc.pages[pageIdx].els||[]).filter(x=>x.id===host.dataset.id);
             doc.pages[pageIdx].els=doc.pages[pageIdx].els.filter(x=>x.id!==host.dataset.id);
-            host.remove(); selected=null; saveDoc();
+            host.remove(); selected=null; markPageEdited(pageIdx); saveDoc();
             purgeElements(gone);
             return;
         }
@@ -10408,6 +10646,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(marquee){ endMarquee(); }
         if(multiDrag){
             if(multiDrag.moved){
+                markPageEdited(multiDrag.pageIdx);
                 _finishMultiPreview(multiDrag,true);
                 try{ syncAllTables(multiDrag.pageIdx); renderTblDivs(multiDrag.pageIdx); positionTblBar(); }catch(e){}
                 saveDoc();
@@ -10428,6 +10667,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         if(drag){
             if(drag.moved){
+                markPageEdited(drag.pageIdx);
                 if(!drag.isStroke){
                     _finishDragPreview(drag,true);
                     const el=findEl(drag.pageIdx,drag.el.dataset.id);
@@ -10451,6 +10691,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 el.y=resize.ny!=null?resize.ny:resize.oy;
             }
             const rpi=resize.pageIdx;
+            if(resize.nw!==undefined||resize.nh!==undefined) markPageEdited(rpi);
             resize=null; _clearGestureClass(); saveDoc();
             try{ syncAllTables(rpi); renderTblDivs(rpi); positionTblBar(); }catch(e){}
         }
@@ -10489,6 +10730,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         resetTypingFormat();
         const el={type:'text',id:uid('t'),x,y,w:sz.w,h:sz.h,html:'',fontSize:curFontSize,font:curFont};
         doc.pages[pageIdx].els.push(el);
+        markPageEdited(pageIdx);
         const node=buildTextEl(el,pageIdx);
         // 가상화로 종이가 내려가 있으면 먼저 올린다 (창 밖 쪽에 글상자를 넣는 경로 방어)
         const _txtL=(ensurePageShell(pageIdx)||{querySelector:()=>null}).querySelector('.layer-text');
@@ -10511,14 +10753,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // ==========================================================
     const TBL_MINW=28, TBL_MINH=20;
     // 표를 끄는 동안 화면 갱신을 프레임당 1회로 묶는다 (드래그가 매끄러워짐)
-    let _tblRaf=0, _tblRafPi=-1;
+    let _tblRaf=0, _tblRafPi=-1, _tblRafDoc=null, _tblRafVersion=0;
     function tblRepaint(pi){
-        _tblRafPi=pi;
+        _tblRafPi=pi; _tblRafDoc=doc; _tblRafVersion=doc&&doc.__rv;
         if(_tblRaf) return;
         _tblRaf=requestAnimationFrame(()=>{
             _tblRaf=0;
             const i=_tblRafPi;
-            if(i>=0&&doc&&doc.pages[i]) renderPageEls(i);
+            const d=_tblRafDoc,v=_tblRafVersion; _tblRafDoc=null;
+            if(i>=0&&doc===d&&doc&&doc.__rv===v&&doc.pages[i]) renderPageEls(i);
         });
     }
     // 중요어 분석 상태 (아래에서 쓰는 함수보다 먼저 선언 — TDZ 방지)
@@ -10592,6 +10835,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const cells=selectedTblCellEls();
         if(!cells.length){ toast('표에서 칸을 먼저 선택하세요',1400); return false; }
         pushHistory(); cells.forEach(fn);
+        markPageEdited(tblCellSelection.pageIdx);
         renderPageEls(tblCellSelection.pageIdx); saveDoc();
         if(msg) toast(msg,1100);
         return true;
@@ -10655,7 +10899,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             cell.w=Math.max(12,Math.round(t.cw[c]-6));
             cell.h=Math.max(12,Math.round(t.ch[r]-6));
         }
-        if(!opt||!opt.quiet){ renderPageEls(pi); renderTblDivs(pi); saveDoc(); }
+        if(!opt||!opt.quiet){ markPageEdited(pi); renderPageEls(pi); renderTblDivs(pi); saveDoc(); }
     }
 
     // ===== 표 테두리(선택 틀) · 꼭짓점 · 경계 잡이 · 변 중앙 늘리기 손잡이 =====
@@ -10976,8 +11220,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function onTblPointerUp(){
         _flushTblPointerMove();
         let pi=null;
-        if(tblDrag){ pi=tblDrag.pi; if(tblDrag.moved) saveDoc(); tblDrag=null; }
-        if(tblScale){ pi=tblScale.pi; if(tblScale.moved) saveDoc(); tblScale=null; }
+        if(tblDrag){ pi=tblDrag.pi; if(tblDrag.moved){ markPageEdited(pi); saveDoc(); } tblDrag=null; }
+        if(tblScale){ pi=tblScale.pi; if(tblScale.moved){ markPageEdited(pi); saveDoc(); } tblScale=null; }
         if(tblMove){
             pi=tblMove.pi;
             const t=findTbl(tblMove.pi,tblMove.tid);
@@ -10985,7 +11229,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             else if(t){ t.x=tblMove.ox; t.y=tblMove.oy; }
             rebuildTable(tblMove.pi,tblMove.tid,{quiet:true});
             renderPageEls(tblMove.pi);
-            if(tblMove.moved) saveDoc();
+            if(tblMove.moved){ markPageEdited(pi); saveDoc(); }
             tblMove=null;
         }
         if(pi!=null){ renderTblDivs(pi); positionTblBar(); }
@@ -11132,7 +11376,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         //   ReferenceError 로 멈춰, 화면에는 표가 남고 저장도 안 되던 버그.
         if(selectedWasInTable){ deselectAll(true); clearMulti(); selected=null; }
         clearActiveTbl();
-        renderPageEls(pi); renderTblDivs(pi); saveDoc();
+        markPageEdited(pi); renderPageEls(pi); renderTblDivs(pi); saveDoc();
         toast('표를 삭제했습니다 (Ctrl+Z 로 되돌리기)', 1800);
     }
     // 표를 통째로 옮기면 표 정보의 기준점도 함께 움직인다
@@ -13285,7 +13529,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 doc.pages[pi].els.push(n);
             });
         }
-        renderPageEls(pi); saveDoc(); toast('넣었습니다',1200);
+        markPageEdited(pi); renderPageEls(pi); saveDoc(); toast('넣었습니다',1200);
     }
     // ---------- ⑤ 통계 ----------
     function panelStats(){
@@ -13517,7 +13761,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!el){ toast('대상을 찾지 못했습니다',1500); return; }
         pushHistory();
         if(replaceInEl(el,findQ.trim(),rep,1)){
-            renderPageEls(h.pageIdx); saveDoc();
+            markPageEdited(h.pageIdx); renderPageEls(h.pageIdx); saveDoc();
             const keep=findCur;
             runFind(findQ);
             if(findHits.length) findCur=Math.min(keep,findHits.length-1);
@@ -13539,7 +13783,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             });
         });
         if(!n){ toast('바꿀 것이 없습니다',1600); return; }
-        pages.forEach(pi=>renderPageEls(pi));
+        pages.forEach(pi=>{ markPageEdited(pi); renderPageEls(pi); });
         saveDoc(); runFind(findQ);
         toast(`${n}개를 바꿨습니다 (Ctrl+Z 로 되돌리기)`,2400);
     }
@@ -13606,7 +13850,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                   html:'<span data-ck="0">☐</span>&nbsp;',
                   fontSize:curFontSize||16,font:curFont};
         doc.pages[pi].els.push(el);
-        renderPageEls(pi); saveDoc();
+        markPageEdited(pi); renderPageEls(pi); saveDoc();
         const node=paperQ(pi,`.tb[data-id="${el.id}"]`);
         if(node){
             enterEdit(node,false);
@@ -13627,7 +13871,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         ck.setAttribute('data-ck',on?'0':'1');
         ck.textContent=on?'☐':'☑';
         const el=findEl(+w.dataset.pageIdx,w.dataset.id);
-        if(el){ el.html=w.querySelector('.tb-content').innerHTML; saveDoc(); }
+        if(el){ el.html=w.querySelector('.tb-content').innerHTML; markPageEdited(+w.dataset.pageIdx); saveDoc(); }
     },true);
 
     // ---------- ③ 요소 잠그기 ----------
@@ -13643,7 +13887,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         });
         const pi=items[0].pageIdx;
         deselectAll(true); clearMulti();
-        renderPageEls(pi); saveDoc();
+        markPageEdited(pi); renderPageEls(pi); saveDoc();
         toast(on?`${on}개를 잠갔습니다 · 실수로 움직이지 않아요`:'잠금을 풀었습니다',2000);
     }
     function isElLocked(pi,id){ const e=findEl(pi,id); return !!(e&&e.locked); }
@@ -13670,7 +13914,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         pinMode=false;
         document.body.classList.remove('pin-mode');
         document.querySelectorAll('.js-pin').forEach(b=>b.classList.remove('active'));
-        renderPins(pi); saveDoc();
+        markPageEdited(pi); renderPins(pi); saveDoc();
         setTimeout(()=>openPin(pi,n.id),60);
     }
     function renderPins(pi){
@@ -13716,14 +13960,14 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
         if(!curPin) return;
         const n=pageNotes(curPin.pi).find(x=>x.id===curPin.id); if(!n) return;
         n.text=document.getElementById('pinText').value;
-        renderPins(curPin.pi); saveDoc(); closePin();
+        markPageEdited(curPin.pi); renderPins(curPin.pi); saveDoc(); closePin();
         toast('메모를 저장했습니다',1200);
     }
     function delPin(){
         if(!curPin) return;
         pushHistory();
         doc.pages[curPin.pi].notes=pageNotes(curPin.pi).filter(x=>x.id!==curPin.id);
-        renderPins(curPin.pi); saveDoc(); closePin();
+        markPageEdited(curPin.pi); renderPins(curPin.pi); saveDoc(); closePin();
         toast('메모를 지웠습니다',1200);
     }
     function closePin(){
@@ -14310,7 +14554,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 x:Math.round(c.x),y:Math.round(c.y),w:pm.w,h:pm.h,
                 fontSize:pm.fontSize,displayMath:pm.display?1:0});
             if(renderedPages.has(pi)) renderPageEls(pi);
-            saveDoc(); cancelPlaceMode(); toast('수식을 넣었습니다',1300);
+            markPageEdited(pi); saveDoc(); cancelPlaceMode(); toast('수식을 넣었습니다',1300);
             return;
         }
         cancelPlaceMode();
@@ -14537,6 +14781,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             nudgeTimer=setTimeout(()=>{ nudgeTimer=null; saveDoc(); },500);
             const move=(id,pi,node)=>{
                 const el=findEl(pi,id); if(!el) return;
+                markPageEdited(pi);
                 if(el.type==='stroke'){
                     el.dx=(el.dx||0)+dx; el.dy=(el.dy||0)+dy;
                     node.setAttribute('transform',`translate(${el.dx},${el.dy})`);
@@ -14643,7 +14888,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const id=lid, pi=lpi;
             const gone=(doc.pages[pi].els||[]).filter(x=>x.id===id);
             doc.pages[pi].els=doc.pages[pi].els.filter(x=>x.id!==id);
-            selected.el.remove(); selected=null; saveDoc();
+            selected.el.remove(); selected=null; markPageEdited(pi); saveDoc();
             purgeElements(gone);
         }
         if(e.ctrlKey&&(e.key==='s'||e.key==='S')){
@@ -15032,6 +15277,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
     function drawStart(e,pageIdx){
         if(!penActive) return;
+        if(e.type==='touchstart'&&_pagePointerIntent&&_pagePointerIntent.ink){ e.preventDefault(); return; }
         e.preventDefault();
         curPageIdx=pageIdx; updatePageInfo();
         drawPageIdx=pageIdx;
@@ -15102,6 +15348,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(shape==='rect'||shape==='square'||shape==='ellipse'||shape==='circle'||shape==='triangle'||shape==='diamond') el.closed=1;
         }
         doc.pages[drawPageIdx].els.push(el);
+        markPageEdited(drawPageIdx);
         if(curPathNode) curPathNode.remove();
         const svg=paperQ(drawPageIdx,'.layer-stroke');
         if(svg) svg.appendChild(buildStrokeEl(el,drawPageIdx));
@@ -15215,7 +15462,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 removed=true;
             }
         }
-        if(removed) _eraseRemoved=true;   // 되돌리기 스냅샷은 drawStart 가 '지우기 전'으로 이미 남겼다
+        if(removed){ _eraseRemoved=true; markPageEdited(pageIdx); }   // 되돌리기 스냅샷은 drawStart 가 '지우기 전'으로 이미 남겼다
     }
 
     // draw-surface 이벤트 위임 — ★ pointerdown 으로 통합 (터치 300ms 지연 제거)
@@ -17274,6 +17521,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             x:Math.round(c.x),y:Math.round(c.y),w:item.box.w,h:item.box.h};
         if(item.public_id) el.public_id=item.public_id;
         doc.pages[pageIdx].els.push(el);
+        markPageEdited(pageIdx);
         renderPageEls(pageIdx);
         return el;
     }
@@ -17436,6 +17684,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             const el={type:'text',id:uid('t'),x:pt.x,y:pt.y,w:Math.round(w),h:Math.round(h),
                       html:content,fontSize:curFontSize,font:curFont};
             doc.pages[pt.pageIdx].els.push(el);
+            markPageEdited(pt.pageIdx);
             renderPageEls(pt.pageIdx);
             saveDoc();
             const node=paperQ(pt.pageIdx,`.tb[data-id="${el.id}"]`);
@@ -17751,7 +18000,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             }
             doc.pages[pi].els.push({type:'image',id:uid('i'),url:s.url,
                 x,y,w,h,sticker:true});
-            renderPageEls(pi); saveDoc();
+            markPageEdited(pi); renderPageEls(pi); saveDoc();
             closeStickers(); toast('스티커를 붙였습니다',1600);
         };
         im.onerror=()=>toast('스티커를 불러오지 못했습니다',2000);
@@ -20768,6 +21017,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     if((op.rev||0)===local){
                         const el=_elById(op.data.id);
                         if(!el||(el.html||'')===(op.data.html||'')) continue;
+                        // An exact echo of our sent revision is not a remote edit.
+                        // Preserve any newer, not-yet-sent text or box formatting.
+                        if(op.dev===SYNC_DEV&&doc.__lastHash.get(op.id)===JSON.stringify(op.data)) continue;
                         // 14.25.0 · 되돌리기 에코 가드: 같은 기기의 같은 rev 면
                         //   방금 되돌린 내 op 가 돌아온 것이므로 건너뛴다.
                         if(op.dev&&op.dev===SYNC_DEV&&Date.now()<_undoGuardUntil) continue;
@@ -20863,6 +21115,8 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     }
 
     function _selectiveRenderPage(idx, activeId){
+        // 원격 변경이 준비 도중 도착하면 이전 청크와 섞거나 동기로 전부 만들지 않는다.
+        if(_pageRenderJobs.has(idx)){ renderPageEls(idx); return; }
         const paper=paperAt(idx); if(!paper) return;
         const txtL=paper.querySelector('.layer-text');
         const svg=paper.querySelector('.layer-stroke');
@@ -20884,7 +21138,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     domEl.style.left=el.x+'px'; domEl.style.top=el.y+'px';
                     domEl.style.width=el.w+'px'; domEl.style.height=el.h+'px';
                     const c=domEl.querySelector('.tb-content');
-                    if(c&&c.innerHTML!==el.html) c.innerHTML=el.html||'';
+                    if(c&&domEl._sdyModelHtml!==el.html){
+                        c.innerHTML=decodeTextMarkup(_normalizePaletteHtml(el.html||''));
+                        domEl._sdyModelHtml=el.html; domEl._sdyViewHtml=c.innerHTML;
+                        if(el.tight) _queueTightFit(c,el);
+                    }
                 }
             }else{
                 if(el.type==='text'&&txtL) txtL.appendChild(buildTextEl(el,idx));
@@ -21021,7 +21279,11 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     doc.__lastHash.set(el.id,h);
                     const rev=_nbNow();
                     doc.__localRev.set(el.id,rev);
-                    ops.push({id:el.id,kind:'put',page:pi,rev,data,dev:SYNC_DEV,
+                    // Each revision owns its payload. A live element reference can
+                    // change while fetch is pending: its ACK would then establish
+                    // an UNSENT edit as __base, and the echo would erase that edit.
+                    const payload=JSON.parse(data===el?h:JSON.stringify(data));
+                    ops.push({id:el.id,kind:'put',page:pi,rev,data:payload,dev:SYNC_DEV,
                               prevRev:(doc.__baseRev&&doc.__baseRev.get(el.id))||0});
                 }
             });
@@ -21072,7 +21334,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
     async function pushOps(pre){
         if(!doc||!curNB) return;
         const d0=doc;
-        const ops=pre||genOps();
+        const ops=pre?JSON.parse(JSON.stringify(pre)):genOps();
         if(!ops.length) return;
         // 14.6 · 노트 id 를 시작 시점에 고정한다. 전송 중 다른 노트로 넘어가면
         //  curNB.id 가 바뀌어 이 노트의 요소 ops 가 엉뚱한 노트로 저장되던 버그 방지.
@@ -21091,10 +21353,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                         //  오인해 실시간 동시 편집에서 상대 변경이 안 보였다.
                         // 14.9 · 수용된 텍스트 put 은 공통 조상(__base)으로 확정한다.
                         const acc=new Set(Array.isArray(d.accepted)?d.accepted:batch.map(o=>o.id));
+                        if(doc!==d0||!curNB||curNB.id!==nbId) return true;
                         batch.forEach(o=>{
-                            if(acc.has(o.id)&&o.kind==='put'&&o.data&&o.data.type==='text'&&doc&&doc.__base){
-                                doc.__base.set(o.id, o.data.html||'');
-                                if(doc.__baseRev) doc.__baseRev.set(o.id, parseFloat(o.rev||0)||0);
+                            const rev=parseFloat(o.rev||0)||0;
+                            if(acc.has(o.id)&&o.kind==='put'&&o.data&&o.data.type==='text'&&d0.__base
+                                &&rev>=((d0.__baseRev&&d0.__baseRev.get(o.id))||0)){
+                                d0.__base.set(o.id, o.data.html||'');
+                                if(d0.__baseRev) d0.__baseRev.set(o.id,rev);
                             }
                         });
                         return true;
@@ -21238,7 +21503,9 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(typeof activeTbl!=='undefined'&&activeTbl) return '표 다루는 중';
             if(typeof drag!=='undefined'&&drag) return '옮기는 중';
             if(typeof findOpen!=='undefined'&&findOpen) return '찾는 중';
-            if(String(getSelection()||'').trim()) return '글 고르는 중';
+            const sel=getSelection();
+            // 상태 표시에 선택 문자열은 필요 없다. 원문 전체를 직렬화/레이아웃하지 않는다.
+            if(sel&&sel.rangeCount&&!sel.isCollapsed) return '글 고르는 중';
             return '';
         }catch(e){ return ''; }
     }
@@ -22258,7 +22525,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                     pushHistory();
                     doc.pages[pi].els.push({type:'text',id:uid('t'),x:Math.round(c.x),y:Math.round(c.y),
                         w:Math.round(w),h:Math.round(h),html:esc(txt).replace(/\n/g,'<br>'),fontSize:curFontSize});
-                    renderPageEls(pi); saveDoc();
+                    markPageEdited(pi); renderPageEls(pi); saveDoc();
                 }else toast('클립보드가 비어 있습니다',1400);
             }catch(err){ toast('Ctrl+V 로 붙여넣어 주세요',1800); }
         }
@@ -22306,7 +22573,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(cp.type==='stroke'){ cp.dx=(cp.dx||0)+16; cp.dy=(cp.dy||0)+16; }
             else { cp.x=Math.min(paperSize().w-cp.w, cp.x+16); cp.y=Math.min(paperSize().h-cp.h, cp.y+16); }
             doc.pages[pi].els.push(cp);
-            renderPageEls(pi); saveDoc(); toast('복제됨',1000);
+            markPageEdited(pi); renderPageEls(pi); saveDoc(); toast('복제됨',1000);
         }
         else if(a==='el-front'||a==='el-back'){
             pushHistory();
@@ -22315,7 +22582,7 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
             if(i>=0){
                 const [it]=arr.splice(i,1);
                 if(a==='el-front') arr.push(it); else arr.unshift(it);
-                renderPageEls(pi); saveDoc();
+                markPageEdited(pi); renderPageEls(pi); saveDoc();
                 toast(a==='el-front'?'맨 앞으로':'맨 뒤로',900);
             }
         }
@@ -22424,13 +22691,13 @@ M [보통] 질문 | 오답 보기 1 | 정답 보기* | 오답 보기 2 | 오답 
                 x:Math.round(lastMouse.x||80), y:Math.round((lastMouse.y||100)+30),
                 w:Math.round(w), h:Math.round(h), html:esc(txt),
                 fontSize:curFontSize, font:curFont});
-            renderPageEls(pi); saveDoc();
+            markPageEdited(pi); renderPageEls(pi); saveDoc();
             toast('새 글상자로 빼냈습니다',1600);
         }
         else if(a==='el-ratio'){
             const el=findEl(pi,t.el.dataset.id);
             el.freeRatio=!el.freeRatio;
-            renderPageEls(pi); saveDoc();
+            markPageEdited(pi); renderPageEls(pi); saveDoc();
             toast(el.freeRatio
                 ? '비율 자유 · 꼭짓점으로도 자유롭게 조절'
                 : '비율 고정 · 꼭짓점=비율유지, 변중앙=자유', 1800);
