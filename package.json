@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.37.1",
+  "version": "14.38.0",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -57,6 +57,7 @@
     "test:heavy": "node test/heavy_doc_scroll_runtime.mjs",
     "test:preview": "node test/page_preview_contract.mjs && node test/page_preview_runtime.mjs && python3 test/worker_preview_jpeg_contract.py",
     "test:openfast": "node test/note_open_fast_contract.mjs",
+    "test:importalign": "node test/import_reopen_align_contract.mjs && node test/import_reopen_align_runtime.mjs",
     "test:palette": "node test/palette_bright_contract.mjs",
     "test:save": "node test/save_outbox_contract.mjs",
     "test:oracle": "node test/oracle_db_contract.mjs && node test/sdb_shim_contract.mjs && node test/migrate_oracle_sim.mjs",
