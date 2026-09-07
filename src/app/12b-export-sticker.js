@@ -214,7 +214,10 @@
         });
         formulas.forEach(el=>{
             let mh;
-            try{ mh=window.katex?katex.renderToString(el.latex||'',{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
+            // tidyLatex 로 한 번 고쳐서 그린다 — 화면과 같은 결과를 굽기 위해서다.
+            // (가져온 수식의 인수 없는 명령을 그대로 넘기면 내보낸 파일에도
+            //  빨간 오류 문자열이 박힌다)
+            try{ mh=window.katex?katex.renderToString(tidyLatex(el.latex||''),{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
             catch(e){ mh=esc(el.latex||''); }
             const imp=!!el.imported;
             const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;

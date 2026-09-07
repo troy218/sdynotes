@@ -171,6 +171,47 @@ class PdfLayoutRuntime(unittest.TestCase):
         self.assertIn("nearby sentence stays editable", text)
         self.assertTrue(all("(2.14)" not in formula for formula in formulas))
 
+    def test_accent_operator_and_label_do_not_break_the_formula(self):
+        r"""The reported breakage: ``v \hat _{i}``, ``\mathrm{e}\mathrm{x}\mathrm{p}``
+        and ``( 5 . 4 4 )`` appearing inside a display equation."""
+        formulas = [e["latex"] for e in self.math_page["els"] if e["type"] == "latex"]
+        target = [f for f in formulas if r"\frac" in f and "b" in f and "d" in f]
+        self.assertTrue(target, formulas)
+        tex = max(target, key=len)
+        # The accent owns its base letter instead of dangling before a script.
+        self.assertIn(r"\hat{v}", tex)
+        self.assertNotRegex(tex, r"\\hat(?![A-Za-z{])")
+        # A function name stays one operator, not one \mathrm per letter.
+        self.assertIn(r"\exp", tex)
+        self.assertNotIn(r"\mathrm{e}", tex)
+        # The equation number is editable text, never part of the math.
+        self.assertNotIn("5", tex)
+        self.assertIn("(5.44)", plain(self.math_page))
+        # Every imported formula must be parseable, or KaTeX renders a red
+        # error string in place of the equation.
+        for f in formulas:
+            self.assertTrue(importer._latex_is_sane(f), f)
+            self.assertNotRegex(f, r"\\(?:hat|widetilde|bar|mathcal|frac|sqrt)(?![A-Za-z{])")
+
+    def test_dangling_commands_are_repaired_or_rejected(self):
+        # Accent before OR after its base; both orders occur in real PDFs.
+        self.assertEqual(importer._tidy_latex(r"v \hat _{i}"), r"\hat{v} _{i}")
+        self.assertEqual(importer._tidy_latex(r"\hat v"), r"\hat{v}")
+        self.assertEqual(importer._tidy_latex(r"\mathcal{N} \widetilde"), r"\widetilde{\mathcal{N}}")
+        # A subscript that already belongs to a base is not stolen by an accent.
+        self.assertEqual(importer._tidy_latex(r"\bar{g}_{\mu\nu}"), r"\bar{g}_{\mu\nu}")
+        # Nothing to attach to → the command goes, the equation survives.
+        self.assertFalse(importer._latex_is_sane(r"\widetilde ^{a}"))
+        self.assertFalse(importer._latex_is_sane(r"\mathcal _{x}"))
+        self.assertTrue(importer._latex_is_sane(r"\hat{s} = \frac{1}{2}"))
+        # Digits are upright already; \mathrm{1} only makes the source unreadable.
+        self.assertEqual(importer._style_latex_atom("1", "rm"), "1")
+        self.assertEqual(importer._style_latex_atom("AdS", "rm"), r"\mathrm{AdS}")
+        for label in ("(5.44)", "(3)", "[12]", "(A.2)"):
+            self.assertTrue(importer._is_equation_label(label), label)
+        for not_label in ("(x)", "(a + b)", "(5.44) = 2"):
+            self.assertFalse(importer._is_equation_label(not_label), not_label)
+
     def test_tex_math_font_styles_and_accents_survive_reconstruction(self):
         def span(font, text):
             chars = []

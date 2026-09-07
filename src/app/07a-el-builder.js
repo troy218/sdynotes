@@ -6,14 +6,38 @@
     // ============ 요소 빌더 ============
     function findEl(pageIdx,id){ return (doc.pages[pageIdx].els||[]).find(e=>e.id===id); }
 
+    // 인수를 잃어버리면 KaTeX 가 통째로 빨간 오류 문자열을 낸다.
+    //  \hat _{i} · \widetilde ^{a} 처럼 PDF 에서 악센트 글리프가 밑글자와
+    //  따로 떨어져 들어온 수식이 그랬다. 워커는 이제 제대로 붙여 보내지만,
+    //  이미 저장된 노트를 다시 가져올 수는 없으므로 그릴 때도 고쳐 준다.
     function tidyLatex(src){
+        const _ACC='acute|grave|hat|widetilde|bar|breve|check|dot|ddot|mathring|vec|tilde';
+        const _NEEDS=_ACC+'|frac|sqrt|text|mathcal|mathbb|mathscr|mathfrak|mathrm|mathsf|mathtt|boldsymbol|overline|underline';
         let t=String(src||'');
         t=t.replace(/\u2032/g,"'").replace(/\u2033/g,"''").replace(/\u00b4/g,"'").replace(/\u2019/g,"'");
         t=t.replace(/\^\{\s*'\s*'\s*\}/g,"''").replace(/\^\{\s*'\s*\}/g,"'");
         t=t.replace(/(\\[A-Za-z]+|[A-Za-z])\s+'\s+'(?![A-Za-z])/g,"$1''");
         t=t.replace(/([A-Za-z])\s*[\u00af]/g,"\\bar{$1}");
         t=t.replace(/\\sqrt\{\}/g,"");
-        return t;
+        // ① 악센트에 밑글자를 붙인다 (앞/뒤 어느 쪽에 있든).
+        const acc='\\\\(?:'+_ACC+')', atom='\\\\[A-Za-z]+(?:\\{[^{}]*\\})?|\\{[^{}]*\\}|[A-Za-z0-9]';
+        for(let i=0;i<4;i++){
+            const before=t;
+            t=t.replace(new RegExp('('+acc+')\\s*('+atom+')(?![A-Za-z])','g'),
+                (m,a,b)=>a+'{'+b.replace(/^\{|\}$/g,'')+'}');
+            t=t.replace(new RegExp('(?<![A-Za-z{_^\\\\])([A-Za-z0-9]|\\\\[A-Za-z]+(?:\\{[^{}]*\\})?)\\s*('+acc+')(?![A-Za-z{])','g'),
+                (m,b,a)=>a+'{'+b+'}');
+            if(t===before) break;
+        }
+        // ② 그래도 인수가 없는 명령은 뒤따르는 첨자의 괄호를 뺏기지 않게 빈 인수를 준다.
+        for(let i=0;i<4;i++){
+            const before=t;
+            t=t.replace(new RegExp('\\\\('+_NEEDS+')\\s*([_^])\\s*\\{','g'),'\\$1{}$2{');
+            if(t===before) break;
+        }
+        t=t.replace(new RegExp('\\\\('+_NEEDS+')\\{\\}','g'),' ');
+        t=t.replace(new RegExp('\\\\('+_ACC+')(?![A-Za-z{])','g'),' ');
+        return t.replace(/\s+/g,' ').trim();
     }
     function latexHTML(src,display){
         try{

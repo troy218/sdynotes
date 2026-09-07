@@ -8254,14 +8254,38 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // ============ 요소 빌더 ============
     function findEl(pageIdx,id){ return (doc.pages[pageIdx].els||[]).find(e=>e.id===id); }
 
+    // 인수를 잃어버리면 KaTeX 가 통째로 빨간 오류 문자열을 낸다.
+    //  \hat _{i} · \widetilde ^{a} 처럼 PDF 에서 악센트 글리프가 밑글자와
+    //  따로 떨어져 들어온 수식이 그랬다. 워커는 이제 제대로 붙여 보내지만,
+    //  이미 저장된 노트를 다시 가져올 수는 없으므로 그릴 때도 고쳐 준다.
     function tidyLatex(src){
+        const _ACC='acute|grave|hat|widetilde|bar|breve|check|dot|ddot|mathring|vec|tilde';
+        const _NEEDS=_ACC+'|frac|sqrt|text|mathcal|mathbb|mathscr|mathfrak|mathrm|mathsf|mathtt|boldsymbol|overline|underline';
         let t=String(src||'');
         t=t.replace(/\u2032/g,"'").replace(/\u2033/g,"''").replace(/\u00b4/g,"'").replace(/\u2019/g,"'");
         t=t.replace(/\^\{\s*'\s*'\s*\}/g,"''").replace(/\^\{\s*'\s*\}/g,"'");
         t=t.replace(/(\\[A-Za-z]+|[A-Za-z])\s+'\s+'(?![A-Za-z])/g,"$1''");
         t=t.replace(/([A-Za-z])\s*[\u00af]/g,"\\bar{$1}");
         t=t.replace(/\\sqrt\{\}/g,"");
-        return t;
+        // ① 악센트에 밑글자를 붙인다 (앞/뒤 어느 쪽에 있든).
+        const acc='\\\\(?:'+_ACC+')', atom='\\\\[A-Za-z]+(?:\\{[^{}]*\\})?|\\{[^{}]*\\}|[A-Za-z0-9]';
+        for(let i=0;i<4;i++){
+            const before=t;
+            t=t.replace(new RegExp('('+acc+')\\s*('+atom+')(?![A-Za-z])','g'),
+                (m,a,b)=>a+'{'+b.replace(/^\{|\}$/g,'')+'}');
+            t=t.replace(new RegExp('(?<![A-Za-z{_^\\\\])([A-Za-z0-9]|\\\\[A-Za-z]+(?:\\{[^{}]*\\})?)\\s*('+acc+')(?![A-Za-z{])','g'),
+                (m,b,a)=>a+'{'+b+'}');
+            if(t===before) break;
+        }
+        // ② 그래도 인수가 없는 명령은 뒤따르는 첨자의 괄호를 뺏기지 않게 빈 인수를 준다.
+        for(let i=0;i<4;i++){
+            const before=t;
+            t=t.replace(new RegExp('\\\\('+_NEEDS+')\\s*([_^])\\s*\\{','g'),'\\$1{}$2{');
+            if(t===before) break;
+        }
+        t=t.replace(new RegExp('\\\\('+_NEEDS+')\\{\\}','g'),' ');
+        t=t.replace(new RegExp('\\\\('+_ACC+')(?![A-Za-z{])','g'),' ');
+        return t.replace(/\s+/g,' ').trim();
     }
     function latexHTML(src,display){
         try{
@@ -16878,7 +16902,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
         formulas.forEach(el=>{
             let mh;
-            try{ mh=window.katex?katex.renderToString(el.latex||'',{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
+            // tidyLatex 로 한 번 고쳐서 그린다 — 화면과 같은 결과를 굽기 위해서다.
+            // (가져온 수식의 인수 없는 명령을 그대로 넘기면 내보낸 파일에도
+            //  빨간 오류 문자열이 박힌다)
+            try{ mh=window.katex?katex.renderToString(tidyLatex(el.latex||''),{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
             catch(e){ mh=esc(el.latex||''); }
             const imp=!!el.imported;
             const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;
@@ -20062,7 +20089,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     // 9.0 · 내보낼 때도 화면과 똑같은 KaTeX(HTML+MathML)로 그린다.
                     //  mathml 만 쓰면 브라우저 기본 수식 글꼴로 대체돼 폭이 달라지고
                     //  그만큼 옆 본문 위로 번져 글자가 겹쳐 보였다.
-                    try{ mh=window.katex?katex.renderToString(el.latex||'',{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
+                    // 화면과 동일하게 tidyLatex 로 고친 뒤 그린다 — 그렇지 않으면
+                    // 내보낸 PDF/JPG 에만 빨간 KaTeX 오류가 남는다.
+                    try{ mh=window.katex?katex.renderToString(tidyLatex(el.latex||''),{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
                     catch(e){ mh=esc(el.latex||''); }
                     // 가져온 수식은 원문 잉크 상자를 넘지 않도록 넘치는 만큼 축소해 그린다.
                     const imp=!!el.imported;

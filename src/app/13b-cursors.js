@@ -442,7 +442,9 @@
                     // 9.0 · 내보낼 때도 화면과 똑같은 KaTeX(HTML+MathML)로 그린다.
                     //  mathml 만 쓰면 브라우저 기본 수식 글꼴로 대체돼 폭이 달라지고
                     //  그만큼 옆 본문 위로 번져 글자가 겹쳐 보였다.
-                    try{ mh=window.katex?katex.renderToString(el.latex||'',{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
+                    // 화면과 동일하게 tidyLatex 로 고친 뒤 그린다 — 그렇지 않으면
+                    // 내보낸 PDF/JPG 에만 빨간 KaTeX 오류가 남는다.
+                    try{ mh=window.katex?katex.renderToString(tidyLatex(el.latex||''),{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
                     catch(e){ mh=esc(el.latex||''); }
                     // 가져온 수식은 원문 잉크 상자를 넘지 않도록 넘치는 만큼 축소해 그린다.
                     const imp=!!el.imported;
