@@ -4,8 +4,8 @@
 //  - GET  /api/ai/imgs?q=...   → 사진 후보 목록 (위키미디어 커먼즈)
 //  - POST /api/ai/imgadd       → {q} 사진을 찾아 이 서버 저장소에 받아 노트용
 //                                주소(/api/img/…)로 돌려준다 (upload와 같은 파이프라인)
-//  - GET  /api/ai/refs?q=...   → 14.34.0 · 참고 일러스트 후보 목록 (서버 번들, 인터넷 없음)
-//  - POST /api/ai/refdraw      → 14.34.0 · {q} 요청에 맞는 참고 일러스트를 찾아(필요하면
+//  - GET  /api/ai/refs?q=...   → 14.36.0 · 참고 일러스트 후보 목록 (서버 번들, 인터넷 없음)
+//  - POST /api/ai/refdraw      → 14.36.0 · {q} 요청에 맞는 참고 일러스트를 찾아(필요하면
 //                                모델이 후보 중 하나를 고름) 펜 획용 SVG 로 돌려준다
 //
 // 설계 원칙 (ai.js 와 같다)
@@ -646,7 +646,7 @@ async function storeImage(buf) {
   };
 }
 
-// ── ③ 14.34.0 · 참고 일러스트 그리기 — "찾아서 윤곽을 따라 그린다" ─────────
+// ── ③ 14.36.0 · 참고 일러스트 그리기 — "찾아서 윤곽을 따라 그린다" ─────────
 //   모델이 좌표를 지어내던 예전 방식은 그림 수준이 들쭉날쭉했다. 이제는
 //   ① 요청 문장에서 그림 대상 낱말을 뽑아 서버 번들(OpenMoji 선화 1,600여 장)
 //      에서 후보를 찾고,
@@ -705,10 +705,144 @@ export async function refDraw(q) {
   if (!svg) return { ok: false, reason: 'nomatch', terms: found.terms, error: '참고 그림을 옮기지 못했어요' };
   return { ok: true, q, terms: found.terms, how: picked.how, color: color || '',
     picks: [{ h: top.h, e: top.e, ko: top.ko, en: top.en, score: top.score }],
-    name: top.ko || top.en, credit: REF_CREDIT, svg };
+    name: top.ko || top.en, credit: REF_CREDIT, svg };}
+
+// 14.33.1(업스트림)의 참고 사진 찾기 — 위 refDraw(번들 선화 따라 그리기)가 nomatch 로
+//   끝나 브라우저가 모델 직접 그리기(task=draw)로 내려갔을 때, ai.js 의 runDrawJob 이
+//   멀티모달 모델에게 보여 줄 참고 사진을 여기서 찾는다. 두 단계가 겹치지 않는다:
+//   번들에 있는 대상은 모델을 부르지 않고, 없는 대상만 이 경로로 온다.
+// ── ④ 해돌이 그림 참고 일러스트(모델 폴백용) ────────────────────────────────────────────
+// 14.33.1 · \"그림을 그려 줘\"가 흐트러지는 건 텍스트 모델이 좌표를 머릿속으로
+//   찍기 때문이다. 그러니 그리기 전에 '그릴 대상의 참고 일러스트'를 하나 찾아
+//   멀티모달 모델(제미나이 등)에게 이미지로 보여 주고 \"이 윤곽을 따라 귀엽게
+//   선화로 다시 그려\"라고 시킨다 — 사진(이미지 생성)이 아니라 형태가 잡힌
+//   참고를 보고 그리는 방식이라 윤곽이 훨씬 안정된다.
+//
+//   참고 그림은 모델 입력(보기)에만 쓰고 어디에도 저장하지 않는다. 그러므로
+//   사진처럼 노트에 저장되는 imgadd 와 달리 저장 라이선스 걱정이 없고,
+//   외부 그림은 공개 소스(위키미디어 커먼즈·오픈버스)만 받아온다.
+//   검색/내려받기가 실패하거나 대상을 못 찾으면 null → 부르는 쪽이
+//   '참고 없이 그리기'(예전 그대로)로 자연 폴백한다.
+const DRAW_REF_EDGE = 960;              // 참고로 보여 줄 최대 가로·세로 (모델 입력용 축소)
+const DRAW_REF_MAX = 12 * 1024 * 1024;  // 그보다 큰 원본은 받지 않는다
+
+// 원본 버퍼의 이미지 종류를 시그니처로 맞힌다 (data URL 라벨용).
+function sniffMime(buf) {
+  if (!buf || buf.length < 8) return '';
+  const h = Array.prototype.slice.call(buf, 0, 12);
+  const hex = h.map((b) => b.toString(16).padStart(2, '0')).join('');
+  if (hex.slice(0, 8) === 'ffd8ffe0' || hex.slice(0, 8) === 'ffd8ffdb' || hex.slice(0, 6) === 'ffd8ff') return 'image/jpeg';
+  if (hex.slice(0, 8) === '89504e47') return 'image/png';
+  if (hex.slice(0, 8) === '52494646' && hex.slice(16, 24) === '57454250') return 'image/webp';
+  if (hex.slice(0, 6) === '474946') return 'image/gif';
+  if (hex.slice(0, 2) === '42' && hex.slice(2, 4) === '4d') return 'image/bmp';
+  return '';
 }
 
-// ── ④ 라우트 ────────────────────────────────────────────────────────────────
+// 요청 문장에서 '그릴 대상' 낱말을 뽑아 영어 검색어를 만든다.
+//   imgQueries 는 그대로 쓸 수 있다 — 한국어를 (imgq AI → 무료 번역 → 정제)
+//   순으로 영어 3단계로 만들어 준다. 사진 전용 stopword 처리라 '그려 줘' 류가
+//   이미 빠진 상태로 '대상'만 남는다.
+async function drawRefEnglish(raw) {
+  let cleaned = cleanImgQuery(raw);
+  try {
+    const { queries } = await imgQueries(raw);
+    const en = (queries || []).find((q) => q && /^[A-Za-z0-9 ,.'\-]{2,}$/.test(q) && !looksKorean(q));
+    if (en) return en.trim();
+  } catch (e) { /* AI·번역 실패 → 정제 검색어로 */ }
+  // 한글 그대로면 영문 소스를 못 쓰므로 대략 영어로 돌려 본다(최선).
+  if (cleaned && looksKorean(cleaned)) {
+    try {
+      const [tr] = await withTimeout(translateFree(cleaned, 'en'), IMG_TRANSLATE_MS, 'translate');
+      const en = String(tr || '').replace(/["'`]/g, '').replace(/\s+/g, ' ').trim();
+      if (en && !looksKorean(en)) cleaned = en;
+    } catch (e) { /* 실패 → 정제값 */ }
+  }
+  return cleaned || '';
+}
+
+// 참고 일러스트 후보를 넓혀 가며 '그리기 참고로 쓸' 한 장을 찾는다.
+//   대상 검색어에 illustration / drawing / line art 를 붙여 선화·그림 위주로
+//   고른다(사진 그대로를 추적하면 잡음만 많아진다). 그래도 사진이면 모델이
+//   형태만 참고하도록 아래 지침에서 다시 못 박는다.
+async function drawRefFind(query, signal) {
+  const cands = [`${query} illustration`, `${query} drawing`, `${query} coloring page`, `${query} line art`, query];
+  let ranked = [];
+  for (const cq of cands) {
+    if (signal && signal.aborted) return null;
+    const terms = imgTerms(cq);
+    const got = await searchImagesRanked(cq, terms).catch(() => ({ results: [] }));
+    const top = got.results && got.results[0];
+    if (top && top.score >= IMG_MIN_SCORE) { ranked = got.results; break; }   // 잘 맞는 그림
+    if (!ranked.length && top) ranked = got.results;                          // 최선의 후보 보관
+  }
+  const top = ranked[0];
+  if (!top || Number(top.score || 0) < IMG_MIN_SCORE) return null;
+  return top;
+}
+
+// 후보를 내려받아 멀티모달 입력용 data URL 로 만든다 (저장 안 함 · 실패 시 null).
+async function drawRefDataUrl(cand, signal) {
+  const urls = [cand.url];
+  if (cand.full && cand.full !== cand.url) urls.push(cand.full);
+  for (const u of urls) {
+    try {
+      const buf = await downloadImage(u);
+      if (!buf || buf.length > DRAW_REF_MAX) continue;
+      let out = buf; let mime = 'image/jpeg';
+      try {
+        // EXIF 회전 반영 + 모델 입력용으로 적당히 줄여 가벼운 JPEG 로 통일한다.
+        out = await sharp(buf).rotate()
+          .resize({ width: DRAW_REF_EDGE, height: DRAW_REF_EDGE, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 86 }).toBuffer();
+        mime = 'image/jpeg';
+      } catch (e) {
+        // sharp 실패(깨진/특수 파일) 시 원본을 쓰되, data URL 라벨은 실제로 맞춘다.
+        mime = sniffMime(buf) || 'image/jpeg';
+      }
+      return { dataUrl: `data:${mime};base64,` + out.toString('base64') };
+    } catch (e) { /* 깨진 후보 → 다음 주소로 */ }
+  }
+  return null;
+}
+
+// 외부에서 부르는 참고 찾기 — 성공 시 { dataUrl, title, page, license, source },
+// 아니면 null. 오류는 모두 삼킨다(그림이 실패하지 않게 부르는 쪽이 폴백).
+export async function fetchDrawReference(raw, signal) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return null;
+  const ck = 'ref:' + s.toLowerCase();
+  const hit = cacheGet(ck);
+  // cacheGet 은 저장된 데이터 자체를 돌려 준다({dataUrl,…} 또는 null).
+  //   예전엔 여기서 hit.data 를 다시 읽어 undefined 가 나와, 캐시에 든 참고를
+  //   못 쓰고 '예전 방식(참고 없이 그리기)'로 폴백했다 — 같은 요청의 두 번째
+  //   그림부터 윤곽선 따기가 절대 안 되던 원인.
+  if (hit) return hit;                            // TTL 안의 같은 요청은 재검색 안 함
+  if (signal && signal.aborted) return null;
+  let out = null;
+  try {
+    const query = await drawRefEnglish(s);
+    if (query) {
+      const cand = await drawRefFind(query, signal);
+      if (cand) {
+        const img = await drawRefDataUrl(cand, signal);
+        if (img) {
+          out = Object.assign({}, img, {
+            query,
+            title: cand.title, page: cand.page, license: cand.license, source: cand.source,
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[ai/drawref]', e && e.message);
+  }
+  if (!out) console.error('[ai/drawref] 참고 일러스트를 못 찾아 예전 방식(참고 없이 그리기)으로 그립니다 ·', s);
+  cachePut(ck, out);
+  return out;
+}
+
+// ── ⑤ 라우트 ────────────────────────────────────────────────────────────────
 function qOf(req) {
   return String((req.query && (req.query.q || req.query.query)) || '').trim().slice(0, 200);
 }
@@ -758,7 +892,7 @@ export function registerAiTools(app) {
     }
   });
 
-  // 14.34.0 · 참고 일러스트 후보 — 어떤 그림이 있는지 본다(디버그·미리보기용, 모델 없음)
+  // 14.36.0 · 참고 일러스트 후보 — 어떤 그림이 있는지 본다(디버그·미리보기용, 모델 없음)
   app.get('/api/ai/refs', async (req, reply) => {
     const q = qOf(req);
     if (q.length < 1) return replyErr(reply, 400, '무엇을 그릴지 적어 주세요');
@@ -768,7 +902,7 @@ export function registerAiTools(app) {
       results: got.results.map((r) => ({ h: r.h, e: r.e, ko: r.ko, en: r.en, score: r.score, paths: r.paths })) });
   });
 
-  // 14.34.0 · 참고 일러스트를 찾아 펜 획용 SVG 로 — 그림 요청의 1순위 경로
+  // 14.36.0 · 참고 일러스트를 찾아 펜 획용 SVG 로 — 그림 요청의 1순위 경로
   app.post('/api/ai/refdraw', async (req, reply) => {
     const b = (req.body && typeof req.body === 'object') ? req.body : {};
     const q = String(b.q || b.query || '').trim().slice(0, 200);

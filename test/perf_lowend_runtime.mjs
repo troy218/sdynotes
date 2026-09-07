@@ -3,7 +3,7 @@
  * page_preview_runtime 을 'sdy_lowend=1 강제' 상태로 돌린다.
  * 확인하는 것
  *   ① body.sdy-turbo 가 자동으로 붙는다 (판정 → CSS/JS 협력)
- *   ② 미리보기 URL 이 ?w=480 을 쓴다 (읽는 동안 디코드·레이아웃 비용 최소화)
+ *   ② 초벌 미리보기 URL 이 ?w=480 을 쓴다 (읽기 화질 승급은 별도 검증)
  *   ③ 셸 여유분/상한이 줄어 종이 DOM 이 더 작게 유지된다
  *   ④ 스크롤해도 글상자 DOM 을 만들지 않는다 (읽기 우선 유지)
  *   ⑤ 치명적 런타임 오류가 없다
@@ -184,7 +184,7 @@ try {
 
   check('가져온 문서가 열린다', ev('doc.pages.length') === PAGES);
   check('읽기 우선으로 쪽 그림을 요청한다', previewHits > 0, `hits=${previewHits}`);
-  check('미리보기는 똥컴용 480px 로 받는다', previewWidths.has('480'), [...previewWidths].join(','));
+  check('초벌 미리보기는 480px 로 시작한다', previewWidths.values().next().value === '480', [...previewWidths].join(','));
 
   ev(`(function(){
     const b=document.getElementById('editorBody');

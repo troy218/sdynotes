@@ -7,7 +7,7 @@
  *   ② 입력 즉시 보라색 — 사진·그림도 문서 편집이라 같은 색으로 알린다
  *   ③ 그림 크기 — 쪽을 반이나 차지하지 않는지(본문 폭의 40%·최대 320px)
  *   ④ 사진 넣기 — /api/ai/imgadd 응답이 실제 사진 요소로 들어가는지
- *   ⑤ 14.34.0 · 참고 일러스트 따라 그리기 — /api/ai/refdraw(진짜 번들)의 선화가
+ *   ⑤ 14.36.0 · 참고 일러스트 따라 그리기 — /api/ai/refdraw(진짜 번들)의 선화가
  *      펜 획으로 들어가고, 참고 그림이 없을 때만 모델 직접 그리기로 내려가는지
  *
  *   AI 모델·외부 사진 소스는 부르지 않는다(가짜 응답만 쓴다). */
@@ -225,6 +225,16 @@ try {
   const parsed = window.sdyAiDrawParse(SAMPLE_SVG);
   check('SVG 선화를 펜 획으로 바꾼다', parsed.ok && parsed.ops.length === 1 && parsed.strokes > 0,
     JSON.stringify({ ok: parsed.ok, strokes: parsed.strokes }));
+
+  // 유기적인 자유 곡선(3차 베지어 C·S·Q) 파싱 및 부드러운 샘플링 검증
+  const organicSvg = '<svg viewBox="0 0 480 360" xmlns="http://www.w3.org/2000/svg">'
+    + '<path fill="none" stroke="#1a1a1a" stroke-width="3" d="M 50 150 C 90 80 140 220 200 150 S 290 80 340 160 Q 390 240 440 150"/>'
+    + '</svg>';
+  const parsedOrganic = window.sdyAiDrawParse(organicSvg);
+  check('자유 곡선(C·S·Q)이 부드럽고 촘촘하게 샘플링된다',
+    parsedOrganic.ok && parsedOrganic.strokes === 1 && parsedOrganic.ops[0].strokes[0].pts.length >= 30,
+    JSON.stringify({ ptsCount: parsedOrganic.ops[0]?.strokes[0]?.pts?.length }));
+
   const before = boxesOf(window.__sdyAiBridge.capture().text, '그림획').length;
   const drawRes = window.__sdyAiBridge.apply(parsed.ops);
   await wait(200);
@@ -277,7 +287,7 @@ try {
   check('사진을 넣었다고 말해 준다', /사진을 넣었어요/.test(said), said.slice(0, 80));
   window.fetch = realFetch;
 
-  // ── ⑤ 14.34.0 · 참고 일러스트를 따라 그리기 — 실제 서버 번들 → 펜 획 ───────
+  // ── ⑤ 14.36.0 · 참고 일러스트를 따라 그리기 — 실제 서버 번들 → 펜 획 ───────
   //   "고양이 그려 줘"는 모델을 부르기 전에 /api/ai/refdraw(진짜 서버·진짜 번들)로
   //   참고 선화를 받아 그 윤곽을 펜 획으로 옮긴다. 모델(/api/ai/ask)은 부르지 않는다.
   const askCalls = [];
