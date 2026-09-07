@@ -248,7 +248,7 @@ try {
 
   // ── 건드리면 그 쪽만 편집 요소로 바뀐다 ─────────────────────────────
   const cur = ev('curPageIdx');
-  ev(`sdyActivatePage(${cur})`);
+  await ev(`sdyActivatePage(${cur})`);
   const actUntil = Date.now() + 6000;
   while (Date.now() < actUntil
     && !document.querySelector(`#pagesStage .paper[data-page-idx="${cur}"] .tb`)) await wait(60);

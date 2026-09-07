@@ -47,8 +47,8 @@ ok('낡은 고정 상수가 소스에 남아 있지 않다',
   !/SHELL_PAD|SHELL_MAX|VIRTUAL_RENDER_RADIUS|VIRTUAL_KEEP_RADIUS|FILL_IDLE|FILL_MAX_GAP/.test(js));
 
 /* ── 3. 읽기 우선 쪽 그림을 더 작게 ─────────────────────────── */
-ok('똥컴 모드는 미리보기를 480px 로 요청한다 (확대한 경우만 900)',
-  /if\(sdyTurbo\(\)\) return pageScale>1\.4\?900:480;/.test(js));
+ok('똥컴 모드는 초벌만 480px, 읽기 화질은 별도 승급한다',
+  /if\(draft&&sdyTurbo\(\)\) return 480;/.test(js) && /function schedulePreviewQuality\(\)/.test(js));
 ok('서버가 480px 미리보기를 실제로 구울 수 있게 단계에 추가했다',
   /PREVIEW_WIDTHS = \(480, 900, 1600\)/.test(worker));
 
