@@ -314,6 +314,8 @@
         try{
             if(navigator.clipboard&&navigator.clipboard.writeText){
                 await navigator.clipboard.writeText(txt);
+                // 22.2 · 글자 복사가 OS 클립보드를 가져갔으니 요소 클립보드 우선권 해제
+                try{ invalidateElsCopyForOsText(); }catch(_e){}
                 return true;
             }
         }catch(e){}
@@ -359,7 +361,28 @@
             addTextBox(pi,c.x,c.y,dim);
         }
         else if(a==='paste'){
+            // 22.2 · 앱에서 복사/잘라낸 요소 붙여넣기 — 예전엔 OS 클립보드
+            //   글자만 봐서, 요소를 복사한 뒤 우클릭 붙여넣기를 하면 오래된
+            //   글자가 글상자로 붙거나 '클립보드가 비어 있습니다'가 떴다.
+            //   지금은 클립보드가 '우리 것'이면 우클릭한 자리에 요소를 붙인다.
             try{
+                if(clipboardEls.length){
+                    let mine=false, _osTxt=null;
+                    try{ _osTxt=String(await navigator.clipboard.readText()||''); }catch(_e){}
+                    if(_elsOsWrite) mine=(_osTxt.trim()===String(_lastCopyText||'').trim());
+                    else mine=(Date.now()-_elsCopyAt<_ELS_PASTE_WIN);
+                    // OS 클립보드가 비어 보이는데 사진을 담고 있으면 사진이 우선
+                    if(mine&&_osTxt.trim()===''){
+                        try{
+                            const _items=await navigator.clipboard.read();
+                            if(_items.some(it=>it.types.some(x=>x.startsWith('image/')))) mine=false;
+                        }catch(_e){}
+                    }
+                    if(mine){
+                        lastMouse.pageIdx=pi; lastMouse.x=t.x; lastMouse.y=t.y;
+                        pasteElements(); return;
+                    }
+                }
                 const items=await navigator.clipboard.read();
                 for(const it of items){
                     const imgType=it.types.find(x=>x.startsWith('image/'));

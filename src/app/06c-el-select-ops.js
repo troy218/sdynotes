@@ -355,8 +355,9 @@
             const ta=document.createElement('textarea');
             ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
             document.body.appendChild(ta); ta.select();
-            document.execCommand('copy'); ta.remove();
-        }catch(e){}
+            const ok=document.execCommand('copy'); ta.remove();
+            return !!ok;
+        }catch(e){ return false; }
     }
     try{ window.fallbackCopyText=fallbackCopyText; }catch(e){}
     function copySelectedTextAsText(els){
@@ -366,14 +367,42 @@
         //   원본 상자(위치·크기·글꼴·서식)도 함께 기억한다. 같은 글자를 그대로
         //   붙여넣으면 맹숭맹숭한 새 상자가 아니라 '상자 복제'가 되도록.
         try{ clipboardEls=JSON.parse(JSON.stringify(els)); _lastCopyText=text; }catch(e){}
+        markElsCopied();
         if(!text){ toast('복사할 글자가 없습니다',1600); return; }
         const done=()=>toast(els.length>1?`${els.length}개 상자 복사됨`:'복사됨',1200);
         if(navigator.clipboard&&navigator.clipboard.writeText){
             navigator.clipboard.writeText(text)
-                .then(done).catch(()=>{ fallbackCopyText(text); done(); });
-        }else{ fallbackCopyText(text); done(); }
+                .then(()=>{ _elsOsWrite=true; done(); })
+                .catch(()=>{ if(fallbackCopyText(text)) _elsOsWrite=true; done(); });
+        }else{ if(fallbackCopyText(text)) _elsOsWrite=true; done(); }
     }
     let _lastCopyText='';           // 18.9 · 방금 우리가 OS 클립보드에 넣은 글자
+    // ===== 요소 클립보드의 'OS 클립보드 소유' 추적 (22.2) =====
+    //   예전엔 요소 복사(비텍스트·혼합·드래그 다중 선택)가 OS 클립보드를
+    //   건드리지 않았다. 그래서 클립보드에 예전 글자가 남아 있으면 Ctrl+V 때
+    //   복사한 요소 대신 그 오래된 글자가 새 글상자로 붙었다 — '드래그해서
+    //   골라 복사한 뒤 붙여넣기가 잘 안 된다'는 보고의 정체.
+    //   - _elsCopyAt  : 마지막 요소 복사/붙여넣기 시각
+    //   - _elsOsWrite : 요소 복사 때 OS 클립보드 쓰기에 성공했는가
+    //       true  → OS 클립보드 텍스트가 _lastCopyText 와 같은지 비교해 판정
+    //       false → OS 클립보드에 뭐가 들었는지 알 수 없으므로, _ELS_PASTE_WIN
+    //               안의 Ctrl+V 는 요소 붙여넣기를 우선한다
+    let _elsCopyAt=0, _elsOsWrite=false;
+    const _ELS_PASTE_WIN=60000;     // 쓰기 실패(권한 없음 등)일 때만 쓰는 안전창
+    function markElsCopied(){ _elsCopyAt=Date.now(); _elsOsWrite=false; }
+    // 사용자가 '글자'를 직접 복사했다(본문 드래그 복사·링크 주소 복사 등) →
+    // 요소 클립보드의 우선권은 물러난다. 이후 Ctrl+V 는 글자 붙여넣기로 간다.
+    function invalidateElsCopyForOsText(){ _elsCopyAt=0; _elsOsWrite=true; }
+    // 요소 복사/잘라내기 때 OS 클립보드에도 '요소의 글자'(없으면 빈 글자)를
+    // 올려 둔다. 빈 글자는 클립보드를 비우는 효과가 있어, 예전 글자가 남아
+    // 요소 붙여넣기를 가로막는 일이 없다. 실패해도 요소 복사 자체는 계속된다.
+    function writeOsTextForEls(txt){
+        if(navigator.clipboard&&navigator.clipboard.writeText){
+            navigator.clipboard.writeText(txt)
+                .then(()=>{ _elsOsWrite=true; })
+                .catch(()=>{ if(fallbackCopyText(txt)) _elsOsWrite=true; });
+        }else if(fallbackCopyText(txt)) _elsOsWrite=true;
+    }
     // 18.12 · 사진을 복사/잘라내면 내부 클립보드(앱 안 붙여넣기)뿐 아니라
     //   OS 클립보드에도 실제 이미지(PNG)를 올려 워드 등 외부 앱에 바로 붙여넣는다.
     async function copyImageToClipboard(el){
@@ -428,8 +457,20 @@
         const els=selectedElsData();
         if(!els.length) return;
         clipboardEls=JSON.parse(JSON.stringify(els));
-        _lastCopyText='';
+        markElsCopied();
         const singleImg=els.length===1&&els[0].type==='image';
+        // 22.2 · 요소 복사/잘라내기 때도 OS 클립보드에 '요소의 글자'를 올려
+        //   둔다(_lastCopyText 도 같이). 안 그러면 예전에 복사해 둔 글자가
+        //   클립보드에 남아 Ctrl+V 때 복사한 요소 대신 글상자로 붙는다.
+        //   글자가 아예 없으면 빈 글자를 써 클립보드를 비운다.
+        //   단, 사진 1장은 OS 클립보드에 PNG 를 올리는 게 이득이라 그대로 둔다.
+        if(singleImg){
+            _lastCopyText='';
+        }else{
+            const txt=els.map(el=>htmlToPlain(el.html,el.tight)).filter(t=>t.length).join('\n');
+            _lastCopyText=txt;
+            writeOsTextForEls(txt);
+        }
         if(cut){
             pushHistory();
             const pi=multiSel.length?multiSel[0].pageIdx:+selected.el.dataset.pageIdx;
@@ -447,6 +488,10 @@
     function pasteElements(){
         if(!clipboardEls.length||!doc) return;
         const pi=(lastMouse.pageIdx>=0&&lastMouse.pageIdx<doc.pages.length)?lastMouse.pageIdx:curPageIdx;
+        // 22.2 · 여러 곳에 이어 붙일 때도 요소 붙여넣기가 계속 우선하도록
+        //   안전창을 다시 연다 (OS 쓰기 상태(_elsOsWrite)는 그대로 둔다 —
+        //   true 면 여전히 글자 일치로 판정한다)
+        _elsCopyAt=Date.now();
         pushHistory();
         // 클립보드 묶음의 좌상단을 기준점으로 삼아 마우스 위치로 옮김
         let minX=Infinity,minY=Infinity;

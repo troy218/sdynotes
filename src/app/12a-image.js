@@ -283,6 +283,14 @@
         // 텍스트 붙여넣기 → 자동으로 텍스트 상자 생성
         const html=e.clipboardData?.getData('text/html');
         const plain=e.clipboardData?.getData('text/plain');
+        // 22.2 · 방금 '요소 복사/잘라내기'를 했는데 OS 클립보드 쓰기가 실패했다면
+        //   지금 클립보드에 뭐가 들어 있는지 알 수 없다. 이때는 잠깐(60초) 동안
+        //   Ctrl+V 를 요소 붙여넣기로 우선 처리한다 — 안 그러면 클립보드에 남아
+        //   있던 예전 글자가 새 글상자로 붙어 복사한 요소가 사라진 것처럼 보인다.
+        //   (쓰기에 성공했으면 아래 글자 일치 판정이 정확하므로 이 창은 쓰지 않는다)
+        if(clipboardEls.length&&!_elsOsWrite&&Date.now()-_elsCopyAt<_ELS_PASTE_WIN){
+            e.preventDefault(); pasteElements(); return;
+        }
         // 18.9 · 앱에서 복사한 상자를 그대로 붙여넣기 (글꼴·크기·서식·크기 유지)
         if(clipboardEls.length&&plain&&_lastCopyText&&plain.trim()===_lastCopyText.trim()){
             e.preventDefault(); pasteElements(); return;
