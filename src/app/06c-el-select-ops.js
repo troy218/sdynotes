@@ -88,18 +88,55 @@
         if(lastFS) setToolbarFS(lastFS);
         return true;
     }
+    // 한 점(px,py)을 중심(cx,cy) 기준으로 deg 도만큼 회전한 좌표를 돌려준다.
+    function _rotPt(px,py,cx,cy,deg){
+        if(!deg) return [px,py];
+        const r=deg*Math.PI/180, c=Math.cos(r), s=Math.sin(r);
+        const dx=px-cx, dy=py-cy;
+        return [cx + dx*c - dy*s, cy + dx*s + dy*c];
+    }
+    // 묶음 회전: 선택한 여러 요소를 '하나의 덩어리'로 보고 공통 피벗(묶음
+    // 바운딩 박스의 중심) 둘레로 강체처럼 함께 돌린다. Alt(비율 크기조절)가
+    // 묶음을 그대로 키우는 것과 같은 느낌 — 각 요소가 제자리에서 따로
+    // 돌지 않고, 배치 그대로 피벗 주위를 공전한다.
     function rotateSelection(delta,items){
         items=items||selEntries();
         if(!items.length) return false;
+        const pi=items[0].pageIdx;
+        const bb=unionBBox(items,pi); if(!bb) return false;
+        const cx=bb.x+bb.w/2, cy=bb.y+bb.h/2;   // 공통 피벗
         items.forEach(it=>{
             const el=findEl(it.pageIdx,it.id); if(!el) return;
-            el.rotation=normalizedRotation((Number(el.rotation)||0)+delta);
-            markPageEdited(it.pageIdx);
-            if(el.type==='stroke') syncStrokeTransform(el,it.node,it.pageIdx);
-            else if(it.node) applyBoxRotation(it.node,el);
+            if(el.type==='stroke'){
+                // 획은 '자신의 중심' 기준 회전(a) + (dx,dy) 이동으로 그려진다.
+                // 피벗 둘레 강체 회전 = 획 중심을 피벗 주위로 공전 + a 에 delta 가산.
+                const bbL=strokeBBox(el);
+                const Cx=bbL.x+bbL.w/2, Cy=bbL.y+bbL.h/2;   // 획 로컬 중심
+                const dx=el.dx||0, dy=el.dy||0;
+                const Sx=Cx+dx, Sy=Cy+dy;                    // 현재 페이지 중심
+                const [nsx,nsy]=_rotPt(Sx,Sy,cx,cy,delta);
+                el.dx=nsx-Cx; el.dy=nsy-Cy;
+                el.rotation=normalizedRotation((Number(el.rotation)||0)+delta);
+                markPageEdited(it.pageIdx);
+                syncStrokeTransform(el,it.node,it.pageIdx);
+            }else{
+                // 상자(글상자·이미지·수식): 중심을 피벗 주위로 공전 + a 에 delta 가산.
+                const Cx=el.x+(el.w||0)/2, Cy=el.y+(el.h||0)/2;
+                const [ncx,ncy]=_rotPt(Cx,Cy,cx,cy,delta);
+                el.x=Math.round(ncx-(el.w||0)/2);
+                el.y=Math.round(ncy-(el.h||0)/2);
+                el.rotation=normalizedRotation((Number(el.rotation)||0)+delta);
+                markPageEdited(it.pageIdx);
+                if(it.node){
+                    it.node.style.left=el.x+'px'; it.node.style.top=el.y+'px';
+                    applyBoxRotation(it.node,el);
+                }
+            }
         });
         return true;
     }
+    // 절댓값 회전(주로 '각도 초기화'). 요소별로 회전만 0 으로 되돌리고
+    // 자리는 그대로 둔다 — 묶음 회전 뒤에도 각 요소가 '똑바로' 서게 한다.
     function rotateSelectionTo(angle,items){
         items=items||selEntries();
         if(!items.length) return false;
