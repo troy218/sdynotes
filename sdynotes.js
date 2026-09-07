@@ -1,3 +1,11 @@
+/* 분리된 JS · 소스: src/app/*.js (scripts/bundle-frontend.mjs 가 이어 붙임) */
+/* AUTO-GENERATED — 직접 고치지 말고 src/app/ 파트를 수정한 뒤 bundle 하라 */
+
+/* === src/app/00-boot.js ===
+   script block 1–2 · 글꼴 지연로드 · FLOAT-BOUNDS · 음악 칩
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:00-boot.js:BEGIN */
 /* 분리된 JS */
 
 /* === script block 1 === */
@@ -152,6 +160,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 })();
 
 
+
+/* APP-PART:00-boot.js:END */
+
+/* === src/app/01-core.js ===
+   sandbox · SDB · 문서모델 · 팔레트 · toast/esc
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:01-core.js:BEGIN */
 /* === script block 3 === */
 
     // ============ 9.4 · 시험 모드 (개발/테스트 격리) ============
@@ -539,6 +555,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         applyWallpaper();
     }
 
+
+/* APP-PART:01-core.js:END */
+
+/* === src/app/02-home.js ===
+   홈 · 설정동기화 · 검색 · 폴더 · 휴지통 · 멀티선택
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:02-home.js:BEGIN */
     // ===== 9.4 · 홈 화면 배경 사진 =====
     function wallIsVideo(){
         return S.wallVideo===true || /\.(mp4|webm|mov)([?#]|$)/i.test(S.wall||'') || /\/video\/upload\//.test(S.wall||'');
@@ -4396,6 +4420,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return {ok:okc,fail};
     }
 
+
+/* APP-PART:02-home.js:END */
+
+/* === src/app/03-admin.js ===
+   관리자 모드 · 파일 보관함
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:03-admin.js:BEGIN */
     // ============ 관리자 모드 ============
     // 비밀번호 검증과 IP 차단은 서버(app.py)에서 처리한다. 프런트는 토큰만 보관.
     let adminMode=false, adminToken=null;
@@ -5099,6 +5131,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return `${base} (${Date.now().toString(36)})`;
     }
 
+
+/* APP-PART:03-admin.js:END */
+
+/* === src/app/04-import-lock.js ===
+   문서 가져오기 · 노트 잠금
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:04-import-lock.js:BEGIN */
     // ============ 문서 가져오기 (PDF / Word → 편집 가능한 노트) ============
     // 진행률은 '절대 뒤로 가지 않게' 한 곳에서만 만진다.
     // (예전엔 업로드 10% → 변환 0% 로 되돌아가 보였다)
@@ -5667,6 +5707,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return true;
     }
 
+
+/* APP-PART:04-import-lock.js:END */
+
+/* === src/app/05-editor-shell.js ===
+   에디터 열기/닫기 · 저장 · 동기화 · 아웃박스
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:05-editor-shell.js:BEGIN */
     // ============ Editor: 열기/닫기 ============
     async function openNB(nb){
         if(window._closeEdT){ clearTimeout(window._closeEdT); window._closeEdT=null; }
@@ -6269,6 +6317,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(mt) target.addEventListener(mt,e=>{ if(sdyIgnoreCompatMouse()) return; handler(e); },opts);
     }
 
+
+/* APP-PART:05-editor-shell.js:END */
+
+/* === src/app/06-pages.js ===
+   페이지 렌더 · 가상화 · 읽기우선 · 다중선택
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:06-pages.js:BEGIN */
     // ============ 페이지 렌더 · 셸 가상화 ============
     // 500쪽이 넘는 문서를 열어도 한 번에 500장의 종이를 만들지 않는다.
     //   ① 스테이지 높이만 전체 쪽수로 잡아 스크롤 막대 길이는 정확히 유지한다.
@@ -8090,6 +8146,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         toast(`${removed.length}개 삭제됨`,1400);
     }
 
+
+/* APP-PART:06-pages.js:END */
+
+/* === src/app/07-elements.js ===
+   요소 빌더 · 형광펜 레이어 · 되돌리기
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:07-elements.js:BEGIN */
     // ============ 요소 빌더 ============
     function findEl(pageIdx,id){ return (doc.pages[pageIdx].els||[]).find(e=>e.id===id); }
 
@@ -9616,6 +9680,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){ return true; }
     }
 
+
+/* APP-PART:07-elements.js:END */
+
+/* === src/app/08-selection-table.js ===
+   선택/드래그 · 표 · 스프레드시트 셀
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:08-selection-table.js:BEGIN */
     // ============ 선택/드래그 ============
     let selected=null, drag=null, resize=null;
     let textToolActive=false, tablePlace=null, curFontSize=16, _textPointerBlockUntil=0;
@@ -11985,6 +12057,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // ===== 서버 상태 계기판 + 알림 센터 =====
     // 14.38+ · src/server-status.js 로 분리 (openSrvPop · toggleNotifications · srvStart …)
 
+
+/* APP-PART:08-selection-table.js:END */
+
+/* === src/app/09-tools-ui.js ===
+   더보기 서랍 · 세로도구 · 체크포인트 등
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:09-tools-ui.js:BEGIN */
     // ===== 더보기 서랍 =====
     function openMore(tab){
         const s=document.getElementById('moreSheet');
@@ -13096,6 +13176,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.body.classList.remove('placing-table');
     }
 
+
+/* APP-PART:09-tools-ui.js:END */
+
+/* === src/app/10-input-pen.js ===
+   배치모드 · 히스토리키 · 펜/지우개 · 핀치
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:10-input-pen.js:BEGIN */
     // ============ 요소 배치 모드 (그림·수식) ============
     // 예전엔 텍스트 상자·표만 '누른 자리 = 생기는 자리' 보정(pageLocal)이 돼 있었고
     //  · 그림은 도구막대에서 넣으면 늘 쪽 한가욵데에,
@@ -14313,6 +14401,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         },{passive:true});
     })();
 
+
+/* APP-PART:10-input-pen.js:END */
+
+/* === src/app/11-text-format.js ===
+   글자색/형광펜 · 인라인 서식 · 종이크기
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:11-text-format.js:BEGIN */
     // ============ 워드식 글자색 / 형광펜 ============
     // 14.18.4 · 글자색/형광펜 팔레트는 파스텔보다 조금 더 세련된 진한 톤으로 맞춘다.
     //   예전 기본색/파스텔값이 저장돼 있어도 렌더링 때 아래 팔레트 계열로 자연스럽게 맞춘다.
@@ -16089,6 +16185,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         renderPages(); saveDoc();
     }
 
+
+/* APP-PART:11-text-format.js:END */
+
+/* === src/app/12-media.js ===
+   이미지 · 내보내기 · 스티커 · 해돌이 문서브릿지
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:12-media.js:BEGIN */
     // ============ 이미지 ============
     let _imgPickAnchor=null;   // 우클릭 '사진 넣기'로 연 경우: 그 지점(문서 좌표)
     function triggerImgUpload(anchor){
@@ -18354,6 +18458,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(err){}
     });
 
+
+/* APP-PART:12-media.js:END */
+
+/* === src/app/13-collab.js ===
+   실시간 동기화 · 커서 공유
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:13-collab.js:BEGIN */
     // ============ 여러 기기 실시간 반영 (적응형 폴링) ============
     // 예전엔 20초 고정이라 다른 기기의 변경이 한참 뒤에 보였다.
     // 지금은 '방금 뭔가 오갔으면 빠르게(1.2초), 조용하면 천천히(15초)'.
@@ -20126,6 +20238,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
 
+
+/* APP-PART:13-collab.js:END */
+
+/* === src/app/14-menus-init.js ===
+   우클릭 메뉴 · 삭제 · Init · 노트목록 동기화 · block4
+   (sdynotes.js 메가 분리 · 이 파일들은 scripts/bundle-frontend.mjs 가 순서대로 이어 붙인다.
+    let/const 스코프를 공유하려면 반드시 concat 되어야 한다 — 단독 <script> 로드 금지) */
+/* APP-PART:14-menus-init.js:BEGIN */
     // ============ 에디터 우클릭 메뉴 ============
     let ctxTarget=null;   // {kind:'blank'|'el'|'text', pageIdx, x, y, el}
     // ── 우클릭 메뉴 ────────────────────────────────────────
@@ -21935,3 +22055,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
 /* === script block 4 === */
 (function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2a781b7af7de89c',t:'MTc4NjYyMTg3Mw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();
+
+/* APP-PART:14-menus-init.js:END */
+
