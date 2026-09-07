@@ -65,6 +65,7 @@
     "test:translate": "node test/translate_contract.mjs && node test/translate_flow_runtime.mjs",
     "test:ai": "node test/ai_contract.mjs && node test/ai_providers_contract.mjs && node test/ai_model_chain_contract.mjs && node test/ai_ratelimit_contract.mjs && node test/ai_frontend_contract.mjs && node test/ai_edit_runtime.mjs && node test/ai_app_runtime.mjs && node test/ai_img_search_contract.mjs && node test/ai_img_pipeline_contract.mjs && node test/ai_draw_ref_runtime.mjs && node test/ai_refdraw_contract.mjs && node test/ai_draw_photo_runtime.mjs",
     "test:refdraw": "node test/ai_refdraw_contract.mjs && node test/ai_draw_photo_runtime.mjs",
+    "test:deploy": "node test/deploy_src_contract.mjs",
     "build:refs": "node scripts/build-haedol-refs.mjs",
     "test:perf": "node test/perf_tuning_contract.mjs",
     "test:lowend": "node test/perf_lowend_contract.mjs && node test/perf_lowend_runtime.mjs",
