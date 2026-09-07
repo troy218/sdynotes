@@ -2847,6 +2847,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 const k=_ptKey(p.id,t); seen.add(k); out[k]={playlist:p.id,track:String(t),order:i};
             });
         });
+        // 버그 일지 — 해돌이가 정리해 기록한 버그(제목·증상·재현·기대·메모).
+        //   모두가 보는 일지라 항목 하나를 키 하나('buglog:<id>')로 동기화한다.
+        getBugEntries().forEach(x=>{
+            if(x&&x.id){ const k='buglog:'+x.id; seen.add(k); out[k]=x; }
+        });
         // 앱 전체 설정(테마·강조색·기본 글꼴/크기 등)도 기기 간 공유
         seen.add('appset'); out['appset']=_appSetPayload();
         seen.add('adminedits'); out['adminedits']=getAdminEdits();
@@ -2875,7 +2880,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //  같은 종류가 여러 개 '삭제'로 나가면 그건 사용자의 뜻이 아니라 버그다
     //  (초기화된 localStorage, 잘못된 정리 코드, 테스트 스크립트 등).
     //  그럴 땐 삭제를 보내지 않고 서버 값을 정답으로 삼아 되돌려 받는다.
-    const _DEL_LIMIT={bookmark:2, playlist:2, folder:2};
+    const _DEL_LIMIT={bookmark:2, playlist:2, folder:2, buglog:10};
     function _stGuardDeletes(ops){
         const dels={};
         ops.forEach(o=>{
@@ -3144,6 +3149,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(card){ card.classList.remove('has-emoji'); card.innerHTML='<span style="font-size:16px;opacity:.35;">◌</span>'; }
                 return false;   // DOM 직접 갱신 (전체 재렌더 불필요)
             }
+            if(k.indexOf('buglog:')===0){
+                const id=k.slice(7), a=getBugEntries(), b=a.filter(x=>String(x.id)!==id);
+                if(a.length===b.length) return false;
+                saveBugEntries(b); return true;
+            }
         }catch(e){}
         return false;
     }
@@ -3261,6 +3271,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 // 카드가 아직 안 그려졌으면 전체 재렌더로 반영시킨다
                 if(!paintEmojiBadge(nbId,em)) return true;
                 return false;   // DOM 직접 갱신 (전체 재렌더 불필요)
+            }
+            if(k.indexOf('buglog:')===0){
+                const id=k.slice(7);
+                if(!d||typeof d!=='object'||String(d.id||'')!==id) return false;
+                const a=getBugEntries(), i=a.findIndex(x=>String(x.id)===id);
+                if(i>=0){
+                    if(JSON.stringify(a[i])===JSON.stringify(d)) return false;
+                    a[i]=d;
+                }else a.push(d);
+                saveBugEntries(a); return true;
             }
             // 노트별 보기 설정 (종이·크기·배경색·즐겨찾는 쪽·용어 사전)
             if(k.indexOf('nset:')===0){
@@ -3436,6 +3456,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(gridHit) renderGrid();
                 else { try{ requestAnimationFrame(rescalePreviews); }catch(e){} }
                 try{ updateTrashCount(); }catch(e){}
+                // 다른 기기에서 온 버그 일지 기록/삭제도 설정 줄과 열린 목록에 반영
+                try{ paintBugCount(); }catch(e){}
+                try{ bugRepaintIfOpen(); }catch(e){}
                 if(curFolder && !getFolders().some(f=>f.id===curFolder&&!f.trashed_at)) curFolder=null;
             }
             // '도착' 애니메이션은 떠나는 것이 없을 때만 (집게 단일 세션)
@@ -4452,6 +4475,155 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
 /* APP-PART:02e-folders.js:END */
 
+/* === src/app/02f-buglog.js ===
+   버그 일지 — 해돌이에게 말한 버그를 정리해 기록하고 설정에서 보는 일지
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:02f-buglog.js:BEGIN */
+    // ============ 버그 일지 (14.39.0) ============
+    // 노트 안의 해돌이에게 "버그 신고: …" 또는 "버그가 있어요 — …"처럼 말하면
+    //   서버 AI(task=bug)가 제목·증상·재현 방법·기대 동작·메모로 정리해 주고,
+    //   이 일지에 기록된다(어느 노트와도 무관한 앱 전체 문제). 기록은 02d 의
+    //   설정 동기화와 같은 LWW 키('buglog:<id>')를 타고 모든 기기·모든 사람이
+    //   함께 본다 — 관리자 전용이 아니라 누구나 보고, 누구나 지울 수 있다.
+    //   설정 → '버그 일지' 줄의 [보기]를 눌러야 목록이 열리고(스크롤), 열린
+    //   목록에서 항목마다 X 로 그 기록만 지운다.
+    const BUGLOG_KEY='sdy_buglog';
+    function getBugEntries(){
+        try{
+            const raw=localStorage.getItem(BUGLOG_KEY);
+            const a=raw?JSON.parse(raw):[];
+            return Array.isArray(a)?a.filter(x=>x&&x.id):[];
+        }catch(e){ return []; }
+    }
+    function saveBugEntries(a){
+        const arr=(Array.isArray(a)?a.filter(x=>x&&x.id):[]).slice()
+            .sort((x,y)=>(y.t||0)-(x.t||0));
+        try{ localStorage.setItem(BUGLOG_KEY,JSON.stringify(arr)); }catch(e){}
+        try{ document.dispatchEvent(new CustomEvent('sdy-buglog-changed')); }catch(e){}
+    }
+    function paintBugCount(){
+        const el=document.getElementById('bugCount');
+        if(!el) return;
+        const n=getBugEntries().length;
+        el.textContent=n?`${n}건`:'없음';
+    }
+    // 해돌이(ai-assistant.js)가 정리한 내용을 일지에 기록한다. id·시각은 여기서.
+    function buglogAdd(data){
+        const id='bug_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+        const e={
+            id,
+            t:Date.now(),
+            title:String((data&&data.title)||'').trim()||'버그 신고',
+            text:String((data&&data.text)||'').trim(),
+            raw:String((data&&data.raw)||'').trim(),
+            who:String((data&&data.who)||'').trim(),
+            ver:String((data&&data.ver)||'').trim()
+        };
+        const a=getBugEntries();
+        a.unshift(e);
+        saveBugEntries(a);
+        try{ _stQueueOp('buglog:'+id,'put',e); }catch(err){}
+        try{ pushSettingsNow(); }catch(err){}
+        paintBugCount();
+        return e;
+    }
+    try{ window.sdyBuglogAdd=buglogAdd; }catch(e){}
+    // 목록에서 X — 그 기록 하나만 지운다 (모두가 쓸 수 있는 삭제)
+    function delBugEntry(id){
+        id=String(id||'');
+        const a=getBugEntries(), b=a.filter(x=>String(x.id)!==id);
+        if(a.length===b.length) return;
+        saveBugEntries(b);
+        try{ _stQueueOp('buglog:'+id,'del'); }catch(err){}
+        try{ pushSettingsNow(); }catch(err){}
+        paintBugCount();
+        if(isBuglogOpen()) renderBugList();
+        try{ toast('버그 기록을 지웠어요',1500); }catch(err){}
+    }
+    function isBuglogOpen(){
+        const el=document.getElementById('buglogModal');
+        return !!(el&&el.style.display==='flex');
+    }
+    // 설정의 [보기] — 새 창처럼 목록이 뜨고 안에서 스크롤한다
+    function openBuglog(){
+        renderBugList();
+        const el=document.getElementById('buglogModal');
+        if(el) el.style.display='flex';
+        try{ openNav(closeBuglog); }catch(e){}
+    }
+    function closeBuglog(){
+        const el=document.getElementById('buglogModal');
+        if(el) el.style.display='none';
+        try{ navDrop(closeBuglog); }catch(e){}
+    }
+    function bugRepaintIfOpen(){ if(isBuglogOpen()) renderBugList(); }
+    try{ window.bugRepaintIfOpen=bugRepaintIfOpen; }catch(e){}
+    function bugFmtTime(t){
+        try{
+            const d=new Date(t);
+            return String(d.getFullYear()%100).padStart(2,'0')+'.'
+                +String(d.getMonth()+1).padStart(2,'0')+'.'
+                +String(d.getDate()).padStart(2,'0')+' '
+                +String(d.getHours()).padStart(2,'0')+':'
+                +String(d.getMinutes()).padStart(2,'0');
+        }catch(e){ return ''; }
+    }
+    function escBug(t){
+        try{
+            return String(t==null?'':t).replace(/[&<>"']/g,c=>(
+                {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+            ));
+        }catch(e){ return ''; }
+    }
+    function bugBodyHtml(t){
+        // 정리본의 '항목: 내용' 줄을 띄워 읽기 좋게 · 줄바꿈 보존
+        const s=String(t==null?'':t).trim();
+        if(!s) return '';
+        return s.split('\n').map(line=>{
+            const m=/^([^:：]{1,12})[:：]\s*/.exec(line);
+            if(m) return '<div class="buglog-line"><b>'+escBug(m[1])+'</b><span>'+escBug(line.slice(m[0].length))+'</span></div>';
+            return '<div class="buglog-line"><span>'+escBug(line)+'</span></div>';
+        }).join('');
+    }
+    function renderBugList(){
+        const el=document.getElementById('bugList');
+        if(!el) return;
+        const a=getBugEntries().slice().sort((x,y)=>(y.t||0)-(x.t||0));
+        if(!a.length){
+            el.innerHTML='<div class="vault-empty" style="padding:34px 10px;">'
+                +'<i class="ri-bug-line"></i>아직 기록된 버그가 없어요<br>'
+                +'<span style="font-size:12px;color:var(--text3);margin-top:6px;display:inline-block;">'
+                +'노트에서 해돌이에게 "버그 신고: …" 또는 "버그가 있어요 — …"라고 말해 보세요 해돌~</span></div>';
+            paintBugCount();
+            return;
+        }
+        el.innerHTML=a.map(x=>{
+            const who=x.who?('<span class="buglog-who">'+escBug(x.who)+'</span>'):'';
+            const ver=x.ver?('<span class="buglog-ver">v'+escBug(x.ver)+'</span>'):'';
+            return '<div class="buglog-item">'
+                +'<div class="buglog-head">'
+                +'<i class="ri-bug-line" aria-hidden="true"></i>'
+                +'<b class="buglog-title">'+escBug(x.title||'버그 신고')+'</b>'
+                +'<button type="button" class="buglog-x" title="이 기록 지우기" onclick="delBugEntry(\''+escBug(x.id)+'\')"><i class="ri-close-line"></i></button>'
+                +'</div>'
+                +'<div class="buglog-meta">'+bugFmtTime(x.t)+' '+who+' '+ver+'</div>'
+                +(x.text?'<div class="buglog-body">'+bugBodyHtml(x.text)+'</div>':'')
+                +(x.raw?'<div class="buglog-raw">원문 보고: '+escBug(x.raw)+'</div>':'')
+                +'</div>';
+        }).join('');
+        paintBugCount();
+    }
+    // 기록이 바뀌면(내 기기/다른 기기) 설정 줄과 열려 있는 목록을 새로 그린다
+    document.addEventListener('sdy-buglog-changed',function(){
+        try{ paintBugCount(); }catch(e){}
+        try{ if(isBuglogOpen()) renderBugList(); }catch(e){}
+    });
+    // 첫 화면에서도 설정 줄 숫자는 맞춰 둔다 (요소는 설정을 열 때 생기지만 없으면 무해)
+    paintBugCount();
+    try{ window.sdyBuglogCount=function(){ return getBugEntries().length; }; }catch(e){}
+/* APP-PART:02f-buglog.js:END */
+
 /* === src/app/03a-admin.js ===
    관리자 모드
    소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
@@ -5116,8 +5288,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 카드 크기 항목 제거됨
         // 배경화면 미리보기
         refreshWallUI();
-        // 휴지통 개수
+        // 휴지통 개수 · 버그 일지 개수
         updateTrashCount();
+        paintBugCount();
         openNav(closeSettings);
     }
     function closeSettings(){ document.getElementById('setModal').style.display='none'; navDrop(closeSettings); }

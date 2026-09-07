@@ -255,6 +255,11 @@
                 const k=_ptKey(p.id,t); seen.add(k); out[k]={playlist:p.id,track:String(t),order:i};
             });
         });
+        // 버그 일지 — 해돌이가 정리해 기록한 버그(제목·증상·재현·기대·메모).
+        //   모두가 보는 일지라 항목 하나를 키 하나('buglog:<id>')로 동기화한다.
+        getBugEntries().forEach(x=>{
+            if(x&&x.id){ const k='buglog:'+x.id; seen.add(k); out[k]=x; }
+        });
         // 앱 전체 설정(테마·강조색·기본 글꼴/크기 등)도 기기 간 공유
         seen.add('appset'); out['appset']=_appSetPayload();
         seen.add('adminedits'); out['adminedits']=getAdminEdits();
@@ -283,7 +288,7 @@
     //  같은 종류가 여러 개 '삭제'로 나가면 그건 사용자의 뜻이 아니라 버그다
     //  (초기화된 localStorage, 잘못된 정리 코드, 테스트 스크립트 등).
     //  그럴 땐 삭제를 보내지 않고 서버 값을 정답으로 삼아 되돌려 받는다.
-    const _DEL_LIMIT={bookmark:2, playlist:2, folder:2};
+    const _DEL_LIMIT={bookmark:2, playlist:2, folder:2, buglog:10};
     function _stGuardDeletes(ops){
         const dels={};
         ops.forEach(o=>{
@@ -552,6 +557,11 @@
                 if(card){ card.classList.remove('has-emoji'); card.innerHTML='<span style="font-size:16px;opacity:.35;">◌</span>'; }
                 return false;   // DOM 직접 갱신 (전체 재렌더 불필요)
             }
+            if(k.indexOf('buglog:')===0){
+                const id=k.slice(7), a=getBugEntries(), b=a.filter(x=>String(x.id)!==id);
+                if(a.length===b.length) return false;
+                saveBugEntries(b); return true;
+            }
         }catch(e){}
         return false;
     }
@@ -669,6 +679,16 @@
                 // 카드가 아직 안 그려졌으면 전체 재렌더로 반영시킨다
                 if(!paintEmojiBadge(nbId,em)) return true;
                 return false;   // DOM 직접 갱신 (전체 재렌더 불필요)
+            }
+            if(k.indexOf('buglog:')===0){
+                const id=k.slice(7);
+                if(!d||typeof d!=='object'||String(d.id||'')!==id) return false;
+                const a=getBugEntries(), i=a.findIndex(x=>String(x.id)===id);
+                if(i>=0){
+                    if(JSON.stringify(a[i])===JSON.stringify(d)) return false;
+                    a[i]=d;
+                }else a.push(d);
+                saveBugEntries(a); return true;
             }
             // 노트별 보기 설정 (종이·크기·배경색·즐겨찾는 쪽·용어 사전)
             if(k.indexOf('nset:')===0){
@@ -844,6 +864,9 @@
                 if(gridHit) renderGrid();
                 else { try{ requestAnimationFrame(rescalePreviews); }catch(e){} }
                 try{ updateTrashCount(); }catch(e){}
+                // 다른 기기에서 온 버그 일지 기록/삭제도 설정 줄과 열린 목록에 반영
+                try{ paintBugCount(); }catch(e){}
+                try{ bugRepaintIfOpen(); }catch(e){}
                 if(curFolder && !getFolders().some(f=>f.id===curFolder&&!f.trashed_at)) curFolder=null;
             }
             // '도착' 애니메이션은 떠나는 것이 없을 때만 (집게 단일 세션)

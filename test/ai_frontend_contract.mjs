@@ -66,6 +66,15 @@ check('서버: 긴 노트는 앞·중간·뒤 3구간을 살린다',
 check('프런트: 키를 직접 들고 있지 않다 (sk- 리터럴 없음)', !/sk-[A-Za-z0-9_\-]{8,}/.test(js));
 check('프런트: AI 는 자기 엔드포인트(/api/ai/ask)만 부른다', /fetch\('\/api\/ai\/ask'/.test(js));
 check('프런트: 상태 조회로 켜짐/모델을 확인한다', /fetch\('\/api\/ai\/status'/.test(js));
+check('서버: 버그 일지 정리(task=bug)가 있다 — 질문만 받고 노트 본문은 안 받으며(needText:false) 캐시하지 않는다',
+  /^  bug: \{/m.test(srv) && /bug: \{[\s\S]*?needText: false,/.test(srv)
+  && /bug: \{[\s\S]*?needQuestion: true,/.test(srv) && /bug: \{[\s\S]*?noCache: true,/.test(srv));
+check('프런트: 버그 신고 감지(/버그·버그 신고:·"버그가 있어요"·"○○가 안 돼요")가 있다',
+  /window\.sdyAiLooksLikeBug=looksLikeBug/.test(js) && /window\.sdyAiBugCmdOf=bugCmdOf/.test(js)
+  && /task:'bug'/.test(js));
+check('설정: 버그 일지 줄(개수 + [보기])과 스크롤 목록 모달이 있다 — 관리자 전용 아님',
+  /id="bugCount"/.test(html) && /onclick="openBuglog\(\)"/.test(html)
+  && /id="buglogModal"/.test(html) && /id="bugList"/.test(html));
 check('프런트: 노트 글은 bridge 로만 꺼낸다 (문서 구조를 직접 안 건드림)',
   /window\.__sdyAiBridge\.text\(/.test(js));
 check('프런트: 편집도 capture/apply bridge로만 하고 요청 중 문서 변경을 막는다',
@@ -160,11 +169,12 @@ check('프런트: 집중시계에 타이머·스톱워치 손잡이를 노출한
 check('프런트: 앱 실행은 말투에 따라 앱 실행 딱지를 단다',
   /appOn\?'앱 실행'/.test(js) && /app:'앱 실행'/.test(js));
 // ── 14.31.0 · 사진 vs 그림 — 둘 다 문서 편집이라 같은 보라색으로 알린다 ──
-check('프런트: 사진·그림도 편집 모드(보라색)로 보고 딱지를 갈라 단다',
-  /var photoOn=PHOTO_PRE\.test\(v\)\|\|looksLikePhoto\(v\)/.test(js)
-  && /var drawOn=!photoOn&&\(DRAW_PRE\.test\(v\)\|\|looksLikeDraw\(v\)\)/.test(js)
+check('프런트: 사진·그림도 편집 모드(보라색)로 보고 딱지를 갈라 단다 (버그 신고가 더 먼저)',
+  /var bugOn=looksLikeBug\(v\)&&bugCmdOf\(v\)==null/.test(js)
+  && /var photoOn=!bugOn&&\(PHOTO_PRE\.test\(v\)\|\|looksLikePhoto\(v\)\)/.test(js)
+  && /var drawOn=!bugOn&&!photoOn&&\(DRAW_PRE\.test\(v\)\|\|looksLikeDraw\(v\)\)/.test(js)
   && /ask\.classList\.toggle\('edit-on',modeOn\)/.test(js)
-  && /appOn\?'앱 실행':\(drawOn\?'그림':\(photoOn\?'사진':'편집'\)\)/.test(js));
+  && /bugOn\?'버그 신고':\(appOn\?'앱 실행':\(drawOn\?'그림':\(photoOn\?'사진':'편집'\)\)\)/.test(js));
 check('프런트: 사진은 사진 낱말 + 넣어/찾아 달라는 말이 함께일 때만 사진이다',
   /var PHOTO_NOUN=\//.test(js) && /var PHOTO_VERB=\//.test(js)
   && /if\(!PHOTO_NOUN\.test\(q\)\) return false;/.test(js)

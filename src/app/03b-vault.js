@@ -403,8 +403,9 @@
         // 카드 크기 항목 제거됨
         // 배경화면 미리보기
         refreshWallUI();
-        // 휴지통 개수
+        // 휴지통 개수 · 버그 일지 개수
         updateTrashCount();
+        paintBugCount();
         openNav(closeSettings);
     }
     function closeSettings(){ document.getElementById('setModal').style.display='none'; navDrop(closeSettings); }

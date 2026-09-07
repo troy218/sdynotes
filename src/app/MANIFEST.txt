@@ -5,6 +5,7 @@
 02c-home-stack.js
 02d-settings-sync.js
 02e-folders.js
+02f-buglog.js
 03a-admin.js
 03b-vault.js
 04a-import.js

@@ -41,6 +41,7 @@ npm run bundle:check
 | 홈 스택·폴더 잠금 | `02c-home-stack.js` |
 | 북마크·설정 LWW 동기화 | `02d-settings-sync.js` |
 | 폴더·휴지통·멀티선택 | `02e-folders.js` |
+| 버그 일지(설정·LWW 저장) | `02f-buglog.js` |
 | 관리자 | `03a-admin.js` |
 | 파일 보관함 | `03b-vault.js` |
 | PDF/Word 가져오기 | `04a-import.js` |
