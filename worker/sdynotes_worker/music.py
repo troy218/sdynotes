@@ -669,6 +669,141 @@ def _fingerprint(path, seconds=120):
     return None
 
 
+# ─────────────────────────────────────────────────────────────
+# 14.37.1 · '같은 소리' 판정 — 중복 자동 정리는 이것으로만 지운다
+#
+#  AcoustID 가 돌려주는 녹음 id(mbid)·제목은 "무슨 곡인지"의 답이지 "같은 파일인지"의
+#  답이 아니다. 같은 곡의 다른 버전(라디오 편집·리마스터·다른 언어판·inst.)이나
+#  앞부분이 닮은 다른 곡, 잘못 등록된 지문에도 같은 id 가 나온다. 그래서 지울지는
+#  두 파일 자체를 대조해서 정한다.
+#    ① 바이트가 같다(해시) → 같은 파일
+#    ② 길이가 DUP_DURATION_TOLERANCE 초 넘게 다르다 → 다른 판본(지우지 않음)
+#    ③ 두 파일의 raw 지문(fpcalc -raw) 비트 일치율 ≥ DUP_FP_SIMILARITY → 같은 소리
+#       (같은 녹음을 다른 코덱·비트레이트로 담으면 0.93~1.0, 다른 곡은 0.5 근처,
+#        같은 곡의 다른 연주·라이브는 0.6~0.8 대라 넉넉히 갈린다)
+#    ④ 재료가 없다(fpcalc 없음·디코딩 실패·너무 짧음) → 판정 불가 = 지우지 않음
+# ─────────────────────────────────────────────────────────────
+RECOG_MIN_SCORE = 0.85          # AcoustID 지문 일치율 하한 — 이 미만은 '못 찾음'
+DUP_FP_SIMILARITY = 0.92        # 두 음원 지문 비트 일치율이 이 이상이어야 '같은 소리'
+DUP_DURATION_TOLERANCE = 3.0    # 길이 차이 허용(초) — 이보다 다르면 다른 판본
+DUP_FP_SECONDS = 600            # 중복 검증용 지문 길이 — 앞 120초가 아니라 곡 전체(10분 상한)
+DUP_FP_MAX_OFFSET = 40          # 앞머리 무음 차이 흡수용 정렬 범위(프레임, 1프레임≈0.124초)
+DUP_FP_MIN_FRAMES = 80          # 이보다 짧은 지문(≈10초 미만)은 비교 자체를 신뢰하지 않는다
+
+try:
+    _POPCNT = int.bit_count            # 3.10+
+except AttributeError:                 # pragma: no cover
+    def _POPCNT(x):
+        return bin(x).count("1")
+
+
+def _file_digest(path, algo="sha1"):
+    """파일 바이트 해시 (스트리밍). 실패하면 None."""
+    try:
+        import hashlib
+        h = hashlib.new(algo)
+        with open(path, "rb") as fp:
+            for chunk in iter(lambda: fp.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def _fingerprint_raw(path, seconds=DUP_FP_SECONDS):
+    """중복 검증용 raw 지문 → (길이초 float, [32비트 정수 …]) | None"""
+    exe = _fp_bin()
+    if not exe or not os.path.exists(path):
+        return None
+    try:
+        out = subprocess.run([exe, "-json", "-raw", "-length", str(int(seconds)), path],
+                             capture_output=True, timeout=120)
+        d = json.loads((out.stdout or b"{}").decode("utf-8", "ignore"))
+        fp, dur = d.get("fingerprint"), d.get("duration")
+        if isinstance(fp, str):
+            fp = [int(x) for x in fp.split(",") if x.strip()]
+        if isinstance(fp, list) and fp and dur:
+            return float(dur), [int(x) & 0xFFFFFFFF for x in fp]
+    except Exception as e:
+        print(f"[recog] raw 지문 실패: {e}")
+    return None
+
+
+def _fp_similarity(a, b, max_offset=DUP_FP_MAX_OFFSET):
+    """두 raw 지문의 최고 비트 일치율(0~1).
+
+    앞머리 무음/인코더 지연 차이를 흡수하려고 ±max_offset 프레임까지 밀어 가며 겹치는
+    구간의 비트 오류율을 재고, 가장 좋은 값을 돌려준다. 겹치는 구간이 너무 짧으면
+    (긴 곡은 짧은 쪽의 60% 미만, 짧은 곡은 거의 전부가 겹쳐야) 판정 불가로 0 을 준다.
+    """
+    if not a or not b:
+        return 0.0
+    n = min(len(a), len(b))
+    if n < DUP_FP_MIN_FRAMES:
+        return 0.0
+    need = min(n, max(200, int(n * 0.6)))
+    best = 0.0
+    for off in range(-int(max_offset), int(max_offset) + 1):
+        xa, xb = (a[off:], b) if off >= 0 else (a, b[-off:])
+        m = min(len(xa), len(xb))
+        if m < need or m <= 0:
+            continue
+        err = 0
+        for x, y in zip(xa, xb):
+            err += _POPCNT(x ^ y)
+        sim = 1.0 - err / (32.0 * m)
+        if sim > best:
+            best = sim
+    return best
+
+
+def _same_audio(path_a, path_b, cache=None):
+    """두 음원 파일이 '같은 소리'인지 → (True/False, 이유).
+
+    이유: hash · fp:0.97 (같음) / dur:12.3 · fp:0.61 · nofp (다름·판정 불가).
+    cache 에 dict 를 주면 같은 파일의 지문을 다시 뜨지 않는다.
+    """
+    if not path_a or not path_b or not os.path.exists(path_a) or not os.path.exists(path_b):
+        return False, "nofile"
+    if os.path.abspath(path_a) == os.path.abspath(path_b):
+        return True, "samefile"
+    try:
+        if os.path.getsize(path_a) == os.path.getsize(path_b):
+            da, db = _file_digest(path_a), _file_digest(path_b)
+            if da and db and da == db:
+                return True, "hash"
+    except Exception:
+        pass
+    cache = cache if isinstance(cache, dict) else {}
+
+    def _fp(p):
+        key = os.path.abspath(p)
+        if key not in cache:
+            cache[key] = _fingerprint_raw(p)
+        return cache[key]
+
+    fa, fb = _fp(path_a), _fp(path_b)
+    if not fa or not fb:
+        return False, "nofp"
+    gap = abs(float(fa[0]) - float(fb[0]))
+    if gap > DUP_DURATION_TOLERANCE:
+        return False, "dur:%.1f" % gap
+    sim = _fp_similarity(fa[1], fb[1])
+    return (sim >= DUP_FP_SIMILARITY), "fp:%.3f" % sim
+
+
+def _music_audio_path(mid):
+    """곡 id 의 실제 음원 파일 경로 (표지·쪽지 제외). 없으면 None."""
+    try:
+        for fn in os.listdir(MUSIC_DIR):
+            if (fn.startswith(mid + ".") and not fn.endswith((".cover", ".meta.json"))
+                    and fn.rsplit(".", 1)[-1].lower() in MUSIC_EXTS):
+                return os.path.join(MUSIC_DIR, fn)
+    except Exception:
+        pass
+    return None
+
+
 def _acoustid_lookup(path):
     """소리 지문으로 곡을 알아낸다. 반환: {title, artist, album, year, score} | None"""
     key = _aco_key()
@@ -719,7 +854,7 @@ def _acoustid_lookup(path):
                     "duration": int(round(float(rec.get("duration") or dur or 0))) if (rec.get("duration") or dur) else 0}
             if sc > cs:
                 cs, closest = sc, cand
-            if sc >= 0.85 and sc > bs:
+            if sc >= RECOG_MIN_SCORE and sc > bs:
                 bs, best = sc, cand
     if not best:
         out = {"error": "notfound"}
@@ -742,16 +877,21 @@ def _recog_norm_text(s):
 
 
 def _recog_dup_key(r):
-    """AcoustID로 확정(recog_state=done)된 곡만 중복 키를 만든다.
+    """AcoustID로 확정(recog_state=done)된 곡의 '중복 후보' 키.
 
-    1순위는 MusicBrainz recording id(mbid)라 같은 녹음본만 같은 키가 된다.
-    mbid가 없을 때는 인식 결과의 제목+가수+앨범이 모두 같은 경우만 사용해
-    동명이곡/라이브/리마스터 오삭제를 피한다.
+    ★ 14.37.1 — 이 키는 **후보를 고르는 용도**일 뿐, 이것만 같다고 지우지 않는다.
+    예전에는 이 키가 같으면(같은 mbid, 또는 제목+가수+앨범이 같으면) 곧바로 파일을
+    지웠는데, AcoustID 는 같은 곡의 다른 판본(라디오 편집·리마스터·다른 언어판·inst.)
+    이나 앞부분이 닮은 다른 곡에도 같은 녹음 id 를 돌려주고, 인식이 '태그만 붙인'
+    수준으로 틀리는 경우도 있어서 **다른 곡이 중복으로 몰려 삭제**됐다.
+    실제 삭제 여부는 `_same_audio` 가 두 파일의 소리(해시·길이·raw 지문 대조)로 정한다.
+
+    mbid 가 있으면 그것을, 없으면 인식 결과의 제목+가수+앨범이 모두 있을 때만 쓴다.
     """
     if not isinstance(r, dict) or r.get("recog_state") != "done":
         return ""
     try:
-        if r.get("recog_score") and float(r.get("recog_score") or 0) < 0.85:
+        if r.get("recog_score") and float(r.get("recog_score") or 0) < RECOG_MIN_SCORE:
             return ""
     except Exception:
         return ""
@@ -764,6 +904,41 @@ def _recog_dup_key(r):
     if title and artist and album:
         return "tag:%s|%s|%s" % (title, artist, album)
     return ""
+
+
+def _recog_dup_candidates(m, mid):
+    """mid 와 같은 인식 키를 가진 다른 곡 id 목록 (mid 제외). 키가 없으면 []."""
+    key = _recog_dup_key((m or {}).get(mid))
+    if not key:
+        return []
+    return [k for k, v in (m or {}).items() if k != mid and _recog_dup_key(v) == key]
+
+
+def _recog_confirm_same(mid, others, path_of):
+    """후보(others) 중 실제로 mid 와 '같은 소리'인 곡만 추린다 → (같은 id 목록, 로그 목록).
+
+    path_of(id) 로 음원 파일 경로를 얻는다(로컬·클라우드 임시 파일 공용).
+    비교 재료가 없거나(파일·fpcalc 없음) 판정이 애매하면 **같지 않은 것으로** 본다 —
+    '지우지 않는' 쪽이 언제나 안전하다.
+    """
+    same, log = [], []
+    base = path_of(mid)
+    if not base:
+        return same, ["%s: nofile" % mid]
+    cache = {}
+    for oid in others:
+        p = path_of(oid)
+        if not p:
+            log.append("%s: nofile" % oid)
+            continue
+        try:
+            ok, why = _same_audio(base, p, cache=cache)
+        except Exception as e:
+            ok, why = False, "err:" + str(e)[:40]
+        log.append("%s: %s%s" % (oid, "same " if ok else "diff ", why))
+        if ok:
+            same.append(oid)
+    return same, log
 
 
 def _recog_keep_sort(mid, r):
@@ -828,20 +1003,45 @@ def _music_merge_duplicate_record(keep, drop, keep_mid, drop_mid):
 
 
 def _music_dedupe_recognized(mid):
-    """인식 완료 곡 중 완전히 같은 곡은 자동으로 하나만 남긴다."""
-    removed, kept = [], None
+    """인식 완료 곡 중 **소리까지 같은** 곡만 자동으로 하나로 합친다.
+
+    14.37.1 — 흐름:
+      ① 인식 키(mbid / 제목+가수+앨범)가 같은 곡을 '후보'로만 모은다.
+      ② 후보마다 실제 음원 파일을 대조한다(`_same_audio`: 바이트 해시 → 길이 →
+         raw 지문 비트 일치율). 같은 소리로 확인된 곡만 '중복'이다.
+      ③ 확인되지 않은 후보(다른 판본·다른 곡·비교 불가)는 그대로 둔다.
+    파일 대조(수 초)는 락 밖에서 하고, 목록 수정은 락 안에서 다시 읽어 그 사이
+    바뀐 곡(삭제·재인식)이 있으면 그 곡은 건드리지 않는다.
+    반환 dict 에는 왜 남겼는지(kept_apart)도 실어 로그·응답에서 확인할 수 있다.
+    """
     with _music_lock:
         m = _music_load()
         rec = m.get(mid)
-        key = _recog_dup_key(rec)
-        if not key:
-            return {"duplicate_removed": False, "removed": [], "kept": rec}
-        same = [k for k, v in m.items() if _recog_dup_key(v) == key]
-        if len(same) <= 1:
-            return {"duplicate_removed": False, "removed": [], "kept": rec}
-        keep_id = sorted(same, key=lambda k: _recog_keep_sort(k, m.get(k) or {}))[0]
+        cands = _recog_dup_candidates(m, mid)
+    if not cands:
+        return {"duplicate_removed": False, "removed": [], "kept": rec}
+    same, log = _recog_confirm_same(mid, cands, _music_audio_path)
+    apart = [c for c in cands if c not in same]
+    if log:
+        print("[recog] 중복 후보 대조 %s ← %s" % (mid, " · ".join(log)))
+    if not same:
+        return {"duplicate_removed": False, "removed": [], "kept": rec,
+                "kept_apart": apart}
+    removed, kept, keep_id = [], None, mid
+    with _music_lock:
+        m = _music_load()
+        if not m.get(mid):
+            return {"duplicate_removed": False, "removed": [], "kept": None,
+                    "kept_apart": apart}
+        # 대조하는 사이 사라졌거나 인식 상태가 바뀐 곡은 제외한다.
+        key = _recog_dup_key(m.get(mid))
+        group = [mid] + [k for k in same if m.get(k) and key and _recog_dup_key(m.get(k)) == key]
+        if len(group) <= 1:
+            return {"duplicate_removed": False, "removed": [], "kept": m.get(mid),
+                    "kept_apart": apart}
+        keep_id = sorted(group, key=lambda k: _recog_keep_sort(k, m.get(k) or {}))[0]
         keep_rec = dict(m.get(keep_id) or {})
-        for drop_id in same:
+        for drop_id in group:
             if drop_id == keep_id:
                 continue
             keep_rec = _music_merge_duplicate_record(keep_rec, m.get(drop_id) or {}, keep_id, drop_id)
@@ -854,8 +1054,11 @@ def _music_dedupe_recognized(mid):
     for drop_id in removed:
         _music_delete_files(drop_id)
     if removed:
-        print("[recog] 동일 음원 자동 정리: keep=%s removed=%s" % (keep_id, ",".join(removed)))
-    return {"duplicate_removed": mid in removed, "removed": removed, "kept": kept}
+        print("[recog] 동일 음원 자동 정리(소리 대조 확인): keep=%s removed=%s%s"
+              % (keep_id, ",".join(removed),
+                 (" · 다른 판본으로 남김=" + ",".join(apart)) if apart else ""))
+    return {"duplicate_removed": mid in removed, "removed": removed, "kept": kept,
+            "kept_apart": apart}
 
 
 def _music_recognize(mid, apply_tags=True, force=False):
@@ -943,6 +1146,9 @@ def _music_recognize(mid, apply_tags=True, force=False):
         resp.update({"duplicate_removed": bool(dedupe.get("duplicate_removed")),
                      "removed": dedupe.get("removed") or [],
                      "kept": dedupe.get("kept") or out})
+    if dedupe.get("kept_apart"):
+        # 14.37.1 · 인식 결과는 같지만 소리가 달라 '다른 판본'으로 남긴 곡들
+        resp["kept_apart"] = list(dedupe.get("kept_apart") or [])
     return resp
 
 

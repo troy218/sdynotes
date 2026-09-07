@@ -27735,7 +27735,7 @@ $('mpTagAuto').onclick=async()=>{
         await loadList(); pruneQueue(); renderTitle(); renderListPop();
         const kept=d.kept||d.track||{};
         if(kept.id&&!fromTrackMenu){ TAG_EDIT=kept.id; _syncTagEditor(P.list.find(x=>x.id===kept.id)||kept); }
-        toast('완전히 같은 곡이라 중복 음원을 자동으로 정리했어요',3000);
+        toast('소리까지 완전히 같은 곡이라 중복 음원을 자동으로 정리했어요',3000);
         return;
       }
       if(r.ok&&d.ok&&d.recog&&(d.recog.title||d.recog.artist)){
@@ -27899,7 +27899,7 @@ $('mpTagRecog').onclick=async()=>{
       await loadList(); pruneQueue(); renderTitle(); renderListPop();
       const kept=d.kept||d.track||{};
       if(kept.id){ TAG_EDIT=kept.id; _syncTagEditor(P.list.find(x=>x.id===kept.id)||kept); }
-      toast('완전히 같은 곡이라 중복 음원을 자동으로 정리했어요',3000);
+      toast('소리까지 완전히 같은 곡이라 중복 음원을 자동으로 정리했어요',3000);
       return;
     }
     P.coverV=Date.now();
@@ -27922,9 +27922,13 @@ $('mpTagRecog').onclick=async()=>{
              try{ renderTitle(); renderListPop(); }catch(e){} }
       $('mpTagHint').textContent='소리 인식(AcoustID) 으로 찾은 곡 정보';
     }
+    // 14.37.1 · 같은 곡으로 인식됐지만 소리가 달라(다른 판본·다른 곡) 지우지 않고 남긴 곡이
+    //   있으면 함께 알려 준다. 예전엔 인식 결과만 같으면 파일을 지워 버렸다.
+    const apart=(Array.isArray(d.kept_apart)&&d.kept_apart.length)
+      ?' · 같은 곡으로 인식된 음원 '+d.kept_apart.length+'곡은 소리가 달라 그대로 두었어요':'';
     // 12.2 · 0.85 미만은 서버가 적용을 안 한다. 안내만.
     if(g.score&&g.score<0.85) toast('다른 곡으로 인식돼 적용하지 않았어요 (점수 '+(g.score*100|0)+'점)',2800);
-    else toast('🎧 '+(g.artist?g.artist+' · ':'')+(g.title||'인식 완료'),2400);
+    else toast('🎧 '+(g.artist?g.artist+' · ':'')+(g.title||'인식 완료')+apart,apart?3600:2400);
   }catch(e){ toast(e&&e.name==='AbortError'?'인식 시간이 초과됐어요 · worker 상태를 확인해 주세요':'인식하지 못했어요',3200); }
   finally{ btn.innerHTML=html; _tagBusy=false; }
 };
