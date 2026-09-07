@@ -6573,10 +6573,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // 14.30.0 · 현재 쪽(지금 보이는 종이)을 먼저 그린다. 이웃 쪽은 짧은
             //   지연 뒤에 채워 스크롤을 멈춘 첫 프레임이 현재 쪽에만 집중되게
             //   한다. (무거운 이웃 쪽을 동시에 그리면 저사양 기기에서 버벅임)
-            // 20.0 · 읽기 중인 쪽은 그림만으로 충분하다 — 편집 DOM 은 만들지
-            //   않는다. 편집 도구가 켜져 있거나 이미 깨운 쪽만 요소를 그린다.
-            const needEls=i=>!previewCapable()||_pvFailed.has(i)||pageEdited(i)
-                              ||activatedPages.has(i)||editingModeOn();
+            // 14.37.0 · 읽기도 '진짜 글자'로 한다. 쪽 그림(래스터)은 원본을 축소해
+            //   구운 것이라 확대하면 흐릿하고 글자를 고를 수도 없었다. 로딩이
+            //   충분히 빨라진 지금은, 그림은 요소가 붙기 전까지만 깔아 두는
+            //   '자리 채움'이고 화면에 남는 것은 항상 텍스트 DOM 이다.
+            const needEls=i=>true;
             if(needEls(center)){
                 if(editingModeOn()) activatedPages.add(center);
                 if(!renderedPages.has(center)) try{ renderPageEls(center); }catch(e){}
@@ -6777,9 +6778,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return !!(doc&&doc.__ref&&!_pvUnsupported&&!S.noPagePreview);
     }
     let _previewTimer=null;
-    const _previewUpgrades=new WeakMap();
     function previewWidth(draft){
-        // 저사양 판정은 초벌 그림의 크기만 줄인다. 읽기 화질을 영구적으로 낮추지 않는다.
+        // 자리 채움 그림이라 크게 받을 이유가 없다 — 저사양은 더 작게.
         if(draft&&sdyTurbo()) return 480;
         const w=paperSize().w*pageScale*(window.devicePixelRatio||1);
         return w<=480?480:(w>900?1600:900);
@@ -6810,30 +6810,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         layer.appendChild(img); paper.classList.add('preview-on');
         return true;
     }
-    function upgradePagePreview(pi){
-        const paper=paperAt(pi), layer=paper&&paper.querySelector('.layer-preview');
-        const old=layer&&layer.firstElementChild;
-        if(!old||pageEdited(pi)||!previewCapable()) return;
-        const width=previewWidth(), pending=_previewUpgrades.get(old);
-        if(+old.dataset.width>=width||(pending&&pending.width>=width)) return;
-        const d=doc, rv=window._renderVersion, next=document.createElement('img');
-        const job={width,next}; _previewUpgrades.set(old,job);
-        next.className='page-preview-img'; next.decoding='async'; next.alt=''; next.draggable=false;
-        next.dataset.width=width;
-        const live=()=>doc===d&&window._renderVersion===rv&&paper.isConnected
-            &&paperAt(pi)===paper&&layer.firstChild===old&&!pageEdited(pi)
-            &&_previewUpgrades.get(old)===job;
-        next.onload=async()=>{
-            try{ if(next.decode) await next.decode(); }catch(e){ return; }
-            if(!live()) return;
-            // 새 그림이 실제로 준비되기 전에는 기존 그림을 건드리지 않는다.
-            layer.replaceChild(next,old);
-            _previewUpgrades.delete(old);
-        };
-        // 선명한 그림만 실패했다면 읽을 수 있는 초벌 그림은 그대로 둔다.
-        next.onerror=()=>{};
-        next.src=previewURL(pi,width);
-    }
+    // 14.37.0 · 그림 화질 승급(upgradePagePreview)은 사라졌다. 화면에 남는 것은
+    //   글자 DOM 이므로, 더 큰 래스터를 다시 받아 봐야 곧 걷힐 그림만 무거워진다.
+    //   대역폭은 본문 데이터(loadBatch)를 먼저 받는 데 쓴다.
     function schedulePreviewQuality(){
         clearTimeout(_previewTimer);
         const d=doc, rv=window._renderVersion;
@@ -6844,17 +6823,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(_isScrolling()){ schedulePreviewQuality(); return; }
             const vis=visiblePageRange(), batches=new Set();
             for(let i=vis.first;i<=vis.last;i++){
-                upgradePagePreview(i);
+                // 14.37.0 · 더 선명한 '그림'을 받아오지 않는다. 흐린 초벌 그림은
+                //   글자 DOM 이 붙는 순간 걷히므로, 대신 그 쪽의 본문 데이터를
+                //   받아 진짜 글자로 교체하는 쪽에 대역폭을 쓴다.
                 if(d.pages[i]&&d.pages[i].__lazy!=null) batches.add(Math.floor(i/LAZY_SLICE)*LAZY_SLICE);
+                else if(paperAt(i)&&!renderedPages.has(i)) try{ renderPageEls(i); }catch(e){}
             }
-            // 편집 DOM 없이, 지금 읽는 쪽의 데이터만 미리 받는다. 클릭 때 네트워크를
-            // 처음 시작하지 않으며 저사양에서도 문서 전체 프리필로 확장하지 않는다.
             batches.forEach(s0=>loadBatch(s0).then(()=>{
                 if(doc!==d||window._renderVersion!==rv) return;
                 // 데이터 예열도 제한된 창만 유지한다(읽으며 문서 전체를 붙잡지 않음).
                 evictFar(curPageIdx|0);
-                for(let i=vis.first;i<=vis.last;i++) if(pageEdited(i)&&paperAt(i)){
-                    dropPagePreview(i); activatePage(i);
+                for(let i=vis.first;i<=vis.last;i++) if(paperAt(i)&&!renderedPages.has(i)){
+                    try{ renderPageEls(i); }catch(e){}
                 }
             }));
         },180);

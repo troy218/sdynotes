@@ -217,11 +217,13 @@ try {
   check('읽기 화면은 쪽 그림을 요청한다', previewHits > 0, `hits=${previewHits}`);
   check(`여는 데 8초를 넘지 않는다 (실제 ${openMs}ms)`, openMs < 8000, `${openMs}ms`);
 
-  // ── 읽기 상태: 글상자 DOM 을 만들지 않는다 ──────────────────────────
+  // ── 14.37.0 · 읽기 화면도 진짜 글자다 ───────────────────────────────
+  //   쪽 그림은 글자가 붙기 전까지의 자리 채움일 뿐이라, 보이는 쪽에는
+  //   실제 글상자 DOM 이 올라와 있어야 한다(선택·복사·확대가 선명하게).
   const readingTbs = tbs();
-  check('읽기만 할 때는 무거운 글상자 DOM 을 만들지 않는다',
-    readingTbs === 0, `tb=${readingTbs}`);
-  check('대신 쪽 그림이 종이에 붙어 있다', previews() > 0, `img=${previews()}`);
+  check('읽기 화면에 진짜 글자(글상자 DOM)가 올라온다',
+    readingTbs > 0, `tb=${readingTbs}`);
+  check('처음 한 프레임은 쪽 그림이 자리를 채운다', previewHits > 0, `hits=${previewHits}`);
 
   // ── 스크롤 프레임 ──────────────────────────────────────────────────
   const body = document.getElementById('editorBody');
@@ -243,7 +245,7 @@ try {
   const mid = await scrollRun('읽기 스크롤 120px/f', 120, 40);
   check(`읽기 스크롤 p95 < 300ms (실제 ${mid.p95}ms)`, mid.p95 < 300, `p95=${mid.p95}ms`);
   check(`읽기 스크롤 최악 프레임 < 800ms (실제 ${mid.worst}ms)`, mid.worst < 800, `worst=${mid.worst}ms`);
-  check('읽는 내내 글상자 DOM 은 여전히 없다', tbs() === 0, `tb=${tbs()}`);
+  check('읽는 내내 글자 DOM 이 유지된다', tbs() > 0, `tb=${tbs()}`);
   check('종이 수는 창 크기로 유지된다', wraps() <= 30, `wrap=${wraps()}`);
 
   // ── 건드리면 그 쪽만 편집 요소로 바뀐다 ─────────────────────────────
@@ -256,12 +258,13 @@ try {
     !!document.querySelector(`#pagesStage .paper[data-page-idx="${cur}"] .tb`));
   check('깨운 쪽의 그림은 걷힌다',
     !document.querySelector(`#pagesStage .paper[data-page-idx="${cur}"] .page-preview-img`));
-  // 다른 쪽은 여전히 읽기 상태여야 한다 (전 쪽이 딸려 올라오면 안 된다)
-  const otherActivated = ev(`(function(){
+  // 글자는 보이는 창 안에서만 산다 — 500쪽이 통째로 올라오면 안 된다.
+  const textWraps = ev(`(function(){
     let n=0; document.querySelectorAll('#pagesStage .page-wrap').forEach(w=>{
-      const i=+w.dataset.pageIdx; if(i!==${cur} && w.querySelector('.tb')) n++; });
+      if(w.querySelector('.tb')) n++; });
     return n; })()`);
-  check('건드리지 않은 쪽은 읽기 상태 그대로다', otherActivated === 0, `activated=${otherActivated}`);
+  check('글자 DOM 은 보이는 창 안에만 있다 (전 쪽이 딸려 올라오지 않는다)',
+    textWraps <= 30, `wrap=${textWraps}`);
 
   // ── 문서 데이터 불변 ────────────────────────────────────────────────
   check('문서 데이터는 전 쪽 그대로다 (저장·내보내기가 쓰는 원본)',

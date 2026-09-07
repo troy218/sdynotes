@@ -73,19 +73,26 @@ ok('폴백이 몇 번 반복되면 그 문서는 통째로 예전 경로를 쓴�
   /_pvUnsupported=true/.test(mount));
 
 const maintain = fnSrc('maintainPageWindow');
-ok('읽기만 하는 쪽은 편집 요소를 만들지 않는다',
-  /const needEls=/.test(maintain)
+// 14.37.0 · 읽기도 진짜 글자로 한다. 쪽 그림은 글자가 붙기 전까지의 자리 채움일 뿐,
+//   화면에 머무는 최종 결과가 아니다 → 보이는 쪽은 언제나 요소를 그린다.
+ok('보이는 쪽은 읽기 중이라도 진짜 글자(요소)를 그린다',
+  /const needEls=i=>true;/.test(maintain)
   && /if\(needEls\(center\)\)\{/.test(maintain));
 ok('편집 도구가 켜져 있으면 읽기 쪽도 요소를 그린다',
   /editingModeOn\(\)/.test(maintain));
-ok('읽기 상태에서는 이웃 쪽 예열도 하지 않는다',
-  /if\(!needEls\(center\)\) return;/.test(maintain));
+ok('이웃 쪽도 글자로 예열한다 (그림으로 때우지 않는다)',
+  /renderPageEls\(i\)/.test(maintain));
 
 const act = fnSrc('activatePage');
 ok('쪽을 깨우면 편집 요소를 그린다',
   /activatedPages\.add\(pi\)/.test(act) && /renderPageEls\(pi\)/.test(act));
 ok('그림은 요소가 다 올라온 뒤에 걷는다 (깜빡임 없이 교대)',
   /paper\._sdyReady=true;[\s\S]{0,180}dropPagePreview\(idx\)/.test(js));
+const sched = fnSrc('schedulePreviewQuality');
+ok('선명한 그림을 더 받는 대신 본문 데이터를 받아 글자로 바꾼다',
+  !/upgradePagePreview\(i\)/.test(sched) && /renderPageEls\(i\)/.test(sched));
+ok('준비 중 배지·덮개로 그림을 글자 위에 올리지 않는다',
+  !/page-preparing[^\n]*z-index:48/.test(css) && !/편집 준비 중/.test(css));
 
 ok('종이를 누르면 그 쪽이 편집 상태가 된다',
   /deferPagePointer\(e,pageIdx\)/.test(js)

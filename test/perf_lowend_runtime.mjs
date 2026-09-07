@@ -203,7 +203,10 @@ try {
     body.dispatchEvent(new window.Event('scroll'));
     await wait(16);
   }
-  check('스크롤해도 글상자 DOM 은 만들지 않는다', tbs() === 0, `tb=${tbs()}`);
+  // 14.37.0 · 저사양에서도 읽는 것은 진짜 글자다. 대신 창(셸 상한)이 작아
+  //   한 번에 살아 있는 글자 DOM 자체가 적게 유지된다.
+  check('저사양에서도 읽기 화면은 진짜 글자다', tbs() > 0, `tb=${tbs()}`);
+  check('다만 글자 DOM 은 좁은 창 안으로 제한된다', wraps() <= 9, `wrap=${wraps()}`);
   check('스크롤해도 종이 DOM 은 작다', wraps() <= 9, `wrap=${wraps()}`);
 
   const fatal = errors.filter(m => !/Not implemented|scrollIntoView|Could not load/.test(String(m)));
