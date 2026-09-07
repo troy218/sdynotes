@@ -509,6 +509,11 @@ def _style_latex_atom(text, style):
             return text
     elif re.fullmatch(r"(?:[A-Za-z0-9])+(?:[']*)", atom) is None:
         return text
+    # Digits are already upright in math mode. Wrapping them turned every
+    # exponent and index of an imported paper into \mathrm{1}/\mathrm{2},
+    # which renders identically but makes the LaTeX unreadable to edit.
+    if style == "rm" and atom.isdigit():
+        return text
     command = {"bb": r"\mathbb", "scr": r"\mathscr", "cal": r"\mathcal",
                "frak": r"\mathfrak", "bold": r"\boldsymbol", "rm": r"\mathrm",
                "sf": r"\mathsf", "tt": r"\mathtt"}.get(style)
@@ -738,14 +743,38 @@ def _spans_to_clean_latex(spans):
 
     out = "".join(res)
     out = re.sub(r"\s+", " ", out).strip()
-    # A standalone TeX accent is emitted before its base by PDF extraction.
-    # Bracing the next atom makes the intended scope explicit, especially when
-    # the base is itself styled (``\widetilde\boldsymbol{y}``).
-    out = re.sub(
-        r"(\\(?:acute|grave|hat|widetilde|bar|breve|check|dot|ddot|mathring))\s+"
-        r"(\\[A-Za-z]+(?:\{[^{}]*\})?|[A-Za-z0-9])",
-        r"\1{\2}", out)
-    return out
+    return _bind_accents(out)
+
+
+def _bind_accents(t):
+    r"""Give each accent command a base atom, whichever side it was emitted on.
+
+    PDF extraction hands back the accent and its letter as two independent
+    glyphs, and their order depends on the producer.  Both ``\hat v`` and
+    ``v \hat`` must become ``\hat{v}``; a trailing ``\hat`` that then meets a
+    subscript is the ``v \hat _{i}`` parse error users reported.
+    """
+    if not t or "\\" not in t:
+        return t
+    acc = r"\\(?:" + _ACCENT_NAMES + r")"
+    atom = r"\\[A-Za-z]+(?:\{[^{}]*\})?|\{[^{}]*\}|[A-Za-z0-9]"
+    for _ in range(4):
+        prev = t
+        # accent BEFORE its base — the common TeX order.
+        t = re.sub(r"(" + acc + r")\s*(" + atom + r")(?![A-Za-z])",
+                   lambda m: m[1] + "{" + m[2].strip("{}") + "}", t)
+        # accent AFTER its base. A bare ``{...}`` group is NOT eligible: it
+        # usually belongs to a preceding _/^, and adopting it would silently
+        # move a subscript inside the accent.
+        t = re.sub(r"(?<![A-Za-z{_^\\])([A-Za-z0-9]|\\[A-Za-z]+(?:\{[^{}]*\})?)\s*("
+                   + acc + r")(?![A-Za-z{])",
+                   lambda m: m[2] + "{" + m[1] + "}", t)
+        if t == prev:
+            break
+    # Anything still bare would be a KaTeX parse error; an accent on nothing
+    # carries no information, so drop the command instead of the equation.
+    t = re.sub(r"(" + acc + r")(?![A-Za-z{])", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
 
 
 def _is_display_formula_line(ln):
@@ -1424,6 +1453,17 @@ _SYM = {
 _MATHOP = re.compile(r"^(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|"
                      r"exp|log|ln|lim|det|dim|ker|deg|gcd|max|min|sup|inf|arg|Tr|tr)$")
 
+# TeX accents. They are separate glyphs in the PDF and MUST end up owning a
+# base atom: a bare ``\hat`` followed by ``_{i}`` is a KaTeX parse error
+# ("Expected group after '_'"), which is exactly how ``v \hat _{i}`` broke.
+_ACCENT_TEX = (r"\acute", r"\grave", r"\hat", r"\widetilde", r"\bar", r"\breve",
+               r"\check", r"\dot", r"\ddot", r"\mathring", r"\vec", r"\tilde")
+_ACCENT_NAMES = "|".join(t[1:] for t in _ACCENT_TEX)
+# Commands that are meaningless without an argument. A dangling one is a parse
+# error, so it is both repaired in _tidy_latex and rejected by _latex_is_sane.
+_NEEDS_GROUP = (_ACCENT_NAMES + r"|frac|sqrt|text|mathcal|mathbb|mathscr|mathfrak"
+                r"|mathrm|mathsf|mathtt|boldsymbol|overline|underline")
+
 
 # 같은 모양 다른 코드포인트 정규화 (Ω 옴 기호 U+2126, µ 마이크로 U+00B5 등)
 _LOOKALIKE = {
@@ -1455,14 +1495,18 @@ def _tok_tex(t):
 
 class Box:
     """한 글자 또는 이미 조립된 덩어리."""
-    __slots__ = ("x0", "y0", "x1", "y1", "tex", "size", "role", "atomic")
+    __slots__ = ("x0", "y0", "x1", "y1", "tex", "size", "role", "atomic", "style")
 
-    def __init__(self, x0, y0, x1, y1, tex, size, role=None, atomic=False):
+    def __init__(self, x0, y0, x1, y1, tex, size, role=None, atomic=False, style=None):
         self.x0, self.y0, self.x1, self.y1 = x0, y0, x1, y1
         self.tex = tex
         self.size = size
-        self.role = role          # 'open'|'close'|'op'|'radical'|'vbar'|None
+        self.role = role          # 'open'|'close'|'op'|'radical'|'vbar'|'accent'|None
         self.atomic = atomic      # 이미 완성된 덩어리(재귀 결과)
+        # 글꼴이 뜻하는 수학 스타일('rm'·'cal'·'bb'…). 글자를 낱말로 합친 뒤에
+        # 한 번만 씌운다 — 글자마다 미리 씌우면 exp 가 \mathrm{e}\mathrm{x}\mathrm{p}
+        # 로 굳어 낱말 병합·연산자 인식이 모두 막힌다.
+        self.style = style
 
     @property
     def cy(self): return (self.y0 + self.y1) / 2.0
@@ -1835,7 +1879,10 @@ def _linear(boxes, rules, depth):
                 if c.x0 >= span0 and c.size < b.size * 0.95:
                     (lo if c.cy > b.cy else hi).append(c)
                     taken.remove(c)
-                    if out and out[-1] == c.tex:
+                    # The emitted token is the STYLED atom, so compare against
+                    # both forms; otherwise the letter is printed twice (once
+                    # inline and once as the operator's limit).
+                    if out and out[-1] in (c.tex, _style_latex_atom(c.tex, c.style)):
                         out.pop()
             # 한계 글자는 연산자 폭을 조금 넘어가기도 한다(\sum_{states}).
             # 작은 글자가 끊기지 않고 이어지는 동안 계속 받아들인다.
@@ -1866,9 +1913,13 @@ def _linear(boxes, rules, depth):
         taken.append(b)
         i += 1
         # 여러 글자로 된 함수 이름 묶기 (sin, exp, lim …)
+        # 스타일(글꼴)은 여기서 합친 뒤 낱말 하나에만 씌운다. 글자마다 미리
+        # 씌우면 'exp' 가 \mathrm{e}\mathrm{x}\mathrm{p} 로 굳어 이 병합이
+        # 아예 돌지 않고, \exp 연산자도 영영 복원되지 않는다.
         while (i < n and not bs[i].atomic and bs[i].role is None
                and len(bs[i].tex) == 1 and bs[i].tex.isascii() and bs[i].tex.isalpha()
                and word.isascii() and word.isalpha()
+               and bs[i].style == b.style
                and abs(bs[i].cy - b.cy) < norm_h * 0.3
                and bs[i].x0 - bs[i - 1].x1 < norm_h * 0.18
                and abs(bs[i].size - b.size) < 0.4):
@@ -1878,7 +1929,7 @@ def _linear(boxes, rules, depth):
         if _MATHOP.match(word):
             out.append("\\" + word if word not in ("Tr", "tr") else r"\mathrm{Tr}")
         else:
-            out.append(word if len(word) == 1 else word)
+            out.append(_style_latex_atom(word, b.style) if b.style else word)
 
         # 첨자 수집: 바로 오른쪽에 붙은 '작은' 글자들.
         #   기준은 전체 중앙값이 아니라 '지금 이 글자(b)' 다. 중앙값을 쓰면
@@ -2016,14 +2067,77 @@ def region_boxes(doc, page, rect, gtables=None):
                             role = "radical"
                         elif c in ("∫", "∑", "∏", "∮"):
                             role = "op"
-                    if not ext:
-                        tex = _style_latex_atom(tex, _math_font_style(fname))
-                    out.append(Box(bb[0], bb[1], bb[2], bb[3], tex, size, role))
+                        elif tex in _ACCENT_TEX:
+                            # A standalone TeX accent glyph (ˆ ˜ ¯ …). It is a
+                            # command, not an atom: it must adopt the letter it
+                            # sits over, or KaTeX fails on the next _/^.
+                            role = "accent"
+                    style = None if ext else _math_font_style(fname)
+                    out.append(Box(bb[0], bb[1], bb[2], bb[3], tex, size, role,
+                                   style=style))
     out.sort(key=lambda b: (b.x0, b.y0))
     out = _merge_vbars(out)
     out = _merge_stacked_delims(out)
     out = _assemble_pua_pieces(out)
+    out = _attach_accents(out)
     return out
+
+
+def _attach_accents(boxes):
+    r"""Give every accent glyph the base letter it is drawn over.
+
+    TeX draws ``\hat v`` as two glyphs: the letter, and a circumflex positioned
+    above it.  Extraction returns them as independent characters, so the naive
+    reading order produced ``v \hat _{i}`` — ``\hat`` then swallowed the
+    subscript brace and KaTeX rejected the whole formula ("Expected group
+    after '_'"), which is why entire equations came out broken.
+
+    The base is chosen by geometry: the nearest non-accent glyph whose
+    horizontal centre sits under the accent and whose top is below it.  An
+    accent with no plausible base is dropped rather than left dangling.
+    """
+    try:
+        accents = [b for b in boxes if b.role == "accent"]
+        if not accents:
+            return boxes
+        rest = [b for b in boxes if b.role != "accent"]
+        for acc in accents:
+            acx = (acc.x0 + acc.x1) / 2.0
+            width = max(1.0, acc.x1 - acc.x0)
+            best, best_key = None, None
+            for b in rest:
+                if b.role in ("open", "close", "op", "vbar", "radical") or b.atomic:
+                    continue
+                if not (b.tex or "").strip():
+                    continue
+                # The base sits below the accent and overlaps it horizontally.
+                if b.y0 < acc.y0 - 0.5:
+                    continue
+                bcx = (b.x0 + b.x1) / 2.0
+                if not (b.x0 - width * 0.8 <= acx <= b.x1 + width * 0.8):
+                    continue
+                dy = b.y0 - acc.y1
+                if dy > max(2.5, acc.size * 0.55):
+                    continue
+                key = (abs(bcx - acx), max(0.0, dy))
+                if best is None or key < best_key:
+                    best, best_key = b, key
+            if best is None:
+                continue        # no base → drop it, never emit a bare command
+            base = (best.tex or "").strip()
+            if not base:
+                continue
+            if best.style:
+                base = _style_latex_atom(base, best.style)
+                best.style = None
+            if len(base) > 1 and not re.fullmatch(r"\\[A-Za-z]+", base):
+                base = "{" + base + "}"
+            best.tex = acc.tex + "{" + base + "}"
+            best.y0 = min(best.y0, acc.y0)
+        rest.sort(key=lambda b: (b.x0, b.y0))
+        return rest
+    except Exception:
+        return boxes
 
 
 def _assemble_pua_pieces(boxes):
@@ -2283,10 +2397,17 @@ def _tidy_latex(t):
     # 인수 없는 \sqrt 는 파스 오류다
     t = re.sub(r"\\sqrt(?!\s*[{\[])", r"\\sqrt{}", t)
     t = re.sub(r"\\sqrt\{\}", "", t)
-    t = re.sub(
-        r"(\\(?:acute|grave|hat|widetilde|bar|breve|check|dot|ddot|mathring))\s+"
-        r"(\\[A-Za-z]+(?:\{[^{}]*\})?|[A-Za-z0-9])",
-        r"\1{\2}", t)
+    t = _bind_accents(t)
+    # A command that still has no group is a hard KaTeX parse error and takes
+    # the whole equation down with it (\mathcal _{x}, \widetilde ^{a}, …).
+    # Steal the following script's group as the argument — that is what the
+    # source glyph order meant — and drop it only if there is nothing at all.
+    for _ in range(4):
+        prev = t
+        t = re.sub(r"\\(" + _NEEDS_GROUP + r")\s*([_^])\s*\{", r"\\\1{}\2{", t)
+        if t == prev:
+            break
+    t = re.sub(r"\\(" + _NEEDS_GROUP + r")\{\}", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
     while t.count(r"\left") > t.count(r"\right"):
         t += r" \right."
@@ -2306,6 +2427,15 @@ def _latex_is_sane(t):
     if (len(re.findall(r"(?<!\\)\{", t)) != len(re.findall(r"(?<!\\)\}", t))):
         return False
     if t.count(r"\left") != t.count(r"\right"):
+        return False
+    # A command with no argument is a KaTeX parse error, so the element would
+    # render as a red error string instead of an equation. _tidy_latex repairs
+    # the known shapes; anything still dangling means we misread the source and
+    # the original vector math must be preserved instead.
+    if re.search(r"\\(?:" + _NEEDS_GROUP + r")(?![A-Za-z{])", t):
+        return False
+    # A script with no base ('^{2}' at the very start) is also a parse error.
+    if re.match(r"^\s*[_^]", t):
         return False
     # 알맹이가 거의 없는 것 (\sqrt 하나 등)
     if len(re.sub(r"[\s\\{}^_]|left|right|begin|end|aligned", "", t)) < 2:
@@ -2327,6 +2457,56 @@ def region_to_latex(doc, page, rect, gtables=None, rules=None):
     rs = [r for r in rules
           if r[0] < x1 + 3 and r[2] > x0 - 3 and y0 - 3 <= (r[1] + r[3]) / 2 <= y1 + 3]
     return _tidy_latex(assemble(boxes, rs))
+
+
+# (3) · (5.44) · [12] · (A.2) · (2.14a) — an optional appendix letter, then a
+# number. A parenthesised expression such as (x) or (a + b) is NOT a label.
+_EQ_LABEL = re.compile(
+    r"^[\[\(]\s*(?:[A-Za-z][.\-])?[0-9]{1,3}(?:[.\-–][0-9A-Za-z]{1,4})*\s*[\]\)]$")
+
+
+def _is_equation_label(text):
+    """(3) · (5.46) · (A.2) — the number printed beside a display equation.
+
+    It is typeset on the same baseline as the formula but is not part of it, so
+    it must stay an ordinary editable text box.
+    """
+    t = (text or "").strip()
+    if not t or len(t) > 12:
+        return False
+    return bool(_EQ_LABEL.match(t))
+
+
+def _trim_band_labels(rd, bands):
+    """Shrink a band that swallowed the equation number at its right edge.
+
+    The band grows by geometry, so a label close to a wide display equation can
+    land inside it. Cutting the band (rather than the LaTeX string) keeps the
+    number as editable text and stops it being painted out of the background.
+    """
+    out = []
+    for m in bands:
+        m = list(m)
+        for blk in rd.get("blocks", []):
+            if blk.get("type") != 0:
+                continue
+            for ln in blk.get("lines", []):
+                bb = ln.get("bbox")
+                if not bb:
+                    continue
+                txt = "".join(_span_text(sp) for sp in ln.get("spans", [])).strip()
+                if not _is_equation_label(txt):
+                    continue
+                # Only a label sitting at the band's right (or left) edge.
+                if not (bb[1] >= m[1] - 2 and bb[3] <= m[3] + 2):
+                    continue
+                if bb[0] >= m[0] and bb[2] <= m[2] + 2 and bb[2] >= m[2] - 2:
+                    m[2] = min(m[2], bb[0] - 0.5)
+                elif bb[0] <= m[0] + 2 and bb[2] <= m[2] and bb[0] >= m[0] - 2:
+                    m[0] = max(m[0], bb[2] + 0.5)
+        if m[2] - m[0] > 4:
+            out.append(m)
+    return out
 
 
 def _expand_math_bands(rd, bands):
@@ -2352,6 +2532,10 @@ def _expand_math_bands(rd, bands):
             prose_hits = [w for w in words if w.lower() in _COMMON_PROSE]
             non_math = [w for w in words if len(w) >= 3 and not _is_math_identifier(w)]
             if prose_hits or len(non_math) >= 2:
+                continue
+            # (5.46)/(3) is the equation NUMBER, never part of the formula.
+            # Absorbing it put literal '( 5 . 4 6 )' inside the rendered math.
+            if _is_equation_label(txt):
                 continue
             glyphs.append(bb)
     out = [list(m) for m in bands]
@@ -2659,6 +2843,8 @@ def _big_math_bands(page, avoid=None):
 
     # 14.3 · cases/큰 괄호 밴드는 좌우 이웃 수식 토큰(s_k(t)=, k>0, …)까지 포함한다.
     bands = _expand_math_bands(rd, bands)
+    # 식 번호 '(5.46)' 이 밴드 안에 들어왔으면 잘라낸다 — 수식이 아니라 글자다.
+    bands = _trim_band_labels(rd, bands)
 
     return bands, rules, gtables
 

@@ -68,6 +68,28 @@ const normal={style:{fontSize:'10.125px'}};
 context.scaleInlineFS({querySelectorAll:()=>[normal]},1.5);
 assert.equal(normal.style.fontSize,'15px','legacy resizing is unchanged');
 
+// Already-imported notes still hold LaTeX produced before the worker fix, so
+// the renderer must repair a dangling command instead of handing KaTeX a
+// string it rejects (which paints a red error where the equation should be).
+vm.runInContext(fn('tidyLatex'), context);
+const tidy = context.tidyLatex;
+assert.equal(tidy(String.raw`v \hat _{i}`), String.raw`\hat{v} _{i}`);
+assert.equal(tidy(String.raw`\mathcal{N} \widetilde`), String.raw`\widetilde{\mathcal{N}}`);
+assert.equal(tidy(String.raw`\bar{g}_{\mu\nu}`), String.raw`\bar{g}_{\mu\nu}`,
+  'a subscript that already has a base is not stolen by an accent');
+assert.equal(tidy(String.raw`\frac{1}{2}`), String.raw`\frac{1}{2}`, 'valid math is untouched');
+// Export must bake the same repaired string the screen shows, otherwise a
+// broken formula renders fine in the editor but as a red error in the PDF/JPG.
+assert.equal(source.match(/katex\.renderToString\(el\.latex/g), null,
+  'export paths must pass el.latex through tidyLatex');
+assert.ok(source.match(/katex\.renderToString\(tidyLatex\(el\.latex/g).length >= 2);
+
+const DANGLING = /\\(?:hat|widetilde|bar|mathcal|frac|sqrt)(?![A-Za-z{])/;
+for (const src of [String.raw`\mathcal{C} _{\Delta} ( u _{i} , v \hat _{i} ) = \mathcal{N}`,
+                   String.raw`\widetilde ^{\alpha}`, String.raw`\mathcal _{x}`, String.raw`\hat`]) {
+  assert.doesNotMatch(tidy(src), DANGLING, `dangling command survived: ${src}`);
+}
+
 vm.runInContext(fn('sanitizePageEls'), context);
 const pdfParts = [
   { type: 'text', id: 'body', x: 10, y: 10, w: 200, h: 80, pdfText: 1, html: 'a paragraph' },

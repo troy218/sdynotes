@@ -121,9 +121,48 @@ def make_math_paper(path):
     page.insert_text((96, 355), "2", fontname="tiro", fontsize=9)
     page.insert_text((112, 365), " = R", fontname="tiro", fontsize=16)
 
+    _accent_display(page)
+
     doc.save(path)
     doc.close()
     return Path(path)
+
+
+def _accent_display(page):
+    r"""A physics-style display: a standalone accent glyph, an operator name and
+    an equation label beside a tall nested fraction.
+
+    This is the shape a user reported as broken.  TeX draws ``\hat v`` as two
+    independent glyphs, ``exp`` as three roman letters, and puts ``(5.44)`` on
+    the same baseline.  Reading them naively produced ``v \hat _{i}`` (a KaTeX
+    parse error), ``\mathrm{e}\mathrm{x}\mathrm{p}`` and a literal
+    ``( 5 . 4 4 )`` inside the formula.
+
+    A TextWriter is used so the accent and the Greek letter keep their real
+    Unicode code points, exactly as a LaTeX-produced PDF does.
+    """
+    roman, italic = pymupdf.Font("tiro"), pymupdf.Font("tiit")
+    tw = pymupdf.TextWriter(page.rect)
+
+    def put(pos, text, font=roman, size=11):
+        tw.append(pos, text, font=font, fontsize=size)
+
+    put((60, 470), "The correlator below follows from the standard integral representation.", size=10)
+    put((150, 575), "C", italic, 13)
+    put((162, 575), "=", roman, 13)
+    put((185, 558), "exp", roman, 11)          # an operator name, not three atoms
+    put((207, 558), "v", italic, 11)
+    put((207.5, 551), "\u02c6", roman, 9)      # accent glyph drawn over the v
+    put((214, 558), "\u03c9", italic, 11)
+    page.draw_line((182, 563), (226, 563), width=.8)
+    put((196, 576), "b", roman, 11)
+    page.draw_line((180, 584), (230, 584), width=.9)
+    put((196, 598), "c", roman, 11)
+    page.draw_line((182, 604), (224, 604), width=.8)
+    put((196, 618), "d", roman, 11)
+    put((240, 585), "(5.44)", roman, 11)       # equation number, stays editable
+    put((60, 700), "This concludes the derivation of the celestial amplitude formula.", roman, 10)
+    tw.write_text(page)
 
 
 if __name__ == "__main__":
