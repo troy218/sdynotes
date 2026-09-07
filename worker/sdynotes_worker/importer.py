@@ -431,14 +431,88 @@ def import_docfile(jid):
 # 전용 기호/수학 글꼴만 즉시 수식으로 인정하고, 겸용 글꼴은 아래의 기호·문맥
 # 점수를 통과할 때만 수식으로 처리한다.
 MATH_FONTS = (
-    "cmmi", "cmsy", "cmex", "msam", "msbm", "mathjax",
-    "cambriamath", "lmmath", "rsfs", "eufm", "wasy", "symbol",
+    "cmmi", "cmsy", "cmex", "cmbsy", "cmssym", "msam", "msbm", "mathjax",
+    "cambriamath", "lmmath", "rsfs", "eufm", "wasy", "symbol", "stmary", "esint",
+    "bbm", "dsfont",
     # 10.1 · pdflatex txfonts/newtx (rtxmi·rtxbmi·txsy·txex 계열)
     "txmi", "txbmi", "txsy", "txex",
 )
 MATH_AMBIG_FONTS = (
     "cmr", "stixgeneral", "stix", "xits", "euclid", "texgyre",
 )
+
+# Short identifiers which are printed in roman/math fonts inside equations.
+# Treating ``AdS`` or ``CFT`` as prose makes an otherwise valid display equation
+# fail the all-or-nothing test and leaves a hole in the original PDF.  This list
+# is deliberately restricted to notation used by mathematical/physics papers;
+# ordinary English words (where, for, with, ...) remain hard boundaries.
+_MATH_DOMAIN_WORDS = {
+    "ads", "ds", "cft", "sym", "iib", "kk", "bps", "lsz", "qft", "ir", "uv",
+    "minkowski", "feynman", "carrollian", "flat", "bulk", "boundary", "null",
+    "vol", "dvol", "dd", "dmu", "measure", "delta", "mellin", "witten",
+}
+
+
+def _is_math_identifier(text):
+    """Whether a word-shaped token is notation rather than prose.
+
+    PDF extraction loses ``\\mathrm``/``\\text`` boundaries, so a few domain
+    identifiers need a small amount of context-free help.  The acronym list is
+    intentionally explicit so ordinary all-caps prose is not reclassified.
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    low = t.lower()
+    if low in _MATH_WORDS or low in _MATH_DOMAIN_WORDS:
+        return True
+    # Keep this explicit: treating every all-caps English word as notation
+    # would make headings and prose around a display equation look mathematical.
+    return bool(re.fullmatch(r"(?:AdS|dS|CFT|SYM|IIB|KK|BPS|LSZ|QFT|Minkowski)[0-9]*", t))
+
+
+def _math_font_style(font):
+    """Return a KaTeX style implied by a TeX math font, if it is known."""
+    n = re.sub(r"[^a-z0-9]", "", (font or "").split("+")[-1].lower())
+    if any(k in n for k in ("msbm", "bbm", "dsfont", "blackboard", "dsss")):
+        return "bb"
+    if any(k in n for k in ("rsfs", "mathrsfs", "eusm")):
+        return "scr"
+    if any(k in n for k in ("eufm", "eufb", "mathfrak", "fraktur")):
+        return "frak"
+    if any(k in n for k in ("cmmib", "cmbmi", "cmbsy", "cmbx", "boldmath", "boldsymbol")):
+        return "bold"
+    if "cmss" in n or "sansmath" in n:
+        return "sf"
+    if "cmtt" in n or "typewriter" in n:
+        return "tt"
+    # CMSY is where Computer Modern stores uppercase calligraphic letters.
+    if "cmsy" in n and not any(k in n for k in ("cmex", "cmssym")):
+        return "cal"
+    if ("cmr" in n or "ecrm" in n or "txr" in n or "termes" in n) and "math" not in n:
+        return "rm"
+    return None
+
+
+def _style_latex_atom(text, style):
+    """Wrap a plain math atom in the style carried by its source font."""
+    if not style or not text or not text.strip():
+        return text
+    atom = text.strip()
+    # Do not wrap operators, relation signs, or a pre-existing command.  The
+    # bold Greek case is intentionally allowed: KaTeX supports
+    # ``\\boldsymbol{\\xi}``, while blackboard/calligraphic operators do not
+    # have useful semantics for a relation glyph.
+    if atom.startswith("\\"):
+        if style != "bold" or re.fullmatch(
+                r"\\(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|mu|nu|xi|omicron|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega)", atom) is None:
+            return text
+    elif re.fullmatch(r"(?:[A-Za-z0-9])+(?:[']*)", atom) is None:
+        return text
+    command = {"bb": r"\mathbb", "scr": r"\mathscr", "cal": r"\mathcal",
+               "frak": r"\mathfrak", "bold": r"\boldsymbol", "rm": r"\mathrm",
+               "sf": r"\mathsf", "tt": r"\mathtt"}.get(style)
+    return (command + "{" + atom + "}") if command else text
 
 
 def _span_text(sp):
@@ -449,7 +523,7 @@ def _span_text(sp):
 
 # 물리·수학 논문은 일반 Times/Arial 글꼴로 식을 심는 경우가 많다.
 # 글꼴 이름만 믿지 않고, 기호 밀도·첨자·관계식 패턴도 함께 본다.
-_MATH_SIGNS = set("=≠≈≃≅≤≥±∓×÷·∂∇∫∮∑∏√∞∝∈∉⊂⊃∪∩→←↔⇒⇔∀∃∇∆∥⊥〈〉⟨⟩")
+_MATH_SIGNS = set("=≠≈≃≅≤≥±∓×÷·⋅∂∇∫∮∑∏√∞∝∈∉⊂⊃∪∩→←↔↦⇒⇔∀∃∇∆∥⊥∼∘ℝℂℤℕℚ〈〉⟨⟩")
 _GREEK_RE = re.compile(r"[αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ]")
 
 
@@ -542,7 +616,7 @@ def _is_formula_only(text):
     if not t or _formula_score(t) < 5 or len(t) > 180:
         return False
     words=re.findall(r"[A-Za-z]{2,}", t)
-    prose=[w for w in words if w.lower() not in _MATH_WORDS]
+    prose=[w for w in words if not _is_math_identifier(w)]
     # 2글자 이상 일반 단어가 둘 이상이면 문장으로 간주한다.
     return len(prose) <= 1
 
@@ -605,7 +679,8 @@ def _spans_to_clean_latex(spans):
         if not chars:
             t = sp.get("text", "")
             if t:
-                tokens.append({"t": t, "sz": sz, "y": base_y, "font": font, "mode": "normal"})
+                tokens.append({"t": t, "sz": sz, "y": base_y, "font": font,
+                               "style": _math_font_style(font), "mode": "normal"})
             continue
         for ch in chars:
             c = ch.get("c", "")
@@ -618,13 +693,16 @@ def _spans_to_clean_latex(spans):
                     mode = "sup"
                 elif oy > base_y + base_sz * 0.10:
                     mode = "sub"
-            tokens.append({"t": c, "sz": sz, "y": oy, "font": font, "mode": mode})
+            tokens.append({"t": c, "sz": sz, "y": oy, "font": font,
+                           "style": _math_font_style(font), "mode": mode})
 
     groups = []
     for tok in tokens:
-        if groups and groups[-1]["mode"] == tok["mode"] and tok["mode"] in ("sub", "sup"):
+        same_style = groups and groups[-1].get("style") == tok.get("style")
+        if groups and same_style and groups[-1]["mode"] == tok["mode"] and tok["mode"] in ("sub", "sup"):
             groups[-1]["t"] += tok["t"]
-        elif groups and groups[-1]["mode"] == tok["mode"] == "normal" and tok["t"].isalnum() and groups[-1]["t"].isalnum():
+        elif (groups and same_style and groups[-1]["mode"] == tok["mode"] == "normal"
+              and tok["t"].isalnum() and groups[-1]["t"].isalnum()):
             groups[-1]["t"] += tok["t"]
         else:
             groups.append(dict(tok))
@@ -633,6 +711,7 @@ def _spans_to_clean_latex(spans):
     for g in groups:
         t = g["t"]
         mode = g["mode"]
+        style = g.get("style")
         for ch, sym in _LATEX_GREEK.items():
             t = t.replace(ch, f" \\{sym} ")
         for ch, sym in _LATEX_SYMBOLS.items():
@@ -644,20 +723,28 @@ def _spans_to_clean_latex(spans):
             if clean_sub.lower() in _MATH_WORDS:
                 res.append(r"_{\text{" + clean_sub + r"}}")
             else:
-                res.append("_{" + clean_sub + "}")
+                res.append("_{" + _style_latex_atom(clean_sub, style) + "}")
         elif mode == "sup":
-            res.append("^{" + t.strip() + "}")
+            res.append("^{" + _style_latex_atom(t.strip(), style) + "}")
         else:
-            if t.lower() in _MATH_WORDS and len(t) >= 2:
-                if t.lower() in {"sin", "cos", "tan", "exp", "log", "ln", "lim", "det", "dim", "min", "max", "sup", "inf"}:
-                    res.append(f"\\{t.lower()} ")
+            if t.strip().lower() in _MATH_WORDS and len(t.strip()) >= 2:
+                word = t.strip()
+                if word.lower() in {"sin", "cos", "tan", "exp", "log", "ln", "lim", "det", "dim", "min", "max", "sup", "inf"}:
+                    res.append(f"\\{word.lower()} ")
                 else:
-                    res.append(r"\text{" + t + r"} ")
+                    res.append(r"\text{" + word + r"} ")
             else:
-                res.append(t)
+                res.append(_style_latex_atom(t, style))
 
     out = "".join(res)
     out = re.sub(r"\s+", " ", out).strip()
+    # A standalone TeX accent is emitted before its base by PDF extraction.
+    # Bracing the next atom makes the intended scope explicit, especially when
+    # the base is itself styled (``\widetilde\boldsymbol{y}``).
+    out = re.sub(
+        r"(\\(?:acute|grave|hat|widetilde|bar|breve|check|dot|ddot|mathring))\s+"
+        r"(\\[A-Za-z]+(?:\{[^{}]*\})?|[A-Za-z0-9])",
+        r"\1{\2}", out)
     return out
 
 
@@ -685,7 +772,7 @@ def _is_display_formula_line(ln):
             continue
         words.extend(re.findall(r"[A-Za-z]{2,}", st))
     prose = [w for w in words if w.lower() in _COMMON_PROSE
-             or (w.lower() not in _MATH_WORDS and len(w) >= 3)]
+             or (len(w) >= 3 and not _is_math_identifier(w))]
     # 설명 단어가 하나라도 있으면 수식 일부가 있어도 줄 전체를 텍스트로 유지
     # 14.3 · if/of/in 같은 2글자 산문도 수식 줄로 만들지 않는다.
     if prose:
@@ -739,11 +826,22 @@ def _display_region_of_line(ln, page=None, gtables=None, rules=None):
                                    max(b[2] for b in bxs), max(b[3] for b in bxs)]})
             cur.clear()
 
+        previous = None
         for ch in chars:
             if not (ch.get("c") or "").strip():
                 _flush()
-            else:
-                cur.append(ch)
+                previous = None
+                continue
+            bb = ch.get("bbox")
+            # Equation labels produced by \hfill/eqnarray frequently share a
+            # span with the formula but contain no literal space glyph.  A large
+            # advance is a token boundary for label detection; normal kerning is
+            # far below this threshold.
+            if (cur and previous and bb
+                    and bb[0] - previous[2] > max(6.0, size * 1.6)):
+                _flush()
+            cur.append(ch)
+            previous = bb
         _flush()
     if not toks:
         return None
@@ -770,14 +868,40 @@ def _display_region_of_line(ln, page=None, gtables=None, rules=None):
     if not toks:
         return None
 
-    tex = _spans_to_clean_latex(spans)
+    szs = sorted(u["sz"] for u in toks)
+    x0 = min(u["b"][0] for u in toks); y0 = min(u["b"][1] for u in toks)
+    x1 = max(u["b"][2] for u in toks); y1 = max(u["b"][3] for u in toks)
+
+    # The equation number is often in the same raw PDF span as the formula
+    # (especially with Type 1 Computer Modern).  Passing the original span list
+    # to the 1-D fallback therefore reintroduced ``(2.14)`` into a box whose
+    # geometry stopped before the number.  Keep only glyphs belonging to the
+    # body rectangle before reconstructing text.  The 2-D path below already
+    # clips by the same rectangle, but using the filtered list keeps both paths
+    # identical when a fraction/radical cannot be assembled.
+    body_spans = []
+    for sp in spans:
+        chars = sp.get("chars") or []
+        if chars:
+            kept = []
+            for ch in chars:
+                bb = ch.get("bbox")
+                if not bb or (bb[2] >= x0 - .5 and bb[0] <= x1 + .5):
+                    kept.append(ch)
+            if kept:
+                cp = dict(sp)
+                cp["chars"] = kept
+                body_spans.append(cp)
+        else:
+            bb = sp.get("bbox")
+            if not bb or (bb[2] >= x0 - .5 and bb[0] <= x1 + .5):
+                body_spans.append(sp)
+
+    tex = _spans_to_clean_latex(body_spans)
     if not tex:
         tex = " ".join(u["t"] for u in toks).strip()
     if not tex:
         return None
-    szs = sorted(u["sz"] for u in toks)
-    x0 = min(u["b"][0] for u in toks); y0 = min(u["b"][1] for u in toks)
-    x1 = max(u["b"][2] for u in toks); y1 = max(u["b"][3] for u in toks)
     # 14.0 · 줄 단위 1D 조립은 중첩 분수를 못 살린다. 2D 복원기가 되면 그걸 쓴다.
     if page is not None:
         try:
@@ -1027,7 +1151,10 @@ _CLOSE = {"parenright":")", "bracketright":"]", "braceright":r"\}",
 _BIGOP = {"integral":r"\int", "summation":r"\sum", "product":r"\prod",
           "union":r"\bigcup", "intersection":r"\bigcap", "coproduct":r"\coprod",
           "contintegral":r"\oint", "circlemultiply":r"\bigotimes", "circleplus":r"\bigoplus",
-          "acute":r"\int", "circumflex":r"\int", "ffl":r"\oint",
+          "acute":r"\acute", "grave":r"\grave", "circumflex":r"\hat",
+          "tilde":r"\widetilde", "macron":r"\bar", "breve":r"\breve",
+          "caron":r"\check", "dieresis":r"\ddot", "ring":r"\mathring",
+          "dotaccent":r"\dot", "ffl":r"\oint",
           "int":r"\int", "iint":r"\iint", "iiint":r"\iiint", "oint":r"\oint",
           "sum":r"\sum", "prod":r"\prod", "coprod":r"\coprod"}
 # 크기 접미사 (big / Big / bigg / Bigg / text / display / tp / bt / ex ...)
@@ -1060,7 +1187,14 @@ def classify_glyph(name):
     if not name:
         return (None, None)
     n = name.strip()
-    if n in ("acute", "circumflex") or n.startswith("integral") or n in ("int", "iint", "iiint", "smallint"):
+    if n in ("acute", "grave", "circumflex", "tilde", "macron", "breve",
+             "caron", "dieresis", "ring", "dotaccent"):
+        return ("accent", {"acute": r"\acute", "grave": r"\grave",
+                             "circumflex": r"\hat", "tilde": r"\widetilde",
+                             "macron": r"\bar", "breve": r"\breve",
+                             "caron": r"\check", "dieresis": r"\ddot",
+                             "ring": r"\mathring", "dotaccent": r"\dot"}[n])
+    if n.startswith("integral") or n in ("int", "iint", "iiint", "smallint"):
         return ("op", r"\int")
     if n in ("ffl", "oint", "oiint") or n.startswith("contintegral"):
         return ("op", r"\oint")
@@ -1084,7 +1218,9 @@ def classify_glyph(name):
     if base in _CLOSE:
         return ("close", _CLOSE[base])
     if base in _BIGOP:
-        return ("op", _BIGOP[base])
+        accent_names = {"acute", "grave", "circumflex", "tilde", "macron", "breve",
+                        "caron", "dieresis", "ring", "dotaccent"}
+        return ("accent" if base in accent_names else "op", _BIGOP[base])
     # 큰 괄호의 위/중간/아래 조각 (parenlefttp, parenleftex ...)
     for k, v in _OPEN.items():
         if n.startswith(k):
@@ -1094,7 +1230,9 @@ def classify_glyph(name):
             return ("close", v)
     for k, v in _BIGOP.items():
         if n.startswith(k):
-            return ("op", v)
+            return ("accent" if k in {"acute", "grave", "circumflex", "tilde", "macron",
+                                      "breve", "caron", "dieresis", "ring", "dotaccent"}
+                    else "op", v)
     return (None, None)
 
 
@@ -1266,15 +1404,22 @@ _SYM = {
     "∮": r"\oint", "∑": r"\sum", "∏": r"\prod", "√": r"\sqrt",
     "≈": r"\approx", "≃": r"\simeq", "≅": r"\cong", "≠": r"\ne",
     "≤": r"\le", "≥": r"\ge", "±": r"\pm", "∓": r"\mp", "×": r"\times",
-    "÷": r"\div", "·": r"\cdot", "∝": r"\propto", "∈": r"\in",
+    "÷": r"\div", "·": r"\cdot", "⋅": r"\cdot", "∝": r"\propto", "∈": r"\in",
     "∉": r"\notin", "⊂": r"\subset", "⊃": r"\supset", "∪": r"\cup",
     "∩": r"\cap", "→": r"\to", "←": r"\leftarrow", "↔": r"\leftrightarrow",
-    "⇒": r"\Rightarrow", "⇔": r"\Leftrightarrow", "∀": r"\forall",
+    "↦": r"\mapsto", "⇒": r"\Rightarrow", "⇔": r"\Leftrightarrow", "∀": r"\forall",
     "∃": r"\exists", "∥": r"\parallel", "⊥": r"\perp", "ℏ": r"\hbar",
-    "ℓ": r"\ell", "−": "-", "≡": r"\equiv", "≫": r"\gg", "≪": r"\ll",
+    "ℓ": r"\ell", "ℝ": r"\mathbb{R}", "ℂ": r"\mathbb{C}", "ℤ": r"\mathbb{Z}",
+    "ℕ": r"\mathbb{N}", "ℚ": r"\mathbb{Q}", "−": "-", "≡": r"\equiv",
+    "≫": r"\gg", "≪": r"\ll", "∼": r"\sim", "∘": r"\circ",
     "⊗": r"\otimes", "⊕": r"\oplus", "′": "'", "″": "''", "…": r"\dots",
     "⟨": r"\langle", "⟩": r"\rangle", "∧": r"\wedge", "∨": r"\vee",
-    "ˆ": r"\int", "◦": r"^{\circ}", "□": r"\square",
+    # TeX accent glyphs are extracted as standalone Unicode characters.  The
+    # old mapping of circumflex to \int was especially damaging for \hat{s}.
+    "ˆ": r"\hat", "˜": r"\widetilde", "~": r"\widetilde", "¯": r"\bar",
+    "ˉ": r"\bar", "´": r"\acute", "`": r"\grave", "˘": r"\breve",
+    "ˇ": r"\check", "˙": r"\dot", "¨": r"\ddot", "˚": r"\mathring",
+    "◦": r"\circ", "□": r"\square",
 }
 _MATHOP = re.compile(r"^(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|"
                      r"exp|log|ln|lim|det|dim|ker|deg|gcd|max|min|sup|inf|arg|Tr|tr)$")
@@ -1871,6 +2016,8 @@ def region_boxes(doc, page, rect, gtables=None):
                             role = "radical"
                         elif c in ("∫", "∑", "∏", "∮"):
                             role = "op"
+                    if not ext:
+                        tex = _style_latex_atom(tex, _math_font_style(fname))
                     out.append(Box(bb[0], bb[1], bb[2], bb[3], tex, size, role))
     out.sort(key=lambda b: (b.x0, b.y0))
     out = _merge_vbars(out)
@@ -2136,6 +2283,10 @@ def _tidy_latex(t):
     # 인수 없는 \sqrt 는 파스 오류다
     t = re.sub(r"\\sqrt(?!\s*[{\[])", r"\\sqrt{}", t)
     t = re.sub(r"\\sqrt\{\}", "", t)
+    t = re.sub(
+        r"(\\(?:acute|grave|hat|widetilde|bar|breve|check|dot|ddot|mathring))\s+"
+        r"(\\[A-Za-z]+(?:\{[^{}]*\})?|[A-Za-z0-9])",
+        r"\1{\2}", t)
     t = re.sub(r"\s+", " ", t).strip()
     while t.count(r"\left") > t.count(r"\right"):
         t += r" \right."
@@ -2199,7 +2350,7 @@ def _expand_math_bands(rd, bands):
             txt = "".join(_span_text(sp) for sp in ln.get("spans", []))
             words = re.findall(r"[A-Za-z]+", txt)
             prose_hits = [w for w in words if w.lower() in _COMMON_PROSE]
-            non_math = [w for w in words if w.lower() not in _MATH_WORDS and len(w) >= 3]
+            non_math = [w for w in words if len(w) >= 3 and not _is_math_identifier(w)]
             if prose_hits or len(non_math) >= 2:
                 continue
             glyphs.append(bb)
@@ -2278,7 +2429,7 @@ def _big_math_bands(page, avoid=None):
     except Exception:
         rules = []
 
-    # 10.4 · 표 안쪽의 가로선은 분수선이 아니다 (표→rac 오인 방지)
+    # 10.4 · 표 안쪽의 가로선은 분수선이 아니다 (표→\frac 오인 방지)
     if avoid:
         def _rule_in_avoid(r):
             cx, cy = (r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0
@@ -2296,7 +2447,7 @@ def _big_math_bands(page, avoid=None):
         if not words:
             return False
         prose_hits = [w for w in words if w.lower() in _COMMON_PROSE]
-        non_math = [w for w in words if w.lower() not in _MATH_WORDS and len(w) >= 3]
+        non_math = [w for w in words if len(w) >= 3 and not _is_math_identifier(w)]
         return bool(prose_hits or len(non_math) >= 2)
 
     seeds = []
@@ -2804,8 +2955,10 @@ r"\langle": "⟨", r"\rangle": "⟩", r"\lfloor": "⌊", r"\rfloor": "⌋",
 r"\lceil": "⌈", r"\rceil": "⌉",
 r"\int": "∫", r"\sum": "∑", r"\prod": "∏", r"\oint": "∮",
 r"\bigcup": "⋃", r"\bigcap": "⋂", r"\coprod": "∐",
-r"\bigotimes": "⊗", r"\bigoplus": "⊕",
-r"\sqrt": "√", "|": "|", r"\|": "‖",
+  r"\bigotimes": "⊗", r"\bigoplus": "⊕",
+  r"\sqrt": "√", r"\hat": "ˆ", r"\widetilde": "˜", r"\bar": "¯",
+  r"\acute": "´", r"\grave": "`", r"\breve": "˘", r"\check": "ˇ",
+  r"\ddot": "¨", r"\mathring": "˚", r"\dot": "˙", "|": "|", r"\|": "‖",
 }
 
 
@@ -2984,13 +3137,18 @@ _LATEX_SYMBOLS = {
     "∫": r"\int", "∮": r"\oint", "∑": r"\sum", "∏": r"\prod",
     "√": r"\sqrt", "≈": r"\approx", "≃": r"\simeq", "≅": r"\cong",
     "≠": r"\ne", "≤": r"\le", "≥": r"\ge", "±": r"\pm", "∓": r"\mp",
-    "×": r"\times", "÷": r"\div", "·": r"\cdot", "∝": r"\propto",
+    "×": r"\times", "÷": r"\div", "·": r"\cdot", "⋅": r"\cdot", "∝": r"\propto",
     "∈": r"\in", "∉": r"\notin", "⊂": r"\subset", "⊃": r"\supset",
     "∪": r"\cup", "∩": r"\cap", "→": r"\to", "←": r"\leftarrow",
-    "↔": r"\leftrightarrow", "⇒": r"\Rightarrow", "⇔": r"\Leftrightarrow",
+    "↔": r"\leftrightarrow", "↦": r"\mapsto", "⇒": r"\Rightarrow", "⇔": r"\Leftrightarrow",
     "∀": r"\forall", "∃": r"\exists", "∥": r"\parallel", "⊥": r"\perp",
-    "ℏ": r"\hbar", "ℓ": r"\ell", "ℜ": r"\Re", "ℑ": r"\Im",
-    "ˆ": r"\int", "◦": r"^{\circ}", "□": r"\square",
+    "ℏ": r"\hbar", "ℓ": r"\ell", "ℝ": r"\mathbb{R}", "ℂ": r"\mathbb{C}",
+    "ℤ": r"\mathbb{Z}", "ℕ": r"\mathbb{N}", "ℚ": r"\mathbb{Q}",
+    "ℜ": r"\Re", "ℑ": r"\Im", "∼": r"\sim", "∘": r"\circ",
+    "ˆ": r"\hat", "˜": r"\widetilde", "~": r"\widetilde", "¯": r"\bar",
+    "ˉ": r"\bar", "´": r"\acute", "`": r"\grave", "˘": r"\breve",
+    "ˇ": r"\check", "˙": r"\dot", "¨": r"\ddot", "˚": r"\mathring",
+    "◦": r"\circ", "□": r"\square",
 }
 _LATEX_GREEK = {
     # 같은 모양 다른 코드포인트도 함께 (µ MICRO SIGN, Ω OHM SIGN, ∆ INCREMENT)
