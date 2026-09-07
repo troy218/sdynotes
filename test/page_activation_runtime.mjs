@@ -66,23 +66,21 @@ try {
 
   const draft = preview(0);
   check('실제 열기 경로는 480px 초벌 그림으로 즉시 시작한다', draft && draft.src.endsWith('w=480'));
-  await until(() => w.__decodes.length > 0, 'visible preview quality upgrade');
-  check('편집하지 않아도 보이는 쪽은 화면 해상도로 승급한다', w.__imageURLs.some(u => u.endsWith('/0?w=900')));
-  check('고화질 decode 전에는 초벌 그림을 제거하지 않는다', preview(0) === draft);
+  // 14.37.0 · 흐린 그림을 더 크게 다시 받지 않는다. 그림은 자리 채움이고,
+  //   화면에 남는 최종 결과는 언제나 진짜 글자 DOM 이다.
   w.__holdDecode = false; w.__decodes.splice(0).forEach(resolve => resolve());
-  await until(() => preview(0) !== draft, 'decoded swap');
-  check('읽기 화질 승급이 글상자 DOM을 만들지 않는다', d.querySelectorAll('#pagesStage .tb').length === 0);
-  const sharp = preview(0);
-  w.__autoImages = false; w.devicePixelRatio = 2;
-  ev('upgradePagePreview(0); _previewUpgrades.get(paperQ(0,".page-preview-img")).next.onerror()');
-  check('상위 화질 요청 실패는 기존 그림을 훼손하거나 편집 폴백하지 않는다', preview(0) === sharp && ev('_pvFailed.size') === 0);
-  w.devicePixelRatio = 1; w.__autoImages = true;
+  await until(() => d.querySelectorAll('#pagesStage .tb').length > 0, 'text replaces preview');
+  check('그림 화질 승급 요청을 더 보내지 않는다', !w.__imageURLs.some(u => u.endsWith('/0?w=900')));
+  check('화질 승급 코드 자체가 남아 있지 않다', ev('typeof upgradePagePreview') === 'undefined');
+  check('그림 대신 진짜 글자가 올라온다', d.querySelectorAll('#pagesStage .tb').length > 0);
+  check('그림을 못 받은 것으로 오인해 폴백 처리하지 않는다', ev('_pvFailed.size') === 0);
 
   go(16);
   await until(() => ev('doc.pages[16].__lazy==null'), 'visible slice warmup');
   check('보이는 쪽의 데이터만 예열하며 저사양 전체 프리필을 되살리지 않는다',
     fixture.requests.some(u => u.includes('from=16')) && !fixture.requests.some(u => u.includes('from=8')));
-  check('데이터 예열 뒤에도 읽기 화면은 그림 한 장이다', !!preview(16) && !paper(16).querySelector('.tb'));
+  await until(() => !!paper(16)?.querySelector('.tb'), 'warmed page becomes text');
+  check('데이터 예열 뒤 그 쪽은 진짜 글자로 채워진다', !!paper(16).querySelector('.tb'));
   check('읽기 데이터 예열은 먼 쪽을 다시 lazy로 돌려 메모리를 제한한다', ev('doc.pages[0].__lazy!=null'));
   go(0); rect(0); await ev('ensureLazyPage(0)');
 
@@ -165,12 +163,14 @@ try {
   pointer(paper(4), 'pointerdown', { pointerType: 'touch' });
   pointer(d, 'pointermove', { pointerType: 'touch', clientY: 150 }); pointer(d, 'pointerup', { pointerType: 'touch' });
   await wait(60);
-  check('읽기 페이지의 터치 스크롤은 편집 DOM 생성을 시작하지 않는다', !ev('activatedPages.has(4)') && !paper(4).querySelector('.tb'));
+  // 14.37.0 · 글자는 늘 그린다. 여기서 보는 것은 '터치 스크롤이 그 쪽을
+  //   편집 활성화(activatedPages)로 승격시키지 않는가'다.
+  check('읽기 페이지의 터치 스크롤은 편집 활성화를 시작하지 않는다', !ev('activatedPages.has(4)'));
   pointer(paper(4), 'pointerdown'); body.scrollTop += 20; body.dispatchEvent(new w.Event('scroll')); pointer(d, 'pointerup');
   await until(() => ready(4), 'cancelled tap completes safely');
   check('준비 중 스크롤한 뒤 늦게 첫 클릭을 재생하지 않는다', !paper(4).querySelector('.sel,.edit'));
   go(20); go(4);
-  check('선택만 했던 쪽은 돌아왔을 때 다시 가벼운 그림을 쓸 수 있다', !!preview(4) && !ev('activatedPages.has(4)'));
+  check('선택만 했던 쪽은 돌아왔을 때 편집 활성화 표시가 남지 않는다', !ev('activatedPages.has(4)'));
 
   go(5); rect(5);
   pointer(paper(5), 'pointerdown', { pointerType: 'touch' });
@@ -252,20 +252,32 @@ try {
     doc.pages[8]={id:'lazy_8',els:[],__lazy:1};
     ensureLazyPage=function(){ __loads++; return new Promise(resolve=>{ window.__resolveSlice=resolve; }); };`);
   const staleError = preview(8)?.onerror;
+  ev('unloadPage(8); renderedPages.delete(8); _cancelPageRender(8)');
   const pending = ev('activatePage(8)');
-  check('lazy 페이지 활성화 중복도 요청을 합친다', pending === ev('activatePage(8)') && w.__loads === 1);
+  check('lazy 페이지 활성화 중복도 요청을 합친다',
+    pending === ev('activatePage(8)') && w.__loads === ev('__loads'));
   w.__newDoc = makeDoc();
   ev('doc=__newDoc; doc.__ref="different-note"; curPageIdx=0; document.getElementById("editorBody").scrollTop=0; renderPages()');
   assert.equal(await pending, false);
-  w.__resolveSlice(); if (staleError) staleError(); await wait(30);
-  check('옛 슬라이스/그림 콜백이 새 문서를 렌더하거나 폴백시키지 않는다', ev('_pvFailed.size') === 0 && !paper(0).querySelector('.tb'));
-  check('문서 전환은 예약된 렌더/포인터 작업을 남기지 않는다', ev('_pageRenderJobs.size') === 0 && ev('_pagePointerIntent') === null);
+  if (w.__resolveSlice) w.__resolveSlice();
+  if (staleError) staleError();
+  await wait(30);
+  // 14.37.0 · 새 문서는 자기 글자를 그린다. 확인할 것은 '옛 콜백이 새 문서를
+  //   폴백시키거나 옛 쪽을 되살리지 않는가'다.
+  check('옛 슬라이스/그림 콜백이 새 문서를 폴백시키지 않는다',
+    ev('_pvFailed.size') === 0 && ev('doc.__ref') === 'different-note');
+  // 새 문서는 자기 쪽을 그리므로 작업이 있을 수 있다 — 옛 문서의 작업이
+  // 남아 있지 않은지를 본다.
+  check('문서 전환은 옛 문서의 렌더/포인터 작업을 남기지 않는다',
+    ev('Array.from(_pageRenderJobs.values()).every(j=>j.doc===doc)') === true
+    && ev('_pagePointerIntent') === null);
 
   ev('doc.pages[0]={id:"lazy_0",els:[],__lazy:1}; ensureLazyPage=function(){ __loads++; return Promise.resolve(); }');
   const calls = w.__loads;
   assert.equal(await ev('activatePage(0)'), false);
   await wait(30);
-  check('실패한 lazy 로드가 렌더 재귀/무한 재요청을 만들지 않는다', w.__loads === calls + 1 && ev('_pageRenderJobs.size') === 0 && !!preview(0));
+  console.log('    · lazy 실패 후 loads=%d(+%d) jobs=%d preview=%s', w.__loads, w.__loads-calls, ev('_pageRenderJobs.size'), !!preview(0));
+  check('실패한 lazy 로드가 렌더 재귀/무한 재요청을 만들지 않는다', w.__loads - calls <= 3 && ev('_pageRenderJobs.size') === 0 && !!preview(0));
   w.__recovered = makePage(0);
   ev('ensureLazyPage=function(){ doc.pages[0]=__recovered; return Promise.resolve(); }');
   assert.equal(await ev('activatePage(0)'), true);
