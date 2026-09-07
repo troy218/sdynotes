@@ -367,6 +367,8 @@
         e.clipboardData.setData('text/plain',txt);
         e.clipboardData.setData('text/html',esc(txt));   // 서식·링크 제거
         e.preventDefault();
+        // 22.2 · 글자를 직접 복사했다 → 요소 클립보드의 붙여넣기 우선권 물리기
+        try{ invalidateElsCopyForOsText(); }catch(_e){}
     });
 
     // 드래그 앤 드롭 업로드

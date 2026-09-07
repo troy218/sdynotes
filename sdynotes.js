@@ -3631,7 +3631,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function copyLinkUrl(i){
         closeCtxMenu();
         const l=getLinks(); if(!l[i]) return;
-        navigator.clipboard&&navigator.clipboard.writeText(l[i].url);
+        navigator.clipboard&&navigator.clipboard.writeText(l[i].url)
+            .then(()=>{ try{ invalidateElsCopyForOsText(); }catch(_e){} })
+            .catch(()=>{});
         toast('주소를 복사했습니다',1400);
     }
     function addLink(){
@@ -5078,6 +5080,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         e.clipboardData.setData('text/plain',txt);
         e.clipboardData.setData('text/html',esc(txt));   // 서식·링크 제거
         e.preventDefault();
+        // 22.2 · 글자를 직접 복사했다 → 요소 클립보드의 붙여넣기 우선권 물리기
+        try{ invalidateElsCopyForOsText(); }catch(_e){}
     });
 
     // 드래그 앤 드롭 업로드
@@ -8058,8 +8062,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const ta=document.createElement('textarea');
             ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
             document.body.appendChild(ta); ta.select();
-            document.execCommand('copy'); ta.remove();
-        }catch(e){}
+            const ok=document.execCommand('copy'); ta.remove();
+            return !!ok;
+        }catch(e){ return false; }
     }
     try{ window.fallbackCopyText=fallbackCopyText; }catch(e){}
     function copySelectedTextAsText(els){
@@ -8069,14 +8074,42 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         //   원본 상자(위치·크기·글꼴·서식)도 함께 기억한다. 같은 글자를 그대로
         //   붙여넣으면 맹숭맹숭한 새 상자가 아니라 '상자 복제'가 되도록.
         try{ clipboardEls=JSON.parse(JSON.stringify(els)); _lastCopyText=text; }catch(e){}
+        markElsCopied();
         if(!text){ toast('복사할 글자가 없습니다',1600); return; }
         const done=()=>toast(els.length>1?`${els.length}개 상자 복사됨`:'복사됨',1200);
         if(navigator.clipboard&&navigator.clipboard.writeText){
             navigator.clipboard.writeText(text)
-                .then(done).catch(()=>{ fallbackCopyText(text); done(); });
-        }else{ fallbackCopyText(text); done(); }
+                .then(()=>{ _elsOsWrite=true; done(); })
+                .catch(()=>{ if(fallbackCopyText(text)) _elsOsWrite=true; done(); });
+        }else{ if(fallbackCopyText(text)) _elsOsWrite=true; done(); }
     }
     let _lastCopyText='';           // 18.9 · 방금 우리가 OS 클립보드에 넣은 글자
+    // ===== 요소 클립보드의 'OS 클립보드 소유' 추적 (22.2) =====
+    //   예전엔 요소 복사(비텍스트·혼합·드래그 다중 선택)가 OS 클립보드를
+    //   건드리지 않았다. 그래서 클립보드에 예전 글자가 남아 있으면 Ctrl+V 때
+    //   복사한 요소 대신 그 오래된 글자가 새 글상자로 붙었다 — '드래그해서
+    //   골라 복사한 뒤 붙여넣기가 잘 안 된다'는 보고의 정체.
+    //   - _elsCopyAt  : 마지막 요소 복사/붙여넣기 시각
+    //   - _elsOsWrite : 요소 복사 때 OS 클립보드 쓰기에 성공했는가
+    //       true  → OS 클립보드 텍스트가 _lastCopyText 와 같은지 비교해 판정
+    //       false → OS 클립보드에 뭐가 들었는지 알 수 없으므로, _ELS_PASTE_WIN
+    //               안의 Ctrl+V 는 요소 붙여넣기를 우선한다
+    let _elsCopyAt=0, _elsOsWrite=false;
+    const _ELS_PASTE_WIN=60000;     // 쓰기 실패(권한 없음 등)일 때만 쓰는 안전창
+    function markElsCopied(){ _elsCopyAt=Date.now(); _elsOsWrite=false; }
+    // 사용자가 '글자'를 직접 복사했다(본문 드래그 복사·링크 주소 복사 등) →
+    // 요소 클립보드의 우선권은 물러난다. 이후 Ctrl+V 는 글자 붙여넣기로 간다.
+    function invalidateElsCopyForOsText(){ _elsCopyAt=0; _elsOsWrite=true; }
+    // 요소 복사/잘라내기 때 OS 클립보드에도 '요소의 글자'(없으면 빈 글자)를
+    // 올려 둔다. 빈 글자는 클립보드를 비우는 효과가 있어, 예전 글자가 남아
+    // 요소 붙여넣기를 가로막는 일이 없다. 실패해도 요소 복사 자체는 계속된다.
+    function writeOsTextForEls(txt){
+        if(navigator.clipboard&&navigator.clipboard.writeText){
+            navigator.clipboard.writeText(txt)
+                .then(()=>{ _elsOsWrite=true; })
+                .catch(()=>{ if(fallbackCopyText(txt)) _elsOsWrite=true; });
+        }else if(fallbackCopyText(txt)) _elsOsWrite=true;
+    }
     // 18.12 · 사진을 복사/잘라내면 내부 클립보드(앱 안 붙여넣기)뿐 아니라
     //   OS 클립보드에도 실제 이미지(PNG)를 올려 워드 등 외부 앱에 바로 붙여넣는다.
     async function copyImageToClipboard(el){
@@ -8131,8 +8164,20 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const els=selectedElsData();
         if(!els.length) return;
         clipboardEls=JSON.parse(JSON.stringify(els));
-        _lastCopyText='';
+        markElsCopied();
         const singleImg=els.length===1&&els[0].type==='image';
+        // 22.2 · 요소 복사/잘라내기 때도 OS 클립보드에 '요소의 글자'를 올려
+        //   둔다(_lastCopyText 도 같이). 안 그러면 예전에 복사해 둔 글자가
+        //   클립보드에 남아 Ctrl+V 때 복사한 요소 대신 글상자로 붙는다.
+        //   글자가 아예 없으면 빈 글자를 써 클립보드를 비운다.
+        //   단, 사진 1장은 OS 클립보드에 PNG 를 올리는 게 이득이라 그대로 둔다.
+        if(singleImg){
+            _lastCopyText='';
+        }else{
+            const txt=els.map(el=>htmlToPlain(el.html,el.tight)).filter(t=>t.length).join('\n');
+            _lastCopyText=txt;
+            writeOsTextForEls(txt);
+        }
         if(cut){
             pushHistory();
             const pi=multiSel.length?multiSel[0].pageIdx:+selected.el.dataset.pageIdx;
@@ -8150,6 +8195,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function pasteElements(){
         if(!clipboardEls.length||!doc) return;
         const pi=(lastMouse.pageIdx>=0&&lastMouse.pageIdx<doc.pages.length)?lastMouse.pageIdx:curPageIdx;
+        // 22.2 · 여러 곳에 이어 붙일 때도 요소 붙여넣기가 계속 우선하도록
+        //   안전창을 다시 연다 (OS 쓰기 상태(_elsOsWrite)는 그대로 둔다 —
+        //   true 면 여전히 글자 일치로 판정한다)
+        _elsCopyAt=Date.now();
         pushHistory();
         // 클립보드 묶음의 좌상단을 기준점으로 삼아 마우스 위치로 옮김
         let minX=Infinity,minY=Infinity;
@@ -16636,6 +16685,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 텍스트 붙여넣기 → 자동으로 텍스트 상자 생성
         const html=e.clipboardData?.getData('text/html');
         const plain=e.clipboardData?.getData('text/plain');
+        // 22.2 · 방금 '요소 복사/잘라내기'를 했는데 OS 클립보드 쓰기가 실패했다면
+        //   지금 클립보드에 뭐가 들어 있는지 알 수 없다. 이때는 잠깐(60초) 동안
+        //   Ctrl+V 를 요소 붙여넣기로 우선 처리한다 — 안 그러면 클립보드에 남아
+        //   있던 예전 글자가 새 글상자로 붙어 복사한 요소가 사라진 것처럼 보인다.
+        //   (쓰기에 성공했으면 아래 글자 일치 판정이 정확하므로 이 창은 쓰지 않는다)
+        if(clipboardEls.length&&!_elsOsWrite&&Date.now()-_elsCopyAt<_ELS_PASTE_WIN){
+            e.preventDefault(); pasteElements(); return;
+        }
         // 18.9 · 앱에서 복사한 상자를 그대로 붙여넣기 (글꼴·크기·서식·크기 유지)
         if(clipboardEls.length&&plain&&_lastCopyText&&plain.trim()===_lastCopyText.trim()){
             e.preventDefault(); pasteElements(); return;
@@ -18616,6 +18673,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                                 if(!(navigator.clipboard&&navigator.clipboard.writeText))
                                     throw new Error('no clipboard');
                                 await navigator.clipboard.writeText(aiEditText(found));
+                                // 22.2 · AI 글자 복사 → 요소 클립보드 우선권 해제
+                                try{ invalidateElsCopyForOsText(); }catch(_e){}
                                 res.applied++;
                             }catch(e){
                                 res.failed++;
@@ -18649,6 +18708,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!clean) return;
             e.clipboardData.setData('text/plain',clean);
             e.preventDefault();
+            // 22.2 · 글자 직접 복사 → 요소 클립보드 붙여넣기 우선권 해제
+            try{ invalidateElsCopyForOsText(); }catch(_err){}
         }catch(err){}
     });
 
@@ -20759,6 +20820,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{
             if(navigator.clipboard&&navigator.clipboard.writeText){
                 await navigator.clipboard.writeText(txt);
+                // 22.2 · 글자 복사가 OS 클립보드를 가져갔으니 요소 클립보드 우선권 해제
+                try{ invalidateElsCopyForOsText(); }catch(_e){}
                 return true;
             }
         }catch(e){}
@@ -20804,7 +20867,28 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             addTextBox(pi,c.x,c.y,dim);
         }
         else if(a==='paste'){
+            // 22.2 · 앱에서 복사/잘라낸 요소 붙여넣기 — 예전엔 OS 클립보드
+            //   글자만 봐서, 요소를 복사한 뒤 우클릭 붙여넣기를 하면 오래된
+            //   글자가 글상자로 붙거나 '클립보드가 비어 있습니다'가 떴다.
+            //   지금은 클립보드가 '우리 것'이면 우클릭한 자리에 요소를 붙인다.
             try{
+                if(clipboardEls.length){
+                    let mine=false, _osTxt=null;
+                    try{ _osTxt=String(await navigator.clipboard.readText()||''); }catch(_e){}
+                    if(_elsOsWrite) mine=(_osTxt.trim()===String(_lastCopyText||'').trim());
+                    else mine=(Date.now()-_elsCopyAt<_ELS_PASTE_WIN);
+                    // OS 클립보드가 비어 보이는데 사진을 담고 있으면 사진이 우선
+                    if(mine&&_osTxt.trim()===''){
+                        try{
+                            const _items=await navigator.clipboard.read();
+                            if(_items.some(it=>it.types.some(x=>x.startsWith('image/')))) mine=false;
+                        }catch(_e){}
+                    }
+                    if(mine){
+                        lastMouse.pageIdx=pi; lastMouse.x=t.x; lastMouse.y=t.y;
+                        pasteElements(); return;
+                    }
+                }
                 const items=await navigator.clipboard.read();
                 for(const it of items){
                     const imgType=it.types.find(x=>x.startsWith('image/'));

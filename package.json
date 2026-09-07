@@ -35,6 +35,7 @@
     "test:imgstore": "python3 test/worker_img_cleanup_contract.py",
     "test:pasteimg": "node test/image_paste_persistence_contract.mjs",
     "test:imgclip": "node test/image_clipboard_contract.mjs",
+    "test:elclip": "node test/editor_element_clipboard_runtime.mjs",
     "test:fastops": "node test/editor_fast_ops_contract.mjs && node test/editor_fast_switch_runtime.mjs",
     "test:font": "node test/editor_font_size_contract.mjs && node test/editor_font_size_runtime.mjs",
     "test:hlband": "node test/editor_hl_band_runtime.mjs",

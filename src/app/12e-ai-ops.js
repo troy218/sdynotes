@@ -1071,6 +1071,8 @@
                                 if(!(navigator.clipboard&&navigator.clipboard.writeText))
                                     throw new Error('no clipboard');
                                 await navigator.clipboard.writeText(aiEditText(found));
+                                // 22.2 · AI 글자 복사 → 요소 클립보드 우선권 해제
+                                try{ invalidateElsCopyForOsText(); }catch(_e){}
                                 res.applied++;
                             }catch(e){
                                 res.failed++;
@@ -1104,6 +1106,8 @@
             if(!clean) return;
             e.clipboardData.setData('text/plain',clean);
             e.preventDefault();
+            // 22.2 · 글자 직접 복사 → 요소 클립보드 붙여넣기 우선권 해제
+            try{ invalidateElsCopyForOsText(); }catch(_err){}
         }catch(err){}
     });
 

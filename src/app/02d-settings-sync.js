@@ -1039,7 +1039,9 @@
     function copyLinkUrl(i){
         closeCtxMenu();
         const l=getLinks(); if(!l[i]) return;
-        navigator.clipboard&&navigator.clipboard.writeText(l[i].url);
+        navigator.clipboard&&navigator.clipboard.writeText(l[i].url)
+            .then(()=>{ try{ invalidateElsCopyForOsText(); }catch(_e){} })
+            .catch(()=>{});
         toast('주소를 복사했습니다',1400);
     }
     function addLink(){
