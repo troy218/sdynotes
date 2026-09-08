@@ -9819,7 +9819,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const _tbPlain=()=>String((c.innerText!=null?c.innerText:c.textContent)||'');
         if(!String(c.textContent||'').trim()){ c.setAttribute('data-empty','true'); w.classList.add('empty'); }
         if(el.locked) w.classList.add('el-lock');
-        c.addEventListener('dblclick',e=>{ e.stopPropagation(); if(pageReady(pageIdx)&&!w.classList.contains('edit')) enterEdit(w,true); });
+        c.addEventListener('dblclick',e=>{
+            e.stopPropagation();
+            if(!pageReady(pageIdx)||w.classList.contains('edit')) return;
+            enterEdit(w,true);
+            // 14.39.8 · enterEdit 은 focus() 만 하므로 캐럿이 상자 맨 앞으로 간다.
+            //   실제 더블클릭은 이 리스너가 편집 진입을 맡으므로(포인터 이벤트의
+            //   e.detail 은 Chrome·Edge 에서 항상 0), 캐럿을 눌린 자리로 옮긴다.
+            //   preventDefault 는 브라우저의 기본 단어 선택이 이 캐럿을 덮지 않게 막는다.
+            e.preventDefault();
+            placeCaretFromPointer(w.querySelector('.tb-content')||c,e.clientX,e.clientY);
+        });
         // 활성 캐럿 서식은 실제 입력 직전에 wrapper를 확인한다. 빈 span을 브라우저가
         // 정리했더라도 beforeinput 단계에서 복구되므로 첫 글자부터 서식이 빠지지 않는다.
         c.addEventListener('beforeinput',e=>{
@@ -10725,6 +10735,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         r.setStart(node,a); r.setEnd(node,b);
         return r;
     }
+    // 14.39.8 · 더블클릭/탭으로 편집에 들어갈 때 캐럿을 '누른 자리'에 둔다.
+    //   enterEdit(w,true) 는 c.focus() 만 하므로 캐럿이 상자 맨 앞으로 간다
+    //   (보고된 버그: 더블클릭하면 깜빡이가 항상 첫 글자 앞에 선다).
+    //   게다가 Chrome·Edge 는 pointerdown 의 e.detail 을 항상 0 으로 보내므로
+    //   (w3c/pointerevents#98 — compat mousedown 이 pointer 환경에서 눌려 있다)
+    //   onPaperDown 의 e.detail>=2 더블클릭 분기는 실제 입력에서 살아나지 않고,
+    //   편집 진입은 .tb-content 의 dblclick 리스너가 한다. 그래서 '누른 좌표'를
+    //   받는 자리를 하나로 모아 어느 경로로 들어가든 캐럿이 눌린 자리에 선다.
+    //   단어 선택이 아니라 접힌(collapsed) 캐럿 — 눌린 위치로 간다는 요구 그대로.
+    function placeCaretFromPointer(c,x,y){
+        if(!c) return false;
+        enableTextSelect(c);
+        const r=caretRangeAt(x,y,c);
+        if(!r) return false;
+        try{
+            const cr=r.cloneRange(); cr.collapse(true);
+            const sel=window.getSelection();
+            if(!sel) return false;
+            sel.removeAllRanges(); sel.addRange(cr);
+        }catch(e){ return false; }
+        // 캐럿 위치를 기억해야 툴바의 글꼴·색·크기가 '앞으로 입력될 글자'에 붙는다.
+        try{ saveSel(); }catch(e){}
+        return true;
+    }
     let textSel=null;
     let savedRange=null, savedHost=null;   // 선택 영역 기억 (툴바 클릭 시 복원용)
     let savedCaret=null;                   // 편집 중 캐럿 기억 (글자 서식: 앞으로 입력될 글자용)
@@ -11308,18 +11342,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                             if(e.detail>=2){
                                 clearTblCellSelection();
                                 deselectAll(true); clearMulti();
-                                const c=node.querySelector('.tb-content');
-                                enterEdit(node,true); enableTextSelect(c);
-                                const r=caretRangeAt(e.clientX,e.clientY,c);
-                                if(r){
-                                    const wr=expandToWord(r,c),sel=window.getSelection();
-                                    sel.removeAllRanges(); sel.addRange(wr);
-                                    textSel={host:c,anchor:{node:wr.startContainer,off:wr.startOffset},
-                                        focusEnd:{node:wr.endContainer,off:wr.endOffset},mode:'word',
-                                        wordStart:{node:wr.startContainer,off:wr.startOffset},
-                                        wordEnd:{node:wr.endContainer,off:wr.endOffset},cellDrag:{pageIdx,tid:cell.tid}};
-                                    saveSel();
-                                }
+                                enterEdit(node,true);
+                                // 14.39.8 · 칸 더블클릭도 '누른 자리에 캐럿'
+                                placeCaretFromPointer(node.querySelector('.tb-content'),e.clientX,e.clientY);
                             }else{
                                 startTblCellSelection(e,pageIdx,cell);
                             }
@@ -11374,7 +11399,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                          && matchMedia('(pointer:coarse)').matches){
                     // ★ 모바일: 이미 선택된 상자를 다시 누르면 편집 모드 진입.
                     //   더블탭은 브라우저 확대와 충돌해 인식이 불안정하다.
+                    //   14.39.8 · 캐럿은 상자 맨 앞이 아니라 '누른 자리'로.
                     enterEdit(tb,true);
+                    placeCaretFromPointer(tb.querySelector('.tb-content'),e.clientX,e.clientY);
                 }else{
                     deselectAll(true); clearMulti();
                     tb.classList.add('sel'); _ensureTbControls(tb);
@@ -11387,22 +11414,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(e.detail>=2){
                 drag=null;
                 enterEdit(tb,true);
-                // 더블클릭 단어 선택 + 끌어서 확장을 직접 구현
-                // (편집 모드 진입과 동시에 일어나는 기본 동작은 브라우저마다 불안정)
-                const c=tb.querySelector('.tb-content');
-                enableTextSelect(c);
-                const r=caretRangeAt(e.clientX,e.clientY,c);
-                if(r){
-                    const wr=expandToWord(r,c);
-                    const sel=window.getSelection();
-                    sel.removeAllRanges(); sel.addRange(wr);
-                    // mode:'word' → 드래그하면 띄어쓰기 단위로 확장 (브라우저 기본 동작과 동일)
-                    textSel={host:c, anchor:{node:wr.startContainer,off:wr.startOffset},
-                             focusEnd:{node:wr.endContainer,off:wr.endOffset}, mode:'word',
-                             wordStart:{node:wr.startContainer,off:wr.startOffset},
-                             wordEnd:{node:wr.endContainer,off:wr.endOffset}};
-                    saveSel();
-                }
+                // 14.39.8 · 더블클릭 = '누른 자리에 캐럿' (단어 선택 아님).
+                //   dblclick 리스너·모바일 다시탭과 같은 규칙을 쓴다.
+                //   (이 분기는 준비 중 쪽의 pointer 재생처럼 detail 이 살아 있는
+                //    경로에서만 탄다 — 실제 포인터 입력은 dblclick 리스너가 맡는다)
+                placeCaretFromPointer(tb.querySelector('.tb-content'),e.clientX,e.clientY);
                 e.preventDefault();
                 return;
             }

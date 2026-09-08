@@ -296,7 +296,17 @@
         const _tbPlain=()=>String((c.innerText!=null?c.innerText:c.textContent)||'');
         if(!String(c.textContent||'').trim()){ c.setAttribute('data-empty','true'); w.classList.add('empty'); }
         if(el.locked) w.classList.add('el-lock');
-        c.addEventListener('dblclick',e=>{ e.stopPropagation(); if(pageReady(pageIdx)&&!w.classList.contains('edit')) enterEdit(w,true); });
+        c.addEventListener('dblclick',e=>{
+            e.stopPropagation();
+            if(!pageReady(pageIdx)||w.classList.contains('edit')) return;
+            enterEdit(w,true);
+            // 14.39.8 · enterEdit 은 focus() 만 하므로 캐럿이 상자 맨 앞으로 간다.
+            //   실제 더블클릭은 이 리스너가 편집 진입을 맡으므로(포인터 이벤트의
+            //   e.detail 은 Chrome·Edge 에서 항상 0), 캐럿을 눌린 자리로 옮긴다.
+            //   preventDefault 는 브라우저의 기본 단어 선택이 이 캐럿을 덮지 않게 막는다.
+            e.preventDefault();
+            placeCaretFromPointer(w.querySelector('.tb-content')||c,e.clientX,e.clientY);
+        });
         // 활성 캐럿 서식은 실제 입력 직전에 wrapper를 확인한다. 빈 span을 브라우저가
         // 정리했더라도 beforeinput 단계에서 복구되므로 첫 글자부터 서식이 빠지지 않는다.
         c.addEventListener('beforeinput',e=>{

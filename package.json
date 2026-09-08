@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.39.7",
+  "version": "14.39.8",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -46,6 +46,7 @@
     "test:undo": "node test/editor_undo_collab_runtime.mjs && node test/editor_draw_contract.mjs",
     "test:format": "node test/editor_format_runtime.mjs && node test/editor_caret_toggle_contract.mjs && node test/editor_inline_fmt_v2_runtime.mjs",
     "test:selux": "node test/editor_selection_ux_runtime.mjs",
+    "test:dblcaret": "node test/editor_dblclick_caret_runtime.mjs",
     "test:uflow": "node test/editor_user_flow_runtime.mjs",
     "test:typeflow": "node test/editor_typing_style_flow_runtime.mjs",
     "test:textbox": "node test/editor_textbox_whole_runtime.mjs",

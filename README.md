@@ -1,4 +1,33 @@
-# SDYnotes 14.39.7 — Fastify + Python worker + Oracle 자체 저장소
+# SDYnotes 14.39.8 — Fastify + Python worker + Oracle 자체 저장소
+
+- **14.39.8 더블클릭하면 캐럿이 상자 맨 앞으로 가던 문제 (사용자 보고)**:
+  - **증상.** 텍스트를 입력하려고 상자를 **더블클릭**하면 깜빡이는 캐럿이 눌린
+    자리가 아니라 항상 **상자의 제일 처음**(첫 글자 앞)으로 갔다. 한 번 더
+    클릭해야 원하는 자리로 옮길 수 있었다. 모바일에서 '이미 선택된 상자를
+    다시 탭'해 편집에 들어갈 때도 똑같이 맨 앞으로 갔다.
+  - **원인.** 더블클릭으로 편집에 들어가는 실제 경로는 `.tb-content` 의
+    **`dblclick` 리스너**다. `onPaperDown` 에 `e.detail>=2` 더블클릭 분기가
+    있지만 그 핸들러는 **pointerdown** 에 붙어 있고, Chrome·Edge 는
+    pointerdown 의 `detail` 을 **항상 0** 으로 보낸다(w3c/pointerevents#98 —
+    compat mousedown 은 포인터 이벤트가 있는 환경에서 눌려 있다). 그래서 그
+    분기는 실제 입력에서 살아나지 않고, 편집 진입을 맡은 `dblclick` 리스너는
+    `enterEdit(w,true)` 만 불렀다. `enterEdit` 의 `keepSel` 경로는
+    `c.focus({preventScroll:true})` 만 하므로 **브라우저가 캐럿을 상자 맨
+    앞으로** 놓는다 — 좌표를 받아 옮기는 코드가 아예 없었다.
+  - **고친 것.** `placeCaretFromPointer(c,x,y)` 를 추가해 '누른 좌표 → 캐럿'
+    변환을 한곳으로 모았다 (`caretRangeAt` + 접힌(collapsed) Range +
+    `saveSel()` — 툴바의 글꼴·색·크기가 앞으로 입력될 글자에 붙도록). 그리고
+    편집에 들어가는 **세 경로 모두**가 이걸 부른다: ① `.tb-content` 의
+    `dblclick`(데스크톱 더블클릭 — `preventDefault` 로 브라우저 기본 단어
+    선택이 캐럿을 덮지 않게 막음), ② 모바일 '선택된 상자 다시 탭',
+    ③ `detail` 이 살아 있는 경로의 더블클릭 분기(준비 중 쪽 포인터 재생 등 —
+    일반 글상자·표 칸). 단어 전체 선택이 아니라 **눌린 자리에 캐럿**으로
+    통일했다(요구 그대로. 원래의 '더블클릭 = 단어 선택' 분기는 위 이유로
+    실제 입력에서 한 번도 실행되지 않던 죽은 코드였다).
+  - 검증 `npm run test:dblcaret` — PASS 17 (합성 히트테스트로 '눌린 좌표 →
+    캐럿 오프셋'을 검사. 고치기 전 코드에서는 캐럿이 아예 안 잡혀 실패함을
+    확인). 회귀 `test:selux` · `test:textbox` · `test:txtedge` ·
+    `test:activation` 유지.
 
 - **14.39.7 텍스트 상자 4가지 (사용자 보고)**:
   - **증상.** ① 서식을(글꼴·색 등) 바꾸고 이어서 입력하면 첫 글자 뒤에 친 두 번째
