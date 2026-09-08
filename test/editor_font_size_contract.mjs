@@ -8,6 +8,8 @@ const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
 //     그 뒤 '+' 를 눌러도 도로 작아지지 않아야 한다.
 //  ② 글꼴 목록은 각 글꼴의 한국어·영어 이름을 '해당 글꼴 자체'로 그린다.
 //     예시 문구(abc 가나다)는 쓰지 않는다 ('한글' 은 넣지 않는다).
+// ※ 14.39.3 이후 저장 문자열 경로는 타이핑 닻(ZWSP)을 걷어내는
+//   _stripTypingMarkersHtml(...) 을 통과한다 — 계약도 그 형태를 기대한다.
 
 // ── ① scaleSelection : 글자 크기 저장 + 툴바 동기화 ─────────────────────────
 const scale = js.match(/function scaleSelection\(f,items\)\{([\s\S]*?)\n    \}\n/);
@@ -20,8 +22,8 @@ const fsStore = scaleBody.match(/if\(el\.type==='text'\)\{\s*\n\s*el\.fontSize=M
 assert.ok(fsStore, 'scaleSelection must store the scaled font size on the text element (even when it had none)');
 assert.match(scaleBody, /c\.style\.fontSize=el\.fontSize\+'px';/,
   'scaleSelection must repaint the box content with the new font size');
-assert.match(scaleBody, /if\(scaleInlineFS\(c,f\)\) el\.html=imathCollapse\(stripWF\(c\.innerHTML\)\);/,
-  'partially sized inline text must be scaled too and written back to the element html');
+assert.match(scaleBody, /if\(scaleInlineFS\(c,f\)\) el\.html=_stripTypingMarkersHtml\(imathCollapse\(stripWF\(c\.innerHTML\)\)\);/,
+  'partially sized inline text must be scaled too and written back to the element html (typing anchors stripped, per 14.39.3)');
 assert.match(scaleBody, /if\(lastFS\) setToolbarFS\(lastFS\);/,
   'scaleSelection must hand the new font size to the toolbar so +/- continues from it');
 

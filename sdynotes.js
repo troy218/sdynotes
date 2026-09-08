@@ -12,6 +12,7 @@
 
     // 장식 글꼴(손글씨·제목용 12종)은 첫 화면을 그린 뒤에 받는다.
     // head 에서 한꺼번에 받으면 폰에서 시작이 눈에 띄게 느려진다.
+    // (글꼴 메뉴를 먼저 열면 buildFontMenu 가 sdyLoadUiFonts() 로 즉시 당겨 온다)
     (function(){
       var href='https://fonts.googleapis.com/css2'
         +'?family=Gaegu:wght@400;700&family=Jua&family=Nanum+Pen+Script'
@@ -19,10 +20,13 @@
         +'&family=Poor+Story&family=Black+Han+Sans&family=Nanum+Gothic+Coding'
         +'&family=Inter:wght@400;600;700&family=Roboto+Mono'
         +'&family=Playfair+Display:wght@400;700&family=Caveat:wght@400;700&display=swap';
+      var done=false;
       function load(){
+        if(done) return; done=true;
         var l=document.createElement('link');
         l.rel='stylesheet'; l.href=href; document.head.appendChild(l);
       }
+      window.sdyLoadUiFonts=load;   // 글꼴 메뉴가 열릴 때 필요하면 즉시 부른다 (멱등)
       if('requestIdleCallback' in window) requestIdleCallback(load,{timeout:2500});
       else addEventListener('load',function(){ setTimeout(load,300); });
     })();
@@ -14035,10 +14039,20 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const dim=textBoxDefaultSize();
         const o=clampEl(p.x-dim.w/2,p.y-dim.h/2,dim.w,dim.h);
         const r=paper.getBoundingClientRect(),sc=uiPageScale(pi),k=uiCssZoom();
-        g.style.width=Math.round(dim.w*sc.x)+'px';
-        g.style.height=Math.round(dim.h*sc.y)+'px';
+        const gCssW=Math.round(dim.w*sc.x), gCssH=Math.round(dim.h*sc.y);
+        g.style.width=gCssW+'px';
+        g.style.height=gCssH+'px';
+        // 상자 안 안내 요소도 '실제로 입력될 글자 크기'에 맞춘다 (고정 11px/12px 가 아니라).
+        //  · 캐럿 높이  = 앞으로 입력될 글자의 em 높이
+        //  · 안내 문구   = 그 글자에 비례하되 상자 폭·높이를 넘지 않게 (커진 상자 안에서
+        //    작은 11px 문구가 어색해 보이던 것 방지) — 크기 모두 상자와 함께 확대/축소된다.
         const c=g.querySelector('.tg-caret');
-        if(c) c.style.height=Math.round((curFontSize*1.4)*sc.y)+'px';
+        if(c) c.style.height=Math.round(Math.max(10,Math.min(curFontSize*sc.y,gCssH-8)))+'px';
+        const ph=g.querySelector('.tg-placeholder');
+        if(ph){
+            const hint=Math.max(10,Math.min(curFontSize*sc.y*0.66,(gCssW-24)/10.5,gCssH*0.32));
+            ph.style.fontSize=Math.round(hint)+'px';
+        }
         g.style.left=Math.round(r.left/k+o.x*sc.x)+'px';
         g.style.top=Math.round(r.top/k+o.y*sc.y)+'px';
         g.dataset.pageIdx=String(pi);
@@ -15444,9 +15458,34 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   예시 문구(abc 가나다)는 쓰지 않는다 — 이름만 보고도 어떤 폰트인지 바로 알 수 있게.
     //   좌측: 한국어·영어 이름 (둘 다 해당 글꼴, .fi-sample 의 font-family 를 상속)
     //   우측: 현재 선택 시 체크
+    // 메뉴를 열었는데 장식 글꼴 CSS 를 아직 안 받았으면(첫 화면 뒤 여유 로드 중)
+    // 지금 바로 받고, 다 받아지는 순간 미리보기를 다시 그린다 — 글꼴이 늦게 떠서
+    // 목록이 전부 기본 글꼴로 보이는 일이 없게.
+    function positionFontMenu(){
+        const m=document.getElementById('fontMenu');
+        if(!m||!m.classList.contains('show')) return;
+        if(m.parentElement!==document.body) document.body.appendChild(m);
+        const r=document.getElementById('fontBtn').getBoundingClientRect();
+        const cw=v=>window.sdyUiCss?window.sdyUiCss(v):(Number(v)||0);  // html zoom(.9) 보정
+        m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-288)+'px';
+        m.style.top=(cw(r.bottom)+6)+'px';
+    }
+    function refreshFontMenu(){
+        const m=document.getElementById('fontMenu');
+        if(!m) return;
+        const wasShow=m.classList.contains('show');
+        const cur=curFont;
+        m.innerHTML='';
+        delete m.dataset.ready;
+        buildFontMenu();
+        m.querySelectorAll('.font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===cur));
+        if(wasShow) positionFontMenu();
+    }
     function buildFontMenu(){
         const m=document.getElementById('fontMenu');
         if(m.dataset.ready==='1') return;
+        // 아직 늦게 로드 중인 장식 글꼴이면 지금 당겨 온다 (00-boot 의 멱등 로더)
+        if(window.sdyLoadUiFonts) try{ window.sdyLoadUiFonts(); }catch(e){}
         FONTS.forEach(f=>{
             const it=document.createElement('div');
             it.className='font-item'; it.dataset.f=f.id;
@@ -15469,6 +15508,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 const fam=f.css.split(',')[0];           // 주 패밀리 (따옴표 포함)
                 try{ document.fonts.load('16px '+fam).catch(()=>{}); }catch(e){}
             });
+            // 폰트가 방금 요청이라 아직 안 떴으면, 다 떠오르는 순간 목록을 다시 그린다.
+            try{
+                if(document.fonts.status!=='loaded'&&document.fonts.ready){
+                    document.fonts.ready.then(()=>{ try{ refreshFontMenu(); }catch(_e){} }).catch(()=>{});
+                }
+            }catch(e){}
         }
     }
     function toggleFontMenu(){
@@ -15480,11 +15525,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(willShow){
             // 툴바의 블러(글래스)가 fixed 의 기준점을 바꾸어 위치가 어긋나므로
             // 색 팝오버와 같은 방식으로 body 로 옮긴 뒤 배치한다.
-            if(m.parentElement!==document.body) document.body.appendChild(m);
-            const r=document.getElementById('fontBtn').getBoundingClientRect();
-            const cw=v=>window.sdyUiCss?window.sdyUiCss(v):(Number(v)||0);  // html zoom(.9) 보정
-            m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-288)+'px';
-            m.style.top=(cw(r.bottom)+6)+'px';
+            positionFontMenu();
             // 현재 선택된 글꼴 표시 (강조 + 체크)
             m.querySelectorAll('.font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===curFont));
         }
@@ -16894,6 +16935,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return nr;
     }
     // span 안의 닻을 지운다. 캐럿이 같은 텍스트 노드 안에 있으면 지운 글자 수만큼 당긴다.
+    // ★ 지운 글자 수는 '줄이기 전' 캐럿 오프셋으로 센다. tn.nodeValue 를 먼저 줄이면
+    //   라이브 셀렉션의 offset 이 새 길이 밖으로 밀려 클램프(끝으로 당겨짐)되고,
+    //   그 클램프된 값을 다시 읽어 다시 맞추면 한 글자 앞(첫 글자 앞)으로 새어
+    //   '다음 글자가 첫 글자 앞에 붙는' 순서 역전이 났다. → 줄이기 전 오프셋을
+    //   미리 떠서 그 값으로만 새 위치를 계산한다.
     function _stripTypeMarks(span){
         if(!span) return;
         let tw=null;
@@ -16907,20 +16953,23 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         nodes.forEach(tn=>{
             const v=String(tn.nodeValue||'');
             if(v.indexOf(_TYPE_MARK)<0) return;
+            // 줄이기 전 캐럿 위치를 먼저 고정한다 (cut = 그 앞에 있는 닻 개수)
+            const pre={ start:caret&&caret.startContainer===tn?caret.startOffset:-1,
+                        end:caret&&!caret.collapsed&&caret.endContainer===tn?caret.endOffset:-1,
+                        hitS:!!(caret&&caret.startContainer===tn),
+                        hitE:!!(caret&&!caret.collapsed&&caret.endContainer===tn) };
             let cutS=0,cutE=0;
             try{
-                if(caret&&caret.startContainer===tn)
-                    cutS=String(v.slice(0,caret.startOffset)).split(_TYPE_MARK).length-1;
-                if(caret&&!caret.collapsed&&caret.endContainer===tn)
-                    cutE=String(v.slice(0,caret.endOffset)).split(_TYPE_MARK).length-1;
+                if(pre.start>=0) cutS=String(v.slice(0,pre.start)).split(_TYPE_MARK).length-1;
+                if(pre.end>=0)   cutE=String(v.slice(0,pre.end)).split(_TYPE_MARK).length-1;
             }catch(e){}
             tn.nodeValue=v.split(_TYPE_MARK).join('');
             if(!caret) return;
             try{
-                if(caret.startContainer===tn||(!caret.collapsed&&caret.endContainer===tn)){
+                if(pre.hitS||pre.hitE){
                     const r=caret.cloneRange();
-                    if(r.startContainer===tn) r.setStart(tn,Math.max(0,caret.startOffset-cutS));
-                    if(!caret.collapsed&&r.endContainer===tn) r.setEnd(tn,Math.max(0,caret.endOffset-cutE));
+                    if(pre.hitS) r.setStart(tn,Math.max(0,pre.start-cutS));
+                    if(pre.hitE) r.setEnd(tn,Math.max(0,pre.end-cutE));
                     s.removeAllRanges(); s.addRange(r);
                     caret=r;
                 }

@@ -1300,10 +1300,20 @@
         const dim=textBoxDefaultSize();
         const o=clampEl(p.x-dim.w/2,p.y-dim.h/2,dim.w,dim.h);
         const r=paper.getBoundingClientRect(),sc=uiPageScale(pi),k=uiCssZoom();
-        g.style.width=Math.round(dim.w*sc.x)+'px';
-        g.style.height=Math.round(dim.h*sc.y)+'px';
+        const gCssW=Math.round(dim.w*sc.x), gCssH=Math.round(dim.h*sc.y);
+        g.style.width=gCssW+'px';
+        g.style.height=gCssH+'px';
+        // 상자 안 안내 요소도 '실제로 입력될 글자 크기'에 맞춘다 (고정 11px/12px 가 아니라).
+        //  · 캐럿 높이  = 앞으로 입력될 글자의 em 높이
+        //  · 안내 문구   = 그 글자에 비례하되 상자 폭·높이를 넘지 않게 (커진 상자 안에서
+        //    작은 11px 문구가 어색해 보이던 것 방지) — 크기 모두 상자와 함께 확대/축소된다.
         const c=g.querySelector('.tg-caret');
-        if(c) c.style.height=Math.round((curFontSize*1.4)*sc.y)+'px';
+        if(c) c.style.height=Math.round(Math.max(10,Math.min(curFontSize*sc.y,gCssH-8)))+'px';
+        const ph=g.querySelector('.tg-placeholder');
+        if(ph){
+            const hint=Math.max(10,Math.min(curFontSize*sc.y*0.66,(gCssW-24)/10.5,gCssH*0.32));
+            ph.style.fontSize=Math.round(hint)+'px';
+        }
         g.style.left=Math.round(r.left/k+o.x*sc.x)+'px';
         g.style.top=Math.round(r.top/k+o.y*sc.y)+'px';
         g.dataset.pageIdx=String(pi);
