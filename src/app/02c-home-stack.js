@@ -269,7 +269,7 @@
             _stackTransforms(cards,stack.classList.contains('fanned'));
         });
     }
-    // ── 14.39.1 · 홈 카드 미리보기 '페인트 기억' ────────────────────────────
+    // ── 14.39.4 · 홈 카드 미리보기 '페인트 기억' ────────────────────────────
     // 뒤로가기로 노트를 닫고 홈에 돌아오면 홈을 다시 그린다 — 방금 본 노트를
     // '최근 편집' 줄로 옮겨 놓아야 하므로 카드 DOM을 새로 만든다. 그때마다
     // 미리보기를 '빈 프레임'으로 만든 뒤 다시 채웠기 때문에 홈 전체가 한 순간
@@ -453,7 +453,7 @@
                     <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nb.title||'새 노트')}</span>
                     <span class="live-dot" data-nb="${nb.id}" style="display:none;flex-shrink:0;margin-left:8px;font-size:10.5px;font-weight:700;color:#059669;">●</span>
                 </div>`;
-            // 14.39.1 · 그려 둔 미리보기가 있으면 빈 프레임 없이 곧바로 얹는다.
+            // 14.39.4 · 그려 둔 미리보기가 있으면 빈 프레임 없이 곧바로 얹는다.
             //   잠긴 노트는 기억을 쓰지 않는다(본문은 흐리게 가려져야 한다) —
             //   잠그는 순간 기억도 버린다.
             if(locked) pvPaintDrop(nb.id);

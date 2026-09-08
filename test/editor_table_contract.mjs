@@ -62,8 +62,24 @@ check('배율을 바꾸면 고스트를 크기·위치 모두 다시 맞춘다',
   fn('sizeTextGhost').includes('moveTextGhost(lastMouse.clientX')
   && fn('sizeTextGhost').includes('moveTableGhost(lastMouse.clientX'));
 
-check('표 삽입은 크기 입력 뒤 자유 배치 모드로 전환한다',
-  fn('openTableModal').includes('beginTablePlacement') && html.includes('id="tableGhost"'));
+check('표 삽입 버튼은 브라우저 prompt 대신 자체 크기 모달을 연다 (14.39.2 사용자 보고)',
+  !fn('openTableModal').includes('prompt(') && fn('openTableModal').includes('openTableSizeModal')
+  && html.includes('id="tableSizeModal"') && css.includes('.ts-cell'));
+check('표 크기 모달은 수식 넣기와 같은 앱 모달 디자인 언어를 쓴다',
+  css.includes('.tblsize-head{') && css.includes('.tblsize-actions button.primary')
+  && html.match(/id="tableSizeModal"[^>]*class="modal-bg"/));
+check('표 크기 모달 격자는 미리보기(포인터)와 선택(클릭)으로 크기를 정한다',
+  fn('tblSizeCellHover').includes("closest('.ts-cell')") && fn('tblSizeCellClick').includes('confirmTableSizeModal')
+  && fn('confirmTableSizeModal').includes('beginTablePlacement'));
+check('표 크기 상한은 삽입 상한(40행·20열)과 같고 스피너로도 넘지 못한다',
+  fn('tblSizeSet').includes('Math.min(40') && fn('tblSizeSet').includes('Math.min(20,')
+  && html.includes("tblSizeStep('rows',1)") && html.includes("tblSizeStep('cols',1)"));
+check('우클릭 표 넣기도 같은 모달을 쓰고 우클릭한 자리에 놓는다',
+  fn('openTableSizeModal').includes('insertTable') && /a==='new-table'\)\{\s*(?:\/\/[^\n]*\n\s*)*openTableSizeModal\(\{pageIdx:pi,x:lastMouse\.x,y:lastMouse\.y\}\)/.test(js));
+check('Esc로 표 크기 모달도 닫을 수 있다',
+  fn('closeTopOverlay').includes("getElementById('tableSizeModal').style.display==='flex'){ closeTableSizeModal(); return true; }"));
+check('표 크기만 정한 뒤 자유 배치 모드로 전환한다',
+  fn('confirmTableSizeModal').includes('closeTableSizeModal()') && html.includes('id="tableGhost"'));
 check('표 배치는 종이 클릭 좌표를 표 중심으로 사용한다',
   /if\(tablePlace\)\{[\s\S]*?p\.x-cfg\.w\/2[\s\S]*?insertTable\(cfg\.rows,cfg\.cols,pageIdx/.test(js));
 check('Esc로 표 배치 모드를 취소할 수 있다',

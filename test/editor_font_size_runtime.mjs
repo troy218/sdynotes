@@ -9,7 +9,7 @@
      ① Alt+휠 배율이 상자의 '글자 크기'로 저장되고
      ② 이어서 '+'를 눌러도 지금 보이는 크기에서 더 커지며
      ③ 그 값이 서버(메모)까지 저장되고
-     ④ 글꼴 목록의 미리보기 문구가 'abc 가나다' 인지
+     ④ 글꼴 목록이 각 글꼴의 한국어·영어 이름을 '해당 글꼴 자체'로 그리는지
    를 확인한다. */
 import assert from 'node:assert/strict';
 import net from 'node:net';
@@ -157,13 +157,25 @@ try {
   const savedFS = memo?.pages?.[0]?.els?.[0]?.fontSize;
   check(`저장된 본문에도 글자 크기가 남는다 (${savedFS}px)`, savedFS === afterPlus);
 
-  // ⑤ 글꼴 미리보기 문구
+  // ⑤ 글꼴 메뉴: 한국어·영어 이름을 해당 글꼴로
   document.getElementById('fontBtn').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await wait(80);
-  const samples = [...document.querySelectorAll('#fontMenu .fi-sample')].map(n => (n.textContent || '').trim());
-  check('글꼴 미리보기가 그려진다', samples.length > 0);
-  check('미리보기 문구는 "abc 가나다" 다', samples.every(s => s === 'abc 가나다'));
-  check('미리보기에 "한글" 이 없다', samples.every(s => s.indexOf('한글') < 0));
+  const fontItems = [...document.querySelectorAll('#fontMenu .font-item')];
+  check('글꼴 메뉴가 그려진다', fontItems.length > 0);
+  const samples = fontItems.map(n => n.querySelector('.fi-sample'));
+  check('각 항목이 해당 글꼴로 그려진다', samples.every(x => x && (x.style.fontFamily || '').length > 0));
+  const fontTexts = fontItems.map(n => (n.textContent || '').trim());
+  check('예시 문구 "abc 가나다" 를 쓰지 않는다', fontTexts.every(t => t.indexOf('abc 가나다') < 0));
+  check('한국어 이름이 보인다 (프리텐다드)', fontTexts.some(t => t.indexOf('프리텐다드') >= 0));
+  check('영어 이름이 보인다 (Pretendard)', fontTexts.some(t => t.indexOf('Pretendard') >= 0));
+  const bothInFontBox = fontItems.some(n => {
+    const box = n.querySelector('.fi-sample');
+    if (!box) return false;
+    const ko = box.querySelector('.fi-ko'), en = box.querySelector('.fi-en');
+    return ko && en && (ko.textContent || '').trim().length > 0 && (en.textContent || '').trim().length > 0;
+  });
+  check('한국어·영어 이름이 해당 글꼴 상자 안에 함께 있다', bothInFontBox);
+  check('메뉴에 "한글" 이 없다', fontTexts.every(t => t.indexOf('한글') < 0));
 
   const fatal = errors.filter(Boolean);
   check('치명적 런타임 오류가 없다', fatal.length === 0);

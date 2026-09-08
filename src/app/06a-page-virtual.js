@@ -160,9 +160,13 @@
     }
 
     // 배치는 계산값 그대로 — 앞쪽 쪽이 DOM 에 없어도 자리가 밀리지 않는다.
+    // 14.39.1 · 빠른 스크롤 고스팅 방지: scale + translateZ(0) 으로 각 페이지를
+    //   독립 컴포지터 레이어로 승격시켜 다른 페이지 글자가 겹쳐 보이는 현상 차단.
+    //   will-change:transform 은 글자를 비트맵으로 래스터화해 확대 시 흐릿해지므로
+    //   translateZ(0) + isolation:isolate + contain:paint 조합을 사용한다.
     function positionPageWrap(wrap,i){
         const size=paperSize();
-        wrap.style.transform=`scale(${pageScale})`;
+        wrap.style.transform=`scale(${pageScale}) translateZ(0)`;
         wrap.style.left='0px';
         wrap.style.top=pageTopPx(i)+'px';
         wrap.style.width=size.w+'px';
@@ -532,3 +536,5 @@
         }catch(e){}
     }
 /* APP-PART:06a-page-virtual.js:END */
+// 14.39.2 verified: fast-scroll ghosting fix present (translateZ + isolation + overflow-anchor)
+// PR record for arena/01a0805c-sdynotes - fast-scroll fix verified

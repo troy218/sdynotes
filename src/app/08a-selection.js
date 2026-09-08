@@ -161,7 +161,8 @@
             if(!w) return;
             const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
             const c=w.querySelector('.tb-content');
-            const nh=c.innerHTML===w._sdyViewHtml?el.html:imathCollapse(stripWF(c.innerHTML));
+            // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
+            const nh=c.innerHTML===w._sdyViewHtml?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
             const nfs=parseFloat(c.style.fontSize)||16;
             if(nh!==el.html||nfs!==el.fontSize){
                 el.html=nh; el.fontSize=nfs; changed=true;

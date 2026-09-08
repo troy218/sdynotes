@@ -453,9 +453,9 @@
         // rAF 대기 중에 mouseup/touchend 가 먼저 온 경우, 마지막 포인트를 놓치지 않고
         // 미리 반영한다. (특히 지우개는 몇 ms 만에 끝날 수 있어 이 flush 가 없으면
         //  빠른 스와이프가 안 지워진다)
-        if(drawing && (_drawEv || _drawEvT)){
-            try{ if(_drawEvT) drawMove(_drawEvT); else if(_drawEv) drawMove(_drawEv); }catch(e){}
-            _drawEv=null; _drawEvT=null;
+        if(drawing && _drawEvT){
+            try{ if(_drawEvT) drawMove(_drawEvT); }catch(e){}
+            _drawEvT=null;
         }
         lastErase=null;
         if(!drawing) return;
@@ -595,7 +595,6 @@
         const s=e.target.closest('.draw-surface');
         if(s&&penActive) drawStart(e,+s.closest('.paper').dataset.pageIdx);
     },true);
-    let _drawRaf=0, _drawEv=null;
     let _drawRafT=0, _drawEvT=null;
     // ★ 펜 호버 필터: Apple Pencil 이 화면 위에 있지만 닿지 않았을 때
     //   (pressure===0, buttons===0) 발생하는 pointermove 를 무시한다.
@@ -604,9 +603,8 @@
     sdyAddPointerCompat(document,'pointermove',e=>{
         if(!drawing) return;
         if(e.pointerType==='pen' && e.pressure===0 && e.buttons===0) return;
-        _drawEv=e;
-        if(_drawRaf) return;
-        _drawRaf=requestAnimationFrame(()=>{ _drawRaf=0; if(drawing&&_drawEv) drawMove(_drawEv); });
+        // 펜/마우스는 rAF 묶음 없이 바로 그려 지연(선이 현재 위치보다 늦게 그려짐)을 없앤다.
+        try{ drawMove(e); }catch(err){}
     },{passive:true});
     // ★ pointercancel 추가 — 펜이 화면 밖으로 나가면 그리기 종료
     sdyAddPointerCompat(document,'pointerup',()=>{ if(drawing) drawEnd(); });

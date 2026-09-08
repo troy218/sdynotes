@@ -372,8 +372,21 @@
                     // DOM 삽입 뒤 브라우저가 할 스타일/레이아웃 비용도 제한한다.
                     // 글상자 36개라도 단어가 2160개면 '가벼운 쪽'이 아니다.
                 }while(at<els.length&&performance.now()<until&&weight<12000);
-                const flushBags=()=>{ imgL.appendChild(bags.img); if(fillL) fillL.appendChild(bags.fill); svg.appendChild(bags.svg); txtL.appendChild(bags.txt); };
-                flushBags();
+                // 14.39.1 · 빠른 스크롤 시 다른 페이지 글자가 겹쳐 보이는 버그 방지:
+                //   flush 직전에 paper가 여전히 살아 있고 같은 idx의 shell인지 재확인.
+                //   unmount/재사용 경합 시 이전 페이지 텍스트가 새 페이지에 붙는 것을 차단.
+                const flushBags=()=>{
+                    if(!_pageJobLive(job)||_pageRenderTok[idx]!==tok) return false;
+                    if(!paper.isConnected||paperAt(idx)!==paper) return false;
+                    // 각 레이어가 여전히 같은 paper에 속해 있는지 확인 (detach 방지)
+                    if(imgL.parentNode!==paper||txtL.parentNode!==paper) return false;
+                    imgL.appendChild(bags.img);
+                    if(fillL) fillL.appendChild(bags.fill);
+                    svg.appendChild(bags.svg);
+                    txtL.appendChild(bags.txt);
+                    return true;
+                };
+                if(!flushBags()){ _cancelPageRender(idx); return; }
                 if(at>=els.length) finish();
             };
             const cheap=els.length<=120&&els.reduce((n,e)=>n+256+(e.html||'').length+(e.pts||[]).length*24,0)<6000;

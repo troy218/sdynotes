@@ -271,25 +271,27 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         square:{label:'정사각',w:900,h:900},
         wide:{label:'와이드',w:1280,h:720}
     };
-    // 선택 가능한 글꼴 (한국어/영어)
+    // 선택 가능한 글꼴 — ko: 한국어 이름, en: 영어 이름.
+    //   글꼴 메뉴는 ko + en 을 '해당 글꼴 자체'로 그린다 (예시 문구 abc 가나다 대신).
+    //   label 은 툴바·토스트용 짧은 이름 (한국어 우선, 영어 글꼴은 영어).
     const FONTS=[
-        {id:'pretendard',label:'프리텐다드',css:"'Pretendard Variable','Pretendard',sans-serif"},
-        {id:'gaegu',  label:'개구쟁이',     css:"'Gaegu','Pretendard Variable',cursive"},
-        {id:'jua',    label:'주아',        css:"'Jua','Pretendard Variable',sans-serif"},
-        {id:'pen',    label:'나눔손글씨',   css:"'Nanum Pen Script','Pretendard Variable',cursive"},
-        {id:'dohyeon',label:'도현',        css:"'Do Hyeon','Pretendard Variable',sans-serif"},
-        {id:'gowun',  label:'고운돋움',     css:"'Gowun Dodum','Pretendard Variable',sans-serif"},
-        {id:'poor',   label:'푸어스토리',   css:"'Poor Story','Pretendard Variable',cursive"},
-        {id:'blackhan',label:'검은고딕',    css:"'Black Han Sans','Pretendard Variable',sans-serif"},
-        {id:'myeongjo',label:'나눔명조',    css:"'Nanum Myeongjo',serif"},
-        {id:'times',  label:'Times New Roman', css:"'SDY Times','Times New Roman','Liberation Serif','Nanum Myeongjo',serif"},
-        {id:'cmroman',label:'Computer Modern',css:"'SDY Computer Modern','Latin Modern Roman','Times New Roman',serif"},
-        {id:'arial',label:'Arial / Helvetica',css:"'SDY Helvetica',Arial,'Liberation Sans',sans-serif"},
-        {id:'coding', label:'코딩체',      css:"'Nanum Gothic Coding',monospace"},
-        {id:'inter',  label:'Inter',      css:"'Inter','Pretendard Variable',sans-serif"},
-        {id:'playfair',label:'Playfair',  css:"'Playfair Display',serif"},
-        {id:'caveat', label:'Caveat',     css:"'Caveat',cursive"},
-        {id:'mono',   label:'Roboto Mono',css:"'Roboto Mono',monospace"}
+        {id:'pretendard',label:'프리텐다드',ko:'프리텐다드',en:'Pretendard',css:"'Pretendard Variable','Pretendard',sans-serif"},
+        {id:'gaegu',  label:'개구쟁이',ko:'개구쟁이',en:'Gaegu',css:"'Gaegu','Pretendard Variable',cursive"},
+        {id:'jua',    label:'주아',ko:'주아',en:'Jua',css:"'Jua','Pretendard Variable',sans-serif"},
+        {id:'pen',    label:'나눔손글씨',ko:'나눔손글씨',en:'Nanum Pen Script',css:"'Nanum Pen Script','Pretendard Variable',cursive"},
+        {id:'dohyeon',label:'도현',ko:'도현',en:'Do Hyeon',css:"'Do Hyeon','Pretendard Variable',sans-serif"},
+        {id:'gowun',  label:'고운돋움',ko:'고운돋움',en:'Gowun Dodum',css:"'Gowun Dodum','Pretendard Variable',sans-serif"},
+        {id:'poor',   label:'푸어스토리',ko:'푸어스토리',en:'Poor Story',css:"'Poor Story','Pretendard Variable',cursive"},
+        {id:'blackhan',label:'검은고딕',ko:'검은고딕',en:'Black Han Sans',css:"'Black Han Sans','Pretendard Variable',sans-serif"},
+        {id:'myeongjo',label:'나눔명조',ko:'나눔명조',en:'Nanum Myeongjo',css:"'Nanum Myeongjo',serif"},
+        {id:'times',  label:'Times New Roman',ko:'타임스 뉴 로먼',en:'Times New Roman',css:"'SDY Times','Times New Roman','Liberation Serif','Nanum Myeongjo',serif"},
+        {id:'cmroman',label:'Computer Modern',ko:'컴퓨터 모던',en:'Computer Modern',css:"'SDY Computer Modern','Latin Modern Roman','Times New Roman',serif"},
+        {id:'arial',label:'Arial / Helvetica',ko:'에어리얼',en:'Arial / Helvetica',css:"'SDY Helvetica',Arial,'Liberation Sans',sans-serif"},
+        {id:'coding', label:'코딩체',ko:'코딩체',en:'Nanum Gothic Coding',css:"'Nanum Gothic Coding',monospace"},
+        {id:'inter',  label:'Inter',ko:'인터',en:'Inter',css:"'Inter','Pretendard Variable',sans-serif"},
+        {id:'playfair',label:'Playfair',ko:'플레이페어',en:'Playfair Display',css:"'Playfair Display',serif"},
+        {id:'caveat', label:'Caveat',ko:'카베아트',en:'Caveat',css:"'Caveat',cursive"},
+        {id:'mono',   label:'Roboto Mono',ko:'로보토 모노',en:'Roboto Mono',css:"'Roboto Mono',monospace"}
     ];
     function fontCSS(id){ const f=FONTS.find(x=>x.id===id); return f?f.css:FONTS[0].css; }
     let curFont='pretendard';
@@ -768,7 +770,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return {...o};
     }
     function _cfgCacheDrop(id){ if(id==null||_cfgCacheId===id){ _cfgCacheId=null; _cfgCacheRaw=null; _cfgCacheObj=null; } }
-    // ── 14.39.1 · 노트 설정(nb_*) '개정 번호' ────────────────────────────
+    // ── 14.39.4 · 노트 설정(nb_*) '개정 번호' ────────────────────────────
     //   홈 카드의 미리보기는 한 번 그려 둔 HTML을 기억했다가 홈을 다시 그릴 때
     //   그대로 얹는다(빈 프레임 = 깜빡임 방지). 그 기억을 언제 버릴지를 이
     //   번호로 판단한다 — nb_* 에 쓰는 모든 변경(setCfg)이 번호를 올린다.
@@ -1263,9 +1265,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function renderPageStatic(page, size, paperCls){
         let html='';
         const strokes=[];
+        // 카드 축소판은 '편집 화면의 확대율'을 따라가지 않는다.
+        // --bw 는 1.6/배율 이라 노트를 보고 나온 뒤에는 그 값이 #pagesStage 에 남아
+        // 같은 노트가 다른 테두리·다른 배치로 다시 그려진다(= 홈이 새로고침된 것처럼 보인다).
+        // 안쪽 조립(_expTextInner/_expLatexInner)은 화면과 그대로 공유하고 테두리만 고정한다.
+        const bw=2;
         (page.els||[]).forEach(el=>{
             if(el.type==='image'){
-                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:2px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:${bw}px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
                       `<img src="${el.url||el.localURL||''}" style="width:100%;height:100%;object-fit:fill;display:block;border-radius:2px;"></div>`;
             }else if(el.type==='legacyDraw'){
                 html+=`<img src="${el.url}" style="position:absolute;left:0;top:0;width:${size.w}px;height:${size.h}px;z-index:3;">`;
@@ -1286,25 +1293,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         (page.els||[]).forEach(el=>{
             if(el.type==='latex'){
-                // 9.0 · 미리보기에서도 가져온 수식은 원문 잉크 상자 안에 가둔다.
-                const imp=!!el.imported;
-                const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;
-                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${bw}px;height:${bh}px;`+
-                      `z-index:5;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;display:flex;align-items:${imp?'center':(el.displayMath?'center':'flex-end')};${el.displayMath?'justify-content:center;':''}`+
-                      `font-size:${el.fontSize||20}px;line-height:1.05;color:var(--text1);overflow:hidden;">${latexHTML(el.latex||'',!!el.displayMath)}</div>`;
+                // 화면과 같은 상자·안쪽 배치 (미리보기라 맞춤 측정은 생략 — 카드 축소판이라 차이 없음)
+                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`+
+                      `z-index:5;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                      `<div style="${_expLatexInner(el,bw,el.fontSize||20,'var(--text1)')}">${latexHTML(el.latex||'',!!el.displayMath)}</div></div>`;
                 return;
             }
             if(el.type!=='text') return;
-            const inner=el.tight
-                ? `width:100%;height:100%;padding:0;box-sizing:border-box;font-size:${el.fontSize||16}px;line-height:1;color:var(--text1);`+
-                  `font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`+
-                  `overflow:visible;position:relative;`
-                : `width:100%;height:100%;min-width:60px;min-height:28px;padding:8px 12px;border:2px solid transparent;`+
-                  `box-sizing:border-box;font-size:${el.fontSize||16}px;line-height:1.5;color:var(--text1);`+
-                  `font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`+
-                  `white-space:pre-wrap;word-break:break-word;overflow:hidden;`;
             html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;z-index:4;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
-                  `<div style="${inner}">${el.html||''}</div></div>`;
+                  `<div style="${_expTextInner(el,bw,'var(--text1)')}">${el.html||''}</div></div>`;
         });
         // .ppv = 미리보기 전용 컨테이너 (에디터 .paper 스크립트와 충돌 방지)
         const pat=paperPatternSVG((paperCls||'').replace('paper-',''),size);
@@ -2142,7 +2139,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             _stackTransforms(cards,stack.classList.contains('fanned'));
         });
     }
-    // ── 14.39.1 · 홈 카드 미리보기 '페인트 기억' ────────────────────────────
+    // ── 14.39.4 · 홈 카드 미리보기 '페인트 기억' ────────────────────────────
     // 뒤로가기로 노트를 닫고 홈에 돌아오면 홈을 다시 그린다 — 방금 본 노트를
     // '최근 편집' 줄로 옮겨 놓아야 하므로 카드 DOM을 새로 만든다. 그때마다
     // 미리보기를 '빈 프레임'으로 만든 뒤 다시 채웠기 때문에 홈 전체가 한 순간
@@ -2326,7 +2323,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nb.title||'새 노트')}</span>
                     <span class="live-dot" data-nb="${nb.id}" style="display:none;flex-shrink:0;margin-left:8px;font-size:10.5px;font-weight:700;color:#059669;">●</span>
                 </div>`;
-            // 14.39.1 · 그려 둔 미리보기가 있으면 빈 프레임 없이 곧바로 얹는다.
+            // 14.39.4 · 그려 둔 미리보기가 있으면 빈 프레임 없이 곧바로 얹는다.
             //   잠긴 노트는 기억을 쓰지 않는다(본문은 흐리게 가려져야 한다) —
             //   잠그는 순간 기억도 버린다.
             if(locked) pvPaintDrop(nb.id);
@@ -4564,7 +4561,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   서버 AI(task=bug)가 제목·증상·재현 방법·기대 동작·메모로 정리해 주고,
     //   이 일지에 기록된다(어느 노트와도 무관한 앱 전체 문제). 기록은 02d 의
     //   설정 동기화와 같은 LWW 키('buglog:<id>')를 타고 모든 기기·모든 사람이
-    //   함께 본다 — 관리자 전용이 아니라 누구나 보고, 누구나 지울 수 있다.
+    //   함께 본다 — 누구나 보되, 지우기(X)는 관리자로 로그인한 경우에만 노출·동작한다.
     //   설정 → '버그 일지' 줄의 [보기]를 눌러야 목록이 열리고(스크롤), 열린
     //   목록에서 항목마다 X 로 그 기록만 지운다.
     const BUGLOG_KEY='sdy_buglog';
@@ -4608,8 +4605,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return e;
     }
     try{ window.sdyBuglogAdd=buglogAdd; }catch(e){}
-    // 목록에서 X — 그 기록 하나만 지운다 (모두가 쓸 수 있는 삭제)
+    // 목록에서 X — 그 기록 하나만 지운다 (관리자로 로그인한 경우에만 노출·동작)
     function delBugEntry(id){
+        // 모두가 지울 수 없게 — 관리자 전용 동작
+        if(!isAdmin()){ try{ toast('관리자로 로그인해야 지울 수 있어요',1800); }catch(e){} return; }
         id=String(id||'');
         const a=getBugEntries(), b=a.filter(x=>String(x.id)!==id);
         if(a.length===b.length) return;
@@ -4680,11 +4679,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         el.innerHTML=a.map(x=>{
             const who=x.who?('<span class="buglog-who">'+escBug(x.who)+'</span>'):'';
             const ver=x.ver?('<span class="buglog-ver">v'+escBug(x.ver)+'</span>'):'';
+            // X 버튼은 관리자로 로그인한 경우에만 — 모두가 지울 수 없게 막는다
+            const xBtn=isAdmin()
+                ? '<button type="button" class="buglog-x" title="이 기록 지우기" onclick="delBugEntry(\''+escBug(x.id)+'\')"><i class="ri-close-line"></i></button>'
+                : '';
             return '<div class="buglog-item">'
                 +'<div class="buglog-head">'
                 +'<i class="ri-bug-line" aria-hidden="true"></i>'
                 +'<b class="buglog-title">'+escBug(x.title||'버그 신고')+'</b>'
-                +'<button type="button" class="buglog-x" title="이 기록 지우기" onclick="delBugEntry(\''+escBug(x.id)+'\')"><i class="ri-close-line"></i></button>'
+                +xBtn
                 +'</div>'
                 +'<div class="buglog-meta">'+bugFmtTime(x.t)+' '+who+' '+ver+'</div>'
                 +(x.text?'<div class="buglog-body">'+bugBodyHtml(x.text)+'</div>':'')
@@ -4915,6 +4918,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         try{ if(typeof renderListPop==='function') renderListPop(); }catch(e){}
         try{ if(typeof renderTitle==='function') renderTitle(); }catch(e){}
+        // 열려 있는 버그 일지 목록도 관리자 여부에 맞춰 X 노출을 갱신한다
+        try{ if(typeof bugRepaintIfOpen==='function') bugRepaintIfOpen(); }catch(e){}
         if(!adminMode) closeVault();
         const btn=document.getElementById('adminToggleBtn');
         if(btn){
@@ -6016,7 +6021,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     async function openNB(nb){
         if(window._closeEdT){
             clearTimeout(window._closeEdT); window._closeEdT=null;
-            // 14.39.1 · '닫기 예약'(슬라이드아웃이 끝난 뒤 종이를 내리는 일)이
+            // 14.39.4 · '닫기 예약'(슬라이드아웃이 끝난 뒤 종이를 내리는 일)이
             //   취소되는 길이다. 예약에 들어 있던 정리를 여기서 바로 한다 —
             //   이어서 renderPages() 가 새 노트의 종이를 채우므로 빈 화면이
             //   남지도, 이전 노트의 종이가 새 노트 뒤에 숨어 있지도 않는다.
@@ -6174,7 +6179,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         openNav(closeEditor);                                          // 뒤로가기 → 에디터 닫기
     }
 
-    // ── 14.39.1 · 에디터 종이(본문) 정리 ────────────────────────────────
+    // ── 14.39.4 · 에디터 종이(본문) 정리 ────────────────────────────────
     // 뒤로가기를 누르면 에디터 패널은 .4s 동안 오른쪽으로 미끄러져 나간다.
     // 예전엔 닫는 즉시 resetPageWork() + pagesStage.innerHTML='' 를 실행해서,
     // 빠져나가는 0.4초 동안 패널이 '내용이 없는 하얀 판'이 됐다 — 사용자가
@@ -6811,9 +6816,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
 
     // 배치는 계산값 그대로 — 앞쪽 쪽이 DOM 에 없어도 자리가 밀리지 않는다.
+    // 14.39.1 · 빠른 스크롤 고스팅 방지: scale + translateZ(0) 으로 각 페이지를
+    //   독립 컴포지터 레이어로 승격시켜 다른 페이지 글자가 겹쳐 보이는 현상 차단.
+    //   will-change:transform 은 글자를 비트맵으로 래스터화해 확대 시 흐릿해지므로
+    //   translateZ(0) + isolation:isolate + contain:paint 조합을 사용한다.
     function positionPageWrap(wrap,i){
         const size=paperSize();
-        wrap.style.transform=`scale(${pageScale})`;
+        wrap.style.transform=`scale(${pageScale}) translateZ(0)`;
         wrap.style.left='0px';
         wrap.style.top=pageTopPx(i)+'px';
         wrap.style.width=size.w+'px';
@@ -7183,6 +7192,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
     }
 /* APP-PART:06a-page-virtual.js:END */
+// 14.39.2 verified: fast-scroll ghosting fix present (translateZ + isolation + overflow-anchor)
+// PR record for arena/01a0805c-sdynotes - fast-scroll fix verified
 
 /* === src/app/06b-read-layer.js ===
    읽기 우선 레이어 · 고화질 배경 · 자원 정리
@@ -7558,8 +7569,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     // DOM 삽입 뒤 브라우저가 할 스타일/레이아웃 비용도 제한한다.
                     // 글상자 36개라도 단어가 2160개면 '가벼운 쪽'이 아니다.
                 }while(at<els.length&&performance.now()<until&&weight<12000);
-                const flushBags=()=>{ imgL.appendChild(bags.img); if(fillL) fillL.appendChild(bags.fill); svg.appendChild(bags.svg); txtL.appendChild(bags.txt); };
-                flushBags();
+                // 14.39.1 · 빠른 스크롤 시 다른 페이지 글자가 겹쳐 보이는 버그 방지:
+                //   flush 직전에 paper가 여전히 살아 있고 같은 idx의 shell인지 재확인.
+                //   unmount/재사용 경합 시 이전 페이지 텍스트가 새 페이지에 붙는 것을 차단.
+                const flushBags=()=>{
+                    if(!_pageJobLive(job)||_pageRenderTok[idx]!==tok) return false;
+                    if(!paper.isConnected||paperAt(idx)!==paper) return false;
+                    // 각 레이어가 여전히 같은 paper에 속해 있는지 확인 (detach 방지)
+                    if(imgL.parentNode!==paper||txtL.parentNode!==paper) return false;
+                    imgL.appendChild(bags.img);
+                    if(fillL) fillL.appendChild(bags.fill);
+                    svg.appendChild(bags.svg);
+                    txtL.appendChild(bags.txt);
+                    return true;
+                };
+                if(!flushBags()){ _cancelPageRender(idx); return; }
                 if(at>=els.length) finish();
             };
             const cheap=els.length<=120&&els.reduce((n,e)=>n+256+(e.html||'').length+(e.pts||[]).length*24,0)<6000;
@@ -8062,7 +8086,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     if(c&&el.type==='text'&&el.fontSize){
                         c.style.fontSize=el.fontSize+'px';
                         // 상자 안에서 '이 단어만' 키워 둔 글자도 같은 배율로 함께
-                        if(scaleInlineFS(c,f)) el.html=imathCollapse(stripWF(c.innerHTML));
+                        // (타이핑 닻도 함께 걷어낸다 — 문서에 남지 않게)
+                        if(scaleInlineFS(c,f)) el.html=_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
                     }
                 }
             }
@@ -8621,30 +8646,39 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
         return '<span class="latex-fallback">'+esc(String(src||''))+'</span>';
     }
-    // 9.0 · 수식이 원문 잉크 상자를 얼마나 넘치는지 실제로 재서 축소 배율을 낸다.
+    // 9.0 · 수식이 상자를 얼마나 넘치는지 실제로 재서 축소 배율을 낸다.
     //  내보내기(PDF/JPG)는 화면과 달리 requestAnimationFrame 보정 기회가 없으므로,
     //  화면 밖 측정용 상자에 한 번 그려 보고 넘치는 만큼 미리 줄여서 굽는다.
-    let _fitProbe=null;
+    //  측정은 paintLatex 와 '같은 상자·같은 식'으로 — 실제 .latex-box/.latex-content
+    //  클래스를 입힌 화면 밖 상자에 같은 크기로 그려 재므로, 편집 화면의 맞춤값과
+    //  어긋나지 않는다 (가져온 수식뿐 아니라 직접 넣은 수식도 화면처럼 줄인다).
+    let _fitProbeWrap=null, _fitProbeInner=null;
     function latexFitScale(el){
         try{
-            const bw=el.inkW||el.w, bh=el.inkH||el.h;
-            if(!bw||!bh) return 1;
-            if(!_fitProbe){
-                _fitProbe=document.createElement('div');
-                _fitProbe.style.cssText='position:fixed;left:-99999px;top:0;visibility:hidden;'+
-                    'white-space:nowrap;pointer-events:none;z-index:-1;';
-                document.body.appendChild(_fitProbe);
+            const base=el.fontSize||20;
+            if(!_fitProbeWrap||!_fitProbeWrap.isConnected){
+                _fitProbeWrap=document.createElement('div');
+                _fitProbeInner=document.createElement('div');
+                _fitProbeInner.className='latex-content';
+                _fitProbeWrap.appendChild(_fitProbeInner);
+                document.body.appendChild(_fitProbeWrap);
             }
-            _fitProbe.style.fontSize=(el.fontSize||20)+'px';
-            _fitProbe.style.lineHeight='1.05';
-            _fitProbe.innerHTML=latexHTML(el.latex||'',!!el.displayMath);
-            // Match the actual imported .latex-box, not KaTeX's default 1.21em
-            // font and 1em display margins (which shrank export-only formulas).
-            const k=_fitProbe.querySelector('.katex'), d=_fitProbe.querySelector('.katex-display');
-            if(k){ k.style.fontSize='1em'; k.style.lineHeight='1.05'; }
-            if(d) d.style.margin='0';
-            const rw=Math.max(1,_fitProbe.scrollWidth), rh=Math.max(1,_fitProbe.scrollHeight);
-            return Math.max(.35,Math.min(1,Math.min(bw/rw,bh/rh)));
+            const imp=!!el.imported, disp=!!el.displayMath;
+            _fitProbeWrap.className='latex-box'+(disp?' display-math':'')+(imp?' imported':'');
+            _fitProbeWrap.style.cssText='position:fixed;left:-99999px;top:0;visibility:hidden;pointer-events:none;'+
+                `width:${Math.max(1,el.w||1)}px;height:${Math.max(1,el.h||1)}px;`;
+            // --bw 는 #pagesStage 아래에서만 정해지므로 화면 밖 상자에는 직접 준다
+            _fitProbeInner.style.borderWidth=_expBorderW()+'px';
+            _fitProbeInner.style.fontSize=base+'px';
+            _fitProbeInner.innerHTML=latexHTML(el.latex||'',disp);
+            // ↓ paintLatex 의 맞춤식과 한 글자도 다르지 않게.
+            const node=_fitProbeInner;
+            const padW=imp?1:8, padH=imp?0:4;
+            const aw=Math.max(8,(imp?(el.inkW||node.clientWidth):node.clientWidth)-padW);
+            const ah=Math.max(8,(imp?(el.inkH||node.clientHeight):node.clientHeight)-padH);
+            const rw=Math.max(1,node.scrollWidth), rh=Math.max(1,node.scrollHeight);
+            const k=Math.min(1,aw/rw,ah/rh);
+            return k<.995?Math.max(.35,k):1;
         }catch(e){ return 1; }
     }
 
@@ -9090,7 +9124,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const font=[s.style.fontStyle||c.style.fontStyle||'normal',s.style.fontWeight||c.style.fontWeight||'400',fs+'px',
                 s.style.fontFamily||c.style.fontFamily].join(' ');
             const ctx=_pdfMeasureCtx; ctx.font=font;
-            // The zero-width copy/search spacer must not participate in width.
+            // The out-of-flow copy/search spacer must not participate in width.
             const text=(s.textContent||'').trimEnd(), measured=ctx.measureText(text);
             let baseline=_pdfBaselineMetrics.get(font);
             if(baseline==null){
@@ -9141,6 +9175,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     }catch(e){}
                 }
             }
+            // Gap spacer sits at left:100% (out of flow). Record its unscaled
+            // width so the write pass can scaleX it across the PDF word gap.
+            try{
+                const z=s.querySelector&&s.querySelector('.zsp');
+                if(z){
+                    let zw=z.scrollWidth||z.offsetWidth||0;
+                    if(!(zw>0)) zw=m.fs*0.25;
+                    m.zspW=zw;
+                }
+            }catch(e){}
             if(!job.groups.has(m.y)) job.groups.set(m.y,[]);
             job.groups.get(m.y).push(m);
             job.maxR=Math.max(job.maxR,m.x+m.w); job.maxB=Math.max(job.maxB,m.y+m.h);
@@ -9150,6 +9194,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             job.rows=Array.from(job.groups.values()); job.rowAt=0;
             job.transforms=new Array(sps.length).fill(null);
             job.tops=new Array(sps.length).fill(null);
+            job.zspSx=new Array(sps.length).fill(null);
         }
         while(job.rowAt<job.rows.length){
             const group=job.rows[job.rowAt++];
@@ -9160,6 +9205,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     // Fit justified runs too; never impose an 84% compression floor.
                     job.transforms[m.i]=m.w>0?'scaleX('+(m.pdfW/m.w).toFixed(5)+')':'';
                     if(m.baseline!=null) job.tops[m.i]=+(m.pdfBase-m.baseline).toFixed(3);
+                    const next=group[i+1];
+                    if(next&&m.zspW>0){
+                        const gap=next.x-(m.x+m.pdfW);
+                        const vis=Math.abs(m.w>0?m.pdfW/m.w:1)*m.zspW;
+                        if(gap>0.25&&vis>0.05){
+                            const zsx=gap/vis;
+                            if(Number.isFinite(zsx)) job.zspSx[m.i]=Math.max(0.05,Math.min(32,zsx));
+                        }
+                    }
                     return;
                 }
                 const next=group[i+1], avail=(next?next.x:job.cw)-m.x-0.5;
@@ -9171,7 +9225,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         return {c,el,sps,writeAt:0,rec:{html:el.html,w:el.w||0,h:el.h||0,fs:el.fontSize||0,
             font:el.font,weight:el.fontWeight,style:el.fontStyle,epoch:_tightFontEpoch,
-            ls:el.ls||0,wsp:el.wsp||0,lg:el.lg||1,fonts:_fontState(),transforms:job.transforms,tops:job.tops,
+            ls:el.ls||0,wsp:el.wsp||0,lg:el.lg||1,fonts:_fontState(),transforms:job.transforms,tops:job.tops,zspSx:job.zspSx,
             growR:!el.pdfText&&job.maxR>job.cw?job.maxR:0,growB:!el.pdfText&&job.maxB>job.ch?job.maxB:0}};
     }
     function _applyTightFit(fit,until,max){
@@ -9193,6 +9247,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(s.style.transform!==v) s.style.transform=v;
                 if(v&&s.style.transformOrigin!=='left center') s.style.transformOrigin='left center';
                 if(s.style.letterSpacing) s.style.letterSpacing='';
+            }
+            const zsx=rec.zspSx&&rec.zspSx[i];
+            if(zsx!=null){
+                try{
+                    const z=s.querySelector&&s.querySelector('.zsp');
+                    if(z){
+                        const zv='scaleX('+Number(zsx).toFixed(4)+')';
+                        if(z.style.transform!==zv) z.style.transform=zv;
+                        if(z.style.transformOrigin!=='left center') z.style.transformOrigin='left center';
+                    }
+                }catch(e){}
             }
             if(performance.now()>=until) break;
         }
@@ -9647,6 +9712,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         w.dataset.nbId=(curNB&&curNB.id)||'';
         w._sdyRv=doc&&doc.__rv;
         w.style.cssText=`left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`;
+        // 회전한 글상자도 그림·수식처럼 다시 그릴 때 자세를 유지한다
+        // (유지하지 않으면 다시 그릴 때마다 똑바로 서서 내보내기와 어긋난다)
+        applyBoxRotation(w,el);
         const c=document.createElement('div');
         c.className='tb-content'; c.contentEditable='false';
         c.style.fontSize=(el.fontSize||16)+'px';
@@ -9707,7 +9775,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(w.classList.contains('edit')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&
                (e.key.length===1||e.key==='Enter')) _ensurePendingTypingSpan(c);
         });
-        c.addEventListener('input',()=>{
+        // 한글 IME 조합 중에는 타이핑 span 안 텍스트 노드를 건드리지 않는다 —
+        // 조합 중인 노드를 고치면 조합이 끊겨 자모가 따로 확정되기 때문.
+        // 조합이 끝나는 순간(input isComposing=false·compositionend) 닻을 치운다.
+        c.addEventListener('compositionstart',()=>{ c._sdyComposing=true; });
+        c.addEventListener('compositionend',()=>{
+            c._sdyComposing=false;
+            try{ _cleanTypingMarks(c); }catch(e){}
+        });
+        c.addEventListener('input',e=>{
             w._caretV=(w._caretV||0)+1;   // 22.1 · 실시간 캐럿 좌표 캐시를 무효화하는 신호
             if(w.classList.contains('edit')){
                 commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
@@ -9720,6 +9796,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             w.classList.toggle('empty',em);
             // 엔진이 입력 뒤 캐럿을 inline 밖으로 옮긴 경우 다음 입력 전에 다시 준비한다.
             if(w.classList.contains('edit')) _ensurePendingTypingSpan(c);
+            // 타이핑 span 에 실제 글자가 들어왔으면 눈에 안 보이는 닻(ZWSP)을 치운다.
+            // 조합 중에는 건드리지 않는다(위 compositionstart/end 참조).
+            if(!c._sdyComposing&&!(e&&e.isComposing)){ try{ _cleanTypingMarks(c); }catch(_e){} }
             clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
         });
         // 편집 상자에서 포커스를 벗어나면 즉시 반영 (자동저장 신뢰성)
@@ -9862,7 +9941,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
         const c=w.querySelector('.tb-content'); if(!c) return;
         const viewOnly=c.innerHTML===w._sdyViewHtml;
-        const html=viewOnly?el.html:imathCollapse(stripWF(c.innerHTML));
+        // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
+        const html=viewOnly?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
         const fs=parseFloat(c.style.fontSize)||16;
         // Formatting commands may have changed model-only fields (font, align,
         // cellBg, etc.) before calling us. Those edits still need a dirty page;
@@ -9871,7 +9951,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         markPageEdited(+w.dataset.pageIdx);
         el.html=html; el.fontSize=fs;
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
-        el.w=w.offsetWidth; el.h=w.offsetHeight;
+        // 회전한 상자의 offset 크기는 외접 박스라서 그대로 쓰면 상자가 부풀며
+        // 자리가 어긋난다 → 똑바로 선 상자만 실측 크기를 되받는다.
+        if(!normalizedRotation(el.rotation)){ el.w=w.offsetWidth; el.h=w.offsetHeight; }
         w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
         w.classList.toggle('empty',!String((c.innerText!=null?c.innerText:c.textContent)||'').trim());
         saveDoc();
@@ -10307,7 +10389,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!w) return;
             const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
             const c=w.querySelector('.tb-content');
-            const nh=c.innerHTML===w._sdyViewHtml?el.html:imathCollapse(stripWF(c.innerHTML));
+            // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
+            const nh=c.innerHTML===w._sdyViewHtml?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
             const nfs=parseFloat(c.style.fontSize)||16;
             if(nh!==el.html||nfs!==el.fontSize){
                 el.html=nh; el.fontSize=nfs; changed=true;
@@ -13551,12 +13634,86 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return html;
     }
 
+    // ===== 표 크기 모달 (14.39.2 · 사용자 보고) =====
+    // '표 삽입'을 누르면 예전엔 브라우저 prompt(크롬 알림)가 떠 UI 통일성이 깨졌다.
+    // 이제 수식 넣기와 같은 앱 자체 모달(#tableSizeModal)에서 격자 미리보기와
+    // 행/열 스피너로 크기를 고른다. 확인 경로는 둘이다.
+    //   · 도구 막대 '표 삽입' 버튼·더보기 서랍 → 모달 → 넣기 → 고스트 배치 모드
+    //   · 우클릭 '표 넣기' → 같은 모달 → 넣기 → 우클릭한 자리에 곧바로 삽입
+    let tblSizeRows=3, tblSizeCols=3, tblSizeTarget=null;
+    // 격자 프리셋은 8행×10열 — 그 이상은 스피너로 40행×20열(tableInsertSize 상한)까지
+    const TBL_SIZE_GRID_R=8, TBL_SIZE_GRID_C=10;
+    // 마우스 환경에서는 격자를 미리 보고 클릭 한 번으로 넣는다. 터치는 미리보기가
+    // 없으므로 첫 탭은 고르기만 하고 '넣기'로 확정한다(1×1 오삽입 방지).
+    function tblSizeCanHover(){
+        try{ return typeof matchMedia==='function'&&matchMedia('(hover:hover) and (pointer:fine)').matches; }
+        catch(e){ return false; }
+    }
     function openTableModal(){
-        const v=prompt('표 크기를 입력하세요 (행 x 열)','3 x 3');
-        if(!v) return;
-        const m=String(v).match(/(\d+)\s*[x\u00d7,\s]\s*(\d+)/);
-        if(!m){ toast('예: 3 x 4 형식으로 입력해 주세요',2200); return; }
-        beginTablePlacement(+m[1],+m[2]);
+        // 도구 막대 경로 — 크기만 정하고 종이에서 자리를 눌러 배치한다(기존 흐름 유지).
+        openTableSizeModal(null);
+    }
+    function openTableSizeModal(target){
+        tblSizeTarget=target||null;
+        tblSizeSet(3,3);
+        const g=document.getElementById('tableSizeGrid');
+        if(g&&!g.childElementCount){
+            let h='';
+            for(let r=1;r<=TBL_SIZE_GRID_R;r++) for(let c=1;c<=TBL_SIZE_GRID_C;c++)
+                h+='<div class="ts-cell" data-r="'+r+'" data-c="'+c+'" role="gridcell" aria-label="'+r+'행 '+c+'열"></div>';
+            g.innerHTML=h;
+        }
+        const m=document.getElementById('tableSizeModal');
+        if(!m){ // 모달이 없는 환경(임베드 등) — 예전 흐름으로 폴백
+            if(tblSizeTarget) insertTable(tblSizeRows,tblSizeCols,tblSizeTarget.pageIdx,tblSizeTarget.x,tblSizeTarget.y);
+            else beginTablePlacement(tblSizeRows,tblSizeCols);
+            tblSizeTarget=null; return;
+        }
+        m.style.display='flex';
+        openNav(closeTableSizeModal);
+    }
+    function closeTableSizeModal(){
+        const m=document.getElementById('tableSizeModal');
+        if(m) m.style.display='none';
+        tblSizeTarget=null;
+        navDrop(closeTableSizeModal);
+    }
+    function tblSizeSet(r,c){
+        // tableInsertSize 와 같은 상한(40행·20열) — 모달에서 고른 크기가 곧삽입 크기
+        tblSizeRows=Math.max(1,Math.min(40,r|0||1));
+        tblSizeCols=Math.max(1,Math.min(20,c|0||1));
+        tblSizePaint();
+    }
+    function tblSizeStep(k,d){
+        if(k==='rows') tblSizeSet(tblSizeRows+d,tblSizeCols);
+        else tblSizeSet(tblSizeRows,tblSizeCols+d);
+    }
+    function tblSizePaint(){
+        const rb=document.getElementById('tableSizeRows'),cb=document.getElementById('tableSizeCols'),
+              b=document.getElementById('tableSizeBadge');
+        if(rb) rb.textContent=tblSizeRows;
+        if(cb) cb.textContent=tblSizeCols;
+        if(b) b.textContent=tblSizeRows+' × '+tblSizeCols;
+        document.querySelectorAll('#tableSizeGrid .ts-cell').forEach(n=>
+            n.classList.toggle('on',+n.dataset.r<=tblSizeRows&&+n.dataset.c<=tblSizeCols));
+    }
+    // 격자 위를 지나며 크기를 미리 본다(마우스). 값만 바뀔 뿐 확정은 아니다.
+    function tblSizeCellHover(e){
+        const c=e.target.closest&&e.target.closest('.ts-cell'); if(!c) return;
+        tblSizeSet(+c.dataset.r,+c.dataset.c);
+    }
+    // 격자를 누른 뒤 — 마우스는 미리보기를 보고 누른 것이므로 곧바로 넣고,
+    // 터치는 선택만 하고 '넣기' 버튼으로 확정한다.
+    function tblSizeCellClick(e){
+        const c=e.target.closest&&e.target.closest('.ts-cell'); if(!c) return;
+        tblSizeSet(+c.dataset.r,+c.dataset.c);
+        if(tblSizeCanHover()) confirmTableSizeModal();
+    }
+    function confirmTableSizeModal(){
+        const r=tblSizeRows,c=tblSizeCols,t=tblSizeTarget;
+        closeTableSizeModal();
+        if(t) insertTable(r,c,t.pageIdx,t.x,t.y);
+        else beginTablePlacement(r,c);
     }
     function beginTablePlacement(rows,cols){
         const dim=tableInsertSize(rows,cols),g=document.getElementById('tableGhost');
@@ -13817,7 +13974,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 에디터·폴더·모달을 열 때 히스토리 항목을 쌓아, 뒤로가기를 누르면
     // 사이트를 빠져나가는 대신 열려 있던 화면/모달이 닫히게 한다.
     //
-    // 14.39.1 · **진짜 뒤로가기를 되찾았다.** (사용자 보고: "뒤로가기 누르면
+    // 14.39.4 · **진짜 뒤로가기를 되찾았다.** (사용자 보고: "뒤로가기 누르면
     //   화면이 한 번 새로고침되면서 깜빡인다")
     //   원인은 이름 가림이었다. 이 묶음(번들)은 모든 파트가 한 어휘 스코프를
     //   공유하는데, 01-core.js 의 `let history=[]`(되돌리기 스택)가
@@ -13913,6 +14070,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(wfOn){ wfOff(); return true; }
         if(document.getElementById('pinPop').classList.contains('show')){ closePin(); return true; }
         if(document.getElementById('latexModal').style.display==='flex'){ closeLatexModal(); return true; }
+        if(document.getElementById('tableSizeModal').style.display==='flex'){ closeTableSizeModal(); return true; }
         if(pinMode){ togglePinMode(); return true; }
         if(findOpen){ closeFind(); return true; }
         if(tablePlace){ cancelTablePlacement(); return true; }
@@ -14681,9 +14839,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // rAF 대기 중에 mouseup/touchend 가 먼저 온 경우, 마지막 포인트를 놓치지 않고
         // 미리 반영한다. (특히 지우개는 몇 ms 만에 끝날 수 있어 이 flush 가 없으면
         //  빠른 스와이프가 안 지워진다)
-        if(drawing && (_drawEv || _drawEvT)){
-            try{ if(_drawEvT) drawMove(_drawEvT); else if(_drawEv) drawMove(_drawEv); }catch(e){}
-            _drawEv=null; _drawEvT=null;
+        if(drawing && _drawEvT){
+            try{ if(_drawEvT) drawMove(_drawEvT); }catch(e){}
+            _drawEvT=null;
         }
         lastErase=null;
         if(!drawing) return;
@@ -14823,7 +14981,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const s=e.target.closest('.draw-surface');
         if(s&&penActive) drawStart(e,+s.closest('.paper').dataset.pageIdx);
     },true);
-    let _drawRaf=0, _drawEv=null;
     let _drawRafT=0, _drawEvT=null;
     // ★ 펜 호버 필터: Apple Pencil 이 화면 위에 있지만 닿지 않았을 때
     //   (pressure===0, buttons===0) 발생하는 pointermove 를 무시한다.
@@ -14832,9 +14989,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     sdyAddPointerCompat(document,'pointermove',e=>{
         if(!drawing) return;
         if(e.pointerType==='pen' && e.pressure===0 && e.buttons===0) return;
-        _drawEv=e;
-        if(_drawRaf) return;
-        _drawRaf=requestAnimationFrame(()=>{ _drawRaf=0; if(drawing&&_drawEv) drawMove(_drawEv); });
+        // 펜/마우스는 rAF 묶음 없이 바로 그려 지연(선이 현재 위치보다 늦게 그려짐)을 없앤다.
+        try{ drawMove(e); }catch(err){}
     },{passive:true});
     // ★ pointercancel 추가 — 펜이 화면 밖으로 나가면 그리기 종료
     sdyAddPointerCompat(document,'pointerup',()=>{ if(drawing) drawEnd(); });
@@ -15036,24 +15192,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   중복됐기 때문. 글자 서식(글꼴·크기·굵기·색·형광펜)은 전부 상단 바에서 한다.
 
     // ===== 글꼴 선택 =====
-    // 각 항목을 '해당 글꼴 자체'로 렌더링해 이름만 보고도 어떤 폰트인지 바로 알 수 있게 한다.
-    //   좌측: 실제 글꼴로 그린 미리보기 문구 (abc 가나다)
-    //   우측: 글꼴 이름 (항상 기본 글꼴로 표시해 항상 가독) + 현재 선택 시 체크
+    // 각 항목은 '한국어 이름 + 영어 이름'을 해당 글꼴 자체로 그린다.
+    //   예시 문구(abc 가나다)는 쓰지 않는다 — 이름만 보고도 어떤 폰트인지 바로 알 수 있게.
+    //   좌측: 한국어·영어 이름 (둘 다 해당 글꼴, .fi-sample 의 font-family 를 상속)
+    //   우측: 현재 선택 시 체크
     function buildFontMenu(){
         const m=document.getElementById('fontMenu');
         if(m.dataset.ready==='1') return;
         FONTS.forEach(f=>{
             const it=document.createElement('div');
             it.className='font-item'; it.dataset.f=f.id;
-            it.innerHTML=`<span class="fi-sample" style="font-family:${f.css}">abc 가나다</span>`+
-                         `<span class="fi-name">${f.label}</span>`+
+            const ko=esc(f.ko||f.label||'');
+            const en=esc(f.en||'');
+            const showEn=en&&en!==ko;
+            it.innerHTML=`<span class="fi-sample" style="font-family:${f.css}">`+
+                         `<span class="fi-ko">${ko}</span>`+
+                         (showEn?`<span class="fi-en">${en}</span>`:'')+
+                         `</span>`+
                          `<i class="ri-checkbox-fill fi-check"></i>`;
             it.onmousedown=e=>e.preventDefault();
             it.onclick=(e)=>{ e.stopPropagation(); applyFont(f.id); closeFontMenu(); };
             m.appendChild(it);
         });
         m.dataset.ready='1';
-        // 미리보기가 실제 폰트로 그려지도록, 아직 안 불러온 글꼴은 여기에서 선제 로드
+        // 이름이 실제 폰트로 그려지도록, 아직 안 불러온 글꼴은 여기에서 선제 로드
         if(document.fonts&&document.fonts.load){
             FONTS.forEach(f=>{
                 const fam=f.css.split(',')[0];           // 주 패밀리 (따옴표 포함)
@@ -15073,7 +15235,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(m.parentElement!==document.body) document.body.appendChild(m);
             const r=document.getElementById('fontBtn').getBoundingClientRect();
             const cw=v=>window.sdyUiCss?window.sdyUiCss(v):(Number(v)||0);  // html zoom(.9) 보정
-            m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-240)+'px';
+            m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-288)+'px';
             m.style.top=(cw(r.bottom)+6)+'px';
             // 현재 선택된 글꼴 표시 (강조 + 체크)
             m.querySelectorAll('.font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===curFont));
@@ -15510,6 +15672,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(block===host&&(FMT_BLOCK_TAGS.has(tag)||_isPosSpan(k))) continue;
                 if(tag==='BR'){ tokens.push({t:'br',node:k}); continue; }
                 if(FMT_ATOMIC_TAGS.has(tag)){ tokens.push({t:'atom',node:k,link:link||null}); continue; }
+                // 아직 입력 전인 타이핑 span(빈칸 또는 닻 ZWSP 1글자)은 원자 토큰으로
+                // 통째로 옮긴다 — 안을 토큰화하면 닻이 '진짜 글자'로 취급된다.
+                if(tag==='SPAN'&&k.classList&&k.classList.contains('sdy-type')&&_isTypeMarkOnly(k)){
+                    tokens.push({t:'type',node:k}); continue;
+                }
                 const hasInner=!!(String(k.textContent||'').length
                     ||(k.querySelector&&k.querySelector('img,br,svg,canvas,video,audio,iframe,hr')));
                 if(!hasInner){
@@ -16434,6 +16601,117 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return true;
         }catch(e){ return false; }
     }
+    // ── 캐럿 서식 span 의 '닻(anchor)' ────────────────────────────────
+    // 빈 span 에 커서(요소,0)를 두면 Chrome·Safari 가 입력 위치를 부모(상자)로
+    // 정규화해 버린다. 그래서 글꼴·색을 바꾼 뒤 치는 글자가 span 밖(기본 서식)으로
+    // 들어갔다. span 안에 눈에 안 보이는 ZWSP 1글자를 넣고 그 뒤(텍스트,1)에
+    // 커서를 두면 입력이 반드시 span 안으로 들어간다. 닻은 실제 글자가 들어오면
+    // input 에서 바로 지우고, 저장할 때는 문자열 단계에서 걷어내 문서에 남기지 않는다.
+    // (조합 중에는 텍스트 노드를 건드리지 않는다 — IME 조합이 끊기기 때문.)
+    const _TYPE_MARK='\u200B';
+    function _typeMarkText(){ return document.createTextNode(_TYPE_MARK); }
+    // '아직 입력 전'인 타이핑 span 인가 (완전 빈칸 또는 닻 1글자만)
+    function _isTypeMarkOnly(span){
+        if(!span) return false;
+        try{
+            if(span.childElementCount) return false;
+            const t=String(span.textContent||'');
+            return t===''||t===_TYPE_MARK;
+        }catch(e){ return false; }
+    }
+    // 타이핑 span 안의 '모호하지 않은' 캐럿 위치를 돌려준다.
+    // 아직 입력 전이면 닻 뒤, 글자가 들어갔으면 그 맨 끝(둘 다 텍스트 노드 안).
+    function _typingCaretRange(span){
+        if(!_isTypeMarkOnly(span)){
+            const nr=document.createRange();
+            try{
+                const tw=document.createTreeWalker(span,NodeFilter.SHOW_TEXT);
+                let last=null,n;
+                while(n=tw.nextNode()) last=n;
+                if(last) nr.setStart(last,String(last.nodeValue||'').length);
+                else nr.setStart(span,span.childNodes.length);
+            }catch(e){ try{ nr.selectNodeContents(span); }catch(_e){} }
+            nr.collapse(false);
+            return nr;
+        }
+        let tn=span.firstChild;
+        if(!tn||tn.nodeType!==3){
+            tn=_typeMarkText();
+            span.insertBefore(tn,span.firstChild);
+        }else if(String(tn.nodeValue||'').charAt(0)!==_TYPE_MARK){
+            tn.nodeValue=_TYPE_MARK+String(tn.nodeValue||'');
+        }
+        const nr=document.createRange();
+        nr.setStart(tn,1); nr.collapse(true);
+        return nr;
+    }
+    // span 안의 닻을 지운다. 캐럿이 같은 텍스트 노드 안에 있으면 지운 글자 수만큼 당긴다.
+    function _stripTypeMarks(span){
+        if(!span) return;
+        let tw=null;
+        try{ tw=document.createTreeWalker(span,NodeFilter.SHOW_TEXT); }catch(e){ return; }
+        const nodes=[]; let n;
+        while(n=tw.nextNode()) nodes.push(n);
+        if(!nodes.length) return;
+        const s=window.getSelection();
+        let caret=null;
+        try{ caret=(s&&s.rangeCount)?s.getRangeAt(0):null; }catch(e){}
+        nodes.forEach(tn=>{
+            const v=String(tn.nodeValue||'');
+            if(v.indexOf(_TYPE_MARK)<0) return;
+            let cutS=0,cutE=0;
+            try{
+                if(caret&&caret.startContainer===tn)
+                    cutS=String(v.slice(0,caret.startOffset)).split(_TYPE_MARK).length-1;
+                if(caret&&!caret.collapsed&&caret.endContainer===tn)
+                    cutE=String(v.slice(0,caret.endOffset)).split(_TYPE_MARK).length-1;
+            }catch(e){}
+            tn.nodeValue=v.split(_TYPE_MARK).join('');
+            if(!caret) return;
+            try{
+                if(caret.startContainer===tn||(!caret.collapsed&&caret.endContainer===tn)){
+                    const r=caret.cloneRange();
+                    if(r.startContainer===tn) r.setStart(tn,Math.max(0,caret.startOffset-cutS));
+                    if(!caret.collapsed&&r.endContainer===tn) r.setEnd(tn,Math.max(0,caret.endOffset-cutE));
+                    s.removeAllRanges(); s.addRange(r);
+                    caret=r;
+                }
+            }catch(e){}
+        });
+    }
+    // 실제 글자가 들어온 타이핑 span 에서 닻을 치운다.
+    // 아직 입력 전(닻만)인 span 은 둔다 — 다음 글자의 자리 표시다.
+    function _cleanTypingMarks(host){
+        if(!host||!host.querySelector) return;
+        if(!_typingSpan&&!_pendingTyping) return;
+        try{
+            host.querySelectorAll('.sdy-type').forEach(sp=>{
+                if(_isTypeMarkOnly(sp)) return;
+                _stripTypeMarks(sp);
+            });
+        }catch(e){}
+    }
+    // 저장 문자열에서 타이핑 닻을 걷어낸다. 빈(닻뿐인) span 은 통째로 뺀다.
+    // 라이브 DOM 은 건드리지 않는다 — 편집 중 캐럿이 그 안에 있을 수 있다.
+    function _stripTypingMarkersHtml(html){
+        if(!html||html.indexOf('sdy-type')<0) return html;
+        const d=document.createElement('div');
+        d.innerHTML=html;
+        let touched=false;
+        try{
+            d.querySelectorAll('.sdy-type').forEach(sp=>{
+                const tw=document.createTreeWalker(sp,NodeFilter.SHOW_TEXT);
+                const nodes=[]; let n;
+                while(n=tw.nextNode()) nodes.push(n);
+                nodes.forEach(tn=>{
+                    const v=String(tn.nodeValue||'');
+                    if(v.indexOf(_TYPE_MARK)>=0){ tn.nodeValue=v.split(_TYPE_MARK).join(''); touched=true; }
+                });
+                if(!sp.textContent&&!sp.querySelector('img,br,svg,canvas')){ sp.remove(); touched=true; }
+            });
+        }catch(e){}
+        return touched?d.innerHTML:html;
+    }
     // 브라우저가 빈 span을 없애거나 입력 후 캐럿을 형제 위치로 옮겨도, 별도로 기억한
     // active state를 사용해 입력 직전 같은 스타일 wrapper를 다시 만든다.
     function _ensurePendingTypingSpan(host){
@@ -16449,7 +16727,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!inHost) return false;
         if(_typingSpan&&_typingSpan.isConnected&&host.contains(_typingSpan)&&
            (point===_typingSpan||_typingSpan.contains(point))){
-            savedCaret={c:host,r:live.cloneRange()};
+            // 텍스트 안(모호하지 않은 위치)이면 그대로 둔다. span 요소 자체를
+            // 가리키는 (요소,오프셋) 캐럿은 브라우저가 부모로 정규화해 다음 글자를
+            // 밖으로 빼 버리므로 span 안 '닻 뒤(아직 입력 전) / 맨 끝'으로 확정한다.
+            if(point.nodeType!==3){
+                try{ _restoreTypingRange(host,_typingCaretRange(_typingSpan)); }
+                catch(e){ savedCaret={c:host,r:live.cloneRange()}; }
+            }else savedCaret={c:host,r:live.cloneRange()};
             return true;
         }
         try{
@@ -16458,9 +16742,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             for(const k in p.styles) _setInlineProp(span,k,p.styles[k]);
             const r=live.cloneRange();
             r.insertNode(span);
-            const nr=document.createRange(); nr.selectNodeContents(span); nr.collapse(false);
             _typingSpan=span;
-            _restoreTypingRange(host,nr);
+            _restoreTypingRange(host,_typingCaretRange(span));
             return true;
         }catch(e){ return false; }
     }
@@ -16471,9 +16754,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{
             const s=window.getSelection();
             const dot=tn=>tn&&(tn===_typingSpan||(_typingSpan&&_typingSpan.contains(tn)));
-            // 빈 span 만 재사용한다. 이미 글자가 들어간 span 을 뒤집으면
-            // '앞으로 입력될 글자'뿐 아니라 '이미 입력된 글자'까지 바뀌기 때문.
-            const spanEmpty=_typingSpan&&!_typingSpan.textContent&&!_typingSpan.childElementCount;
+            // 닻만 있는 span 은 '아직 입력 전'이므로 재사용한다. 이미 글자가 들어간
+            // span 을 뒤집으면 '앞으로 입력될 글자'뿐 아니라 '이미 입력된 글자'까지
+            // 바뀌기 때문.
+            const spanEmpty=_typingSpan&&_isTypeMarkOnly(_typingSpan);
             let span=null;
             if(spanEmpty&&_typingSpan.isConnected&&c.contains(_typingSpan)){
                 const r0=s.rangeCount?s.getRangeAt(0):null;
@@ -16483,7 +16767,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!span){
                 span=document.createElement('span');
                 span.className='sdy-type';
-                const src=(s.rangeCount?s.getRangeAt(0):t.r).cloneRange();
+                // 삽입 위치는 '상자 안 실제 캐럿'으로만 잡는다. 툴바 글자 크기칸처럼
+                // 상자 밖에 포커스가 있으면 live Selection 이 상자 밖을 가리킨다 —
+                // 그걸 그대로 쓰면 span 이 엉뚱한 곳에 들어가 서식이 증발한다.
+                let srcBase=null;
+                try{
+                    if(s.rangeCount){
+                        const lr=s.getRangeAt(0);
+                        const sc=lr.startContainer;
+                        if(sc===c||(c.contains&&c.contains(sc))) srcBase=lr;
+                    }
+                }catch(e){}
+                const src=(srcBase||t.r).cloneRange();
                 // 14.18.4 · 도중 스타일 변경: 새 빈 span 을 만들 때도 직전까지의
                 // 캐럿 서식(색·크기·굵기·밑줄·형광펜·부분 글꼴)을 모두 먼저 심어 둔다.
                 // 예전엔 font-family 만 옮겨 "크기만 바꾼 뒤 다시 색 변경" 같은 흐름에서
@@ -16493,15 +16788,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     : _typingStylesFromNode(src.startContainer,c);
                 for(const k in seed) _setInlineProp(span,k,seed[k]);
                 src.insertNode(span);
-                const nr=document.createRange();
-                nr.selectNodeContents(span); nr.collapse(true);
                 _typingSpan=span;
-                _restoreTypingRange(c,nr);
+                // 빈 (요소,0)이 아니라 '닻 뒤(텍스트,1)'에 캐럿을 둔다 — 그래야
+                // 다음 글자가 span 안으로 들어간다.
+                _restoreTypingRange(c,_typingCaretRange(span));
             }else{
                 // 캐럿을 서식 span 안으로 되돌린다 (툴바 입력창을 쓰다 돌아와도 이어짐)
-                const nr=document.createRange();
-                nr.selectNodeContents(span); nr.collapse(true);
-                _restoreTypingRange(c,nr);
+                _restoreTypingRange(c,_typingCaretRange(span));
             }
             const _removeStyleSafe=(name)=>{
                 // jsdom·일부 WebView 는 camelCase removeProperty 를 무시한다.
@@ -16519,7 +16812,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             //   sdy-type 빈 span 을 하나 남겨 두는 편이 안전하다. 여기서는 '진짜 빈
             //   스타일' + '아직 입력 전'일 때만 지우고, '이전 서식 차단용'으로 쓴
             //   중립값(400/normal)이 남아 있으면(즉 cssText 가 있으면) 반드시 유지한다.
-            if(span.classList.contains('sdy-type')&&!span.style.cssText&&!span.textContent&&!span.childElementCount){
+            if(span.classList.contains('sdy-type')&&!span.style.cssText&&_isTypeMarkOnly(span)){
                 span.remove(); _typingSpan=null; savedCaret=null; _pendingTyping=null;
                 return true;
             }
@@ -16607,7 +16900,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         box.innerHTML=html||'';
         box.querySelectorAll('br').forEach(b=>b.replaceWith('\n'));
         box.querySelectorAll('div,p,li').forEach(n=>{ n.after('\n'); });
-        const text=(box.textContent||'').replace(/\n{3,}/g,'\n\n').replace(/[ \t]+\n/g,'\n').trim();
+        const text=(box.textContent||'').replace(/\n{3,}/g,'\n\n').replace(/[ \t]+\n/g,'\n').replace(/\u200B/g,'').trim();
         return esc(text).replace(/\n/g,'<br>');
     }
     // 14.16 · 툴바의 글자 크기칸과 '지금 보고 있는 글자'를 맞추는 장치
@@ -17152,6 +17445,102 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             .replace(/"/g,'&quot;');
     }
 
+    // ============ 내보내기 WYSIWYG 정합 (PDF·사진이 편집 화면과 어긋나지 않게) ============
+    // 편집 화면의 .tb-content/.paper-img/.latex-content 는 '투명 테두리(var(--bw))'를
+    // 두르고 있다. 눈에는 안 보여도 글자 시작점·줄바꿈 폭·그림 크기에 그대로 반영되므로,
+    // 내보내기에서 빼먹으면 요소마다 1~3px씩 관계가 틀어져 보인다.
+    // 아래 조립기들은 편집 화면의 CSS 와 같은 상자 모델을 쓰고, 테두리 두께는
+    // 지금 보고 있는 화면과 같은 값(--bw, 없으면 2)을 읽어 맞춘다.
+    let _expBwCache=null, _expBwAt=0;
+    function _expBorderW(){
+        // getComputedStyle 은 강제 스타일 계산이라 카드·쪽마다 부르면 무겁다.
+        // --bw 는 확대/축소 때만 바뀌므로 1초짜리 메모로 충분하다.
+        const now=Date.now();
+        if(_expBwCache!=null&&now-_expBwAt<1000) return _expBwCache;
+        let out=2;
+        try{
+            const st=document.getElementById('pagesStage');
+            const v=st?getComputedStyle(st).getPropertyValue('--bw'):'';
+            const n=v?parseFloat(v):NaN;
+            if(Number.isFinite(n)&&n>=0&&n<=8) out=Math.round(n*100)/100;
+        }catch(e){}
+        _expBwCache=out; _expBwAt=now;
+        return out;
+    }
+    // 편집 화면에 보이는 글자 크기 (buildTextEl·fitTextToBox·fitTranslated 과 같은 규칙).
+    // 가져오기 맞춤(fit·fitDown)과 번역 맞춤(trFit)은 캐시된 맞춤값을 쓴다 —
+    // 화면에 이미 그렇게 나와 있으므로 내보내기도 따라야 한다.
+    function _expTextMetrics(el){
+        let fs=el.fontSize||16, ls='', fw='', lh='';
+        if((el.fit||el.fitDown)&&el.fitSize){ fs=el.fitSize; ls=el.fitLS||''; lh=el.fitLH||''; }
+        else if(el.trFit&&!el.trPending){
+            if(el.trFS) fs=el.trFS;
+            ls=el.trLS||''; fw=el.trFW||'';
+        }
+        return {fs:fs,ls:ls,fw:fw,lh:lh};
+    }
+    function _expVAlign(el){
+        return {top:'flex-start',middle:'center',bottom:'flex-end'}[el.vAlign||'middle']||'center';
+    }
+    // .tb-content 와 같은 안쪽 상자 (일반 / 표 칸 / 가져온-tight).
+    // color: 내보내기는 '#111111'(흰 종이), 미리보기는 'var(--text1)'.
+    function _expTextInner(el,bw,color){
+        const m=_expTextMetrics(el);
+        let s=`width:100%;height:100%;box-sizing:border-box;font-size:${m.fs}px;`+
+              `color:${color};font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`;
+        if(el.fontWeight) s+=`font-weight:${el.fontWeight};`;
+        if(el.fontStyle) s+=`font-style:${el.fontStyle};`;
+        if(el.textDecoration) s+=`text-decoration:${el.textDecoration};`;
+        if(m.ls) s+=`letter-spacing:${m.ls};`;
+        if(m.fw) s+=`font-weight:${m.fw};`;
+        if(el.tight){
+            s+=`padding:0;line-height:${m.lh||1};overflow:${el.tbl?'hidden':'visible'};`+
+               `position:relative;white-space:normal;word-break:normal;overflow-wrap:normal;`;
+            // .tb.pdf-text 상자는 편집 화면에서도 테두리가 없다
+            if(!el.pdfText) s+=`border:${bw}px solid transparent;`;
+            // 맞춤값(fitLS·trLS)이 화면에서처럼 수동 자간보다 우선한다
+            if(!m.ls&&el.ls) s+=`letter-spacing:${el.ls}px;`;
+            if(el.wsp) s+=`word-spacing:${el.wsp}px;`;
+            if(el.tbl) s+=`display:flex;flex-direction:column;justify-content:${_expVAlign(el)};`;
+        }else if(el.tbl){
+            // .tb.in-tbl .tb-content — 칸 글자는 6px 8px 여백에 세로 가운데
+            s+=`padding:6px 8px;border:${bw}px solid transparent;border-radius:3px;`+
+               `line-height:${m.lh||1.5};overflow:hidden;white-space:normal;`+
+               `overflow-wrap:break-word;word-break:break-word;min-width:60px;min-height:28px;`+
+               `display:flex;flex-direction:column;justify-content:${_expVAlign(el)};`;
+        }else{
+            s+=`padding:8px 12px;border:${bw}px solid transparent;border-radius:3px;`+
+               `line-height:${m.lh||1.5};overflow:visible;white-space:pre-wrap;`+
+               `overflow-wrap:break-word;word-break:break-word;min-width:60px;min-height:28px;`;
+        }
+        return s;
+    }
+    // .latex-content 와 같은 안쪽 상자 (fs: latexFitScale 으로 맞춘 크기).
+    function _expLatexInner(el,bw,fs,color){
+        const imp=!!el.imported, disp=!!el.displayMath;
+        let s=`width:100%;height:100%;box-sizing:border-box;border:${bw}px solid transparent;`+
+              `display:flex;font-size:${fs}px;line-height:1.05;color:${color||'#111'};`+
+              `white-space:nowrap;font-family:'Times New Roman',serif;`;
+        // 14.39.3 · 화면과 같은 규칙 — 가져온 수식도 상자 밖으로 나가면 자르지 않고
+        //   전부 보인다 (overflow:hidden 은 큰 수식이 잘려 '사라진' 것처럼 보이는
+        //   버그의 원인이었음, 보고 26.09.08). 글상자(_expTextInner)도 같은 값.
+        if(imp) s+=`padding:0;overflow:visible;align-items:center;`;
+        else if(disp) s+=`padding:1px 4px;overflow:visible;align-items:center;`;
+        else s+=`padding:0 4px 1px;overflow:visible;align-items:flex-end;`;
+        if(disp) s+=`justify-content:center;`;
+        return s;
+    }
+    // foreignObject 안은 편집 화면의 전역 리셋(*{margin:0;padding:0}·sup/sub)이
+    // 닿지 않아 UA 기본값이 적용된다 → 같은 리셋을 SVG 안에 동봉한다.
+    function _expForeignReset(){
+        return `<style>.sdyx *{margin:0;padding:0;box-sizing:border-box;}`+
+            `.sdyx pre,.sdyx code,.sdyx tt,.sdyx kbd,.sdyx samp{font-family:inherit;}`+
+            `.sdyx button,.sdyx input,.sdyx select,.sdyx textarea{font:inherit;}`+
+            `.sdyx sup,.sdyx sub{font-size:.72em;line-height:0;position:relative;vertical-align:baseline;}`+
+            `.sdyx sup{top:-.45em;}.sdyx sub{bottom:-.22em;}`+
+            `.sdyx .zsp{position:absolute;left:100%;top:0;font-size:0;font-style:normal;letter-spacing:0;}</style>`;
+    }
+
     // SVG <img> documents cannot use the editor's loaded web fonts. Bundle only
     // the PDF families actually referenced, using same-origin cached WOFF2 data.
     const _pdfSvgFonts=new Map();
@@ -17192,15 +17581,62 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function _pdfStaticHtml(el){
         if(!el.pdfText||!el.tight) return el.html||'';
         const c=document.createElement('div'); c.innerHTML=el.html||'';
-        c.style.fontFamily=fontCSS(el.font||'times');
+        const m0=_expTextMetrics(el);
+        c.style.fontFamily=fontCSS(el.font||'pretendard');
+        c.style.fontSize=m0.fs+'px';
+        // 편집 화면(buildTextEl)과 같은 자간·어간 — 측정(_pdfSpanMetrics)에도 반영된다
+        if(el.ls) c.style.letterSpacing=el.ls+'px';
+        if(el.wsp) c.style.wordSpacing=el.wsp+'px';
+        const tops=[];
         for(const s of c.querySelectorAll(':scope > span[data-pdf-w]')){
-            const fs=parseFloat(s.style.fontSize)||el.fontSize||parseFloat(s.dataset.fs)||14;
+            const fs=parseFloat(s.style.fontSize)||m0.fs||parseFloat(s.dataset.fs)||14;
             const m=_pdfSpanMetrics(s,c,fs), width=parseFloat(s.dataset.pdfW), base=parseFloat(s.dataset.pdfBase);
-            if(m&&m.w>0&&width>0){ s.style.transform='scaleX('+(width/m.w)+')'; s.style.transformOrigin='left center'; }
-            if(m&&Number.isFinite(base)) s.style.top=(base-m.baseline)+'px';
+            if(m&&m.w>0&&width>0){ s.style.transform='scaleX('+(width/m.w).toFixed(5)+')'; s.style.transformOrigin='left center'; }
+            else if(width>0){
+                // 겹겹 스타일(편집·형광펜)이 섞인 행은 캔버스 한 글꼴로 잴 수 없다 —
+                // 편집 화면(_measureTightSpans 폴백)처럼 실제 렌더 폭을 재서 맞춘다.
+                const w0=_pdfProbeSpanW(s,c);
+                if(w0>0){ s.style.transform='scaleX('+(width/w0).toFixed(5)+')'; s.style.transformOrigin='left center'; }
+            }
+            if(m&&Number.isFinite(base)) tops.push({s:s,top:+(base-m.baseline).toFixed(3)});
         }
-        c.querySelectorAll('.zsp').forEach(n=>n.style.fontSize='0px');
+        // 줄간격(lg)은 편집 화면(_applyTightFit)과 같이 첫 줄 기준으로 벌린다
+        if(tops.length){
+            const lg=(el.lg&&Math.abs(el.lg-1)>0.001)?el.lg:1;
+            let t0=0;
+            if(lg!==1){ t0=Infinity; for(const t of tops) if(t.top<t0) t0=t.top; }
+            for(const t of tops) t.s.style.top=(lg===1?t.top:(t0+(t.top-t0)*lg)).toFixed(3)+'px';
+        }
+        c.querySelectorAll('.zsp').forEach(n=>{
+            n.style.fontSize='0px';
+            n.style.position='absolute';
+            n.style.left='100%';
+            n.style.top='0';
+            n.style.fontStyle='normal';
+        });
         return c.innerHTML;
+    }
+    let _pdfProbeBox=null;
+    function _pdfProbeSpanW(s,c){
+        // 이전 맞춤(scaleX)을 걷어낸 '있는 그대로'의 렌더 폭 — 편집 폴백과 같은 식.
+        try{
+            if(!_pdfProbeBox||!_pdfProbeBox.isConnected){
+                _pdfProbeBox=document.createElement('div');
+                _pdfProbeBox.style.cssText='position:fixed;left:-99999px;top:0;visibility:hidden;pointer-events:none;';
+                document.body.appendChild(_pdfProbeBox);
+            }
+            const sps=Array.from(c.querySelectorAll(':scope > span[data-pdf-w]'));
+            const idx=sps.indexOf(s); if(idx<0) return 0;
+            const match=(s.style.transform||'').match(/scaleX\(([^)]+)\)/);
+            const sx=match?Math.abs(parseFloat(match[1]))||1:1;
+            _pdfProbeBox.innerHTML='';
+            // 상자째 복제해야 자간·글꼴 상속까지 화면과 같아진다
+            _pdfProbeBox.appendChild(c.cloneNode(true));
+            const g=_pdfProbeBox.querySelectorAll(':scope > div > span[data-pdf-w]')[idx];
+            const w=g?g.getBoundingClientRect().width/sx:0;
+            _pdfProbeBox.innerHTML='';
+            return w>0?w:0;
+        }catch(e){ return 0; }
     }
     let _katexSvgFonts;
     async function _katexSvgCSS(){
@@ -17269,13 +17705,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const ids=new Set(items.map(i=>i.id));
         const list=(doc.pages[pi].els||[]).filter(e=>ids.has(e.id));
         let drew=0, imgs='', paths='', body='';
+        const _xbw=_expBorderW();
         for(const el of list){
             if(el.type==='image'&&el.url){
                 // SVG 는 <img> 로 열면 외부 그림을 못 가져오므로 data: 로 인라인한다
                 const href=await toDataURL(el.url);
                 if(!href) continue;
+                // 편집 화면의 .paper-img 는 투명 테두리 안쪽에 그림을 채운다
                 const ia=normalizedRotation(el.rotation), icx=el.x+el.w/2, icy=el.y+el.h/2;
-                imgs+=`<image x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}"`+
+                imgs+=`<image x="${el.x+_xbw}" y="${el.y+_xbw}" width="${Math.max(1,el.w-_xbw*2)}" height="${Math.max(1,el.h-_xbw*2)}"`+
                       (ia?` transform="rotate(${ia} ${icx} ${icy})"`:'')+
                       ` href="${escXml(href)}" xlink:href="${escXml(href)}"/>`;
                 drew++;
@@ -17295,15 +17733,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const texts=list.filter(e=>e.type==='text'&&(e.html||'').trim());
         const formulas=list.filter(e=>e.type==='latex'&&(e.latex||'').trim());
         texts.forEach(el=>{
-            const inner=el.tight
-                ? `width:100%;height:100%;padding:0;box-sizing:border-box;`+
-                  `font-size:${el.fontSize||16}px;line-height:1;color:${el.__c||'#111111'};`+
-                  `overflow:visible;font-family:${fontCSS(el.font||'pretendard')};`+
-                  `text-align:${el.align||'left'};position:relative;`
-                : `width:100%;height:100%;padding:8px 12px;box-sizing:border-box;`+
-                  `font-size:${el.fontSize||16}px;line-height:1.5;color:${el.__c||'#111111'};white-space:pre-wrap;`+
-                  `word-break:break-word;overflow:hidden;font-family:${fontCSS(el.font||'pretendard')};`+
-                  `text-align:${el.align||'left'};`;
+            const inner=_expTextInner(el,_xbw,el.__c||'#111111');
             body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${el.w}px;height:${el.h}px;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
                   `<div style="${inner}">`+
                   htmlToXhtml(fixDarkColors(imathExpandHtml(el.html)))+`</div></div>`;
@@ -17316,14 +17746,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             //  빨간 오류 문자열이 박힌다)
             try{ mh=window.katex?katex.renderToString(tidyLatex(el.latex||''),{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
             catch(e){ mh=esc(el.latex||''); }
-            const imp=!!el.imported;
-            const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;
-            const k=imp?Math.min(1,(latexFitScale(el)||1)):1;
-            const fs=Math.max(6,(el.fontSize||20)*k);
-            body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${bw}px;height:${bh}px;`+
-                  `transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;display:flex;align-items:center;${el.displayMath?'justify-content:center;':''}font-size:${fs}px;`+
-                  `line-height:1.05;font-family:'Times New Roman',serif;color:#111;`+
-                  `overflow:${imp?'hidden':'visible'};">${htmlToXhtml(mh)}</div>`;
+            const fs=Math.max(6,(el.fontSize||20)*(latexFitScale(el)||1));
+            body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${el.w}px;height:${el.h}px;`+
+                  `transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                  `<div style="${_expLatexInner(el,_xbw,fs)}">${htmlToXhtml(mh)}</div></div>`;
             drew++;
         });
         if(!drew) throw new Error('스티커로 만들 내용이 없다');
@@ -17331,7 +17757,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             ` width="${Math.max(1,Math.round(rw))}" height="${Math.max(1,Math.round(rh))}" viewBox="${rx} ${ry} ${rw} ${rh}">`+
             imgs+paths+
             (body?`<foreignObject x="${rx}" y="${ry}" width="${rw}" height="${rh}">`+
-                  `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${rw}px;height:${rh}px;position:relative;">${body}</div>`+
+                  `<div xmlns="http://www.w3.org/1999/xhtml" class="sdyx" style="width:${rw}px;height:${rh}px;position:relative;">${_expForeignReset()}${body}</div>`+
                   `</foreignObject>`:'')+
             `</svg>`;
         return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
@@ -17541,15 +17967,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(hl&&AI_TEXT_COLOR_NAMES[v]) return AI_TEXT_COLOR_NAMES[v];
         return null;
     }
-    // 글꼴 id·라벨 모두 받는다 ("개구쟁이체"처럼 체가 붙어도 된다).
+    // 글꼴 id·라벨·한국어/영어 이름 모두 받는다 ("개구쟁이체"처럼 체가 붙어도 된다).
     function aiEditFont(value){
         const v=String(value==null?'':value).trim().toLowerCase();
         if(!v) return null;
         let hit=FONTS.find(f=>f.id.toLowerCase()===v);
         if(hit) return hit.id;
         const bare=v.replace(/체$/,'');
-        hit=FONTS.find(f=>f.label.toLowerCase()===v||f.label.toLowerCase()===bare
-            ||f.label.replace(/체$/,'').toLowerCase()===bare);
+        hit=FONTS.find(f=>{
+            const names=[f.label,f.ko,f.en].filter(Boolean).map(x=>String(x).toLowerCase());
+            return names.some(n=>n===v||n===bare||n.replace(/체$/,'')===bare);
+        });
         return hit?hit.id:null;
     }
     const AI_ON_WORDS={on:1,true:1,1:1,켜:1,켜기:1,적용:1,yes:1};
@@ -20454,13 +20882,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
 
         // ② 이미지 — 캔버스에 직접 (foreignObject 안 거침 → 훨씬 안정적)
+        //    편집 화면의 .paper-img 는 투명 테두리(bw) 안쪽에 그림을 채운다 → 같이 들여쓴다
+        const bw=_expBorderW();
         for(const el of page.els||[]){
             if(el.type==='image'&&el.url){
                 try{
                     const im=await loadImg(el.url);
                     const a=normalizedRotation(el.rotation);
-                    if(a){ ctx.save(); ctx.translate(el.x+el.w/2,el.y+el.h/2); ctx.rotate(a*Math.PI/180); ctx.drawImage(im,-el.w/2,-el.h/2,el.w,el.h); ctx.restore(); }
-                    else ctx.drawImage(im,el.x,el.y,el.w,el.h);
+                    const ix=el.x+bw, iy=el.y+bw, iw=Math.max(1,el.w-bw*2), ih=Math.max(1,el.h-bw*2);
+                    if(a){ ctx.save(); ctx.translate(el.x+el.w/2,el.y+el.h/2); ctx.rotate(a*Math.PI/180); ctx.drawImage(im,-iw/2,-ih/2,iw,ih); ctx.restore(); }
+                    else ctx.drawImage(im,ix,iy,iw,ih);
                 }catch(e){ console.warn('이미지 건너뜀',e); }
             }else if(el.type==='legacyDraw'&&el.url){
                 try{
@@ -20470,10 +20901,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
         }
 
-        // ③ 펜 획 — 캔버스 경로로 직접
+        // ③-a 펜 채움 — 편집 화면(layer-fill)이 글자보다 아래인 것과 같은 순서
         (page.els||[]).forEach(st=>{
-            if(st.type!=='stroke') return;
-            drawStrokeOnCanvas(ctx,st);
+            if(st.type!=='stroke'||!st.fillColor) return;
+            drawStrokeOnCanvas(ctx,st,'fill');
         });
 
         // ④ 텍스트 — foreignObject(서식 유지). 실패하면 캔버스 텍스트로 폴백.
@@ -20484,17 +20915,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             try{
                 let body='';
                 texts.forEach(el=>{
-                    const inner=el.tight
-                        ? `width:100%;height:100%;padding:0;box-sizing:border-box;`+
-                          `font-size:${el.fontSize||16}px;line-height:1;color:${el.__c||'#111111'};`+
-                          `overflow:visible;font-family:${fontCSS(el.font||'pretendard')};`+
-                          `text-align:${el.align||'left'};position:relative;`
-                        : `width:100%;height:100%;padding:8px 12px;box-sizing:border-box;`+
-                          `font-size:${el.fontSize||16}px;line-height:1.5;color:${el.__c||'#111111'};white-space:pre-wrap;`+
-                          `word-break:break-word;overflow:hidden;font-family:${fontCSS(el.font||'pretendard')};`+
-                          `text-align:${el.align||'left'};`;
-                    body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;">`+
-                          `<div style="${inner}">`+
+                    body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                          `<div style="${_expTextInner(el,bw,el.__c||'#111111')}">`+
                           htmlToXhtml(imathExpandHtml(_pdfStaticHtml(el)))+`</div></div>`;
                 });
                 formulas.forEach(el=>{
@@ -20506,20 +20928,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     // 내보낸 PDF/JPG 에만 빨간 KaTeX 오류가 남는다.
                     try{ mh=window.katex?katex.renderToString(tidyLatex(el.latex||''),{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
                     catch(e){ mh=esc(el.latex||''); }
-                    // 가져온 수식은 원문 잉크 상자를 넘지 않도록 넘치는 만큼 축소해 그린다.
-                    const imp=!!el.imported;
-                    const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;
-                    const k=imp?Math.min(1,(latexFitScale(el)||1)):1;
-                    const fs=Math.max(6,(el.fontSize||20)*k);
-                    body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${bw}px;height:${bh}px;`+
-                          `transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;display:flex;align-items:center;${el.displayMath?'justify-content:center;':''}font-size:${fs}px;`+
-                          `line-height:1.05;font-family:'Times New Roman',serif;color:#111;`+
-                          `overflow:${imp?'hidden':'visible'};">${htmlToXhtml(mh)}</div>`;
+                    // 상자는 화면(buildLatexEl)과 같은 el.w×el.h, 맞춤은 paintLatex 과
+                    // 같은 latexFitScale — 가져온 수식뿐 아니라 직접 넣은 수식도 화면처럼.
+                    const fs=Math.max(6,(el.fontSize||20)*(latexFitScale(el)||1));
+                    body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`+
+                          `transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                          `<div style="${_expLatexInner(el,bw,fs)}">${htmlToXhtml(mh)}</div></div>`;
                 });
                 const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${size.w}" height="${size.h}" viewBox="0 0 ${size.w} ${size.h}">`+
                     `<foreignObject x="0" y="0" width="${size.w}" height="${size.h}">`+
-                    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${size.w}px;height:${size.h}px;position:relative;`+
-                    `font-family:'Pretendard Variable','Pretendard',sans-serif;">${body}</div></foreignObject></svg>`;
+                    `<div xmlns="http://www.w3.org/1999/xhtml" class="sdyx" style="width:${size.w}px;height:${size.h}px;position:relative;`+
+                    `font-family:'Pretendard Variable','Pretendard',sans-serif;">${_expForeignReset()}${body}</div></foreignObject></svg>`;
                 const img=await svgToImage(svg);
                 ctx.drawImage(img,0,0,size.w,size.h);
                 done=true;
@@ -20529,20 +20948,29 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!done){
                 texts.forEach(el=>drawTextOnCanvas(ctx,el));
                 formulas.forEach(el=>{
-                    ctx.save();ctx.fillStyle='#111';
-                    // 9.0 · 폴백에서도 원문 잉크 폭을 넘지 않게 글씨를 줄여 그린다.
-                    const bw=Math.max(8,(el.imported?(el.inkW||el.w):el.w));
-                    let fs=el.fontSize||20;
+                    ctx.save();
+                    const a=normalizedRotation(el.rotation);
+                    if(a){ const cx=el.x+el.w/2, cy=el.y+el.h/2; ctx.translate(cx,cy); ctx.rotate(a*Math.PI/180); ctx.translate(-cx,-cy); }
+                    ctx.fillStyle='#111';
+                    // 9.0 · 폴백에서도 화면 상자(el.w)를 넘지 않게 글씨를 줄여 그린다.
+                    const bw2=Math.max(8,el.w), bh2=Math.max(8,el.h);
+                    let fs=(el.fontSize||20)*(latexFitScale(el)||1);
                     ctx.font=`${fs}px "Times New Roman",serif`;
                     const raw=(el.latex||'').replace(/[{}\\]|\$/g,'');
                     const tw=ctx.measureText(raw).width||1;
-                    if(tw>bw){ fs=Math.max(6,fs*(bw/tw)); ctx.font=`${fs}px "Times New Roman",serif`; }
+                    const avail=Math.max(8,bw2-(el.imported?0:8));
+                    if(tw>avail){ fs=Math.max(6,fs*(avail/tw)); ctx.font=`${fs}px "Times New Roman",serif`; }
                     ctx.textBaseline='middle';ctx.textAlign=el.displayMath?'center':'left';
-                    ctx.fillText(raw,el.displayMath?el.x+bw/2:el.x,el.y+(el.imported?(el.inkH||el.h):el.h)/2);
+                    ctx.fillText(raw,el.displayMath?el.x+bw2/2:el.x+(el.imported?0:4),el.y+bh2/2);
                     ctx.restore();
                 });
             }
         }
+        // ③-b 펜 선 — 편집 화면(layer-stroke)이 글자보다 위인 것과 같은 순서
+        (page.els||[]).forEach(st=>{
+            if(st.type!=='stroke') return;
+            drawStrokeOnCanvas(ctx,st,'line');
+        });
         return c;
     }
 
@@ -20555,9 +20983,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
     }
 
-    function drawStrokeOnCanvas(ctx,st){
+    function drawStrokeOnCanvas(ctx,st,pass){
         const pts=st.pts||[];
         if(!pts.length) return;
+        // 편집 화면과 같은 겹침 순서 (채움 layer-fill < 글자 < 선 layer-stroke)를
+        // 맞추려고 채우기와 선을 나눠 그릴 수 있다. pass 없이 부르면 둘 다 그린다.
+        if(pass==='fill'&&!st.fillColor) return;
         ctx.save();
         ctx.translate(st.dx||0, st.dy||0);
         const a=normalizedRotation(st.rotation);
@@ -20576,23 +21007,33 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const last=pts[pts.length-1];
             ctx.lineTo(last[0],last[1]);
         }
-        if(st.fillColor){
+        if(st.fillColor&&pass!=='line'){
             ctx.save(); ctx.globalAlpha=st.fillOpacity==null?0.58:st.fillOpacity; ctx.fillStyle=st.fillColor; ctx.fill('evenodd'); ctx.restore();
         }
-        if(st.opacity!=null) ctx.globalAlpha=st.opacity;
-        ctx.stroke();
+        if(pass!=='fill'){
+            if(st.opacity!=null) ctx.globalAlpha=st.opacity;
+            ctx.stroke();
+        }
         ctx.restore();
     }
 
     // 서식 없는 순수 텍스트 폴백 (SVG 렌더가 막혔을 때도 글자는 남긴다)
     function drawTextOnCanvas(ctx,el){
+        // SVG 렌더가 막혔을 때의 최후 수단 — 그래도 자리·자세·맞춤 크기는 화면과 같이.
+        const a=normalizedRotation(el.rotation);
+        const bw=_expBorderW(), m=_expTextMetrics(el);
+        ctx.save();
+        if(a){ const cx=el.x+el.w/2, cy=el.y+el.h/2; ctx.translate(cx,cy); ctx.rotate(a*Math.PI/180); ctx.translate(-cx,-cy); }
+        try{ _drawTextFallback(ctx,el,bw,m); }finally{ ctx.restore(); }
+    }
+    function _drawTextFallback(ctx,el,bw,m){
         const tmp=document.createElement('div');
         tmp.innerHTML=(el.html||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/(div|p)>/gi,'\n');
         const text=(tmp.textContent||'').replace(/\u00a0/g,' ');
         if(!text.trim()) return;
         if(el.pdfText&&el.tight){
             for(const s of tmp.querySelectorAll(':scope > span[data-pdf-w]')){
-                const st=s.style, fs=parseFloat(st.fontSize)||el.fontSize||parseFloat(s.dataset.fs)||14;
+                const st=s.style, fs=parseFloat(st.fontSize)||m.fs||parseFloat(s.dataset.fs)||14;
                 const text=(s.textContent||'').trimEnd(), width=parseFloat(s.dataset.pdfW);
                 const baseline=parseFloat(s.dataset.pdfBase);
                 if(!(width>0)||!Number.isFinite(baseline)) continue;
@@ -20600,7 +21041,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 ctx.font=[st.fontStyle||'normal',st.fontWeight||'400',fs+'px',st.fontFamily||fontCSS(el.font)].join(' ');
                 ctx.fillStyle=st.color||'#111'; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
                 const natural=ctx.measureText(text).width;
-                ctx.translate(el.x+(parseFloat(st.left)||0),el.y+baseline);
+                ctx.translate(el.x+bw+(parseFloat(st.left)||0),el.y+bw+baseline);
                 if(natural>0) ctx.scale(width/natural,1);
                 ctx.fillText(text,0,0); ctx.restore();
             }
@@ -20608,28 +21049,28 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         // 단어 상자(tight): 패딩·줄바꿈 없이 상자 중앙에 한 줄로
         if(el.tight){
-            const fs=el.fontSize||16;
+            const fs=m.fs||16;
             ctx.save();
             ctx.fillStyle='#111111';
             ctx.font=`${fs}px ${fontCSS(el.font||'pretendard')}`;
             ctx.textBaseline='middle';
             const al=el.align||'left';
             ctx.textAlign=al==='center'?'center':al==='right'?'right':'left';
-            const ox=al==='center'?el.x+el.w/2:al==='right'?el.x+el.w:el.x;
+            const ox=al==='center'?el.x+el.w/2:al==='right'?el.x+el.w-bw:el.x+bw;
             ctx.fillText(text.replace(/\s+/g,' '), ox, el.y+el.h/2);
             ctx.restore();
             return;
         }
-        const fs=el.fontSize||16, lh=fs*1.5;
+        const fs=m.fs||16, lh=fs*1.5;
         ctx.save();
         ctx.fillStyle='#111111';
         ctx.font=`${fs}px ${fontCSS(el.font||'pretendard')}`;
         ctx.textBaseline='top';
         const al=el.align||'left';
         ctx.textAlign=al==='center'?'center':al==='right'?'right':'left';
-        const maxW=el.w-24;
-        const ox=al==='center'?el.x+el.w/2:al==='right'?el.x+el.w-12:el.x+12;
-        let y=el.y+8;
+        const maxW=el.w-24-bw*2;
+        const ox=al==='center'?el.x+el.w/2:al==='right'?el.x+el.w-12-bw:el.x+12+bw;
+        let y=el.y+8+bw;
         text.split('\n').forEach(para=>{
             let line='';
             for(const ch of para){
@@ -21335,10 +21776,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             saveDoc(); toast('서식 지움',1200);
         }
         else if(a==='new-table'){
-            const v=prompt('표 크기를 입력하세요 (행 x 열)','3 x 3');
-            if(v){ const m=String(v).match(/(\d+)\s*[x\u00d7,\s]\s*(\d+)/);
-                   if(m) insertTable(+m[1],+m[2],pi,lastMouse.x,lastMouse.y);
-                   else toast('예: 3 x 4 형식으로 입력해 주세요',2200); }
+            // 14.39.2 · 브라우저 prompt(크롬 알림) 대신 앱 자체 모달로 크기를 고르고,
+            //   우클릭한 자리에 곧바로 놓는다. 도구 막대'표 삽입'과 같은 모달(UI 통일).
+            openTableSizeModal({pageIdx:pi,x:lastMouse.x,y:lastMouse.y});
         }
         else if(a==='tbl-row-up'){ tblAdd('row',-1); }
         else if(a==='tbl-row-down'){ tblAdd('row',1); }
@@ -21772,7 +22212,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const nbId=curNB.id;
         try{ if(doc) flushSaveDoc(); }catch(e){}   // 나가기 전 편집분 즉시 저장
         document.getElementById('editorView').classList.remove('open');
-        // 14.39.1 · closeEditor 를 거치지 않는 닫기 길도 똑같이 마무리한다.
+        // 14.39.4 · closeEditor 를 거치지 않는 닫기 길도 똑같이 마무리한다.
         //   예전엔 html/body 의 in-editor 가 그대로 남아(overflow:hidden !important)
         //   노트를 지우고 홈으로 돌아오면 홈이 스크롤되지 않았다.
         //   종이 정리는 슬라이드아웃(.4s)이 끝난 뒤 — 닫는 동안 화면이 하얗게

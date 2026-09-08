@@ -26,7 +26,8 @@ const body = (name) => {
   const m = js.match(new RegExp(`function ${name}\\([^)]*\\)\\{`));
   assert.ok(m, `${name} 함수가 존재해야 한다`);
   const next = js.indexOf('\n    function ', m.index + 10);
-  const end = next >= 0 ? Math.min(next, m.index + 9000) : m.index + 7000;
+  // 다음 함수까지가 이 함수의 몸통이다 — 고정 길이로 자르면 소스가 길어질 때 검사가 깨진다.
+  const end = next >= 0 ? next : m.index + 14000;
   return js.slice(m.index, end);
 };
 
@@ -169,8 +170,10 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   const b = body('caretWrapStyle');
   check('캐럿 서식 span(sdy-type)을 만들어 이후 입력이 그 안에 들어간다',
     b.includes("span.className='sdy-type'"));
-  check('서식 span 은 빈 span 만 재사용한다 (이미 입력된 글자까지 바꾸지 않는다)',
-    b.includes('빈 span 만 재사용한다') && b.includes('_typingSpan&&!_typingSpan.textContent&&!_typingSpan.childElementCount'));
+  check('서식 span 은 아직 입력 전(닻만)인 span 만 재사용한다 (이미 입력된 글자까지 바꾸지 않는다)',
+    b.includes('_isTypeMarkOnly') && b.includes('_typingSpan&&_isTypeMarkOnly(_typingSpan)'));
+  check('캐럿은 빈 (요소,0)이 아니라 span 안 닻 뒤(텍스트)에 둔다 (브라우저 정규화 회피)',
+    b.includes('_typingCaretRange(span)'));
   check('새 span 은 직전 캐럿 서식(부분 글꼴·크기·색 등)을 seed 로 복사해 도중 변경이 끊기지 않는다',
     b.includes('_pendingTyping&&_pendingTyping.host===c&&_pendingTyping.styles')
     && b.includes('_typingStylesFromNode(src.startContainer,c)')
@@ -181,6 +184,8 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   const b = body('_ensurePendingTypingSpan');
   check('브라우저가 빈 span 을 제거해도 pending style 로 wrapper를 복구한다',
     b.includes('_pendingTyping') && b.includes("span.className='sdy-type'") && b.includes('_setInlineProp'));
+  check('복구한 wrapper 의 캐럿도 span 안(닻 뒤/맨 끝)으로 확정한다',
+    b.includes('_typingCaretRange('));
 }
 {
   const b = body('_typingHost');
@@ -282,6 +287,8 @@ for (const fn of ['applyTextColor', 'applyHighlight']) {
   const b = body('syncTextEl');
   check('syncTextEl 을 부를 수 없는 화면(DOM 분리·노트 전환)에서는 무시한다',
     b.includes('w.isConnected') && js.includes('doc.__rv!==w._sdyRv'));
+  check('타이핑 닻(ZWSP·빈 span)은 저장 문자열에서 걷어내 문서에 남기지 않는다',
+    b.includes('_stripTypingMarkersHtml('));
 }
 
 // ── ⑨ 18.8 · 선택/툴바 UX 규칙 ───────────────────────────────────────────

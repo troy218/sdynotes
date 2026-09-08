@@ -148,10 +148,24 @@ try {
     parseFloat(moved[0].style.left) === 183 && parseFloat(moved[0].style.top) === 173
     && paper.querySelectorAll('.stroke-g').length === 7);
 
-  window.prompt = () => '2 x 2';
+  // 14.39.2 · 표 삽입은 브라우저 prompt 가 아니라 앱 자체 모달로 크기를 묻는다.
+  // (jsdom matchMedia 스텁이 pointer:fine → 마우스 환경: 격자 칸을 누르면 곧바로 확정)
   window.openTableModal();
+  const tsModal = document.getElementById('tableSizeModal');
+  check('표 버튼은 크롬 알림 대신 자체 크기 모달을 연다',
+    tsModal.style.display === 'flex' && tsModal.querySelectorAll('.ts-cell').length === 80
+    && document.getElementById('tableSizeBadge').textContent === '3 × 3');
+  window.tblSizeStep('rows', 1); window.tblSizeStep('cols', 1);
+  check('스피너로 행·열을 늘리면 배지와 격자 미리보기가 같이 움직인다',
+    document.getElementById('tableSizeBadge').textContent === '4 × 4'
+    && tsModal.querySelector('.ts-cell[data-r="4"][data-c="4"]').classList.contains('on')
+    && !tsModal.querySelector('.ts-cell[data-r="5"][data-c="1"]').classList.contains('on'));
+  for (let i = 0; i < 45; i++) window.tblSizeStep('rows', 1);
+  check('행은 삽입 상한 40을 넘지 못한다', document.getElementById('tableSizeRows').textContent === '40');
+  tsModal.querySelector('.ts-cell[data-r="2"][data-c="2"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   check('표 버튼은 즉시 삽입하지 않고 크기 고스트 배치를 시작한다',
-    document.getElementById('tableGhost').style.display === 'block' && document.body.classList.contains('placing-table'));
+    tsModal.style.display === 'none'
+    && document.getElementById('tableGhost').style.display === 'block' && document.body.classList.contains('placing-table'));
   paper.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, button: 0, detail: 1, clientX: 600, clientY: 600 }));
   await wait(120);
   check('종이를 누른 위치에 새 2×2 표를 배치하고 모드를 끝낸다',
@@ -180,6 +194,32 @@ try {
   await wait(160);
   check('다중선택으로 표를 지우면 칸·테두리·조절틀이 모두 사라진다',
     paper.querySelectorAll('.tb.in-tbl').length === 0 && paper.querySelectorAll('.stroke-g').length === 0 && paper.querySelectorAll('.tbl-box').length === 0);
+
+  // ── 14.39.2 · 우클릭 '표 넣기'도 같은 크기 모달을 쓴다 — 우클릭한 자리에 곧바로 삽입
+  paper.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 300, clientY: 420 }));
+  await wait(60);
+  const ctxTable = document.querySelector('#ctxMenu .ctx-item[data-a="new-table"]');
+  check('우클릭 메뉴에 표 넣기가 있다', !!ctxTable);
+  ctxTable.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await wait(60);
+  check('우클릭 표 넣기도 브라우저 알림 대신 같은 크기 모달을 연다',
+    document.getElementById('tableSizeModal').style.display === 'flex');
+  document.querySelector('#tableSizeModal .ts-cell[data-r="2"][data-c="3"]')
+    .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await wait(120);
+  check('우클릭한 자리에 고른 크기(2×3) 표가 곧바로 놓인다',
+    paper.querySelectorAll('.tbl-box').length === 1 && paper.querySelectorAll('.tb.in-tbl').length === 6
+    && document.getElementById('tableSizeModal').style.display === 'none'
+    && document.getElementById('tableGhost').style.display === 'none');
+
+  // Esc 로도 닫는다 — 배치가 시작되지 않고 열려 있던 표도 그대로다.
+  window.openTableModal();
+  check('모달을 다시 열 수 있다', document.getElementById('tableSizeModal').style.display === 'flex');
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+  check('Esc는 모달을 닫고 배치를 시작하지 않는다',
+    document.getElementById('tableSizeModal').style.display === 'none'
+    && document.getElementById('tableGhost').style.display === 'none'
+    && !document.body.classList.contains('placing-table'));
 
   const fatal = errors.filter(Boolean);
   check('표 배치·선택·정렬·이동 중 치명적 런타임 오류가 없다', fatal.length === 0);

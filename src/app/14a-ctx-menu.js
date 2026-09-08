@@ -477,10 +477,9 @@
             saveDoc(); toast('서식 지움',1200);
         }
         else if(a==='new-table'){
-            const v=prompt('표 크기를 입력하세요 (행 x 열)','3 x 3');
-            if(v){ const m=String(v).match(/(\d+)\s*[x\u00d7,\s]\s*(\d+)/);
-                   if(m) insertTable(+m[1],+m[2],pi,lastMouse.x,lastMouse.y);
-                   else toast('예: 3 x 4 형식으로 입력해 주세요',2200); }
+            // 14.39.2 · 브라우저 prompt(크롬 알림) 대신 앱 자체 모달로 크기를 고르고,
+            //   우클릭한 자리에 곧바로 놓는다. 도구 막대'표 삽입'과 같은 모달(UI 통일).
+            openTableSizeModal({pageIdx:pi,x:lastMouse.x,y:lastMouse.y});
         }
         else if(a==='tbl-row-up'){ tblAdd('row',-1); }
         else if(a==='tbl-row-down'){ tblAdd('row',1); }
@@ -914,7 +913,7 @@
         const nbId=curNB.id;
         try{ if(doc) flushSaveDoc(); }catch(e){}   // 나가기 전 편집분 즉시 저장
         document.getElementById('editorView').classList.remove('open');
-        // 14.39.1 · closeEditor 를 거치지 않는 닫기 길도 똑같이 마무리한다.
+        // 14.39.4 · closeEditor 를 거치지 않는 닫기 길도 똑같이 마무리한다.
         //   예전엔 html/body 의 in-editor 가 그대로 남아(overflow:hidden !important)
         //   노트를 지우고 홈으로 돌아오면 홈이 스크롤되지 않았다.
         //   종이 정리는 슬라이드아웃(.4s)이 끝난 뒤 — 닫는 동안 화면이 하얗게

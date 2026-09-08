@@ -197,10 +197,15 @@ try {
   window.setFS(16);
 
   // ── ② 표: 고스트 자리 == 실제로 생기는 자리 ──────────────────────────
-  window.prompt = () => '3 x 3';
+  // 14.39.2 · 표 삽입은 브라우저 prompt 가 아니라 앱 자체 모달로 크기를 묻는다.
   window.openTableModal();
+  const tsModal = document.getElementById('tableSizeModal');
+  check('표 버튼은 크롬 알림 대신 자체 크기 모달로 크기를 묻는다',
+    tsModal.style.display === 'flex' && document.getElementById('tableSizeBadge').textContent === '3 × 3');
+  tsModal.querySelector('.ts-cell[data-r="3"][data-c="3"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   check('표 버튼은 크기 입력 뒤 배치 모드로 들어간다',
-    document.getElementById('tableGhost').style.display === 'block' && document.body.classList.contains('placing-table'));
+    tsModal.style.display === 'none'
+    && document.getElementById('tableGhost').style.display === 'block' && document.body.classList.contains('placing-table'));
   document.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: CLICK.x, clientY: CLICK.y }));
   const pghost = document.getElementById('tableGhost');
   const pLeft = parseFloat(pghost.style.left), pTop = parseFloat(pghost.style.top);

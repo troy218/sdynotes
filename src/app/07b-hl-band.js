@@ -206,6 +206,9 @@
         w.dataset.nbId=(curNB&&curNB.id)||'';
         w._sdyRv=doc&&doc.__rv;
         w.style.cssText=`left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`;
+        // 회전한 글상자도 그림·수식처럼 다시 그릴 때 자세를 유지한다
+        // (유지하지 않으면 다시 그릴 때마다 똑바로 서서 내보내기와 어긋난다)
+        applyBoxRotation(w,el);
         const c=document.createElement('div');
         c.className='tb-content'; c.contentEditable='false';
         c.style.fontSize=(el.fontSize||16)+'px';
@@ -266,7 +269,15 @@
             if(w.classList.contains('edit')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&
                (e.key.length===1||e.key==='Enter')) _ensurePendingTypingSpan(c);
         });
-        c.addEventListener('input',()=>{
+        // 한글 IME 조합 중에는 타이핑 span 안 텍스트 노드를 건드리지 않는다 —
+        // 조합 중인 노드를 고치면 조합이 끊겨 자모가 따로 확정되기 때문.
+        // 조합이 끝나는 순간(input isComposing=false·compositionend) 닻을 치운다.
+        c.addEventListener('compositionstart',()=>{ c._sdyComposing=true; });
+        c.addEventListener('compositionend',()=>{
+            c._sdyComposing=false;
+            try{ _cleanTypingMarks(c); }catch(e){}
+        });
+        c.addEventListener('input',e=>{
             w._caretV=(w._caretV||0)+1;   // 22.1 · 실시간 캐럿 좌표 캐시를 무효화하는 신호
             if(w.classList.contains('edit')){
                 commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
@@ -279,6 +290,9 @@
             w.classList.toggle('empty',em);
             // 엔진이 입력 뒤 캐럿을 inline 밖으로 옮긴 경우 다음 입력 전에 다시 준비한다.
             if(w.classList.contains('edit')) _ensurePendingTypingSpan(c);
+            // 타이핑 span 에 실제 글자가 들어왔으면 눈에 안 보이는 닻(ZWSP)을 치운다.
+            // 조합 중에는 건드리지 않는다(위 compositionstart/end 참조).
+            if(!c._sdyComposing&&!(e&&e.isComposing)){ try{ _cleanTypingMarks(c); }catch(_e){} }
             clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
         });
         // 편집 상자에서 포커스를 벗어나면 즉시 반영 (자동저장 신뢰성)
@@ -421,7 +435,8 @@
         const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
         const c=w.querySelector('.tb-content'); if(!c) return;
         const viewOnly=c.innerHTML===w._sdyViewHtml;
-        const html=viewOnly?el.html:imathCollapse(stripWF(c.innerHTML));
+        // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
+        const html=viewOnly?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
         const fs=parseFloat(c.style.fontSize)||16;
         // Formatting commands may have changed model-only fields (font, align,
         // cellBg, etc.) before calling us. Those edits still need a dirty page;
@@ -430,7 +445,9 @@
         markPageEdited(+w.dataset.pageIdx);
         el.html=html; el.fontSize=fs;
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
-        el.w=w.offsetWidth; el.h=w.offsetHeight;
+        // 회전한 상자의 offset 크기는 외접 박스라서 그대로 쓰면 상자가 부풀며
+        // 자리가 어긋난다 → 똑바로 선 상자만 실측 크기를 되받는다.
+        if(!normalizedRotation(el.rotation)){ el.w=w.offsetWidth; el.h=w.offsetHeight; }
         w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
         w.classList.toggle('empty',!String((c.innerText!=null?c.innerText:c.textContent)||'').trim());
         saveDoc();

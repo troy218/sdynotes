@@ -1002,7 +1002,7 @@
         .font-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .font-menu{
             position:fixed;z-index:2000;background:var(--card);border:1px solid var(--border);
-            border-radius:10px;padding:6px;display:none;min-width:232px;max-height:340px;overflow-y:auto;
+            border-radius:10px;padding:6px;display:none;min-width:264px;max-height:340px;overflow-y:auto;
             box-shadow:0 10px 30px rgba(0,0,0,.18);
         }
         .font-menu.show{display:block;}
@@ -1014,20 +1014,23 @@
         .key-row kbd{display:inline-block;padding:2px 7px;border-radius:3px;background:var(--bg2);
             border:1px solid var(--border);border-bottom-width:2px;font-size:11px;font-family:inherit;
             color:var(--text2);white-space:nowrap;}
-        /* 14.13 · 항목 = 실제 글꼴로 그린 미리보기 + 글꼴 이름 + 현재 선택 체크 */
+        /* 14.39.1 · 항목 = 한국어 이름 + 영어 이름을 해당 글꼴 자체로 + 현재 선택 체크.
+           예시 문구(abc 가나다)는 쓰지 않는다. .fi-ko/.fi-en 은 둘 다
+           .fi-sample 의 font-family(인라인 해당 글꼴)를 상속한다. */
         .font-item{
             padding:8px 10px;border-radius:8px;cursor:pointer;font-size:15px;color:var(--text1);
             display:flex;align-items:center;gap:10px;
         }
-        .font-item .fi-sample{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-            font-size:15px;line-height:1.35;color:var(--text1);}
-        .font-item .fi-name{flex:none;font-size:11px;color:var(--text3);
-            font-family:'Pretendard Variable','Pretendard',sans-serif;white-space:nowrap;}
+        .font-item .fi-sample{flex:1;min-width:0;overflow:hidden;
+            font-size:15px;line-height:1.35;color:var(--text1);
+            display:flex;align-items:baseline;gap:8px;}
+        .font-item .fi-sample .fi-ko{flex:none;font-size:15px;line-height:1.35;white-space:nowrap;}
+        .font-item .fi-sample .fi-en{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+            font-size:12px;line-height:1.35;opacity:.68;}
         .font-item .fi-check{flex:none;display:none;font-size:15px;color:var(--accent);line-height:1;}
         .font-item:hover{background:var(--bg2);}
         .font-item.sel{background:color-mix(in srgb, var(--accent) 12%, transparent);}
         .font-item.sel .fi-sample{color:var(--accent);}
-        .font-item.sel .fi-name{color:var(--accent);}
         .font-item.sel .fi-check{display:block;}
 
         .color-popover{
@@ -1055,6 +1058,7 @@
         .editor-main{flex:1;display:flex;min-height:0;position:relative;}
         .editor-body{
             flex:1;overflow:auto;scroll-behavior:smooth;padding:20px;min-width:0;
+            overflow-anchor:none;
         }
         /* ===== 세로 도구막대 ===== */
         .side-bar{
@@ -1336,7 +1340,9 @@
             .editor.side-off .side-panel{left:0;margin-left:0;transform:translateX(-110%);}
         }
         @media(max-width:640px){
-            .editor-body{padding:8px 4px 80px;padding-bottom:max(80px,env(safe-area-inset-bottom)) !important;}
+            .editor-body{padding:8px 4px 80px;padding-bottom:max(80px,env(safe-area-inset-bottom)) !important;
+    overflow-anchor:none;
+}
             .tb-group{padding:2px;border-radius:4px;}
             .tool-btn{width:38px;height:38px;font-size:19px;}   /* 손가락으로 누르기 쉽게 */
             .tool-sep{margin:0 2px;}
@@ -1372,10 +1378,14 @@
         }
         /* 한 손가락 = 스크롤(브라우저), 두 손가락 = 확대(JS 가 처리).
            pinch-zoom 을 빼야 브라우저가 페이지째 확대하지 않는다. */
-        .editor-body{touch-action:pan-x pan-y;}
-        .pages-stage{margin:0 auto;position:relative;}
+        .editor-body{touch-action:pan-x pan-y;
+    overflow-anchor:none;
+}
+        .pages-stage{margin:0 auto;position:relative;overflow-anchor:none;}
         .page-wrap{position:absolute;left:0;top:0;transform-origin:top left;
-                   contain:layout;}  /* will-change:transform 제거 → 확대 시 글자가 벡터로 재렌더링되어 또렷 */
+                   contain:layout; isolation:isolate; overflow-anchor:none;
+                   backface-visibility:hidden;}  /* will-change:transform 제거 → 확대 시 글자가 벡터로 재렌더링되어 또렷
+                   isolation:isolate + overflow-anchor:none + backface-visibility:hidden → 빠른 스크롤 시 다른 페이지 글자 겹침(고스팅) 방지 */
         .page-label{
             position:absolute;top:-26px;left:2px;font-size:11px;color:var(--text3);
             display:flex;align-items:center;gap:8px;user-select:none;white-space:nowrap;
@@ -1392,6 +1402,7 @@
             width:800px;height:1100px;padding:0;
             outline:1px solid var(--border);border:none;border-radius:3px;
             box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden;
+            contain:paint; isolation:isolate;
         }
         /* 현재 페이지는 실제 노출 면적 판정과 같은 focused 상태를 또렷하게 보여 준다.
            --pz 역수를 써서 확대/축소해도 테두리 굵기가 거의 일정하다. */
@@ -1736,8 +1747,12 @@
            ③ 클릭은 수식 잉크에만 반응(상자 빈 공간은 통과) → 본문 선택을 안 뺏는다 */
         .latex-box.imported{z-index:6;}
         /* 10.0 · 수식이 상자보다 커도 자르지 않고 전부 보이게 한다.
-           (기존 overflow:hidden — 상자 밖으로 삐져나온 큰 수식이 잘려 보였다) */
-        .latex-box.imported>.latex-content{padding:0;overflow:hidden;align-items:center;}
+           (기존 overflow:hidden — 상자 밖으로 삐져나온 큰 수식이 잘려 보였다)
+           14.39.3 · 보고(26.09.08) — '수식상자 바깥으로 수식이 나가면 사라짐'.
+           이 규칙에 overflow:hidden 이 남아 있어 상자를 줄이는 등 수식이 상자
+           밖으로 나가면 삐져나온 부분이 잘려 없어 보였다. 글상자(.tb-content)는
+           overflow:visible 로 글자가 절대 안 잘리므로, 수식도 같은 규칙으로 둔다. */
+        .latex-box.imported>.latex-content{padding:0;overflow:visible;align-items:center;}
         .latex-box.imported.display-math>.latex-content{padding:0;justify-content:center;}
         .latex-box.imported:not(.sel):not(.msel)>.latex-content{pointer-events:none;}
         .latex-box.imported .katex{line-height:1.05;}
@@ -1775,6 +1790,37 @@
         .latex-modal-actions button{border:1px solid var(--border);background:var(--bg2);color:var(--text1);border-radius:9px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer;}
         .latex-modal-actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff;display:flex;align-items:center;gap:5px;}
         @media(max-width:640px){.latex-modal-box{width:calc(100vw - 16px)!important}.latex-input{height:120px}.latex-preview{min-height:100px}}
+        /* 14.39.2 · 표 크기 모달 — 브라우저 prompt 대신 앱 모달로 통일. 수식 넣기와 같은
+           머리글(아이콘·제목·배지·닫기)·행/열 스피너·아래 단추(취소·넣기) 구조를 쓴다. */
+        .tblsize-box{max-width:340px;padding:0!important;overflow:hidden;}
+        .tblsize-head{display:flex;align-items:center;padding:14px 15px;border-bottom:1px solid var(--border);}
+        .tblsize-head>div{display:flex;align-items:center;gap:8px;flex:1}
+        .tblsize-head>div>i{color:var(--accent);font-size:19px;}
+        .tblsize-head b{font-size:15px}
+        .tblsize-head span{font-size:10px;color:var(--accent);font-weight:700;padding:2px 6px;border-radius:6px;background:var(--bg2);}
+        .tblsize-head button{width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:var(--text3);cursor:pointer;}
+        .tblsize-head button:hover{background:var(--bg2);color:var(--text1);}
+        /* 격자 프리셋 — Word·노션의 '격자 위에서 크기 고르기' 그대로. 칸 위를 지나면
+           그때그때 만들어질 행×열이 채워져 보이고, 누르면 그 크기가 정해진다. */
+        .tblsize-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;padding:14px 15px 6px;}
+        .ts-cell{height:20px;border:1px solid var(--border);border-radius:3px;background:var(--bg2);cursor:pointer;transition:background .06s,border-color .06s;}
+        .ts-cell.on{background:var(--accent);border-color:var(--accent);opacity:.86;}
+        .tblsize-hint{padding:0 15px 10px;font-size:10.5px;color:var(--text3);}
+        .tblsize-steppers{display:flex;gap:10px;padding:0 15px 14px;}
+        .tblsize-step{flex:1;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;padding:7px 9px;background:var(--bg2);}
+        .tblsize-step span{font-size:11.5px;color:var(--text2);}
+        .tblsize-step b{flex:1;text-align:center;font-size:14px;color:var(--text1);font-variant-numeric:tabular-nums;}
+        .tblsize-step button{width:26px;height:26px;flex:none;border:1px solid var(--border);border-radius:7px;background:var(--card);color:var(--text1);cursor:pointer;font-size:14px;line-height:1;}
+        .tblsize-step button:hover{border-color:var(--accent);color:var(--accent);}
+        .tblsize-actions{display:flex;justify-content:flex-end;gap:7px;padding:11px 14px;border-top:1px solid var(--border);}
+        .tblsize-actions button{border:1px solid var(--border);background:var(--bg2);color:var(--text1);border-radius:9px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer;}
+        .tblsize-actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff;display:flex;align-items:center;gap:5px;}
+        @media(max-width:640px){
+          .tblsize-box{width:calc(100vw - 16px)!important}
+          .ts-cell{height:26px}                     /* 터치 히트 영역 확보 */
+          .tblsize-step button{width:34px;height:34px}
+          .tblsize-actions button{min-height:44px;} /* 터치에서도 누르기 쉬운 단추 */
+        }
         .tb-content{overflow-wrap:break-word;
             width:100%;height:100%;min-width:60px;min-height:28px;padding:8px 12px;
             border:var(--bw,2px) solid transparent;border-radius:3px;background:transparent;
@@ -1830,8 +1876,10 @@
         .tb.pdf-text .tb-content{border-width:0;border-radius:0;}
         .tb.pdf-text.sel .tb-content,.tb.pdf-text.edit .tb-content{outline:1px solid var(--accent);}
         .tb.tight.edit .tb-content{white-space:pre-wrap;line-height:1.4;}
-        /* 안 보이는 스페이스바: 시각적 차지 0, 선택/복사/번역/검색에만 잡힘 */
-        .tb.tight .zsp{font-size:0;letter-spacing:0;font-style:normal;}
+        /* 안 보이는 스페이스바: 흐름에서 빼 글자 맞춤은 안 건드리고,
+           font-size:0 은 Chromium 이 ::selection / Selection.toString() 에서
+           공백을 건너뛰게 하므로 쓰지 않는다. 글자는 투명, 하이라이트만 남는다. */
+        .tb.tight .zsp{position:absolute;left:100%;top:0;font-size:1em;font-style:normal;letter-spacing:0;line-height:inherit;white-space:pre;color:transparent;transform-origin:left center;}
         /* 가져온 텍스트 간격 조절 바 */
         .tight-bar{position:fixed;top:64px;left:50%;transform:translateX(-50%);
             z-index:1250;display:none;align-items:center;gap:5px;padding:6px 10px;
@@ -3418,7 +3466,9 @@ body.sdy-booting #musicListPop{z-index:10001;}
   .pg-nav .tot{font-size:11px}
   .side-bar,.side-open{display:none!important}
   .side-panel{left:0!important}.side-panel.show{width:min(82vw,300px)!important}
-  .editor-body{overflow:auto!important;padding:6px 2px 100px!important}
+  .editor-body{overflow:auto!important;padding:6px 2px 100px!important;
+    overflow-anchor:none;
+}
   /* 펜 색·굵기·도형 툴바도 화면 안에서 가로 스와이프 */
   .draw-toolbar{left:6px!important;right:6px!important;bottom:max(10px,env(safe-area-inset-bottom))!important;
       width:auto!important;max-width:none!important;transform:none!important;overflow-x:auto!important;
@@ -4888,9 +4938,11 @@ body.has-wall #sdyAmbient{opacity:0;}
     overflow: auto;
     scroll-behavior: smooth;
     min-width: 0;
+    overflow-anchor:none;
 }
 .dark .editor-body {
     background: #0d0d0f !important;
+    overflow-anchor:none;
 }
 .paper{
     border-radius: 4px !important;
@@ -6919,8 +6971,11 @@ body.sdy-turbo .page-wrap{will-change:auto!important;}
     scroll-padding:72px 0 calc(var(--ph-safe) + 120px);
     -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
     touch-action:pan-x pan-y;
-  }
-  .pages-stage{margin:0 auto;}
+    overflow-anchor:none;
+}
+  .pages-stage{margin:0 auto;
+    overflow-anchor:none;
+}
   .side-bar,.side-open{display:none!important;}
   .side-panel{left:0!important;top:0;bottom:0;max-width:calc(100vw - 48px);}
   .side-panel.show{width:min(86vw,340px)!important;}

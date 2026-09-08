@@ -1,4 +1,4 @@
-/* 14.39.1 · 뒤로가기 깜빡임 회귀 테스트
+/* 14.39.4 · 뒤로가기 깜빡임 회귀 테스트
    (사용자 보고: "뒤로가기 누르면 한번 화면이 프레시가 되면서 깜빡이는 버그가 있어")
 
    세 가지 원인을 함께 잡았다.
@@ -135,6 +135,12 @@ try {
   const hState = () => { try { return window.history.state; } catch { return undefined; } };
   const guardN = () => { const s = hState(); return (s && s.sdyNavGuard) ? (s.n ?? -1) : null; };
   const click = el => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  // 두 문자열이 어디에서 갈리는지 (미리보기 비교 실패 시 원인 확인용)
+  const firstDiff = (a, b) => {
+    if (a === b) return '';
+    let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    return `@${i} before=…${a.slice(Math.max(0, i - 40), i + 60)}… after=…${b.slice(Math.max(0, i - 40), i + 60)}…`;
+  };
   const openNote = async (word) => {
     click(cardOf(word));
     const t = Date.now();
@@ -225,8 +231,10 @@ try {
     !!document.querySelector('.recent-row .note-card'));
   const cardA2 = cardOf('라면');
   check('닫고 나면 방금 본 노트가 홈에 보인다', !!cardA2);
+  const pvA2 = ((cardA2 && cardA2.querySelector('.note-preview-frame')) || {}).innerHTML || '';
+  const pvA1 = (cardA2 && previewBefore.get(cardA2.dataset.nbId)) || '';
   check('미리보기 내용이 열기 전과 같다(빈 프레임 없이 그대로 얹었다)',
-    !!cardA2 && (cardA2.querySelector('.note-preview-frame') || {}).innerHTML === previewBefore.get(cardA2.dataset.nbId));
+    !!cardA2 && pvA2 === pvA1, firstDiff(pvA1, pvA2));
 
   console.log('\n── ④ 본문을 고치고 돌아오면 미리보기는 새 내용으로 갱신된다 ──');
   check('떡볶이 노트가 열린다', await openNote('떡볶이'));
