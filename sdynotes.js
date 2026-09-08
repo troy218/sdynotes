@@ -10508,6 +10508,56 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(_fid) setToolbarFont(_fid);
         }catch(e){}
         const c=w.querySelector('.tb-content');
+        // 14.39.0 · 영어 논문 상자(tight)는 단어마다 absolute span 으로 배치돼
+        //   브라우저가 줄을 계산하지 못한다 → 상하 방향키가 줄 이동이 아니라
+        //   옆 단어로 이동한다. 편집에 들어가는 순간 일반 흐름 텍스트로 바꿔
+        //   정상적인 줄 단위 캐럿 이동이 되게 한다.
+        try{
+            const _el=findEl(+w.dataset.pageIdx,w.dataset.id);
+            if(_el&&_el.tight){
+                let plain='';
+                try{
+                    const sps=Array.from(c.querySelectorAll(':scope > span'));
+                    if(sps.length){
+                        const num=v=>{ const n=parseFloat(v); return isNaN(n)?0:n; };
+                        sps.sort((a,b)=>{
+                            const at=num(a.dataset.origTop||a.style.top)||a.offsetTop||0;
+                            const bt=num(b.dataset.origTop||b.style.top)||b.offsetTop||0;
+                            if(Math.abs(at-bt)>2) return at-bt;
+                            return (num(a.style.left)||a.offsetLeft||0)-(num(b.style.left)||b.offsetLeft||0);
+                        });
+                        const lines=[]; let cur=[]; let lastTop=null;
+                        sps.forEach(s=>{
+                            let t='';
+                            try{
+                                const cl=s.cloneNode(true);
+                                cl.querySelectorAll('.zsp').forEach(z=>z.remove());
+                                t=(cl.textContent||'').replace(/[\u200b\ufeff]/g,'').trim();
+                            }catch(e){ t=(s.textContent||'').replace(/[\u200b\ufeff]/g,'').trim(); }
+                            if(!t) return;
+                            const top=num(s.dataset.origTop||s.style.top)||s.offsetTop||0;
+                            if(lastTop!=null&&Math.abs(top-lastTop)>2){
+                                if(cur.length) lines.push(cur.join(' '));
+                                cur=[];
+                            }
+                            cur.push(t); lastTop=top;
+                        });
+                        if(cur.length) lines.push(cur.join(' '));
+                        plain=lines.join('\n');
+                    }
+                }catch(e){}
+                if(!plain) plain=(c.innerText!=null?c.innerText:c.textContent||'').trim();
+                if(plain){
+                    const html=(typeof esc==='function'?esc(plain):plain).replace(/\n/g,'<br>');
+                    c.innerHTML=html;
+                }
+                w.classList.remove('tight');
+                w.classList.remove('pdf-text');
+                _el.tight=0; delete _el.pdfText;
+                try{ if(typeof _tightQueue!=='undefined'&&_tightQueue.delete) _tightQueue.delete(c); }catch(e){}
+                w._sdyViewHtml=c.innerHTML;
+            }
+        }catch(e){}
         c.contentEditable='true';
         if(c.getAttribute('data-empty')==='true') c.innerHTML='';
         if(keepSel){ c.focus({preventScroll:true}); return; }
