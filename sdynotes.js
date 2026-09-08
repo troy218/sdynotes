@@ -7084,6 +7084,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
     }
 /* APP-PART:06a-page-virtual.js:END */
+// 14.39.2 verified: fast-scroll ghosting fix present (translateZ + isolation + overflow-anchor)
+// PR record for arena/01a0805c-sdynotes - fast-scroll fix verified
 
 /* === src/app/06b-read-layer.js ===
    읽기 우선 레이어 · 고화질 배경 · 자원 정리

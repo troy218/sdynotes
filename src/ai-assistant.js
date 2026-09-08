@@ -329,8 +329,8 @@
     if(!APP_PRE.test(q||'')) return null;
     return String(q).replace(APP_PRE,'').trim();
   };
-  // 앱 명사 — 노래·타이머·노트·발표·내보내기·찾기·창 열기·이퀄라이저 말투.
-  var APP_HINT=/(틀어|재생해|일시 ?정지|멈춰|정지해|다음 ?곡|이전 ?곡|노래|음악|BGM|랜덤 ?믹스|믹스로|플레이어|볼륨|소리 (키워|줄여|크게|작게)|이퀄라이저|이큐|equalizer|\bEQ\b|베이스 ?부스트|보컬 ?강조|타이머|스톱워치|스탑워치|집중 ?시계|시계 (열어|보여|틀어)|새 노트|노트를? (열어|닫아|만들어)|노트 (목록|열어|닫아|만들어)|다른 노트|발표(를| 모드| 시작| 해)|프레젠테이션|내보내|PDF로|피디에프|찾기 (열어|보여)|스티커|단어 ?카드|설정(을| 화면| 열어| 보여))/;
+  // 앱 명사 — 노래·타이머·노트·발표·내보내기·찾기·창 열기·이퀄라이저·엽스코드(채팅) 말투.
+  var APP_HINT=/(틀어|재생해|일시 ?정지|멈춰|정지해|다음 ?곡|이전 ?곡|노래|음악|BGM|랜덤 ?믹스|믹스로|플레이어|볼륨|소리 (키워|줄여|크게|작게)|이퀄라이저|이큐|equalizer|\bEQ\b|베이스 ?부스트|보컬 ?강조|타이머|스톱워치|스탑워치|집중 ?시계|시계 (열어|보여|틀어)|새 노트|노트를? (열어|닫아|만들어)|노트 (목록|열어|닫아|만들어)|다른 노트|발표(를| 모드| 시작| 해)|프레젠테이션|내보내|PDF로|피디에프|찾기 (열어|보여)|스티커|단어 ?카드|설정(을| 화면| 열어| 보여)|엽스(코드)?|YP\b|채팅(창)?(을|를|은|는)?\s*(열어|보여|켜|켜줘|열어줘|열어\s*줘)?|대화 ?방(을|를)?)/;
   // 앱 동사 — 명사만 있고 이 동사가 없는데 문서 동사가 있으면 편집으로 둔다.
   var APP_VERB=/(틀어|재생|멈춰|정지|일시정지|다음 ?곡|이전 ?곡|열어|보여|닫아|시작해|내보내|찾아|검색해|보여줘|켜줘|꺼줘|켜|꺼|키워|줄여|맞춰|재줘|설정|바꿔|초기화|리셋)/;
   var APP_DOCVERB=/(만들|고치|바꾸|옮기|지우|삭제|추가|정리)/;
@@ -361,6 +361,8 @@
     if(!APP_HINT.test(q)) return false;
     if(/새 ?노트/.test(q)) return true;
     if(/노트(를)? 만들어/.test(q)) return true;
+    // 14.39.0 · "엽스코드"·"채팅"·"채팅방"은 낱말만으로도 앱 실행으로 본다(열어/보여 와 자주 같이 옴)
+    if(/(?:^|\\s)(?:엽스(?:코드)?|채팅(?:방)?|대화방)(?:\\s|$|[.!?])/.test(q)) return true;
     if(!APP_VERB.test(q)&&APP_DOCVERB.test(q)) return false;
     return true;
   }
@@ -512,11 +514,21 @@
       if(st) lines.push('집중 화면: '+(st.open?'열림':'닫힘')+' · 모드 '+st.mode
         +(st.run?(' · 타이머 실행 중(약 '+Math.max(1,Math.round(st.left/60000))+'분 남음)'):''));
     }catch(e){}
+    // 14.39.x · 엽스코드(채팅) 열림 상태도 스냅샷에 담는다 — 모델이 이미 열려 있는지 보고 @chat on/off 를 고른다
+    try{
+      var ypOpen=false;
+      try{ ypOpen=!!(window.YP&&window.YP.open); }catch(_){}
+      if(!ypOpen){
+        var ypApp=null; try{ ypApp=document.getElementById('ypApp'); }catch(_){}
+        if(ypApp) ypOpen=ypApp.classList.contains('open');
+      }
+      lines.push('엽스코드(채팅): '+(ypOpen?'열림':'닫힘'));
+    }catch(e){}
     return lines.join('\n');
   }
   window.sdyAiAppSnapshot=function(){ try{ return appCapture(); }catch(e){ return ''; } };
   function appProgress(acc){
-    var count=(String(acc||'').match(/^\s*@(music|note|timer|clock|sw|present|export|find|translate|stickers|cards|settings|eq)\b/gmi)||[]).length;
+    var count=(String(acc||'').match(/^\s*@(music|note|timer|clock|sw|present|export|find|translate|stickers|cards|settings|eq|chat)\b/gmi)||[]).length;
     return count?('앱 실행안을 만드는 중… · 동작 '+count+'개'):'앱 상태를 살펴보는 중…';
   }
   // 앱 실행 마무리 — editApplyDone과 같은 모양. 음악 재생은 자동재생 확인을
@@ -1355,6 +1367,20 @@
       if(cmd==='stickers'||cmd==='sticker'){ ops.push({cmd:'stickers'}); return; }
       if(cmd==='cards'||cmd==='card'){ ops.push({cmd:'cards'}); return; }
       if(cmd==='settings'||cmd==='setting'){ ops.push({cmd:'settings'}); return; }
+      // 14.39.x · @chat — 엽스코드(채팅) 열기/닫기
+      if(cmd==='chat'||cmd==='yp'||cmd==='yeps'||cmd==='엽스'||cmd==='엽스코드'||cmd==='채팅'){
+        var cf=cutN(rest,1);
+        var cact=String(cf.cuts.length?cf.cuts[0]:cf.rest).toLowerCase().trim();
+        if(!cact||cact==='on'||cact==='open'||cact==='show'||cact==='열기'||cact==='열어'||cact==='켜기'||cact==='켜'||cact==='켜줘'||cact==='보여줘'||cact==='들어가기'||cact==='들어가'){
+          ops.push({cmd:'chat',act:'open'}); return;
+        }
+        if(cact==='off'||cact==='close'||cact==='hide'||cact==='닫기'||cact==='닫아'||cact==='끄기'||cact==='꺼'||cact==='나가기'||cact==='나가'){
+          ops.push({cmd:'chat',act:'close'}); return;
+        }
+        if(cact==='toggle'||cact==='토글'){ ops.push({cmd:'chat',act:'toggle'}); return; }
+        // 동작 없이 @chat 만 있으면 연다
+        ops.push({cmd:'chat',act:'open'}); return;
+      }
       dropped++;
     });
     return {ops:ops.slice(0,10),say:say,ask:ask,dropped:dropped+Math.max(0,ops.length-10)};
@@ -1418,6 +1444,7 @@
         if(op.cmd==='stickers'){ var st=needFn('openStickers'); if(!st){ bad('스티커 창을 열지 못했어요'); return; } try{ st(); }catch(e){ bad('스티커 창을 열지 못했어요'); return; } ok(); return; }
         if(op.cmd==='cards'){ var cd=needFn('openCards'); if(!cd){ bad('단어카드 창을 열지 못했어요'); return; } try{ cd(); }catch(e){ bad('단어카드 창을 열지 못했어요'); return; } ok(); return; }
         if(op.cmd==='settings'){ var sg=needFn('openSettings'); if(!sg){ bad('설정 창을 열지 못했어요'); return; } try{ sg(); }catch(e){ bad('설정 창을 열지 못했어요'); return; } ok(); return; }
+        if(op.cmd==='chat') return chatOp(op);
         bad('알 수 없는 동작이에요');
       }).catch(function(){ bad('실행 중 문제가 생겼어요'); });
     });
@@ -1641,6 +1668,31 @@
         if(rf) rf(op.q);
       }catch(e){ bad('찾기를 실행하지 못했어요'); return; }
       ok(); return;
+    }
+    /* 14.39.x · 엽스코드(채팅) 열기/닫기 — 칩을 누른 것과 같은 __ypEnter / ypClose 를 쓴다. */
+    function chatOp(op){
+      var enter=needFn('__ypEnter');
+      var isOpen=false;
+      try{ isOpen=!!(window.YP&&window.YP.open); }catch(_){}
+      if(!isOpen){
+        try{ var ya=document.getElementById('ypApp'); if(ya) isOpen=ya.classList.contains('open'); }catch(_){}
+      }
+      // 토글 — 지금 상태를 뒤집는다
+      var wantOpen;
+      if(op.act==='toggle') wantOpen=!isOpen;
+      else wantOpen=(op.act!=='close'&&op.act!=='off');
+      if(wantOpen){
+        if(isOpen){ note('엽스코드가 이미 열려 있어요'); ok(); return; }
+        if(!enter){ bad('엽스코드를 열지 못했어요'); return; }
+        try{ enter(); }catch(e){ bad('엽스코드를 열지 못했어요'); return; }
+        ok(); return;
+      }else{
+        if(!isOpen){ bad('엽스코드가 이미 닫혀 있어요'); return; }
+        var closeFn=needFn('__ypClose');
+        if(!closeFn){ bad('엽스코드를 닫지 못했어요'); return; }
+        try{ closeFn(); }catch(e){ bad('엽스코드를 닫지 못했어요'); return; }
+        ok(); return;
+      }
     }
     return chain.then(function(){
       // 음악 재생을 시도했으면 자동재생이 막혔는지 확인한다 — 막혔으면
