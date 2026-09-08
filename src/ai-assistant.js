@@ -2202,7 +2202,7 @@
       body:JSON.stringify({task:'bug', question:q, stream:false})
     }).then(function(r){
       return readSSE(r,function(){});        // 비스트림 — 서버가 JSON 한 방으로 준다
-    }).then(function(res){
+    }).then(async function(res){
       var d=res.d||{};
       if(d.ok){
         var text=String(d.text||acc||'').trim();
@@ -2213,7 +2213,7 @@
             var who='';
             try{ var u=window.sdyUser&&window.sdyUser(); if(u&&u.nick) who=String(u.nick); }catch(e){}
             var ver=((document.querySelector('meta[name="application-version"]')||{}).content)||'';
-            stored=window.sdyBuglogAdd({
+            stored=await window.sdyBuglogAdd({
               title:m?m[1].trim():'',
               text:text,
               raw:q,
@@ -2223,8 +2223,10 @@
           }catch(e){}
         }
         lastText=text+(stored
-          ?'\n\n— 버그 일지에 기록했어요 · 설정 → 버그 일지에서 볼 수 있어요 해돌~'
-          :'');
+          ?(stored.synced
+            ?'\n\n— 버그 일지를 서버에 저장했어요 · 설정 → 버그 일지에서 볼 수 있어요 해돌~'
+            :'\n\n— 이 기기에 기록했어요 · 서버 저장 대기 중이에요. 연결 복구 후 다시 동기화해요 · 업데이트 안내가 보이면 새로고침해 주세요 해돌~')
+          :'\n\n— 버그 일지를 저장하지 못했어요 · 정리본을 복사해 두고 브라우저 저장 공간을 확인해 주세요');
         lastKind='bug';
         kindChip('bug');
         out(lastText);

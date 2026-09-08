@@ -11,6 +11,8 @@
     //   함께 본다 — 누구나 보되, 지우기(X)는 관리자로 로그인한 경우에만 노출·동작한다.
     //   설정 → '버그 일지' 줄의 [보기]를 눌러야 목록이 열리고(스크롤), 열린
     //   목록에서 항목마다 X 로 그 기록만 지운다.
+    // 로컬 배열은 기기 사본이다. 서버는 sync/settings.json(Oracle 기본)에 영구
+    // 저장하며 apply.sh는 sync/를 교체하지 않는다. tmp는 원자 저장 중에만 쓴다.
     const BUGLOG_KEY='sdy_buglog';
     function getBugEntries(){
         try{
@@ -22,7 +24,8 @@
     function saveBugEntries(a){
         const arr=(Array.isArray(a)?a.filter(x=>x&&x.id):[]).slice()
             .sort((x,y)=>(y.t||0)-(x.t||0));
-        try{ localStorage.setItem(BUGLOG_KEY,JSON.stringify(arr)); }catch(e){}
+        // 실패를 숨기면 실제로 아무것도 저장하지 않고 '기록 완료'라고 안내하게 된다.
+        localStorage.setItem(BUGLOG_KEY,JSON.stringify(arr));
         try{ document.dispatchEvent(new CustomEvent('sdy-buglog-changed')); }catch(e){}
     }
     function paintBugCount(){
@@ -32,7 +35,7 @@
         el.textContent=n?`${n}건`:'없음';
     }
     // 해돌이(ai-assistant.js)가 정리한 내용을 일지에 기록한다. id·시각은 여기서.
-    function buglogAdd(data){
+    async function buglogAdd(data){
         const id='bug_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
         const e={
             id,
@@ -47,24 +50,36 @@
         a.unshift(e);
         saveBugEntries(a);
         try{ _stQueueOp('buglog:'+id,'put',e); }catch(err){}
-        try{ pushSettingsNow(); }catch(err){}
         paintBugCount();
-        return e;
+        let result=null;
+        try{ result=await pushSettingsNow(); }catch(err){}
+        // synced는 응답용 상태일 뿐 일지 본문/설정 payload에는 저장하지 않는다.
+        const synced=!!(result&&Array.isArray(result.accepted)&&result.accepted.includes('buglog:'+id));
+        return {...e,synced};
     }
     try{ window.sdyBuglogAdd=buglogAdd; }catch(e){}
     // 목록에서 X — 그 기록 하나만 지운다 (관리자로 로그인한 경우에만 노출·동작)
-    function delBugEntry(id){
+    async function delBugEntry(id){
         // 모두가 지울 수 없게 — 관리자 전용 동작
         if(!isAdmin()){ try{ toast('관리자로 로그인해야 지울 수 있어요',1800); }catch(e){} return; }
         id=String(id||'');
         const a=getBugEntries(), b=a.filter(x=>String(x.id)!==id);
         if(a.length===b.length) return;
-        saveBugEntries(b);
-        try{ _stQueueOp('buglog:'+id,'del'); }catch(err){}
-        try{ pushSettingsNow(); }catch(err){}
+        try{ saveBugEntries(b); }catch(err){
+            try{ toast('삭제 요청을 저장하지 못했어요 · 브라우저 저장 공간을 확인해 주세요',2600); }catch(e){}
+            return;
+        }
+        try{ _stQueueOp('buglog:'+id,'del',undefined,true); }catch(err){}
         paintBugCount();
         if(isBuglogOpen()) renderBugList();
-        try{ toast('버그 기록을 지웠어요',1500); }catch(err){}
+        let result=null;
+        try{ result=await pushSettingsNow(); }catch(err){}
+        const key='buglog:'+id;
+        const saved=result&&Array.isArray(result.accepted)&&result.accepted.includes(key);
+        const blocked=result&&Array.isArray(result.blocked)&&result.blocked.includes(key);
+        try{ toast(saved?'버그 기록을 지웠어요':(blocked
+            ?'삭제가 차단됐어요 · 관리자 로그인 상태를 확인해 주세요'
+            :'삭제 요청을 기기에 보관했어요 · 서버 반영 대기 중'),2200); }catch(err){}
     }
     function isBuglogOpen(){
         const el=document.getElementById('buglogModal');
