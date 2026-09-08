@@ -209,7 +209,7 @@
         return {...o};
     }
     function _cfgCacheDrop(id){ if(id==null||_cfgCacheId===id){ _cfgCacheId=null; _cfgCacheRaw=null; _cfgCacheObj=null; } }
-    // ── 14.39.4 · 노트 설정(nb_*) '개정 번호' ────────────────────────────
+    // ── 14.39.5 · 노트 설정(nb_*) '개정 번호' ────────────────────────────
     //   홈 카드의 미리보기는 한 번 그려 둔 HTML을 기억했다가 홈을 다시 그릴 때
     //   그대로 얹는다(빈 프레임 = 깜빡임 방지). 그 기억을 언제 버릴지를 이
     //   번호로 판단한다 — nb_* 에 쓰는 모든 변경(setCfg)이 번호를 올린다.

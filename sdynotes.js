@@ -770,7 +770,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return {...o};
     }
     function _cfgCacheDrop(id){ if(id==null||_cfgCacheId===id){ _cfgCacheId=null; _cfgCacheRaw=null; _cfgCacheObj=null; } }
-    // ── 14.39.4 · 노트 설정(nb_*) '개정 번호' ────────────────────────────
+    // ── 14.39.5 · 노트 설정(nb_*) '개정 번호' ────────────────────────────
     //   홈 카드의 미리보기는 한 번 그려 둔 HTML을 기억했다가 홈을 다시 그릴 때
     //   그대로 얹는다(빈 프레임 = 깜빡임 방지). 그 기억을 언제 버릴지를 이
     //   번호로 판단한다 — nb_* 에 쓰는 모든 변경(setCfg)이 번호를 올린다.
@@ -2139,7 +2139,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             _stackTransforms(cards,stack.classList.contains('fanned'));
         });
     }
-    // ── 14.39.4 · 홈 카드 미리보기 '페인트 기억' ────────────────────────────
+    // ── 14.39.5 · 홈 카드 미리보기 '페인트 기억' ────────────────────────────
     // 뒤로가기로 노트를 닫고 홈에 돌아오면 홈을 다시 그린다 — 방금 본 노트를
     // '최근 편집' 줄로 옮겨 놓아야 하므로 카드 DOM을 새로 만든다. 그때마다
     // 미리보기를 '빈 프레임'으로 만든 뒤 다시 채웠기 때문에 홈 전체가 한 순간
@@ -2323,7 +2323,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nb.title||'새 노트')}</span>
                     <span class="live-dot" data-nb="${nb.id}" style="display:none;flex-shrink:0;margin-left:8px;font-size:10.5px;font-weight:700;color:#059669;">●</span>
                 </div>`;
-            // 14.39.4 · 그려 둔 미리보기가 있으면 빈 프레임 없이 곧바로 얹는다.
+            // 14.39.5 · 그려 둔 미리보기가 있으면 빈 프레임 없이 곧바로 얹는다.
             //   잠긴 노트는 기억을 쓰지 않는다(본문은 흐리게 가려져야 한다) —
             //   잠그는 순간 기억도 버린다.
             if(locked) pvPaintDrop(nb.id);
@@ -6021,7 +6021,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     async function openNB(nb){
         if(window._closeEdT){
             clearTimeout(window._closeEdT); window._closeEdT=null;
-            // 14.39.4 · '닫기 예약'(슬라이드아웃이 끝난 뒤 종이를 내리는 일)이
+            // 14.39.5 · '닫기 예약'(슬라이드아웃이 끝난 뒤 종이를 내리는 일)이
             //   취소되는 길이다. 예약에 들어 있던 정리를 여기서 바로 한다 —
             //   이어서 renderPages() 가 새 노트의 종이를 채우므로 빈 화면이
             //   남지도, 이전 노트의 종이가 새 노트 뒤에 숨어 있지도 않는다.
@@ -6179,7 +6179,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         openNav(closeEditor);                                          // 뒤로가기 → 에디터 닫기
     }
 
-    // ── 14.39.4 · 에디터 종이(본문) 정리 ────────────────────────────────
+    // ── 14.39.5 · 에디터 종이(본문) 정리 ────────────────────────────────
     // 뒤로가기를 누르면 에디터 패널은 .4s 동안 오른쪽으로 미끄러져 나간다.
     // 예전엔 닫는 즉시 resetPageWork() + pagesStage.innerHTML='' 를 실행해서,
     // 빠져나가는 0.4초 동안 패널이 '내용이 없는 하얀 판'이 됐다 — 사용자가
@@ -6766,6 +6766,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         paper.style.width=size.w+'px';
         paper.style.height=size.h+'px';
         paper.innerHTML=`<div class="layer layer-preview"></div>
+                         <div class="layer layer-fig"></div>
                          <div class="layer layer-img"></div>
                          <svg class="stroke-svg layer-fill" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none" aria-hidden="true"></svg>
                          <svg class="stroke-svg layer-stroke" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none"></svg>
@@ -7045,12 +7046,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     function clearPageEls(idx){
         const paper=paperAt(idx); if(!paper) return;
+        const figL=paper.querySelector('.layer-fig');
         const imgL=paper.querySelector('.layer-img');
         const fill=paper.querySelector('.layer-fill');
         const svg=paper.querySelector('.layer-stroke');
         const txtL=paper.querySelector('.layer-text');
         const tbl=paper.querySelector('.layer-tbl');
         const pin=paper.querySelector('.layer-pin');
+        if(figL) figL.innerHTML='';
         if(imgL) imgL.innerHTML='';
         if(fill) fill.innerHTML='';
         if(svg)  svg.innerHTML='';
@@ -7524,9 +7527,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             job.loading=false;
             const size=paperSize();
-            const imgL=paper.querySelector('.layer-img'), fillL=paper.querySelector('.layer-fill'),
+            // 14.39.3 · PDF 원본 배경(isBg)·수식 조각(isMath)은 layer-fig 로 —
+            //   사진을 선택/이동해도 이 '종이 가구'가 글자·수식 위로 뜨지 않게.
+            const figL=paper.querySelector('.layer-fig'),
+                imgL=paper.querySelector('.layer-img'), fillL=paper.querySelector('.layer-fill'),
                 svg=paper.querySelector('.layer-stroke'), txtL=paper.querySelector('.layer-text');
             _dropPageTightFits(paper);
+            if(figL) figL.innerHTML='';
             imgL.innerHTML=''; if(fillL) fillL.innerHTML=''; svg.innerHTML=''; txtL.innerHTML='';
             if(fillL) fillL.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
             svg.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
@@ -7549,13 +7556,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(!_pageJobLive(job)||_pageRenderTok[idx]!==tok){ _cancelPageRender(idx); return; }
                 // 데이터가 교체됐으면 오래된 청크를 새 문서 위에 붙이지 않는다.
                 if(d.pages[idx]!==pg||(pg.els&&pg.els!==els)){ renderPageEls(idx); return; }
-                const bags={img:document.createDocumentFragment(),fill:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()};
+                const bags={img:document.createDocumentFragment(),fig:document.createDocumentFragment(),fill:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()};
                 let weight=0;
                 do{
                     const el=els[at++];
                     if(!el) break;
-                    if(el.type==='image') bags.img.appendChild(buildImageEl(el,idx));
-                    else if(el.type==='legacyDraw'){
+                    if(el.type==='image'){
+                        // 14.39.3 · 원본 배경·수식 조각은 가구 층(layer-fig)으로,
+                        //   사용자가 옮기는 사진·가져온 그림만 layer-img 로.
+                        const bag=(el.isBg||el.isMath)&&figL?bags.fig:bags.img;
+                        bag.appendChild(buildImageEl(el,idx));
+                    }else if(el.type==='legacyDraw'){
                         const im=document.createElementNS('http://www.w3.org/2000/svg','image');
                         im.setAttribute('href',el.url); im.setAttribute('x',0); im.setAttribute('y',0);
                         im.setAttribute('width',size.w); im.setAttribute('height',size.h); bags.svg.appendChild(im);
@@ -7577,7 +7588,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     if(!paper.isConnected||paperAt(idx)!==paper) return false;
                     // 각 레이어가 여전히 같은 paper에 속해 있는지 확인 (detach 방지)
                     if(imgL.parentNode!==paper||txtL.parentNode!==paper) return false;
+                    if(figL&&figL.parentNode!==paper) return false;
                     imgL.appendChild(bags.img);
+                    if(figL) figL.appendChild(bags.fig);
                     if(fillL) fillL.appendChild(bags.fill);
                     svg.appendChild(bags.svg);
                     txtL.appendChild(bags.txt);
@@ -9557,29 +9570,69 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         return runs;
     }
+    // 줄 상자가 닿거나 글꼴 bbox가 조금 겹쳐도 서로 다른 줄은 합치지 않는다.
+    // 고정 화면 px 대신 작은 조각 높이의 절반을 기준으로 해 확대/축소에도 같다.
+    function _hlSameLine(a,b){
+        return Math.min(a.b,b.b)-Math.max(a.t,b.t)>Math.min(a.b-a.t,b.b-b.t)*0.5;
+    }
+    // PDF 단어 끝의 .zsp(복사/검색용 공백)는 폭이 0이다. 서식 정규화 후에는
+    // 일반 trailing space로 남기도 한다. 그 공백이 실제로 칠해진 경우에만
+    // 이웃한 절대좌표 단어 사이의 빈 영역을 표시용 조각으로 보충한다.
+    // 공백만 선택해도 동작하며, 원문/단어 좌표/공백 문자는 전혀 바꾸지 않는다.
+    function _hlSpaceRect(n,c,boxes){
+        if(!/[^\S\r\n]$/.test(n.nodeValue||'')) return null;
+        const positioned=s=>s&&s.nodeType===1&&s.tagName==='SPAN'&&s.style.position==='absolute';
+        let s=n.parentElement;
+        while(s&&s!==c&&!positioned(s)) s=s.parentElement;
+        if(!s||s===c) return null;
+        // 선택한 공백 뒤에 다른 글자/공백이나 줄바꿈이 있으면 단어 끝이 아니다.
+        // 빈 편집 마커는 무시하되, 선택하지 않은 뒤쪽 글자를 건너뛰지는 않는다.
+        for(let tail=n;tail!==s;tail=tail.parentNode){
+            for(let k=tail.nextSibling;k;k=k.nextSibling){
+                if(k.textContent||(k.nodeType===1&&(k.tagName==='BR'||k.querySelector('br')))) return null;
+            }
+        }
+        let next=s.nextSibling;
+        while(next&&next.nodeType===3&&!next.nodeValue) next=next.nextSibling;
+        // 같은 부모 아래 바로 다음 단어만: 문단/열/줄바꿈/이미지 경계를 넘지 않는다.
+        if(!positioned(next)) return null;
+        const bounds=el=>{
+            if(!boxes.has(el)){
+                const r=el.getBoundingClientRect();
+                boxes.set(el,{l:r.left,t:r.top,rr:r.right,b:r.bottom});
+            }
+            return boxes.get(el);
+        };
+        const a=bounds(s), b=bounds(next);
+        if(a.rr-a.l<=0.3||b.rr-b.l<=0.3||a.b-a.t<=0.3||b.b-b.t<=0.3
+            ||b.l<=a.rr||!_hlSameLine(a,b)) return null;
+        return {l:a.rr,t:Math.min(a.t,b.t),rr:b.l,b:Math.max(a.b,b.b)};
+    }
     // 텍스트 노드를 실제 화면 선 조각(뷰 좌표)으로 잰다
-    function _hlFragRects(run){
+    function _hlFragRects(run,c){
         const out=[], range=document.createRange();
+        const boxes=c&&c.parentElement&&c.parentElement.classList.contains('tight')?new Map():null;
         for(const n of run.nodes){
-            try{ range.selectNodeContents(n); }catch(e){ continue; }
             let rs=[];
-            try{ rs=Array.from(range.getClientRects()); }catch(e){ rs=[]; }
+            try{ range.selectNodeContents(n); rs=Array.from(range.getClientRects()); }catch(e){ continue; }
             for(const r of rs){
                 if(r&&r.width>0.3&&r.height>0.3)
-                    out.push({l:r.left,t:r.top,rr:r.right,b:r.bottom,color:run.color});
+                    out.push({l:r.left,t:r.top,rr:r.right,b:r.bottom,color:run.color,run:run});
             }
+            const space=boxes&&_hlSpaceRect(n,c,boxes);
+            if(space) out.push({...space,color:run.color,run:run});
         }
         return out;
     }
-    // 같은 줄 조각을 세로 겹침으로 묶고, 가로로 닿은 조각은 한 띠로 합친다
+    // 같은 줄 조각을 세로 겹침으로 묶고, 같은 선택/색의 닿은 조각만 합친다.
     function _hlBands(frags){
         const rows=[];
         for(const f of frags){
             let row=null;
-            for(const r of rows){ if(f.t<r.maxT+2&&f.b>r.minT-2){ row=r; break; } }
-            if(!row){ row={minT:f.t,maxT:f.b,items:[]}; rows.push(row); }
-            if(f.t<row.minT) row.minT=f.t;
-            if(f.b>row.maxT) row.maxT=f.b;
+            for(const r of rows){ if(_hlSameLine(f,r)){ row=r; break; } }
+            if(!row){ row={t:f.t,b:f.b,items:[]}; rows.push(row); }
+            if(f.t<row.t) row.t=f.t;
+            if(f.b>row.b) row.b=f.b;
             row.items.push(f);
         }
         const bands=[];
@@ -9587,11 +9640,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const items=row.items.slice().sort((a,b)=>a.l-b.l);
             let band=null;
             for(const f of items){
-                if(band&&f.l-band.rr<=2.5){
+                if(band&&band.run===f.run&&band.color===f.color&&f.l-band.rr<=2.5){
                     if(f.rr>band.rr) band.rr=f.rr;
                     if(f.t<band.t) band.t=f.t;
                     if(f.b>band.b) band.b=f.b;
-                }else{ band={l:f.l,t:f.t,rr:f.rr,b:f.b,color:f.color}; bands.push(band); }
+                }else{ band={l:f.l,t:f.t,rr:f.rr,b:f.b,color:f.color,run:f.run}; bands.push(band); }
             }
         }
         return bands;
@@ -9659,7 +9712,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{ baseHex=_colorToHex(_classicPaletteColor('hl',(c.style&&c.style.backgroundColor)||'')); }catch(_e){}
         let frags=[];
         try{
-            for(const run of _hlRuns(c,baseHex)) frags=frags.concat(_hlFragRects(run));
+            for(const run of _hlRuns(c,baseHex)) frags=frags.concat(_hlFragRects(run,c));
         }catch(e){ frags=[]; }
         if(!frags.length){
             w.classList.remove('sdy-hl-band-on');
@@ -10249,12 +10302,27 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   확인한다. `.tb`/`.paper-img`/`.stroke-g` 는 언제나 각 레이어의 직계
     //   자식이므로 판정 결과는 예전과 완전히 같고, 비용만 subtree 크기와
     //   무관해진다.
+    //
+    // ★ 14.39.3 · 이미지 층(layer-img)은 '실제로 끌거나 크기를 조절하는 동안'만
+    //   올린다 (사용자 보고 — "이미지를 이동하려고 선택하면 주변 수식이 사라짐").
+    //   예전에는 사진을 한 번만 선택해도 층 전체가 z=50 으로 떠올라, 글자·수식
+    //   층 위에 그림이 얹혔다. 그 결과 ① 사진과 겹친 수식·글자가 그림 뒤에
+    //   숨고, ② (옛 구조에선 같은 층에 있던) 원본 배경 래스터와 흰 바탕 수식
+    //   조각까지 함께 떠올라 주변이 통째로 가려졌다. 이제 선택만으로는
+    //   올리지 않고, sdy-dragging / sdy-resizing 이 붙은 동안(실제 제스처)
+    //   만 앞으로 온다 — 옮기는 그림은 끝까지 보이되, 놓거나 손을 떼면
+    //   곧바로 글자·수식이 다시 그림 위로 돌아온다. 그림 층이 올라가 있어도
+    //   글자는 여전히 그 아래에서 읽힌다(아래 layer-fig 분리 참고).
     function _layerLift(layer){
         if(!layer) return;
+        const imgGesture=layer.classList.contains('layer-img');
         let on=false;
         for(let n=layer.firstElementChild;n;n=n.nextElementSibling){
             const cl=n.classList;
-            if(cl&&(cl.contains('sel')||cl.contains('edit')||cl.contains('msel'))){ on=true; break; }
+            if(!cl) continue;
+            if(imgGesture){
+                if(cl.contains('sdy-dragging')||cl.contains('sdy-resizing')){ on=true; break; }
+            }else if(cl.contains('sel')||cl.contains('edit')||cl.contains('msel')){ on=true; break; }
         }
         const v=on?'50':'';
         // 같은 값을 다시 쓰면 브라우저가 불필요하게 스타일을 무효화한다.
@@ -13974,7 +14042,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 에디터·폴더·모달을 열 때 히스토리 항목을 쌓아, 뒤로가기를 누르면
     // 사이트를 빠져나가는 대신 열려 있던 화면/모달이 닫히게 한다.
     //
-    // 14.39.4 · **진짜 뒤로가기를 되찾았다.** (사용자 보고: "뒤로가기 누르면
+    // 14.39.5 · **진짜 뒤로가기를 되찾았다.** (사용자 보고: "뒤로가기 누르면
     //   화면이 한 번 새로고침되면서 깜빡인다")
     //   원인은 이름 가림이었다. 이 묶음(번들)은 모든 파트가 한 어휘 스코프를
     //   공유하는데, 01-core.js 의 `let history=[]`(되돌리기 스택)가
@@ -20206,6 +20274,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const txtL=paper.querySelector('.layer-text');
         const svg=paper.querySelector('.layer-stroke');
         const fillL=paper.querySelector('.layer-fill');
+        const figL=paper.querySelector('.layer-fig');
         const imgL=paper.querySelector('.layer-img');
         const els=(doc.pages&&doc.pages[idx]&&doc.pages[idx].els)||[];
         els.forEach(el=>{
@@ -20241,7 +20310,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }else{
                 if(el.type==='text'&&txtL) txtL.appendChild(buildTextEl(el,idx));
                 else if(el.type==='stroke'&&svg){ if(el.fillColor&&fillL) fillL.appendChild(buildStrokeFillEl(el,idx)); svg.appendChild(buildStrokeEl(el,idx)); }
-                else if(el.type==='image'&&imgL) imgL.appendChild(buildImageEl(el,idx));
+                else if(el.type==='image'){
+                    // 14.39.3 · 원본 배경·수식 조각은 가구 층(layer-fig)으로.
+                    const dst=((el.isBg||el.isMath)&&figL)?figL:imgL;
+                    if(dst) dst.appendChild(buildImageEl(el,idx));
+                }
                 else if(el.type==='latex'&&txtL) txtL.appendChild(buildLatexEl(el,idx));
             }
         });
@@ -22212,7 +22285,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const nbId=curNB.id;
         try{ if(doc) flushSaveDoc(); }catch(e){}   // 나가기 전 편집분 즉시 저장
         document.getElementById('editorView').classList.remove('open');
-        // 14.39.4 · closeEditor 를 거치지 않는 닫기 길도 똑같이 마무리한다.
+        // 14.39.5 · closeEditor 를 거치지 않는 닫기 길도 똑같이 마무리한다.
         //   예전엔 html/body 의 in-editor 가 그대로 남아(overflow:hidden !important)
         //   노트를 지우고 홈으로 돌아오면 홈이 스크롤되지 않았다.
         //   종이 정리는 슬라이드아웃(.4s)이 끝난 뒤 — 닫는 동안 화면이 하얗게

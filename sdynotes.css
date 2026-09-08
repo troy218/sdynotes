@@ -1448,6 +1448,14 @@
         /* 14.37.0 · 화면에 남는 것은 언제나 진짜 글자다. 그림은 글자가 붙기 전
            잠깐의 자리 채움이라, 준비 배지를 따로 띄우지 않는다. */
         /* 이미지가 가장 뒤, 그 위에 글자, 펜 그림이 가장 앞 */
+        .layer-fig{z-index:2;}
+        /* 14.39.3 · PDF 원본 배경(isBg)·수식 조각(isMath) 전용 '가구' 층.
+           이 둘은 사용자가 건드릴 수 없는 종이 인쇄물이라 항상 글자·수식 아래에
+           둔다. 예전엔 layer-img 에 섞여 있어서, 사진을 하나만 선택해도
+           (_layerLift 가 층째로 올리는 바람에) 원본 래스터와 흰 바탕 수식 조각이
+           통째로 글자·수식 위로 떠올라 주변 수식이 사라져 보였다 (사용자 보고).
+           DOM 순서가 layer-img 보다 앞서므로 같은 z-index 여도 항상 그 아래다. */
+        .layer-fig>*{pointer-events:none!important;}
         .layer-img{z-index:2;}
         .layer-fill{z-index:3;pointer-events:none;}
         .layer-text{z-index:4;}

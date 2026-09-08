@@ -110,6 +110,7 @@
         paper.style.width=size.w+'px';
         paper.style.height=size.h+'px';
         paper.innerHTML=`<div class="layer layer-preview"></div>
+                         <div class="layer layer-fig"></div>
                          <div class="layer layer-img"></div>
                          <svg class="stroke-svg layer-fill" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none" aria-hidden="true"></svg>
                          <svg class="stroke-svg layer-stroke" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none"></svg>
@@ -389,12 +390,14 @@
 
     function clearPageEls(idx){
         const paper=paperAt(idx); if(!paper) return;
+        const figL=paper.querySelector('.layer-fig');
         const imgL=paper.querySelector('.layer-img');
         const fill=paper.querySelector('.layer-fill');
         const svg=paper.querySelector('.layer-stroke');
         const txtL=paper.querySelector('.layer-text');
         const tbl=paper.querySelector('.layer-tbl');
         const pin=paper.querySelector('.layer-pin');
+        if(figL) figL.innerHTML='';
         if(imgL) imgL.innerHTML='';
         if(fill) fill.innerHTML='';
         if(svg)  svg.innerHTML='';

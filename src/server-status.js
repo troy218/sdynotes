@@ -64,7 +64,7 @@ function srvFill(d){
     document.getElementById('srvExtra').textContent=
         `변환 ${d.jobs||0}건 · 분당 요청 ${d.rpm||0} · 접속 ${_notifOnline||1}명 · 가동 ${upTxt}`;
 }
-// 14.39.4 · '창이 닫힌 뒤 깨어난 폴링' 방어.
+// 14.39.5 · '창이 닫힌 뒤 깨어난 폴링' 방어.
 //   이 모듈은 setInterval/await 로 혼자 계속 돈다. 화면(문서)이 사라진 뒤에
 //   그 이어서 실행(continuation)이 깨어나면 document 가 undefined 라
 //   TypeError 가 나고, jsdom 런타임 테스트에서는 프로세스 자체가 죽어

@@ -913,7 +913,7 @@
         const nbId=curNB.id;
         try{ if(doc) flushSaveDoc(); }catch(e){}   // 나가기 전 편집분 즉시 저장
         document.getElementById('editorView').classList.remove('open');
-        // 14.39.4 · closeEditor 를 거치지 않는 닫기 길도 똑같이 마무리한다.
+        // 14.39.5 · closeEditor 를 거치지 않는 닫기 길도 똑같이 마무리한다.
         //   예전엔 html/body 의 in-editor 가 그대로 남아(overflow:hidden !important)
         //   노트를 지우고 홈으로 돌아오면 홈이 스크롤되지 않았다.
         //   종이 정리는 슬라이드아웃(.4s)이 끝난 뒤 — 닫는 동안 화면이 하얗게
