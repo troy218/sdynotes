@@ -708,6 +708,7 @@
         const txtL=paper.querySelector('.layer-text');
         const svg=paper.querySelector('.layer-stroke');
         const fillL=paper.querySelector('.layer-fill');
+        const figL=paper.querySelector('.layer-fig');
         const imgL=paper.querySelector('.layer-img');
         const els=(doc.pages&&doc.pages[idx]&&doc.pages[idx].els)||[];
         els.forEach(el=>{
@@ -743,7 +744,11 @@
             }else{
                 if(el.type==='text'&&txtL) txtL.appendChild(buildTextEl(el,idx));
                 else if(el.type==='stroke'&&svg){ if(el.fillColor&&fillL) fillL.appendChild(buildStrokeFillEl(el,idx)); svg.appendChild(buildStrokeEl(el,idx)); }
-                else if(el.type==='image'&&imgL) imgL.appendChild(buildImageEl(el,idx));
+                else if(el.type==='image'){
+                    // 14.39.3 · 원본 배경·수식 조각은 가구 층(layer-fig)으로.
+                    const dst=((el.isBg||el.isMath)&&figL)?figL:imgL;
+                    if(dst) dst.appendChild(buildImageEl(el,idx));
+                }
                 else if(el.type==='latex'&&txtL) txtL.appendChild(buildLatexEl(el,idx));
             }
         });
