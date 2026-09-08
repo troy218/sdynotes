@@ -210,6 +210,8 @@
         }
         try{ if(typeof renderListPop==='function') renderListPop(); }catch(e){}
         try{ if(typeof renderTitle==='function') renderTitle(); }catch(e){}
+        // 열려 있는 버그 일지 목록도 관리자 여부에 맞춰 X 노출을 갱신한다
+        try{ if(typeof bugRepaintIfOpen==='function') bugRepaintIfOpen(); }catch(e){}
         if(!adminMode) closeVault();
         const btn=document.getElementById('adminToggleBtn');
         if(btn){

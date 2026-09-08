@@ -4487,7 +4487,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   서버 AI(task=bug)가 제목·증상·재현 방법·기대 동작·메모로 정리해 주고,
     //   이 일지에 기록된다(어느 노트와도 무관한 앱 전체 문제). 기록은 02d 의
     //   설정 동기화와 같은 LWW 키('buglog:<id>')를 타고 모든 기기·모든 사람이
-    //   함께 본다 — 관리자 전용이 아니라 누구나 보고, 누구나 지울 수 있다.
+    //   함께 본다 — 누구나 보되, 지우기(X)는 관리자로 로그인한 경우에만 노출·동작한다.
     //   설정 → '버그 일지' 줄의 [보기]를 눌러야 목록이 열리고(스크롤), 열린
     //   목록에서 항목마다 X 로 그 기록만 지운다.
     const BUGLOG_KEY='sdy_buglog';
@@ -4531,8 +4531,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return e;
     }
     try{ window.sdyBuglogAdd=buglogAdd; }catch(e){}
-    // 목록에서 X — 그 기록 하나만 지운다 (모두가 쓸 수 있는 삭제)
+    // 목록에서 X — 그 기록 하나만 지운다 (관리자로 로그인한 경우에만 노출·동작)
     function delBugEntry(id){
+        // 모두가 지울 수 없게 — 관리자 전용 동작
+        if(!isAdmin()){ try{ toast('관리자로 로그인해야 지울 수 있어요',1800); }catch(e){} return; }
         id=String(id||'');
         const a=getBugEntries(), b=a.filter(x=>String(x.id)!==id);
         if(a.length===b.length) return;
@@ -4603,11 +4605,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         el.innerHTML=a.map(x=>{
             const who=x.who?('<span class="buglog-who">'+escBug(x.who)+'</span>'):'';
             const ver=x.ver?('<span class="buglog-ver">v'+escBug(x.ver)+'</span>'):'';
+            // X 버튼은 관리자로 로그인한 경우에만 — 모두가 지울 수 없게 막는다
+            const xBtn=isAdmin()
+                ? '<button type="button" class="buglog-x" title="이 기록 지우기" onclick="delBugEntry(\''+escBug(x.id)+'\')"><i class="ri-close-line"></i></button>'
+                : '';
             return '<div class="buglog-item">'
                 +'<div class="buglog-head">'
                 +'<i class="ri-bug-line" aria-hidden="true"></i>'
                 +'<b class="buglog-title">'+escBug(x.title||'버그 신고')+'</b>'
-                +'<button type="button" class="buglog-x" title="이 기록 지우기" onclick="delBugEntry(\''+escBug(x.id)+'\')"><i class="ri-close-line"></i></button>'
+                +xBtn
                 +'</div>'
                 +'<div class="buglog-meta">'+bugFmtTime(x.t)+' '+who+' '+ver+'</div>'
                 +(x.text?'<div class="buglog-body">'+bugBodyHtml(x.text)+'</div>':'')
@@ -4838,6 +4844,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         try{ if(typeof renderListPop==='function') renderListPop(); }catch(e){}
         try{ if(typeof renderTitle==='function') renderTitle(); }catch(e){}
+        // 열려 있는 버그 일지 목록도 관리자 여부에 맞춰 X 노출을 갱신한다
+        try{ if(typeof bugRepaintIfOpen==='function') bugRepaintIfOpen(); }catch(e){}
         if(!adminMode) closeVault();
         const btn=document.getElementById('adminToggleBtn');
         if(btn){
