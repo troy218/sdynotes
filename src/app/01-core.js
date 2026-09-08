@@ -107,25 +107,27 @@
         square:{label:'정사각',w:900,h:900},
         wide:{label:'와이드',w:1280,h:720}
     };
-    // 선택 가능한 글꼴 (한국어/영어)
+    // 선택 가능한 글꼴 — ko: 한국어 이름, en: 영어 이름.
+    //   글꼴 메뉴는 ko + en 을 '해당 글꼴 자체'로 그린다 (예시 문구 abc 가나다 대신).
+    //   label 은 툴바·토스트용 짧은 이름 (한국어 우선, 영어 글꼴은 영어).
     const FONTS=[
-        {id:'pretendard',label:'프리텐다드',css:"'Pretendard Variable','Pretendard',sans-serif"},
-        {id:'gaegu',  label:'개구쟁이',     css:"'Gaegu','Pretendard Variable',cursive"},
-        {id:'jua',    label:'주아',        css:"'Jua','Pretendard Variable',sans-serif"},
-        {id:'pen',    label:'나눔손글씨',   css:"'Nanum Pen Script','Pretendard Variable',cursive"},
-        {id:'dohyeon',label:'도현',        css:"'Do Hyeon','Pretendard Variable',sans-serif"},
-        {id:'gowun',  label:'고운돋움',     css:"'Gowun Dodum','Pretendard Variable',sans-serif"},
-        {id:'poor',   label:'푸어스토리',   css:"'Poor Story','Pretendard Variable',cursive"},
-        {id:'blackhan',label:'검은고딕',    css:"'Black Han Sans','Pretendard Variable',sans-serif"},
-        {id:'myeongjo',label:'나눔명조',    css:"'Nanum Myeongjo',serif"},
-        {id:'times',  label:'Times New Roman', css:"'SDY Times','Times New Roman','Liberation Serif','Nanum Myeongjo',serif"},
-        {id:'cmroman',label:'Computer Modern',css:"'SDY Computer Modern','Latin Modern Roman','Times New Roman',serif"},
-        {id:'arial',label:'Arial / Helvetica',css:"'SDY Helvetica',Arial,'Liberation Sans',sans-serif"},
-        {id:'coding', label:'코딩체',      css:"'Nanum Gothic Coding',monospace"},
-        {id:'inter',  label:'Inter',      css:"'Inter','Pretendard Variable',sans-serif"},
-        {id:'playfair',label:'Playfair',  css:"'Playfair Display',serif"},
-        {id:'caveat', label:'Caveat',     css:"'Caveat',cursive"},
-        {id:'mono',   label:'Roboto Mono',css:"'Roboto Mono',monospace"}
+        {id:'pretendard',label:'프리텐다드',ko:'프리텐다드',en:'Pretendard',css:"'Pretendard Variable','Pretendard',sans-serif"},
+        {id:'gaegu',  label:'개구쟁이',ko:'개구쟁이',en:'Gaegu',css:"'Gaegu','Pretendard Variable',cursive"},
+        {id:'jua',    label:'주아',ko:'주아',en:'Jua',css:"'Jua','Pretendard Variable',sans-serif"},
+        {id:'pen',    label:'나눔손글씨',ko:'나눔손글씨',en:'Nanum Pen Script',css:"'Nanum Pen Script','Pretendard Variable',cursive"},
+        {id:'dohyeon',label:'도현',ko:'도현',en:'Do Hyeon',css:"'Do Hyeon','Pretendard Variable',sans-serif"},
+        {id:'gowun',  label:'고운돋움',ko:'고운돋움',en:'Gowun Dodum',css:"'Gowun Dodum','Pretendard Variable',sans-serif"},
+        {id:'poor',   label:'푸어스토리',ko:'푸어스토리',en:'Poor Story',css:"'Poor Story','Pretendard Variable',cursive"},
+        {id:'blackhan',label:'검은고딕',ko:'검은고딕',en:'Black Han Sans',css:"'Black Han Sans','Pretendard Variable',sans-serif"},
+        {id:'myeongjo',label:'나눔명조',ko:'나눔명조',en:'Nanum Myeongjo',css:"'Nanum Myeongjo',serif"},
+        {id:'times',  label:'Times New Roman',ko:'타임스 뉴 로먼',en:'Times New Roman',css:"'SDY Times','Times New Roman','Liberation Serif','Nanum Myeongjo',serif"},
+        {id:'cmroman',label:'Computer Modern',ko:'컴퓨터 모던',en:'Computer Modern',css:"'SDY Computer Modern','Latin Modern Roman','Times New Roman',serif"},
+        {id:'arial',label:'Arial / Helvetica',ko:'에어리얼',en:'Arial / Helvetica',css:"'SDY Helvetica',Arial,'Liberation Sans',sans-serif"},
+        {id:'coding', label:'코딩체',ko:'코딩체',en:'Nanum Gothic Coding',css:"'Nanum Gothic Coding',monospace"},
+        {id:'inter',  label:'Inter',ko:'인터',en:'Inter',css:"'Inter','Pretendard Variable',sans-serif"},
+        {id:'playfair',label:'Playfair',ko:'플레이페어',en:'Playfair Display',css:"'Playfair Display',serif"},
+        {id:'caveat', label:'Caveat',ko:'카베아트',en:'Caveat',css:"'Caveat',cursive"},
+        {id:'mono',   label:'Roboto Mono',ko:'로보토 모노',en:'Roboto Mono',css:"'Roboto Mono',monospace"}
     ];
     function fontCSS(id){ const f=FONTS.find(x=>x.id===id); return f?f.css:FONTS[0].css; }
     let curFont='pretendard';
