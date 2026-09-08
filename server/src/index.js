@@ -83,6 +83,13 @@ for (const [method, url] of [
   ['POST', '/api/import/reconv'],
   ['GET', '/api/import/status'],
   ['GET', '/api/import/docfile/:jid'],
+  // 14.39.3 · 편집된 쪽 저장. 워커는 이 경로의 GET(슬라이스 읽기)과 POST(편집 쪽
+  //  저장)을 같은 경로로 받는데(methods=["GET","POST"]), 프록시 목록에는 GET 만
+  //  올라 있었다. 그 덕분에 가져온 문서(PDF/문서 가져오기)에서 그림 옮기기·글자
+  //  고치기·번역 저장이 전부 404 로 막혀 클라이언트 재시도 3회 후 조용히 버려졌고,
+  //  다시 열면 편집이 증발했다 (사용자 보고 "이미지를 이동하려고 선택하면 주변
+  //  수식이 사라짐" — 화면 가림 버그와 함께 이 저장 누락까지 수정).
+  ['POST', '/api/import/docfile/:jid'],
   ['GET', '/api/import/img/*'],
   ['GET', '/api/import/bg/:ref/:pno'],
   ['GET', '/api/import/page/:ref/:pno'],   // 쪽 미리보기 래스터(읽기 화면 즉시 표시)

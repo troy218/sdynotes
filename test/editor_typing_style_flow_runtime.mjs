@@ -470,8 +470,9 @@ try {
 
   // Safari/WebView가 빈 span을 지운 상황을 재현한다. beforeinput이 pending state로
   // wrapper를 복원해야 바로 다음 " 마바사"부터 주아 글꼴이 적용된다.
+  // (서식 span 은 이제 눈에 안 보이는 닻 1글자를 품고 있으므로 무조건 뗀다.)
   const emptyFontSpan = liveContent.querySelector('.sdy-type');
-  if (emptyFontSpan && !emptyFontSpan.textContent) emptyFontSpan.remove();
+  if (emptyFontSpan) emptyFontSpan.remove();
   caretEnd(window, liveContent);
   liveContent.dispatchEvent(new window.InputEvent('beforeinput', {
     bubbles: true, cancelable: true, inputType: 'insertText', data: ' '
@@ -499,6 +500,52 @@ try {
     effStyle(window, liveContent, '타파하').fontWeight === '700'
     && effStyle(window, liveContent, '타파하').fontSize === '24px'
     && effStyle(window, liveContent, '아자차카').fontWeight == null);
+
+  // ── ⑧ 캐럿 서식 닻(anchor) 회귀: 빈 span + (요소,0) 캐럿이면 실제 브라우저가
+  // 입력 위치를 상자로 정규화해 다음 글자가 기본 서식으로 들어간다. 서식 변경
+  // 직후 캐럿은 반드시 서식 span '안 텍스트'에 있어야 한다. ──────────────
+  const ZWSP = String.fromCharCode(8203);
+  window.clearTextSelection();
+  liveContent.innerHTML = '기본글';
+  caretEnd(window, liveContent);
+  window.applyFont('jua'); await wait(40);
+  {
+    const rr = window.getSelection().getRangeAt(0);
+    const inMark = rr.startContainer.nodeType === 3
+      && rr.startContainer.parentElement
+      && rr.startContainer.parentElement.closest('.sdy-type');
+    check('⑧ 스타일 변경 후 캐럿은 서식 span 안 텍스트(닻 뒤)에 있다',
+      window.getSelection().rangeCount === 1 && !!inMark && rr.startOffset === 1);
+  }
+  typeAt(window, liveContent, '추가'); await wait(80);
+  check('⑧ 입력 뒤 닻(ZWSP)이 본문에 남지 않는다',
+    !(liveContent.textContent || '').includes(ZWSP) && !(liveContent.innerHTML || '').includes(ZWSP));
+  check('⑧ 새 글자에만 바꾼 글꼴이 들어간다',
+    (effStyle(window, liveContent, '추가').fontFamily || '').includes('Jua')
+    && !(effStyle(window, liveContent, '기본글').fontFamily || '').includes('Jua'));
+  // fsInput 경로: live selection 이 상자 밖에 있어도 저장된 캐럿에 서식이 들어가야 한다.
+  caretEnd(window, liveContent);
+  {
+    const rOut = document.createRange();
+    rOut.setStart(document.body, 0); rOut.collapse(true);
+    const s = window.getSelection();
+    s.removeAllRanges(); s.addRange(rOut);
+  }
+  window.setFS(30); await wait(40);
+  check('⑧ 상자 밖 선택 상태에서도 크기 변경이 저장된 캐럿을 다시 잡는다',
+    window.getSelection().rangeCount === 1
+    && liveContent.contains(window.getSelection().getRangeAt(0).startContainer)
+    && !!liveContent.querySelector('.sdy-type'));
+  typeAt(window, liveContent, '큼'); await wait(80);
+  check('⑧ 저장된 캐럿 서식으로 입력된다', effStyle(window, liveContent, '큼').fontSize === '30px');
+  check('⑧ 문장이 정확하다 (닻 유실 없음)',
+    (liveContent.textContent || '').replace(/\u00a0/g, ' ') === '기본글추가큼');
+  await wait(500);   // input 디바운스(300ms) 후 저장 반영까지
+  {
+    const el8 = window.findEl(0, 't1');
+    check('⑧ 저장 html 에 닻·빈 서식 span 이 남지 않는다',
+      !(el8.html || '').includes(ZWSP) && !/sdy-type[^>]*><\/span>/.test(el8.html || ''));
+  }
 
   const fatal = errors.filter(Boolean);
   check('타이핑·중간 스타일 변경 중 치명적 런타임 오류가 없다', fatal.length === 0);

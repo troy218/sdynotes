@@ -131,7 +131,10 @@
         let s=`width:100%;height:100%;box-sizing:border-box;border:${bw}px solid transparent;`+
               `display:flex;font-size:${fs}px;line-height:1.05;color:${color||'#111'};`+
               `white-space:nowrap;font-family:'Times New Roman',serif;`;
-        if(imp) s+=`padding:0;overflow:hidden;align-items:center;`;
+        // 14.39.3 · 화면과 같은 규칙 — 가져온 수식도 상자 밖으로 나가면 자르지 않고
+        //   전부 보인다 (overflow:hidden 은 큰 수식이 잘려 '사라진' 것처럼 보이는
+        //   버그의 원인이었음, 보고 26.09.08). 글상자(_expTextInner)도 같은 값.
+        if(imp) s+=`padding:0;overflow:visible;align-items:center;`;
         else if(disp) s+=`padding:1px 4px;overflow:visible;align-items:center;`;
         else s+=`padding:0 4px 1px;overflow:visible;align-items:flex-end;`;
         if(disp) s+=`justify-content:center;`;
@@ -144,7 +147,8 @@
             `.sdyx pre,.sdyx code,.sdyx tt,.sdyx kbd,.sdyx samp{font-family:inherit;}`+
             `.sdyx button,.sdyx input,.sdyx select,.sdyx textarea{font:inherit;}`+
             `.sdyx sup,.sdyx sub{font-size:.72em;line-height:0;position:relative;vertical-align:baseline;}`+
-            `.sdyx sup{top:-.45em;}.sdyx sub{bottom:-.22em;}</style>`;
+            `.sdyx sup{top:-.45em;}.sdyx sub{bottom:-.22em;}`+
+            `.sdyx .zsp{position:absolute;left:100%;top:0;font-size:0;font-style:normal;letter-spacing:0;}</style>`;
     }
 
     // SVG <img> documents cannot use the editor's loaded web fonts. Bundle only
@@ -213,7 +217,13 @@
             if(lg!==1){ t0=Infinity; for(const t of tops) if(t.top<t0) t0=t.top; }
             for(const t of tops) t.s.style.top=(lg===1?t.top:(t0+(t.top-t0)*lg)).toFixed(3)+'px';
         }
-        c.querySelectorAll('.zsp').forEach(n=>n.style.fontSize='0px');
+        c.querySelectorAll('.zsp').forEach(n=>{
+            n.style.fontSize='0px';
+            n.style.position='absolute';
+            n.style.left='100%';
+            n.style.top='0';
+            n.style.fontStyle='normal';
+        });
         return c.innerHTML;
     }
     let _pdfProbeBox=null;

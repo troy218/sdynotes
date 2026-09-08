@@ -1273,7 +1273,7 @@
         .sp-ord button:hover{background:var(--accent);color:#fff;}
 
         /* ===== 단어 빈도 분석 (중요어 색칠) =====
-           14.39.3 · '산만함' 수정 — 배경 강조는 최상위 단계에만 옅게 준다.
+           14.39.5 · '산만함' 수정 — 배경 강조는 최상위 단계에만 옅게 준다.
            (예전엔 두 단계 모두 진한 배경이라 본문이 얼룩덜룩했다) */
         .wf{border-radius:2px;padding:0 1px;transition:background .15s;}
         .wf.hot{background:transparent;}
@@ -1453,6 +1453,14 @@
         /* 14.37.0 · 화면에 남는 것은 언제나 진짜 글자다. 그림은 글자가 붙기 전
            잠깐의 자리 채움이라, 준비 배지를 따로 띄우지 않는다. */
         /* 이미지가 가장 뒤, 그 위에 글자, 펜 그림이 가장 앞 */
+        .layer-fig{z-index:2;}
+        /* 14.39.5 · PDF 원본 배경(isBg)·수식 조각(isMath) 전용 '가구' 층.
+           이 둘은 사용자가 건드릴 수 없는 종이 인쇄물이라 항상 글자·수식 아래에
+           둔다. 예전엔 layer-img 에 섞여 있어서, 사진을 하나만 선택해도
+           (_layerLift 가 층째로 올리는 바람에) 원본 래스터와 흰 바탕 수식 조각이
+           통째로 글자·수식 위로 떠올라 주변 수식이 사라져 보였다 (사용자 보고).
+           DOM 순서가 layer-img 보다 앞서므로 같은 z-index 여도 항상 그 아래다. */
+        .layer-fig>*{pointer-events:none!important;}
         .layer-img{z-index:2;}
         .layer-fill{z-index:3;pointer-events:none;}
         .layer-text{z-index:4;}
@@ -1752,8 +1760,12 @@
            ③ 클릭은 수식 잉크에만 반응(상자 빈 공간은 통과) → 본문 선택을 안 뺏는다 */
         .latex-box.imported{z-index:6;}
         /* 10.0 · 수식이 상자보다 커도 자르지 않고 전부 보이게 한다.
-           (기존 overflow:hidden — 상자 밖으로 삐져나온 큰 수식이 잘려 보였다) */
-        .latex-box.imported>.latex-content{padding:0;overflow:hidden;align-items:center;}
+           (기존 overflow:hidden — 상자 밖으로 삐져나온 큰 수식이 잘려 보였다)
+           14.39.5 · 보고(26.09.08) — '수식상자 바깥으로 수식이 나가면 사라짐'.
+           이 규칙에 overflow:hidden 이 남아 있어 상자를 줄이는 등 수식이 상자
+           밖으로 나가면 삐져나온 부분이 잘려 없어 보였다. 글상자(.tb-content)는
+           overflow:visible 로 글자가 절대 안 잘리므로, 수식도 같은 규칙으로 둔다. */
+        .latex-box.imported>.latex-content{padding:0;overflow:visible;align-items:center;}
         .latex-box.imported.display-math>.latex-content{padding:0;justify-content:center;}
         .latex-box.imported:not(.sel):not(.msel)>.latex-content{pointer-events:none;}
         .latex-box.imported .katex{line-height:1.05;}
@@ -1877,8 +1889,10 @@
         .tb.pdf-text .tb-content{border-width:0;border-radius:0;}
         .tb.pdf-text.sel .tb-content,.tb.pdf-text.edit .tb-content{outline:1px solid var(--accent);}
         .tb.tight.edit .tb-content{white-space:pre-wrap;line-height:1.4;}
-        /* 안 보이는 스페이스바: 시각적 차지 0, 선택/복사/번역/검색에만 잡힘 */
-        .tb.tight .zsp{font-size:0;letter-spacing:0;font-style:normal;}
+        /* 안 보이는 스페이스바: 흐름에서 빼 글자 맞춤은 안 건드리고,
+           font-size:0 은 Chromium 이 ::selection / Selection.toString() 에서
+           공백을 건너뛰게 하므로 쓰지 않는다. 글자는 투명, 하이라이트만 남는다. */
+        .tb.tight .zsp{position:absolute;left:100%;top:0;font-size:1em;font-style:normal;letter-spacing:0;line-height:inherit;white-space:pre;color:transparent;transform-origin:left center;}
         /* 가져온 텍스트 간격 조절 바 */
         .tight-bar{position:fixed;top:64px;left:50%;transform:translateX(-50%);
             z-index:1250;display:none;align-items:center;gap:5px;padding:6px 10px;

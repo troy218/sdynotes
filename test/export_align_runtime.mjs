@@ -129,7 +129,8 @@ check('--bw 가 범위를 벗어나면 2 로 둔다', load('99px')._expBorderW()
 {
   const { _expLatexInner } = load('2px');
   const im = _expLatexInner({ imported: 1 }, 2, 20);
-  check('가져온 수식: 여백 0 + 숨김 + 가운데', im.includes('padding:0;overflow:hidden;align-items:center;')
+  check('가져온 수식: 여백 0 + 보이는 overflow + 가운데 (상자 밖으로 나가도 안 자름)',
+    im.includes('padding:0;overflow:visible;align-items:center;')
     && !im.includes('justify-content'));
   const dp = _expLatexInner({ displayMath: 1, fontSize: 22 }, 2, 22);
   check('display: 1px 4px + 가운데', dp.includes('padding:1px 4px;overflow:visible;align-items:center;')

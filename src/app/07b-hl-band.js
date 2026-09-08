@@ -51,29 +51,69 @@
         }
         return runs;
     }
+    // 줄 상자가 닿거나 글꼴 bbox가 조금 겹쳐도 서로 다른 줄은 합치지 않는다.
+    // 고정 화면 px 대신 작은 조각 높이의 절반을 기준으로 해 확대/축소에도 같다.
+    function _hlSameLine(a,b){
+        return Math.min(a.b,b.b)-Math.max(a.t,b.t)>Math.min(a.b-a.t,b.b-b.t)*0.5;
+    }
+    // PDF 단어 끝의 .zsp(복사/검색용 공백)는 폭이 0이다. 서식 정규화 후에는
+    // 일반 trailing space로 남기도 한다. 그 공백이 실제로 칠해진 경우에만
+    // 이웃한 절대좌표 단어 사이의 빈 영역을 표시용 조각으로 보충한다.
+    // 공백만 선택해도 동작하며, 원문/단어 좌표/공백 문자는 전혀 바꾸지 않는다.
+    function _hlSpaceRect(n,c,boxes){
+        if(!/[^\S\r\n]$/.test(n.nodeValue||'')) return null;
+        const positioned=s=>s&&s.nodeType===1&&s.tagName==='SPAN'&&s.style.position==='absolute';
+        let s=n.parentElement;
+        while(s&&s!==c&&!positioned(s)) s=s.parentElement;
+        if(!s||s===c) return null;
+        // 선택한 공백 뒤에 다른 글자/공백이나 줄바꿈이 있으면 단어 끝이 아니다.
+        // 빈 편집 마커는 무시하되, 선택하지 않은 뒤쪽 글자를 건너뛰지는 않는다.
+        for(let tail=n;tail!==s;tail=tail.parentNode){
+            for(let k=tail.nextSibling;k;k=k.nextSibling){
+                if(k.textContent||(k.nodeType===1&&(k.tagName==='BR'||k.querySelector('br')))) return null;
+            }
+        }
+        let next=s.nextSibling;
+        while(next&&next.nodeType===3&&!next.nodeValue) next=next.nextSibling;
+        // 같은 부모 아래 바로 다음 단어만: 문단/열/줄바꿈/이미지 경계를 넘지 않는다.
+        if(!positioned(next)) return null;
+        const bounds=el=>{
+            if(!boxes.has(el)){
+                const r=el.getBoundingClientRect();
+                boxes.set(el,{l:r.left,t:r.top,rr:r.right,b:r.bottom});
+            }
+            return boxes.get(el);
+        };
+        const a=bounds(s), b=bounds(next);
+        if(a.rr-a.l<=0.3||b.rr-b.l<=0.3||a.b-a.t<=0.3||b.b-b.t<=0.3
+            ||b.l<=a.rr||!_hlSameLine(a,b)) return null;
+        return {l:a.rr,t:Math.min(a.t,b.t),rr:b.l,b:Math.max(a.b,b.b)};
+    }
     // 텍스트 노드를 실제 화면 선 조각(뷰 좌표)으로 잰다
-    function _hlFragRects(run){
+    function _hlFragRects(run,c){
         const out=[], range=document.createRange();
+        const boxes=c&&c.parentElement&&c.parentElement.classList.contains('tight')?new Map():null;
         for(const n of run.nodes){
-            try{ range.selectNodeContents(n); }catch(e){ continue; }
             let rs=[];
-            try{ rs=Array.from(range.getClientRects()); }catch(e){ rs=[]; }
+            try{ range.selectNodeContents(n); rs=Array.from(range.getClientRects()); }catch(e){ continue; }
             for(const r of rs){
                 if(r&&r.width>0.3&&r.height>0.3)
-                    out.push({l:r.left,t:r.top,rr:r.right,b:r.bottom,color:run.color});
+                    out.push({l:r.left,t:r.top,rr:r.right,b:r.bottom,color:run.color,run:run});
             }
+            const space=boxes&&_hlSpaceRect(n,c,boxes);
+            if(space) out.push({...space,color:run.color,run:run});
         }
         return out;
     }
-    // 같은 줄 조각을 세로 겹침으로 묶고, 가로로 닿은 조각은 한 띠로 합친다
+    // 같은 줄 조각을 세로 겹침으로 묶고, 같은 선택/색의 닿은 조각만 합친다.
     function _hlBands(frags){
         const rows=[];
         for(const f of frags){
             let row=null;
-            for(const r of rows){ if(f.t<r.maxT+2&&f.b>r.minT-2){ row=r; break; } }
-            if(!row){ row={minT:f.t,maxT:f.b,items:[]}; rows.push(row); }
-            if(f.t<row.minT) row.minT=f.t;
-            if(f.b>row.maxT) row.maxT=f.b;
+            for(const r of rows){ if(_hlSameLine(f,r)){ row=r; break; } }
+            if(!row){ row={t:f.t,b:f.b,items:[]}; rows.push(row); }
+            if(f.t<row.t) row.t=f.t;
+            if(f.b>row.b) row.b=f.b;
             row.items.push(f);
         }
         const bands=[];
@@ -81,11 +121,11 @@
             const items=row.items.slice().sort((a,b)=>a.l-b.l);
             let band=null;
             for(const f of items){
-                if(band&&f.l-band.rr<=2.5){
+                if(band&&band.run===f.run&&band.color===f.color&&f.l-band.rr<=2.5){
                     if(f.rr>band.rr) band.rr=f.rr;
                     if(f.t<band.t) band.t=f.t;
                     if(f.b>band.b) band.b=f.b;
-                }else{ band={l:f.l,t:f.t,rr:f.rr,b:f.b,color:f.color}; bands.push(band); }
+                }else{ band={l:f.l,t:f.t,rr:f.rr,b:f.b,color:f.color,run:f.run}; bands.push(band); }
             }
         }
         return bands;
@@ -153,7 +193,7 @@
         try{ baseHex=_colorToHex(_classicPaletteColor('hl',(c.style&&c.style.backgroundColor)||'')); }catch(_e){}
         let frags=[];
         try{
-            for(const run of _hlRuns(c,baseHex)) frags=frags.concat(_hlFragRects(run));
+            for(const run of _hlRuns(c,baseHex)) frags=frags.concat(_hlFragRects(run,c));
         }catch(e){ frags=[]; }
         if(!frags.length){
             w.classList.remove('sdy-hl-band-on');
@@ -269,7 +309,15 @@
             if(w.classList.contains('edit')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&
                (e.key.length===1||e.key==='Enter')) _ensurePendingTypingSpan(c);
         });
-        c.addEventListener('input',()=>{
+        // 한글 IME 조합 중에는 타이핑 span 안 텍스트 노드를 건드리지 않는다 —
+        // 조합 중인 노드를 고치면 조합이 끊겨 자모가 따로 확정되기 때문.
+        // 조합이 끝나는 순간(input isComposing=false·compositionend) 닻을 치운다.
+        c.addEventListener('compositionstart',()=>{ c._sdyComposing=true; });
+        c.addEventListener('compositionend',()=>{
+            c._sdyComposing=false;
+            try{ _cleanTypingMarks(c); }catch(e){}
+        });
+        c.addEventListener('input',e=>{
             w._caretV=(w._caretV||0)+1;   // 22.1 · 실시간 캐럿 좌표 캐시를 무효화하는 신호
             if(w.classList.contains('edit')){
                 commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
@@ -282,6 +330,9 @@
             w.classList.toggle('empty',em);
             // 엔진이 입력 뒤 캐럿을 inline 밖으로 옮긴 경우 다음 입력 전에 다시 준비한다.
             if(w.classList.contains('edit')) _ensurePendingTypingSpan(c);
+            // 타이핑 span 에 실제 글자가 들어왔으면 눈에 안 보이는 닻(ZWSP)을 치운다.
+            // 조합 중에는 건드리지 않는다(위 compositionstart/end 참조).
+            if(!c._sdyComposing&&!(e&&e.isComposing)){ try{ _cleanTypingMarks(c); }catch(_e){} }
             clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
         });
         // 편집 상자에서 포커스를 벗어나면 즉시 반영 (자동저장 신뢰성)
@@ -424,7 +475,8 @@
         const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
         const c=w.querySelector('.tb-content'); if(!c) return;
         const viewOnly=c.innerHTML===w._sdyViewHtml;
-        const html=viewOnly?el.html:imathCollapse(stripWF(c.innerHTML));
+        // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
+        const html=viewOnly?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
         const fs=parseFloat(c.style.fontSize)||16;
         // Formatting commands may have changed model-only fields (font, align,
         // cellBg, etc.) before calling us. Those edits still need a dirty page;

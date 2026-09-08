@@ -94,6 +94,28 @@ ok('선명한 그림을 더 받는 대신 본문 데이터를 받아 글자로 �
 ok('준비 중 배지·덮개로 그림을 글자 위에 올리지 않는다',
   !/page-preparing[^\n]*z-index:48/.test(css) && !/편집 준비 중/.test(css));
 
+// ── 14.39.3 · '가구 층' 분리 + 선택 끌어올림은 제스처 동안만 ────────────
+//   사용자 보고: "이미지를 이동하려고 선택하면 주변 수식이 사라짐".
+//   사진을 한 번 선택해도 .layer-img 층째로 z=50 이 올라, 같은 층의 PDF 원본
+//   배경 래스터·흰 바탕 수식 조각(isMath)까지 글자·수식 위로 떠올랐다.
+ok('종이 셸에 가구 층(layer-fig)이 미리보기와 이미지 층 사이에 있다',
+  /layer layer-preview"><\/div>\s*\n\s*<div class="layer layer-fig"><\/div>\s*\n\s*<div class="layer layer-img">/.test(js));
+ok('가구 층은 글자보다 뒤에 깔리고, 안쪽은 아예 눌리지 않는다',
+  /\.layer-fig\{z-index:2;\}/.test(css) && /\.layer-fig>\*\{pointer-events:none!important;\}/.test(css));
+ok('그림 셸은 원본 배경·수식 조각(isBg·isMath)을 가구 층에 그린다',
+  /\(el\.isBg\|\|el\.isMath\)&&figL\?bags\.fig:bags\.img/.test(fnSrc('renderPageEls')));
+ok('원격 요소 반영(_selectiveRenderPage)도 가구 층 규칙을 따른다',
+  /\(\(el\.isBg\|\|el\.isMath\)&&figL\)\?figL:imgL/.test(js));
+{
+  const lift = fnSrc('_layerLift');
+  ok('이미지 층은 선택만으로 올라가지 않는다 (끌기·크기조절 동안만)',
+    /layer-img/.test(lift) && /sdy-dragging/.test(lift) && /sdy-resizing/.test(lift));
+}
+ok('가구 층은 선택 끌어올림 대상이 아니다',
+  !/layer-fig/.test(fnSrc('_liftPaper')));
+ok('가져온 문서 편집 쪽 저장(POST docfile)도 워커로 프록시한다',
+  /\['POST', '\/api\/import\/docfile\/:jid'\]/.test(idx));
+
 ok('종이를 누르면 그 쪽이 편집 상태가 된다',
   /deferPagePointer\(e,pageIdx\)/.test(js)
   && /deferPagePointer\(e,i\)/.test(js));

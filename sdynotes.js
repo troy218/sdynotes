@@ -6658,6 +6658,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         paper.style.width=size.w+'px';
         paper.style.height=size.h+'px';
         paper.innerHTML=`<div class="layer layer-preview"></div>
+                         <div class="layer layer-fig"></div>
                          <div class="layer layer-img"></div>
                          <svg class="stroke-svg layer-fill" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none" aria-hidden="true"></svg>
                          <svg class="stroke-svg layer-stroke" viewBox="0 0 ${size.w} ${size.h}" preserveAspectRatio="none"></svg>
@@ -6937,12 +6938,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     function clearPageEls(idx){
         const paper=paperAt(idx); if(!paper) return;
+        const figL=paper.querySelector('.layer-fig');
         const imgL=paper.querySelector('.layer-img');
         const fill=paper.querySelector('.layer-fill');
         const svg=paper.querySelector('.layer-stroke');
         const txtL=paper.querySelector('.layer-text');
         const tbl=paper.querySelector('.layer-tbl');
         const pin=paper.querySelector('.layer-pin');
+        if(figL) figL.innerHTML='';
         if(imgL) imgL.innerHTML='';
         if(fill) fill.innerHTML='';
         if(svg)  svg.innerHTML='';
@@ -7416,9 +7419,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             job.loading=false;
             const size=paperSize();
-            const imgL=paper.querySelector('.layer-img'), fillL=paper.querySelector('.layer-fill'),
+            // 14.39.3 · PDF 원본 배경(isBg)·수식 조각(isMath)은 layer-fig 로 —
+            //   사진을 선택/이동해도 이 '종이 가구'가 글자·수식 위로 뜨지 않게.
+            const figL=paper.querySelector('.layer-fig'),
+                imgL=paper.querySelector('.layer-img'), fillL=paper.querySelector('.layer-fill'),
                 svg=paper.querySelector('.layer-stroke'), txtL=paper.querySelector('.layer-text');
             _dropPageTightFits(paper);
+            if(figL) figL.innerHTML='';
             imgL.innerHTML=''; if(fillL) fillL.innerHTML=''; svg.innerHTML=''; txtL.innerHTML='';
             if(fillL) fillL.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
             svg.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
@@ -7441,13 +7448,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(!_pageJobLive(job)||_pageRenderTok[idx]!==tok){ _cancelPageRender(idx); return; }
                 // 데이터가 교체됐으면 오래된 청크를 새 문서 위에 붙이지 않는다.
                 if(d.pages[idx]!==pg||(pg.els&&pg.els!==els)){ renderPageEls(idx); return; }
-                const bags={img:document.createDocumentFragment(),fill:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()};
+                const bags={img:document.createDocumentFragment(),fig:document.createDocumentFragment(),fill:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()};
                 let weight=0;
                 do{
                     const el=els[at++];
                     if(!el) break;
-                    if(el.type==='image') bags.img.appendChild(buildImageEl(el,idx));
-                    else if(el.type==='legacyDraw'){
+                    if(el.type==='image'){
+                        // 14.39.3 · 원본 배경·수식 조각은 가구 층(layer-fig)으로,
+                        //   사용자가 옮기는 사진·가져온 그림만 layer-img 로.
+                        const bag=(el.isBg||el.isMath)&&figL?bags.fig:bags.img;
+                        bag.appendChild(buildImageEl(el,idx));
+                    }else if(el.type==='legacyDraw'){
                         const im=document.createElementNS('http://www.w3.org/2000/svg','image');
                         im.setAttribute('href',el.url); im.setAttribute('x',0); im.setAttribute('y',0);
                         im.setAttribute('width',size.w); im.setAttribute('height',size.h); bags.svg.appendChild(im);
@@ -7469,7 +7480,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     if(!paper.isConnected||paperAt(idx)!==paper) return false;
                     // 각 레이어가 여전히 같은 paper에 속해 있는지 확인 (detach 방지)
                     if(imgL.parentNode!==paper||txtL.parentNode!==paper) return false;
+                    if(figL&&figL.parentNode!==paper) return false;
                     imgL.appendChild(bags.img);
+                    if(figL) figL.appendChild(bags.fig);
                     if(fillL) fillL.appendChild(bags.fill);
                     svg.appendChild(bags.svg);
                     txtL.appendChild(bags.txt);
@@ -7978,7 +7991,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     if(c&&el.type==='text'&&el.fontSize){
                         c.style.fontSize=el.fontSize+'px';
                         // 상자 안에서 '이 단어만' 키워 둔 글자도 같은 배율로 함께
-                        if(scaleInlineFS(c,f)) el.html=imathCollapse(stripWF(c.innerHTML));
+                        // (타이핑 닻도 함께 걷어낸다 — 문서에 남지 않게)
+                        if(scaleInlineFS(c,f)) el.html=_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
                     }
                 }
             }
@@ -9015,7 +9029,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const font=[s.style.fontStyle||c.style.fontStyle||'normal',s.style.fontWeight||c.style.fontWeight||'400',fs+'px',
                 s.style.fontFamily||c.style.fontFamily].join(' ');
             const ctx=_pdfMeasureCtx; ctx.font=font;
-            // The zero-width copy/search spacer must not participate in width.
+            // The out-of-flow copy/search spacer must not participate in width.
             const text=(s.textContent||'').trimEnd(), measured=ctx.measureText(text);
             let baseline=_pdfBaselineMetrics.get(font);
             if(baseline==null){
@@ -9066,6 +9080,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     }catch(e){}
                 }
             }
+            // Gap spacer sits at left:100% (out of flow). Record its unscaled
+            // width so the write pass can scaleX it across the PDF word gap.
+            try{
+                const z=s.querySelector&&s.querySelector('.zsp');
+                if(z){
+                    let zw=z.scrollWidth||z.offsetWidth||0;
+                    if(!(zw>0)) zw=m.fs*0.25;
+                    m.zspW=zw;
+                }
+            }catch(e){}
             if(!job.groups.has(m.y)) job.groups.set(m.y,[]);
             job.groups.get(m.y).push(m);
             job.maxR=Math.max(job.maxR,m.x+m.w); job.maxB=Math.max(job.maxB,m.y+m.h);
@@ -9075,6 +9099,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             job.rows=Array.from(job.groups.values()); job.rowAt=0;
             job.transforms=new Array(sps.length).fill(null);
             job.tops=new Array(sps.length).fill(null);
+            job.zspSx=new Array(sps.length).fill(null);
         }
         while(job.rowAt<job.rows.length){
             const group=job.rows[job.rowAt++];
@@ -9085,6 +9110,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     // Fit justified runs too; never impose an 84% compression floor.
                     job.transforms[m.i]=m.w>0?'scaleX('+(m.pdfW/m.w).toFixed(5)+')':'';
                     if(m.baseline!=null) job.tops[m.i]=+(m.pdfBase-m.baseline).toFixed(3);
+                    const next=group[i+1];
+                    if(next&&m.zspW>0){
+                        const gap=next.x-(m.x+m.pdfW);
+                        const vis=Math.abs(m.w>0?m.pdfW/m.w:1)*m.zspW;
+                        if(gap>0.25&&vis>0.05){
+                            const zsx=gap/vis;
+                            if(Number.isFinite(zsx)) job.zspSx[m.i]=Math.max(0.05,Math.min(32,zsx));
+                        }
+                    }
                     return;
                 }
                 const next=group[i+1], avail=(next?next.x:job.cw)-m.x-0.5;
@@ -9096,7 +9130,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         return {c,el,sps,writeAt:0,rec:{html:el.html,w:el.w||0,h:el.h||0,fs:el.fontSize||0,
             font:el.font,weight:el.fontWeight,style:el.fontStyle,epoch:_tightFontEpoch,
-            ls:el.ls||0,wsp:el.wsp||0,lg:el.lg||1,fonts:_fontState(),transforms:job.transforms,tops:job.tops,
+            ls:el.ls||0,wsp:el.wsp||0,lg:el.lg||1,fonts:_fontState(),transforms:job.transforms,tops:job.tops,zspSx:job.zspSx,
             growR:!el.pdfText&&job.maxR>job.cw?job.maxR:0,growB:!el.pdfText&&job.maxB>job.ch?job.maxB:0}};
     }
     function _applyTightFit(fit,until,max){
@@ -9118,6 +9152,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(s.style.transform!==v) s.style.transform=v;
                 if(v&&s.style.transformOrigin!=='left center') s.style.transformOrigin='left center';
                 if(s.style.letterSpacing) s.style.letterSpacing='';
+            }
+            const zsx=rec.zspSx&&rec.zspSx[i];
+            if(zsx!=null){
+                try{
+                    const z=s.querySelector&&s.querySelector('.zsp');
+                    if(z){
+                        const zv='scaleX('+Number(zsx).toFixed(4)+')';
+                        if(z.style.transform!==zv) z.style.transform=zv;
+                        if(z.style.transformOrigin!=='left center') z.style.transformOrigin='left center';
+                    }
+                }catch(e){}
             }
             if(performance.now()>=until) break;
         }
@@ -9417,29 +9462,69 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         return runs;
     }
+    // 줄 상자가 닿거나 글꼴 bbox가 조금 겹쳐도 서로 다른 줄은 합치지 않는다.
+    // 고정 화면 px 대신 작은 조각 높이의 절반을 기준으로 해 확대/축소에도 같다.
+    function _hlSameLine(a,b){
+        return Math.min(a.b,b.b)-Math.max(a.t,b.t)>Math.min(a.b-a.t,b.b-b.t)*0.5;
+    }
+    // PDF 단어 끝의 .zsp(복사/검색용 공백)는 폭이 0이다. 서식 정규화 후에는
+    // 일반 trailing space로 남기도 한다. 그 공백이 실제로 칠해진 경우에만
+    // 이웃한 절대좌표 단어 사이의 빈 영역을 표시용 조각으로 보충한다.
+    // 공백만 선택해도 동작하며, 원문/단어 좌표/공백 문자는 전혀 바꾸지 않는다.
+    function _hlSpaceRect(n,c,boxes){
+        if(!/[^\S\r\n]$/.test(n.nodeValue||'')) return null;
+        const positioned=s=>s&&s.nodeType===1&&s.tagName==='SPAN'&&s.style.position==='absolute';
+        let s=n.parentElement;
+        while(s&&s!==c&&!positioned(s)) s=s.parentElement;
+        if(!s||s===c) return null;
+        // 선택한 공백 뒤에 다른 글자/공백이나 줄바꿈이 있으면 단어 끝이 아니다.
+        // 빈 편집 마커는 무시하되, 선택하지 않은 뒤쪽 글자를 건너뛰지는 않는다.
+        for(let tail=n;tail!==s;tail=tail.parentNode){
+            for(let k=tail.nextSibling;k;k=k.nextSibling){
+                if(k.textContent||(k.nodeType===1&&(k.tagName==='BR'||k.querySelector('br')))) return null;
+            }
+        }
+        let next=s.nextSibling;
+        while(next&&next.nodeType===3&&!next.nodeValue) next=next.nextSibling;
+        // 같은 부모 아래 바로 다음 단어만: 문단/열/줄바꿈/이미지 경계를 넘지 않는다.
+        if(!positioned(next)) return null;
+        const bounds=el=>{
+            if(!boxes.has(el)){
+                const r=el.getBoundingClientRect();
+                boxes.set(el,{l:r.left,t:r.top,rr:r.right,b:r.bottom});
+            }
+            return boxes.get(el);
+        };
+        const a=bounds(s), b=bounds(next);
+        if(a.rr-a.l<=0.3||b.rr-b.l<=0.3||a.b-a.t<=0.3||b.b-b.t<=0.3
+            ||b.l<=a.rr||!_hlSameLine(a,b)) return null;
+        return {l:a.rr,t:Math.min(a.t,b.t),rr:b.l,b:Math.max(a.b,b.b)};
+    }
     // 텍스트 노드를 실제 화면 선 조각(뷰 좌표)으로 잰다
-    function _hlFragRects(run){
+    function _hlFragRects(run,c){
         const out=[], range=document.createRange();
+        const boxes=c&&c.parentElement&&c.parentElement.classList.contains('tight')?new Map():null;
         for(const n of run.nodes){
-            try{ range.selectNodeContents(n); }catch(e){ continue; }
             let rs=[];
-            try{ rs=Array.from(range.getClientRects()); }catch(e){ rs=[]; }
+            try{ range.selectNodeContents(n); rs=Array.from(range.getClientRects()); }catch(e){ continue; }
             for(const r of rs){
                 if(r&&r.width>0.3&&r.height>0.3)
-                    out.push({l:r.left,t:r.top,rr:r.right,b:r.bottom,color:run.color});
+                    out.push({l:r.left,t:r.top,rr:r.right,b:r.bottom,color:run.color,run:run});
             }
+            const space=boxes&&_hlSpaceRect(n,c,boxes);
+            if(space) out.push({...space,color:run.color,run:run});
         }
         return out;
     }
-    // 같은 줄 조각을 세로 겹침으로 묶고, 가로로 닿은 조각은 한 띠로 합친다
+    // 같은 줄 조각을 세로 겹침으로 묶고, 같은 선택/색의 닿은 조각만 합친다.
     function _hlBands(frags){
         const rows=[];
         for(const f of frags){
             let row=null;
-            for(const r of rows){ if(f.t<r.maxT+2&&f.b>r.minT-2){ row=r; break; } }
-            if(!row){ row={minT:f.t,maxT:f.b,items:[]}; rows.push(row); }
-            if(f.t<row.minT) row.minT=f.t;
-            if(f.b>row.maxT) row.maxT=f.b;
+            for(const r of rows){ if(_hlSameLine(f,r)){ row=r; break; } }
+            if(!row){ row={t:f.t,b:f.b,items:[]}; rows.push(row); }
+            if(f.t<row.t) row.t=f.t;
+            if(f.b>row.b) row.b=f.b;
             row.items.push(f);
         }
         const bands=[];
@@ -9447,11 +9532,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const items=row.items.slice().sort((a,b)=>a.l-b.l);
             let band=null;
             for(const f of items){
-                if(band&&f.l-band.rr<=2.5){
+                if(band&&band.run===f.run&&band.color===f.color&&f.l-band.rr<=2.5){
                     if(f.rr>band.rr) band.rr=f.rr;
                     if(f.t<band.t) band.t=f.t;
                     if(f.b>band.b) band.b=f.b;
-                }else{ band={l:f.l,t:f.t,rr:f.rr,b:f.b,color:f.color}; bands.push(band); }
+                }else{ band={l:f.l,t:f.t,rr:f.rr,b:f.b,color:f.color,run:f.run}; bands.push(band); }
             }
         }
         return bands;
@@ -9519,7 +9604,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{ baseHex=_colorToHex(_classicPaletteColor('hl',(c.style&&c.style.backgroundColor)||'')); }catch(_e){}
         let frags=[];
         try{
-            for(const run of _hlRuns(c,baseHex)) frags=frags.concat(_hlFragRects(run));
+            for(const run of _hlRuns(c,baseHex)) frags=frags.concat(_hlFragRects(run,c));
         }catch(e){ frags=[]; }
         if(!frags.length){
             w.classList.remove('sdy-hl-band-on');
@@ -9635,7 +9720,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(w.classList.contains('edit')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&
                (e.key.length===1||e.key==='Enter')) _ensurePendingTypingSpan(c);
         });
-        c.addEventListener('input',()=>{
+        // 한글 IME 조합 중에는 타이핑 span 안 텍스트 노드를 건드리지 않는다 —
+        // 조합 중인 노드를 고치면 조합이 끊겨 자모가 따로 확정되기 때문.
+        // 조합이 끝나는 순간(input isComposing=false·compositionend) 닻을 치운다.
+        c.addEventListener('compositionstart',()=>{ c._sdyComposing=true; });
+        c.addEventListener('compositionend',()=>{
+            c._sdyComposing=false;
+            try{ _cleanTypingMarks(c); }catch(e){}
+        });
+        c.addEventListener('input',e=>{
             w._caretV=(w._caretV||0)+1;   // 22.1 · 실시간 캐럿 좌표 캐시를 무효화하는 신호
             if(w.classList.contains('edit')){
                 commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
@@ -9648,6 +9741,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             w.classList.toggle('empty',em);
             // 엔진이 입력 뒤 캐럿을 inline 밖으로 옮긴 경우 다음 입력 전에 다시 준비한다.
             if(w.classList.contains('edit')) _ensurePendingTypingSpan(c);
+            // 타이핑 span 에 실제 글자가 들어왔으면 눈에 안 보이는 닻(ZWSP)을 치운다.
+            // 조합 중에는 건드리지 않는다(위 compositionstart/end 참조).
+            if(!c._sdyComposing&&!(e&&e.isComposing)){ try{ _cleanTypingMarks(c); }catch(_e){} }
             clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
         });
         // 편집 상자에서 포커스를 벗어나면 즉시 반영 (자동저장 신뢰성)
@@ -9790,7 +9886,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
         const c=w.querySelector('.tb-content'); if(!c) return;
         const viewOnly=c.innerHTML===w._sdyViewHtml;
-        const html=viewOnly?el.html:imathCollapse(stripWF(c.innerHTML));
+        // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
+        const html=viewOnly?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
         const fs=parseFloat(c.style.fontSize)||16;
         // Formatting commands may have changed model-only fields (font, align,
         // cellBg, etc.) before calling us. Those edits still need a dirty page;
@@ -10097,12 +10194,27 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   확인한다. `.tb`/`.paper-img`/`.stroke-g` 는 언제나 각 레이어의 직계
     //   자식이므로 판정 결과는 예전과 완전히 같고, 비용만 subtree 크기와
     //   무관해진다.
+    //
+    // ★ 14.39.3 · 이미지 층(layer-img)은 '실제로 끌거나 크기를 조절하는 동안'만
+    //   올린다 (사용자 보고 — "이미지를 이동하려고 선택하면 주변 수식이 사라짐").
+    //   예전에는 사진을 한 번만 선택해도 층 전체가 z=50 으로 떠올라, 글자·수식
+    //   층 위에 그림이 얹혔다. 그 결과 ① 사진과 겹친 수식·글자가 그림 뒤에
+    //   숨고, ② (옛 구조에선 같은 층에 있던) 원본 배경 래스터와 흰 바탕 수식
+    //   조각까지 함께 떠올라 주변이 통째로 가려졌다. 이제 선택만으로는
+    //   올리지 않고, sdy-dragging / sdy-resizing 이 붙은 동안(실제 제스처)
+    //   만 앞으로 온다 — 옮기는 그림은 끝까지 보이되, 놓거나 손을 떼면
+    //   곧바로 글자·수식이 다시 그림 위로 돌아온다. 그림 층이 올라가 있어도
+    //   글자는 여전히 그 아래에서 읽힌다(아래 layer-fig 분리 참고).
     function _layerLift(layer){
         if(!layer) return;
+        const imgGesture=layer.classList.contains('layer-img');
         let on=false;
         for(let n=layer.firstElementChild;n;n=n.nextElementSibling){
             const cl=n.classList;
-            if(cl&&(cl.contains('sel')||cl.contains('edit')||cl.contains('msel'))){ on=true; break; }
+            if(!cl) continue;
+            if(imgGesture){
+                if(cl.contains('sdy-dragging')||cl.contains('sdy-resizing')){ on=true; break; }
+            }else if(cl.contains('sel')||cl.contains('edit')||cl.contains('msel')){ on=true; break; }
         }
         const v=on?'50':'';
         // 같은 값을 다시 쓰면 브라우저가 불필요하게 스타일을 무효화한다.
@@ -10236,7 +10348,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!w) return;
             const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
             const c=w.querySelector('.tb-content');
-            const nh=c.innerHTML===w._sdyViewHtml?el.html:imathCollapse(stripWF(c.innerHTML));
+            // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
+            const nh=c.innerHTML===w._sdyViewHtml?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
             const nfs=parseFloat(c.style.fontSize)||16;
             if(nh!==el.html||nfs!==el.fontSize){
                 el.html=nh; el.fontSize=nfs; changed=true;
@@ -11453,7 +11566,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     // 중요어 분석 상태 (아래에서 쓰는 함수보다 먼저 선언 — TDZ 방지)
     //  wfMin  : 후보로 칠 최소 등장 횟수 (문서 길이에 따라 wfFloorN 이 자동 결정)
-    //  wfTopN : 실제로 색칠할 중요어 개수 상한 (14.39.3 · 기본 8개 · 3~24 조절)
+    //  wfTopN : 실제로 색칠할 중요어 개수 상한 (14.39.5 · 기본 8개 · 3~24 조절)
     //  wfSel  : 고른 중요어 Map(낱말 → 순위) · wfExtra : 손으로 짚어 본 낱말
     let wfOn=false, wfStats=[], wfMap=null, wfPick=null, wfMin=2;
     let wfTopN=8, wfSel=new Map(), wfExtra=new Set(), wfCand=[], wfTotal=0;
@@ -13181,11 +13294,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     // ---------- ⑩ 자동 백업 내려받기 ----------
     // ==========================================================
-    //  단어 빈도 분석 — 중요어 색칠 (Task 31 · 14.39.3 에서 '산만함' 수정)
+    //  단어 빈도 분석 — 중요어 색칠 (Task 31 · 14.39.5 에서 '산만함' 수정)
     //  문서의 핵심어를 한눈에 알아볼 수 있게 물들인다.
     //  (화면 표시 전용 · 원문 변경 없음)
     //
-    //  14.39.3 · 사용자 보고 "너무 산만하다. 진짜 중요한 단어만".
+    //  14.39.5 · 사용자 보고 "너무 산만하다. 진짜 중요한 단어만".
     //   예전에는 '두 번 이상 나온 모든 낱말'을 여섯 갈래 색·다섯 갈래 굵기로
     //   칠했다. 조금만 긴 노트면 수백 개 낱말이 알록달록해져 본문을 읽을 수
     //   없었다. 이제 세 가지를 바꿨다.
@@ -13216,7 +13329,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         '우리','저희','당신','자신','여기','거기','저기','오늘','내일','어제','정말','아주','너무',
         '이것','그것','저것','이때','그때','경우','가지','통한','따라','따른','관련','기타','이상','이하',
         '때문','대하','위하','그림','다음','이번','지금','모두','각각','서로','다시','먼저','또','즉',
-        // 14.39.3 · 뜻이 옅어 칠해도 도움이 안 되던 일반 명사·부사를 더 걸러 낸다
+        // 14.39.5 · 뜻이 옅어 칠해도 도움이 안 되던 일반 명사·부사를 더 걸러 낸다
         '내용','부분','정도','자체','전체','여러','하나','대부분','번째','사실','아래','다만',
         '중요','필요','다양','간단','실제','바로','그냥','조금','계속','항상','일반',
         // 두 글자짜리 활용형·관형형 — 아래 wfPredicate 가 세 글자부터 걸러 내므로 여기서 받는다
@@ -13245,7 +13358,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                    '했다','한다','하고','하는','하며','하면','해서','해야','했던','하러','하자','하지',
                    '되는','되어','된다','됐다','되고','되며','있다','있는','없다','없는',
                    '하여','시켜','시킨',
-                   // 14.39.3 · 한 글자 어미도 뗀다 (기록해 → 기록 · 제한된 → 제한 · 가능할 → 가능)
+                   // 14.39.5 · 한 글자 어미도 뗀다 (기록해 → 기록 · 제한된 → 제한 · 가능할 → 가능)
                    //   세 글자 이상일 때만 떼므로 '이해'·'포함'·'북한' 같은 두 글자 명사는 그대로다.
                    '해','돼','한','된','할','될','함','됨'];
     // 그 자체가 통째로 기능어인 말 (조사·어미를 떼면 껍데기만 남는 것)
@@ -13256,7 +13369,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(WF_FUNC.has(w)) return '';        // 통째로 버린다
         let prev=w;
         // 어미 → 조사 순으로 각 1회 (분석하였다 → 분석)
-        // 14.39.3 · 조사는 '한 번만' 뗀다. 두 번 떼면 '캘빈회로가 → 캘빈회로 → 캘빈회'
+        // 14.39.5 · 조사는 '한 번만' 뗀다. 두 번 떼면 '캘빈회로가 → 캘빈회로 → 캘빈회'
         //   처럼 멀쩡한 명사의 끝 글자(로·과·와…)까지 잘려 엉뚱한 낱말이 보였다.
         let josaDone=false;
         for(let pass=0;pass<2;pass++){
@@ -13285,7 +13398,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     // 뜻이 옅어 세어도 의미 없는 말 (조사를 뗀 뒤에도 남는 것들)
     const WF_THIN=new Set(['것','수','때','곳','점','바','줄','things','thing','way','ways']);
-    // 14.39.3 · 용언(동사·형용사)의 활용형은 '중요어'가 아니다.
+    // 14.39.5 · 용언(동사·형용사)의 활용형은 '중요어'가 아니다.
     //   '살펴보면'·'필요하다'·'중요한' 같은 말이 상위에 올라와 본문을 어지럽혔다.
     //   낱말 끝만 보고 걸러 낸다 — 명사를 잘못 자르지 않게 두 글자 어미 위주로,
     //   한 글자는 오탐이 거의 없는 '다/요/죠' 와 관형형 '한/된' 만 쓴다.
@@ -13355,7 +13468,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         wfSelect();
         return wfStats;
     }
-    // 14.39.3 · 끝 글자가 조사처럼 보여 한 낱말이 둘로 쪼개지는 일을 막는다.
+    // 14.39.5 · 끝 글자가 조사처럼 보여 한 낱말이 둘로 쪼개지는 일을 막는다.
     //   '캘빈회로'(그대로) 와 '캘빈회로가'(조사를 한 번 뗀 것) 처럼 한 글자 차이로
     //   갈린 짝은 더 많이 나온 쪽으로 합치고, 나머지는 별칭(wfAlias)으로 이어 준다.
     const WF_JOSA1=['의','를','을','이','가','은','는','에','도','만','로','과','와','랑'];
@@ -13501,7 +13614,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         walk(root);
         texts.forEach(tn=>{
             const text=tn.nodeValue;
-            // 14.39.3 · '기준 횟수를 넘은 모든 낱말'이 아니라 '고른 중요어'만 칠한다
+            // 14.39.5 · '기준 횟수를 넘은 모든 낱말'이 아니라 '고른 중요어'만 칠한다
             const toks=wfTokens(text).filter(t=>wfPaintable(t.key));
             if(!toks.length) return;
             const frag=document.createDocumentFragment();
@@ -14741,9 +14854,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // rAF 대기 중에 mouseup/touchend 가 먼저 온 경우, 마지막 포인트를 놓치지 않고
         // 미리 반영한다. (특히 지우개는 몇 ms 만에 끝날 수 있어 이 flush 가 없으면
         //  빠른 스와이프가 안 지워진다)
-        if(drawing && (_drawEv || _drawEvT)){
-            try{ if(_drawEvT) drawMove(_drawEvT); else if(_drawEv) drawMove(_drawEv); }catch(e){}
-            _drawEv=null; _drawEvT=null;
+        if(drawing && _drawEvT){
+            try{ if(_drawEvT) drawMove(_drawEvT); }catch(e){}
+            _drawEvT=null;
         }
         lastErase=null;
         if(!drawing) return;
@@ -14883,7 +14996,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const s=e.target.closest('.draw-surface');
         if(s&&penActive) drawStart(e,+s.closest('.paper').dataset.pageIdx);
     },true);
-    let _drawRaf=0, _drawEv=null;
     let _drawRafT=0, _drawEvT=null;
     // ★ 펜 호버 필터: Apple Pencil 이 화면 위에 있지만 닿지 않았을 때
     //   (pressure===0, buttons===0) 발생하는 pointermove 를 무시한다.
@@ -14892,9 +15004,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     sdyAddPointerCompat(document,'pointermove',e=>{
         if(!drawing) return;
         if(e.pointerType==='pen' && e.pressure===0 && e.buttons===0) return;
-        _drawEv=e;
-        if(_drawRaf) return;
-        _drawRaf=requestAnimationFrame(()=>{ _drawRaf=0; if(drawing&&_drawEv) drawMove(_drawEv); });
+        // 펜/마우스는 rAF 묶음 없이 바로 그려 지연(선이 현재 위치보다 늦게 그려짐)을 없앤다.
+        try{ drawMove(e); }catch(err){}
     },{passive:true});
     // ★ pointercancel 추가 — 펜이 화면 밖으로 나가면 그리기 종료
     sdyAddPointerCompat(document,'pointerup',()=>{ if(drawing) drawEnd(); });
@@ -15576,6 +15687,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(block===host&&(FMT_BLOCK_TAGS.has(tag)||_isPosSpan(k))) continue;
                 if(tag==='BR'){ tokens.push({t:'br',node:k}); continue; }
                 if(FMT_ATOMIC_TAGS.has(tag)){ tokens.push({t:'atom',node:k,link:link||null}); continue; }
+                // 아직 입력 전인 타이핑 span(빈칸 또는 닻 ZWSP 1글자)은 원자 토큰으로
+                // 통째로 옮긴다 — 안을 토큰화하면 닻이 '진짜 글자'로 취급된다.
+                if(tag==='SPAN'&&k.classList&&k.classList.contains('sdy-type')&&_isTypeMarkOnly(k)){
+                    tokens.push({t:'type',node:k}); continue;
+                }
                 const hasInner=!!(String(k.textContent||'').length
                     ||(k.querySelector&&k.querySelector('img,br,svg,canvas,video,audio,iframe,hr')));
                 if(!hasInner){
@@ -16500,6 +16616,117 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return true;
         }catch(e){ return false; }
     }
+    // ── 캐럿 서식 span 의 '닻(anchor)' ────────────────────────────────
+    // 빈 span 에 커서(요소,0)를 두면 Chrome·Safari 가 입력 위치를 부모(상자)로
+    // 정규화해 버린다. 그래서 글꼴·색을 바꾼 뒤 치는 글자가 span 밖(기본 서식)으로
+    // 들어갔다. span 안에 눈에 안 보이는 ZWSP 1글자를 넣고 그 뒤(텍스트,1)에
+    // 커서를 두면 입력이 반드시 span 안으로 들어간다. 닻은 실제 글자가 들어오면
+    // input 에서 바로 지우고, 저장할 때는 문자열 단계에서 걷어내 문서에 남기지 않는다.
+    // (조합 중에는 텍스트 노드를 건드리지 않는다 — IME 조합이 끊기기 때문.)
+    const _TYPE_MARK='\u200B';
+    function _typeMarkText(){ return document.createTextNode(_TYPE_MARK); }
+    // '아직 입력 전'인 타이핑 span 인가 (완전 빈칸 또는 닻 1글자만)
+    function _isTypeMarkOnly(span){
+        if(!span) return false;
+        try{
+            if(span.childElementCount) return false;
+            const t=String(span.textContent||'');
+            return t===''||t===_TYPE_MARK;
+        }catch(e){ return false; }
+    }
+    // 타이핑 span 안의 '모호하지 않은' 캐럿 위치를 돌려준다.
+    // 아직 입력 전이면 닻 뒤, 글자가 들어갔으면 그 맨 끝(둘 다 텍스트 노드 안).
+    function _typingCaretRange(span){
+        if(!_isTypeMarkOnly(span)){
+            const nr=document.createRange();
+            try{
+                const tw=document.createTreeWalker(span,NodeFilter.SHOW_TEXT);
+                let last=null,n;
+                while(n=tw.nextNode()) last=n;
+                if(last) nr.setStart(last,String(last.nodeValue||'').length);
+                else nr.setStart(span,span.childNodes.length);
+            }catch(e){ try{ nr.selectNodeContents(span); }catch(_e){} }
+            nr.collapse(false);
+            return nr;
+        }
+        let tn=span.firstChild;
+        if(!tn||tn.nodeType!==3){
+            tn=_typeMarkText();
+            span.insertBefore(tn,span.firstChild);
+        }else if(String(tn.nodeValue||'').charAt(0)!==_TYPE_MARK){
+            tn.nodeValue=_TYPE_MARK+String(tn.nodeValue||'');
+        }
+        const nr=document.createRange();
+        nr.setStart(tn,1); nr.collapse(true);
+        return nr;
+    }
+    // span 안의 닻을 지운다. 캐럿이 같은 텍스트 노드 안에 있으면 지운 글자 수만큼 당긴다.
+    function _stripTypeMarks(span){
+        if(!span) return;
+        let tw=null;
+        try{ tw=document.createTreeWalker(span,NodeFilter.SHOW_TEXT); }catch(e){ return; }
+        const nodes=[]; let n;
+        while(n=tw.nextNode()) nodes.push(n);
+        if(!nodes.length) return;
+        const s=window.getSelection();
+        let caret=null;
+        try{ caret=(s&&s.rangeCount)?s.getRangeAt(0):null; }catch(e){}
+        nodes.forEach(tn=>{
+            const v=String(tn.nodeValue||'');
+            if(v.indexOf(_TYPE_MARK)<0) return;
+            let cutS=0,cutE=0;
+            try{
+                if(caret&&caret.startContainer===tn)
+                    cutS=String(v.slice(0,caret.startOffset)).split(_TYPE_MARK).length-1;
+                if(caret&&!caret.collapsed&&caret.endContainer===tn)
+                    cutE=String(v.slice(0,caret.endOffset)).split(_TYPE_MARK).length-1;
+            }catch(e){}
+            tn.nodeValue=v.split(_TYPE_MARK).join('');
+            if(!caret) return;
+            try{
+                if(caret.startContainer===tn||(!caret.collapsed&&caret.endContainer===tn)){
+                    const r=caret.cloneRange();
+                    if(r.startContainer===tn) r.setStart(tn,Math.max(0,caret.startOffset-cutS));
+                    if(!caret.collapsed&&r.endContainer===tn) r.setEnd(tn,Math.max(0,caret.endOffset-cutE));
+                    s.removeAllRanges(); s.addRange(r);
+                    caret=r;
+                }
+            }catch(e){}
+        });
+    }
+    // 실제 글자가 들어온 타이핑 span 에서 닻을 치운다.
+    // 아직 입력 전(닻만)인 span 은 둔다 — 다음 글자의 자리 표시다.
+    function _cleanTypingMarks(host){
+        if(!host||!host.querySelector) return;
+        if(!_typingSpan&&!_pendingTyping) return;
+        try{
+            host.querySelectorAll('.sdy-type').forEach(sp=>{
+                if(_isTypeMarkOnly(sp)) return;
+                _stripTypeMarks(sp);
+            });
+        }catch(e){}
+    }
+    // 저장 문자열에서 타이핑 닻을 걷어낸다. 빈(닻뿐인) span 은 통째로 뺀다.
+    // 라이브 DOM 은 건드리지 않는다 — 편집 중 캐럿이 그 안에 있을 수 있다.
+    function _stripTypingMarkersHtml(html){
+        if(!html||html.indexOf('sdy-type')<0) return html;
+        const d=document.createElement('div');
+        d.innerHTML=html;
+        let touched=false;
+        try{
+            d.querySelectorAll('.sdy-type').forEach(sp=>{
+                const tw=document.createTreeWalker(sp,NodeFilter.SHOW_TEXT);
+                const nodes=[]; let n;
+                while(n=tw.nextNode()) nodes.push(n);
+                nodes.forEach(tn=>{
+                    const v=String(tn.nodeValue||'');
+                    if(v.indexOf(_TYPE_MARK)>=0){ tn.nodeValue=v.split(_TYPE_MARK).join(''); touched=true; }
+                });
+                if(!sp.textContent&&!sp.querySelector('img,br,svg,canvas')){ sp.remove(); touched=true; }
+            });
+        }catch(e){}
+        return touched?d.innerHTML:html;
+    }
     // 브라우저가 빈 span을 없애거나 입력 후 캐럿을 형제 위치로 옮겨도, 별도로 기억한
     // active state를 사용해 입력 직전 같은 스타일 wrapper를 다시 만든다.
     function _ensurePendingTypingSpan(host){
@@ -16515,7 +16742,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!inHost) return false;
         if(_typingSpan&&_typingSpan.isConnected&&host.contains(_typingSpan)&&
            (point===_typingSpan||_typingSpan.contains(point))){
-            savedCaret={c:host,r:live.cloneRange()};
+            // 텍스트 안(모호하지 않은 위치)이면 그대로 둔다. span 요소 자체를
+            // 가리키는 (요소,오프셋) 캐럿은 브라우저가 부모로 정규화해 다음 글자를
+            // 밖으로 빼 버리므로 span 안 '닻 뒤(아직 입력 전) / 맨 끝'으로 확정한다.
+            if(point.nodeType!==3){
+                try{ _restoreTypingRange(host,_typingCaretRange(_typingSpan)); }
+                catch(e){ savedCaret={c:host,r:live.cloneRange()}; }
+            }else savedCaret={c:host,r:live.cloneRange()};
             return true;
         }
         try{
@@ -16524,9 +16757,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             for(const k in p.styles) _setInlineProp(span,k,p.styles[k]);
             const r=live.cloneRange();
             r.insertNode(span);
-            const nr=document.createRange(); nr.selectNodeContents(span); nr.collapse(false);
             _typingSpan=span;
-            _restoreTypingRange(host,nr);
+            _restoreTypingRange(host,_typingCaretRange(span));
             return true;
         }catch(e){ return false; }
     }
@@ -16537,9 +16769,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{
             const s=window.getSelection();
             const dot=tn=>tn&&(tn===_typingSpan||(_typingSpan&&_typingSpan.contains(tn)));
-            // 빈 span 만 재사용한다. 이미 글자가 들어간 span 을 뒤집으면
-            // '앞으로 입력될 글자'뿐 아니라 '이미 입력된 글자'까지 바뀌기 때문.
-            const spanEmpty=_typingSpan&&!_typingSpan.textContent&&!_typingSpan.childElementCount;
+            // 닻만 있는 span 은 '아직 입력 전'이므로 재사용한다. 이미 글자가 들어간
+            // span 을 뒤집으면 '앞으로 입력될 글자'뿐 아니라 '이미 입력된 글자'까지
+            // 바뀌기 때문.
+            const spanEmpty=_typingSpan&&_isTypeMarkOnly(_typingSpan);
             let span=null;
             if(spanEmpty&&_typingSpan.isConnected&&c.contains(_typingSpan)){
                 const r0=s.rangeCount?s.getRangeAt(0):null;
@@ -16549,7 +16782,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!span){
                 span=document.createElement('span');
                 span.className='sdy-type';
-                const src=(s.rangeCount?s.getRangeAt(0):t.r).cloneRange();
+                // 삽입 위치는 '상자 안 실제 캐럿'으로만 잡는다. 툴바 글자 크기칸처럼
+                // 상자 밖에 포커스가 있으면 live Selection 이 상자 밖을 가리킨다 —
+                // 그걸 그대로 쓰면 span 이 엉뚱한 곳에 들어가 서식이 증발한다.
+                let srcBase=null;
+                try{
+                    if(s.rangeCount){
+                        const lr=s.getRangeAt(0);
+                        const sc=lr.startContainer;
+                        if(sc===c||(c.contains&&c.contains(sc))) srcBase=lr;
+                    }
+                }catch(e){}
+                const src=(srcBase||t.r).cloneRange();
                 // 14.18.4 · 도중 스타일 변경: 새 빈 span 을 만들 때도 직전까지의
                 // 캐럿 서식(색·크기·굵기·밑줄·형광펜·부분 글꼴)을 모두 먼저 심어 둔다.
                 // 예전엔 font-family 만 옮겨 "크기만 바꾼 뒤 다시 색 변경" 같은 흐름에서
@@ -16559,15 +16803,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     : _typingStylesFromNode(src.startContainer,c);
                 for(const k in seed) _setInlineProp(span,k,seed[k]);
                 src.insertNode(span);
-                const nr=document.createRange();
-                nr.selectNodeContents(span); nr.collapse(true);
                 _typingSpan=span;
-                _restoreTypingRange(c,nr);
+                // 빈 (요소,0)이 아니라 '닻 뒤(텍스트,1)'에 캐럿을 둔다 — 그래야
+                // 다음 글자가 span 안으로 들어간다.
+                _restoreTypingRange(c,_typingCaretRange(span));
             }else{
                 // 캐럿을 서식 span 안으로 되돌린다 (툴바 입력창을 쓰다 돌아와도 이어짐)
-                const nr=document.createRange();
-                nr.selectNodeContents(span); nr.collapse(true);
-                _restoreTypingRange(c,nr);
+                _restoreTypingRange(c,_typingCaretRange(span));
             }
             const _removeStyleSafe=(name)=>{
                 // jsdom·일부 WebView 는 camelCase removeProperty 를 무시한다.
@@ -16585,7 +16827,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             //   sdy-type 빈 span 을 하나 남겨 두는 편이 안전하다. 여기서는 '진짜 빈
             //   스타일' + '아직 입력 전'일 때만 지우고, '이전 서식 차단용'으로 쓴
             //   중립값(400/normal)이 남아 있으면(즉 cssText 가 있으면) 반드시 유지한다.
-            if(span.classList.contains('sdy-type')&&!span.style.cssText&&!span.textContent&&!span.childElementCount){
+            if(span.classList.contains('sdy-type')&&!span.style.cssText&&_isTypeMarkOnly(span)){
                 span.remove(); _typingSpan=null; savedCaret=null; _pendingTyping=null;
                 return true;
             }
@@ -16673,7 +16915,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         box.innerHTML=html||'';
         box.querySelectorAll('br').forEach(b=>b.replaceWith('\n'));
         box.querySelectorAll('div,p,li').forEach(n=>{ n.after('\n'); });
-        const text=(box.textContent||'').replace(/\n{3,}/g,'\n\n').replace(/[ \t]+\n/g,'\n').trim();
+        const text=(box.textContent||'').replace(/\n{3,}/g,'\n\n').replace(/[ \t]+\n/g,'\n').replace(/\u200B/g,'').trim();
         return esc(text).replace(/\n/g,'<br>');
     }
     // 14.16 · 툴바의 글자 크기칸과 '지금 보고 있는 글자'를 맞추는 장치
@@ -17294,7 +17536,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         let s=`width:100%;height:100%;box-sizing:border-box;border:${bw}px solid transparent;`+
               `display:flex;font-size:${fs}px;line-height:1.05;color:${color||'#111'};`+
               `white-space:nowrap;font-family:'Times New Roman',serif;`;
-        if(imp) s+=`padding:0;overflow:hidden;align-items:center;`;
+        // 14.39.3 · 화면과 같은 규칙 — 가져온 수식도 상자 밖으로 나가면 자르지 않고
+        //   전부 보인다 (overflow:hidden 은 큰 수식이 잘려 '사라진' 것처럼 보이는
+        //   버그의 원인이었음, 보고 26.09.08). 글상자(_expTextInner)도 같은 값.
+        if(imp) s+=`padding:0;overflow:visible;align-items:center;`;
         else if(disp) s+=`padding:1px 4px;overflow:visible;align-items:center;`;
         else s+=`padding:0 4px 1px;overflow:visible;align-items:flex-end;`;
         if(disp) s+=`justify-content:center;`;
@@ -17307,7 +17552,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             `.sdyx pre,.sdyx code,.sdyx tt,.sdyx kbd,.sdyx samp{font-family:inherit;}`+
             `.sdyx button,.sdyx input,.sdyx select,.sdyx textarea{font:inherit;}`+
             `.sdyx sup,.sdyx sub{font-size:.72em;line-height:0;position:relative;vertical-align:baseline;}`+
-            `.sdyx sup{top:-.45em;}.sdyx sub{bottom:-.22em;}</style>`;
+            `.sdyx sup{top:-.45em;}.sdyx sub{bottom:-.22em;}`+
+            `.sdyx .zsp{position:absolute;left:100%;top:0;font-size:0;font-style:normal;letter-spacing:0;}</style>`;
     }
 
     // SVG <img> documents cannot use the editor's loaded web fonts. Bundle only
@@ -17376,7 +17622,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(lg!==1){ t0=Infinity; for(const t of tops) if(t.top<t0) t0=t.top; }
             for(const t of tops) t.s.style.top=(lg===1?t.top:(t0+(t.top-t0)*lg)).toFixed(3)+'px';
         }
-        c.querySelectorAll('.zsp').forEach(n=>n.style.fontSize='0px');
+        c.querySelectorAll('.zsp').forEach(n=>{
+            n.style.fontSize='0px';
+            n.style.position='absolute';
+            n.style.left='100%';
+            n.style.top='0';
+            n.style.fontStyle='normal';
+        });
         return c.innerHTML;
     }
     let _pdfProbeBox=null;
@@ -19969,6 +20221,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const txtL=paper.querySelector('.layer-text');
         const svg=paper.querySelector('.layer-stroke');
         const fillL=paper.querySelector('.layer-fill');
+        const figL=paper.querySelector('.layer-fig');
         const imgL=paper.querySelector('.layer-img');
         const els=(doc.pages&&doc.pages[idx]&&doc.pages[idx].els)||[];
         els.forEach(el=>{
@@ -20004,7 +20257,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }else{
                 if(el.type==='text'&&txtL) txtL.appendChild(buildTextEl(el,idx));
                 else if(el.type==='stroke'&&svg){ if(el.fillColor&&fillL) fillL.appendChild(buildStrokeFillEl(el,idx)); svg.appendChild(buildStrokeEl(el,idx)); }
-                else if(el.type==='image'&&imgL) imgL.appendChild(buildImageEl(el,idx));
+                else if(el.type==='image'){
+                    // 14.39.3 · 원본 배경·수식 조각은 가구 층(layer-fig)으로.
+                    const dst=((el.isBg||el.isMath)&&figL)?figL:imgL;
+                    if(dst) dst.appendChild(buildImageEl(el,idx));
+                }
                 else if(el.type==='latex'&&txtL) txtL.appendChild(buildLatexEl(el,idx));
             }
         });

@@ -78,7 +78,8 @@
                     if(c&&el.type==='text'&&el.fontSize){
                         c.style.fontSize=el.fontSize+'px';
                         // 상자 안에서 '이 단어만' 키워 둔 글자도 같은 배율로 함께
-                        if(scaleInlineFS(c,f)) el.html=imathCollapse(stripWF(c.innerHTML));
+                        // (타이핑 닻도 함께 걷어낸다 — 문서에 남지 않게)
+                        if(scaleInlineFS(c,f)) el.html=_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
                     }
                 }
             }
