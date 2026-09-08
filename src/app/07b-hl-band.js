@@ -343,6 +343,11 @@
             // 타이핑 span 에 실제 글자가 들어왔으면 눈에 안 보이는 닻(ZWSP)을 치운다.
             // 조합 중에는 건드리지 않는다(위 compositionstart/end 참조).
             if(!c._sdyComposing&&!(e&&e.isComposing)){ try{ _cleanTypingMarks(c); }catch(_e){} }
+            // 14.39.9 · tight 편집 중 타이핑 후 즉시 단어 맞춤 재실행.
+            //   syncTextEl(300ms 뒤)까지 기다리면 그 사이 글자가 span 을 넘어 보인다.
+            if(w._sdyTightEdit&&el.tight&&typeof _queueTightFit==='function'){
+                try{ _queueTightFit(c,el); }catch(_e){}
+            }
             clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
         });
         // 편집 상자에서 포커스를 벗어나면 즉시 반영 (자동저장 신뢰성)
@@ -495,7 +500,8 @@
         const textChanged=html!==el.html;   // 글자 본문이 실제로 바뀌었는가 (저장 전 비교)
         markPageEdited(+w.dataset.pageIdx);
         el.html=html; el.fontSize=fs;
-        // 편집 중 펼친 pdf/tight 상자: 실제로 글자를 고쳤을 때만 '흐름 텍스트 상자'로 확정.
+        // 14.39.9 · tight 상자는 텍스트를 고쳐도 절대좌표 배치를 유지한다.
+        //   흐름 텍스트로 변환했던 옛 경로(_sdyWasTight)만 확정한다.
         if(w._sdyWasTight&&textChanged) _finalizeTightEdit(w,el);
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
         // 회전한 상자의 offset 크기는 외접 박스라서 그대로 쓰면 상자가 부풀며
@@ -503,6 +509,12 @@
         if(!normalizedRotation(el.rotation)){ el.w=w.offsetWidth; el.h=w.offsetHeight; }
         w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
         w.classList.toggle('empty',!String((c.innerText!=null?c.innerText:c.textContent)||'').trim());
+        // 14.39.9 · tight 상자 서식 변경 후 단어 맞춤을 다시 돌린다.
+        //   글꼴·크기가 바뀌면 각 span 의 자연 폭이 달라지므로 scaleX 를 재계산해야
+        //   원본 배치가 유지된다. 편집 중(_sdyTightEdit)과 선택 상태 모두 포함.
+        if(el.tight&&w.classList.contains('tight')&&!w._sdyWasTight&&typeof _queueTightFit==='function'){
+            try{ _queueTightFit(c,el); }catch(_e){}
+        }
         saveDoc();
     }
 

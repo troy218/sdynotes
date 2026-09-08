@@ -2359,7 +2359,8 @@
       aiQMir.textContent=q.value||q.placeholder||'';     // 비면 안내 글씨 너비만큼
       var textW=Math.ceil(aiQMir.getBoundingClientRect().width);
       // 글씨 + 좌우 패딩(30) + 상태 점(9) + 사이(8) + 여유(14)
-      var want=Math.max(180,Math.min(360,textW+61));
+      // 14.39.9 · 가로로 먼저 충분히 늘어난 뒤에 줄바꿈이 일어나도록 최대 폭을 키웠다.
+      var want=Math.max(180,Math.min(480,textW+61));
       field.style.setProperty('--ai-q-w',want+'px');
       q.style.height='auto';
       var h=q.scrollHeight||0;

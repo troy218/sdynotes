@@ -1839,6 +1839,7 @@
             border:var(--bw,2px) solid transparent;border-radius:3px;background:transparent;
             outline:none;white-space:pre-wrap;word-break:break-word;overflow:visible;
             cursor:text;color:var(--text1);user-select:none;line-height:1.5;box-sizing:border-box;
+            display:flex;flex-direction:column;justify-content:center;
         }
         /* 10.0 · 선택/편집 중에도 상자 속 빈 공간을 흰 바탕으로 채우지 않는다.
            (예전: 편집 중 background:rgba(255,255,255,.97) — 옆의 그림·수식을 가렸다.
@@ -1882,6 +1883,7 @@
             padding:0;min-width:0;min-height:0;line-height:1;
             white-space:normal;word-break:normal;overflow-wrap:normal;
             position:relative;   /* overflow는 visible 유지 — 글자 절대 안 잘림 */
+            display:block;       /* 절대좌표 span 과 flex 충돌 방지 */
         }
         /* The global * rule sets a UI font on EVERY span. Imported words must
            inherit the document font unless they explicitly carry a source face. */
@@ -6584,7 +6586,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    말풍선 아래쪽까지 올라오는데, 그때 버튼이 말풍선에 깔려 안 눌리면 곤란하다. */
 .ai-askbar{position:absolute;left:140px;bottom:14px;z-index:9;
     display:flex;flex-direction:column;align-items:center;gap:6px;
-    max-width:min(420px,calc(100% - 160px));
+    max-width:min(520px,calc(100% - 160px));
     transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
 .ai-askbar.draw-on{bottom:calc(64px + 32px);}      /* 그리기 툴바가 뜨면 해돌이와 같이 위로 */
 /* 범위 버튼 줄 — '이 페이지' 와 '전체 페이지' 를 질문칸 위 가운데에 나란히 둔다.
@@ -6607,7 +6609,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    여러 줄이 되면 .multi 가 붙어 모서리가 각져 보이고, 상자는 아래에 고정된
    채로 위를 향해 자란다(검색창이 bottom 고정이라 자연스레 위로 자람). */
 .ai-askbar-field{display:flex;align-items:center;gap:8px;
-    width:min(var(--ai-q-w,230px),360px,100%);
+    width:min(var(--ai-q-w,230px),480px,100%);
     border:1px solid var(--g-brd);background:var(--g-fill-strong);
     backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%);
     box-shadow:var(--g-hi),var(--g-shadow);
@@ -6650,7 +6652,8 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
     border:1px solid var(--g-brd);border-radius:18px 18px 18px 6px;
     box-shadow:var(--g-hi),var(--g-shadow-lg);
     color:var(--text1);overflow:visible;
-    animation:aiPop .22s cubic-bezier(.22,.9,.32,1.06);
+    animation:aiPop .3s cubic-bezier(.22,.9,.32,1.06);
+    transform-origin:left bottom;
     transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
 .ai-say[hidden]{display:none;}
 .ai-say.draw-on{bottom:calc(64px + 140px + var(--ai-lift,0px));}   /* 그리기 툴바 위로 */
@@ -6720,7 +6723,11 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 .ai-typing i:nth-child(3){animation-delay:.3s;}
 .ai-meta{flex:none;padding:5px 13px 8px;font-size:10.8px;color:var(--text3);line-height:1.5;}
 .ai-meta:empty{display:none;}
-@keyframes aiPop{from{opacity:0;transform:translateY(10px) scale(.97);}to{opacity:1;transform:none;}}
+@keyframes aiPop{
+  from{opacity:0;transform:translateY(10px) scaleX(.88) scaleY(.72);}
+  50%{opacity:1;transform:translateY(3px) scaleX(1) scaleY(.88);}
+  to{opacity:1;transform:none;}
+}
 @keyframes aiDot{0%,80%,100%{transform:translateY(0);opacity:.35;}40%{transform:translateY(-4px);opacity:1;}}
 
 /* ── 대화기록 — 해돌이를 누르면 열리는 목록 ── */
@@ -6732,7 +6739,8 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
     border:1px solid var(--g-brd);border-radius:18px 18px 18px 6px;
     box-shadow:var(--g-hi),var(--g-shadow-lg);
     color:var(--text1);overflow:visible;
-    animation:aiPop .22s cubic-bezier(.22,.9,.32,1.06);
+    animation:aiPop .3s cubic-bezier(.22,.9,.32,1.06);
+    transform-origin:left bottom;
     transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
 .ai-hist[hidden]{display:none;}
 .ai-hist.draw-on{bottom:calc(64px + 140px);}
