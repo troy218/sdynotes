@@ -120,9 +120,11 @@
         {id:'poor',   label:'푸어스토리',ko:'푸어스토리',en:'Poor Story',css:"'Poor Story','Pretendard Variable',cursive"},
         {id:'blackhan',label:'검은고딕',ko:'검은고딕',en:'Black Han Sans',css:"'Black Han Sans','Pretendard Variable',sans-serif"},
         {id:'myeongjo',label:'나눔명조',ko:'나눔명조',en:'Nanum Myeongjo',css:"'Nanum Myeongjo',serif"},
-        {id:'times',  label:'Times New Roman',ko:'타임스 뉴 로먼',en:'Times New Roman',css:"'SDY Times','Times New Roman','Liberation Serif','Nanum Myeongjo',serif"},
+        // ※ 실제 글꼴 이름을 먼저, 번들 대체(유사)글꼴은 뒤에 두어, OS 에 그 글꼴이
+        //   있으면 진짜 그 글꼴로 그린다(라벨=실제 모습 일치). 없으면 아래 유사글꼴로 대체.
+        {id:'times',  label:'Times New Roman',ko:'타임스 뉴 로먼',en:'Times New Roman',css:"'Times New Roman','Liberation Serif','SDY Times','Nanum Myeongjo',serif"},
         {id:'cmroman',label:'Computer Modern',ko:'컴퓨터 모던',en:'Computer Modern',css:"'SDY Computer Modern','Latin Modern Roman','Times New Roman',serif"},
-        {id:'arial',label:'Arial / Helvetica',ko:'에어리얼',en:'Arial / Helvetica',css:"'SDY Helvetica',Arial,'Liberation Sans',sans-serif"},
+        {id:'arial',label:'Arial / Helvetica',ko:'에어리얼',en:'Arial / Helvetica',css:"'Arial','Helvetica','Liberation Sans','SDY Helvetica',sans-serif"},
         {id:'coding', label:'코딩체',ko:'코딩체',en:'Nanum Gothic Coding',css:"'Nanum Gothic Coding',monospace"},
         {id:'inter',  label:'Inter',ko:'인터',en:'Inter',css:"'Inter','Pretendard Variable',sans-serif"},
         {id:'playfair',label:'Playfair',ko:'플레이페어',en:'Playfair Display',css:"'Playfair Display',serif"},

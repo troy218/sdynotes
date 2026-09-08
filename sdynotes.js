@@ -288,9 +288,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         {id:'poor',   label:'푸어스토리',ko:'푸어스토리',en:'Poor Story',css:"'Poor Story','Pretendard Variable',cursive"},
         {id:'blackhan',label:'검은고딕',ko:'검은고딕',en:'Black Han Sans',css:"'Black Han Sans','Pretendard Variable',sans-serif"},
         {id:'myeongjo',label:'나눔명조',ko:'나눔명조',en:'Nanum Myeongjo',css:"'Nanum Myeongjo',serif"},
-        {id:'times',  label:'Times New Roman',ko:'타임스 뉴 로먼',en:'Times New Roman',css:"'SDY Times','Times New Roman','Liberation Serif','Nanum Myeongjo',serif"},
+        // ※ 실제 글꼴 이름을 먼저, 번들 대체(유사)글꼴은 뒤에 두어, OS 에 그 글꼴이
+        //   있으면 진짜 그 글꼴로 그린다(라벨=실제 모습 일치). 없으면 아래 유사글꼴로 대체.
+        {id:'times',  label:'Times New Roman',ko:'타임스 뉴 로먼',en:'Times New Roman',css:"'Times New Roman','Liberation Serif','SDY Times','Nanum Myeongjo',serif"},
         {id:'cmroman',label:'Computer Modern',ko:'컴퓨터 모던',en:'Computer Modern',css:"'SDY Computer Modern','Latin Modern Roman','Times New Roman',serif"},
-        {id:'arial',label:'Arial / Helvetica',ko:'에어리얼',en:'Arial / Helvetica',css:"'SDY Helvetica',Arial,'Liberation Sans',sans-serif"},
+        {id:'arial',label:'Arial / Helvetica',ko:'에어리얼',en:'Arial / Helvetica',css:"'Arial','Helvetica','Liberation Sans','SDY Helvetica',sans-serif"},
         {id:'coding', label:'코딩체',ko:'코딩체',en:'Nanum Gothic Coding',css:"'Nanum Gothic Coding',monospace"},
         {id:'inter',  label:'Inter',ko:'인터',en:'Inter',css:"'Inter','Pretendard Variable',sans-serif"},
         {id:'playfair',label:'Playfair',ko:'플레이페어',en:'Playfair Display',css:"'Playfair Display',serif"},
@@ -10015,8 +10017,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // cellBg, etc.) before calling us. Those edits still need a dirty page;
         // only a genuinely unchanged view/model pair can take the no-op path.
         if(html===el.html&&fs===el.fontSize&&w._sdyModelKey===JSON.stringify(el)) return;
+        const textChanged=html!==el.html;   // 글자 본문이 실제로 바뀌었는가 (저장 전 비교)
         markPageEdited(+w.dataset.pageIdx);
         el.html=html; el.fontSize=fs;
+        // 편집 중 펼친 pdf/tight 상자: 실제로 글자를 고쳤을 때만 '흐름 텍스트 상자'로 확정.
+        if(w._sdyWasTight&&textChanged) _finalizeTightEdit(w,el);
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
         // 회전한 상자의 offset 크기는 외접 박스라서 그대로 쓰면 상자가 부풀며
         // 자리가 어긋난다 → 똑바로 선 상자만 실측 크기를 되받는다.
@@ -10443,6 +10448,66 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!keepTool) setTextTool(false);
     }
 
+    // 불러온 논문(tight/pdfText)의 '단어마다 절대좌표 배치된 span'을, 폰트·
+    // 글자 크기·색·굵기·기울임 등 단어별 서식을 보존한 채 브라우저가 줄을
+    // 재계산할 수 있는 '흐름 텍스트' HTML 로 펼친다. 행(줄)은 원문의 세로
+    // 위치로, 단어 순서는 가로 위치로 복원한다. 자리만 옮기는 표시 작업이라
+    // 절대 모델(el.html)을 바꾸지 않는다 — 편집 중에 쓰고, 실제 수정이
+    // 저장될 때만 확정된다.
+    function _pdfTightToEditHtml(c){
+        try{
+            const sps=Array.from(c.children).filter(s=>s&&s.nodeType===1&&s.tagName==='SPAN');
+            if(!sps.length) return '';
+            const num=v=>{ const n=parseFloat(v); return isNaN(n)?0:n; };
+            sps.sort((a,b)=>{
+                const at=num(a.dataset.origTop||a.style.top)||a.offsetTop||0;
+                const bt=num(b.dataset.origTop||b.style.top)||b.offsetTop||0;
+                if(Math.abs(at-bt)>2) return at-bt;
+                return (num(a.style.left)||a.offsetLeft||0)-(num(b.style.left)||b.offsetLeft||0);
+            });
+            const rows=[]; let cur=[]; let lastTop=null;
+            sps.forEach(s=>{
+                let t='';
+                try{
+                    const cl=s.cloneNode(true);
+                    cl.querySelectorAll('.zsp,br,img').forEach(z=>z.remove());
+                    t=(cl.textContent||'').replace(/[\u200b\ufeff]/g,'').trim();
+                }catch(e){ t=(s.textContent||'').replace(/[\u200b\ufeff]/g,'').trim(); }
+                if(!t) return;
+                const top=num(s.dataset.origTop||s.style.top)||s.offsetTop||0;
+                if(lastTop!=null&&Math.abs(top-lastTop)>2){ if(cur.length) rows.push(cur); cur=[]; }
+                cur.push({t,s}); lastTop=top;
+            });
+            if(cur.length) rows.push(cur);
+            if(!rows.length) return '';
+            return rows.map(row=>{
+                const parts=[];
+                row.forEach(({t,s},idx)=>{
+                    if(idx>0) parts.push(' ');
+                    // 인라인 서식은 그대로 두고, 절대좌표·변형만 흐름에서 빠뜨린다.
+                    const sp=s.cloneNode(false);
+                    sp.removeAttribute('data-fs'); sp.removeAttribute('data-pdf-w'); sp.removeAttribute('data-pdf-base');
+                    sp.style.position=''; sp.style.left=''; sp.style.top='';
+                    sp.style.transform=''; sp.style.transformOrigin='';
+                    sp.style.whiteSpace=''; sp.style.lineHeight=''; sp.style.display='';
+                    sp.textContent=t;
+                    parts.push(sp.outerHTML);
+                });
+                return parts.join('');
+            }).join('<br>');
+        }catch(e){ return ''; }
+    }
+    // 실제 수정이 커밋/저장될 때만 이 상자를 '흐름 텍스트 상자'로 확정한다.
+    // 원문 pdf 배치 깃발(tight/pdfText)을 끄고 그에 딸린 클래스도 지운다.
+    function _finalizeTightEdit(w,el){
+        try{
+            if(!w||!w._sdyWasTight) return;
+            if(el) el.tight=0;
+            if(el) delete el.pdfText;
+            w.classList.remove('tight'); w.classList.remove('pdf-text');
+            delete w._sdyWasTight;
+        }catch(e){}
+    }
     function commitEditingText(only){
         // 14.15 · 노트 교체 중(새 doc 이 아직 안 왔거나 이전 doc 이 남은 상태)에는
         //   이전 편집 상자를 새 노트/다른 노트 본문에 커밋하지 않는다.
@@ -10474,7 +10539,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const nh=c.innerHTML===w._sdyViewHtml?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
             const nfs=parseFloat(c.style.fontSize)||16;
             if(nh!==el.html||nfs!==el.fontSize){
+                const textChanged=nh!==el.html;   // 글자 본문이 실제로 바뀌었는가 (저장 전 비교)
                 el.html=nh; el.fontSize=nfs; changed=true;
+                // pdf/tight 상자를 실제로 글자를 고쳤을 때만 '흐름 텍스트 상자'로 확정.
+                // (아무것도 안 고치고 나가면 여기까지 오지 않아 원본 배치가 유지된다)
+                if(w._sdyWasTight&&textChanged) _finalizeTightEdit(w,el);
                 w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
                 // 14.6 · 커밋된 편집분도 dirty 로 표시 → 가져온 문서(서버 보관본)에서
                 //  나가기 직전 커밋된 글자가 슬라이스 저장에서 빠져 유실되지 않는다.
@@ -10522,54 +10591,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(_fid) setToolbarFont(_fid);
         }catch(e){}
         const c=w.querySelector('.tb-content');
-        // 14.39.0 · 영어 논문 상자(tight)는 단어마다 absolute span 으로 배치돼
+        // 영어 논문 상자(tight)는 단어마다 절대좌표 span 으로 배치돼 있어서
         //   브라우저가 줄을 계산하지 못한다 → 상하 방향키가 줄 이동이 아니라
-        //   옆 단어로 이동한다. 편집에 들어가는 순간 일반 흐름 텍스트로 바꿔
-        //   정상적인 줄 단위 캐럿 이동이 되게 한다.
+        //   옆 단어로 이동한다. 편집에 들어가면 그 단어들을 '자기 서식(폰트·
+        //   글자 크기·색·굵기·기울임)을 안은 채' 흐름 텍스트로 펼쳐, 일반
+        //   텍스트처럼 줄 단위 캐럿 이동과 바로 고치기가 되게 한다.
+        //
+        //   ★ 여기서 모델(el.html · el.tight · el.pdfText)은 절대 건드리지 않는다.
+        //   화면에 보이는 것만 흐름으로 바꾸고, 실제로 글자를 고쳐 저장하는
+        //   순간(commit/sync) 그제서야 이 상자를 '흐름 텍스트 상자'로 확정한다.
+        //   이렇게 하면 '편집하려 클릭만 하고 아무것도 안 고치고 나온' 경우에
+        //   PDF 원본 배치가 그대로 남는다 — 예전처럼 글자 자간·서식이 갑자기
+        //   변해 원문이 망가지는 회귀를 막는다.
         try{
             const _el=findEl(+w.dataset.pageIdx,w.dataset.id);
-            if(_el&&_el.tight){
-                let plain='';
-                try{
-                    const sps=Array.from(c.querySelectorAll(':scope > span'));
-                    if(sps.length){
-                        const num=v=>{ const n=parseFloat(v); return isNaN(n)?0:n; };
-                        sps.sort((a,b)=>{
-                            const at=num(a.dataset.origTop||a.style.top)||a.offsetTop||0;
-                            const bt=num(b.dataset.origTop||b.style.top)||b.offsetTop||0;
-                            if(Math.abs(at-bt)>2) return at-bt;
-                            return (num(a.style.left)||a.offsetLeft||0)-(num(b.style.left)||b.offsetLeft||0);
-                        });
-                        const lines=[]; let cur=[]; let lastTop=null;
-                        sps.forEach(s=>{
-                            let t='';
-                            try{
-                                const cl=s.cloneNode(true);
-                                cl.querySelectorAll('.zsp').forEach(z=>z.remove());
-                                t=(cl.textContent||'').replace(/[\u200b\ufeff]/g,'').trim();
-                            }catch(e){ t=(s.textContent||'').replace(/[\u200b\ufeff]/g,'').trim(); }
-                            if(!t) return;
-                            const top=num(s.dataset.origTop||s.style.top)||s.offsetTop||0;
-                            if(lastTop!=null&&Math.abs(top-lastTop)>2){
-                                if(cur.length) lines.push(cur.join(' '));
-                                cur=[];
-                            }
-                            cur.push(t); lastTop=top;
-                        });
-                        if(cur.length) lines.push(cur.join(' '));
-                        plain=lines.join('\n');
-                    }
-                }catch(e){}
-                if(!plain) plain=(c.innerText!=null?c.innerText:c.textContent||'').trim();
-                if(plain){
-                    const html=(typeof esc==='function'?esc(plain):plain).replace(/\n/g,'<br>');
-                    c.innerHTML=html;
+            if(_el&&_el.tight&&!w._sdyWasTight){
+                const _html=_pdfTightToEditHtml(c);
+                if(_html){
+                    c.innerHTML=_html;
+                    // 단어맞춤이 남긴 자간·어간 스타일이 흐름 텍스트에 섞이지 않게 지운다.
+                    c.style.letterSpacing=''; c.style.wordSpacing='';
+                    w._sdyWasTight=1;
+                    try{ if(typeof _tightQueue!=='undefined'&&_tightQueue.delete) _tightQueue.delete(c); }catch(e){}
+                    w._sdyViewHtml=c.innerHTML;
                 }
-                w.classList.remove('tight');
-                w.classList.remove('pdf-text');
-                _el.tight=0; delete _el.pdfText;
-                try{ if(typeof _tightQueue!=='undefined'&&_tightQueue.delete) _tightQueue.delete(c); }catch(e){}
-                w._sdyViewHtml=c.innerHTML;
             }
         }catch(e){}
         c.contentEditable='true';
@@ -17291,9 +17336,42 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
         return false;
     }
+    // 캐럿(선택 없음)으로 글을 치는 중 '앞으로 입력될 글자'의 실제 크기를 잰다.
+    // 상자 기본 크기(.tb-content)는 그대로여도 캐럿은 인라인 span(예: '+'로 키운
+    // 18px) 안에 있을 수 있어, 그 span 의 font-size 를 따라 올라가며 읽어야 한다.
+    // 이걸 안 하면 '+' 를 누를 때마다 상자 기본(16)으로 되돌아가 '2px 까지만
+    // 커지는' 것처럼 보인다. (보고: 타이핑 중 '+' 가 선택-후-'+' 와 달리 2px 밖에
+    // 안 늘어나는 문제)
+    function activeTypingFS(){
+        try{
+            const t=_typingHost(); if(!t) return 0;
+            let p=t.r.startContainer;
+            p=p&&p.nodeType===3?p.parentElement:p;
+            let v=0;
+            while(p&&p!==t.c){
+                if(p.nodeType===1&&p.style){
+                    const n=parseFloat(p.style.fontSize);
+                    if(n){ v=n; break; }   // 캐럿 바로 위 가장 가까운 인라인 크기
+                }
+                p=p.parentElement;
+            }
+            if(!v&&t.c&&t.c.style) v=parseFloat(t.c.style.fontSize);   // 상자 기본
+            if(!v){
+                const w=t.c&&t.c.closest?t.c.closest('.tb'):null;
+                try{ const el=w&&findEl(+w.dataset.pageIdx,w.dataset.id); v=el&&el.fontSize; }catch(e){}
+            }
+            return Math.round(Number(v)||0);
+        }catch(e){ return 0; }
+    }
     function chFS(d){
-        if(!hasInlineTextSel()) syncFSFromTarget();   // 지금 보이는 크기에서 증감
-        setFS(curFontSize + (curFontSize<=10 ? (d>0?1:-1) : d));
+        // '+'/− 가 증감할 기준값: 캐럿 편집 중이면 '지금 입력될 글자'의 실제 크기,
+        //   글자 드래그 선택 중이면 이미 유지 중인 값, 그 외엔 화면에 보이는 크기.
+        const tf=_typingHost()?activeTypingFS():0;
+        let base=tf;
+        if(!base&&hasInlineTextSel()) base=curFontSize;   // 드래그 선택: 그대로 이어감
+        if(!base){ syncFSFromTarget(); base=curFontSize; } // 지금 보이는 크기에서 증감
+        const step=(base<=10 ? (d>0?1:-1) : d);
+        setFS(base+step);
     }
     function setFS(v){
         curFontSize=Math.max(2,Math.min(200,Math.round(v)));

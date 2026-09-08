@@ -466,9 +466,42 @@
         }catch(e){}
         return false;
     }
+    // 캐럿(선택 없음)으로 글을 치는 중 '앞으로 입력될 글자'의 실제 크기를 잰다.
+    // 상자 기본 크기(.tb-content)는 그대로여도 캐럿은 인라인 span(예: '+'로 키운
+    // 18px) 안에 있을 수 있어, 그 span 의 font-size 를 따라 올라가며 읽어야 한다.
+    // 이걸 안 하면 '+' 를 누를 때마다 상자 기본(16)으로 되돌아가 '2px 까지만
+    // 커지는' 것처럼 보인다. (보고: 타이핑 중 '+' 가 선택-후-'+' 와 달리 2px 밖에
+    // 안 늘어나는 문제)
+    function activeTypingFS(){
+        try{
+            const t=_typingHost(); if(!t) return 0;
+            let p=t.r.startContainer;
+            p=p&&p.nodeType===3?p.parentElement:p;
+            let v=0;
+            while(p&&p!==t.c){
+                if(p.nodeType===1&&p.style){
+                    const n=parseFloat(p.style.fontSize);
+                    if(n){ v=n; break; }   // 캐럿 바로 위 가장 가까운 인라인 크기
+                }
+                p=p.parentElement;
+            }
+            if(!v&&t.c&&t.c.style) v=parseFloat(t.c.style.fontSize);   // 상자 기본
+            if(!v){
+                const w=t.c&&t.c.closest?t.c.closest('.tb'):null;
+                try{ const el=w&&findEl(+w.dataset.pageIdx,w.dataset.id); v=el&&el.fontSize; }catch(e){}
+            }
+            return Math.round(Number(v)||0);
+        }catch(e){ return 0; }
+    }
     function chFS(d){
-        if(!hasInlineTextSel()) syncFSFromTarget();   // 지금 보이는 크기에서 증감
-        setFS(curFontSize + (curFontSize<=10 ? (d>0?1:-1) : d));
+        // '+'/− 가 증감할 기준값: 캐럿 편집 중이면 '지금 입력될 글자'의 실제 크기,
+        //   글자 드래그 선택 중이면 이미 유지 중인 값, 그 외엔 화면에 보이는 크기.
+        const tf=_typingHost()?activeTypingFS():0;
+        let base=tf;
+        if(!base&&hasInlineTextSel()) base=curFontSize;   // 드래그 선택: 그대로 이어감
+        if(!base){ syncFSFromTarget(); base=curFontSize; } // 지금 보이는 크기에서 증감
+        const step=(base<=10 ? (d>0?1:-1) : d);
+        setFS(base+step);
     }
     function setFS(v){
         curFontSize=Math.max(2,Math.min(200,Math.round(v)));

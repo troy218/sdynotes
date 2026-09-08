@@ -492,8 +492,11 @@
         // cellBg, etc.) before calling us. Those edits still need a dirty page;
         // only a genuinely unchanged view/model pair can take the no-op path.
         if(html===el.html&&fs===el.fontSize&&w._sdyModelKey===JSON.stringify(el)) return;
+        const textChanged=html!==el.html;   // 글자 본문이 실제로 바뀌었는가 (저장 전 비교)
         markPageEdited(+w.dataset.pageIdx);
         el.html=html; el.fontSize=fs;
+        // 편집 중 펼친 pdf/tight 상자: 실제로 글자를 고쳤을 때만 '흐름 텍스트 상자'로 확정.
+        if(w._sdyWasTight&&textChanged) _finalizeTightEdit(w,el);
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
         // 회전한 상자의 offset 크기는 외접 박스라서 그대로 쓰면 상자가 부풀며
         // 자리가 어긋난다 → 똑바로 선 상자만 실측 크기를 되받는다.

@@ -2363,6 +2363,11 @@
       field.style.setProperty('--ai-q-w',want+'px');
       q.style.height='auto';
       var h=q.scrollHeight||0;
+      // 빈(공백만) 칸은 rows=1 이어도 브라우저 textarea 의 자동 높이가 '두 줄'로
+      // 잡혀, 글자를 입력하기 전부터 질문칸이 두 줄로 보였다. → 글이 실제로
+      // 다음 줄로 넘치기 전에는 명시적으로 '한 줄' 높이로 고정한다.
+      var _plain=(q.value||'').replace(/\s/g,'');
+      if(!_plain) h=0;
       q.style.height=(h>0?Math.min(h,96):19)+'px';       // 96px 넘으면 칸 안에서 스크롤
       field.classList.toggle('multi',h>24);              // 두 줄부터는 각진 모서리
       // 질문칸이 여러 줄로 자라면 이 기둥(범위 버튼 + 질문칸)이
