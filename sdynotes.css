@@ -1272,10 +1272,12 @@
         }
         .sp-ord button:hover{background:var(--accent);color:#fff;}
 
-        /* ===== 단어 빈도 분석 (중요어 히트맵) ===== */
+        /* ===== 단어 빈도 분석 (중요어 색칠) =====
+           14.39.6 · '산만함' 수정 — 배경 강조는 최상위 단계에만 옅게 준다.
+           (예전엔 두 단계 모두 진한 배경이라 본문이 얼룩덜룩했다) */
         .wf{border-radius:2px;padding:0 1px;transition:background .15s;}
-        .wf.hot{background:rgba(37,99,235,.10);}
-        .wf.top{background:rgba(23,58,150,.18);}
+        .wf.hot{background:transparent;}
+        .wf.top{background:rgba(23,58,150,.09);}
         .wf.pick{background:rgba(250,204,21,.55);box-shadow:0 0 0 1px rgba(202,138,4,.6);}
         .editor.wf-on .tb-content{cursor:default;}
         .editor.wf-on .tb-content a{color:inherit!important;}
@@ -1290,7 +1292,7 @@
         .wf-bar b{color:var(--text1);}
         .wf-bar .scale{
             display:inline-block;width:78px;height:9px;border-radius:3px;
-            background:linear-gradient(90deg,#9ec9f7,#2563eb,#0b2e6b);
+            background:linear-gradient(90deg,#608dc9,#2563eb,#11348a);
         }
         .wf-bar button{
             border:none;background:var(--bg2);color:var(--text2);border-radius:3px;
@@ -1309,6 +1311,9 @@
             border-radius:3px;pointer-events:none;
         }
         .wf-item .w{position:relative;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        /* 칠하지 않는 '그 밖의 낱말'은 목록에서도 조용하게 */
+        .wf-item.dim{padding:5px 8px 5px 25px;font-size:12px;color:var(--text3);}
+        .wf-item.dim .w{font-weight:500;color:var(--text3);}
         .wf-item .c{position:relative;margin-left:auto;font-size:11px;color:var(--text3);flex:none;}
         .sp-mini{
             width:20px;height:20px;border:1px solid var(--border);border-radius:3px;
@@ -1449,7 +1454,7 @@
            잠깐의 자리 채움이라, 준비 배지를 따로 띄우지 않는다. */
         /* 이미지가 가장 뒤, 그 위에 글자, 펜 그림이 가장 앞 */
         .layer-fig{z-index:2;}
-        /* 14.39.3 · PDF 원본 배경(isBg)·수식 조각(isMath) 전용 '가구' 층.
+        /* 14.39.6 · PDF 원본 배경(isBg)·수식 조각(isMath) 전용 '가구' 층.
            이 둘은 사용자가 건드릴 수 없는 종이 인쇄물이라 항상 글자·수식 아래에
            둔다. 예전엔 layer-img 에 섞여 있어서, 사진을 하나만 선택해도
            (_layerLift 가 층째로 올리는 바람에) 원본 래스터와 흰 바탕 수식 조각이
@@ -1756,7 +1761,7 @@
         .latex-box.imported{z-index:6;}
         /* 10.0 · 수식이 상자보다 커도 자르지 않고 전부 보이게 한다.
            (기존 overflow:hidden — 상자 밖으로 삐져나온 큰 수식이 잘려 보였다)
-           14.39.3 · 보고(26.09.08) — '수식상자 바깥으로 수식이 나가면 사라짐'.
+           14.39.6 · 보고(26.09.08) — '수식상자 바깥으로 수식이 나가면 사라짐'.
            이 규칙에 overflow:hidden 이 남아 있어 상자를 줄이는 등 수식이 상자
            밖으로 나가면 삐져나온 부분이 잘려 없어 보였다. 글상자(.tb-content)는
            overflow:visible 로 글자가 절대 안 잘리므로, 수식도 같은 규칙으로 둔다. */

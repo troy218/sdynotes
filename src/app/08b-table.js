@@ -26,7 +26,12 @@
         });
     }
     // 중요어 분석 상태 (아래에서 쓰는 함수보다 먼저 선언 — TDZ 방지)
+    //  wfMin  : 후보로 칠 최소 등장 횟수 (문서 길이에 따라 wfFloorN 이 자동 결정)
+    //  wfTopN : 실제로 색칠할 중요어 개수 상한 (14.39.6 · 기본 8개 · 3~24 조절)
+    //  wfSel  : 고른 중요어 Map(낱말 → 순위) · wfExtra : 손으로 짚어 본 낱말
     let wfOn=false, wfStats=[], wfMap=null, wfPick=null, wfMin=2;
+    let wfTopN=8, wfSel=new Map(), wfExtra=new Set(), wfCand=[], wfTotal=0;
+    let wfAlias=new Map();   // 한 글자 차이로 쪼개진 낱말을 이어 주는 별칭
     let activeTbl=null;            // {pageIdx,tid,r,c}
     let tblCellSelection=null;     // {pageIdx,tid,r0,c0,r1,c1} 직사각형 셀 범위
     let tblCellPick=null;          // 포인터로 범위를 끄는 동안의 앵커
