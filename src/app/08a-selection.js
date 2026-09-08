@@ -201,12 +201,31 @@
     // 원문 pdf 배치 깃발(tight/pdfText)을 끄고 그에 딸린 클래스도 지운다.
     function _finalizeTightEdit(w,el){
         try{
-            if(!w||!w._sdyWasTight) return;
+            if(!w||!(w._sdyWasTight||w._sdyTightEdit)) return;
             if(el) el.tight=0;
             if(el) delete el.pdfText;
             w.classList.remove('tight'); w.classList.remove('pdf-text');
             delete w._sdyWasTight;
+            delete w._sdyTightEdit;
         }catch(e){}
+    }
+    // 14.39.9 · tight 상자를 '원본 절대좌표 배치' 그대로 두고 편집 모드로 들어간다.
+    //   글꼴·색·크기·굵기 같은 서식만 바꿀 때는 배치가 바뀌지 않는다.
+    //   실제 글자 입력(타이핑·붙여넣기·삭제)이 일어나는 순간에만 흐름 텍스트로
+    //   펼쳐(_pdfTightToEditHtml) 일반 편집과 같은 줄·캐럿 동작을 제공한다.
+    function _convertTightToFlow(w){
+        if(!w||!w._sdyTightEdit||w._sdyWasTight) return;
+        const c=w.querySelector('.tb-content');
+        if(!c) return;
+        const _html=_pdfTightToEditHtml(c);
+        if(_html){
+            c.innerHTML=_html;
+            c.style.letterSpacing=''; c.style.wordSpacing='';
+            w._sdyWasTight=1;
+            delete w._sdyTightEdit;
+            try{ if(typeof _tightQueue!=='undefined'&&_tightQueue.delete) _tightQueue.delete(c); }catch(e){}
+            w._sdyViewHtml=c.innerHTML;
+        }
     }
     function commitEditingText(only){
         // 14.15 · 노트 교체 중(새 doc 이 아직 안 왔거나 이전 doc 이 남은 상태)에는
@@ -241,14 +260,20 @@
             if(nh!==el.html||nfs!==el.fontSize){
                 const textChanged=nh!==el.html;   // 글자 본문이 실제로 바뀌었는가 (저장 전 비교)
                 el.html=nh; el.fontSize=nfs; changed=true;
-                // pdf/tight 상자를 실제로 글자를 고쳤을 때만 '흐름 텍스트 상자'로 확정.
-                // (아무것도 안 고치고 나가면 여기까지 오지 않아 원본 배치가 유지된다)
+                // 14.39.9 · tight 상자는 텍스트를 고쳐도 절대좌표 배치를 유지한다.
+                //   흐름 텍스트로 변환했던 옛 경로(_sdyWasTight)만 확정한다.
                 if(w._sdyWasTight&&textChanged) _finalizeTightEdit(w,el);
                 w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
+                // tight 편집 후 단어 맞춤 재실행 — 새 글자 폭에 맞춰 scaleX 재계산
+                if(w._sdyTightEdit&&el.tight&&typeof _queueTightFit==='function'){
+                    try{ _queueTightFit(c,el); }catch(_e){}
+                }
                 // 14.6 · 커밋된 편집분도 dirty 로 표시 → 가져온 문서(서버 보관본)에서
                 //  나가기 직전 커밋된 글자가 슬라이스 저장에서 빠져 유실되지 않는다.
                 try{ markPageEdited(+w.dataset.pageIdx); }catch(e){}
             }
+            // 편집 종료 시 _sdyTightEdit 플래그 정리 (tight 배치는 유지)
+            if(w._sdyTightEdit) delete w._sdyTightEdit;
             // 빈 상자도 남겨둔다 (연한 점선 + 안내 문구로 위치 표시)
             const plain=String((c.innerText!=null?c.innerText:c.textContent)||'');
             const isEmpty=!plain.trim()&&!c.querySelector('img');
@@ -291,30 +316,15 @@
             if(_fid) setToolbarFont(_fid);
         }catch(e){}
         const c=w.querySelector('.tb-content');
-        // 영어 논문 상자(tight)는 단어마다 절대좌표 span 으로 배치돼 있어서
-        //   브라우저가 줄을 계산하지 못한다 → 상하 방향키가 줄 이동이 아니라
-        //   옆 단어로 이동한다. 편집에 들어가면 그 단어들을 '자기 서식(폰트·
-        //   글자 크기·색·굵기·기울임)을 안은 채' 흐름 텍스트로 펼쳐, 일반
-        //   텍스트처럼 줄 단위 캐럿 이동과 바로 고치기가 되게 한다.
-        //
-        //   ★ 여기서 모델(el.html · el.tight · el.pdfText)은 절대 건드리지 않는다.
-        //   화면에 보이는 것만 흐름으로 바꾸고, 실제로 글자를 고쳐 저장하는
-        //   순간(commit/sync) 그제서야 이 상자를 '흐름 텍스트 상자'로 확정한다.
-        //   이렇게 하면 '편집하려 클릭만 하고 아무것도 안 고치고 나온' 경우에
-        //   PDF 원본 배치가 그대로 남는다 — 예전처럼 글자 자간·서식이 갑자기
-        //   변해 원문이 망가지는 회귀를 막는다.
+        // 14.39.9 · 가져온 PDF 상자(tight)는 편집 중에도 **절대좌표 배치를 끝까지 유지**한다.
+        //   글꼴·색·크기·굵기 변경은 물론 실제 타이핑·붙여넣기·삭제를 해도 흐름
+        //   텍스트로 변환하지 않는다. 각 단어 span 의 절대위치가 유지된 채 글자만
+        //   바뀌고, tight fit 시스템이 scaleX 를 재계산해 원본 배치를 보존한다.
         try{
             const _el=findEl(+w.dataset.pageIdx,w.dataset.id);
-            if(_el&&_el.tight&&!w._sdyWasTight){
-                const _html=_pdfTightToEditHtml(c);
-                if(_html){
-                    c.innerHTML=_html;
-                    // 단어맞춤이 남긴 자간·어간 스타일이 흐름 텍스트에 섞이지 않게 지운다.
-                    c.style.letterSpacing=''; c.style.wordSpacing='';
-                    w._sdyWasTight=1;
-                    try{ if(typeof _tightQueue!=='undefined'&&_tightQueue.delete) _tightQueue.delete(c); }catch(e){}
-                    w._sdyViewHtml=c.innerHTML;
-                }
+            if(_el&&_el.tight&&!w._sdyTightEdit){
+                w._sdyTightEdit=1;
+                w._sdyViewHtml=c.innerHTML;
             }
         }catch(e){}
         c.contentEditable='true';

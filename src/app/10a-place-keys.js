@@ -156,11 +156,15 @@
     const TB_W=200, TB_H=48;
     function textBoxDefaultSize(fontSize){
         const fs=Math.max(2,Math.min(200,Math.round(fontSize||curFontSize||16)));
-        // 기본 글상자는 현재 툴바 글자 크기가 한 줄 들어갈 높이를 우선 보장한다.
-        // 큰 글씨를 고른 뒤 만들면 48px 고정 상자가 아니라 그 글씨에 맞춰 시작한다.
+        // 14.39.9 · 글상자 높이를 글자 크기에 비례하게 조정한다.
+        //   예전에는 TB_H=48px 고정 최소값이라 작은 글씨(12px 등)에서 상자가
+        //   텍스트보다 훨씬 커서 커서가 상자 위쪽에 치우쳤다.
+        //   이제 상자 높이 = 글줄 높이(line-height 1.5) + 위아래 패딩(8px×2) + 여유(4px)
+        //   로 글자 크기에 맞춰 유동적으로 변한다.
+        const h=Math.max(36,Math.round(fs*1.5+20));
         return {
-            w:Math.max(TB_W,Math.round(Math.min(420,fs*8))),
-            h:Math.max(TB_H,Math.round(fs*1.45+22))
+            w:Math.max(Math.round(TB_W*0.8),Math.round(Math.min(420,fs*8))),
+            h
         };
     }
 

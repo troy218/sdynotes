@@ -686,6 +686,17 @@
                     bar.style.background='transparent';
                 }
             }
+            // 14.39.9 · tight 편집 상자에서 서식 변경 후 단어 맞춤을 다시 돌린다.
+            //   _fmtApply 가 DOM 을 바꾸었지만 syncTextEl 이 바로 불리지 않는 경로
+            //   (toggleSelStyle·wrapSelStyle 등)에서도 배치가 유지되게 한다.
+            try{
+                const _w=ctx.host&&ctx.host.closest&&ctx.host.closest('.tb');
+                if(_w&&_w._sdyTightEdit&&!_w._sdyWasTight){
+                    const _el=findEl(+_w.dataset.pageIdx,_w.dataset.id);
+                    if(_el&&_el.tight&&typeof _queueTightFit==='function')
+                        _queueTightFit(ctx.host,_el);
+                }
+            }catch(_e){}
         }catch(e){}
     }
     // 상자 안 내용 전체에 스타일을 입힌다 (prop=null 이면 형광펜 전체 지우기)

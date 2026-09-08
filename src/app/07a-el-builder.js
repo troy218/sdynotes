@@ -463,8 +463,13 @@
     }
     function _tightFitLive(c,el){
         const w=c&&c.parentElement;
-        return !!(w&&w.isConnected&&!w.classList.contains('edit')
-            &&w._sdyRv===(doc&&doc.__rv)&&findEl(+w.dataset.pageIdx,w.dataset.id)===el);
+        if(!w||!w.isConnected) return false;
+        if(w._sdyRv!==(doc&&doc.__rv)) return false;
+        if(findEl(+w.dataset.pageIdx,w.dataset.id)!==el) return false;
+        // 편집 중이면 일반적으로 제외하되, _sdyTightEdit (원본 절대좌표 유지 편집)
+        // 상태면 서식 변경 후 재조정이 필요하므로 허용한다.
+        if(w.classList.contains('edit')&&!w._sdyTightEdit) return false;
+        return true;
     }
     function _drainTightQueue(){
         _tightRaf=0;

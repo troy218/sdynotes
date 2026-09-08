@@ -9081,8 +9081,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     function _tightFitLive(c,el){
         const w=c&&c.parentElement;
-        return !!(w&&w.isConnected&&!w.classList.contains('edit')
-            &&w._sdyRv===(doc&&doc.__rv)&&findEl(+w.dataset.pageIdx,w.dataset.id)===el);
+        if(!w||!w.isConnected) return false;
+        if(w._sdyRv!==(doc&&doc.__rv)) return false;
+        if(findEl(+w.dataset.pageIdx,w.dataset.id)!==el) return false;
+        // 편집 중이면 일반적으로 제외하되, _sdyTightEdit (원본 절대좌표 유지 편집)
+        // 상태면 서식 변경 후 재조정이 필요하므로 허용한다.
+        if(w.classList.contains('edit')&&!w._sdyTightEdit) return false;
+        return true;
     }
     function _drainTightQueue(){
         _tightRaf=0;
@@ -9868,6 +9873,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // 타이핑 span 에 실제 글자가 들어왔으면 눈에 안 보이는 닻(ZWSP)을 치운다.
             // 조합 중에는 건드리지 않는다(위 compositionstart/end 참조).
             if(!c._sdyComposing&&!(e&&e.isComposing)){ try{ _cleanTypingMarks(c); }catch(_e){} }
+            // 14.39.9 · tight 편집 중 타이핑 후 즉시 단어 맞춤 재실행.
+            //   syncTextEl(300ms 뒤)까지 기다리면 그 사이 글자가 span 을 넘어 보인다.
+            if(w._sdyTightEdit&&el.tight&&typeof _queueTightFit==='function'){
+                try{ _queueTightFit(c,el); }catch(_e){}
+            }
             clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
         });
         // 편집 상자에서 포커스를 벗어나면 즉시 반영 (자동저장 신뢰성)
@@ -10020,7 +10030,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const textChanged=html!==el.html;   // 글자 본문이 실제로 바뀌었는가 (저장 전 비교)
         markPageEdited(+w.dataset.pageIdx);
         el.html=html; el.fontSize=fs;
-        // 편집 중 펼친 pdf/tight 상자: 실제로 글자를 고쳤을 때만 '흐름 텍스트 상자'로 확정.
+        // 14.39.9 · tight 상자는 텍스트를 고쳐도 절대좌표 배치를 유지한다.
+        //   흐름 텍스트로 변환했던 옛 경로(_sdyWasTight)만 확정한다.
         if(w._sdyWasTight&&textChanged) _finalizeTightEdit(w,el);
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
         // 회전한 상자의 offset 크기는 외접 박스라서 그대로 쓰면 상자가 부풀며
@@ -10028,6 +10039,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!normalizedRotation(el.rotation)){ el.w=w.offsetWidth; el.h=w.offsetHeight; }
         w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
         w.classList.toggle('empty',!String((c.innerText!=null?c.innerText:c.textContent)||'').trim());
+        // 14.39.9 · tight 상자 서식 변경 후 단어 맞춤을 다시 돌린다.
+        //   글꼴·크기가 바뀌면 각 span 의 자연 폭이 달라지므로 scaleX 를 재계산해야
+        //   원본 배치가 유지된다. 편집 중(_sdyTightEdit)과 선택 상태 모두 포함.
+        if(el.tight&&w.classList.contains('tight')&&!w._sdyWasTight&&typeof _queueTightFit==='function'){
+            try{ _queueTightFit(c,el); }catch(_e){}
+        }
         saveDoc();
     }
 
@@ -10501,12 +10518,31 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 원문 pdf 배치 깃발(tight/pdfText)을 끄고 그에 딸린 클래스도 지운다.
     function _finalizeTightEdit(w,el){
         try{
-            if(!w||!w._sdyWasTight) return;
+            if(!w||!(w._sdyWasTight||w._sdyTightEdit)) return;
             if(el) el.tight=0;
             if(el) delete el.pdfText;
             w.classList.remove('tight'); w.classList.remove('pdf-text');
             delete w._sdyWasTight;
+            delete w._sdyTightEdit;
         }catch(e){}
+    }
+    // 14.39.9 · tight 상자를 '원본 절대좌표 배치' 그대로 두고 편집 모드로 들어간다.
+    //   글꼴·색·크기·굵기 같은 서식만 바꿀 때는 배치가 바뀌지 않는다.
+    //   실제 글자 입력(타이핑·붙여넣기·삭제)이 일어나는 순간에만 흐름 텍스트로
+    //   펼쳐(_pdfTightToEditHtml) 일반 편집과 같은 줄·캐럿 동작을 제공한다.
+    function _convertTightToFlow(w){
+        if(!w||!w._sdyTightEdit||w._sdyWasTight) return;
+        const c=w.querySelector('.tb-content');
+        if(!c) return;
+        const _html=_pdfTightToEditHtml(c);
+        if(_html){
+            c.innerHTML=_html;
+            c.style.letterSpacing=''; c.style.wordSpacing='';
+            w._sdyWasTight=1;
+            delete w._sdyTightEdit;
+            try{ if(typeof _tightQueue!=='undefined'&&_tightQueue.delete) _tightQueue.delete(c); }catch(e){}
+            w._sdyViewHtml=c.innerHTML;
+        }
     }
     function commitEditingText(only){
         // 14.15 · 노트 교체 중(새 doc 이 아직 안 왔거나 이전 doc 이 남은 상태)에는
@@ -10541,14 +10577,20 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(nh!==el.html||nfs!==el.fontSize){
                 const textChanged=nh!==el.html;   // 글자 본문이 실제로 바뀌었는가 (저장 전 비교)
                 el.html=nh; el.fontSize=nfs; changed=true;
-                // pdf/tight 상자를 실제로 글자를 고쳤을 때만 '흐름 텍스트 상자'로 확정.
-                // (아무것도 안 고치고 나가면 여기까지 오지 않아 원본 배치가 유지된다)
+                // 14.39.9 · tight 상자는 텍스트를 고쳐도 절대좌표 배치를 유지한다.
+                //   흐름 텍스트로 변환했던 옛 경로(_sdyWasTight)만 확정한다.
                 if(w._sdyWasTight&&textChanged) _finalizeTightEdit(w,el);
                 w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
+                // tight 편집 후 단어 맞춤 재실행 — 새 글자 폭에 맞춰 scaleX 재계산
+                if(w._sdyTightEdit&&el.tight&&typeof _queueTightFit==='function'){
+                    try{ _queueTightFit(c,el); }catch(_e){}
+                }
                 // 14.6 · 커밋된 편집분도 dirty 로 표시 → 가져온 문서(서버 보관본)에서
                 //  나가기 직전 커밋된 글자가 슬라이스 저장에서 빠져 유실되지 않는다.
                 try{ markPageEdited(+w.dataset.pageIdx); }catch(e){}
             }
+            // 편집 종료 시 _sdyTightEdit 플래그 정리 (tight 배치는 유지)
+            if(w._sdyTightEdit) delete w._sdyTightEdit;
             // 빈 상자도 남겨둔다 (연한 점선 + 안내 문구로 위치 표시)
             const plain=String((c.innerText!=null?c.innerText:c.textContent)||'');
             const isEmpty=!plain.trim()&&!c.querySelector('img');
@@ -10591,30 +10633,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(_fid) setToolbarFont(_fid);
         }catch(e){}
         const c=w.querySelector('.tb-content');
-        // 영어 논문 상자(tight)는 단어마다 절대좌표 span 으로 배치돼 있어서
-        //   브라우저가 줄을 계산하지 못한다 → 상하 방향키가 줄 이동이 아니라
-        //   옆 단어로 이동한다. 편집에 들어가면 그 단어들을 '자기 서식(폰트·
-        //   글자 크기·색·굵기·기울임)을 안은 채' 흐름 텍스트로 펼쳐, 일반
-        //   텍스트처럼 줄 단위 캐럿 이동과 바로 고치기가 되게 한다.
-        //
-        //   ★ 여기서 모델(el.html · el.tight · el.pdfText)은 절대 건드리지 않는다.
-        //   화면에 보이는 것만 흐름으로 바꾸고, 실제로 글자를 고쳐 저장하는
-        //   순간(commit/sync) 그제서야 이 상자를 '흐름 텍스트 상자'로 확정한다.
-        //   이렇게 하면 '편집하려 클릭만 하고 아무것도 안 고치고 나온' 경우에
-        //   PDF 원본 배치가 그대로 남는다 — 예전처럼 글자 자간·서식이 갑자기
-        //   변해 원문이 망가지는 회귀를 막는다.
+        // 14.39.9 · 가져온 PDF 상자(tight)는 편집 중에도 **절대좌표 배치를 끝까지 유지**한다.
+        //   글꼴·색·크기·굵기 변경은 물론 실제 타이핑·붙여넣기·삭제를 해도 흐름
+        //   텍스트로 변환하지 않는다. 각 단어 span 의 절대위치가 유지된 채 글자만
+        //   바뀌고, tight fit 시스템이 scaleX 를 재계산해 원본 배치를 보존한다.
         try{
             const _el=findEl(+w.dataset.pageIdx,w.dataset.id);
-            if(_el&&_el.tight&&!w._sdyWasTight){
-                const _html=_pdfTightToEditHtml(c);
-                if(_html){
-                    c.innerHTML=_html;
-                    // 단어맞춤이 남긴 자간·어간 스타일이 흐름 텍스트에 섞이지 않게 지운다.
-                    c.style.letterSpacing=''; c.style.wordSpacing='';
-                    w._sdyWasTight=1;
-                    try{ if(typeof _tightQueue!=='undefined'&&_tightQueue.delete) _tightQueue.delete(c); }catch(e){}
-                    w._sdyViewHtml=c.innerHTML;
-                }
+            if(_el&&_el.tight&&!w._sdyTightEdit){
+                w._sdyTightEdit=1;
+                w._sdyViewHtml=c.innerHTML;
             }
         }catch(e){}
         c.contentEditable='true';
@@ -14285,11 +14312,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     const TB_W=200, TB_H=48;
     function textBoxDefaultSize(fontSize){
         const fs=Math.max(2,Math.min(200,Math.round(fontSize||curFontSize||16)));
-        // 기본 글상자는 현재 툴바 글자 크기가 한 줄 들어갈 높이를 우선 보장한다.
-        // 큰 글씨를 고른 뒤 만들면 48px 고정 상자가 아니라 그 글씨에 맞춰 시작한다.
+        // 14.39.9 · 글상자 높이를 글자 크기에 비례하게 조정한다.
+        //   예전에는 TB_H=48px 고정 최소값이라 작은 글씨(12px 등)에서 상자가
+        //   텍스트보다 훨씬 커서 커서가 상자 위쪽에 치우쳤다.
+        //   이제 상자 높이 = 글줄 높이(line-height 1.5) + 위아래 패딩(8px×2) + 여유(4px)
+        //   로 글자 크기에 맞춰 유동적으로 변한다.
+        const h=Math.max(36,Math.round(fs*1.5+20));
         return {
-            w:Math.max(TB_W,Math.round(Math.min(420,fs*8))),
-            h:Math.max(TB_H,Math.round(fs*1.45+22))
+            w:Math.max(Math.round(TB_W*0.8),Math.round(Math.min(420,fs*8))),
+            h
         };
     }
 
@@ -16610,6 +16641,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     bar.style.background='transparent';
                 }
             }
+            // 14.39.9 · tight 편집 상자에서 서식 변경 후 단어 맞춤을 다시 돌린다.
+            //   _fmtApply 가 DOM 을 바꾸었지만 syncTextEl 이 바로 불리지 않는 경로
+            //   (toggleSelStyle·wrapSelStyle 등)에서도 배치가 유지되게 한다.
+            try{
+                const _w=ctx.host&&ctx.host.closest&&ctx.host.closest('.tb');
+                if(_w&&_w._sdyTightEdit&&!_w._sdyWasTight){
+                    const _el=findEl(+_w.dataset.pageIdx,_w.dataset.id);
+                    if(_el&&_el.tight&&typeof _queueTightFit==='function')
+                        _queueTightFit(ctx.host,_el);
+                }
+            }catch(_e){}
         }catch(e){}
     }
     // 상자 안 내용 전체에 스타일을 입힌다 (prop=null 이면 형광펜 전체 지우기)
