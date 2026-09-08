@@ -206,6 +206,9 @@
         w.dataset.nbId=(curNB&&curNB.id)||'';
         w._sdyRv=doc&&doc.__rv;
         w.style.cssText=`left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`;
+        // 회전한 글상자도 그림·수식처럼 다시 그릴 때 자세를 유지한다
+        // (유지하지 않으면 다시 그릴 때마다 똑바로 서서 내보내기와 어긋난다)
+        applyBoxRotation(w,el);
         const c=document.createElement('div');
         c.className='tb-content'; c.contentEditable='false';
         c.style.fontSize=(el.fontSize||16)+'px';
@@ -430,7 +433,9 @@
         markPageEdited(+w.dataset.pageIdx);
         el.html=html; el.fontSize=fs;
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
-        el.w=w.offsetWidth; el.h=w.offsetHeight;
+        // 회전한 상자의 offset 크기는 외접 박스라서 그대로 쓰면 상자가 부풀며
+        // 자리가 어긋난다 → 똑바로 선 상자만 실측 크기를 되받는다.
+        if(!normalizedRotation(el.rotation)){ el.w=w.offsetWidth; el.h=w.offsetHeight; }
         w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
         w.classList.toggle('empty',!String((c.innerText!=null?c.innerText:c.textContent)||'').trim());
         saveDoc();
