@@ -537,3 +537,4 @@
     }
 /* APP-PART:06a-page-virtual.js:END */
 // 14.39.2 verified: fast-scroll ghosting fix present (translateZ + isolation + overflow-anchor)
+// PR record for arena/01a0805c-sdynotes - fast-scroll fix verified
