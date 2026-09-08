@@ -9875,14 +9875,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 활성 캐럿 서식은 실제 입력 직전에 wrapper를 확인한다. 빈 span을 브라우저가
         // 정리했더라도 beforeinput 단계에서 복구되므로 첫 글자부터 서식이 빠지지 않는다.
         c.addEventListener('beforeinput',e=>{
-            if(w.classList.contains('edit') && (!e.inputType||e.inputType.indexOf('insert')===0))
+            if(!w.classList.contains('edit')) return;
+            const it=e.inputType||'';
+            if(it==='insertParagraph'||it==='insertLineBreak'){
+                // Enter(Shift+Enter) 줄바꿈: 캐럿 앞 글자의 서식을 다음 줄 입력으로
+                // 이어받는다. 예전엔 앞 글자가 서식된 채로 줄만 바꾸면 다음 줄이
+                // 기본 서식으로 풀렸다(_pendingTyping 이 '툴바로 방금 정한 서식'만
+                // 기억했기 때문). 서식이 없으면 아무것도 하지 않는다.
+                _captureLineBreakInherit(c);
                 _ensurePendingTypingSpan(c);
+            }else if(!it||it.indexOf('insert')===0){
+                _ensurePendingTypingSpan(c);
+            }
         });
         // beforeinput이 없는 구형 WebView용 선행 fallback (조합 중에는 keydown이 없어도
         // 표준 beforeinput이 오며, 둘 다 없는 환경은 아래 input에서 다음 글자를 복구).
         c.addEventListener('keydown',e=>{
-            if(w.classList.contains('edit')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&
-               (e.key.length===1||e.key==='Enter')) _ensurePendingTypingSpan(c);
+            if(!w.classList.contains('edit')||e.ctrlKey||e.metaKey||e.altKey
+               ||e.isComposing||e.keyCode===229) return;
+            if(e.key==='Enter'){
+                _captureLineBreakInherit(c);
+                _ensurePendingTypingSpan(c);
+            }else if(e.key.length===1){
+                _ensurePendingTypingSpan(c);
+            }
         });
         // 한글 IME 조합 중에는 타이핑 span 안 텍스트 노드를 건드리지 않는다 —
         // 조합 중인 노드를 고치면 조합이 끊겨 자모가 따로 확정되기 때문.
@@ -17173,11 +17189,66 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
         return touched?d.innerHTML:html;
     }
+    // 14.39.11 · Enter(줄바꿈) 직전에 캐럿 '바로 앞 글자'의 인라인 서식을 기억해
+    //   다음 줄 입력 서식으로 이어받는다(워드처럼 줄만 바꿔도 글꼴/굵기/색이 유지).
+    //   예전엔 _pendingTyping 이 '툴바가 캐럿에 직접 입힌 서식'만 기억해서,
+    //   드래그 선택에 입힌 서식/방금 입력한 글자의 서식으로 쓰다가 Enter 를 누르면
+    //   다음 줄이 상자 기본 서식으로 돌아가는 버그가 있었다. 명시적 입력 서식
+    //   (_pendingTyping)이 이미 있으면 그걸 우선하고 이어받기는 건너뛴다.
+    function _captureLineBreakInherit(host){
+        try{
+            if(!host||!host.isConnected) return;
+            if(_pendingTyping&&_pendingTyping.host===host) return;
+            const s=window.getSelection();
+            if(!s||!s.rangeCount||!s.isCollapsed) return;
+            const r=s.getRangeAt(0);
+            const c0=r.startContainer;
+            if(c0!==host&&!(host.contains&&host.contains(c0))) return;
+            const off=_fmtOffsetAt(host,c0,r.startOffset);
+            if(off<=0) return;                       // 맨 앞 — 이어받을 앞 글자가 없다
+            const pt=_fmtPointFromOffset(host,off-1);
+            if(!pt||!pt.node||pt.node.nodeType!==3) return;
+            const styles=_typingStylesFromNode(pt.node,host);
+            if(Object.keys(styles).length) _pendingTyping={host,styles};
+        }catch(e){}
+    }
+    // 캐럿 바로 옆(왼쪽/오른쪽 인접)에 있는 '빈 입력 대기 span' 을 찾는다.
+    //   빈 .sdy-type 은 화면에 0글자 폭이라, 줄 끝을 탭하거나 줄바꿈한 뒤의 캐럿은
+    //   span '앞/뒤 경계'에 놓이는 경우가 많다 — 그 경계를 span 안으로 인수해야
+    //   다음 글자가 그 span 의 서식을 이어받는다.
+    function _adjacentTypingMarker(host,container,offset){
+        const isMarker=n=>n&&n.nodeType===1&&n.classList&&n.classList.contains('sdy-type')
+            &&_isTypeMarkOnly(n)&&n.style&&!!n.style.cssText;
+        try{
+            if(container.nodeType===3){
+                if(offset>=String(container.nodeValue||'').length){
+                    const n=container.nextSibling;
+                    if(isMarker(n)) return n;
+                }else if(offset===0){
+                    const n=container.previousSibling;
+                    if(isMarker(n)) return n;
+                }
+                return null;
+            }
+            if(container.nodeType===1){
+                const n=container.childNodes[offset];
+                if(isMarker(n)) return n;
+                const m=container.childNodes[offset-1];
+                if(isMarker(m)) return m;
+            }
+        }catch(e){}
+        return null;
+    }
+    function _sameStyleAs(span,styles){
+        for(const k in styles){
+            if(!_propMatch(k,span.style?span.style[k]:'',styles[k])) return false;
+        }
+        return true;
+    }
     // 브라우저가 빈 span을 없애거나 입력 후 캐럿을 형제 위치로 옮겨도, 별도로 기억한
     // active state를 사용해 입력 직전 같은 스타일 wrapper를 다시 만든다.
     function _ensurePendingTypingSpan(host){
-        const p=_pendingTyping;
-        if(!p||p.host!==host||!host||!host.isConnected) return false;
+        if(!host||!host.isConnected) return false;
         const w=host.closest&&host.closest('.tb');
         if(!w||!w.classList.contains('edit')) return false;
         const s=window.getSelection();
@@ -17186,6 +17257,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const point=live.startContainer;
         const inHost=point===host||host.contains(point);
         if(!inHost) return false;
+        const p=(_pendingTyping&&_pendingTyping.host===host)?_pendingTyping:null;
         if(_typingSpan&&_typingSpan.isConnected&&host.contains(_typingSpan)&&
            (point===_typingSpan||_typingSpan.contains(point))){
             // 텍스트 안(모호하지 않은 위치)이면 그대로 둔다. span 요소 자체를
@@ -17197,6 +17269,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }else savedCaret={c:host,r:live.cloneRange()};
             return true;
         }
+        // 캐럿이 '빈 입력 대기 span' 바로 앞/옆에 놓여 있으면 그 span 안으로 끌고
+        //   간다 — 다음 입력이 그 span 의 서식을 그대로 이어받는다. (줄바꿈 직후
+        //   브라우저가 캐럿을 span 밖 경계로 정규화한 경우를 덮는다.)
+        try{
+            const mk=_adjacentTypingMarker(host,point,live.startOffset);
+            if(mk&&(!p||_sameStyleAs(mk,p.styles))){
+                _typingSpan=mk;
+                const nr=document.createRange(); nr.selectNodeContents(mk); nr.collapse(false);
+                s.removeAllRanges(); s.addRange(nr);
+                savedCaret={c:host,r:nr.cloneRange()};
+                if(!p) _rememberTypingStyles(mk,host);   // 다음 줄바꿈 계승 등 상태 복원
+                return true;
+            }
+        }catch(e){}
+        if(!p) return false;
         try{
             const span=document.createElement('span');
             span.className='sdy-type';
