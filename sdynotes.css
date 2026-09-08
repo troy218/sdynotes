@@ -1002,7 +1002,7 @@
         .font-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .font-menu{
             position:fixed;z-index:2000;background:var(--card);border:1px solid var(--border);
-            border-radius:10px;padding:6px;display:none;min-width:232px;max-height:340px;overflow-y:auto;
+            border-radius:10px;padding:6px;display:none;min-width:264px;max-height:340px;overflow-y:auto;
             box-shadow:0 10px 30px rgba(0,0,0,.18);
         }
         .font-menu.show{display:block;}
@@ -1014,20 +1014,23 @@
         .key-row kbd{display:inline-block;padding:2px 7px;border-radius:3px;background:var(--bg2);
             border:1px solid var(--border);border-bottom-width:2px;font-size:11px;font-family:inherit;
             color:var(--text2);white-space:nowrap;}
-        /* 14.13 · 항목 = 실제 글꼴로 그린 미리보기 + 글꼴 이름 + 현재 선택 체크 */
+        /* 14.39.1 · 항목 = 한국어 이름 + 영어 이름을 해당 글꼴 자체로 + 현재 선택 체크.
+           예시 문구(abc 가나다)는 쓰지 않는다. .fi-ko/.fi-en 은 둘 다
+           .fi-sample 의 font-family(인라인 해당 글꼴)를 상속한다. */
         .font-item{
             padding:8px 10px;border-radius:8px;cursor:pointer;font-size:15px;color:var(--text1);
             display:flex;align-items:center;gap:10px;
         }
-        .font-item .fi-sample{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-            font-size:15px;line-height:1.35;color:var(--text1);}
-        .font-item .fi-name{flex:none;font-size:11px;color:var(--text3);
-            font-family:'Pretendard Variable','Pretendard',sans-serif;white-space:nowrap;}
+        .font-item .fi-sample{flex:1;min-width:0;overflow:hidden;
+            font-size:15px;line-height:1.35;color:var(--text1);
+            display:flex;align-items:baseline;gap:8px;}
+        .font-item .fi-sample .fi-ko{flex:none;font-size:15px;line-height:1.35;white-space:nowrap;}
+        .font-item .fi-sample .fi-en{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+            font-size:12px;line-height:1.35;opacity:.68;}
         .font-item .fi-check{flex:none;display:none;font-size:15px;color:var(--accent);line-height:1;}
         .font-item:hover{background:var(--bg2);}
         .font-item.sel{background:color-mix(in srgb, var(--accent) 12%, transparent);}
         .font-item.sel .fi-sample{color:var(--accent);}
-        .font-item.sel .fi-name{color:var(--accent);}
         .font-item.sel .fi-check{display:block;}
 
         .color-popover{
