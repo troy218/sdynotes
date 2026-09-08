@@ -2253,6 +2253,8 @@
     g.style.display='flex';
   }
   window.__ypEnter=ypEnter;
+  window.__ypClose=ypClose;    // 해돌이 앱 실행·단축키·테스트용 — 채팅창을 프로그래밍 방식으로 닫는다
+  window.__ypToggle=function(){ if(YP.open) ypClose(); else ypEnter(); };
   (function(){
     var g=$('ypGate'); if(!g) return;
     var hide=function(){ g.style.display='none'; };
