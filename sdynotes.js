@@ -770,7 +770,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return {...o};
     }
     function _cfgCacheDrop(id){ if(id==null||_cfgCacheId===id){ _cfgCacheId=null; _cfgCacheRaw=null; _cfgCacheObj=null; } }
-    function setCfg(id,c){ try{localStorage.setItem('nb_'+id,JSON.stringify(c));_cfgCacheDrop(id);return true;}
+    // ── 14.39.5 · 노트 설정(nb_*) '개정 번호' ────────────────────────────
+    //   홈 카드의 미리보기는 한 번 그려 둔 HTML을 기억했다가 홈을 다시 그릴 때
+    //   그대로 얹는다(빈 프레임 = 깜빡임 방지). 그 기억을 언제 버릴지를 이
+    //   번호로 판단한다 — nb_* 에 쓰는 모든 변경(setCfg)이 번호를 올린다.
+    const _cfgRev=new Map();          // nbId(String) -> 숫자
+    function _cfgRevBump(id){ if(id==null||id==='') return; const k=String(id); _cfgRev.set(k,(_cfgRev.get(k)||0)+1); }
+    function cfgRevOf(id){ return (id==null||id==='')?0:(_cfgRev.get(String(id))||0); }
+    function setCfg(id,c){ _cfgRevBump(id); try{localStorage.setItem('nb_'+id,JSON.stringify(c));_cfgCacheDrop(id);return true;}
         catch(e){
             // 용량 부족: 절대 '다른 노트의 캐시를 통째로' 지우지 않는다.
             // (그러면 그 노트의 폴더 소속·고정·휴지통 정보까지 날아가
@@ -781,6 +788,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     const k=localStorage.key(i);
                     if(k&&(k.indexOf('draw_')===0||k.indexOf('img_')===0)) localStorage.removeItem(k);
                 }
+                // 그림·이미지 사본이 사라졌으니 그려 둔 미리보기 기억도 버린다
+                // (안 그러면 홈 카드에 지워진 그림이 계속 남아 있게 된다)
+                try{ pvPaintClear(); }catch(e){}
                 localStorage.setItem('nb_'+id,JSON.stringify(c)); return true;
             }catch(e2){}
             // ② 그래도 부족하면 다른 노트의 '본문(pages)'만 비워 서버에서 다시 받게 한다
@@ -807,6 +817,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                             if(o.pages&&_safeToDrop(k,o)){
                                 delete o.pages; delete o.textBoxes; delete o.previewImgs; delete o.drawing;
                                 localStorage.setItem(k,JSON.stringify(o));
+                                // 본문을 비운 노트는 파싱 캐시·미리보기 기억도 어긋난다
+                                const _nid=k.slice(3); _cfgRevBump(_nid); _cfgCacheDrop(_nid);
                             }
                         }catch(err){}
                     }
@@ -1253,7 +1265,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function renderPageStatic(page, size, paperCls){
         let html='';
         const strokes=[];
-        const bw=_expBorderW();
+        // 카드 축소판은 '편집 화면의 확대율'을 따라가지 않는다.
+        // --bw 는 1.6/배율 이라 노트를 보고 나온 뒤에는 그 값이 #pagesStage 에 남아
+        // 같은 노트가 다른 테두리·다른 배치로 다시 그려진다(= 홈이 새로고침된 것처럼 보인다).
+        // 안쪽 조립(_expTextInner/_expLatexInner)은 화면과 그대로 공유하고 테두리만 고정한다.
+        const bw=2;
         (page.els||[]).forEach(el=>{
             if(el.type==='image'){
                 html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:${bw}px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
@@ -2123,6 +2139,63 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             _stackTransforms(cards,stack.classList.contains('fanned'));
         });
     }
+    // ── 14.39.5 · 홈 카드 미리보기 '페인트 기억' ────────────────────────────
+    // 뒤로가기로 노트를 닫고 홈에 돌아오면 홈을 다시 그린다 — 방금 본 노트를
+    // '최근 편집' 줄로 옮겨 놓아야 하므로 카드 DOM을 새로 만든다. 그때마다
+    // 미리보기를 '빈 프레임'으로 만든 뒤 다시 채웠기 때문에 홈 전체가 한 순간
+    // 하얗게 비었다가 채워지는 새로고침 깜빡임이 보였다(서버에 본문을 둔
+    // 노트는 미리보기를 받아 오는 동안 그 빈 시간이 훨씬 길었다).
+    // 이제 한 번 그려 둔 미리보기 HTML을 기억했다가, 같은 카드를 다시 만들 때
+    // '동기적으로' 얹는다 → 빈 프레임이 아예 생기지 않는다.
+    //   · nb_* 개정 번호(cfgRevOf)가 같으면 다시 그릴 일도, 네트워크도 없다.
+    //   · 본문이 바뀐 노트는 기억을 '자리 표시'로만 쓰고 _render 가 곧 덮어쓴다
+    //     (그래도 카드는 비어 보이지 않는다).
+    const _pvPaint=new Map();          // nbId(String) -> {rev,html,bw,bh,tf,left,top}
+    const _PV_PAINT_MAX=48;            // 기억해 둘 카드 수 한도
+    const _PV_PAINT_BYTES=8*1024*1024; // 기억해 둘 HTML 총량 한도
+    const _PV_PAINT_ONE=2*1024*1024;   // 한 카드가 너무 크면 기억하지 않는다
+    let _pvPaintBytes=0;
+    function pvPaintDrop(id){
+        if(id==null||id==='') return;
+        const k=String(id), e=_pvPaint.get(k);
+        if(!e) return;
+        _pvPaintBytes-=e.html.length; _pvPaint.delete(k);
+    }
+    function pvPaintClear(){ _pvPaint.clear(); _pvPaintBytes=0; }
+    function pvPaintStore(id,rev,html,bw,bh,frameEl){
+        if(id==null||id===''||!html||html.length>_PV_PAINT_ONE) return;
+        const k=String(id);
+        pvPaintDrop(k);
+        // 배율(transform·left·top)도 함께 기억한다. 이것 없으면 다시 만든 카드가
+        // '축소 전 크기'로 한 프레임 보였다가 rAF 의 rescalePreviews 에서 제자리로
+        // 뛰므로 그것 역시 깜빡임이 된다.
+        const fst=(frameEl&&frameEl.style)||null;
+        _pvPaint.set(k,{rev:rev|0,html,bw,bh,
+            tf:(fst&&fst.transform)||'', left:(fst&&fst.left)||'', top:(fst&&fst.top)||''});
+        _pvPaintBytes+=html.length;
+        // 한도(개수·총량)를 넘기면 가장 오래된 기억부터 비운다 (Map 은 삽입 순서)
+        for(const key of _pvPaint.keys()){
+            if(_pvPaint.size<=_PV_PAINT_MAX&&_pvPaintBytes<=_PV_PAINT_BYTES) break;
+            const e=_pvPaint.get(key); _pvPaintBytes-=(e?e.html.length:0); _pvPaint.delete(key);
+        }
+    }
+    // 새로 만든 카드에 기억해 둔 미리보기를 얹는다.
+    // 반환: true = 그대로 확정(다시 그릴 필요 없음), false = 자리 표시만 함.
+    function pvPaintApply(card,nbId,rev){
+        const e=_pvPaint.get(String(nbId));
+        if(!e) return false;
+        const pv=card.querySelector('.note-preview');
+        const f=card.querySelector('.note-preview-frame');
+        if(!pv||!f) return false;
+        f.innerHTML=e.html;
+        f.style.width=e.bw+'px'; f.style.height=e.bh+'px';
+        if(e.tf){ f.style.transform=e.tf; f.style.left=e.left; f.style.top=e.top; }
+        pv.dataset.bw=e.bw; pv.dataset.bh=e.bh;
+        if((e.rev|0)===(rev|0)){ f.dataset.done='1'; return true; }
+        f.dataset.stale='1';       // 본문이 바뀌었다 → _render 가 곧 새로 그린다
+        return false;
+    }
+
     function renderGrid(force){
         const g=document.getElementById('noteGrid');
         if(!g) return;
@@ -2250,6 +2323,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nb.title||'새 노트')}</span>
                     <span class="live-dot" data-nb="${nb.id}" style="display:none;flex-shrink:0;margin-left:8px;font-size:10.5px;font-weight:700;color:#059669;">●</span>
                 </div>`;
+            // 14.39.5 · 그려 둔 미리보기가 있으면 빈 프레임 없이 곧바로 얹는다.
+            //   잠긴 노트는 기억을 쓰지 않는다(본문은 흐리게 가려져야 한다) —
+            //   잠그는 순간 기억도 버린다.
+            if(locked) pvPaintDrop(nb.id);
+            else pvPaintApply(card,nb.id,cfgRevOf(nb.id));
             const startLP=(ev)=>{
                 clearTimeout(longPressTimer);
                 longPressTimer=setTimeout(()=>{
@@ -2311,7 +2389,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     f.style.width=rs.w+'px'; f.style.height=rs.h+'px';
                     f.innerHTML=renderPageStatic((rd.pages&&rd.pages[0])||blankPage(),rs,rp);
                     f.dataset.done='1';
+                    delete f.dataset.stale;
                     rescaleOne(pv);
+                    // 다음 재렌더(뒤로가기·폴더 이동·설정 반영)에서 빈 프레임이
+                    // 생기지 않도록 방금 그린 결과(배율 포함)를 기억해 둔다.
+                    pvPaintStore(nb.id,cfgRevOf(nb.id),f.innerHTML,rs.w,rs.h,f);
                 }catch(e){
                     card._previewTry=(card._previewTry||0)+1;
                     f.innerHTML='<div style="padding:24px;color:var(--text3);font-size:12px">미리보기를 다시 불러오는 중…</div>';
@@ -3865,6 +3947,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 혹시 서버 삭제가 실패/지연돼도 재조회 때 되살아나지 않도록 기록(tombstone)
         tombstone('notebooks', id);
         localStorage.removeItem('nb_'+id); localStorage.removeItem('draw_'+id);
+        try{ pvPaintDrop(id); previewDocCache.delete(id); }catch(e){}   // 그려 둔 미리보기 기억도
         sessionKeys.delete(id); decCache.delete(id); adminPlainUnlocked.delete(id);
         notebooks=notebooks.filter(x=>x.id!==id);
         saveLocalNBs();
@@ -5936,7 +6019,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 /* APP-PART:05a-editor-open.js:BEGIN */
     // ============ Editor: 열기/닫기 ============
     async function openNB(nb){
-        if(window._closeEdT){ clearTimeout(window._closeEdT); window._closeEdT=null; }
+        if(window._closeEdT){
+            clearTimeout(window._closeEdT); window._closeEdT=null;
+            // 14.39.5 · '닫기 예약'(슬라이드아웃이 끝난 뒤 종이를 내리는 일)이
+            //   취소되는 길이다. 예약에 들어 있던 정리를 여기서 바로 한다 —
+            //   이어서 renderPages() 가 새 노트의 종이를 채우므로 빈 화면이
+            //   남지도, 이전 노트의 종이가 새 노트 뒤에 숨어 있지도 않는다.
+            if(!document.getElementById('editorView').classList.contains('open')) teardownEditorStage();
+        }
         try{ _trackRecent(nb.id); }catch(_){}
         // 14.14 · 이미 같은 노트를 연 상태면 저장·동기화 왕복을 건너뛴다.
         //   (연속 클릭·스택 재진입 시 빈 저장 레이스가 돌지 않게)
@@ -6089,6 +6179,20 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         openNav(closeEditor);                                          // 뒤로가기 → 에디터 닫기
     }
 
+    // ── 14.39.5 · 에디터 종이(본문) 정리 ────────────────────────────────
+    // 뒤로가기를 누르면 에디터 패널은 .4s 동안 오른쪽으로 미끄러져 나간다.
+    // 예전엔 닫는 즉시 resetPageWork() + pagesStage.innerHTML='' 를 실행해서,
+    // 빠져나가는 0.4초 동안 패널이 '내용이 없는 하얀 판'이 됐다 — 사용자가
+    // "뒤로가기를 누르면 화면이 한 번 새로고침되며 깜빡인다"고 한 것의 정체.
+    // 이제 종이는 슬라이드아웃이 끝날 때까지 그대로 보이고, 정리는 그 직후
+    // 한 번에 한다. (닫기 예약이 취소되는 길 — openNB · 노트 삭제 — 에서도
+    //  같은 함수를 불러 종이 DOM이 홈 뒤에 남지 않게 한다.)
+    function teardownEditorStage(){
+        try{ resetPageWork(); }catch(e){}
+        const st=document.getElementById('pagesStage');
+        if(st&&st.firstChild) st.innerHTML='';
+    }
+
     function closeEditor(){
         if(!document.getElementById('editorView').classList.contains('open')) return;   // 이미 닫힘
         // 노트 전환 fetch가 진행 중이면 그 응답이 닫힌 편집기를 다시 열지 못하게 한다.
@@ -6118,10 +6222,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.getElementById('editorView').classList.remove('open');
         document.documentElement.classList.remove('in-editor');
         document.body.classList.remove('in-editor');
-        resetPageWork();
-        document.getElementById('pagesStage').innerHTML='';
+        // 뒤로가기(popstate)가 아니라 X·삭제 등으로 직접 닫힌 길이면 히스토리
+        // 장부에서도 이 항목을 지운다. (안 지우면 다음 뒤로가기의 짝이 어긋난다)
+        try{ navDrop(closeEditor); }catch(e){}
         if(window._closeEdT) clearTimeout(window._closeEdT);
         window._closeEdT=setTimeout(async()=>{
+            window._closeEdT=null;
+            // 슬라이드아웃(.4s)이 끝났다 — 이제 종이를 내린다. (깜빡임 방지)
+            teardownEditorStage();
             try{ if(_impFlush) await _impFlush; }catch(e){}
             // 문서를 보고 홈으로 돌아오면 자동 크기의 두 줄부터 보여 준다.
             // 클래식 새 노트 버튼은 그 바로 위에 있어 휠 한 칸으로 나타난다.
@@ -13933,21 +14041,96 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // ============ 뒤로가기(브라우저 히스토리) 처리 ============
     // 에디터·폴더·모달을 열 때 히스토리 항목을 쌓아, 뒤로가기를 누르면
     // 사이트를 빠져나가는 대신 열려 있던 화면/모달이 닫히게 한다.
+    //
+    // 14.39.5 · **진짜 뒤로가기를 되찾았다.** (사용자 보고: "뒤로가기 누르면
+    //   화면이 한 번 새로고침되면서 깜빡인다")
+    //   원인은 이름 가림이었다. 이 묶음(번들)은 모든 파트가 한 어휘 스코프를
+    //   공유하는데, 01-core.js 의 `let history=[]`(되돌리기 스택)가
+    //   `window.history` 를 가린다. 그래서
+    //     · openNav 의 history.pushState() → "pushState is not a function"
+    //       예외 → catch 에 삼켜짐 → **히스토리 항목이 한 번도 쌓이지 않았다**
+    //     · navBack 의 history.back() → 같은 예외 → catch 의 '직접 닫기'로 동작
+    //     · popstate 처리부는 불릴 일이 없어 죽은 코드였다
+    //   겉보기엔 툴바 ← 버튼이 잘 닫는 것 같았지만, **브라우저·폰의 뒤로가기와
+    //   옆으로 밀어 돌아가기는 앱이 전혀 잡지 못했다.** 그래서 뒤로가기를 누르면
+    //   앱이 화면을 닫는 대신 사이트를 빠져나갔고, 브라우저가 문서를 다시
+    //   실으면서 화면이 통째로 새로고침되며 깜빡였다. 이제 window.history 를
+    //   명시적으로 부른다.
+    //
+    //   쌓는 방식은 '층마다 항목 하나'가 아니라 **보초 항목 하나**다.
+    //   모달을 X 로 닫으면(navDrop) 우리 장부에서는 빠져도 히스토리 항목은
+    //   지울 방법이 없어 남는다. 층마다 쌓으면 그 남은 항목 수만큼 '아무 일도
+    //   하지 않는 뒤로가기'가 쌓여, 앱을 나가려면 뒤로가기를 여러 번 눌러야
+    //   했다. 보초는 하나뿐이라 남는 항목도 최대 하나고, 뒤로가기는 언제나
+    //   '한 번 = 가장 위에 열린 것 하나 닫기'로 동작한다.
     const _nav=[];
-    function openNav(close){ _nav.push({close}); try{ history.pushState({sdy:_nav.length},''); }catch(e){} }
-    function navDrop(close){ const i=_nav.findIndex(x=>x.close===close); if(i>=0) _nav.splice(i,1); }
+    const _NAV_GUARD='sdyNavGuard';   // 보초 항목에 찍는 도장
+    let _navGuard=false;              // 지금 히스토리 항목이 우리가 얹은 보초인가
+    let _navNoHist=false;             // pushState 를 못 쓰는 환경(샌드박스 iframe·file://)
+    let _navCollapsing=false;         // 보초를 걷는 history.back() 의 popstate 는 무시한다
+    let _navCollapseT=null;           // …그 popstate 가 끝내 안 오는 환경 대비 안전망
+    function _navClose(it){ if(it&&it.close){ try{ it.close(); }catch(err){} } }
+    // 보초를 얹거나(첫 층) 이미 얹힌 보초의 층 수만 고친다(다음 층부터).
+    // replaceState 라서 층이 늘어도 히스토리 항목은 하나다.
+    function _navStamp(){
+        if(_navNoHist) return;
+        try{
+            if(_navGuard) window.history.replaceState({[_NAV_GUARD]:1,n:_nav.length},'');
+            else { window.history.pushState({[_NAV_GUARD]:1,n:_nav.length},''); _navGuard=true; }
+        }catch(e){ _navNoHist=true; _navGuard=false; }
+    }
+    function openNav(close){ _nav.push({close}); _navStamp(); }
+    function navDrop(close){
+        const i=_nav.findIndex(x=>x.close===close);
+        if(i>=0) _nav.splice(i,1);
+        if(_nav.length){ _navStamp(); return; }
+        // 층이 하나도 남지 않았다 → 보초도 함께 걷는다. 안 그러면 다음
+        // 뒤로가기 한 번이 '아무 일도 안 하는' 누름이 된다.
+        if(_navGuard&&!_navNoHist){
+            _navCollapsing=true;
+            try{ window.history.back(); }catch(e){ _navCollapsing=false; }
+            // popstate 를 주지 않는 이상한 브라우저에서도 다음 '진짜' 뒤로가기를
+            // 삼키지 않게, 잠시 뒤 스스로 푼다.
+            clearTimeout(_navCollapseT);
+            _navCollapseT=setTimeout(()=>{ _navCollapseT=null; _navCollapsing=false; },1500);
+        }
+    }
     function navBack(){
         if(!_nav.length) return;
-        try{ history.back(); }
-        catch(e){ const it=_nav.pop(); if(it&&it.close){ try{ it.close(); }catch(err){} } }
+        // 히스토리를 못 쓰는 환경에서 history.back() 을 부르면 앱 밖으로 나가
+        // 페이지가 다시 실린다(= 그 자체가 화면 깜빡임). 그럴 땐 곧바로 닫는다.
+        if(_navNoHist||!_navGuard){ _navClose(_nav.pop()); _navStamp(); return; }
+        try{ window.history.back(); }
+        catch(e){ _navClose(_nav.pop()); _navStamp(); }
     }
     window.addEventListener('popstate',(e)=>{
-        const target=(e.state&&typeof e.state.sdy==='number')?e.state.sdy:0;
-        while(_nav.length>target){
-            const it=_nav.pop();
-            if(it&&it.close){ try{ it.close(); }catch(err){} }
+        // 보초를 걷으려고 우리가 부른 back() 이다 — 화면은 이미 닫혔다.
+        if(_navCollapsing){
+            _navCollapsing=false; _navGuard=false;
+            clearTimeout(_navCollapseT); _navCollapseT=null;
+            // 걷는 사이에 새 층이 열렸으면 보초를 다시 얹어 장부를 맞춘다.
+            if(_nav.length) _navStamp();
+            return;
         }
+        const st=e&&e.state;
+        if(st&&st[_NAV_GUARD]){
+            // 앞으로가기 등으로 보초 항목에 다시 도착 — 닫힌 층을 되살릴 수는
+            // 없으므로, 열려 있는 것 중 보초가 기억하는 층 수를 넘는 것만 정리한다.
+            _navGuard=true;
+            const n=(typeof st.n==='number')?st.n:_nav.length;
+            while(_nav.length>n) _navClose(_nav.pop());
+            return;
+        }
+        // 보초 아래(앱이 처음 실린 항목)로 내려왔다.
+        _navGuard=false;
+        if(!_nav.length) return;      // 열린 것이 없다 → 다음 뒤로가기가 앱을 나간다
+        // 뒤로가기 한 번 = 가장 위 열린 것 하나 닫기.
+        _navClose(_nav.pop());
+        // 아직 층이 남았다면 보초를 다시 얹는다 — 다음 뒤로가기도 앱을
+        // 빠져나가는 대신 그다음 층을 닫아야 한다.
+        if(_nav.length) _navStamp();
     });
+
     // 열려 있는 것 중 가장 위를 닫는다 (Esc / 뒤로가기 공용). 닫았으면 true.
     function closeTopOverlay(){
         if(ctxMenuOpen()){ closeCtxMenu(); return true; }
@@ -22102,6 +22285,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const nbId=curNB.id;
         try{ if(doc) flushSaveDoc(); }catch(e){}   // 나가기 전 편집분 즉시 저장
         document.getElementById('editorView').classList.remove('open');
+        // 14.39.5 · closeEditor 를 거치지 않는 닫기 길도 똑같이 마무리한다.
+        //   예전엔 html/body 의 in-editor 가 그대로 남아(overflow:hidden !important)
+        //   노트를 지우고 홈으로 돌아오면 홈이 스크롤되지 않았다.
+        //   종이 정리는 슬라이드아웃(.4s)이 끝난 뒤 — 닫는 동안 화면이 하얗게
+        //   비는 깜빡임이 없게 closeEditor 와 같은 규칙을 쓴다.
+        document.documentElement.classList.remove('in-editor');
+        document.body.classList.remove('in-editor');
+        setTimeout(()=>{ try{ teardownEditorStage(); }catch(e){} },420);
         navDrop(closeEditor);
         const _c=document.querySelector('.note-card[data-nb-id="'+nbId+'"]');
         playClawThrow(_c, ()=>{

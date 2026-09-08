@@ -5,7 +5,14 @@
 /* APP-PART:05a-editor-open.js:BEGIN */
     // ============ Editor: 열기/닫기 ============
     async function openNB(nb){
-        if(window._closeEdT){ clearTimeout(window._closeEdT); window._closeEdT=null; }
+        if(window._closeEdT){
+            clearTimeout(window._closeEdT); window._closeEdT=null;
+            // 14.39.5 · '닫기 예약'(슬라이드아웃이 끝난 뒤 종이를 내리는 일)이
+            //   취소되는 길이다. 예약에 들어 있던 정리를 여기서 바로 한다 —
+            //   이어서 renderPages() 가 새 노트의 종이를 채우므로 빈 화면이
+            //   남지도, 이전 노트의 종이가 새 노트 뒤에 숨어 있지도 않는다.
+            if(!document.getElementById('editorView').classList.contains('open')) teardownEditorStage();
+        }
         try{ _trackRecent(nb.id); }catch(_){}
         // 14.14 · 이미 같은 노트를 연 상태면 저장·동기화 왕복을 건너뛴다.
         //   (연속 클릭·스택 재진입 시 빈 저장 레이스가 돌지 않게)
@@ -158,6 +165,20 @@
         openNav(closeEditor);                                          // 뒤로가기 → 에디터 닫기
     }
 
+    // ── 14.39.5 · 에디터 종이(본문) 정리 ────────────────────────────────
+    // 뒤로가기를 누르면 에디터 패널은 .4s 동안 오른쪽으로 미끄러져 나간다.
+    // 예전엔 닫는 즉시 resetPageWork() + pagesStage.innerHTML='' 를 실행해서,
+    // 빠져나가는 0.4초 동안 패널이 '내용이 없는 하얀 판'이 됐다 — 사용자가
+    // "뒤로가기를 누르면 화면이 한 번 새로고침되며 깜빡인다"고 한 것의 정체.
+    // 이제 종이는 슬라이드아웃이 끝날 때까지 그대로 보이고, 정리는 그 직후
+    // 한 번에 한다. (닫기 예약이 취소되는 길 — openNB · 노트 삭제 — 에서도
+    //  같은 함수를 불러 종이 DOM이 홈 뒤에 남지 않게 한다.)
+    function teardownEditorStage(){
+        try{ resetPageWork(); }catch(e){}
+        const st=document.getElementById('pagesStage');
+        if(st&&st.firstChild) st.innerHTML='';
+    }
+
     function closeEditor(){
         if(!document.getElementById('editorView').classList.contains('open')) return;   // 이미 닫힘
         // 노트 전환 fetch가 진행 중이면 그 응답이 닫힌 편집기를 다시 열지 못하게 한다.
@@ -187,10 +208,14 @@
         document.getElementById('editorView').classList.remove('open');
         document.documentElement.classList.remove('in-editor');
         document.body.classList.remove('in-editor');
-        resetPageWork();
-        document.getElementById('pagesStage').innerHTML='';
+        // 뒤로가기(popstate)가 아니라 X·삭제 등으로 직접 닫힌 길이면 히스토리
+        // 장부에서도 이 항목을 지운다. (안 지우면 다음 뒤로가기의 짝이 어긋난다)
+        try{ navDrop(closeEditor); }catch(e){}
         if(window._closeEdT) clearTimeout(window._closeEdT);
         window._closeEdT=setTimeout(async()=>{
+            window._closeEdT=null;
+            // 슬라이드아웃(.4s)이 끝났다 — 이제 종이를 내린다. (깜빡임 방지)
+            teardownEditorStage();
             try{ if(_impFlush) await _impFlush; }catch(e){}
             // 문서를 보고 홈으로 돌아오면 자동 크기의 두 줄부터 보여 준다.
             // 클래식 새 노트 버튼은 그 바로 위에 있어 휠 한 칸으로 나타난다.
