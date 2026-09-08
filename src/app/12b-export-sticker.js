@@ -144,7 +144,8 @@
             `.sdyx pre,.sdyx code,.sdyx tt,.sdyx kbd,.sdyx samp{font-family:inherit;}`+
             `.sdyx button,.sdyx input,.sdyx select,.sdyx textarea{font:inherit;}`+
             `.sdyx sup,.sdyx sub{font-size:.72em;line-height:0;position:relative;vertical-align:baseline;}`+
-            `.sdyx sup{top:-.45em;}.sdyx sub{bottom:-.22em;}</style>`;
+            `.sdyx sup{top:-.45em;}.sdyx sub{bottom:-.22em;}`+
+            `.sdyx .zsp{position:absolute;left:100%;top:0;font-size:0;font-style:normal;letter-spacing:0;}</style>`;
     }
 
     // SVG <img> documents cannot use the editor's loaded web fonts. Bundle only
@@ -213,7 +214,13 @@
             if(lg!==1){ t0=Infinity; for(const t of tops) if(t.top<t0) t0=t.top; }
             for(const t of tops) t.s.style.top=(lg===1?t.top:(t0+(t.top-t0)*lg)).toFixed(3)+'px';
         }
-        c.querySelectorAll('.zsp').forEach(n=>n.style.fontSize='0px');
+        c.querySelectorAll('.zsp').forEach(n=>{
+            n.style.fontSize='0px';
+            n.style.position='absolute';
+            n.style.left='100%';
+            n.style.top='0';
+            n.style.fontStyle='normal';
+        });
         return c.innerHTML;
     }
     let _pdfProbeBox=null;
