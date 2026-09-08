@@ -536,3 +536,4 @@
         }catch(e){}
     }
 /* APP-PART:06a-page-virtual.js:END */
+// 14.39.2 verified: fast-scroll ghosting fix present (translateZ + isolation + overflow-anchor)
