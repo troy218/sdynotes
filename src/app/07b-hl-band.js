@@ -310,8 +310,18 @@
         // 활성 캐럿 서식은 실제 입력 직전에 wrapper를 확인한다. 빈 span을 브라우저가
         // 정리했더라도 beforeinput 단계에서 복구되므로 첫 글자부터 서식이 빠지지 않는다.
         c.addEventListener('beforeinput',e=>{
-            if(w.classList.contains('edit') && (!e.inputType||e.inputType.indexOf('insert')===0))
+            if(!w.classList.contains('edit')) return;
+            const it=e.inputType||'';
+            if(it==='insertParagraph'||it==='insertLineBreak'){
+                // Enter(Shift+Enter) 줄바꿈: 캐럿 앞 글자의 서식을 다음 줄 입력으로
+                // 이어받는다. 예전엔 앞 글자가 서식된 채로 줄만 바꾸면 다음 줄이
+                // 기본 서식으로 풀렸다(_pendingTyping 이 '툴바로 방금 정한 서식'만
+                // 기억했기 때문). 서식이 없으면 아무것도 하지 않는다.
+                _captureLineBreakInherit(c);
                 _ensurePendingTypingSpan(c);
+            }else if(!it||it.indexOf('insert')===0){
+                _ensurePendingTypingSpan(c);
+            }
         });
         // beforeinput이 없는 구형 WebView용 선행 fallback (조합 중에는 keydown이 없어도
         // 표준 beforeinput이 오며, 둘 다 없는 환경은 아래 input에서 다음 글자를 복구).
@@ -325,8 +335,16 @@
                 _tightLineEnter(c,w);
                 return;
             }
-            if(w.classList.contains('edit')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&
-               (e.key.length===1||e.key==='Enter')) _ensurePendingTypingSpan(c);
+            // 14.39.11 · 일반 글상자: Enter(Shift+Enter) 줄바꿈 시 앞 글자의
+            //   인라인 서식을 다음 줄로 이어받는다(서식 풀림 버그 수정).
+            if(!w.classList.contains('edit')||e.ctrlKey||e.metaKey||e.altKey
+               ||e.isComposing||e.keyCode===229) return;
+            if(e.key==='Enter'){
+                _captureLineBreakInherit(c);
+                _ensurePendingTypingSpan(c);
+            }else if(e.key.length===1){
+                _ensurePendingTypingSpan(c);
+            }
         });
         // 한글 IME 조합 중에는 타이핑 span 안 텍스트 노드를 건드리지 않는다 —
         // 조합 중인 노드를 고치면 조합이 끊겨 자모가 따로 확정되기 때문.
