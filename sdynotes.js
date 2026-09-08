@@ -1251,9 +1251,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function renderPageStatic(page, size, paperCls){
         let html='';
         const strokes=[];
+        const bw=_expBorderW();
         (page.els||[]).forEach(el=>{
             if(el.type==='image'){
-                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:2px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:${bw}px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
                       `<img src="${el.url||el.localURL||''}" style="width:100%;height:100%;object-fit:fill;display:block;border-radius:2px;"></div>`;
             }else if(el.type==='legacyDraw'){
                 html+=`<img src="${el.url}" style="position:absolute;left:0;top:0;width:${size.w}px;height:${size.h}px;z-index:3;">`;
@@ -1274,25 +1275,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         (page.els||[]).forEach(el=>{
             if(el.type==='latex'){
-                // 9.0 · 미리보기에서도 가져온 수식은 원문 잉크 상자 안에 가둔다.
-                const imp=!!el.imported;
-                const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;
-                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${bw}px;height:${bh}px;`+
-                      `z-index:5;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;display:flex;align-items:${imp?'center':(el.displayMath?'center':'flex-end')};${el.displayMath?'justify-content:center;':''}`+
-                      `font-size:${el.fontSize||20}px;line-height:1.05;color:var(--text1);overflow:hidden;">${latexHTML(el.latex||'',!!el.displayMath)}</div>`;
+                // 화면과 같은 상자·안쪽 배치 (미리보기라 맞춤 측정은 생략 — 카드 축소판이라 차이 없음)
+                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`+
+                      `z-index:5;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                      `<div style="${_expLatexInner(el,bw,el.fontSize||20,'var(--text1)')}">${latexHTML(el.latex||'',!!el.displayMath)}</div></div>`;
                 return;
             }
             if(el.type!=='text') return;
-            const inner=el.tight
-                ? `width:100%;height:100%;padding:0;box-sizing:border-box;font-size:${el.fontSize||16}px;line-height:1;color:var(--text1);`+
-                  `font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`+
-                  `overflow:visible;position:relative;`
-                : `width:100%;height:100%;min-width:60px;min-height:28px;padding:8px 12px;border:2px solid transparent;`+
-                  `box-sizing:border-box;font-size:${el.fontSize||16}px;line-height:1.5;color:var(--text1);`+
-                  `font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`+
-                  `white-space:pre-wrap;word-break:break-word;overflow:hidden;`;
             html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;z-index:4;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
-                  `<div style="${inner}">${el.html||''}</div></div>`;
+                  `<div style="${_expTextInner(el,bw,'var(--text1)')}">${el.html||''}</div></div>`;
         });
         // .ppv = 미리보기 전용 컨테이너 (에디터 .paper 스크립트와 충돌 방지)
         const pat=paperPatternSVG((paperCls||'').replace('paper-',''),size);
@@ -8517,30 +8508,39 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
         return '<span class="latex-fallback">'+esc(String(src||''))+'</span>';
     }
-    // 9.0 · 수식이 원문 잉크 상자를 얼마나 넘치는지 실제로 재서 축소 배율을 낸다.
+    // 9.0 · 수식이 상자를 얼마나 넘치는지 실제로 재서 축소 배율을 낸다.
     //  내보내기(PDF/JPG)는 화면과 달리 requestAnimationFrame 보정 기회가 없으므로,
     //  화면 밖 측정용 상자에 한 번 그려 보고 넘치는 만큼 미리 줄여서 굽는다.
-    let _fitProbe=null;
+    //  측정은 paintLatex 와 '같은 상자·같은 식'으로 — 실제 .latex-box/.latex-content
+    //  클래스를 입힌 화면 밖 상자에 같은 크기로 그려 재므로, 편집 화면의 맞춤값과
+    //  어긋나지 않는다 (가져온 수식뿐 아니라 직접 넣은 수식도 화면처럼 줄인다).
+    let _fitProbeWrap=null, _fitProbeInner=null;
     function latexFitScale(el){
         try{
-            const bw=el.inkW||el.w, bh=el.inkH||el.h;
-            if(!bw||!bh) return 1;
-            if(!_fitProbe){
-                _fitProbe=document.createElement('div');
-                _fitProbe.style.cssText='position:fixed;left:-99999px;top:0;visibility:hidden;'+
-                    'white-space:nowrap;pointer-events:none;z-index:-1;';
-                document.body.appendChild(_fitProbe);
+            const base=el.fontSize||20;
+            if(!_fitProbeWrap||!_fitProbeWrap.isConnected){
+                _fitProbeWrap=document.createElement('div');
+                _fitProbeInner=document.createElement('div');
+                _fitProbeInner.className='latex-content';
+                _fitProbeWrap.appendChild(_fitProbeInner);
+                document.body.appendChild(_fitProbeWrap);
             }
-            _fitProbe.style.fontSize=(el.fontSize||20)+'px';
-            _fitProbe.style.lineHeight='1.05';
-            _fitProbe.innerHTML=latexHTML(el.latex||'',!!el.displayMath);
-            // Match the actual imported .latex-box, not KaTeX's default 1.21em
-            // font and 1em display margins (which shrank export-only formulas).
-            const k=_fitProbe.querySelector('.katex'), d=_fitProbe.querySelector('.katex-display');
-            if(k){ k.style.fontSize='1em'; k.style.lineHeight='1.05'; }
-            if(d) d.style.margin='0';
-            const rw=Math.max(1,_fitProbe.scrollWidth), rh=Math.max(1,_fitProbe.scrollHeight);
-            return Math.max(.35,Math.min(1,Math.min(bw/rw,bh/rh)));
+            const imp=!!el.imported, disp=!!el.displayMath;
+            _fitProbeWrap.className='latex-box'+(disp?' display-math':'')+(imp?' imported':'');
+            _fitProbeWrap.style.cssText='position:fixed;left:-99999px;top:0;visibility:hidden;pointer-events:none;'+
+                `width:${Math.max(1,el.w||1)}px;height:${Math.max(1,el.h||1)}px;`;
+            // --bw 는 #pagesStage 아래에서만 정해지므로 화면 밖 상자에는 직접 준다
+            _fitProbeInner.style.borderWidth=_expBorderW()+'px';
+            _fitProbeInner.style.fontSize=base+'px';
+            _fitProbeInner.innerHTML=latexHTML(el.latex||'',disp);
+            // ↓ paintLatex 의 맞춤식과 한 글자도 다르지 않게.
+            const node=_fitProbeInner;
+            const padW=imp?1:8, padH=imp?0:4;
+            const aw=Math.max(8,(imp?(el.inkW||node.clientWidth):node.clientWidth)-padW);
+            const ah=Math.max(8,(imp?(el.inkH||node.clientHeight):node.clientHeight)-padH);
+            const rw=Math.max(1,node.scrollWidth), rh=Math.max(1,node.scrollHeight);
+            const k=Math.min(1,aw/rw,ah/rh);
+            return k<.995?Math.max(.35,k):1;
         }catch(e){ return 1; }
     }
 
@@ -9543,6 +9543,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         w.dataset.nbId=(curNB&&curNB.id)||'';
         w._sdyRv=doc&&doc.__rv;
         w.style.cssText=`left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`;
+        // 회전한 글상자도 그림·수식처럼 다시 그릴 때 자세를 유지한다
+        // (유지하지 않으면 다시 그릴 때마다 똑바로 서서 내보내기와 어긋난다)
+        applyBoxRotation(w,el);
         const c=document.createElement('div');
         c.className='tb-content'; c.contentEditable='false';
         c.style.fontSize=(el.fontSize||16)+'px';
@@ -9767,7 +9770,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         markPageEdited(+w.dataset.pageIdx);
         el.html=html; el.fontSize=fs;
         el.x=parseFloat(w.style.left)||0; el.y=parseFloat(w.style.top)||0;
-        el.w=w.offsetWidth; el.h=w.offsetHeight;
+        // 회전한 상자의 offset 크기는 외접 박스라서 그대로 쓰면 상자가 부풀며
+        // 자리가 어긋난다 → 똑바로 선 상자만 실측 크기를 되받는다.
+        if(!normalizedRotation(el.rotation)){ el.w=w.offsetWidth; el.h=w.offsetHeight; }
         w._sdyModelHtml=el.html; w._sdyViewHtml=c.innerHTML; w._sdyModelKey=JSON.stringify(el);
         w.classList.toggle('empty',!String((c.innerText!=null?c.innerText:c.textContent)||'').trim());
         saveDoc();
@@ -16973,6 +16978,98 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             .replace(/"/g,'&quot;');
     }
 
+    // ============ 내보내기 WYSIWYG 정합 (PDF·사진이 편집 화면과 어긋나지 않게) ============
+    // 편집 화면의 .tb-content/.paper-img/.latex-content 는 '투명 테두리(var(--bw))'를
+    // 두르고 있다. 눈에는 안 보여도 글자 시작점·줄바꿈 폭·그림 크기에 그대로 반영되므로,
+    // 내보내기에서 빼먹으면 요소마다 1~3px씩 관계가 틀어져 보인다.
+    // 아래 조립기들은 편집 화면의 CSS 와 같은 상자 모델을 쓰고, 테두리 두께는
+    // 지금 보고 있는 화면과 같은 값(--bw, 없으면 2)을 읽어 맞춘다.
+    let _expBwCache=null, _expBwAt=0;
+    function _expBorderW(){
+        // getComputedStyle 은 강제 스타일 계산이라 카드·쪽마다 부르면 무겁다.
+        // --bw 는 확대/축소 때만 바뀌므로 1초짜리 메모로 충분하다.
+        const now=Date.now();
+        if(_expBwCache!=null&&now-_expBwAt<1000) return _expBwCache;
+        let out=2;
+        try{
+            const st=document.getElementById('pagesStage');
+            const v=st?getComputedStyle(st).getPropertyValue('--bw'):'';
+            const n=v?parseFloat(v):NaN;
+            if(Number.isFinite(n)&&n>=0&&n<=8) out=Math.round(n*100)/100;
+        }catch(e){}
+        _expBwCache=out; _expBwAt=now;
+        return out;
+    }
+    // 편집 화면에 보이는 글자 크기 (buildTextEl·fitTextToBox·fitTranslated 과 같은 규칙).
+    // 가져오기 맞춤(fit·fitDown)과 번역 맞춤(trFit)은 캐시된 맞춤값을 쓴다 —
+    // 화면에 이미 그렇게 나와 있으므로 내보내기도 따라야 한다.
+    function _expTextMetrics(el){
+        let fs=el.fontSize||16, ls='', fw='', lh='';
+        if((el.fit||el.fitDown)&&el.fitSize){ fs=el.fitSize; ls=el.fitLS||''; lh=el.fitLH||''; }
+        else if(el.trFit&&!el.trPending){
+            if(el.trFS) fs=el.trFS;
+            ls=el.trLS||''; fw=el.trFW||'';
+        }
+        return {fs:fs,ls:ls,fw:fw,lh:lh};
+    }
+    function _expVAlign(el){
+        return {top:'flex-start',middle:'center',bottom:'flex-end'}[el.vAlign||'middle']||'center';
+    }
+    // .tb-content 와 같은 안쪽 상자 (일반 / 표 칸 / 가져온-tight).
+    // color: 내보내기는 '#111111'(흰 종이), 미리보기는 'var(--text1)'.
+    function _expTextInner(el,bw,color){
+        const m=_expTextMetrics(el);
+        let s=`width:100%;height:100%;box-sizing:border-box;font-size:${m.fs}px;`+
+              `color:${color};font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`;
+        if(el.fontWeight) s+=`font-weight:${el.fontWeight};`;
+        if(el.fontStyle) s+=`font-style:${el.fontStyle};`;
+        if(el.textDecoration) s+=`text-decoration:${el.textDecoration};`;
+        if(m.ls) s+=`letter-spacing:${m.ls};`;
+        if(m.fw) s+=`font-weight:${m.fw};`;
+        if(el.tight){
+            s+=`padding:0;line-height:${m.lh||1};overflow:${el.tbl?'hidden':'visible'};`+
+               `position:relative;white-space:normal;word-break:normal;overflow-wrap:normal;`;
+            // .tb.pdf-text 상자는 편집 화면에서도 테두리가 없다
+            if(!el.pdfText) s+=`border:${bw}px solid transparent;`;
+            // 맞춤값(fitLS·trLS)이 화면에서처럼 수동 자간보다 우선한다
+            if(!m.ls&&el.ls) s+=`letter-spacing:${el.ls}px;`;
+            if(el.wsp) s+=`word-spacing:${el.wsp}px;`;
+            if(el.tbl) s+=`display:flex;flex-direction:column;justify-content:${_expVAlign(el)};`;
+        }else if(el.tbl){
+            // .tb.in-tbl .tb-content — 칸 글자는 6px 8px 여백에 세로 가운데
+            s+=`padding:6px 8px;border:${bw}px solid transparent;border-radius:3px;`+
+               `line-height:${m.lh||1.5};overflow:hidden;white-space:normal;`+
+               `overflow-wrap:break-word;word-break:break-word;min-width:60px;min-height:28px;`+
+               `display:flex;flex-direction:column;justify-content:${_expVAlign(el)};`;
+        }else{
+            s+=`padding:8px 12px;border:${bw}px solid transparent;border-radius:3px;`+
+               `line-height:${m.lh||1.5};overflow:visible;white-space:pre-wrap;`+
+               `overflow-wrap:break-word;word-break:break-word;min-width:60px;min-height:28px;`;
+        }
+        return s;
+    }
+    // .latex-content 와 같은 안쪽 상자 (fs: latexFitScale 으로 맞춘 크기).
+    function _expLatexInner(el,bw,fs,color){
+        const imp=!!el.imported, disp=!!el.displayMath;
+        let s=`width:100%;height:100%;box-sizing:border-box;border:${bw}px solid transparent;`+
+              `display:flex;font-size:${fs}px;line-height:1.05;color:${color||'#111'};`+
+              `white-space:nowrap;font-family:'Times New Roman',serif;`;
+        if(imp) s+=`padding:0;overflow:hidden;align-items:center;`;
+        else if(disp) s+=`padding:1px 4px;overflow:visible;align-items:center;`;
+        else s+=`padding:0 4px 1px;overflow:visible;align-items:flex-end;`;
+        if(disp) s+=`justify-content:center;`;
+        return s;
+    }
+    // foreignObject 안은 편집 화면의 전역 리셋(*{margin:0;padding:0}·sup/sub)이
+    // 닿지 않아 UA 기본값이 적용된다 → 같은 리셋을 SVG 안에 동봉한다.
+    function _expForeignReset(){
+        return `<style>.sdyx *{margin:0;padding:0;box-sizing:border-box;}`+
+            `.sdyx pre,.sdyx code,.sdyx tt,.sdyx kbd,.sdyx samp{font-family:inherit;}`+
+            `.sdyx button,.sdyx input,.sdyx select,.sdyx textarea{font:inherit;}`+
+            `.sdyx sup,.sdyx sub{font-size:.72em;line-height:0;position:relative;vertical-align:baseline;}`+
+            `.sdyx sup{top:-.45em;}.sdyx sub{bottom:-.22em;}</style>`;
+    }
+
     // SVG <img> documents cannot use the editor's loaded web fonts. Bundle only
     // the PDF families actually referenced, using same-origin cached WOFF2 data.
     const _pdfSvgFonts=new Map();
@@ -17013,15 +17110,56 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function _pdfStaticHtml(el){
         if(!el.pdfText||!el.tight) return el.html||'';
         const c=document.createElement('div'); c.innerHTML=el.html||'';
-        c.style.fontFamily=fontCSS(el.font||'times');
+        const m0=_expTextMetrics(el);
+        c.style.fontFamily=fontCSS(el.font||'pretendard');
+        c.style.fontSize=m0.fs+'px';
+        // 편집 화면(buildTextEl)과 같은 자간·어간 — 측정(_pdfSpanMetrics)에도 반영된다
+        if(el.ls) c.style.letterSpacing=el.ls+'px';
+        if(el.wsp) c.style.wordSpacing=el.wsp+'px';
+        const tops=[];
         for(const s of c.querySelectorAll(':scope > span[data-pdf-w]')){
-            const fs=parseFloat(s.style.fontSize)||el.fontSize||parseFloat(s.dataset.fs)||14;
+            const fs=parseFloat(s.style.fontSize)||m0.fs||parseFloat(s.dataset.fs)||14;
             const m=_pdfSpanMetrics(s,c,fs), width=parseFloat(s.dataset.pdfW), base=parseFloat(s.dataset.pdfBase);
-            if(m&&m.w>0&&width>0){ s.style.transform='scaleX('+(width/m.w)+')'; s.style.transformOrigin='left center'; }
-            if(m&&Number.isFinite(base)) s.style.top=(base-m.baseline)+'px';
+            if(m&&m.w>0&&width>0){ s.style.transform='scaleX('+(width/m.w).toFixed(5)+')'; s.style.transformOrigin='left center'; }
+            else if(width>0){
+                // 겹겹 스타일(편집·형광펜)이 섞인 행은 캔버스 한 글꼴로 잴 수 없다 —
+                // 편집 화면(_measureTightSpans 폴백)처럼 실제 렌더 폭을 재서 맞춘다.
+                const w0=_pdfProbeSpanW(s,c);
+                if(w0>0){ s.style.transform='scaleX('+(width/w0).toFixed(5)+')'; s.style.transformOrigin='left center'; }
+            }
+            if(m&&Number.isFinite(base)) tops.push({s:s,top:+(base-m.baseline).toFixed(3)});
+        }
+        // 줄간격(lg)은 편집 화면(_applyTightFit)과 같이 첫 줄 기준으로 벌린다
+        if(tops.length){
+            const lg=(el.lg&&Math.abs(el.lg-1)>0.001)?el.lg:1;
+            let t0=0;
+            if(lg!==1){ t0=Infinity; for(const t of tops) if(t.top<t0) t0=t.top; }
+            for(const t of tops) t.s.style.top=(lg===1?t.top:(t0+(t.top-t0)*lg)).toFixed(3)+'px';
         }
         c.querySelectorAll('.zsp').forEach(n=>n.style.fontSize='0px');
         return c.innerHTML;
+    }
+    let _pdfProbeBox=null;
+    function _pdfProbeSpanW(s,c){
+        // 이전 맞춤(scaleX)을 걷어낸 '있는 그대로'의 렌더 폭 — 편집 폴백과 같은 식.
+        try{
+            if(!_pdfProbeBox||!_pdfProbeBox.isConnected){
+                _pdfProbeBox=document.createElement('div');
+                _pdfProbeBox.style.cssText='position:fixed;left:-99999px;top:0;visibility:hidden;pointer-events:none;';
+                document.body.appendChild(_pdfProbeBox);
+            }
+            const sps=Array.from(c.querySelectorAll(':scope > span[data-pdf-w]'));
+            const idx=sps.indexOf(s); if(idx<0) return 0;
+            const match=(s.style.transform||'').match(/scaleX\(([^)]+)\)/);
+            const sx=match?Math.abs(parseFloat(match[1]))||1:1;
+            _pdfProbeBox.innerHTML='';
+            // 상자째 복제해야 자간·글꼴 상속까지 화면과 같아진다
+            _pdfProbeBox.appendChild(c.cloneNode(true));
+            const g=_pdfProbeBox.querySelectorAll(':scope > div > span[data-pdf-w]')[idx];
+            const w=g?g.getBoundingClientRect().width/sx:0;
+            _pdfProbeBox.innerHTML='';
+            return w>0?w:0;
+        }catch(e){ return 0; }
     }
     let _katexSvgFonts;
     async function _katexSvgCSS(){
@@ -17090,13 +17228,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const ids=new Set(items.map(i=>i.id));
         const list=(doc.pages[pi].els||[]).filter(e=>ids.has(e.id));
         let drew=0, imgs='', paths='', body='';
+        const _xbw=_expBorderW();
         for(const el of list){
             if(el.type==='image'&&el.url){
                 // SVG 는 <img> 로 열면 외부 그림을 못 가져오므로 data: 로 인라인한다
                 const href=await toDataURL(el.url);
                 if(!href) continue;
+                // 편집 화면의 .paper-img 는 투명 테두리 안쪽에 그림을 채운다
                 const ia=normalizedRotation(el.rotation), icx=el.x+el.w/2, icy=el.y+el.h/2;
-                imgs+=`<image x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}"`+
+                imgs+=`<image x="${el.x+_xbw}" y="${el.y+_xbw}" width="${Math.max(1,el.w-_xbw*2)}" height="${Math.max(1,el.h-_xbw*2)}"`+
                       (ia?` transform="rotate(${ia} ${icx} ${icy})"`:'')+
                       ` href="${escXml(href)}" xlink:href="${escXml(href)}"/>`;
                 drew++;
@@ -17116,15 +17256,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const texts=list.filter(e=>e.type==='text'&&(e.html||'').trim());
         const formulas=list.filter(e=>e.type==='latex'&&(e.latex||'').trim());
         texts.forEach(el=>{
-            const inner=el.tight
-                ? `width:100%;height:100%;padding:0;box-sizing:border-box;`+
-                  `font-size:${el.fontSize||16}px;line-height:1;color:${el.__c||'#111111'};`+
-                  `overflow:visible;font-family:${fontCSS(el.font||'pretendard')};`+
-                  `text-align:${el.align||'left'};position:relative;`
-                : `width:100%;height:100%;padding:8px 12px;box-sizing:border-box;`+
-                  `font-size:${el.fontSize||16}px;line-height:1.5;color:${el.__c||'#111111'};white-space:pre-wrap;`+
-                  `word-break:break-word;overflow:hidden;font-family:${fontCSS(el.font||'pretendard')};`+
-                  `text-align:${el.align||'left'};`;
+            const inner=_expTextInner(el,_xbw,el.__c||'#111111');
             body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${el.w}px;height:${el.h}px;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
                   `<div style="${inner}">`+
                   htmlToXhtml(fixDarkColors(imathExpandHtml(el.html)))+`</div></div>`;
@@ -17137,14 +17269,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             //  빨간 오류 문자열이 박힌다)
             try{ mh=window.katex?katex.renderToString(tidyLatex(el.latex||''),{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
             catch(e){ mh=esc(el.latex||''); }
-            const imp=!!el.imported;
-            const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;
-            const k=imp?Math.min(1,(latexFitScale(el)||1)):1;
-            const fs=Math.max(6,(el.fontSize||20)*k);
-            body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${bw}px;height:${bh}px;`+
-                  `transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;display:flex;align-items:center;${el.displayMath?'justify-content:center;':''}font-size:${fs}px;`+
-                  `line-height:1.05;font-family:'Times New Roman',serif;color:#111;`+
-                  `overflow:${imp?'hidden':'visible'};">${htmlToXhtml(mh)}</div>`;
+            const fs=Math.max(6,(el.fontSize||20)*(latexFitScale(el)||1));
+            body+=`<div style="position:absolute;left:${el.x-rx}px;top:${el.y-ry}px;width:${el.w}px;height:${el.h}px;`+
+                  `transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                  `<div style="${_expLatexInner(el,_xbw,fs)}">${htmlToXhtml(mh)}</div></div>`;
             drew++;
         });
         if(!drew) throw new Error('스티커로 만들 내용이 없다');
@@ -17152,7 +17280,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             ` width="${Math.max(1,Math.round(rw))}" height="${Math.max(1,Math.round(rh))}" viewBox="${rx} ${ry} ${rw} ${rh}">`+
             imgs+paths+
             (body?`<foreignObject x="${rx}" y="${ry}" width="${rw}" height="${rh}">`+
-                  `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${rw}px;height:${rh}px;position:relative;">${body}</div>`+
+                  `<div xmlns="http://www.w3.org/1999/xhtml" class="sdyx" style="width:${rw}px;height:${rh}px;position:relative;">${_expForeignReset()}${body}</div>`+
                   `</foreignObject>`:'')+
             `</svg>`;
         return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
@@ -20275,13 +20403,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
 
         // ② 이미지 — 캔버스에 직접 (foreignObject 안 거침 → 훨씬 안정적)
+        //    편집 화면의 .paper-img 는 투명 테두리(bw) 안쪽에 그림을 채운다 → 같이 들여쓴다
+        const bw=_expBorderW();
         for(const el of page.els||[]){
             if(el.type==='image'&&el.url){
                 try{
                     const im=await loadImg(el.url);
                     const a=normalizedRotation(el.rotation);
-                    if(a){ ctx.save(); ctx.translate(el.x+el.w/2,el.y+el.h/2); ctx.rotate(a*Math.PI/180); ctx.drawImage(im,-el.w/2,-el.h/2,el.w,el.h); ctx.restore(); }
-                    else ctx.drawImage(im,el.x,el.y,el.w,el.h);
+                    const ix=el.x+bw, iy=el.y+bw, iw=Math.max(1,el.w-bw*2), ih=Math.max(1,el.h-bw*2);
+                    if(a){ ctx.save(); ctx.translate(el.x+el.w/2,el.y+el.h/2); ctx.rotate(a*Math.PI/180); ctx.drawImage(im,-iw/2,-ih/2,iw,ih); ctx.restore(); }
+                    else ctx.drawImage(im,ix,iy,iw,ih);
                 }catch(e){ console.warn('이미지 건너뜀',e); }
             }else if(el.type==='legacyDraw'&&el.url){
                 try{
@@ -20291,10 +20422,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
         }
 
-        // ③ 펜 획 — 캔버스 경로로 직접
+        // ③-a 펜 채움 — 편집 화면(layer-fill)이 글자보다 아래인 것과 같은 순서
         (page.els||[]).forEach(st=>{
-            if(st.type!=='stroke') return;
-            drawStrokeOnCanvas(ctx,st);
+            if(st.type!=='stroke'||!st.fillColor) return;
+            drawStrokeOnCanvas(ctx,st,'fill');
         });
 
         // ④ 텍스트 — foreignObject(서식 유지). 실패하면 캔버스 텍스트로 폴백.
@@ -20305,17 +20436,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             try{
                 let body='';
                 texts.forEach(el=>{
-                    const inner=el.tight
-                        ? `width:100%;height:100%;padding:0;box-sizing:border-box;`+
-                          `font-size:${el.fontSize||16}px;line-height:1;color:${el.__c||'#111111'};`+
-                          `overflow:visible;font-family:${fontCSS(el.font||'pretendard')};`+
-                          `text-align:${el.align||'left'};position:relative;`
-                        : `width:100%;height:100%;padding:8px 12px;box-sizing:border-box;`+
-                          `font-size:${el.fontSize||16}px;line-height:1.5;color:${el.__c||'#111111'};white-space:pre-wrap;`+
-                          `word-break:break-word;overflow:hidden;font-family:${fontCSS(el.font||'pretendard')};`+
-                          `text-align:${el.align||'left'};`;
-                    body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;">`+
-                          `<div style="${inner}">`+
+                    body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                          `<div style="${_expTextInner(el,bw,el.__c||'#111111')}">`+
                           htmlToXhtml(imathExpandHtml(_pdfStaticHtml(el)))+`</div></div>`;
                 });
                 formulas.forEach(el=>{
@@ -20327,20 +20449,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     // 내보낸 PDF/JPG 에만 빨간 KaTeX 오류가 남는다.
                     try{ mh=window.katex?katex.renderToString(tidyLatex(el.latex||''),{displayMode:!!el.displayMath,throwOnError:false,strict:'ignore',output:'html'}):esc(el.latex||''); }
                     catch(e){ mh=esc(el.latex||''); }
-                    // 가져온 수식은 원문 잉크 상자를 넘지 않도록 넘치는 만큼 축소해 그린다.
-                    const imp=!!el.imported;
-                    const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;
-                    const k=imp?Math.min(1,(latexFitScale(el)||1)):1;
-                    const fs=Math.max(6,(el.fontSize||20)*k);
-                    body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${bw}px;height:${bh}px;`+
-                          `transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;display:flex;align-items:center;${el.displayMath?'justify-content:center;':''}font-size:${fs}px;`+
-                          `line-height:1.05;font-family:'Times New Roman',serif;color:#111;`+
-                          `overflow:${imp?'hidden':'visible'};">${htmlToXhtml(mh)}</div>`;
+                    // 상자는 화면(buildLatexEl)과 같은 el.w×el.h, 맞춤은 paintLatex 과
+                    // 같은 latexFitScale — 가져온 수식뿐 아니라 직접 넣은 수식도 화면처럼.
+                    const fs=Math.max(6,(el.fontSize||20)*(latexFitScale(el)||1));
+                    body+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`+
+                          `transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                          `<div style="${_expLatexInner(el,bw,fs)}">${htmlToXhtml(mh)}</div></div>`;
                 });
                 const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${size.w}" height="${size.h}" viewBox="0 0 ${size.w} ${size.h}">`+
                     `<foreignObject x="0" y="0" width="${size.w}" height="${size.h}">`+
-                    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${size.w}px;height:${size.h}px;position:relative;`+
-                    `font-family:'Pretendard Variable','Pretendard',sans-serif;">${body}</div></foreignObject></svg>`;
+                    `<div xmlns="http://www.w3.org/1999/xhtml" class="sdyx" style="width:${size.w}px;height:${size.h}px;position:relative;`+
+                    `font-family:'Pretendard Variable','Pretendard',sans-serif;">${_expForeignReset()}${body}</div></foreignObject></svg>`;
                 const img=await svgToImage(svg);
                 ctx.drawImage(img,0,0,size.w,size.h);
                 done=true;
@@ -20350,20 +20469,29 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!done){
                 texts.forEach(el=>drawTextOnCanvas(ctx,el));
                 formulas.forEach(el=>{
-                    ctx.save();ctx.fillStyle='#111';
-                    // 9.0 · 폴백에서도 원문 잉크 폭을 넘지 않게 글씨를 줄여 그린다.
-                    const bw=Math.max(8,(el.imported?(el.inkW||el.w):el.w));
-                    let fs=el.fontSize||20;
+                    ctx.save();
+                    const a=normalizedRotation(el.rotation);
+                    if(a){ const cx=el.x+el.w/2, cy=el.y+el.h/2; ctx.translate(cx,cy); ctx.rotate(a*Math.PI/180); ctx.translate(-cx,-cy); }
+                    ctx.fillStyle='#111';
+                    // 9.0 · 폴백에서도 화면 상자(el.w)를 넘지 않게 글씨를 줄여 그린다.
+                    const bw2=Math.max(8,el.w), bh2=Math.max(8,el.h);
+                    let fs=(el.fontSize||20)*(latexFitScale(el)||1);
                     ctx.font=`${fs}px "Times New Roman",serif`;
                     const raw=(el.latex||'').replace(/[{}\\]|\$/g,'');
                     const tw=ctx.measureText(raw).width||1;
-                    if(tw>bw){ fs=Math.max(6,fs*(bw/tw)); ctx.font=`${fs}px "Times New Roman",serif`; }
+                    const avail=Math.max(8,bw2-(el.imported?0:8));
+                    if(tw>avail){ fs=Math.max(6,fs*(avail/tw)); ctx.font=`${fs}px "Times New Roman",serif`; }
                     ctx.textBaseline='middle';ctx.textAlign=el.displayMath?'center':'left';
-                    ctx.fillText(raw,el.displayMath?el.x+bw/2:el.x,el.y+(el.imported?(el.inkH||el.h):el.h)/2);
+                    ctx.fillText(raw,el.displayMath?el.x+bw2/2:el.x+(el.imported?0:4),el.y+bh2/2);
                     ctx.restore();
                 });
             }
         }
+        // ③-b 펜 선 — 편집 화면(layer-stroke)이 글자보다 위인 것과 같은 순서
+        (page.els||[]).forEach(st=>{
+            if(st.type!=='stroke') return;
+            drawStrokeOnCanvas(ctx,st,'line');
+        });
         return c;
     }
 
@@ -20376,9 +20504,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
     }
 
-    function drawStrokeOnCanvas(ctx,st){
+    function drawStrokeOnCanvas(ctx,st,pass){
         const pts=st.pts||[];
         if(!pts.length) return;
+        // 편집 화면과 같은 겹침 순서 (채움 layer-fill < 글자 < 선 layer-stroke)를
+        // 맞추려고 채우기와 선을 나눠 그릴 수 있다. pass 없이 부르면 둘 다 그린다.
+        if(pass==='fill'&&!st.fillColor) return;
         ctx.save();
         ctx.translate(st.dx||0, st.dy||0);
         const a=normalizedRotation(st.rotation);
@@ -20397,23 +20528,33 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             const last=pts[pts.length-1];
             ctx.lineTo(last[0],last[1]);
         }
-        if(st.fillColor){
+        if(st.fillColor&&pass!=='line'){
             ctx.save(); ctx.globalAlpha=st.fillOpacity==null?0.58:st.fillOpacity; ctx.fillStyle=st.fillColor; ctx.fill('evenodd'); ctx.restore();
         }
-        if(st.opacity!=null) ctx.globalAlpha=st.opacity;
-        ctx.stroke();
+        if(pass!=='fill'){
+            if(st.opacity!=null) ctx.globalAlpha=st.opacity;
+            ctx.stroke();
+        }
         ctx.restore();
     }
 
     // 서식 없는 순수 텍스트 폴백 (SVG 렌더가 막혔을 때도 글자는 남긴다)
     function drawTextOnCanvas(ctx,el){
+        // SVG 렌더가 막혔을 때의 최후 수단 — 그래도 자리·자세·맞춤 크기는 화면과 같이.
+        const a=normalizedRotation(el.rotation);
+        const bw=_expBorderW(), m=_expTextMetrics(el);
+        ctx.save();
+        if(a){ const cx=el.x+el.w/2, cy=el.y+el.h/2; ctx.translate(cx,cy); ctx.rotate(a*Math.PI/180); ctx.translate(-cx,-cy); }
+        try{ _drawTextFallback(ctx,el,bw,m); }finally{ ctx.restore(); }
+    }
+    function _drawTextFallback(ctx,el,bw,m){
         const tmp=document.createElement('div');
         tmp.innerHTML=(el.html||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/(div|p)>/gi,'\n');
         const text=(tmp.textContent||'').replace(/\u00a0/g,' ');
         if(!text.trim()) return;
         if(el.pdfText&&el.tight){
             for(const s of tmp.querySelectorAll(':scope > span[data-pdf-w]')){
-                const st=s.style, fs=parseFloat(st.fontSize)||el.fontSize||parseFloat(s.dataset.fs)||14;
+                const st=s.style, fs=parseFloat(st.fontSize)||m.fs||parseFloat(s.dataset.fs)||14;
                 const text=(s.textContent||'').trimEnd(), width=parseFloat(s.dataset.pdfW);
                 const baseline=parseFloat(s.dataset.pdfBase);
                 if(!(width>0)||!Number.isFinite(baseline)) continue;
@@ -20421,7 +20562,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 ctx.font=[st.fontStyle||'normal',st.fontWeight||'400',fs+'px',st.fontFamily||fontCSS(el.font)].join(' ');
                 ctx.fillStyle=st.color||'#111'; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
                 const natural=ctx.measureText(text).width;
-                ctx.translate(el.x+(parseFloat(st.left)||0),el.y+baseline);
+                ctx.translate(el.x+bw+(parseFloat(st.left)||0),el.y+bw+baseline);
                 if(natural>0) ctx.scale(width/natural,1);
                 ctx.fillText(text,0,0); ctx.restore();
             }
@@ -20429,28 +20570,28 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }
         // 단어 상자(tight): 패딩·줄바꿈 없이 상자 중앙에 한 줄로
         if(el.tight){
-            const fs=el.fontSize||16;
+            const fs=m.fs||16;
             ctx.save();
             ctx.fillStyle='#111111';
             ctx.font=`${fs}px ${fontCSS(el.font||'pretendard')}`;
             ctx.textBaseline='middle';
             const al=el.align||'left';
             ctx.textAlign=al==='center'?'center':al==='right'?'right':'left';
-            const ox=al==='center'?el.x+el.w/2:al==='right'?el.x+el.w:el.x;
+            const ox=al==='center'?el.x+el.w/2:al==='right'?el.x+el.w-bw:el.x+bw;
             ctx.fillText(text.replace(/\s+/g,' '), ox, el.y+el.h/2);
             ctx.restore();
             return;
         }
-        const fs=el.fontSize||16, lh=fs*1.5;
+        const fs=m.fs||16, lh=fs*1.5;
         ctx.save();
         ctx.fillStyle='#111111';
         ctx.font=`${fs}px ${fontCSS(el.font||'pretendard')}`;
         ctx.textBaseline='top';
         const al=el.align||'left';
         ctx.textAlign=al==='center'?'center':al==='right'?'right':'left';
-        const maxW=el.w-24;
-        const ox=al==='center'?el.x+el.w/2:al==='right'?el.x+el.w-12:el.x+12;
-        let y=el.y+8;
+        const maxW=el.w-24-bw*2;
+        const ox=al==='center'?el.x+el.w/2:al==='right'?el.x+el.w-12-bw:el.x+12+bw;
+        let y=el.y+8+bw;
         text.split('\n').forEach(para=>{
             let line='';
             for(const ch of para){

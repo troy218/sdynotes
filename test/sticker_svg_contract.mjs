@@ -39,7 +39,9 @@ const fnBody = (src, name) => {
   check('글자는 foreignObject + htmlToXhtml 로 서식이 유지된다',
     b.includes('<foreignObject') && b.includes('htmlToXhtml(fixDarkColors(imathExpandHtml(el.html)))'));
   check('이미지는 data: 로 인라인해 <image> 로 넣는다',
-    b.includes('await toDataURL(el.url)') && b.includes('`<image x="${el.x}"'));
+    b.includes('await toDataURL(el.url)') && b.includes('`<image x="${el.x+_xbw}"'));
+  check('이미지는 편집 화면처럼 투명 테두리 안쪽에 들여쓴다',
+    b.includes('_expBorderW()') && b.includes('el.w-_xbw*2') && b.includes('el.h-_xbw*2'));
   check('만들 내용이 없으면 실패로 처리해 폴백을 유도한다', b.includes("throw new Error('스티커로 만들 내용이 없다')"));
   check('결과는 URL 인코딩 SVG data: URL 이다',
     b.includes("'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)"));

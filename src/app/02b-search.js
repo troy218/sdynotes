@@ -60,9 +60,10 @@
     function renderPageStatic(page, size, paperCls){
         let html='';
         const strokes=[];
+        const bw=_expBorderW();
         (page.els||[]).forEach(el=>{
             if(el.type==='image'){
-                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:2px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:${bw}px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
                       `<img src="${el.url||el.localURL||''}" style="width:100%;height:100%;object-fit:fill;display:block;border-radius:2px;"></div>`;
             }else if(el.type==='legacyDraw'){
                 html+=`<img src="${el.url}" style="position:absolute;left:0;top:0;width:${size.w}px;height:${size.h}px;z-index:3;">`;
@@ -83,25 +84,15 @@
         }
         (page.els||[]).forEach(el=>{
             if(el.type==='latex'){
-                // 9.0 · 미리보기에서도 가져온 수식은 원문 잉크 상자 안에 가둔다.
-                const imp=!!el.imported;
-                const bw=imp?(el.inkW||el.w):el.w, bh=imp?(el.inkH||el.h):el.h;
-                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${bw}px;height:${bh}px;`+
-                      `z-index:5;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;display:flex;align-items:${imp?'center':(el.displayMath?'center':'flex-end')};${el.displayMath?'justify-content:center;':''}`+
-                      `font-size:${el.fontSize||20}px;line-height:1.05;color:var(--text1);overflow:hidden;">${latexHTML(el.latex||'',!!el.displayMath)}</div>`;
+                // 화면과 같은 상자·안쪽 배치 (미리보기라 맞춤 측정은 생략 — 카드 축소판이라 차이 없음)
+                html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`+
+                      `z-index:5;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
+                      `<div style="${_expLatexInner(el,bw,el.fontSize||20,'var(--text1)')}">${latexHTML(el.latex||'',!!el.displayMath)}</div></div>`;
                 return;
             }
             if(el.type!=='text') return;
-            const inner=el.tight
-                ? `width:100%;height:100%;padding:0;box-sizing:border-box;font-size:${el.fontSize||16}px;line-height:1;color:var(--text1);`+
-                  `font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`+
-                  `overflow:visible;position:relative;`
-                : `width:100%;height:100%;min-width:60px;min-height:28px;padding:8px 12px;border:2px solid transparent;`+
-                  `box-sizing:border-box;font-size:${el.fontSize||16}px;line-height:1.5;color:var(--text1);`+
-                  `font-family:${fontCSS(el.font||'pretendard')};text-align:${el.align||'left'};`+
-                  `white-space:pre-wrap;word-break:break-word;overflow:hidden;`;
             html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;z-index:4;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
-                  `<div style="${inner}">${el.html||''}</div></div>`;
+                  `<div style="${_expTextInner(el,bw,'var(--text1)')}">${el.html||''}</div></div>`;
         });
         // .ppv = 미리보기 전용 컨테이너 (에디터 .paper 스크립트와 충돌 방지)
         const pat=paperPatternSVG((paperCls||'').replace('paper-',''),size);

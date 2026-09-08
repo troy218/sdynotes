@@ -47,30 +47,39 @@
         }catch(e){}
         return '<span class="latex-fallback">'+esc(String(src||''))+'</span>';
     }
-    // 9.0 · 수식이 원문 잉크 상자를 얼마나 넘치는지 실제로 재서 축소 배율을 낸다.
+    // 9.0 · 수식이 상자를 얼마나 넘치는지 실제로 재서 축소 배율을 낸다.
     //  내보내기(PDF/JPG)는 화면과 달리 requestAnimationFrame 보정 기회가 없으므로,
     //  화면 밖 측정용 상자에 한 번 그려 보고 넘치는 만큼 미리 줄여서 굽는다.
-    let _fitProbe=null;
+    //  측정은 paintLatex 와 '같은 상자·같은 식'으로 — 실제 .latex-box/.latex-content
+    //  클래스를 입힌 화면 밖 상자에 같은 크기로 그려 재므로, 편집 화면의 맞춤값과
+    //  어긋나지 않는다 (가져온 수식뿐 아니라 직접 넣은 수식도 화면처럼 줄인다).
+    let _fitProbeWrap=null, _fitProbeInner=null;
     function latexFitScale(el){
         try{
-            const bw=el.inkW||el.w, bh=el.inkH||el.h;
-            if(!bw||!bh) return 1;
-            if(!_fitProbe){
-                _fitProbe=document.createElement('div');
-                _fitProbe.style.cssText='position:fixed;left:-99999px;top:0;visibility:hidden;'+
-                    'white-space:nowrap;pointer-events:none;z-index:-1;';
-                document.body.appendChild(_fitProbe);
+            const base=el.fontSize||20;
+            if(!_fitProbeWrap||!_fitProbeWrap.isConnected){
+                _fitProbeWrap=document.createElement('div');
+                _fitProbeInner=document.createElement('div');
+                _fitProbeInner.className='latex-content';
+                _fitProbeWrap.appendChild(_fitProbeInner);
+                document.body.appendChild(_fitProbeWrap);
             }
-            _fitProbe.style.fontSize=(el.fontSize||20)+'px';
-            _fitProbe.style.lineHeight='1.05';
-            _fitProbe.innerHTML=latexHTML(el.latex||'',!!el.displayMath);
-            // Match the actual imported .latex-box, not KaTeX's default 1.21em
-            // font and 1em display margins (which shrank export-only formulas).
-            const k=_fitProbe.querySelector('.katex'), d=_fitProbe.querySelector('.katex-display');
-            if(k){ k.style.fontSize='1em'; k.style.lineHeight='1.05'; }
-            if(d) d.style.margin='0';
-            const rw=Math.max(1,_fitProbe.scrollWidth), rh=Math.max(1,_fitProbe.scrollHeight);
-            return Math.max(.35,Math.min(1,Math.min(bw/rw,bh/rh)));
+            const imp=!!el.imported, disp=!!el.displayMath;
+            _fitProbeWrap.className='latex-box'+(disp?' display-math':'')+(imp?' imported':'');
+            _fitProbeWrap.style.cssText='position:fixed;left:-99999px;top:0;visibility:hidden;pointer-events:none;'+
+                `width:${Math.max(1,el.w||1)}px;height:${Math.max(1,el.h||1)}px;`;
+            // --bw 는 #pagesStage 아래에서만 정해지므로 화면 밖 상자에는 직접 준다
+            _fitProbeInner.style.borderWidth=_expBorderW()+'px';
+            _fitProbeInner.style.fontSize=base+'px';
+            _fitProbeInner.innerHTML=latexHTML(el.latex||'',disp);
+            // ↓ paintLatex 의 맞춤식과 한 글자도 다르지 않게.
+            const node=_fitProbeInner;
+            const padW=imp?1:8, padH=imp?0:4;
+            const aw=Math.max(8,(imp?(el.inkW||node.clientWidth):node.clientWidth)-padW);
+            const ah=Math.max(8,(imp?(el.inkH||node.clientHeight):node.clientHeight)-padH);
+            const rw=Math.max(1,node.scrollWidth), rh=Math.max(1,node.scrollHeight);
+            const k=Math.min(1,aw/rw,ah/rh);
+            return k<.995?Math.max(.35,k):1;
         }catch(e){ return 1; }
     }
 
