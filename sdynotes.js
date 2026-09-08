@@ -271,25 +271,27 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         square:{label:'정사각',w:900,h:900},
         wide:{label:'와이드',w:1280,h:720}
     };
-    // 선택 가능한 글꼴 (한국어/영어)
+    // 선택 가능한 글꼴 — ko: 한국어 이름, en: 영어 이름.
+    //   글꼴 메뉴는 ko + en 을 '해당 글꼴 자체'로 그린다 (예시 문구 abc 가나다 대신).
+    //   label 은 툴바·토스트용 짧은 이름 (한국어 우선, 영어 글꼴은 영어).
     const FONTS=[
-        {id:'pretendard',label:'프리텐다드',css:"'Pretendard Variable','Pretendard',sans-serif"},
-        {id:'gaegu',  label:'개구쟁이',     css:"'Gaegu','Pretendard Variable',cursive"},
-        {id:'jua',    label:'주아',        css:"'Jua','Pretendard Variable',sans-serif"},
-        {id:'pen',    label:'나눔손글씨',   css:"'Nanum Pen Script','Pretendard Variable',cursive"},
-        {id:'dohyeon',label:'도현',        css:"'Do Hyeon','Pretendard Variable',sans-serif"},
-        {id:'gowun',  label:'고운돋움',     css:"'Gowun Dodum','Pretendard Variable',sans-serif"},
-        {id:'poor',   label:'푸어스토리',   css:"'Poor Story','Pretendard Variable',cursive"},
-        {id:'blackhan',label:'검은고딕',    css:"'Black Han Sans','Pretendard Variable',sans-serif"},
-        {id:'myeongjo',label:'나눔명조',    css:"'Nanum Myeongjo',serif"},
-        {id:'times',  label:'Times New Roman', css:"'SDY Times','Times New Roman','Liberation Serif','Nanum Myeongjo',serif"},
-        {id:'cmroman',label:'Computer Modern',css:"'SDY Computer Modern','Latin Modern Roman','Times New Roman',serif"},
-        {id:'arial',label:'Arial / Helvetica',css:"'SDY Helvetica',Arial,'Liberation Sans',sans-serif"},
-        {id:'coding', label:'코딩체',      css:"'Nanum Gothic Coding',monospace"},
-        {id:'inter',  label:'Inter',      css:"'Inter','Pretendard Variable',sans-serif"},
-        {id:'playfair',label:'Playfair',  css:"'Playfair Display',serif"},
-        {id:'caveat', label:'Caveat',     css:"'Caveat',cursive"},
-        {id:'mono',   label:'Roboto Mono',css:"'Roboto Mono',monospace"}
+        {id:'pretendard',label:'프리텐다드',ko:'프리텐다드',en:'Pretendard',css:"'Pretendard Variable','Pretendard',sans-serif"},
+        {id:'gaegu',  label:'개구쟁이',ko:'개구쟁이',en:'Gaegu',css:"'Gaegu','Pretendard Variable',cursive"},
+        {id:'jua',    label:'주아',ko:'주아',en:'Jua',css:"'Jua','Pretendard Variable',sans-serif"},
+        {id:'pen',    label:'나눔손글씨',ko:'나눔손글씨',en:'Nanum Pen Script',css:"'Nanum Pen Script','Pretendard Variable',cursive"},
+        {id:'dohyeon',label:'도현',ko:'도현',en:'Do Hyeon',css:"'Do Hyeon','Pretendard Variable',sans-serif"},
+        {id:'gowun',  label:'고운돋움',ko:'고운돋움',en:'Gowun Dodum',css:"'Gowun Dodum','Pretendard Variable',sans-serif"},
+        {id:'poor',   label:'푸어스토리',ko:'푸어스토리',en:'Poor Story',css:"'Poor Story','Pretendard Variable',cursive"},
+        {id:'blackhan',label:'검은고딕',ko:'검은고딕',en:'Black Han Sans',css:"'Black Han Sans','Pretendard Variable',sans-serif"},
+        {id:'myeongjo',label:'나눔명조',ko:'나눔명조',en:'Nanum Myeongjo',css:"'Nanum Myeongjo',serif"},
+        {id:'times',  label:'Times New Roman',ko:'타임스 뉴 로먼',en:'Times New Roman',css:"'SDY Times','Times New Roman','Liberation Serif','Nanum Myeongjo',serif"},
+        {id:'cmroman',label:'Computer Modern',ko:'컴퓨터 모던',en:'Computer Modern',css:"'SDY Computer Modern','Latin Modern Roman','Times New Roman',serif"},
+        {id:'arial',label:'Arial / Helvetica',ko:'에어리얼',en:'Arial / Helvetica',css:"'SDY Helvetica',Arial,'Liberation Sans',sans-serif"},
+        {id:'coding', label:'코딩체',ko:'코딩체',en:'Nanum Gothic Coding',css:"'Nanum Gothic Coding',monospace"},
+        {id:'inter',  label:'Inter',ko:'인터',en:'Inter',css:"'Inter','Pretendard Variable',sans-serif"},
+        {id:'playfair',label:'Playfair',ko:'플레이페어',en:'Playfair Display',css:"'Playfair Display',serif"},
+        {id:'caveat', label:'Caveat',ko:'카베아트',en:'Caveat',css:"'Caveat',cursive"},
+        {id:'mono',   label:'Roboto Mono',ko:'로보토 모노',en:'Roboto Mono',css:"'Roboto Mono',monospace"}
     ];
     function fontCSS(id){ const f=FONTS.find(x=>x.id===id); return f?f.css:FONTS[0].css; }
     let curFont='pretendard';
@@ -14857,24 +14859,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   중복됐기 때문. 글자 서식(글꼴·크기·굵기·색·형광펜)은 전부 상단 바에서 한다.
 
     // ===== 글꼴 선택 =====
-    // 각 항목을 '해당 글꼴 자체'로 렌더링해 이름만 보고도 어떤 폰트인지 바로 알 수 있게 한다.
-    //   좌측: 실제 글꼴로 그린 미리보기 문구 (abc 가나다)
-    //   우측: 글꼴 이름 (항상 기본 글꼴로 표시해 항상 가독) + 현재 선택 시 체크
+    // 각 항목은 '한국어 이름 + 영어 이름'을 해당 글꼴 자체로 그린다.
+    //   예시 문구(abc 가나다)는 쓰지 않는다 — 이름만 보고도 어떤 폰트인지 바로 알 수 있게.
+    //   좌측: 한국어·영어 이름 (둘 다 해당 글꼴, .fi-sample 의 font-family 를 상속)
+    //   우측: 현재 선택 시 체크
     function buildFontMenu(){
         const m=document.getElementById('fontMenu');
         if(m.dataset.ready==='1') return;
         FONTS.forEach(f=>{
             const it=document.createElement('div');
             it.className='font-item'; it.dataset.f=f.id;
-            it.innerHTML=`<span class="fi-sample" style="font-family:${f.css}">abc 가나다</span>`+
-                         `<span class="fi-name">${f.label}</span>`+
+            const ko=esc(f.ko||f.label||'');
+            const en=esc(f.en||'');
+            const showEn=en&&en!==ko;
+            it.innerHTML=`<span class="fi-sample" style="font-family:${f.css}">`+
+                         `<span class="fi-ko">${ko}</span>`+
+                         (showEn?`<span class="fi-en">${en}</span>`:'')+
+                         `</span>`+
                          `<i class="ri-checkbox-fill fi-check"></i>`;
             it.onmousedown=e=>e.preventDefault();
             it.onclick=(e)=>{ e.stopPropagation(); applyFont(f.id); closeFontMenu(); };
             m.appendChild(it);
         });
         m.dataset.ready='1';
-        // 미리보기가 실제 폰트로 그려지도록, 아직 안 불러온 글꼴은 여기에서 선제 로드
+        // 이름이 실제 폰트로 그려지도록, 아직 안 불러온 글꼴은 여기에서 선제 로드
         if(document.fonts&&document.fonts.load){
             FONTS.forEach(f=>{
                 const fam=f.css.split(',')[0];           // 주 패밀리 (따옴표 포함)
@@ -14894,7 +14902,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(m.parentElement!==document.body) document.body.appendChild(m);
             const r=document.getElementById('fontBtn').getBoundingClientRect();
             const cw=v=>window.sdyUiCss?window.sdyUiCss(v):(Number(v)||0);  // html zoom(.9) 보정
-            m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-240)+'px';
+            m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-288)+'px';
             m.style.top=(cw(r.bottom)+6)+'px';
             // 현재 선택된 글꼴 표시 (강조 + 체크)
             m.querySelectorAll('.font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===curFont));
@@ -17362,15 +17370,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(hl&&AI_TEXT_COLOR_NAMES[v]) return AI_TEXT_COLOR_NAMES[v];
         return null;
     }
-    // 글꼴 id·라벨 모두 받는다 ("개구쟁이체"처럼 체가 붙어도 된다).
+    // 글꼴 id·라벨·한국어/영어 이름 모두 받는다 ("개구쟁이체"처럼 체가 붙어도 된다).
     function aiEditFont(value){
         const v=String(value==null?'':value).trim().toLowerCase();
         if(!v) return null;
         let hit=FONTS.find(f=>f.id.toLowerCase()===v);
         if(hit) return hit.id;
         const bare=v.replace(/체$/,'');
-        hit=FONTS.find(f=>f.label.toLowerCase()===v||f.label.toLowerCase()===bare
-            ||f.label.replace(/체$/,'').toLowerCase()===bare);
+        hit=FONTS.find(f=>{
+            const names=[f.label,f.ko,f.en].filter(Boolean).map(x=>String(x).toLowerCase());
+            return names.some(n=>n===v||n===bare||n.replace(/체$/,'')===bare);
+        });
         return hit?hit.id:null;
     }
     const AI_ON_WORDS={on:1,true:1,1:1,켜:1,켜기:1,적용:1,yes:1};

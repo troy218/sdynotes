@@ -34,15 +34,17 @@
         if(hl&&AI_TEXT_COLOR_NAMES[v]) return AI_TEXT_COLOR_NAMES[v];
         return null;
     }
-    // 글꼴 id·라벨 모두 받는다 ("개구쟁이체"처럼 체가 붙어도 된다).
+    // 글꼴 id·라벨·한국어/영어 이름 모두 받는다 ("개구쟁이체"처럼 체가 붙어도 된다).
     function aiEditFont(value){
         const v=String(value==null?'':value).trim().toLowerCase();
         if(!v) return null;
         let hit=FONTS.find(f=>f.id.toLowerCase()===v);
         if(hit) return hit.id;
         const bare=v.replace(/체$/,'');
-        hit=FONTS.find(f=>f.label.toLowerCase()===v||f.label.toLowerCase()===bare
-            ||f.label.replace(/체$/,'').toLowerCase()===bare);
+        hit=FONTS.find(f=>{
+            const names=[f.label,f.ko,f.en].filter(Boolean).map(x=>String(x).toLowerCase());
+            return names.some(n=>n===v||n===bare||n.replace(/체$/,'')===bare);
+        });
         return hit?hit.id:null;
     }
     const AI_ON_WORDS={on:1,true:1,1:1,켜:1,켜기:1,적용:1,yes:1};

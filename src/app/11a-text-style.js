@@ -80,24 +80,30 @@
     //   중복됐기 때문. 글자 서식(글꼴·크기·굵기·색·형광펜)은 전부 상단 바에서 한다.
 
     // ===== 글꼴 선택 =====
-    // 각 항목을 '해당 글꼴 자체'로 렌더링해 이름만 보고도 어떤 폰트인지 바로 알 수 있게 한다.
-    //   좌측: 실제 글꼴로 그린 미리보기 문구 (abc 가나다)
-    //   우측: 글꼴 이름 (항상 기본 글꼴로 표시해 항상 가독) + 현재 선택 시 체크
+    // 각 항목은 '한국어 이름 + 영어 이름'을 해당 글꼴 자체로 그린다.
+    //   예시 문구(abc 가나다)는 쓰지 않는다 — 이름만 보고도 어떤 폰트인지 바로 알 수 있게.
+    //   좌측: 한국어·영어 이름 (둘 다 해당 글꼴, .fi-sample 의 font-family 를 상속)
+    //   우측: 현재 선택 시 체크
     function buildFontMenu(){
         const m=document.getElementById('fontMenu');
         if(m.dataset.ready==='1') return;
         FONTS.forEach(f=>{
             const it=document.createElement('div');
             it.className='font-item'; it.dataset.f=f.id;
-            it.innerHTML=`<span class="fi-sample" style="font-family:${f.css}">abc 가나다</span>`+
-                         `<span class="fi-name">${f.label}</span>`+
+            const ko=esc(f.ko||f.label||'');
+            const en=esc(f.en||'');
+            const showEn=en&&en!==ko;
+            it.innerHTML=`<span class="fi-sample" style="font-family:${f.css}">`+
+                         `<span class="fi-ko">${ko}</span>`+
+                         (showEn?`<span class="fi-en">${en}</span>`:'')+
+                         `</span>`+
                          `<i class="ri-checkbox-fill fi-check"></i>`;
             it.onmousedown=e=>e.preventDefault();
             it.onclick=(e)=>{ e.stopPropagation(); applyFont(f.id); closeFontMenu(); };
             m.appendChild(it);
         });
         m.dataset.ready='1';
-        // 미리보기가 실제 폰트로 그려지도록, 아직 안 불러온 글꼴은 여기에서 선제 로드
+        // 이름이 실제 폰트로 그려지도록, 아직 안 불러온 글꼴은 여기에서 선제 로드
         if(document.fonts&&document.fonts.load){
             FONTS.forEach(f=>{
                 const fam=f.css.split(',')[0];           // 주 패밀리 (따옴표 포함)
@@ -117,7 +123,7 @@
             if(m.parentElement!==document.body) document.body.appendChild(m);
             const r=document.getElementById('fontBtn').getBoundingClientRect();
             const cw=v=>window.sdyUiCss?window.sdyUiCss(v):(Number(v)||0);  // html zoom(.9) 보정
-            m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-240)+'px';
+            m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-288)+'px';
             m.style.top=(cw(r.bottom)+6)+'px';
             // 현재 선택된 글꼴 표시 (강조 + 체크)
             m.querySelectorAll('.font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===curFont));

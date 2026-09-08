@@ -6,7 +6,8 @@ const js = fs.readFileSync(new URL('../sdynotes.js', import.meta.url), 'utf8');
 // 14.16 · 두 가지 계약
 //  ① Alt+휠(상자 배율)로 키운 글자 크기가 '상자'에 저장되고 툴바에도 반영되어
 //     그 뒤 '+' 를 눌러도 도로 작아지지 않아야 한다.
-//  ② 글꼴 목록의 미리보기 문구는 'abc 가나다' 다 ('한글' 은 넣지 않는다).
+//  ② 글꼴 목록은 각 글꼴의 한국어·영어 이름을 '해당 글꼴 자체'로 그린다.
+//     예시 문구(abc 가나다)는 쓰지 않는다 ('한글' 은 넣지 않는다).
 
 // ── ① scaleSelection : 글자 크기 저장 + 툴바 동기화 ─────────────────────────
 const scale = js.match(/function scaleSelection\(f,items\)\{([\s\S]*?)\n    \}\n/);
@@ -56,12 +57,21 @@ assert.match(enterEdit[1], /syncFSFromTarget\(\);/,
 const clickSel = js.match(/deselectAll\(true\); clearMulti\(\);[\s\S]{0,220}?tb\.classList\.add\('sel'\);[\s\S]{0,220}?selected=\{type:'text',el:tb\};[\s\S]{0,220}?syncFSFromTarget\(\);/);
 assert.ok(clickSel, 'clicking a text box must sync the toolbar to that box font size');
 
-// ── ② 글꼴 미리보기 문구 ────────────────────────────────────────────────
+// ── ② 글꼴 메뉴: 한국어·영어 이름을 해당 글꼴로 ────────────────────────────
 const build = js.match(/function buildFontMenu\(\)\{([\s\S]*?)\n        m\.dataset\.ready='1';/);
 assert.ok(build, 'buildFontMenu should exist');
-assert.match(build[1], /class="fi-sample" style="font-family:\$\{f\.css\}">abc 가나다</,
-  'the font preview sample must read exactly "abc 가나다"');
+assert.ok(build[1].indexOf('abc 가나다') < 0,
+  'the font menu must not use the sample text "abc 가나다" — show the font names instead');
+assert.match(build[1], /class="fi-sample" style="font-family:\$\{f\.css\}"/,
+  'the font names must be rendered in that font itself (fi-sample with font-family)');
+assert.match(build[1], /fi-ko/,
+  'the font menu must render the Korean font name (fi-ko)');
+assert.match(build[1], /fi-en/,
+  'the font menu must render the English font name (fi-en)');
 assert.ok(build[1].indexOf('한글') < 0,
-  'the font preview must not contain the word 한글');
+  'the font menu must not contain the word 한글');
+// FONTS 가 한국어(ko)·영어(en) 이름을 모두 들고 있어야 메뉴가 그릴 수 있다
+assert.match(js, /ko:'프리텐다드',en:'Pretendard'/,
+  'FONTS must carry Korean (ko) and English (en) names');
 
-console.log('Editor font-size contract: alt-scale keeps its size, preview reads "abc 가나다".');
+console.log('Editor font-size contract: alt-scale keeps its size, font menu shows ko+en names in each font.');
