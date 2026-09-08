@@ -26,8 +26,8 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-txtedge-'));
 process.env.SDY_BASE_DIR = TMP;
 for (const f of ['sdynotes.html', 'sdynotes.js', 'sdynotes.css']) fs.copyFileSync(path.join(ROOT, f), path.join(TMP, f));
   fs.mkdirSync(path.join(TMP, 'src'), { recursive: true });
-  for (const f of fs.readdirSync(path.join(REPO, 'src'))) {
-    const from = path.join(REPO, 'src', f), to = path.join(TMP, 'src', f);
+  for (const f of fs.readdirSync(path.join(ROOT, 'src'))) {
+    const from = path.join(ROOT, 'src', f), to = path.join(TMP, 'src', f);
     if (fs.statSync(from).isDirectory()) continue; // src/app 메가파트는 번들된 sdynotes.js 로만 제공
     fs.copyFileSync(from, to);
   }

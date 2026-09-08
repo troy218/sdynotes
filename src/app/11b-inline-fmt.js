@@ -98,6 +98,11 @@
                 if(block===host&&(FMT_BLOCK_TAGS.has(tag)||_isPosSpan(k))) continue;
                 if(tag==='BR'){ tokens.push({t:'br',node:k}); continue; }
                 if(FMT_ATOMIC_TAGS.has(tag)){ tokens.push({t:'atom',node:k,link:link||null}); continue; }
+                // 아직 입력 전인 타이핑 span(빈칸 또는 닻 ZWSP 1글자)은 원자 토큰으로
+                // 통째로 옮긴다 — 안을 토큰화하면 닻이 '진짜 글자'로 취급된다.
+                if(tag==='SPAN'&&k.classList&&k.classList.contains('sdy-type')&&_isTypeMarkOnly(k)){
+                    tokens.push({t:'type',node:k}); continue;
+                }
                 const hasInner=!!(String(k.textContent||'').length
                     ||(k.querySelector&&k.querySelector('img,br,svg,canvas,video,audio,iframe,hr')));
                 if(!hasInner){

@@ -7978,7 +7978,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     if(c&&el.type==='text'&&el.fontSize){
                         c.style.fontSize=el.fontSize+'px';
                         // 상자 안에서 '이 단어만' 키워 둔 글자도 같은 배율로 함께
-                        if(scaleInlineFS(c,f)) el.html=imathCollapse(stripWF(c.innerHTML));
+                        // (타이핑 닻도 함께 걷어낸다 — 문서에 남지 않게)
+                        if(scaleInlineFS(c,f)) el.html=_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
                     }
                 }
             }
@@ -9666,7 +9667,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(w.classList.contains('edit')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&
                (e.key.length===1||e.key==='Enter')) _ensurePendingTypingSpan(c);
         });
-        c.addEventListener('input',()=>{
+        // 한글 IME 조합 중에는 타이핑 span 안 텍스트 노드를 건드리지 않는다 —
+        // 조합 중인 노드를 고치면 조합이 끊겨 자모가 따로 확정되기 때문.
+        // 조합이 끝나는 순간(input isComposing=false·compositionend) 닻을 치운다.
+        c.addEventListener('compositionstart',()=>{ c._sdyComposing=true; });
+        c.addEventListener('compositionend',()=>{
+            c._sdyComposing=false;
+            try{ _cleanTypingMarks(c); }catch(e){}
+        });
+        c.addEventListener('input',e=>{
             w._caretV=(w._caretV||0)+1;   // 22.1 · 실시간 캐럿 좌표 캐시를 무효화하는 신호
             if(w.classList.contains('edit')){
                 commitEditSnapshot();   // 18.9 · 첫 타이핑 = 되돌리기 지점
@@ -9679,6 +9688,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             w.classList.toggle('empty',em);
             // 엔진이 입력 뒤 캐럿을 inline 밖으로 옮긴 경우 다음 입력 전에 다시 준비한다.
             if(w.classList.contains('edit')) _ensurePendingTypingSpan(c);
+            // 타이핑 span 에 실제 글자가 들어왔으면 눈에 안 보이는 닻(ZWSP)을 치운다.
+            // 조합 중에는 건드리지 않는다(위 compositionstart/end 참조).
+            if(!c._sdyComposing&&!(e&&e.isComposing)){ try{ _cleanTypingMarks(c); }catch(_e){} }
             clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
         });
         // 편집 상자에서 포커스를 벗어나면 즉시 반영 (자동저장 신뢰성)
@@ -9821,7 +9833,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
         const c=w.querySelector('.tb-content'); if(!c) return;
         const viewOnly=c.innerHTML===w._sdyViewHtml;
-        const html=viewOnly?el.html:imathCollapse(stripWF(c.innerHTML));
+        // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
+        const html=viewOnly?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
         const fs=parseFloat(c.style.fontSize)||16;
         // Formatting commands may have changed model-only fields (font, align,
         // cellBg, etc.) before calling us. Those edits still need a dirty page;
@@ -10268,7 +10281,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!w) return;
             const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
             const c=w.querySelector('.tb-content');
-            const nh=c.innerHTML===w._sdyViewHtml?el.html:imathCollapse(stripWF(c.innerHTML));
+            // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
+            const nh=c.innerHTML===w._sdyViewHtml?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
             const nfs=parseFloat(c.style.fontSize)||16;
             if(nh!==el.html||nfs!==el.fontSize){
                 el.html=nh; el.fontSize=nfs; changed=true;
@@ -15475,6 +15489,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(block===host&&(FMT_BLOCK_TAGS.has(tag)||_isPosSpan(k))) continue;
                 if(tag==='BR'){ tokens.push({t:'br',node:k}); continue; }
                 if(FMT_ATOMIC_TAGS.has(tag)){ tokens.push({t:'atom',node:k,link:link||null}); continue; }
+                // 아직 입력 전인 타이핑 span(빈칸 또는 닻 ZWSP 1글자)은 원자 토큰으로
+                // 통째로 옮긴다 — 안을 토큰화하면 닻이 '진짜 글자'로 취급된다.
+                if(tag==='SPAN'&&k.classList&&k.classList.contains('sdy-type')&&_isTypeMarkOnly(k)){
+                    tokens.push({t:'type',node:k}); continue;
+                }
                 const hasInner=!!(String(k.textContent||'').length
                     ||(k.querySelector&&k.querySelector('img,br,svg,canvas,video,audio,iframe,hr')));
                 if(!hasInner){
@@ -16399,6 +16418,117 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return true;
         }catch(e){ return false; }
     }
+    // ── 캐럿 서식 span 의 '닻(anchor)' ────────────────────────────────
+    // 빈 span 에 커서(요소,0)를 두면 Chrome·Safari 가 입력 위치를 부모(상자)로
+    // 정규화해 버린다. 그래서 글꼴·색을 바꾼 뒤 치는 글자가 span 밖(기본 서식)으로
+    // 들어갔다. span 안에 눈에 안 보이는 ZWSP 1글자를 넣고 그 뒤(텍스트,1)에
+    // 커서를 두면 입력이 반드시 span 안으로 들어간다. 닻은 실제 글자가 들어오면
+    // input 에서 바로 지우고, 저장할 때는 문자열 단계에서 걷어내 문서에 남기지 않는다.
+    // (조합 중에는 텍스트 노드를 건드리지 않는다 — IME 조합이 끊기기 때문.)
+    const _TYPE_MARK='\u200B';
+    function _typeMarkText(){ return document.createTextNode(_TYPE_MARK); }
+    // '아직 입력 전'인 타이핑 span 인가 (완전 빈칸 또는 닻 1글자만)
+    function _isTypeMarkOnly(span){
+        if(!span) return false;
+        try{
+            if(span.childElementCount) return false;
+            const t=String(span.textContent||'');
+            return t===''||t===_TYPE_MARK;
+        }catch(e){ return false; }
+    }
+    // 타이핑 span 안의 '모호하지 않은' 캐럿 위치를 돌려준다.
+    // 아직 입력 전이면 닻 뒤, 글자가 들어갔으면 그 맨 끝(둘 다 텍스트 노드 안).
+    function _typingCaretRange(span){
+        if(!_isTypeMarkOnly(span)){
+            const nr=document.createRange();
+            try{
+                const tw=document.createTreeWalker(span,NodeFilter.SHOW_TEXT);
+                let last=null,n;
+                while(n=tw.nextNode()) last=n;
+                if(last) nr.setStart(last,String(last.nodeValue||'').length);
+                else nr.setStart(span,span.childNodes.length);
+            }catch(e){ try{ nr.selectNodeContents(span); }catch(_e){} }
+            nr.collapse(false);
+            return nr;
+        }
+        let tn=span.firstChild;
+        if(!tn||tn.nodeType!==3){
+            tn=_typeMarkText();
+            span.insertBefore(tn,span.firstChild);
+        }else if(String(tn.nodeValue||'').charAt(0)!==_TYPE_MARK){
+            tn.nodeValue=_TYPE_MARK+String(tn.nodeValue||'');
+        }
+        const nr=document.createRange();
+        nr.setStart(tn,1); nr.collapse(true);
+        return nr;
+    }
+    // span 안의 닻을 지운다. 캐럿이 같은 텍스트 노드 안에 있으면 지운 글자 수만큼 당긴다.
+    function _stripTypeMarks(span){
+        if(!span) return;
+        let tw=null;
+        try{ tw=document.createTreeWalker(span,NodeFilter.SHOW_TEXT); }catch(e){ return; }
+        const nodes=[]; let n;
+        while(n=tw.nextNode()) nodes.push(n);
+        if(!nodes.length) return;
+        const s=window.getSelection();
+        let caret=null;
+        try{ caret=(s&&s.rangeCount)?s.getRangeAt(0):null; }catch(e){}
+        nodes.forEach(tn=>{
+            const v=String(tn.nodeValue||'');
+            if(v.indexOf(_TYPE_MARK)<0) return;
+            let cutS=0,cutE=0;
+            try{
+                if(caret&&caret.startContainer===tn)
+                    cutS=String(v.slice(0,caret.startOffset)).split(_TYPE_MARK).length-1;
+                if(caret&&!caret.collapsed&&caret.endContainer===tn)
+                    cutE=String(v.slice(0,caret.endOffset)).split(_TYPE_MARK).length-1;
+            }catch(e){}
+            tn.nodeValue=v.split(_TYPE_MARK).join('');
+            if(!caret) return;
+            try{
+                if(caret.startContainer===tn||(!caret.collapsed&&caret.endContainer===tn)){
+                    const r=caret.cloneRange();
+                    if(r.startContainer===tn) r.setStart(tn,Math.max(0,caret.startOffset-cutS));
+                    if(!caret.collapsed&&r.endContainer===tn) r.setEnd(tn,Math.max(0,caret.endOffset-cutE));
+                    s.removeAllRanges(); s.addRange(r);
+                    caret=r;
+                }
+            }catch(e){}
+        });
+    }
+    // 실제 글자가 들어온 타이핑 span 에서 닻을 치운다.
+    // 아직 입력 전(닻만)인 span 은 둔다 — 다음 글자의 자리 표시다.
+    function _cleanTypingMarks(host){
+        if(!host||!host.querySelector) return;
+        if(!_typingSpan&&!_pendingTyping) return;
+        try{
+            host.querySelectorAll('.sdy-type').forEach(sp=>{
+                if(_isTypeMarkOnly(sp)) return;
+                _stripTypeMarks(sp);
+            });
+        }catch(e){}
+    }
+    // 저장 문자열에서 타이핑 닻을 걷어낸다. 빈(닻뿐인) span 은 통째로 뺀다.
+    // 라이브 DOM 은 건드리지 않는다 — 편집 중 캐럿이 그 안에 있을 수 있다.
+    function _stripTypingMarkersHtml(html){
+        if(!html||html.indexOf('sdy-type')<0) return html;
+        const d=document.createElement('div');
+        d.innerHTML=html;
+        let touched=false;
+        try{
+            d.querySelectorAll('.sdy-type').forEach(sp=>{
+                const tw=document.createTreeWalker(sp,NodeFilter.SHOW_TEXT);
+                const nodes=[]; let n;
+                while(n=tw.nextNode()) nodes.push(n);
+                nodes.forEach(tn=>{
+                    const v=String(tn.nodeValue||'');
+                    if(v.indexOf(_TYPE_MARK)>=0){ tn.nodeValue=v.split(_TYPE_MARK).join(''); touched=true; }
+                });
+                if(!sp.textContent&&!sp.querySelector('img,br,svg,canvas')){ sp.remove(); touched=true; }
+            });
+        }catch(e){}
+        return touched?d.innerHTML:html;
+    }
     // 브라우저가 빈 span을 없애거나 입력 후 캐럿을 형제 위치로 옮겨도, 별도로 기억한
     // active state를 사용해 입력 직전 같은 스타일 wrapper를 다시 만든다.
     function _ensurePendingTypingSpan(host){
@@ -16414,7 +16544,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!inHost) return false;
         if(_typingSpan&&_typingSpan.isConnected&&host.contains(_typingSpan)&&
            (point===_typingSpan||_typingSpan.contains(point))){
-            savedCaret={c:host,r:live.cloneRange()};
+            // 텍스트 안(모호하지 않은 위치)이면 그대로 둔다. span 요소 자체를
+            // 가리키는 (요소,오프셋) 캐럿은 브라우저가 부모로 정규화해 다음 글자를
+            // 밖으로 빼 버리므로 span 안 '닻 뒤(아직 입력 전) / 맨 끝'으로 확정한다.
+            if(point.nodeType!==3){
+                try{ _restoreTypingRange(host,_typingCaretRange(_typingSpan)); }
+                catch(e){ savedCaret={c:host,r:live.cloneRange()}; }
+            }else savedCaret={c:host,r:live.cloneRange()};
             return true;
         }
         try{
@@ -16423,9 +16559,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             for(const k in p.styles) _setInlineProp(span,k,p.styles[k]);
             const r=live.cloneRange();
             r.insertNode(span);
-            const nr=document.createRange(); nr.selectNodeContents(span); nr.collapse(false);
             _typingSpan=span;
-            _restoreTypingRange(host,nr);
+            _restoreTypingRange(host,_typingCaretRange(span));
             return true;
         }catch(e){ return false; }
     }
@@ -16436,9 +16571,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{
             const s=window.getSelection();
             const dot=tn=>tn&&(tn===_typingSpan||(_typingSpan&&_typingSpan.contains(tn)));
-            // 빈 span 만 재사용한다. 이미 글자가 들어간 span 을 뒤집으면
-            // '앞으로 입력될 글자'뿐 아니라 '이미 입력된 글자'까지 바뀌기 때문.
-            const spanEmpty=_typingSpan&&!_typingSpan.textContent&&!_typingSpan.childElementCount;
+            // 닻만 있는 span 은 '아직 입력 전'이므로 재사용한다. 이미 글자가 들어간
+            // span 을 뒤집으면 '앞으로 입력될 글자'뿐 아니라 '이미 입력된 글자'까지
+            // 바뀌기 때문.
+            const spanEmpty=_typingSpan&&_isTypeMarkOnly(_typingSpan);
             let span=null;
             if(spanEmpty&&_typingSpan.isConnected&&c.contains(_typingSpan)){
                 const r0=s.rangeCount?s.getRangeAt(0):null;
@@ -16448,7 +16584,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(!span){
                 span=document.createElement('span');
                 span.className='sdy-type';
-                const src=(s.rangeCount?s.getRangeAt(0):t.r).cloneRange();
+                // 삽입 위치는 '상자 안 실제 캐럿'으로만 잡는다. 툴바 글자 크기칸처럼
+                // 상자 밖에 포커스가 있으면 live Selection 이 상자 밖을 가리킨다 —
+                // 그걸 그대로 쓰면 span 이 엉뚱한 곳에 들어가 서식이 증발한다.
+                let srcBase=null;
+                try{
+                    if(s.rangeCount){
+                        const lr=s.getRangeAt(0);
+                        const sc=lr.startContainer;
+                        if(sc===c||(c.contains&&c.contains(sc))) srcBase=lr;
+                    }
+                }catch(e){}
+                const src=(srcBase||t.r).cloneRange();
                 // 14.18.4 · 도중 스타일 변경: 새 빈 span 을 만들 때도 직전까지의
                 // 캐럿 서식(색·크기·굵기·밑줄·형광펜·부분 글꼴)을 모두 먼저 심어 둔다.
                 // 예전엔 font-family 만 옮겨 "크기만 바꾼 뒤 다시 색 변경" 같은 흐름에서
@@ -16458,15 +16605,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     : _typingStylesFromNode(src.startContainer,c);
                 for(const k in seed) _setInlineProp(span,k,seed[k]);
                 src.insertNode(span);
-                const nr=document.createRange();
-                nr.selectNodeContents(span); nr.collapse(true);
                 _typingSpan=span;
-                _restoreTypingRange(c,nr);
+                // 빈 (요소,0)이 아니라 '닻 뒤(텍스트,1)'에 캐럿을 둔다 — 그래야
+                // 다음 글자가 span 안으로 들어간다.
+                _restoreTypingRange(c,_typingCaretRange(span));
             }else{
                 // 캐럿을 서식 span 안으로 되돌린다 (툴바 입력창을 쓰다 돌아와도 이어짐)
-                const nr=document.createRange();
-                nr.selectNodeContents(span); nr.collapse(true);
-                _restoreTypingRange(c,nr);
+                _restoreTypingRange(c,_typingCaretRange(span));
             }
             const _removeStyleSafe=(name)=>{
                 // jsdom·일부 WebView 는 camelCase removeProperty 를 무시한다.
@@ -16484,7 +16629,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             //   sdy-type 빈 span 을 하나 남겨 두는 편이 안전하다. 여기서는 '진짜 빈
             //   스타일' + '아직 입력 전'일 때만 지우고, '이전 서식 차단용'으로 쓴
             //   중립값(400/normal)이 남아 있으면(즉 cssText 가 있으면) 반드시 유지한다.
-            if(span.classList.contains('sdy-type')&&!span.style.cssText&&!span.textContent&&!span.childElementCount){
+            if(span.classList.contains('sdy-type')&&!span.style.cssText&&_isTypeMarkOnly(span)){
                 span.remove(); _typingSpan=null; savedCaret=null; _pendingTyping=null;
                 return true;
             }
@@ -16572,7 +16717,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         box.innerHTML=html||'';
         box.querySelectorAll('br').forEach(b=>b.replaceWith('\n'));
         box.querySelectorAll('div,p,li').forEach(n=>{ n.after('\n'); });
-        const text=(box.textContent||'').replace(/\n{3,}/g,'\n\n').replace(/[ \t]+\n/g,'\n').trim();
+        const text=(box.textContent||'').replace(/\n{3,}/g,'\n\n').replace(/[ \t]+\n/g,'\n').replace(/\u200B/g,'').trim();
         return esc(text).replace(/\n/g,'<br>');
     }
     // 14.16 · 툴바의 글자 크기칸과 '지금 보고 있는 글자'를 맞추는 장치
