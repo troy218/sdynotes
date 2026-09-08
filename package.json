@@ -56,6 +56,7 @@
     "test:stkentry": "node test/sticker_entry_contract.mjs && node test/sticker_entry_runtime.mjs",
     "test:stksvg": "node test/sticker_svg_contract.mjs && node test/sticker_svg_runtime.mjs",
     "test:draw": "node test/editor_draw_contract.mjs",
+    "test:rotmove": "node test/editor_rotate_move_runtime.mjs",
     "test:export": "node test/export_align_contract.mjs && node test/export_align_runtime.mjs",
     "test:live": "node test/live_presence_contract.mjs",
     "test:editor": "node test/editor_format_runtime.mjs && node test/editor_draw_contract.mjs",
