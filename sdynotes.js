@@ -5997,7 +5997,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             },12000);
         }
         try{ closeFind(); clearActiveTbl(); cancelTablePlacement(); closePanel(); closePin();
-             if(wfOn) wfOff(); wfStats=[]; wfMap=null;
+             if(wfOn) wfOff(); wfStats=[]; wfMap=null; wfCand=[]; wfSel=new Map(); wfExtra=new Set();
              if(pinMode) togglePinMode(); }catch(e){}
         const isLocal=String(nb.id).startsWith('local_');
         let memoFor=null;
@@ -7084,6 +7084,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
     }
 /* APP-PART:06a-page-virtual.js:END */
+// 14.39.2 verified: fast-scroll ghosting fix present (translateZ + isolation + overflow-anchor)
+// PR record for arena/01a0805c-sdynotes - fast-scroll fix verified
 
 /* === src/app/06b-read-layer.js ===
    읽기 우선 레이어 · 고화질 배경 · 자원 정리
@@ -10217,11 +10219,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(wfOn) setTimeout(()=>{
             try{
                 wfAnalyze();
-                const max=wfStats.length?wfStats[0].n:1;
                 list.forEach(w=>{
                     if(!w||w.classList.contains('edit')) return;
                     const c=w.querySelector('.tb-content');
-                    if(c&&!c.querySelector('.wf')) wfPaintNode(c,max);
+                    if(c&&!c.querySelector('.wf')) wfPaintNode(c);
                 });
                 if(sidePanel==='words') renderPanel();
             }catch(e){}
@@ -11451,7 +11452,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
     }
     // 중요어 분석 상태 (아래에서 쓰는 함수보다 먼저 선언 — TDZ 방지)
+    //  wfMin  : 후보로 칠 최소 등장 횟수 (문서 길이에 따라 wfFloorN 이 자동 결정)
+    //  wfTopN : 실제로 색칠할 중요어 개수 상한 (14.39.3 · 기본 8개 · 3~24 조절)
+    //  wfSel  : 고른 중요어 Map(낱말 → 순위) · wfExtra : 손으로 짚어 본 낱말
     let wfOn=false, wfStats=[], wfMap=null, wfPick=null, wfMin=2;
+    let wfTopN=8, wfSel=new Map(), wfExtra=new Set(), wfCand=[], wfTotal=0;
+    let wfAlias=new Map();   // 한 글자 차이로 쪼개진 낱말을 이어 주는 별칭
     let activeTbl=null;            // {pageIdx,tid,r,c}
     let tblCellSelection=null;     // {pageIdx,tid,r0,c0,r1,c1} 직사각형 셀 범위
     let tblCellPick=null;          // 포인터로 범위를 끄는 동안의 앵커
@@ -13175,9 +13181,19 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     // ---------- ⑩ 자동 백업 내려받기 ----------
     // ==========================================================
-    //  단어 빈도 분석 — 중요어 히트맵 (Task 31)
-    //  자주 나온 낱말일수록 진한 파랑으로 물들여, 문서의 핵심어를
-    //  한눈에 알아볼 수 있게 한다. (화면 표시 전용 · 원문 변경 없음)
+    //  단어 빈도 분석 — 중요어 색칠 (Task 31 · 14.39.3 에서 '산만함' 수정)
+    //  문서의 핵심어를 한눈에 알아볼 수 있게 물들인다.
+    //  (화면 표시 전용 · 원문 변경 없음)
+    //
+    //  14.39.3 · 사용자 보고 "너무 산만하다. 진짜 중요한 단어만".
+    //   예전에는 '두 번 이상 나온 모든 낱말'을 여섯 갈래 색·다섯 갈래 굵기로
+    //   칠했다. 조금만 긴 노트면 수백 개 낱말이 알록달록해져 본문을 읽을 수
+    //   없었다. 이제 세 가지를 바꿨다.
+    //     ① 고르는 기준 — 빈도만이 아니라 '문서 여기저기 퍼진 정도'와
+    //        '낱말의 구체성'을 함께 점수로 매긴다(wfScore).
+    //     ② 개수 상한  — 점수 상위 wfTopN 개(기본 8개)만 칠한다. 문서가
+    //        길수록 최소 등장 횟수 기준도 저절로 올라간다(wfFloorN).
+    //     ③ 색 단계   — 여섯 색·다섯 굵기 → 3단계로 줄여 눈이 편하게.
     // ==========================================================
     // 화면 색칠용 <span class="wf"> 를 걷어내 원래 글자로 되돌린다.
     // (저장 경로에서 항상 통과시켜 색이 문서에 스며들지 않게 한다)
@@ -13200,9 +13216,19 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         '우리','저희','당신','자신','여기','거기','저기','오늘','내일','어제','정말','아주','너무',
         '이것','그것','저것','이때','그때','경우','가지','통한','따라','따른','관련','기타','이상','이하',
         '때문','대하','위하','그림','다음','이번','지금','모두','각각','서로','다시','먼저','또','즉',
+        // 14.39.3 · 뜻이 옅어 칠해도 도움이 안 되던 일반 명사·부사를 더 걸러 낸다
+        '내용','부분','정도','자체','전체','여러','하나','대부분','번째','사실','아래','다만',
+        '중요','필요','다양','간단','실제','바로','그냥','조금','계속','항상','일반',
+        // 두 글자짜리 활용형·관형형 — 아래 wfPredicate 가 세 글자부터 걸러 내므로 여기서 받는다
+        '하는','되는','있는','없는','같은','다른','많은','적은','높은','낮은','좋은','작은',
+        '위한','의한','인한','관한','보는','오는','가는','주는','받는','쓰는','되기','하기',
+        '보면','보니','본다','살펴','알아','나타','들어','거쳐','이루','만들','다루','두고',
+        '함께','받아','적어','두어','보아','와서','가서','대로','만큼','뿐','채로','한편',
         'the','and','for','are','but','not','you','all','any','can','has','had','was','were',
         'this','that','with','from','have','will','your','they','their','then','than','into',
-        'been','when','what','which','also','more','some','such','only','over','very','just'
+        'been','when','what','which','also','more','some','such','only','over','very','just',
+        'about','these','those','there','here','each','other','using','used','make','made',
+        'many','much','most','both','same','between','because','however','therefore','while'
     ]);
 
     // 한글은 조사를 떼어 어간을 얻는다 (형태소 분석기 없이 쓰는 간단한 방법)
@@ -13217,7 +13243,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                    '하였다','되었다','하였고','하였으며','시켰다','시키는','하려는','하려고','하면서',
                    '하기로','했지만','하지만','했었다','되어야','해야만',
                    '했다','한다','하고','하는','하며','하면','해서','해야','했던','하러','하자','하지',
-                   '되는','되어','된다','됐다','되고','되며','있다','있는','없다','없는'];
+                   '되는','되어','된다','됐다','되고','되며','있다','있는','없다','없는',
+                   '하여','시켜','시킨',
+                   // 14.39.3 · 한 글자 어미도 뗀다 (기록해 → 기록 · 제한된 → 제한 · 가능할 → 가능)
+                   //   세 글자 이상일 때만 떼므로 '이해'·'포함'·'북한' 같은 두 글자 명사는 그대로다.
+                   '해','돼','한','된','할','될','함','됨'];
     // 그 자체가 통째로 기능어인 말 (조사·어미를 떼면 껍데기만 남는 것)
     const WF_FUNC=new Set(['것이다','것이','것은','것을','수가','수는','수를','있다','없다',
         '되었습니다','하였습니다','합니다','됩니다','했습니다','이었다','이라','에서','으로']);
@@ -13226,12 +13256,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(WF_FUNC.has(w)) return '';        // 통째로 버린다
         let prev=w;
         // 어미 → 조사 순으로 각 1회 (분석하였다 → 분석)
+        // 14.39.3 · 조사는 '한 번만' 뗀다. 두 번 떼면 '캘빈회로가 → 캘빈회로 → 캘빈회'
+        //   처럼 멀쩡한 명사의 끝 글자(로·과·와…)까지 잘려 엉뚱한 낱말이 보였다.
+        let josaDone=false;
         for(let pass=0;pass<2;pass++){
             for(const v of WF_VERB){
                 if(prev.length>v.length+1 && prev.endsWith(v)){ prev=prev.slice(0,-v.length); break; }
             }
+            if(josaDone) continue;
             for(const j of WF_JOSA){
-                if(prev.length>j.length+1 && prev.endsWith(j)){ prev=prev.slice(0,-j.length); break; }
+                if(prev.length>j.length+1 && prev.endsWith(j)){
+                    prev=prev.slice(0,-j.length); josaDone=true; break;
+                }
             }
         }
         // 복수 접미사 '들' (학생들 → 학생)
@@ -13249,13 +13285,30 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     // 뜻이 옅어 세어도 의미 없는 말 (조사를 뗀 뒤에도 남는 것들)
     const WF_THIN=new Set(['것','수','때','곳','점','바','줄','things','thing','way','ways']);
+    // 14.39.3 · 용언(동사·형용사)의 활용형은 '중요어'가 아니다.
+    //   '살펴보면'·'필요하다'·'중요한' 같은 말이 상위에 올라와 본문을 어지럽혔다.
+    //   낱말 끝만 보고 걸러 낸다 — 명사를 잘못 자르지 않게 두 글자 어미 위주로,
+    //   한 글자는 오탐이 거의 없는 '다/요/죠' 와 관형형 '한/된' 만 쓴다.
+    //   (보고서·이미지·냉장고 처럼 '서/지/고'로 끝나는 명사는 건드리지 않는다)
+    const WF_PRED2=['보면','하면','되면','으면','다면','려면','하고','되고','하며','되며',
+                    '하여','되어','해서','돼서','하지','되지','한다','된다','지만','는데',
+                    '니까','면서','아서','어서','토록','도록','거나','든지','으니','더니',
+                    '었고','았고','했고','였고','다고','라고','나고','지고','내고','오고',
+                    '하게','되게','시켜','시킨','기에','으로써'];
+    function wfPredicate(w){
+        if(!/[가-힣]$/.test(w)) return false;
+        if(w.length>=2 && /[다요죠]$/.test(w)) return true;              // 필요하다·있어요
+        if(w.length>=3 && WF_PRED2.some(t=>w.endsWith(t))) return true;  // 살펴보면·검토하지만
+        if(w.length>=3 && /[한된]$/.test(w)) return true;                // 중요한·제한된
+        return false;
+    }
     function wfValid(w){
         if(!w) return false;
         const s=w.toLowerCase();
         if(WF_STOP.has(s)||WF_THIN.has(s)) return false;
         if(/^[0-9]+$/.test(s)) return false;             // 숫자만
         if(/^[0-9]+[a-z가-힣]?$/.test(s)) return false;   // 1, 2쪽 같은 것
-        if(/[가-힣]/.test(w)) return w.length>=2;         // 한글은 2글자 이상
+        if(/[가-힣]/.test(w)) return w.length>=2 && !wfPredicate(w);   // 한글은 2글자 이상
         return /[a-z]/i.test(w) && w.length>=3;           // 영문은 3글자 이상
     }
     // 글자에서 낱말을 뽑는다 → [{raw, key, start}]
@@ -13265,97 +13318,146 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         let m;
         while((m=re.exec(text))){
             const raw=m[0];
-            const key=wfStem(raw).toLowerCase();
+            const key=wfKey(wfStem(raw).toLowerCase());
             if(wfValid(wfStem(raw))) out.push({raw,key,start:m.index,len:raw.length});
         }
         return out;
     }
 
-    // 문서 전체를 훑어 낱말별 등장 횟수를 센다
+    // 문서 전체를 훑어 낱말별 등장 횟수와 '퍼진 정도'(몇 쪽에 걸쳐 나오나)를 센다
     function wfAnalyze(){
-        const count=new Map(), label=new Map();
-        doc.pages.forEach(pg=>{
+        const count=new Map(), label=new Map(), spread=new Map();
+        wfTotal=0; wfAlias=new Map();     // 별칭은 이번 분석에서 새로 만든다
+        ((doc&&doc.pages)||[]).forEach((pg,pi)=>{
             (pg.els||[]).forEach(el=>{
                 if(el.type!=='text') return;
                 wfTokens(elPlainText(el)).forEach(t=>{
+                    wfTotal++;
                     count.set(t.key,(count.get(t.key)||0)+1);
+                    let ps=spread.get(t.key);
+                    if(!ps){ ps=new Set(); spread.set(t.key,ps); }
+                    ps.add(pi);
                     // 보여 줄 이름은 조사를 뗀 기본형 (보고서를 → 보고서)
                     if(!label.has(t.key)) label.set(t.key,wfStem(t.raw));
                 });
             });
         });
+        wfMergeSplits(count,label,spread);
         wfStats=[...count.entries()]
-            .map(([k,n])=>({key:k,word:label.get(k),n}))
-            .sort((a,b)=>b.n-a.n||a.word.localeCompare(b.word));
+            .map(([k,n])=>{
+                const s={key:k,word:label.get(k),n,pages:(spread.get(k)||{size:1}).size};
+                s.score=wfScore(s);
+                return s;
+            })
+            // 중요도(점수) 순 — 같으면 많이 나온 순, 그래도 같으면 가나다순
+            .sort((a,b)=>b.score-a.score||b.n-a.n||a.word.localeCompare(b.word));
         wfMap=new Map(wfStats.map(s=>[s.key,s.n]));
-        wfBuildLevels();
+        wfSelect();
         return wfStats;
     }
-    // 횟수 → 파랑 농도 (적으면 연하게, 많으면 진하게)
-    // 등장 횟수 → 0~1 단계값.
-    // 횟수만 쓰면 '5번'과 '4번'이 거의 같은 색이 되어 구분이 안 된다.
-    // → 실제 존재하는 '횟수의 종류'를 줄 세워 단계를 고르게 벌린다.
-    let wfLevels=[];              // [2,3,4,6,9] 처럼 오름차순
-    function wfBuildLevels(){
-        wfLevels=[...new Set(wfStats.filter(s=>s.n>=wfMin).map(s=>s.n))].sort((a,b)=>a-b);
+    // 14.39.3 · 끝 글자가 조사처럼 보여 한 낱말이 둘로 쪼개지는 일을 막는다.
+    //   '캘빈회로'(그대로) 와 '캘빈회로가'(조사를 한 번 뗀 것) 처럼 한 글자 차이로
+    //   갈린 짝은 더 많이 나온 쪽으로 합치고, 나머지는 별칭(wfAlias)으로 이어 준다.
+    const WF_JOSA1=['의','를','을','이','가','은','는','에','도','만','로','과','와','랑'];
+    function wfMergeSplits(count,label,spread){
+        [...count.keys()].forEach(k=>{
+            if(!/[가-힣]$/.test(k)) return;
+            WF_JOSA1.forEach(j=>{
+                const alt=k+j;
+                if(!count.has(k)||!count.has(alt)) return;
+                // 동점이면 '잘리지 않은 쪽'(긴 낱말)을 남긴다 — 캘빈회 ← 캘빈회로
+                const keep=count.get(alt)>=count.get(k)?alt:k, drop=keep===k?alt:k;
+                count.set(keep,count.get(keep)+count.get(drop));
+                const ps=spread.get(drop);
+                if(ps&&spread.get(keep)) ps.forEach(p=>spread.get(keep).add(p));
+                count.delete(drop); spread.delete(drop); label.delete(drop);
+                wfAlias.set(drop,keep);
+            });
+        });
     }
-    function wfTone(n){
-        if(!wfLevels.length) return 1;
-        // 단계가 하나뿐이면 가장 진하게
-        if(wfLevels.length===1) return 1;
-        const i=wfLevels.indexOf(n);
-        const rank=i<0?wfLevels.length-1:i;
-        // 순위를 0~1 로 고르게 편다 (최저=연한 하늘, 최고=짙은 남색)
-        let t=rank/(wfLevels.length-1);
-        // 단계가 많으면 아래쪽이 몰려 보이므로 살짝 밀어 올려 대비를 키운다
-        if(wfLevels.length>4) t=Math.pow(t,0.78);
-        return t;
+    // 별칭을 따라가 '진짜 쓰는 열쇠말'을 찾는다 (분석 중에는 별칭이 비어 있어 그대로)
+    function wfKey(k){
+        let v=k;
+        for(let i=0;i<4&&wfAlias.has(v);i++) v=wfAlias.get(v);
+        return v;
     }
-    // 0~1 → 파랑 그라데이션.
-    //  · 가장 적게 나온 말  = 아주 연한 하늘색
-    //  · 가장 많이 나온 말  = 짙은 남색
-    // 사이 단계도 확실히 구분되도록 밝기를 큰 폭으로 벌린다.
-    // (완전한 검정까지는 가지 않아 본문 검은 글자와 구분된다)
-    const WF_RAMP=[
-        [0.00,[168,214,255]],   // 아주 연한 하늘
-        [0.20,[109,178,250]],   // 하늘
-        [0.40,[56,130,246]],    // 파랑
-        [0.60,[29,86,214]],     // 진한 파랑
-        [0.80,[18,48,140]],     // 감청
-        [1.00,[10,22,72]]       // 짙은 남색
+    // 중요도 점수 — '몇 번 나왔나'만 보지 않는다.
+    //   ① 빈도            자주 나온 말
+    //   ② 퍼진 정도        한 문단에만 몰린 말보다 문서 전체를 관통하는 말이 주제어다
+    //   ③ 낱말의 구체성    두 글자로 뭉뚱그린 말보다 긴 말(전문 용어·고유명사)이 핵심어다
+    function wfScore(s){
+        const pages=Math.max(1,s.pages||1);
+        const spread=1+Math.log2(pages)*0.45;
+        const w=s.word||'';
+        let body;
+        if(/[가-힣]/.test(w)) body = w.length>=4?1.30 : w.length===3?1.15 : 1.00;
+        else                  body = w.length>=7?1.25 : w.length>=5?1.10 : 0.95;
+        return s.n*spread*body;
+    }
+    // 최소 등장 횟수 — 문서가 길수록 '두 번 나왔다'는 사실만으로는 중요하지 않다.
+    // 다만 문서가 길어도 최다 낱말이 드물게 나오면 기준을 도로 낮춘다.
+    function wfFloorN(){
+        const base = wfTotal>=4000?5 : wfTotal>=1500?4 : wfTotal>=500?3 : 2;
+        const top  = wfStats.reduce((m,s)=>Math.max(m,s.n),0);
+        return Math.max(2,Math.min(base,Math.max(2,Math.ceil(top*0.3))));
+    }
+    // 색칠할 낱말을 고른다 — 여기가 '산만함'을 막는 곳이다.
+    //  · 기준(wfMin) 이상 나온 말만 후보로 두고
+    //  · 그 가운데 점수 상위 wfTopN 개만 칠한다 (wfSel: 낱말 → 순위)
+    function wfSelect(){
+        wfMin=wfFloorN();
+        wfCand=wfStats.filter(s=>s.n>=wfMin);
+        wfSel=new Map();
+        wfCand.slice(0,Math.max(1,wfTopN)).forEach((s,i)=>wfSel.set(s.key,i));
+        return wfSel;
+    }
+    // 그 낱말을 화면에 칠할까? (자동으로 고른 중요어 + 손으로 집어 본 낱말)
+    function wfPaintable(key){ return wfSel.has(key)||wfExtra.has(key); }
+    // 고른 낱말만 3단계로 — 색이 여섯 갈래로 흩어지면 그것 자체가 산만하다.
+    //   2단계(상위 ¼) 짙은 남색 · 1단계 파랑 · 0단계 차분한 청회색
+    const WF_TIER=[
+        {c:'rgb(96,141,201)', w:600},
+        {c:'rgb(37,99,235)',  w:700},
+        {c:'rgb(17,52,138)',  w:800}
     ];
-    function wfColor(n,max){
-        const t=wfTone(n);
-        let a=WF_RAMP[0], b=WF_RAMP[WF_RAMP.length-1];
-        for(let i=0;i<WF_RAMP.length-1;i++){
-            if(t>=WF_RAMP[i][0]&&t<=WF_RAMP[i+1][0]){ a=WF_RAMP[i]; b=WF_RAMP[i+1]; break; }
-        }
-        const k=(t-a[0])/Math.max(.0001,(b[0]-a[0]));
-        const rgb=[0,1,2].map(i=>Math.round(a[1][i]+(b[1][i]-a[1][i])*k));
-        // 굵기도 함께 5단계로 → 색과 겹쳐 차이가 더 또렷해진다
-        const w = t>=.85?900 : t>=.65?800 : t>=.45?700 : t>=.22?600 : 500;
-        return {c:`rgb(${rgb.join(',')})`, w, t};
+    function wfTier(key){
+        if(!wfSel.has(key)) return 0;          // 손으로 더 집은 낱말은 가장 옅게
+        const i=wfSel.get(key), n=Math.max(1,wfSel.size);
+        if(i<Math.max(1,Math.round(n*0.25))) return 2;
+        if(i<Math.max(2,Math.round(n*0.60))) return 1;
+        return 0;
+    }
+    function wfColor(key){
+        const t=wfTier(key), s=WF_TIER[t];
+        return {c:s.c, w:s.w, t};
     }
 
     function toggleWordFreq(){ wfOn?wfOff():wfRun(); }
     function wfRun(){
         if(!doc){ return; }
         commitEditingText(); deselectAll(true); clearMulti();
+        // 지난번에 고른 '몇 개만 칠할지'를 이어서 쓴다
+        try{ const v=+localStorage.getItem('sdy_wf_top'); if(v>=3&&v<=24) wfTopN=v; }catch(e){}
+        wfExtra=new Set();
         wfAnalyze();
-        const rep=wfStats.filter(s=>s.n>=wfMin);
         if(!wfStats.length){ toast('분석할 글자가 없습니다',2000); return; }
         wfOn=true; wfPick=null;
         document.getElementById('editorView').classList.add('wf-on');
         document.querySelectorAll('.js-wf').forEach(b=>b.classList.add('active'));
         wfPaint();
         document.getElementById('wfBar').classList.add('show');
-        // 심플하게: 가장 많이 나온 말 하나만
-        document.getElementById('wfInfo').innerHTML=
-            `<b>${esc(wfStats[0].word)}</b> ${wfStats[0].n}번 · 낱말 ${rep.length}개`;
+        // 심플하게: 가장 중요한 말 하나 + 칠한 개수
+        const top=wfCand[0]||wfStats[0];
+        document.getElementById('wfInfo').innerHTML= wfSel.size
+            ? `<b>${esc(top.word)}</b> ${top.n}번 · 중요어 ${wfSel.size}개`
+            : '되풀이되는 낱말이 없어 칠할 중요어가 없습니다';
+        if(!wfSel.size) toast('되풀이해 나온 낱말이 없어 칠할 중요어가 없습니다',2400);
+        const lb=document.getElementById('wfTopLbl');
+        if(lb) lb.textContent=wfTopN+'개';
         if(sidePanel!=='words') openPanel('words'); else renderPanel();
     }
     function wfOff(){
-        wfOn=false; wfPick=null;
+        wfOn=false; wfPick=null; wfExtra=new Set();
         document.getElementById('editorView').classList.remove('wf-on');
         document.querySelectorAll('.js-wf').forEach(b=>b.classList.remove('active'));
         document.getElementById('wfBar').classList.remove('show');
@@ -13374,12 +13476,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!doc||!wfMap||!wfOn) return;
         const pg=doc.pages[pi]; if(!pg) return;
         const paper=paperAt(pi); if(!paper) return;
-        const max=wfStats.length?wfStats[0].n:1;
         (pg.els||[]).forEach(el=>{
             if(el.type!=='text') return;
             const node=paper.querySelector(`.tb[data-id="${el.id}"] .tb-content`);
             if(!node) return;
-            wfPaintNode(node,max);
+            wfPaintNode(node);
         });
     }
     function wfPaint(){
@@ -13389,7 +13490,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 나머지는 그 쪽이 다시 그려질 때(renderPageEls) 자동으로 칠해진다.
         Array.from(mountedShells.keys()).forEach(pi=>wfPaintPage(pi));
     }
-    function wfPaintNode(root,max){
+    function wfPaintNode(root){
         const texts=[];
         const walk=(n)=>{
             for(const ch of Array.from(n.childNodes)){
@@ -13400,16 +13501,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         walk(root);
         texts.forEach(tn=>{
             const text=tn.nodeValue;
-            const toks=wfTokens(text).filter(t=>(wfMap.get(t.key)||0)>=wfMin);
+            // 14.39.3 · '기준 횟수를 넘은 모든 낱말'이 아니라 '고른 중요어'만 칠한다
+            const toks=wfTokens(text).filter(t=>wfPaintable(t.key));
             if(!toks.length) return;
             const frag=document.createDocumentFragment();
             let at=0;
             toks.forEach(t=>{
                 if(t.start>at) frag.appendChild(document.createTextNode(text.slice(at,t.start)));
                 const n=wfMap.get(t.key)||0;
-                const col=wfColor(n,max);
+                const col=wfColor(t.key);
                 const s=document.createElement('span');
-                s.className='wf'+(col.t>=.75?' top':col.t>=.45?' hot':'')
+                s.className='wf'+(col.t>=2?' top':col.t>=1?' hot':'')
                             +(wfPick===t.key?' pick':'');
                 s.dataset.k=t.key;
                 s.style.color=col.c;
@@ -13425,8 +13527,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     // 특정 낱말만 노랗게 집어내기
     function wfPickWord(key){
-        if(!wfOn) wfRun();
+        if(!wfOn){ wfRun(); }
         wfPick=(wfPick===key)?null:key;
+        // 자동으로 안 고른 낱말을 목록에서 집으면 '그 낱말만' 임시로 더 칠한다.
+        // (기본 색칠은 그대로 적게 두고, 궁금한 낱말은 짚어 볼 수 있게)
+        const wantExtra=(wfPick&&!wfSel.has(wfPick))?wfPick:null;
+        const hadExtra=[...wfExtra][0]||null;
+        if(wantExtra!==hadExtra){
+            wfExtra=wantExtra?new Set([wantExtra]):new Set();
+            if(wfOn){ wfClear(); wfPaint(); }
+        }
         document.querySelectorAll('.wf').forEach(s=>
             s.classList.toggle('pick', !!wfPick && s.dataset.k===wfPick));
         if(sidePanel==='words') renderPanel();
@@ -13441,33 +13551,45 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(s) toast(`'${s.word}' · 문서에서 ${s.n}번 나왔습니다`,2400);
         }
     }
-    // 최소 등장 횟수 조절
-    function wfSetMin(v){
-        wfMin=Math.max(1,Math.min(9,v));
-        wfBuildLevels();
-        if(wfOn){ wfClear(); wfPaint(); renderPanel(); }
-        const lb=document.getElementById('wfMinLbl');
-        if(lb) lb.textContent=wfMin+'번';
+    // 몇 개나 칠할지 조절 (3~24개) — 적을수록 본문이 깨끗하다
+    function wfSetTop(v){
+        const next=Math.max(3,Math.min(24,Math.round(v)||3));
+        if(next===wfTopN) return;
+        wfTopN=next;
+        try{ localStorage.setItem('sdy_wf_top',String(wfTopN)); }catch(e){}
+        wfSelect();
+        if(wfOn){
+            wfClear(); wfPaint();
+            const top=wfCand[0];
+            const info=document.getElementById('wfInfo');
+            if(info&&top) info.innerHTML=`<b>${esc(top.word)}</b> ${top.n}번 · 중요어 ${wfSel.size}개`;
+        }
+        if(sidePanel==='words') renderPanel();
+        const lb=document.getElementById('wfTopLbl');
+        if(lb) lb.textContent=wfTopN+'개';
     }
     // ---------- 패널 ----------
     function panelWords(){
         if(!doc) return '';
-        if(!wfStats.length) wfAnalyze();
-        const list=wfStats.filter(s=>s.n>=wfMin);
-        const max=wfStats.length?wfStats[0].n:1;
+        if(!wfStats.length) wfAnalyze(); else wfSelect();
+        const picked=wfCand.slice(0,wfTopN);            // 실제로 칠하는 중요어
+        const rest=wfCand.slice(wfTopN,wfTopN+40);      // 그 밖에 자주 나온 낱말
+        const max=picked.length?picked[0].n:1;
         let html=`<div class="wf-top">
                     <button class="wf-toggle${wfOn?' on':''}" onclick="toggleWordFreq()">
                       <i class="ri-${wfOn?'eye-off-line':'contrast-2-line'}"></i>${wfOn?'색칠 끄기':'색칠하기'}</button>
-                    <span class="wf-min">
-                      <button class="sp-mini" onclick="wfSetMin(wfMin-1)">−</button>
-                      <b>${wfMin}</b>번↑
-                      <button class="sp-mini" onclick="wfSetMin(wfMin+1)">＋</button>
+                    <span class="wf-min" title="색칠할 중요어 개수">
+                      <button class="sp-mini" onclick="wfSetTop(wfTopN-2)">−</button>
+                      <b>${wfTopN}</b>개
+                      <button class="sp-mini" onclick="wfSetTop(wfTopN+2)">＋</button>
                     </span>
                   </div>`;
-        if(!list.length)
+        if(!picked.length)
             return html+'<div class="sp-empty">여러 번 나온 낱말이 없습니다</div>';
-        list.slice(0,60).forEach((s,i)=>{
-            const col=wfColor(s.n,max);
+        html+=`<div class="sp-item sp-dim">${wfMin}번 이상 나온 ${wfCand.length}개 가운데 `
+             +`중요한 ${picked.length}개만 칠합니다</div>`;
+        picked.forEach((s,i)=>{
+            const col=wfColor(s.key);
             html+=`<div class="wf-item${wfPick===s.key?' on':''}" onclick="wfPickWord('${s.key}')">
                      <span class="bar" style="width:${Math.max(6,(s.n/max)*100)}%"></span>
                      <span class="wf-rank">${i+1}</span>
@@ -13475,7 +13597,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                      <span class="c">${s.n}</span>
                    </div>`;
         });
-        if(list.length>60) html+=`<div class="sp-item sp-dim">… 외 ${list.length-60}개</div>`;
+        if(rest.length){
+            html+=`<div class="sp-item sp-dim">그 밖에 자주 나온 낱말 — 누르면 그 낱말만 짚어 줍니다</div>`;
+            rest.forEach(s=>{
+                html+=`<div class="wf-item dim${wfPick===s.key?' on':''}" onclick="wfPickWord('${s.key}')">
+                         <span class="w">${esc(s.word)}</span>
+                         <span class="c">${s.n}</span>
+                       </div>`;
+            });
+            if(wfCand.length>wfTopN+40)
+                html+=`<div class="sp-item sp-dim">… 외 ${wfCand.length-wfTopN-40}개</div>`;
+        }
         return html;
     }
 

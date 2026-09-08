@@ -66,7 +66,7 @@
             },12000);
         }
         try{ closeFind(); clearActiveTbl(); cancelTablePlacement(); closePanel(); closePin();
-             if(wfOn) wfOff(); wfStats=[]; wfMap=null;
+             if(wfOn) wfOff(); wfStats=[]; wfMap=null; wfCand=[]; wfSel=new Map(); wfExtra=new Set();
              if(pinMode) togglePinMode(); }catch(e){}
         const isLocal=String(nb.id).startsWith('local_');
         let memoFor=null;

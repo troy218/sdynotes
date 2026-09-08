@@ -143,11 +143,10 @@
         if(wfOn) setTimeout(()=>{
             try{
                 wfAnalyze();
-                const max=wfStats.length?wfStats[0].n:1;
                 list.forEach(w=>{
                     if(!w||w.classList.contains('edit')) return;
                     const c=w.querySelector('.tb-content');
-                    if(c&&!c.querySelector('.wf')) wfPaintNode(c,max);
+                    if(c&&!c.querySelector('.wf')) wfPaintNode(c);
                 });
                 if(sidePanel==='words') renderPanel();
             }catch(e){}

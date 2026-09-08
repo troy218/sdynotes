@@ -1272,10 +1272,12 @@
         }
         .sp-ord button:hover{background:var(--accent);color:#fff;}
 
-        /* ===== 단어 빈도 분석 (중요어 히트맵) ===== */
+        /* ===== 단어 빈도 분석 (중요어 색칠) =====
+           14.39.3 · '산만함' 수정 — 배경 강조는 최상위 단계에만 옅게 준다.
+           (예전엔 두 단계 모두 진한 배경이라 본문이 얼룩덜룩했다) */
         .wf{border-radius:2px;padding:0 1px;transition:background .15s;}
-        .wf.hot{background:rgba(37,99,235,.10);}
-        .wf.top{background:rgba(23,58,150,.18);}
+        .wf.hot{background:transparent;}
+        .wf.top{background:rgba(23,58,150,.09);}
         .wf.pick{background:rgba(250,204,21,.55);box-shadow:0 0 0 1px rgba(202,138,4,.6);}
         .editor.wf-on .tb-content{cursor:default;}
         .editor.wf-on .tb-content a{color:inherit!important;}
@@ -1290,7 +1292,7 @@
         .wf-bar b{color:var(--text1);}
         .wf-bar .scale{
             display:inline-block;width:78px;height:9px;border-radius:3px;
-            background:linear-gradient(90deg,#9ec9f7,#2563eb,#0b2e6b);
+            background:linear-gradient(90deg,#608dc9,#2563eb,#11348a);
         }
         .wf-bar button{
             border:none;background:var(--bg2);color:var(--text2);border-radius:3px;
@@ -1309,6 +1311,9 @@
             border-radius:3px;pointer-events:none;
         }
         .wf-item .w{position:relative;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        /* 칠하지 않는 '그 밖의 낱말'은 목록에서도 조용하게 */
+        .wf-item.dim{padding:5px 8px 5px 25px;font-size:12px;color:var(--text3);}
+        .wf-item.dim .w{font-weight:500;color:var(--text3);}
         .wf-item .c{position:relative;margin-left:auto;font-size:11px;color:var(--text3);flex:none;}
         .sp-mini{
             width:20px;height:20px;border:1px solid var(--border);border-radius:3px;
