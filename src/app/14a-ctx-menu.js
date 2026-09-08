@@ -477,10 +477,9 @@
             saveDoc(); toast('서식 지움',1200);
         }
         else if(a==='new-table'){
-            const v=prompt('표 크기를 입력하세요 (행 x 열)','3 x 3');
-            if(v){ const m=String(v).match(/(\d+)\s*[x\u00d7,\s]\s*(\d+)/);
-                   if(m) insertTable(+m[1],+m[2],pi,lastMouse.x,lastMouse.y);
-                   else toast('예: 3 x 4 형식으로 입력해 주세요',2200); }
+            // 14.39.2 · 브라우저 prompt(크롬 알림) 대신 앱 자체 모달로 크기를 고르고,
+            //   우클릭한 자리에 곧바로 놓는다. 도구 막대'표 삽입'과 같은 모달(UI 통일).
+            openTableSizeModal({pageIdx:pi,x:lastMouse.x,y:lastMouse.y});
         }
         else if(a==='tbl-row-up'){ tblAdd('row',-1); }
         else if(a==='tbl-row-down'){ tblAdd('row',1); }

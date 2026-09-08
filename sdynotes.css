@@ -1786,6 +1786,37 @@
         .latex-modal-actions button{border:1px solid var(--border);background:var(--bg2);color:var(--text1);border-radius:9px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer;}
         .latex-modal-actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff;display:flex;align-items:center;gap:5px;}
         @media(max-width:640px){.latex-modal-box{width:calc(100vw - 16px)!important}.latex-input{height:120px}.latex-preview{min-height:100px}}
+        /* 14.39.2 · 표 크기 모달 — 브라우저 prompt 대신 앱 모달로 통일. 수식 넣기와 같은
+           머리글(아이콘·제목·배지·닫기)·행/열 스피너·아래 단추(취소·넣기) 구조를 쓴다. */
+        .tblsize-box{max-width:340px;padding:0!important;overflow:hidden;}
+        .tblsize-head{display:flex;align-items:center;padding:14px 15px;border-bottom:1px solid var(--border);}
+        .tblsize-head>div{display:flex;align-items:center;gap:8px;flex:1}
+        .tblsize-head>div>i{color:var(--accent);font-size:19px;}
+        .tblsize-head b{font-size:15px}
+        .tblsize-head span{font-size:10px;color:var(--accent);font-weight:700;padding:2px 6px;border-radius:6px;background:var(--bg2);}
+        .tblsize-head button{width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:var(--text3);cursor:pointer;}
+        .tblsize-head button:hover{background:var(--bg2);color:var(--text1);}
+        /* 격자 프리셋 — Word·노션의 '격자 위에서 크기 고르기' 그대로. 칸 위를 지나면
+           그때그때 만들어질 행×열이 채워져 보이고, 누르면 그 크기가 정해진다. */
+        .tblsize-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;padding:14px 15px 6px;}
+        .ts-cell{height:20px;border:1px solid var(--border);border-radius:3px;background:var(--bg2);cursor:pointer;transition:background .06s,border-color .06s;}
+        .ts-cell.on{background:var(--accent);border-color:var(--accent);opacity:.86;}
+        .tblsize-hint{padding:0 15px 10px;font-size:10.5px;color:var(--text3);}
+        .tblsize-steppers{display:flex;gap:10px;padding:0 15px 14px;}
+        .tblsize-step{flex:1;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;padding:7px 9px;background:var(--bg2);}
+        .tblsize-step span{font-size:11.5px;color:var(--text2);}
+        .tblsize-step b{flex:1;text-align:center;font-size:14px;color:var(--text1);font-variant-numeric:tabular-nums;}
+        .tblsize-step button{width:26px;height:26px;flex:none;border:1px solid var(--border);border-radius:7px;background:var(--card);color:var(--text1);cursor:pointer;font-size:14px;line-height:1;}
+        .tblsize-step button:hover{border-color:var(--accent);color:var(--accent);}
+        .tblsize-actions{display:flex;justify-content:flex-end;gap:7px;padding:11px 14px;border-top:1px solid var(--border);}
+        .tblsize-actions button{border:1px solid var(--border);background:var(--bg2);color:var(--text1);border-radius:9px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer;}
+        .tblsize-actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff;display:flex;align-items:center;gap:5px;}
+        @media(max-width:640px){
+          .tblsize-box{width:calc(100vw - 16px)!important}
+          .ts-cell{height:26px}                     /* 터치 히트 영역 확보 */
+          .tblsize-step button{width:34px;height:34px}
+          .tblsize-actions button{min-height:44px;} /* 터치에서도 누르기 쉬운 단추 */
+        }
         .tb-content{overflow-wrap:break-word;
             width:100%;height:100%;min-width:60px;min-height:28px;padding:8px 12px;
             border:var(--bw,2px) solid transparent;border-radius:3px;background:transparent;

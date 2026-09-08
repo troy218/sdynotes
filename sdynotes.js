@@ -13479,12 +13479,86 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         return html;
     }
 
+    // ===== 표 크기 모달 (14.39.2 · 사용자 보고) =====
+    // '표 삽입'을 누르면 예전엔 브라우저 prompt(크롬 알림)가 떠 UI 통일성이 깨졌다.
+    // 이제 수식 넣기와 같은 앱 자체 모달(#tableSizeModal)에서 격자 미리보기와
+    // 행/열 스피너로 크기를 고른다. 확인 경로는 둘이다.
+    //   · 도구 막대 '표 삽입' 버튼·더보기 서랍 → 모달 → 넣기 → 고스트 배치 모드
+    //   · 우클릭 '표 넣기' → 같은 모달 → 넣기 → 우클릭한 자리에 곧바로 삽입
+    let tblSizeRows=3, tblSizeCols=3, tblSizeTarget=null;
+    // 격자 프리셋은 8행×10열 — 그 이상은 스피너로 40행×20열(tableInsertSize 상한)까지
+    const TBL_SIZE_GRID_R=8, TBL_SIZE_GRID_C=10;
+    // 마우스 환경에서는 격자를 미리 보고 클릭 한 번으로 넣는다. 터치는 미리보기가
+    // 없으므로 첫 탭은 고르기만 하고 '넣기'로 확정한다(1×1 오삽입 방지).
+    function tblSizeCanHover(){
+        try{ return typeof matchMedia==='function'&&matchMedia('(hover:hover) and (pointer:fine)').matches; }
+        catch(e){ return false; }
+    }
     function openTableModal(){
-        const v=prompt('표 크기를 입력하세요 (행 x 열)','3 x 3');
-        if(!v) return;
-        const m=String(v).match(/(\d+)\s*[x\u00d7,\s]\s*(\d+)/);
-        if(!m){ toast('예: 3 x 4 형식으로 입력해 주세요',2200); return; }
-        beginTablePlacement(+m[1],+m[2]);
+        // 도구 막대 경로 — 크기만 정하고 종이에서 자리를 눌러 배치한다(기존 흐름 유지).
+        openTableSizeModal(null);
+    }
+    function openTableSizeModal(target){
+        tblSizeTarget=target||null;
+        tblSizeSet(3,3);
+        const g=document.getElementById('tableSizeGrid');
+        if(g&&!g.childElementCount){
+            let h='';
+            for(let r=1;r<=TBL_SIZE_GRID_R;r++) for(let c=1;c<=TBL_SIZE_GRID_C;c++)
+                h+='<div class="ts-cell" data-r="'+r+'" data-c="'+c+'" role="gridcell" aria-label="'+r+'행 '+c+'열"></div>';
+            g.innerHTML=h;
+        }
+        const m=document.getElementById('tableSizeModal');
+        if(!m){ // 모달이 없는 환경(임베드 등) — 예전 흐름으로 폴백
+            if(tblSizeTarget) insertTable(tblSizeRows,tblSizeCols,tblSizeTarget.pageIdx,tblSizeTarget.x,tblSizeTarget.y);
+            else beginTablePlacement(tblSizeRows,tblSizeCols);
+            tblSizeTarget=null; return;
+        }
+        m.style.display='flex';
+        openNav(closeTableSizeModal);
+    }
+    function closeTableSizeModal(){
+        const m=document.getElementById('tableSizeModal');
+        if(m) m.style.display='none';
+        tblSizeTarget=null;
+        navDrop(closeTableSizeModal);
+    }
+    function tblSizeSet(r,c){
+        // tableInsertSize 와 같은 상한(40행·20열) — 모달에서 고른 크기가 곧삽입 크기
+        tblSizeRows=Math.max(1,Math.min(40,r|0||1));
+        tblSizeCols=Math.max(1,Math.min(20,c|0||1));
+        tblSizePaint();
+    }
+    function tblSizeStep(k,d){
+        if(k==='rows') tblSizeSet(tblSizeRows+d,tblSizeCols);
+        else tblSizeSet(tblSizeRows,tblSizeCols+d);
+    }
+    function tblSizePaint(){
+        const rb=document.getElementById('tableSizeRows'),cb=document.getElementById('tableSizeCols'),
+              b=document.getElementById('tableSizeBadge');
+        if(rb) rb.textContent=tblSizeRows;
+        if(cb) cb.textContent=tblSizeCols;
+        if(b) b.textContent=tblSizeRows+' × '+tblSizeCols;
+        document.querySelectorAll('#tableSizeGrid .ts-cell').forEach(n=>
+            n.classList.toggle('on',+n.dataset.r<=tblSizeRows&&+n.dataset.c<=tblSizeCols));
+    }
+    // 격자 위를 지나며 크기를 미리 본다(마우스). 값만 바뀔 뿐 확정은 아니다.
+    function tblSizeCellHover(e){
+        const c=e.target.closest&&e.target.closest('.ts-cell'); if(!c) return;
+        tblSizeSet(+c.dataset.r,+c.dataset.c);
+    }
+    // 격자를 누른 뒤 — 마우스는 미리보기를 보고 누른 것이므로 곧바로 넣고,
+    // 터치는 선택만 하고 '넣기' 버튼으로 확정한다.
+    function tblSizeCellClick(e){
+        const c=e.target.closest&&e.target.closest('.ts-cell'); if(!c) return;
+        tblSizeSet(+c.dataset.r,+c.dataset.c);
+        if(tblSizeCanHover()) confirmTableSizeModal();
+    }
+    function confirmTableSizeModal(){
+        const r=tblSizeRows,c=tblSizeCols,t=tblSizeTarget;
+        closeTableSizeModal();
+        if(t) insertTable(r,c,t.pageIdx,t.x,t.y);
+        else beginTablePlacement(r,c);
     }
     function beginTablePlacement(rows,cols){
         const dim=tableInsertSize(rows,cols),g=document.getElementById('tableGhost');
@@ -13766,6 +13840,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(wfOn){ wfOff(); return true; }
         if(document.getElementById('pinPop').classList.contains('show')){ closePin(); return true; }
         if(document.getElementById('latexModal').style.display==='flex'){ closeLatexModal(); return true; }
+        if(document.getElementById('tableSizeModal').style.display==='flex'){ closeTableSizeModal(); return true; }
         if(pinMode){ togglePinMode(); return true; }
         if(findOpen){ closeFind(); return true; }
         if(tablePlace){ cancelTablePlacement(); return true; }
@@ -21332,10 +21407,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             saveDoc(); toast('서식 지움',1200);
         }
         else if(a==='new-table'){
-            const v=prompt('표 크기를 입력하세요 (행 x 열)','3 x 3');
-            if(v){ const m=String(v).match(/(\d+)\s*[x\u00d7,\s]\s*(\d+)/);
-                   if(m) insertTable(+m[1],+m[2],pi,lastMouse.x,lastMouse.y);
-                   else toast('예: 3 x 4 형식으로 입력해 주세요',2200); }
+            // 14.39.2 · 브라우저 prompt(크롬 알림) 대신 앱 자체 모달로 크기를 고르고,
+            //   우클릭한 자리에 곧바로 놓는다. 도구 막대'표 삽입'과 같은 모달(UI 통일).
+            openTableSizeModal({pageIdx:pi,x:lastMouse.x,y:lastMouse.y});
         }
         else if(a==='tbl-row-up'){ tblAdd('row',-1); }
         else if(a==='tbl-row-down'){ tblAdd('row',1); }
