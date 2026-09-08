@@ -722,25 +722,39 @@
     }
     function _previewBegin(node,cls){
         if(!node||node._sdyPreview) return;
+        const tf=node.style.transform||'';
+        // 14.39.9 · 회전한 상자는 미리보기 동안에도 자세를 유지한다.
+        //   기존에는 미리보기가 transform 을 translate 로 통째로 덮어써서,
+        //   회전한 상자를 잡는 순간 똑바로 섰다 (원점도 모서리로 옮겨져서
+        //   잡기만 해도 상자가 흔들렸다). 회전 성분만 따로 기억해 둔다.
+        const _rm=/rotate\([^)]*\)/.exec(tf);
         node._sdyPreview={
             cls,
-            transform:node.style.transform||'',
+            transform:tf,
             transformOrigin:node.style.transformOrigin||'',
             willChange:node.style.willChange||'',
-            touchAction:node.style.touchAction||''
+            touchAction:node.style.touchAction||'',
+            rot:_rm?_rm[0]:''
         };
         node.classList.add(cls);
-        node.style.transformOrigin='0 0';
+        // 회전이 있으면 회전축(중심)을 그대로 둔다. 0 0 으로 옮기면
+        // transform 이 rotate 인 동안 상자가 모서리 기준으로 돌아간다.
+        node.style.transformOrigin=node._sdyPreview.rot?'50% 50%':'0 0';
         node.style.willChange='transform';
         node.style.touchAction='none';
         try{ document.body.classList.add('sdy-editor-gesturing'); }catch(e){}
     }
     function _previewSet(node,tx,ty,sx=1,sy=1){
         if(!node) return;
+        const p=node._sdyPreview;
         const x=Math.round((tx||0)*100)/100, y=Math.round((ty||0)*100)/100;
         const sc=(Math.abs(sx-1)>0.0005||Math.abs(sy-1)>0.0005)
             ? ` scale(${(sx||1).toFixed(4)},${(sy||1).toFixed(4)})` : '';
-        node.style.transform=`translate3d(${x}px,${y}px,0)`+sc;
+        // 14.39.9 · 'translate + (기억해 둔) rotate' 순서로 합성한다.
+        //   원점이 중심(50% 50%)이면 p' = T(R(p)) — 회전한 상자를
+        //   (dx,dy) 만큼 평행이동한 것과 정확히 같은 그림이 된다.
+        const rot=p&&p.rot?(' '+p.rot):'';
+        node.style.transform=`translate3d(${x}px,${y}px,0)`+sc+rot;
     }
     function _previewEnd(node){
         if(!node||!node._sdyPreview) return;
@@ -839,7 +853,9 @@
         multiDrag.items.forEach(it=>{
             if(it.el.type==='stroke'){
                 it.el.dx=it.ox+sdx; it.el.dy=it.oy+sdy;
-                it.node.setAttribute('transform',`translate(${it.el.dx},${it.el.dy})`);
+                // 14.39.9 · translate 만 덧씌우면 회전 성분이 날아간다.
+                //   회전+채움까지 함께 갱신하는 공용 함수로 둔다.
+                syncStrokeTransform(it.el,it.node,multiDrag.pageIdx);
             }else{
                 const c=clampEl(it.ox+sdx,it.oy+sdy,it.w||it.el.w,it.h||it.el.h);
                 it.nx=Math.round(c.x); it.ny=Math.round(c.y);
@@ -864,7 +880,8 @@
                 nx=sn.x-bb.x; ny=sn.y-bb.y;
             }else clearSnapLines();
             el.dx=nx; el.dy=ny; drag.nx=nx; drag.ny=ny;
-            drag.el.setAttribute('transform',`translate(${el.dx},${el.dy})`);
+            // 14.39.9 · 위와 같은 이유 — 회전한 획을 옮기면 똑바로 서던 버그.
+            syncStrokeTransform(el,drag.el,drag.pageIdx);
             return;
         }
         const w=drag.w||drag.el.offsetWidth, h=drag.h||drag.el.offsetHeight;
@@ -924,7 +941,11 @@
         //   리플로우한다. 스케일(scale)로는 내부 텍스트가 찌부됐다가 놓으면 돌아오는
         //   현상이 있어서(보고 이슈⑤) 텍스트는 리플로우 방식을 쓴다. 이미지/도형은
         //   계속 GPU scale 로 가볍게 그린다.
-        if(resize.el.classList&&resize.el.classList.contains('tb')){
+        // 14.39.9 · 회전한 요소도 리플로우 방식으로 — transform 을 건드리지
+        //   않으므로 회전축·자세가 매 프레임 확정 상태와 정확히 같다.
+        const _rzModel=findEl(resize.pageIdx,resize.el.dataset.id);
+        const _rzRot=_rzModel?normalizedRotation(_rzModel.rotation):0;
+        if((resize.el.classList&&resize.el.classList.contains('tb'))||_rzRot){
             resize.el.style.left=Math.round(resize.nx)+'px';
             resize.el.style.top =Math.round(resize.ny)+'px';
             resize.el.style.width=resize.nw+'px';
@@ -1044,7 +1065,12 @@
             // 꼭짓점(대각선)은 비율 유지, 변 중앙은 가로/세로만 자유롭게
             const corner=(dir==='h-nw'||dir==='h-ne'||dir==='h-sw'||dir==='h-se');
             const isImg=host.classList.contains('paper-img');
-            resize={el:host,pageIdx,sx:e.clientX,sy:e.clientY,sw:host.offsetWidth,sh:host.offsetHeight,
+            // 14.39.9 · 회전한 상자의 offset 크기는 외접 박스라서 그대로 쓰면
+            //   손잡이를 잡는 순간 상자가 부풀며 커진다. 회전했으면 모델 크기를 쓴다.
+            const _rzRot0=mdl?normalizedRotation(mdl.rotation):0;
+            resize={el:host,pageIdx,sx:e.clientX,sy:e.clientY,
+                    sw:_rzRot0?(mdl.w||host.offsetWidth):host.offsetWidth,
+                    sh:_rzRot0?(mdl.h||host.offsetHeight):host.offsetHeight,
                     ox:parseFloat(host.style.left)||0, oy:parseFloat(host.style.top)||0,
                     isImg, dir,
                     // 이미지: 꼭짓점이면 비율 유지(잠금 해제 시엔 자유),

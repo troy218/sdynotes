@@ -72,6 +72,23 @@ cd /tmp/newsite && sudo bash ./apply.sh
 - swap, deno, bgutil, fpcalc 자동 준비
 - 마지막에 `음성 릴레이 : 준비됨` 출력
 
+## 버그 일지는 어디에 저장되나요? (14.39.10)
+
+- 기본 Oracle 모드에서는 **`/var/www/memo/sync/settings.json`**의
+  `els["buglog:<id>"]`에 저장됩니다. 일반 문서와 같은 서버 디스크를 쓰되,
+  일지는 설정 동기화 파일을 공유합니다. 브라우저 `sdy_buglog`는 기기 사본이고,
+  미전송 변경은 `sdy_settings_outbox_8_17`에 남아 연결 복구 후 재전송됩니다.
+- **`/tmp/newsite`는 내려받은 배포 코드**입니다. `apply.sh`는 코드를
+  `/var/www/memo`로 옮기며 기존 `sync/`와 `db/`는 교체하지 않습니다.
+  JSON 저장 때 생기는 `.tmp.*` 파일은 최종 JSON으로 원자 교체하는 중간 파일입니다.
+- `apply.sh` 없이 임시 디렉터리에서 직접 서버를 실행하거나 `SDY_BASE_DIR`를 바꾸면
+  데이터 위치도 달라집니다. 운영 데이터 루트를 임시 경로로 잡지 마세요.
+  `SDY_STORAGE=cloud`에서는 같은 키가 Supabase `sdy_sync_states`에 저장됩니다.
+- 14.39.10은 구버전 탭/빈 기기 목록의 자동 삭제를 차단합니다. 이미 서버에
+  `del: 1`만 남고 본문이 없어진 일지는 패치만으로 되살릴 수 없습니다. **기존
+  `sync/` 백업이나 아직 동기화하지 않은 기기 사본부터 보존**한 뒤 확인하세요.
+  정상 삭제와 구별할 수 없으므로 tombstone 전체를 일괄 복원하지 않습니다.
+
 ## 배포 직후 검증
 
 ```bash

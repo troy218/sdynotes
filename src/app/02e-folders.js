@@ -92,7 +92,8 @@
         const put=(o,nx,ny)=>{
             if(o.el.type==='stroke'){
                 o.el.dx=(o.el.dx||0)+(nx-o.bb.x); o.el.dy=(o.el.dy||0)+(ny-o.bb.y);
-                o.m.node.setAttribute('transform',`translate(${o.el.dx},${o.el.dy})`);
+                // 14.39.9 · 회전 성분까지 함께 갱신 (translate 덮어쓰기 금지).
+                syncStrokeTransform(o.el,o.m.node,pi);
             }else{
                 const c=clampEl(nx,ny,o.el.w,o.el.h);
                 o.el.x=Math.round(c.x); o.el.y=Math.round(c.y);

@@ -1839,6 +1839,17 @@
             border:var(--bw,2px) solid transparent;border-radius:3px;background:transparent;
             outline:none;white-space:pre-wrap;word-break:break-word;overflow:visible;
             cursor:text;color:var(--text1);user-select:none;line-height:1.5;box-sizing:border-box;
+            /* 14.39.10 · 글상자 본문은 '보통 흐름(block)'이다.
+               예전엔 세로 중앙 정렬을 위해 .tb-content 자체를 flex 컬럼으로 뒀는데,
+               그러면 (1) 글이 언제나 상자 세로 중앙에서 시작하고,
+               (2) 입력 도중 만들어지는 인라인 서식 span(.sdy-type 등)이
+                   flex '아이템'이 되어 줄이 강제로 바뀌고 서식이 끊겨 보였다.
+               세로 중앙 정렬은 '아직 아무것도 안 쓴 새 상자'에만 준다(아래 규칙). */
+            display:block;
+        }
+        /* 처음 놓은(내용이 빈) 글상자에서만 안내문·캐럿을 세로 중앙에 둔다.
+           글자가 한 자라도 들어오면 data-empty 가 사라지며 보통 흐름(왼쪽 위)로 돌아간다. */
+        .tb:not(.in-tbl) .tb-content[data-empty="true"]{
             display:flex;flex-direction:column;justify-content:center;
         }
         /* 10.0 · 선택/편집 중에도 상자 속 빈 공간을 흰 바탕으로 채우지 않는다.

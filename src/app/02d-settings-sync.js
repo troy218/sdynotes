@@ -144,8 +144,10 @@
     function _stOutSave(){
         try{ localStorage.setItem(ST_OUT_KEY,JSON.stringify(_stOut)); }catch(e){}
     }
-    function _stQueueOp(id,kind,data){
+    function _stQueueOp(id,kind,data,explicit=false){
         const op={id,kind,rev:_stNow(),dev:SET_DEV};
+        // 버그 일지 X처럼 사용자가 직접 요청한 삭제만 표시한다 (diff는 표시 금지).
+        if(kind==='del'&&explicit===true) op.explicit=true;
         if(kind!=='del') op.data=data;
         _stOut[id]=op; _stLocalRev.set(id,op.rev); _stDirty=true; _stOutSave();
         return op;
@@ -272,13 +274,15 @@
         for(const k in cur){
             seen.add(k); const v=cur[k];
             if(v===null){
-                if(_stHash.has(k)&&_stHash.get(k)!==null) ops.push({id:k,kind:'del'});
+                if(k.indexOf('buglog:')!==0&&_stHash.has(k)&&_stHash.get(k)!==null) ops.push({id:k,kind:'del'});
             }else{
                 if(_stHash.get(k)!==JSON.stringify(v)) ops.push({id:k,kind:'put',data:v});
             }
         }
         for(const [k,v] of Array.from(_stHash.entries())){
-            if(!seen.has(k)&&v!==null) ops.push({id:k,kind:'del'});
+            // 빈/구버전 기기나 localStorage 실패는 일지 삭제 의도가 아니다.
+            // 일지는 delBugEntry가 outbox에 넣은 명시적 삭제만 전송한다.
+            if(!seen.has(k)&&v!==null&&k.indexOf('buglog:')!==0) ops.push({id:k,kind:'del'});
         }
         return _stGuardDeletes(ops);
     }
@@ -375,8 +379,13 @@
 
     async function _stPush(ops){
         if(_stFrozen) return null;            // 예전 화면은 아무것도 덮어쓰지 않는다
+        const headers={'Content-Type':'application/json'};
+        if(ops.some(o=>o.kind==='del'&&String(o.id).indexOf('buglog:')===0)){
+            // 인증 토큰은 outbox에 남기지 않고, 전송 시 현재 세션에서만 가져온다.
+            try{ if(adminToken) headers['X-Admin-Token']=adminToken; }catch(e){}
+        }
         const r=await fetch('/api/sync/push',{method:'POST',
-            headers:{'Content-Type':'application/json'},
+            headers,
             body:JSON.stringify({nb:SET_NS, schema:SETTINGS_SCHEMA, ops})});
         if(r.status===409){                   // 서버가 '오래된 화면' 이라고 알려 줌
             const info=await r.json().catch(()=>({}));
@@ -386,9 +395,9 @@
         const d=await r.json().catch(()=>({}));
         if(!r.ok||!d.ok) return null;
         if(Array.isArray(d.blocked)&&d.blocked.length){
-            // 서버가 대량 삭제를 막았다 → 서버 값을 정답으로 삼아 되돌려 받는다
+            // 구버전의 자동 삭제·권한 없는 삭제·대량 삭제 → 서버 기록으로 복원한다.
             console.warn('[동기화 보호] 서버가 삭제 '+d.blocked.length+'건을 막았습니다');
-            try{ toast('⚠️ 비정상적인 대량 삭제를 막았습니다 · 서버 데이터를 유지합니다',3400); }catch(e){}
+            try{ toast('⚠️ 확인되지 않은 삭제를 막았습니다 · 서버 데이터를 유지합니다',3400); }catch(e){}
             d.blocked.forEach(id=>{ delete _stOut[id]; _stLocalRev.delete(id); });
             _stOutSave();
             setTimeout(()=>{ _stSince=0; _stHash.clear(); _stApplied.clear(); pullSettings(); },80);
@@ -416,7 +425,7 @@
         });
         const ops=Object.values(_stOut).filter(o=>o&&o.id);
         if(!ops.length){ _stDirty=false; return; }
-        const res=await _stPush(ops);
+        const res=await _stPush(ops).catch(()=>null);
         if(!res){ _stDirty=true; return; }
         const accepted=new Set(Array.isArray(res.accepted)?res.accepted:ops.map(o=>o.id));
         const rejected=new Set(Array.isArray(res.rejected)?res.rejected:[]);
@@ -433,6 +442,7 @@
         });
         _stOutSave(); _stDirty=Object.keys(_stOut).length>0;
         if(rejected.size) setTimeout(pullSettings,40);
+        return res;   // 일지 등은 서버 ACK 뒤에만 저장 완료를 안내한다.
     }
     try{ window.pushSettings=pushSettings; window.pushSettingsNow=pushSettingsNow; }catch(e){}
 
@@ -562,7 +572,10 @@
                 if(a.length===b.length) return false;
                 saveBugEntries(b); return true;
             }
-        }catch(e){}
+        }catch(e){
+            // 일지 저장 실패는 pull의 적용 완료 해시에 올리지 않고 다음에 재시도한다.
+            if(k.indexOf('buglog:')===0) throw e;
+        }
         return false;
     }
     function _stApply(op){
@@ -726,7 +739,10 @@
             }
             // 앱 전체 설정 (테마·강조색·기본 글꼴 등)
             if(k==='appset'){ return _appSetApply(d); }
-        }catch(e){}
+        }catch(e){
+            // 일지 저장 실패는 pull의 적용 완료 해시에 올리지 않고 다음에 재시도한다.
+            if(k.indexOf('buglog:')===0) throw e;
+        }
         return false;
     }
 
@@ -871,9 +887,12 @@
             }
             // '도착' 애니메이션은 떠나는 것이 없을 때만 (집게 단일 세션)
             if(!didLeave && !_clawBusy) _stFlushArrive(pending.filter(a=>a.type==='arrive'));
-        }catch(e){}
+        }catch(e){
+            // 읽기/기기 저장 실패 때는 불완전하게 병합된 목록을 서버로 올리지 않는다.
+            return;
+        }
         if(cleaned) _stDirty=true;          // 정리 결과도 서버에 반영
-        if(!_stCacheReset && _stDirty) pushSettingsNow(); // 서버 복원 뒤의 새 변경만 전송
+        if(!_stCacheReset && _stDirty) return pushSettingsNow(); // 서버 복원 뒤의 새 변경만 전송
     }
     // 마지막의 SSE 릴레이가 스크립트 경계/브라우저에 관계없이 호출할 수 있게 노출
     try{ window.pullSettings=pullSettings; }catch(e){}
