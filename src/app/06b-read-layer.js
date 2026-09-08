@@ -327,9 +327,13 @@
             }
             job.loading=false;
             const size=paperSize();
-            const imgL=paper.querySelector('.layer-img'), fillL=paper.querySelector('.layer-fill'),
+            // 14.39.3 · PDF 원본 배경(isBg)·수식 조각(isMath)은 layer-fig 로 —
+            //   사진을 선택/이동해도 이 '종이 가구'가 글자·수식 위로 뜨지 않게.
+            const figL=paper.querySelector('.layer-fig'),
+                imgL=paper.querySelector('.layer-img'), fillL=paper.querySelector('.layer-fill'),
                 svg=paper.querySelector('.layer-stroke'), txtL=paper.querySelector('.layer-text');
             _dropPageTightFits(paper);
+            if(figL) figL.innerHTML='';
             imgL.innerHTML=''; if(fillL) fillL.innerHTML=''; svg.innerHTML=''; txtL.innerHTML='';
             if(fillL) fillL.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
             svg.setAttribute('viewBox',`0 0 ${size.w} ${size.h}`);
@@ -352,13 +356,17 @@
                 if(!_pageJobLive(job)||_pageRenderTok[idx]!==tok){ _cancelPageRender(idx); return; }
                 // 데이터가 교체됐으면 오래된 청크를 새 문서 위에 붙이지 않는다.
                 if(d.pages[idx]!==pg||(pg.els&&pg.els!==els)){ renderPageEls(idx); return; }
-                const bags={img:document.createDocumentFragment(),fill:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()};
+                const bags={img:document.createDocumentFragment(),fig:document.createDocumentFragment(),fill:document.createDocumentFragment(),svg:document.createDocumentFragment(),txt:document.createDocumentFragment()};
                 let weight=0;
                 do{
                     const el=els[at++];
                     if(!el) break;
-                    if(el.type==='image') bags.img.appendChild(buildImageEl(el,idx));
-                    else if(el.type==='legacyDraw'){
+                    if(el.type==='image'){
+                        // 14.39.3 · 원본 배경·수식 조각은 가구 층(layer-fig)으로,
+                        //   사용자가 옮기는 사진·가져온 그림만 layer-img 로.
+                        const bag=(el.isBg||el.isMath)&&figL?bags.fig:bags.img;
+                        bag.appendChild(buildImageEl(el,idx));
+                    }else if(el.type==='legacyDraw'){
                         const im=document.createElementNS('http://www.w3.org/2000/svg','image');
                         im.setAttribute('href',el.url); im.setAttribute('x',0); im.setAttribute('y',0);
                         im.setAttribute('width',size.w); im.setAttribute('height',size.h); bags.svg.appendChild(im);
@@ -380,7 +388,9 @@
                     if(!paper.isConnected||paperAt(idx)!==paper) return false;
                     // 각 레이어가 여전히 같은 paper에 속해 있는지 확인 (detach 방지)
                     if(imgL.parentNode!==paper||txtL.parentNode!==paper) return false;
+                    if(figL&&figL.parentNode!==paper) return false;
                     imgL.appendChild(bags.img);
+                    if(figL) figL.appendChild(bags.fig);
                     if(fillL) fillL.appendChild(bags.fill);
                     svg.appendChild(bags.svg);
                     txtL.appendChild(bags.txt);

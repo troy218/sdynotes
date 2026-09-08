@@ -33,6 +33,7 @@
     "test:sync": "node test/note_sync_clock_contract.mjs && node test/collab_protocol.cjs && node test/merge3_unit.cjs && node test/empty_note_render_contract.mjs && node test/import_retry_contract.mjs",
     "test:image": "node test/note_image_reopen_contract.mjs && node test/image_cross_device_contract.mjs && node test/image_paste_persistence_contract.mjs && node test/image_clipboard_contract.mjs && python3 test/worker_img_cleanup_contract.py",
     "test:imgstore": "python3 test/worker_img_cleanup_contract.py",
+    "test:imgsel": "node test/page_preview_contract.mjs && node test/editor_imgsel_formula_runtime.mjs",
     "test:pasteimg": "node test/image_paste_persistence_contract.mjs",
     "test:imgclip": "node test/image_clipboard_contract.mjs",
     "test:elclip": "node test/editor_element_clipboard_runtime.mjs",

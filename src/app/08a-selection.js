@@ -21,12 +21,27 @@
     //   확인한다. `.tb`/`.paper-img`/`.stroke-g` 는 언제나 각 레이어의 직계
     //   자식이므로 판정 결과는 예전과 완전히 같고, 비용만 subtree 크기와
     //   무관해진다.
+    //
+    // ★ 14.39.3 · 이미지 층(layer-img)은 '실제로 끌거나 크기를 조절하는 동안'만
+    //   올린다 (사용자 보고 — "이미지를 이동하려고 선택하면 주변 수식이 사라짐").
+    //   예전에는 사진을 한 번만 선택해도 층 전체가 z=50 으로 떠올라, 글자·수식
+    //   층 위에 그림이 얹혔다. 그 결과 ① 사진과 겹친 수식·글자가 그림 뒤에
+    //   숨고, ② (옛 구조에선 같은 층에 있던) 원본 배경 래스터와 흰 바탕 수식
+    //   조각까지 함께 떠올라 주변이 통째로 가려졌다. 이제 선택만으로는
+    //   올리지 않고, sdy-dragging / sdy-resizing 이 붙은 동안(실제 제스처)
+    //   만 앞으로 온다 — 옮기는 그림은 끝까지 보이되, 놓거나 손을 떼면
+    //   곧바로 글자·수식이 다시 그림 위로 돌아온다. 그림 층이 올라가 있어도
+    //   글자는 여전히 그 아래에서 읽힌다(아래 layer-fig 분리 참고).
     function _layerLift(layer){
         if(!layer) return;
+        const imgGesture=layer.classList.contains('layer-img');
         let on=false;
         for(let n=layer.firstElementChild;n;n=n.nextElementSibling){
             const cl=n.classList;
-            if(cl&&(cl.contains('sel')||cl.contains('edit')||cl.contains('msel'))){ on=true; break; }
+            if(!cl) continue;
+            if(imgGesture){
+                if(cl.contains('sdy-dragging')||cl.contains('sdy-resizing')){ on=true; break; }
+            }else if(cl.contains('sel')||cl.contains('edit')||cl.contains('msel')){ on=true; break; }
         }
         const v=on?'50':'';
         // 같은 값을 다시 쓰면 브라우저가 불필요하게 스타일을 무효화한다.
