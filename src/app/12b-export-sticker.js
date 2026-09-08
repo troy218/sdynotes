@@ -178,7 +178,8 @@
         for(const el of els){
             if(!el.pdfText||!el.tight) continue;
             const c=document.createElement('div'); c.innerHTML=el.html||'';
-            for(const s of c.querySelectorAll(':scope > span[data-pdf-w]')){
+            // 14.40 · 편집된 논문 상자는 .sdy-tl 줄 흐름이라 span[data-pdf-w] 가 없다
+            for(const s of c.querySelectorAll(':scope > span[data-pdf-w], .sdy-tl span')){
                 const st=s.style, fs=parseFloat(st.fontSize)||el.fontSize||parseFloat(s.dataset.fs)||14;
                 const font=[st.fontStyle||'normal',st.fontWeight||'400',fs+'px',st.fontFamily||fontCSS(el.font)].join(' ');
                 if(!faces.has(font)) faces.set(font,new Set());

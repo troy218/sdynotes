@@ -112,7 +112,10 @@
     function docText(d){
         let t='';
         (d.pages||[]).forEach(p=>(p.els||[]).forEach(e=>{
-            if(e.type==='text'){ const tmp=document.createElement('div'); tmp.innerHTML=e.html||''; t+=' '+tmp.textContent; }
+            if(e.type==='text'){ const tmp=document.createElement('div'); tmp.innerHTML=e.html||'';
+                // 14.40 · 논문 상자 줄(.sdy-tl) 경계에 공백이 없으면 줄 사이 낱말이 합쳐진다
+                tmp.querySelectorAll('.sdy-tl').forEach(x=>x.append(' '));
+                t+=' '+tmp.textContent; }
             else if(e.type==='latex') t+=' '+(e.latex||'');
         }));
         return t.toLowerCase();

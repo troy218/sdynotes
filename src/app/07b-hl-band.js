@@ -326,6 +326,17 @@
         // beforeinput이 없는 구형 WebView용 선행 fallback (조합 중에는 keydown이 없어도
         // 표준 beforeinput이 오며, 둘 다 없는 환경은 아래 input에서 다음 글자를 복구).
         c.addEventListener('keydown',e=>{
+            // 14.40 · 줄 흐름(논문) 상자 — 엔터=캐럿 위치 줄 분할.
+            //   브라우저 기본 <div> 대신 원문 줄 간격에 맞춘 .sdy-tl 을 만들고,
+            //   원문 줄은 절대 위치라 이동하지 않는다.
+            if(w.classList.contains('edit')&&w._sdyTightLine&&e.key==='Enter'
+               &&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!(e.isComposing||e.keyCode===229)){
+                e.preventDefault();
+                _tightLineEnter(c,w);
+                return;
+            }
+            // 14.39.11 · 일반 글상자: Enter(Shift+Enter) 줄바꿈 시 앞 글자의
+            //   인라인 서식을 다음 줄로 이어받는다(서식 풀림 버그 수정).
             if(!w.classList.contains('edit')||e.ctrlKey||e.metaKey||e.altKey
                ||e.isComposing||e.keyCode===229) return;
             if(e.key==='Enter'){
@@ -505,6 +516,8 @@
         if(doc&&doc.__rv!=null&&w._sdyRv!=null&&doc.__rv!==w._sdyRv) return;
         const el=findEl(+w.dataset.pageIdx,w.dataset.id); if(!el) return;
         const c=w.querySelector('.tb-content'); if(!c) return;
+        // 14.40 · 줄 흐름 상자는 다시 그려도(콜라보 동기화 등) 엔터 분할이 살아야 한다
+        if(el.tight&&c.querySelector(':scope>.sdy-tl')) w._sdyTightLine=1;
         const viewOnly=c.innerHTML===w._sdyViewHtml;
         // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
         const html=viewOnly?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
@@ -533,6 +546,188 @@
         }
         saveDoc();
     }
+
+/* ════════════════════════════════════════════════════════════════
+   14.40 · 논문(tight) 상자 편집: 줄 단위 절대위치 + 줄 내 인라인 흐름
+   ─────────────────────────────────────────────────────────────
+   편집 진입 시 단어별 절대 스팬을 한 번만 변환한다:
+     · 줄 = <div class="sdy-tl" style="position:absolute;top:원본위치">
+       → 줄이 절대 위치에 박혀 어떤 입력에도 세로로 이동하지 않는다.
+     · 줄 안 단어 = 인라인 스팬(원본 폰트/크기/굵기/색/이탈릭 보존)
+       → 드래그 선택·방향키(상하=줄 이동)·형광펜이 일반 텍스트처럼 동작.
+     · 단어 간격 = 실공백 + (.sdy-tg) 실측 스페이서로 원본 갭 복원.
+   그 뒤는 브라우저 기본 동작 그대로다. tight fit 의 scaleX 재계산은
+   '직접 자식 절대 스팬'만 대상이라 줄 흐름에서는 아무것도 안 움직인다.
+   엔터만 캐럿 위치에서 줄을 나누어 아래(원문 줄 간격)에 새 줄을 만든다.
+   ════════════════════════════════════════════════════════════════ */
+function _tightWordW(s){
+    if(s.dataset&&s.dataset.pdfW){ const n=parseFloat(s.dataset.pdfW); if(n>0) return n; }
+    let w=s.scrollWidth;
+    if(s.style.transform&&s.style.transform.indexOf('scaleX')>=0){
+        const m=s.style.transform.match(/scaleX\(\s*([0-9.]+)\s*\)/);
+        if(m&&+m[1]>0) w=w*(+m[1]);
+    }
+    return w;
+}
+function _tightWordText(s){
+    const cl=s.cloneNode(true);
+    cl.querySelectorAll('.zsp,br,img').forEach(z=>z.remove());
+    return (cl.textContent||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
+}
+// '자연 공백 폭' 실측 — 같은 글꼴 환경에서 공백 하나를 넣어 재는 것.
+// 스페이서 폭 = 원본 갭 − 이 값 으로 계산해 화면이 겉보기 그대로다.
+function _tightGapW(c,ff,fs){
+    try{
+        const p=document.createElement('span');
+        p.style.cssText='position:absolute;left:-9999px;top:0;visibility:hidden;line-height:1;white-space:pre;'+
+            (ff?('font-family:'+ff+';'):'')+'font-size:'+(fs||16)+'px;';
+        p.textContent=' ';
+        c.appendChild(p);
+        const w=p.offsetWidth;
+        p.remove();
+        return w;
+    }catch(e){ return (fs||16)*0.28; }
+}
+function _tightToLineFlow(c){
+    if(!c) return null;
+    const sps=Array.from(c.children).filter(s=>s.tagName==='SPAN');
+    if(!sps.length) return null;   // 이미 줄 흐름(DIV 자식)이면 그대로
+    const pos=sps.filter(s=>{
+        const st=s.style;
+        return (st&&st.position==='absolute')
+            ||(st&&(parseFloat(st.top)>0||parseFloat(st.left)>0))
+            ||(s.dataset&&s.dataset.pdfW);
+    });
+    if(!pos.length) return null;
+    // 이전 맞춤(scaleX) 배율 — '있는 그대로'의 폭을 되돌린다
+    const scale=pos.map(s=>{
+        const t=s.style.transform; let k=1;
+        if(t&&t.indexOf('scaleX')>=0){ const m=t.match(/scaleX\(\s*([0-9.]+)\s*\)/); if(m) k=Math.max(0.05,+m[1]); }
+        return k;
+    });
+    const words=[];
+    pos.forEach((s,i)=>{
+        const st=s.style;
+        const t=parseFloat(s.dataset.origTop!=null?s.dataset.origTop:st.top);
+        const l=parseFloat(st.left)||0;
+        const fs=parseFloat(st.fontSize)||16;
+        const txt=_tightWordText(s);
+        if(!txt) return;
+        const style=[
+            st.fontSize?'font-size:'+st.fontSize:'',
+            st.fontFamily?'font-family:'+st.fontFamily:'',
+            st.fontWeight?'font-weight:'+st.fontWeight:'',
+            st.fontStyle&&st.fontStyle!=='normal'?'font-style:'+st.fontStyle:'',
+            st.color?'color:'+st.color:'',
+            st.backgroundColor&&st.backgroundColor!=='rgba(0, 0, 0, 0)'?'background-color:'+st.backgroundColor:'',
+            st.textDecoration&&st.textDecoration!=='none'?'text-decoration:'+st.textDecoration:'',
+            st.verticalAlign&&st.verticalAlign!=='baseline'?'vertical-align:'+st.verticalAlign:''
+        ].filter(Boolean).join(';');
+        words.push({top:isNaN(t)?0:t, left:isNaN(l)?0:l, fs:fs,
+            adv:_tightWordW(s)*scale[i], txt:txt, style:style, ff:st.fontFamily||''});
+    });
+    if(!words.length) return null;
+    // top 으로 2px 묶음 = 줄, 줄 안은 left 순
+    const rows=[];
+    words.sort((a,b)=>a.top-b.top||a.left-b.left);
+    for(const wd of words){
+        const last=rows[rows.length-1];
+        if(last&&Math.abs(wd.top-last.top)<2) last.items.push(wd);
+        else rows.push({top:wd.top, items:[wd]});
+    }
+    rows.forEach(r=>r.items.sort((a,b)=>a.left-b.left));
+    const gapCache=new Map();
+    const gapOf=(ff,fs)=>{
+        const k=ff+'|'+fs;
+        if(!gapCache.has(k)) gapCache.set(k,_tightGapW(c,ff,fs));
+        return gapCache.get(k);
+    };
+    const frag=document.createDocumentFragment();
+    rows.forEach((r,ri)=>{
+        const nextTop=ri<rows.length-1?rows[ri+1].top:Infinity;
+        const maxFs=r.items.reduce((m,x)=>Math.max(m,x.fs),0);
+        const h=nextTop===Infinity?Math.max(maxFs*1.6,4):Math.max(2,nextTop-r.top);
+        const d=document.createElement('div');
+        d.className='sdy-tl';
+        d.style.cssText='position:absolute;left:0;width:100%;top:'+r.top.toFixed(1)+'px;height:'+h.toFixed(1)+'px;line-height:'+maxFs.toFixed(1)+'px;white-space:normal;';
+        r.items.forEach((wd,wi)=>{
+            if(wi>0){
+                const gap=wd.left-(r.items[wi-1].left+r.items[wi-1].adv);
+                const nat=gapOf(r.items[wi-1].ff||wd.ff,r.items[wi-1].fs||wd.fs);
+                const extra=Math.round((Math.max(0,gap)-nat)*4)/4;
+                d.appendChild(document.createTextNode(' '));
+                if(extra>0.5){
+                    const g=document.createElement('span');
+                    g.className='sdy-tg';
+                    g.style.cssText='display:inline-block;width:'+extra.toFixed(1)+'px;height:0;overflow:hidden;vertical-align:bottom;';
+                    d.appendChild(g);
+                }
+            }
+            const sp=document.createElement('span');
+            sp.style.cssText=wd.style+';line-height:1;white-space:nowrap;';
+            sp.textContent=wd.txt;
+            d.appendChild(sp);
+        });
+        frag.appendChild(d);
+    });
+    return frag;
+}
+// 14.40 · 줄 흐름 상자 엔터 — 캐럿 위치에서 줄을 나눈 뒤, 그 아래(원문 줄
+// 간격만큼)에 새 줄을 만든다. 원문 줄은 절대 위치라 어느 쪽도 이동하지 않는다.
+function _tightLineEnter(c,w){
+    try{
+        const sel=window.getSelection();
+        if(!sel||!sel.rangeCount) return;
+        let r=sel.getRangeAt(0).cloneRange();
+        if(!r.collapsed){
+            r.deleteContents();
+            sel.removeAllRanges();
+            r=sel.rangeCount?sel.getRangeAt(0).cloneRange():document.createRange();
+            r.collapse(true);
+            if(!c.contains(r.startContainer)) return;
+        }
+        let p=(r.startContainer.nodeType===3)?r.startContainer.parentElement:r.startContainer;
+        let line=null;
+        while(p&&p!==c){
+            if(p.classList&&p.classList.contains('sdy-tl')){ line=p; break; }
+            p=p.parentElement;
+        }
+        if(!line){
+            const lines=Array.from(c.children).filter(x=>x.classList&&x.classList.contains('sdy-tl'));
+            if(!lines.length) return;
+            line=lines[lines.length-1];
+            const er=document.createRange();
+            er.selectNodeContents(line); er.collapse(false);
+            sel.removeAllRanges(); sel.addRange(er);
+            r=er;
+        }
+        const top=parseFloat(line.style.top)||0;
+        const pitch=parseFloat(line.style.height)||line.offsetHeight||20;
+        const afterR=document.createRange();
+        afterR.setStart(r.startContainer,r.startOffset);
+        afterR.setEnd(line,line.childNodes.length);
+        const afterFrag=afterR.extractContents();
+        const afterText=String(afterFrag.textContent||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
+        const nl=document.createElement('div');
+        nl.className='sdy-tl';
+        nl.style.cssText='position:absolute;left:0;width:100%;top:'+(top+pitch).toFixed(1)+'px;height:'+pitch.toFixed(1)+'px;white-space:normal;';
+        if(!afterText){ while(afterFrag.firstChild) afterFrag.removeChild(afterFrag.firstChild); nl.appendChild(document.createElement('br')); }
+        nl.appendChild(afterFrag);
+        if(line.parentNode) line.parentNode.insertBefore(nl,line.nextSibling);
+        if(!String(line.textContent||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim()&&!line.querySelector('img')) line.appendChild(document.createElement('br'));
+        // 캐럿 → 새 줄의 맨 앞
+        const cr=document.createRange();
+        const f0=afterFrag.firstChild;
+        if(f0&&f0.nodeType===3) cr.setStart(f0,0);
+        else if(f0&&f0.nodeType===1&&f0.tagName!=='BR'){ cr.selectNodeContents(f0); cr.collapse(true); }
+        else cr.setStart(nl,0);
+        cr.collapse(true);
+        sel.removeAllRanges(); sel.addRange(cr);
+        w._caretV=(w._caretV||0)+1;
+        try{ saveSel(); }catch(e2){}
+        if(w.classList.contains('edit')){ commitEditSnapshot(); _armTypingCheckpoint(w); }
+    }catch(e){}
+}
 
     let _histT=0, _lastTypeT=0, _scriptEditUndoable=false;
 /* APP-PART:07b-hl-band.js:END */
