@@ -84,9 +84,34 @@
     //   예시 문구(abc 가나다)는 쓰지 않는다 — 이름만 보고도 어떤 폰트인지 바로 알 수 있게.
     //   좌측: 한국어·영어 이름 (둘 다 해당 글꼴, .fi-sample 의 font-family 를 상속)
     //   우측: 현재 선택 시 체크
+    // 메뉴를 열었는데 장식 글꼴 CSS 를 아직 안 받았으면(첫 화면 뒤 여유 로드 중)
+    // 지금 바로 받고, 다 받아지는 순간 미리보기를 다시 그린다 — 글꼴이 늦게 떠서
+    // 목록이 전부 기본 글꼴로 보이는 일이 없게.
+    function positionFontMenu(){
+        const m=document.getElementById('fontMenu');
+        if(!m||!m.classList.contains('show')) return;
+        if(m.parentElement!==document.body) document.body.appendChild(m);
+        const r=document.getElementById('fontBtn').getBoundingClientRect();
+        const cw=v=>window.sdyUiCss?window.sdyUiCss(v):(Number(v)||0);  // html zoom(.9) 보정
+        m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-288)+'px';
+        m.style.top=(cw(r.bottom)+6)+'px';
+    }
+    function refreshFontMenu(){
+        const m=document.getElementById('fontMenu');
+        if(!m) return;
+        const wasShow=m.classList.contains('show');
+        const cur=curFont;
+        m.innerHTML='';
+        delete m.dataset.ready;
+        buildFontMenu();
+        m.querySelectorAll('.font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===cur));
+        if(wasShow) positionFontMenu();
+    }
     function buildFontMenu(){
         const m=document.getElementById('fontMenu');
         if(m.dataset.ready==='1') return;
+        // 아직 늦게 로드 중인 장식 글꼴이면 지금 당겨 온다 (00-boot 의 멱등 로더)
+        if(window.sdyLoadUiFonts) try{ window.sdyLoadUiFonts(); }catch(e){}
         FONTS.forEach(f=>{
             const it=document.createElement('div');
             it.className='font-item'; it.dataset.f=f.id;
@@ -109,6 +134,12 @@
                 const fam=f.css.split(',')[0];           // 주 패밀리 (따옴표 포함)
                 try{ document.fonts.load('16px '+fam).catch(()=>{}); }catch(e){}
             });
+            // 폰트가 방금 요청이라 아직 안 떴으면, 다 떠오르는 순간 목록을 다시 그린다.
+            try{
+                if(document.fonts.status!=='loaded'&&document.fonts.ready){
+                    document.fonts.ready.then(()=>{ try{ refreshFontMenu(); }catch(_e){} }).catch(()=>{});
+                }
+            }catch(e){}
         }
     }
     function toggleFontMenu(){
@@ -120,11 +151,7 @@
         if(willShow){
             // 툴바의 블러(글래스)가 fixed 의 기준점을 바꾸어 위치가 어긋나므로
             // 색 팝오버와 같은 방식으로 body 로 옮긴 뒤 배치한다.
-            if(m.parentElement!==document.body) document.body.appendChild(m);
-            const r=document.getElementById('fontBtn').getBoundingClientRect();
-            const cw=v=>window.sdyUiCss?window.sdyUiCss(v):(Number(v)||0);  // html zoom(.9) 보정
-            m.style.left=Math.min(cw(r.left),cw(window.innerWidth)-288)+'px';
-            m.style.top=(cw(r.bottom)+6)+'px';
+            positionFontMenu();
             // 현재 선택된 글꼴 표시 (강조 + 체크)
             m.querySelectorAll('.font-item').forEach(n=>n.classList.toggle('sel',n.dataset.f===curFont));
         }

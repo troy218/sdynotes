@@ -1945,9 +1945,10 @@
         .text-ghost .tg-label kbd,.place-ghost .tg-label kbd{margin-left:2px;padding:1px 5px;border-radius:5px;background:rgba(255,255,255,.2);
             font:700 9px/1.5 ui-monospace,monospace;}
         .text-ghost .tg-placeholder{position:absolute;left:14px;top:50%;transform:translateY(-50%);
-            font-size:11px;color:var(--accent);opacity:.62;white-space:nowrap;}
+            font-size:11px;line-height:1.2;color:var(--accent);opacity:.62;white-space:nowrap;}
         .text-ghost .tg-caret{
-            position:absolute;left:10px;top:12px;width:2px;background:var(--accent);border-radius:2px;
+            position:absolute;left:10px;top:50%;width:2px;height:16px;background:var(--accent);border-radius:2px;
+            transform:translateY(-50%);  /* 상자 높이가 몇이든 캐럿은 안내 문구와 함께 세로 중앙 */
             animation:caretBlink 1s steps(1) infinite;
         }
         .text-ghost .tg-corner{position:absolute;width:7px;height:7px;border-radius:50%;background:#fff;

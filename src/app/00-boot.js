@@ -9,6 +9,7 @@
 
     // 장식 글꼴(손글씨·제목용 12종)은 첫 화면을 그린 뒤에 받는다.
     // head 에서 한꺼번에 받으면 폰에서 시작이 눈에 띄게 느려진다.
+    // (글꼴 메뉴를 먼저 열면 buildFontMenu 가 sdyLoadUiFonts() 로 즉시 당겨 온다)
     (function(){
       var href='https://fonts.googleapis.com/css2'
         +'?family=Gaegu:wght@400;700&family=Jua&family=Nanum+Pen+Script'
@@ -16,10 +17,13 @@
         +'&family=Poor+Story&family=Black+Han+Sans&family=Nanum+Gothic+Coding'
         +'&family=Inter:wght@400;600;700&family=Roboto+Mono'
         +'&family=Playfair+Display:wght@400;700&family=Caveat:wght@400;700&display=swap';
+      var done=false;
       function load(){
+        if(done) return; done=true;
         var l=document.createElement('link');
         l.rel='stylesheet'; l.href=href; document.head.appendChild(l);
       }
+      window.sdyLoadUiFonts=load;   // 글꼴 메뉴가 열릴 때 필요하면 즉시 부른다 (멱등)
       if('requestIdleCallback' in window) requestIdleCallback(load,{timeout:2500});
       else addEventListener('load',function(){ setTimeout(load,300); });
     })();

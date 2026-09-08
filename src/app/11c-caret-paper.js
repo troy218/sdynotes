@@ -126,6 +126,11 @@
         return nr;
     }
     // span 안의 닻을 지운다. 캐럿이 같은 텍스트 노드 안에 있으면 지운 글자 수만큼 당긴다.
+    // ★ 지운 글자 수는 '줄이기 전' 캐럿 오프셋으로 센다. tn.nodeValue 를 먼저 줄이면
+    //   라이브 셀렉션의 offset 이 새 길이 밖으로 밀려 클램프(끝으로 당겨짐)되고,
+    //   그 클램프된 값을 다시 읽어 다시 맞추면 한 글자 앞(첫 글자 앞)으로 새어
+    //   '다음 글자가 첫 글자 앞에 붙는' 순서 역전이 났다. → 줄이기 전 오프셋을
+    //   미리 떠서 그 값으로만 새 위치를 계산한다.
     function _stripTypeMarks(span){
         if(!span) return;
         let tw=null;
@@ -139,20 +144,23 @@
         nodes.forEach(tn=>{
             const v=String(tn.nodeValue||'');
             if(v.indexOf(_TYPE_MARK)<0) return;
+            // 줄이기 전 캐럿 위치를 먼저 고정한다 (cut = 그 앞에 있는 닻 개수)
+            const pre={ start:caret&&caret.startContainer===tn?caret.startOffset:-1,
+                        end:caret&&!caret.collapsed&&caret.endContainer===tn?caret.endOffset:-1,
+                        hitS:!!(caret&&caret.startContainer===tn),
+                        hitE:!!(caret&&!caret.collapsed&&caret.endContainer===tn) };
             let cutS=0,cutE=0;
             try{
-                if(caret&&caret.startContainer===tn)
-                    cutS=String(v.slice(0,caret.startOffset)).split(_TYPE_MARK).length-1;
-                if(caret&&!caret.collapsed&&caret.endContainer===tn)
-                    cutE=String(v.slice(0,caret.endOffset)).split(_TYPE_MARK).length-1;
+                if(pre.start>=0) cutS=String(v.slice(0,pre.start)).split(_TYPE_MARK).length-1;
+                if(pre.end>=0)   cutE=String(v.slice(0,pre.end)).split(_TYPE_MARK).length-1;
             }catch(e){}
             tn.nodeValue=v.split(_TYPE_MARK).join('');
             if(!caret) return;
             try{
-                if(caret.startContainer===tn||(!caret.collapsed&&caret.endContainer===tn)){
+                if(pre.hitS||pre.hitE){
                     const r=caret.cloneRange();
-                    if(r.startContainer===tn) r.setStart(tn,Math.max(0,caret.startOffset-cutS));
-                    if(!caret.collapsed&&r.endContainer===tn) r.setEnd(tn,Math.max(0,caret.endOffset-cutE));
+                    if(pre.hitS) r.setStart(tn,Math.max(0,pre.start-cutS));
+                    if(pre.hitE) r.setEnd(tn,Math.max(0,pre.end-cutE));
                     s.removeAllRanges(); s.addRange(r);
                     caret=r;
                 }
