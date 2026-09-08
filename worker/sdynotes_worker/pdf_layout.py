@@ -15,10 +15,12 @@ import pymupdf
 # glyph advance is retained; the paint plan still identifies the original glyph.
 LIGATURES = str.maketrans({"ﬁ": "fi", "ﬂ": "fl", "ﬀ": "ff", "ﬃ": "ffi", "ﬄ": "ffl", "ﬅ": "st", "ﬆ": "st"})
 
+# 실제 글꼴 이름을 먼저 두어 OS 에 그 글꼴이 있으면 진짜로 그린다(라벨과 일치).
+# 번들 유사글꼴(SDY Times/Tinos · SDY Helvetica/Arimo)은 그 글꼴이 없을 때만 대체한다.
 FONT_CSS = {
-    "times": "'SDY Times','Times New Roman','Liberation Serif',serif",
+    "times": "'Times New Roman','Liberation Serif','SDY Times',serif",
     "cmroman": "'SDY Computer Modern','Latin Modern Roman','Times New Roman',serif",
-    "arial": "'SDY Helvetica',Arial,'Liberation Sans',sans-serif",
+    "arial": "'Arial','Helvetica','Liberation Sans','SDY Helvetica',sans-serif",
     "mono": "'Courier New','Liberation Mono',monospace",
     "myeongjo": "'Nanum Myeongjo',serif",
     "pretendard": "'Pretendard Variable','Pretendard',sans-serif",
