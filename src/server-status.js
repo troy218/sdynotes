@@ -64,12 +64,21 @@ function srvFill(d){
     document.getElementById('srvExtra').textContent=
         `변환 ${d.jobs||0}건 · 분당 요청 ${d.rpm||0} · 접속 ${_notifOnline||1}명 · 가동 ${upTxt}`;
 }
+// 14.39.5 · '창이 닫힌 뒤 깨어난 폴링' 방어.
+//   이 모듈은 setInterval/await 로 혼자 계속 돈다. 화면(문서)이 사라진 뒤에
+//   그 이어서 실행(continuation)이 깨어나면 document 가 undefined 라
+//   TypeError 가 나고, jsdom 런타임 테스트에서는 프로세스 자체가 죽어
+//   다 통과한 그룹이 간헐적으로 실패(= CI 깜빡임)로 잡혔다.
+//   화면이 없으면 아무것도 그리지 않고 조용히 돌아온다.
+function _docGone(){ return typeof document==='undefined'||!document; }
 async function srvPoll(){
     try{
         const r=await fetch('/api/server/stat',{cache:'no-store'});
         const d=await r.json();
+        if(_docGone()) return;
         if(d&&d.ok) srvPaint(d);
     }catch(e){
+        if(_docGone()) return;
         srvPaint({score:0,level:'bad',reason:'서버에 연결할 수 없습니다',jobs:0,rpm:0});
     }
 }
@@ -96,9 +105,9 @@ document.addEventListener('click',e=>{
 function srvStart(){
     clearInterval(_srvTimer);
     srvPoll();
-    _srvTimer=setInterval(()=>{ if(!document.hidden) srvPoll(); },20000);
+    _srvTimer=setInterval(()=>{ if(!_docGone()&&!document.hidden) srvPoll(); },20000);
 }
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) srvPoll(); });
+document.addEventListener('visibilitychange',()=>{ if(!_docGone()&&!document.hidden) srvPoll(); });
 
 // ===== 알림 센터 + 현재 접속자 =====
 let _notifItems=[], _notifOnline=1, _notifBusy=false;
@@ -126,12 +135,13 @@ function renderNotifications(){
     </div>`).join('');
 }
 async function notifPoll(){
-    if(_notifBusy||document.hidden) return; _notifBusy=true;
+    if(_docGone()||_notifBusy||document.hidden) return; _notifBusy=true;
     try{
         const ping=fetch('/api/presence/ping',{method:'POST',headers:{'Content-Type':'application/json'},
             body:JSON.stringify({device:(window.SET_DEV||'web')})}).then(r=>r.json()).catch(()=>null);
         const data=fetch('/api/notifications',{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
         const [p,d]=await Promise.all([ping,data]);
+        if(_docGone()) return;      // 받는 사이에 창이 닫혔다 — 그리지 않는다
         if(p&&p.ok) _notifOnline=p.online||1;
         if(d&&d.ok){ _notifItems=d.items||[]; _notifOnline=Math.max(_notifOnline,d.online||0,1); }
         const unread=_notifItems.filter(x=>!x.read).length;
@@ -168,8 +178,8 @@ async function clearReadNotifications(){
 document.addEventListener('click',e=>{
     if(!e.target.closest('#notifPop')&&!e.target.closest('#notifBtn')) document.getElementById('notifPop').classList.remove('show');
 });
-setInterval(()=>{ if(!document.hidden) notifPoll(); },25000);
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ notifPoll(); window.flushCardGrades&&window.flushCardGrades(); window.pullSettings&&window.pullSettings(); } });
+setInterval(()=>{ if(!_docGone()&&!document.hidden) notifPoll(); },25000);
+document.addEventListener('visibilitychange',()=>{ if(!_docGone()&&!document.hidden){ notifPoll(); window.flushCardGrades&&window.flushCardGrades(); window.pullSettings&&window.pullSettings(); } });
 setTimeout(notifPoll,1200);
 
 // ── 외부 노출 ──

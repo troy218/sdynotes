@@ -269,6 +269,63 @@
             _stackTransforms(cards,stack.classList.contains('fanned'));
         });
     }
+    // ── 14.39.5 · 홈 카드 미리보기 '페인트 기억' ────────────────────────────
+    // 뒤로가기로 노트를 닫고 홈에 돌아오면 홈을 다시 그린다 — 방금 본 노트를
+    // '최근 편집' 줄로 옮겨 놓아야 하므로 카드 DOM을 새로 만든다. 그때마다
+    // 미리보기를 '빈 프레임'으로 만든 뒤 다시 채웠기 때문에 홈 전체가 한 순간
+    // 하얗게 비었다가 채워지는 새로고침 깜빡임이 보였다(서버에 본문을 둔
+    // 노트는 미리보기를 받아 오는 동안 그 빈 시간이 훨씬 길었다).
+    // 이제 한 번 그려 둔 미리보기 HTML을 기억했다가, 같은 카드를 다시 만들 때
+    // '동기적으로' 얹는다 → 빈 프레임이 아예 생기지 않는다.
+    //   · nb_* 개정 번호(cfgRevOf)가 같으면 다시 그릴 일도, 네트워크도 없다.
+    //   · 본문이 바뀐 노트는 기억을 '자리 표시'로만 쓰고 _render 가 곧 덮어쓴다
+    //     (그래도 카드는 비어 보이지 않는다).
+    const _pvPaint=new Map();          // nbId(String) -> {rev,html,bw,bh,tf,left,top}
+    const _PV_PAINT_MAX=48;            // 기억해 둘 카드 수 한도
+    const _PV_PAINT_BYTES=8*1024*1024; // 기억해 둘 HTML 총량 한도
+    const _PV_PAINT_ONE=2*1024*1024;   // 한 카드가 너무 크면 기억하지 않는다
+    let _pvPaintBytes=0;
+    function pvPaintDrop(id){
+        if(id==null||id==='') return;
+        const k=String(id), e=_pvPaint.get(k);
+        if(!e) return;
+        _pvPaintBytes-=e.html.length; _pvPaint.delete(k);
+    }
+    function pvPaintClear(){ _pvPaint.clear(); _pvPaintBytes=0; }
+    function pvPaintStore(id,rev,html,bw,bh,frameEl){
+        if(id==null||id===''||!html||html.length>_PV_PAINT_ONE) return;
+        const k=String(id);
+        pvPaintDrop(k);
+        // 배율(transform·left·top)도 함께 기억한다. 이것 없으면 다시 만든 카드가
+        // '축소 전 크기'로 한 프레임 보였다가 rAF 의 rescalePreviews 에서 제자리로
+        // 뛰므로 그것 역시 깜빡임이 된다.
+        const fst=(frameEl&&frameEl.style)||null;
+        _pvPaint.set(k,{rev:rev|0,html,bw,bh,
+            tf:(fst&&fst.transform)||'', left:(fst&&fst.left)||'', top:(fst&&fst.top)||''});
+        _pvPaintBytes+=html.length;
+        // 한도(개수·총량)를 넘기면 가장 오래된 기억부터 비운다 (Map 은 삽입 순서)
+        for(const key of _pvPaint.keys()){
+            if(_pvPaint.size<=_PV_PAINT_MAX&&_pvPaintBytes<=_PV_PAINT_BYTES) break;
+            const e=_pvPaint.get(key); _pvPaintBytes-=(e?e.html.length:0); _pvPaint.delete(key);
+        }
+    }
+    // 새로 만든 카드에 기억해 둔 미리보기를 얹는다.
+    // 반환: true = 그대로 확정(다시 그릴 필요 없음), false = 자리 표시만 함.
+    function pvPaintApply(card,nbId,rev){
+        const e=_pvPaint.get(String(nbId));
+        if(!e) return false;
+        const pv=card.querySelector('.note-preview');
+        const f=card.querySelector('.note-preview-frame');
+        if(!pv||!f) return false;
+        f.innerHTML=e.html;
+        f.style.width=e.bw+'px'; f.style.height=e.bh+'px';
+        if(e.tf){ f.style.transform=e.tf; f.style.left=e.left; f.style.top=e.top; }
+        pv.dataset.bw=e.bw; pv.dataset.bh=e.bh;
+        if((e.rev|0)===(rev|0)){ f.dataset.done='1'; return true; }
+        f.dataset.stale='1';       // 본문이 바뀌었다 → _render 가 곧 새로 그린다
+        return false;
+    }
+
     function renderGrid(force){
         const g=document.getElementById('noteGrid');
         if(!g) return;
@@ -396,6 +453,11 @@
                     <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nb.title||'새 노트')}</span>
                     <span class="live-dot" data-nb="${nb.id}" style="display:none;flex-shrink:0;margin-left:8px;font-size:10.5px;font-weight:700;color:#059669;">●</span>
                 </div>`;
+            // 14.39.5 · 그려 둔 미리보기가 있으면 빈 프레임 없이 곧바로 얹는다.
+            //   잠긴 노트는 기억을 쓰지 않는다(본문은 흐리게 가려져야 한다) —
+            //   잠그는 순간 기억도 버린다.
+            if(locked) pvPaintDrop(nb.id);
+            else pvPaintApply(card,nb.id,cfgRevOf(nb.id));
             const startLP=(ev)=>{
                 clearTimeout(longPressTimer);
                 longPressTimer=setTimeout(()=>{
@@ -457,7 +519,11 @@
                     f.style.width=rs.w+'px'; f.style.height=rs.h+'px';
                     f.innerHTML=renderPageStatic((rd.pages&&rd.pages[0])||blankPage(),rs,rp);
                     f.dataset.done='1';
+                    delete f.dataset.stale;
                     rescaleOne(pv);
+                    // 다음 재렌더(뒤로가기·폴더 이동·설정 반영)에서 빈 프레임이
+                    // 생기지 않도록 방금 그린 결과(배율 포함)를 기억해 둔다.
+                    pvPaintStore(nb.id,cfgRevOf(nb.id),f.innerHTML,rs.w,rs.h,f);
                 }catch(e){
                     card._previewTry=(card._previewTry||0)+1;
                     f.innerHTML='<div style="padding:24px;color:var(--text3);font-size:12px">미리보기를 다시 불러오는 중…</div>';

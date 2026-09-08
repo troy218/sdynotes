@@ -60,7 +60,11 @@
     function renderPageStatic(page, size, paperCls){
         let html='';
         const strokes=[];
-        const bw=_expBorderW();
+        // 카드 축소판은 '편집 화면의 확대율'을 따라가지 않는다.
+        // --bw 는 1.6/배율 이라 노트를 보고 나온 뒤에는 그 값이 #pagesStage 에 남아
+        // 같은 노트가 다른 테두리·다른 배치로 다시 그려진다(= 홈이 새로고침된 것처럼 보인다).
+        // 안쪽 조립(_expTextInner/_expLatexInner)은 화면과 그대로 공유하고 테두리만 고정한다.
+        const bw=2;
         (page.els||[]).forEach(el=>{
             if(el.type==='image'){
                 html+=`<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;border:${bw}px solid transparent;box-sizing:border-box;border-radius:2px;z-index:2;transform:rotate(${normalizedRotation(el.rotation)}deg);transform-origin:50% 50%;">`+
