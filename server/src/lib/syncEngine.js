@@ -65,11 +65,18 @@ export async function putState(nb, state) {
 }
 
 // Push: apply ops with per-key LWW. Returns {ok, version, accepted, rejected, blocked}
-export async function syncPush(body) {
+export async function syncPush(body, { canDeleteBuglog = false } = {}) {
   const nb = String(body.nb || '');
   let ops = body.ops || [];
   if (!nb) return { status: 400, body: { ok: false, error: 'nb 없음' } };
 
+  // syncPath는 밑줄/특수문자를 제거한다. 'settings' 같은 별칭으로 같은 파일을
+  // 노트인 척 덮어써 설정의 스키마/삭제 권한 검사를 우회하지 못하게 한다.
+  const fileId = nb.replace(/[^0-9a-zA-Z-]/g, '');
+  if ((fileId === 'settings' && nb !== '__settings__')
+      || (fileId === 'settingssandbox' && nb !== '__settings_sandbox__')) {
+    return { status: 400, body: { ok: false, error: '설정 동기화 키 오류' } };
+  }
   const isSettings = String(nb).startsWith('__settings');
   if (isSettings) {
     const clientSchema = parseInt(body.schema || 0, 10) || 0;
@@ -86,10 +93,21 @@ export async function syncPush(body) {
   if (!ops || !Array.isArray(ops)) return { status: 400, body: { ok: false, error: 'ops 형식 오류' } };
   if (!ops.length) return { status: 200, body: { ok: true, version: 0 } };
 
-  // bulk-delete firewall
-  let blocked = [];
+  // 버그 일지는 빈/구버전 기기가 보내는 자동 삭제로 사라지면 안 된다.
+  // 관리자 세션 + X에서 남긴 명시적 의도가 모두 있어야 삭제를 허용한다.
+  // 막힌 삭제만 빼고 나머지 추가/설정 변경은 정상적으로 저장한다.
+  const blocked = [];
   if (isSettings) {
-    const limits = { bookmark: 4, playlist: 4, folder: 4 };
+    ops = ops.filter((op) => {
+      if (op.kind === 'del' && String(op.id || '').startsWith('buglog:')
+          && (canDeleteBuglog !== true || op.explicit !== true)) {
+        blocked.push(op.id);
+        return false;
+      }
+      return true;
+    });
+    // bulk-delete firewall — 구버전 프런트에도 적용되도록 서버에서도 보호한다.
+    const limits = { bookmark: 4, playlist: 4, folder: 4, buglog: 10 };
     const counts = {};
     for (const op of ops) {
       if (op.kind !== 'del') continue;

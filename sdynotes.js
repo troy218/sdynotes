@@ -2817,8 +2817,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function _stOutSave(){
         try{ localStorage.setItem(ST_OUT_KEY,JSON.stringify(_stOut)); }catch(e){}
     }
-    function _stQueueOp(id,kind,data){
+    function _stQueueOp(id,kind,data,explicit=false){
         const op={id,kind,rev:_stNow(),dev:SET_DEV};
+        // 버그 일지 X처럼 사용자가 직접 요청한 삭제만 표시한다 (diff는 표시 금지).
+        if(kind==='del'&&explicit===true) op.explicit=true;
         if(kind!=='del') op.data=data;
         _stOut[id]=op; _stLocalRev.set(id,op.rev); _stDirty=true; _stOutSave();
         return op;
@@ -2945,13 +2947,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         for(const k in cur){
             seen.add(k); const v=cur[k];
             if(v===null){
-                if(_stHash.has(k)&&_stHash.get(k)!==null) ops.push({id:k,kind:'del'});
+                if(k.indexOf('buglog:')!==0&&_stHash.has(k)&&_stHash.get(k)!==null) ops.push({id:k,kind:'del'});
             }else{
                 if(_stHash.get(k)!==JSON.stringify(v)) ops.push({id:k,kind:'put',data:v});
             }
         }
         for(const [k,v] of Array.from(_stHash.entries())){
-            if(!seen.has(k)&&v!==null) ops.push({id:k,kind:'del'});
+            // 빈/구버전 기기나 localStorage 실패는 일지 삭제 의도가 아니다.
+            // 일지는 delBugEntry가 outbox에 넣은 명시적 삭제만 전송한다.
+            if(!seen.has(k)&&v!==null&&k.indexOf('buglog:')!==0) ops.push({id:k,kind:'del'});
         }
         return _stGuardDeletes(ops);
     }
@@ -3048,8 +3052,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     async function _stPush(ops){
         if(_stFrozen) return null;            // 예전 화면은 아무것도 덮어쓰지 않는다
+        const headers={'Content-Type':'application/json'};
+        if(ops.some(o=>o.kind==='del'&&String(o.id).indexOf('buglog:')===0)){
+            // 인증 토큰은 outbox에 남기지 않고, 전송 시 현재 세션에서만 가져온다.
+            try{ if(adminToken) headers['X-Admin-Token']=adminToken; }catch(e){}
+        }
         const r=await fetch('/api/sync/push',{method:'POST',
-            headers:{'Content-Type':'application/json'},
+            headers,
             body:JSON.stringify({nb:SET_NS, schema:SETTINGS_SCHEMA, ops})});
         if(r.status===409){                   // 서버가 '오래된 화면' 이라고 알려 줌
             const info=await r.json().catch(()=>({}));
@@ -3059,9 +3068,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const d=await r.json().catch(()=>({}));
         if(!r.ok||!d.ok) return null;
         if(Array.isArray(d.blocked)&&d.blocked.length){
-            // 서버가 대량 삭제를 막았다 → 서버 값을 정답으로 삼아 되돌려 받는다
+            // 구버전의 자동 삭제·권한 없는 삭제·대량 삭제 → 서버 기록으로 복원한다.
             console.warn('[동기화 보호] 서버가 삭제 '+d.blocked.length+'건을 막았습니다');
-            try{ toast('⚠️ 비정상적인 대량 삭제를 막았습니다 · 서버 데이터를 유지합니다',3400); }catch(e){}
+            try{ toast('⚠️ 확인되지 않은 삭제를 막았습니다 · 서버 데이터를 유지합니다',3400); }catch(e){}
             d.blocked.forEach(id=>{ delete _stOut[id]; _stLocalRev.delete(id); });
             _stOutSave();
             setTimeout(()=>{ _stSince=0; _stHash.clear(); _stApplied.clear(); pullSettings(); },80);
@@ -3089,7 +3098,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
         const ops=Object.values(_stOut).filter(o=>o&&o.id);
         if(!ops.length){ _stDirty=false; return; }
-        const res=await _stPush(ops);
+        const res=await _stPush(ops).catch(()=>null);
         if(!res){ _stDirty=true; return; }
         const accepted=new Set(Array.isArray(res.accepted)?res.accepted:ops.map(o=>o.id));
         const rejected=new Set(Array.isArray(res.rejected)?res.rejected:[]);
@@ -3106,6 +3115,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
         _stOutSave(); _stDirty=Object.keys(_stOut).length>0;
         if(rejected.size) setTimeout(pullSettings,40);
+        return res;   // 일지 등은 서버 ACK 뒤에만 저장 완료를 안내한다.
     }
     try{ window.pushSettings=pushSettings; window.pushSettingsNow=pushSettingsNow; }catch(e){}
 
@@ -3235,7 +3245,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(a.length===b.length) return false;
                 saveBugEntries(b); return true;
             }
-        }catch(e){}
+        }catch(e){
+            // 일지 저장 실패는 pull의 적용 완료 해시에 올리지 않고 다음에 재시도한다.
+            if(k.indexOf('buglog:')===0) throw e;
+        }
         return false;
     }
     function _stApply(op){
@@ -3399,7 +3412,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             // 앱 전체 설정 (테마·강조색·기본 글꼴 등)
             if(k==='appset'){ return _appSetApply(d); }
-        }catch(e){}
+        }catch(e){
+            // 일지 저장 실패는 pull의 적용 완료 해시에 올리지 않고 다음에 재시도한다.
+            if(k.indexOf('buglog:')===0) throw e;
+        }
         return false;
     }
 
@@ -3544,9 +3560,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             }
             // '도착' 애니메이션은 떠나는 것이 없을 때만 (집게 단일 세션)
             if(!didLeave && !_clawBusy) _stFlushArrive(pending.filter(a=>a.type==='arrive'));
-        }catch(e){}
+        }catch(e){
+            // 읽기/기기 저장 실패 때는 불완전하게 병합된 목록을 서버로 올리지 않는다.
+            return;
+        }
         if(cleaned) _stDirty=true;          // 정리 결과도 서버에 반영
-        if(!_stCacheReset && _stDirty) pushSettingsNow(); // 서버 복원 뒤의 새 변경만 전송
+        if(!_stCacheReset && _stDirty) return pushSettingsNow(); // 서버 복원 뒤의 새 변경만 전송
     }
     // 마지막의 SSE 릴레이가 스크립트 경계/브라우저에 관계없이 호출할 수 있게 노출
     try{ window.pullSettings=pullSettings; }catch(e){}
@@ -4571,6 +4590,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     //   함께 본다 — 누구나 보되, 지우기(X)는 관리자로 로그인한 경우에만 노출·동작한다.
     //   설정 → '버그 일지' 줄의 [보기]를 눌러야 목록이 열리고(스크롤), 열린
     //   목록에서 항목마다 X 로 그 기록만 지운다.
+    // 로컬 배열은 기기 사본이다. 서버는 sync/settings.json(Oracle 기본)에 영구
+    // 저장하며 apply.sh는 sync/를 교체하지 않는다. tmp는 원자 저장 중에만 쓴다.
     const BUGLOG_KEY='sdy_buglog';
     function getBugEntries(){
         try{
@@ -4582,7 +4603,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function saveBugEntries(a){
         const arr=(Array.isArray(a)?a.filter(x=>x&&x.id):[]).slice()
             .sort((x,y)=>(y.t||0)-(x.t||0));
-        try{ localStorage.setItem(BUGLOG_KEY,JSON.stringify(arr)); }catch(e){}
+        // 실패를 숨기면 실제로 아무것도 저장하지 않고 '기록 완료'라고 안내하게 된다.
+        localStorage.setItem(BUGLOG_KEY,JSON.stringify(arr));
         try{ document.dispatchEvent(new CustomEvent('sdy-buglog-changed')); }catch(e){}
     }
     function paintBugCount(){
@@ -4592,7 +4614,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         el.textContent=n?`${n}건`:'없음';
     }
     // 해돌이(ai-assistant.js)가 정리한 내용을 일지에 기록한다. id·시각은 여기서.
-    function buglogAdd(data){
+    async function buglogAdd(data){
         const id='bug_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
         const e={
             id,
@@ -4607,24 +4629,36 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         a.unshift(e);
         saveBugEntries(a);
         try{ _stQueueOp('buglog:'+id,'put',e); }catch(err){}
-        try{ pushSettingsNow(); }catch(err){}
         paintBugCount();
-        return e;
+        let result=null;
+        try{ result=await pushSettingsNow(); }catch(err){}
+        // synced는 응답용 상태일 뿐 일지 본문/설정 payload에는 저장하지 않는다.
+        const synced=!!(result&&Array.isArray(result.accepted)&&result.accepted.includes('buglog:'+id));
+        return {...e,synced};
     }
     try{ window.sdyBuglogAdd=buglogAdd; }catch(e){}
     // 목록에서 X — 그 기록 하나만 지운다 (관리자로 로그인한 경우에만 노출·동작)
-    function delBugEntry(id){
+    async function delBugEntry(id){
         // 모두가 지울 수 없게 — 관리자 전용 동작
         if(!isAdmin()){ try{ toast('관리자로 로그인해야 지울 수 있어요',1800); }catch(e){} return; }
         id=String(id||'');
         const a=getBugEntries(), b=a.filter(x=>String(x.id)!==id);
         if(a.length===b.length) return;
-        saveBugEntries(b);
-        try{ _stQueueOp('buglog:'+id,'del'); }catch(err){}
-        try{ pushSettingsNow(); }catch(err){}
+        try{ saveBugEntries(b); }catch(err){
+            try{ toast('삭제 요청을 저장하지 못했어요 · 브라우저 저장 공간을 확인해 주세요',2600); }catch(e){}
+            return;
+        }
+        try{ _stQueueOp('buglog:'+id,'del',undefined,true); }catch(err){}
         paintBugCount();
         if(isBuglogOpen()) renderBugList();
-        try{ toast('버그 기록을 지웠어요',1500); }catch(err){}
+        let result=null;
+        try{ result=await pushSettingsNow(); }catch(err){}
+        const key='buglog:'+id;
+        const saved=result&&Array.isArray(result.accepted)&&result.accepted.includes(key);
+        const blocked=result&&Array.isArray(result.blocked)&&result.blocked.includes(key);
+        try{ toast(saved?'버그 기록을 지웠어요':(blocked
+            ?'삭제가 차단됐어요 · 관리자 로그인 상태를 확인해 주세요'
+            :'삭제 요청을 기기에 보관했어요 · 서버 반영 대기 중'),2200); }catch(err){}
     }
     function isBuglogOpen(){
         const el=document.getElementById('buglogModal');
