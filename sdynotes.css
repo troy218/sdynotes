@@ -1747,8 +1747,12 @@
            ③ 클릭은 수식 잉크에만 반응(상자 빈 공간은 통과) → 본문 선택을 안 뺏는다 */
         .latex-box.imported{z-index:6;}
         /* 10.0 · 수식이 상자보다 커도 자르지 않고 전부 보이게 한다.
-           (기존 overflow:hidden — 상자 밖으로 삐져나온 큰 수식이 잘려 보였다) */
-        .latex-box.imported>.latex-content{padding:0;overflow:hidden;align-items:center;}
+           (기존 overflow:hidden — 상자 밖으로 삐져나온 큰 수식이 잘려 보였다)
+           14.39.3 · 보고(26.09.08) — '수식상자 바깥으로 수식이 나가면 사라짐'.
+           이 규칙에 overflow:hidden 이 남아 있어 상자를 줄이는 등 수식이 상자
+           밖으로 나가면 삐져나온 부분이 잘려 없어 보였다. 글상자(.tb-content)는
+           overflow:visible 로 글자가 절대 안 잘리므로, 수식도 같은 규칙으로 둔다. */
+        .latex-box.imported>.latex-content{padding:0;overflow:visible;align-items:center;}
         .latex-box.imported.display-math>.latex-content{padding:0;justify-content:center;}
         .latex-box.imported:not(.sel):not(.msel)>.latex-content{pointer-events:none;}
         .latex-box.imported .katex{line-height:1.05;}

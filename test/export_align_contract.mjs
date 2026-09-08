@@ -78,8 +78,8 @@ check('CSS 기준: 표 칸은 여백 6px 8px + 세로 가운데 flex 다',
   const b = fnBody(js, '_expLatexInner', 2000);
   check('수식도 투명 테두리 + 줄바꿈 없음이다',
     b.includes('solid transparent') && b.includes('white-space:nowrap'));
-  check('가져온 수식은 여백 0 + 숨김 + 가운데다',
-    b.includes('padding:0;overflow:hidden;align-items:center;'));
+  check('가져온 수식은 여백 0 + 보이는 overflow + 가운데다 (상자 밖으로 나가도 안 자름)',
+    b.includes('padding:0;overflow:visible;align-items:center;'));
   check('display 수식은 화면처럼 1px 4px + 가운데다',
     b.includes('padding:1px 4px;overflow:visible;align-items:center;'));
   check('인라인 수식은 화면처럼 아래 맞춤이다',
@@ -87,6 +87,22 @@ check('CSS 기준: 표 칸은 여백 6px 8px + 세로 가운데 flex 다',
 }
 check('CSS 기준: .latex-content 기본 여백·아래 맞춤이 그대로다',
   css.includes('.latex-content{') && css.includes('padding:0 4px 1px'));
+
+// ── ④-보 수식상자 오버플로 — 보고 26.09.08 "수식상자 바깥으로 수식이 나가면 사라짐" ──
+// 상자를 줄이거나 렌더가 크면 수식이 상자 밖으로 나가는데, 가져온 수식상자만
+// overflow:hidden 으로 잘려 '사라진' 것처럼 보였다. 텍스트는 .tb-content 가
+// overflow:visible 해서 상자 밖에서도 안 사라진다 — 수식도 그 규칙이 되어야 한다.
+{
+  const impRule=(css.match(/\.latex-box\.imported>\.latex-content\{[^}]*\}/)||[''])[0];
+  check('화면 CSS: 가져온 수식상자도 수식이 상자 밖으로 나가면 자르지 않는다',
+    impRule.includes('overflow:visible') && !impRule.includes('overflow:hidden'));
+  const baseRule=(css.match(/\.latex-content\{[^}]*\}/)||[''])[0];
+  check('화면 CSS: 기본 수식상자도 보이는 overflow 다',
+    baseRule.includes('overflow:visible'));
+  const tbRules=[...css.matchAll(/\.tb-content\{[^}]*\}/g)].map(m=>m[0]);
+  check('기준: 글상자(.tb-content) 는 보이는 overflow 다 — 수식과 같은 규칙',
+    tbRules.length>0 && tbRules.some(r=>r.includes('overflow:visible')));
+}
 
 // ── ⑤ foreignObject 리셋 ──────────────────────────────────────────────
 {
