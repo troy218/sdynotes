@@ -209,7 +209,14 @@
         return {...o};
     }
     function _cfgCacheDrop(id){ if(id==null||_cfgCacheId===id){ _cfgCacheId=null; _cfgCacheRaw=null; _cfgCacheObj=null; } }
-    function setCfg(id,c){ try{localStorage.setItem('nb_'+id,JSON.stringify(c));_cfgCacheDrop(id);return true;}
+    // ── 14.39.1 · 노트 설정(nb_*) '개정 번호' ────────────────────────────
+    //   홈 카드의 미리보기는 한 번 그려 둔 HTML을 기억했다가 홈을 다시 그릴 때
+    //   그대로 얹는다(빈 프레임 = 깜빡임 방지). 그 기억을 언제 버릴지를 이
+    //   번호로 판단한다 — nb_* 에 쓰는 모든 변경(setCfg)이 번호를 올린다.
+    const _cfgRev=new Map();          // nbId(String) -> 숫자
+    function _cfgRevBump(id){ if(id==null||id==='') return; const k=String(id); _cfgRev.set(k,(_cfgRev.get(k)||0)+1); }
+    function cfgRevOf(id){ return (id==null||id==='')?0:(_cfgRev.get(String(id))||0); }
+    function setCfg(id,c){ _cfgRevBump(id); try{localStorage.setItem('nb_'+id,JSON.stringify(c));_cfgCacheDrop(id);return true;}
         catch(e){
             // 용량 부족: 절대 '다른 노트의 캐시를 통째로' 지우지 않는다.
             // (그러면 그 노트의 폴더 소속·고정·휴지통 정보까지 날아가
@@ -220,6 +227,9 @@
                     const k=localStorage.key(i);
                     if(k&&(k.indexOf('draw_')===0||k.indexOf('img_')===0)) localStorage.removeItem(k);
                 }
+                // 그림·이미지 사본이 사라졌으니 그려 둔 미리보기 기억도 버린다
+                // (안 그러면 홈 카드에 지워진 그림이 계속 남아 있게 된다)
+                try{ pvPaintClear(); }catch(e){}
                 localStorage.setItem('nb_'+id,JSON.stringify(c)); return true;
             }catch(e2){}
             // ② 그래도 부족하면 다른 노트의 '본문(pages)'만 비워 서버에서 다시 받게 한다
@@ -246,6 +256,8 @@
                             if(o.pages&&_safeToDrop(k,o)){
                                 delete o.pages; delete o.textBoxes; delete o.previewImgs; delete o.drawing;
                                 localStorage.setItem(k,JSON.stringify(o));
+                                // 본문을 비운 노트는 파싱 캐시·미리보기 기억도 어긋난다
+                                const _nid=k.slice(3); _cfgRevBump(_nid); _cfgCacheDrop(_nid);
                             }
                         }catch(err){}
                     }

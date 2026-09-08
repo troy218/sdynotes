@@ -193,6 +193,7 @@
         // 혹시 서버 삭제가 실패/지연돼도 재조회 때 되살아나지 않도록 기록(tombstone)
         tombstone('notebooks', id);
         localStorage.removeItem('nb_'+id); localStorage.removeItem('draw_'+id);
+        try{ pvPaintDrop(id); previewDocCache.delete(id); }catch(e){}   // 그려 둔 미리보기 기억도
         sessionKeys.delete(id); decCache.delete(id); adminPlainUnlocked.delete(id);
         notebooks=notebooks.filter(x=>x.id!==id);
         saveLocalNBs();

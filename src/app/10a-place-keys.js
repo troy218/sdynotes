@@ -167,21 +167,96 @@
     // ============ 뒤로가기(브라우저 히스토리) 처리 ============
     // 에디터·폴더·모달을 열 때 히스토리 항목을 쌓아, 뒤로가기를 누르면
     // 사이트를 빠져나가는 대신 열려 있던 화면/모달이 닫히게 한다.
+    //
+    // 14.39.1 · **진짜 뒤로가기를 되찾았다.** (사용자 보고: "뒤로가기 누르면
+    //   화면이 한 번 새로고침되면서 깜빡인다")
+    //   원인은 이름 가림이었다. 이 묶음(번들)은 모든 파트가 한 어휘 스코프를
+    //   공유하는데, 01-core.js 의 `let history=[]`(되돌리기 스택)가
+    //   `window.history` 를 가린다. 그래서
+    //     · openNav 의 history.pushState() → "pushState is not a function"
+    //       예외 → catch 에 삼켜짐 → **히스토리 항목이 한 번도 쌓이지 않았다**
+    //     · navBack 의 history.back() → 같은 예외 → catch 의 '직접 닫기'로 동작
+    //     · popstate 처리부는 불릴 일이 없어 죽은 코드였다
+    //   겉보기엔 툴바 ← 버튼이 잘 닫는 것 같았지만, **브라우저·폰의 뒤로가기와
+    //   옆으로 밀어 돌아가기는 앱이 전혀 잡지 못했다.** 그래서 뒤로가기를 누르면
+    //   앱이 화면을 닫는 대신 사이트를 빠져나갔고, 브라우저가 문서를 다시
+    //   실으면서 화면이 통째로 새로고침되며 깜빡였다. 이제 window.history 를
+    //   명시적으로 부른다.
+    //
+    //   쌓는 방식은 '층마다 항목 하나'가 아니라 **보초 항목 하나**다.
+    //   모달을 X 로 닫으면(navDrop) 우리 장부에서는 빠져도 히스토리 항목은
+    //   지울 방법이 없어 남는다. 층마다 쌓으면 그 남은 항목 수만큼 '아무 일도
+    //   하지 않는 뒤로가기'가 쌓여, 앱을 나가려면 뒤로가기를 여러 번 눌러야
+    //   했다. 보초는 하나뿐이라 남는 항목도 최대 하나고, 뒤로가기는 언제나
+    //   '한 번 = 가장 위에 열린 것 하나 닫기'로 동작한다.
     const _nav=[];
-    function openNav(close){ _nav.push({close}); try{ history.pushState({sdy:_nav.length},''); }catch(e){} }
-    function navDrop(close){ const i=_nav.findIndex(x=>x.close===close); if(i>=0) _nav.splice(i,1); }
+    const _NAV_GUARD='sdyNavGuard';   // 보초 항목에 찍는 도장
+    let _navGuard=false;              // 지금 히스토리 항목이 우리가 얹은 보초인가
+    let _navNoHist=false;             // pushState 를 못 쓰는 환경(샌드박스 iframe·file://)
+    let _navCollapsing=false;         // 보초를 걷는 history.back() 의 popstate 는 무시한다
+    let _navCollapseT=null;           // …그 popstate 가 끝내 안 오는 환경 대비 안전망
+    function _navClose(it){ if(it&&it.close){ try{ it.close(); }catch(err){} } }
+    // 보초를 얹거나(첫 층) 이미 얹힌 보초의 층 수만 고친다(다음 층부터).
+    // replaceState 라서 층이 늘어도 히스토리 항목은 하나다.
+    function _navStamp(){
+        if(_navNoHist) return;
+        try{
+            if(_navGuard) window.history.replaceState({[_NAV_GUARD]:1,n:_nav.length},'');
+            else { window.history.pushState({[_NAV_GUARD]:1,n:_nav.length},''); _navGuard=true; }
+        }catch(e){ _navNoHist=true; _navGuard=false; }
+    }
+    function openNav(close){ _nav.push({close}); _navStamp(); }
+    function navDrop(close){
+        const i=_nav.findIndex(x=>x.close===close);
+        if(i>=0) _nav.splice(i,1);
+        if(_nav.length){ _navStamp(); return; }
+        // 층이 하나도 남지 않았다 → 보초도 함께 걷는다. 안 그러면 다음
+        // 뒤로가기 한 번이 '아무 일도 안 하는' 누름이 된다.
+        if(_navGuard&&!_navNoHist){
+            _navCollapsing=true;
+            try{ window.history.back(); }catch(e){ _navCollapsing=false; }
+            // popstate 를 주지 않는 이상한 브라우저에서도 다음 '진짜' 뒤로가기를
+            // 삼키지 않게, 잠시 뒤 스스로 푼다.
+            clearTimeout(_navCollapseT);
+            _navCollapseT=setTimeout(()=>{ _navCollapseT=null; _navCollapsing=false; },1500);
+        }
+    }
     function navBack(){
         if(!_nav.length) return;
-        try{ history.back(); }
-        catch(e){ const it=_nav.pop(); if(it&&it.close){ try{ it.close(); }catch(err){} } }
+        // 히스토리를 못 쓰는 환경에서 history.back() 을 부르면 앱 밖으로 나가
+        // 페이지가 다시 실린다(= 그 자체가 화면 깜빡임). 그럴 땐 곧바로 닫는다.
+        if(_navNoHist||!_navGuard){ _navClose(_nav.pop()); _navStamp(); return; }
+        try{ window.history.back(); }
+        catch(e){ _navClose(_nav.pop()); _navStamp(); }
     }
     window.addEventListener('popstate',(e)=>{
-        const target=(e.state&&typeof e.state.sdy==='number')?e.state.sdy:0;
-        while(_nav.length>target){
-            const it=_nav.pop();
-            if(it&&it.close){ try{ it.close(); }catch(err){} }
+        // 보초를 걷으려고 우리가 부른 back() 이다 — 화면은 이미 닫혔다.
+        if(_navCollapsing){
+            _navCollapsing=false; _navGuard=false;
+            clearTimeout(_navCollapseT); _navCollapseT=null;
+            // 걷는 사이에 새 층이 열렸으면 보초를 다시 얹어 장부를 맞춘다.
+            if(_nav.length) _navStamp();
+            return;
         }
+        const st=e&&e.state;
+        if(st&&st[_NAV_GUARD]){
+            // 앞으로가기 등으로 보초 항목에 다시 도착 — 닫힌 층을 되살릴 수는
+            // 없으므로, 열려 있는 것 중 보초가 기억하는 층 수를 넘는 것만 정리한다.
+            _navGuard=true;
+            const n=(typeof st.n==='number')?st.n:_nav.length;
+            while(_nav.length>n) _navClose(_nav.pop());
+            return;
+        }
+        // 보초 아래(앱이 처음 실린 항목)로 내려왔다.
+        _navGuard=false;
+        if(!_nav.length) return;      // 열린 것이 없다 → 다음 뒤로가기가 앱을 나간다
+        // 뒤로가기 한 번 = 가장 위 열린 것 하나 닫기.
+        _navClose(_nav.pop());
+        // 아직 층이 남았다면 보초를 다시 얹는다 — 다음 뒤로가기도 앱을
+        // 빠져나가는 대신 그다음 층을 닫아야 한다.
+        if(_nav.length) _navStamp();
     });
+
     // 열려 있는 것 중 가장 위를 닫는다 (Esc / 뒤로가기 공용). 닫았으면 true.
     function closeTopOverlay(){
         if(ctxMenuOpen()){ closeCtxMenu(); return true; }
