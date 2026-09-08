@@ -691,6 +691,7 @@
         const hit=_plainCache.get(el);
         if(hit&&hit.html===html) return hit.text;
         const d=document.createElement('div'); d.innerHTML=html;
+        try{ d.querySelectorAll('.sdy-tl').forEach(x=>x.append(' ')); }catch(_e){}   // 14.40 · 줄 경계 공백
         const text=d.textContent||'';
         try{ _plainCache.set(el,{html,text}); }catch(e){}
         return text;

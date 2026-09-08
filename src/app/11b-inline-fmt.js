@@ -108,6 +108,8 @@
                 if(!hasInner){
                     // 빈 span. 입력 대기 마커(.sdy-type)만 원자 토큰으로 살려 둔다.
                     if(k.classList&&k.classList.contains('sdy-type')) tokens.push({t:'type',node:k});
+                    // 14.40 · 논문 상자 단어 간격 스페이서 — 빈 span 이라서라도 토큰으로 온전하게 다룬다.
+                    if(tag==='SPAN'&&k.classList&&k.classList.contains('sdy-tg')) tokens.push({t:'atom',node:k});
                     continue;
                 }
                 walk(k, tag==='A'?k:(link||null));
@@ -516,6 +518,8 @@
         if(!host||!host.querySelectorAll) return;
         const toRemove=[];
         host.querySelectorAll('span,b,strong,i,em,u,s,strike,mark,font').forEach(el=>{
+            // 14.40 · 단어 간격 스페이서는 빈 span 이라서가 아니다.
+            if(el.classList&&el.classList.contains('sdy-tg')) return;
             if(!el.textContent&&!el.querySelector('img,br,svg,canvas')){ toRemove.push(el); return; }
             if(el.tagName==='SPAN'){
                 const style=el.getAttribute('style')||'';
