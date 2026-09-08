@@ -2,7 +2,8 @@
 //
 // 이 파일이 지키려는 계약
 //   1) 설정 화면에 '버그 일지' 줄(개수 + [보기])이 있고, [보기]를 눌러야 목록이
-//      열린다(항목마다 X 로 그 기록만 지운다) — 관리자 전용이 아니라 누구나
+//      열린다. X(이 기록 지우기) 버튼은 **관리자로 로그인한 경우에만** 노출·동작한다
+//      — 모두가 지울 수 없게 막는다(14.39.0 버그 수정: 누구나 X 를 누를 수 있었음)
 //   2) 저장은 설정 LWW 동기화 키('buglog:<id>')를 타서 모든 기기에 퍼진다
 //      (put=기록 추가 · del=삭제, 대량 삭제 방화벽 buglog:10)
 //   3) 프런트 AI(ai-assistant)에 '버그 신고' 감지와 runBug 가 있다
@@ -66,12 +67,16 @@ const ls = {
 const queued = [];                       // _stQueueOp 기록 (동기화 큐 흉내)
 const nav = { openNav: 0, navDrop: 0 };
 const src = part + '\nwindow.__t={paintBugCount,renderBugList,delBugEntry,openBuglog,closeBuglog,getBugEntries,buglogAdd};';
+// isAdmin: 14.39.0 버그 수정 — X 버튼은 관리자로 로그인한 경우에만 노출·동작한다.
+//   admin.mode 를 바꿔 가며 두 상태를 모두 검증한다.
+const admin = { mode: false };
 new Function('localStorage', 'document', 'CustomEvent', 'toast', '_stQueueOp',
-  'pushSettingsNow', 'openNav', 'navDrop', 'window', src)(
+  'pushSettingsNow', 'openNav', 'navDrop', 'window', 'isAdmin', src)(
   ls, w.document, w.CustomEvent, () => {},
   (id, kind, data) => queued.push({ id, kind, data }),
   () => {},
   () => nav.openNav++, () => nav.navDrop++, w,
+  () => admin.mode,
 );
 const F = w.__t;
 const $ = (id) => w.document.getElementById(id);
@@ -86,7 +91,15 @@ F.buglogAdd({ title: '표 글자 겹침', text: '제목: 표 글자 겹침\n증�
 F.buglogAdd({ title: '저장 안 됨', text: '제목: 저장 안 됨' });
 ok('런타임: 기록하면 개수가 늘고 목록에 제목이 그려진다', $('bugCount').textContent === '2건'
   && /표 글자 겹침/.test($('bugList').innerHTML) && /저장 안 됨/.test($('bugList').innerHTML));
-ok('런타임: 각 기록마다 X(이 기록 지우기) 버튼이 붙는다',
+// ── 14.39.0 수정: X 버튼은 관리자 전용 ──
+ok('런타임: 관리자가 아니면 항목마다 X 버튼이 붙지 않는다(모두가 지울 수 없음)',
+  ($('bugList').innerHTML.match(/class="buglog-x"/g) || []).length === 0);
+ok('런타임: 관리자가 아니면 delBugEntry 로 지울 수 없다(삭제 무시)',
+  (() => { const before = F.getBugEntries().length; F.delBugEntry(F.getBugEntries()[0].id); return F.getBugEntries().length === before; })());
+
+admin.mode = true;            // 관리자로 로그인한 상태로 전환
+F.renderBugList();           // 열려 있는 목록을 관리자 상태에 맞춰 다시 그린다
+ok('런타임: 관리자로 로그인하면 항목마다 X(이 기록 지우기) 버튼이 붙는다',
   ($('bugList').innerHTML.match(/class="buglog-x"/g) || []).length === 2);
 ok('런타임: 보고자·버전·원문 보고가 함께 보인다', /테스터/.test($('bugList').innerHTML)
   && /14\.39\.0/.test($('bugList').innerHTML) && /원문 보고: 표를 만들면/.test($('bugList').innerHTML));
