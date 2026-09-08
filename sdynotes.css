@@ -1902,6 +1902,10 @@
         .tb.pdf-text .tb-content{border-width:0;border-radius:0;}
         .tb.pdf-text.sel .tb-content,.tb.pdf-text.edit .tb-content{outline:1px solid var(--accent);}
         .tb.tight.edit .tb-content{white-space:pre-wrap;line-height:1.4;}
+        /* 14.40 · 논문 상자 '줄 흐름' 편집 — 줄(.sdy-tl)은 절대위치(원본 top·높이),
+           줄 안은 인라인 흐름. 단어 간격 스페이서(.sdy-tg)는 폭만 있고 높이가 0. */
+        .tb-content .sdy-tl{position:absolute;left:0;width:100%;box-sizing:border-box;overflow:visible;}
+        .tb-content .sdy-tg{display:inline-block;height:0;overflow:hidden;}
         /* 안 보이는 스페이스바: 흐름에서 빼 글자 맞춤은 안 건드리고,
            font-size:0 은 Chromium 이 ::selection / Selection.toString() 에서
            공백을 건너뛰게 하므로 쓰지 않는다. 글자는 투명, 하이라이트만 남는다. */

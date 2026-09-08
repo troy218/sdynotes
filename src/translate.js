@@ -270,6 +270,12 @@
     function tightTextFromHtml(html){
         const d=document.createElement('div'); d.innerHTML=html||'';
         const sps=Array.from(d.querySelectorAll('span')).filter(s=>s.style.left!==''||s.style.top!=='');
+        if(!sps.length){
+            // 14.40 · 편집된 논문 상자(줄 흐름 .sdy-tl) — 절대위치 스팬이 없으면
+            // 줄 순서 그대로 문장을 잇는다 (줄 경계에 공백을 보탠다).
+            d.querySelectorAll('.sdy-tl').forEach(x=>x.append(' '));
+            return (d.textContent||'').replace(/[\u200b\u200c\u200d\ufeff]+/g,'').replace(/\s+/g,' ').trim();
+        }
         sps.sort((a,b)=>(parseFloat(a.style.top)||0)-(parseFloat(b.style.top)||0)
                        ||(parseFloat(a.style.left)||0)-(parseFloat(b.style.left)||0));
         const lines=[]; let cur=[]; let last=null;

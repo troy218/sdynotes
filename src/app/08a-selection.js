@@ -316,14 +316,19 @@
             if(_fid) setToolbarFont(_fid);
         }catch(e){}
         const c=w.querySelector('.tb-content');
-        // 14.39.9 · 가져온 PDF 상자(tight)는 편집 중에도 **절대좌표 배치를 끝까지 유지**한다.
-        //   글꼴·색·크기·굵기 변경은 물론 실제 타이핑·붙여넣기·삭제를 해도 흐름
-        //   텍스트로 변환하지 않는다. 각 단어 span 의 절대위치가 유지된 채 글자만
-        //   바뀌고, tight fit 시스템이 scaleX 를 재계산해 원본 배치를 보존한다.
+        // 14.40 · 가져온 PDF 상자(tight) — 편집 진입 시 '줄 단위 절대위치 + 줄 내
+        //   인라인 흐름'으로 한 번만 변환한다. 줄(원본 세로 위치)은 절대위치라
+        //   절대 이동하지 않고, 줄 안은 일반 텍스트처럼 흘러 드래그 선택·방향키
+        //   (상하=줄 이동)·형광펜·드래그가 자연스럽다. 엔터는 캐럿 위치에서 줄을
+        //   나눠 아래에 새 줄을 만든다(_tightLineEnter). 커밋 시 이 HTML 이
+        //   el.html 로 확정된다(tight·pdfText 플래그는 유지).
         try{
             const _el=findEl(+w.dataset.pageIdx,w.dataset.id);
             if(_el&&_el.tight&&!w._sdyTightEdit){
                 w._sdyTightEdit=1;
+                const _lf=(typeof _tightToLineFlow==='function')?_tightToLineFlow(c):null;
+                if(_lf){ c.innerHTML=''; c.appendChild(_lf); w._sdyTightLine=1; }
+                else if(c.querySelector&&c.querySelector(':scope>.sdy-tl')) w._sdyTightLine=1; // 이미 줄 흐름
                 w._sdyViewHtml=c.innerHTML;
             }
         }catch(e){}
