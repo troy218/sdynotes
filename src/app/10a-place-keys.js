@@ -189,6 +189,7 @@
         if(wfOn){ wfOff(); return true; }
         if(document.getElementById('pinPop').classList.contains('show')){ closePin(); return true; }
         if(document.getElementById('latexModal').style.display==='flex'){ closeLatexModal(); return true; }
+        if(document.getElementById('tableSizeModal').style.display==='flex'){ closeTableSizeModal(); return true; }
         if(pinMode){ togglePinMode(); return true; }
         if(findOpen){ closeFind(); return true; }
         if(tablePlace){ cancelTablePlacement(); return true; }
