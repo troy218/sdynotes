@@ -525,7 +525,7 @@
             const font=[s.style.fontStyle||c.style.fontStyle||'normal',s.style.fontWeight||c.style.fontWeight||'400',fs+'px',
                 s.style.fontFamily||c.style.fontFamily].join(' ');
             const ctx=_pdfMeasureCtx; ctx.font=font;
-            // The zero-width copy/search spacer must not participate in width.
+            // The out-of-flow copy/search spacer must not participate in width.
             const text=(s.textContent||'').trimEnd(), measured=ctx.measureText(text);
             let baseline=_pdfBaselineMetrics.get(font);
             if(baseline==null){
@@ -576,6 +576,16 @@
                     }catch(e){}
                 }
             }
+            // Gap spacer sits at left:100% (out of flow). Record its unscaled
+            // width so the write pass can scaleX it across the PDF word gap.
+            try{
+                const z=s.querySelector&&s.querySelector('.zsp');
+                if(z){
+                    let zw=z.scrollWidth||z.offsetWidth||0;
+                    if(!(zw>0)) zw=m.fs*0.25;
+                    m.zspW=zw;
+                }
+            }catch(e){}
             if(!job.groups.has(m.y)) job.groups.set(m.y,[]);
             job.groups.get(m.y).push(m);
             job.maxR=Math.max(job.maxR,m.x+m.w); job.maxB=Math.max(job.maxB,m.y+m.h);
@@ -585,6 +595,7 @@
             job.rows=Array.from(job.groups.values()); job.rowAt=0;
             job.transforms=new Array(sps.length).fill(null);
             job.tops=new Array(sps.length).fill(null);
+            job.zspSx=new Array(sps.length).fill(null);
         }
         while(job.rowAt<job.rows.length){
             const group=job.rows[job.rowAt++];
@@ -595,6 +606,15 @@
                     // Fit justified runs too; never impose an 84% compression floor.
                     job.transforms[m.i]=m.w>0?'scaleX('+(m.pdfW/m.w).toFixed(5)+')':'';
                     if(m.baseline!=null) job.tops[m.i]=+(m.pdfBase-m.baseline).toFixed(3);
+                    const next=group[i+1];
+                    if(next&&m.zspW>0){
+                        const gap=next.x-(m.x+m.pdfW);
+                        const vis=Math.abs(m.w>0?m.pdfW/m.w:1)*m.zspW;
+                        if(gap>0.25&&vis>0.05){
+                            const zsx=gap/vis;
+                            if(Number.isFinite(zsx)) job.zspSx[m.i]=Math.max(0.05,Math.min(32,zsx));
+                        }
+                    }
                     return;
                 }
                 const next=group[i+1], avail=(next?next.x:job.cw)-m.x-0.5;
@@ -606,7 +626,7 @@
         }
         return {c,el,sps,writeAt:0,rec:{html:el.html,w:el.w||0,h:el.h||0,fs:el.fontSize||0,
             font:el.font,weight:el.fontWeight,style:el.fontStyle,epoch:_tightFontEpoch,
-            ls:el.ls||0,wsp:el.wsp||0,lg:el.lg||1,fonts:_fontState(),transforms:job.transforms,tops:job.tops,
+            ls:el.ls||0,wsp:el.wsp||0,lg:el.lg||1,fonts:_fontState(),transforms:job.transforms,tops:job.tops,zspSx:job.zspSx,
             growR:!el.pdfText&&job.maxR>job.cw?job.maxR:0,growB:!el.pdfText&&job.maxB>job.ch?job.maxB:0}};
     }
     function _applyTightFit(fit,until,max){
@@ -628,6 +648,17 @@
                 if(s.style.transform!==v) s.style.transform=v;
                 if(v&&s.style.transformOrigin!=='left center') s.style.transformOrigin='left center';
                 if(s.style.letterSpacing) s.style.letterSpacing='';
+            }
+            const zsx=rec.zspSx&&rec.zspSx[i];
+            if(zsx!=null){
+                try{
+                    const z=s.querySelector&&s.querySelector('.zsp');
+                    if(z){
+                        const zv='scaleX('+Number(zsx).toFixed(4)+')';
+                        if(z.style.transform!==zv) z.style.transform=zv;
+                        if(z.style.transformOrigin!=='left center') z.style.transformOrigin='left center';
+                    }
+                }catch(e){}
             }
             if(performance.now()>=until) break;
         }

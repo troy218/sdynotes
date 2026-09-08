@@ -39,6 +39,23 @@ assert.equal(a.style.transform, 'scaleX(0.25250)');
 assert.equal(a.style.top, '4.125px');
 assert.equal(JSON.stringify(el), before, 'fitting is view-only, not an edit/sync write');
 assert.equal(fitCache.get(el), fit.rec);
+assert.equal(fit.rec.zspSx[0], null, 'missing .zsp is a no-op');
+assert.equal(fit.rec.zspSx[1], null);
+
+const zspA={className:'zsp',style:{},scrollWidth:3,offsetWidth:3};
+const za=span({pdfW:'25.25',pdfBase:'12.125'});
+za.querySelector=sel=>sel==='.zsp'?zspA:null;
+const zb=span({pdfW:'10.75',pdfBase:'12.125'},32.5);
+zb.querySelector=()=>null;
+const zfit=context._measureTightSpans({...c,children:[za,zb]},el);
+const expectZsx=7.25/(0.2525*3);
+assert.equal(+zfit.rec.zspSx[0].toFixed(4), +expectZsx.toFixed(4),
+  'spacer scaleX fills the PDF gap after parent scaleX');
+assert.equal(zfit.rec.zspSx[1], null, 'last-on-line spacer is not stretched into the margin');
+context._applyTightFit(zfit);
+assert.equal(zspA.style.transform, 'scaleX('+expectZsx.toFixed(4)+')');
+assert.equal(zspA.style.transformOrigin, 'left center');
+assert.equal(za.style.transform, 'scaleX(0.25250)', 'word scaleX is unchanged');
 const justified = span({ j: '1' });
 const legacy = context._measureTightSpans({ ...c, children: [justified], clientWidth: 40 }, { ...el, pdfText: 0 });
 assert.ok(parseFloat(legacy.rec.transforms[0].slice(7)) < .4, 'legacy justified words cannot bypass overlap fitting');
@@ -100,6 +117,15 @@ assert.equal(context.sanitizePageEls(pdfParts).length, 3, 'bbox containment cann
 assert.ok(css.includes('.tb.tight .tb-content :where(span,b,i,sup,sub){font-family:inherit;}'),
   'UI universal font must not override imported words');
 assert.ok(css.includes('.tb.pdf-text .tb-content{border-width:0;'), 'selection border cannot offset source coordinates');
+const zspRule=(css.match(/\.tb\.tight \.zsp\{[^}]+\}/)||[])[0]||'';
+assert.match(zspRule, /position:absolute/, 'zsp is out of flow so fitting width is unchanged');
+assert.match(zspRule, /left:100%/);
+assert.match(zspRule, /font-size:1em/);
+assert.doesNotMatch(zspRule, /font-size:0/, 'font-size:0 hides ::selection in Chromium');
+assert.match(source, /\.sdyx \.zsp\{[^}]*font-size:0/, 'export SVG has no editor CSS — hide zsp');
+assert.ok(source.includes("n.style.fontSize='0px'"), 'page export bakes fontSize 0 on zsp');
+assert.ok(source.includes("n.style.position='absolute'") && source.includes("n.style.left='100%'"),
+  'page export bakes out-of-flow zsp');
 
 const bg = { src: '/original.png', isConnected: true, getAttribute: () => '/original.png' };
 const image = { type: 'image', isBg: 1, url: bg.src, pdfBg: 2, pdfPage: 7, pdfRef:'source-ref' };

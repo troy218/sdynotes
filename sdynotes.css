@@ -1872,8 +1872,10 @@
         .tb.pdf-text .tb-content{border-width:0;border-radius:0;}
         .tb.pdf-text.sel .tb-content,.tb.pdf-text.edit .tb-content{outline:1px solid var(--accent);}
         .tb.tight.edit .tb-content{white-space:pre-wrap;line-height:1.4;}
-        /* 안 보이는 스페이스바: 시각적 차지 0, 선택/복사/번역/검색에만 잡힘 */
-        .tb.tight .zsp{font-size:0;letter-spacing:0;font-style:normal;}
+        /* 안 보이는 스페이스바: 흐름에서 빼 글자 맞춤은 안 건드리고,
+           font-size:0 은 Chromium 이 ::selection / Selection.toString() 에서
+           공백을 건너뛰게 하므로 쓰지 않는다. 글자는 투명, 하이라이트만 남는다. */
+        .tb.tight .zsp{position:absolute;left:100%;top:0;font-size:1em;font-style:normal;letter-spacing:0;line-height:inherit;white-space:pre;color:transparent;transform-origin:left center;}
         /* 가져온 텍스트 간격 조절 바 */
         .tight-bar{position:fixed;top:64px;left:50%;transform:translateX(-50%);
             z-index:1250;display:none;align-items:center;gap:5px;padding:6px 10px;
