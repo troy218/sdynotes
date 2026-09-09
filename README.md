@@ -58,6 +58,31 @@
     `test:txtstyle` 90 · `test:dblcaret` 17 · `test:fastops` 9 · `test:editlag` 20 ·
     `test:table` 22 · `test:pages` 9 · `bundle:check` 통과.
 
+- **14.45.0 고정 위치(논문) 글자 — 읽기로 돌아갈 때 줄 흐름을 단어별 절대좌표로 되돌린다** · `src/app/07b-hl-band.js` `08a-selection.js` *(이 항목은 14.45.1 에서 뒤늦게 정리 — 지난 라운드 PR #182 가 README 없이 들어왔다)*:
+  - **문제.** 14.40~14.44 는 편집 진입에 단어별 절대좌표 span 을 줄 흐름(`.sdy-tl`)으로
+    펼치고, 나갈 때는 그 편집 DOM 을 그대로 `el.html` 에 확정했다. 줄 흐름은 줄 폭·단어
+    간격을 실측으로 복원하므로 다시 그릴 때마다 원문 좌표와 1px 안팎으로 어긋났고, 그
+    어긋난 폭이 저장본에 굳어 다음 편집의 줄 묶음까지 흐렸다(14.44.1 의 nowrap·`_sdyViewHtml`
+    고정으로 '마지막 단어가 다음 줄로 넘어가 겹침'은 사라졌지만, '읽기 복귀 = 편집 DOM
+    확정'이라는 구조 자체는 그대로였다).
+  - **고친 것.** 퇴장(`_rebuildTightToReading`)에서 `el.html` 을 **단어별 절대좌표 span** 으로
+    역변환해 확정한다. 진입(`enterEdit`) 때 `_stashTightOrig(c)` 로 원본 단어 배치
+    (left·top·fs·`data-pdf-w`·`data-pdf-base`·origTop·런 스타일)를 스태시로 잡아 두고,
+    `_tightLineFlowToAbsolute` 가 그 스태시를 좇아 **손대지 않은 단어는 좌표·폭·글자 크기를
+    픽셀 그대로** 되돌린다. 고친 단어만 폭을 다시 재고(원문 글자 크기는 실측이 아니라 모델 값
+    `data-pdf-base`), 엔터로 밀린 줄은 top 을 평행이동한다. 스태시가 없는 구 저장본은
+    best-effort 로 실측 배치를 절대좌표로 옮긴다(별도 마이그레이션 없음). img·수식(imath)·링크·
+    표·미디어 같은 원자 요소가 섞인 본문은 역변환을 건너뛰어 유실을 막고, 편집 중(캐럿·IME)에는
+    역변환을 하지 않는다. 14.44.1 의 nowrap·빈 스팬 맞춤 가드는 그대로다.
+  - **영향 범위.** `07b-hl-band.js`(단어 읽기 `_tightReadTightWords`·스태시·줄 흐름↔절대좌표
+    변환·빈 원문 줄과 문장 형광펜 연속성 복원), `08a-selection.js`(`enterEdit` 진입 스태시·
+    `_rebuildTightToReading`). 저장 포맷은 예전 절대좌표 모양 그대로라 열기·내보내기·인쇄·
+    콜라보는 새 필드를 알지 않아도 된다.
+  - **검증(그 라운드 기록).** `test:tight` commit_view 15 + engine 178 · hlband · format ·
+    words · translate · export · preview · undo · selux · typeflow · textbox · txtedge · sync ·
+    font · activation · pdf · heavy · lowend 통과 · `bundle:check` ✓ · `bump:check` 14.45.0 ✓.
+    14.44.1 에 생긴 `test/editor_tight_commit_view_runtime.mjs` 의 칸을 9 → 15 로 늘려
+    '안 고친 단어가 1회차·2회차 왕복 뒤에 픽셀 그대로 남는지', '형광펜이 남는지'를 본다.
 - **14.44.1 고정 위치(논문) 글자 편집 두 가지 — '미리보기로 돌아가면 편집 내용이 사라짐'과 '형광펜이 남는데 글자가 어긋나 정렬 안 됨'**:
   - **문제 (보고: "고정글자 모드에서 미리보기 → 편집 → 미리보기로 돌아갈 때
     편집 내용(기존 글자를 지우고 새 글자를 넣기 등)이 반영되지 않고 사라진다.
