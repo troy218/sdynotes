@@ -21,6 +21,12 @@
      ⑪ 고정 위치 원문 '중간 줄'에서 Enter — 새 문단이 다음 원문 줄과 겹치지
         않고 뒤따르는 원문 줄들이 한 줄씩 내려가며, 읽는 순서·간격·위(첫 줄)는
         그대로이고 저장·재진입 후에도 내려간 위치가 유지된다?
+     ⑫ 고정 위치 원문 '한 줄'에 크기·기준선이 다른 글자(제목 크기·본문·아래
+        첨자)가 섞여도 편집 진입 시 한 줄로 묶여, 각자 왼쪽(left:0)에 붙어
+        원문 글자와 겹치지 않는다?
+     ⑬ Enter 로 만든 줄을 Backspace 한 번에 지운다 — 새 줄 머리의 서식 이어받기
+        닻(ZWSP)을 백스페이스가 먼저 먹어 줄바꿈이 남지 않고, 엔터가 밀어 내린
+        아래 원문 줄도 제자리로 올라온다? (일반 글상자 문단도 같다)
    jsdom 은 레이아웃이 없으므로 '위치'는 저장 모델의 좌표(절대 스팬의
    left/top·pdfW/pdfBase/origTop, .sdy-tl 줄의 top)로, 서식은 span 스타일로
    단언한다. 실물 Chromium 커버: bench 계열. */
@@ -154,6 +160,22 @@ const rowS2 = word('west', 0, 24, 40) + word('code', 52, 24, 38) + word('data', 
 const rowP1 = word('lorem', 0, 0, 50) + word('ipsum', 58, 0, 42);
 const rowP2 = word('dolor', 0, 24, 44) + word('sit', 52, 24, 32);
 
+// ⑫⑬ 전용 — importer(pdf_layout.py)가 만드는 꼴 그대로: top = 기준선 - 글자크기*0.8
+//   한 줄 안에 '제목 크기(16) + 본문(11) + 아래첨자(7, 기준선이 2.5px 내려감)'가
+//   섞인 원문. top 이 제각각이어도 '세로 구간'은 겹치므로 한 줄로 묶여야 한다.
+const wordAt = (text, left, base, fs, pdfW) =>
+  `<span data-word="1" data-fs="${fs}" data-pdf-w="${pdfW}" data-pdf-base="${base}" ` +
+  `style="position:absolute;left:${left}px;top:${(base - fs * 0.8).toFixed(3)}px;` +
+  `font-size:${fs}px;line-height:${fs}px;white-space:nowrap;">${text}<i class="zsp"> </i></span>`;
+const rowM1 = wordAt('Results', 0, 16, 16, 60) + wordAt('of', 70, 16, 11, 16)
+  + wordAt('the', 92, 16, 11, 24) + wordAt('H', 122, 16, 11, 9)
+  + wordAt('2', 132, 18.5, 7, 5) + wordAt('O', 139, 16, 11, 10)
+  + wordAt('study', 155, 16, 11, 38);
+const rowM2 = wordAt('We', 0, 40, 11, 20) + wordAt('measured', 26, 40, 11, 62);
+// ⑬ 전용 — Enter → Backspace 검증용 (두 줄 · 글자 크기 균일)
+const rowK1 = word('alpha', 0, 0, 46) + word('beta', 60, 0, 38);
+const rowK2 = word('gamma', 0, 24, 44) + word('delta', 58, 24, 40);
+
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['server/src/index.js'], {
@@ -182,6 +204,8 @@ try {
         { type: 'text', id: 't1', x: 40, y: 40, w: 260, h: 80, html: row1 + row2, fontSize: 16, tight: 1 },
         { type: 'text', id: 't3', x: 330, y: 40, w: 240, h: 70, html: rowS1 + rowS2, fontSize: 16, tight: 1 },
         { type: 'text', id: 't4', x: 40, y: 170, w: 200, h: 70, html: rowP1 + rowP2, fontSize: 16, tight: 1 },
+        { type: 'text', id: 't5', x: 300, y: 170, w: 300, h: 90, html: rowM1 + rowM2, fontSize: 16, tight: 1, pdfText: 1 },
+        { type: 'text', id: 't6', x: 40, y: 300, w: 240, h: 70, html: rowK1 + rowK2, fontSize: 16, tight: 1 },
         { type: 'text', id: 't2', x: 520, y: 300, w: 220, h: 70, html: '가나다', fontSize: 16 },
       ],
     }],
@@ -1202,12 +1226,150 @@ try {
     await wait(250);
   }
 
+  // ══ ⑫ 고정 위치 원문 '한 줄'에 크기·기준선이 다른 글자가 섞여도 '한 줄'로 ══
+  //   PDF 한 줄에는 제목 크기 글자·본문·위/아래 첨자가 섞인다. 예전엔 'top 이 2px
+  //   안'으로만 줄을 묶어 그런 글자들이 딴 줄로 튀었고, 각 줄(.sdy-tl)은 left:0
+  //   에서 펼쳐지므로 원래 그 자리에 있던 원문 글자와 겹쳐 보였다(보고).
+  const tbM = document.querySelector('#pagesStage .tb[data-id="t5"]');
+  const tcM = tbM.querySelector('.tb-content');
+  const rowsM = () => [...tcM.querySelectorAll(':scope>.sdy-tl')];
+  const topsM = () => rowsM().map(r => parseFloat(r.style.top));
+  const flat = node => String(node.textContent || '').replace(/\s+/g, ' ').trim();
+  tcM.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+  await wait(180);
+  check('⑫ 크기·첨자가 섞인 고정 위치 상자가 편집 모드로 들어간다', tbM.classList.contains('edit'));
+  check('⑫ 크기·기준선이 달라도 원문 두 줄이 그대로 두 줄로 묶인다', rowsM().length === 2);
+  check('⑫ 첫 줄 글자가 왼쪽에 붙지 않고 읽는 순서대로 한 줄에 놓인다',
+    flat(rowsM()[0]) === 'Results of the H 2 O study'
+    && rowsM()[0].querySelectorAll(':scope>span:not(.sdy-tg)').length === 7);
+  check('⑫ 둘째 줄도 그대로다', flat(rowsM()[1]) === 'We measured');
+  check('⑫ 줄의 세로 위치가 원문 그대로다(3.2 / 31.2)',
+    Math.abs(topsM()[0] - 3.2) < 0.01 && Math.abs(topsM()[1] - 31.2) < 0.01);
+  check('⑫ 겹치는 줄이 없다(서로 다른 top)', new Set(topsM()).size === rowsM().length);
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  await wait(250);
+
+  // ══ ⑬ Enter 로 만든 줄을 Backspace 한 번에 지운다 ══
+  //   새 줄 머리에는 서식 이어받기용 .sdy-type 닻(ZWSP)이 놓인다(14.41). 그 닻을
+  //   백스페이스가 '글자 하나'로 먼저 먹으면 화면은 그대로인데 줄은 그대로 남고,
+  //   input 핸들러가 닻을 다시 심어 줄바꿈이 영영 안 지워졌다(보고).
+  const tbK = document.querySelector('#pagesStage .tb[data-id="t6"]');
+  const tcK = tbK.querySelector('.tb-content');
+  const rowsK = () => [...tcK.querySelectorAll(':scope>.sdy-tl')];
+  const topsK = () => rowsK().map(r => parseFloat(r.style.top));
+  // 브라우저 기본 Backspace 흉내 (jsdom 은 편집 명령이 없다)
+  //   · 캐럿 앞 글자 하나를 지운다
+  //   · 블록(tight 줄 .sdy-tl / 글상자 직계 div) 맨 앞이면 이전 블록과 합친다
+  const pressBackspace = async (content) => {
+    const ev = new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true });
+    content.dispatchEvent(ev);
+    if (!ev.defaultPrevented) {          // 앱이 직접 합쳤으면 브라우저 기본 동작은 없다
+      const sel = window.getSelection();
+      const r = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      if (r && r.collapsed && r.startContainer.nodeType === 3 && r.startOffset > 0) {
+        // 주의: jsdom 의 live selection 은 글자를 줄이면 오프셋을 되돌려 놓는다 → 먼저 떠 둔다
+        const n = r.startContainer, v = n.nodeValue || '', off = r.startOffset;
+        n.nodeValue = v.slice(0, off - 1) + v.slice(off);
+        const nr = window.document.createRange();
+        nr.setStart(n, off - 1); nr.collapse(true);
+        sel.removeAllRanges(); sel.addRange(nr);
+      } else if (r && r.collapsed && r.startContainer.nodeType === 1 && r.startOffset === 0
+        && r.startContainer.parentNode === content) {
+        const blk = r.startContainer, prev = blk.previousElementSibling;
+        if (prev) {
+          const mark = prev.lastChild;
+          while (blk.firstChild) prev.appendChild(blk.firstChild);
+          blk.remove();
+          const nr = window.document.createRange();
+          if (mark && mark.parentNode === prev) nr.setStartAfter(mark); else nr.setStart(prev, 0);
+          nr.collapse(true);
+          sel.removeAllRanges(); sel.addRange(nr);
+        }
+      }
+      content.dispatchEvent(new window.InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
+    }
+    await wait(130);
+  };
+  tcK.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+  await wait(180);
+  check('⑬ 고정 위치 상자(t6)가 두 줄로 편집 모드에 들어간다',
+    tbK.classList.contains('edit') && rowsK().length === 2);
+  const topsBaseK = topsK();      // [0, 24]
+  // ⑬-1 첫째 줄 'alpha' 끝에서 Enter → 새 줄 + 아래 원문 줄은 한 줄 내려간다
+  {
+    const tn = textNodeOf(window, tcK, 'alpha');
+    assert.ok(tn, '⑬ 원문 단어(alpha)를 찾지 못했다');
+    putCaret(tn, (tn.nodeValue || '').length);
+    tcK.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await wait(130);
+    check('⑬ Enter 로 새 줄이 생기고 아래 원문 줄이 내려간다(2→3)',
+      rowsK().length === 3 && JSON.stringify(topsK()) === JSON.stringify([0, 24, 48]));
+    const mk = rowsK()[1].querySelector('.sdy-type');
+    check('⑬ 새 줄 머리에 서식 이어받기 닻(ZWSP)이 놓인다',
+      !!mk && (mk.textContent || '').includes('\u200B'));
+  }
+  // ⑬-2 Backspace 한 번 → 줄바꿈이 지워지고 내려갔던 원문 줄도 제자리로
+  await pressBackspace(tcK);
+  check('⑬ Backspace 한 번에 엔터 줄바꿈이 지워진다(3→2)', rowsK().length === 2);
+  check('⑬ 내려갔던 원문 줄도 제자리로 올라온다(빈 칸이 안 남는다)',
+    JSON.stringify(topsK()) === JSON.stringify(topsBaseK));
+  check('⑬ 지운 뒤 읽는 순서·글자가 그대로다',
+    flat(rowsK()[0]) === 'alpha beta' && flat(rowsK()[1]) === 'gamma delta');
+  check('⑬ 지운 자리에 입력 닻(ZWSP)·빈 서식 span 이 남지 않는다',
+    !tcK.innerHTML.includes('\u200B') && !tcK.querySelector('.sdy-type'));
+  // ⑬-3 (회귀) 글자 가운데 백스페이스는 여전히 '한 글자'만 지운다
+  {
+    const tn = textNodeOf(window, tcK, 'beta');
+    assert.ok(tn, '⑬ 원문 단어(beta)를 찾지 못했다');
+    putCaret(tn, (tn.nodeValue || '').length);
+    await pressBackspace(tcK);
+    check('⑬ 글자 가운데 백스페이스는 한 글자만 지운다',
+      rowsK().length === 2 && (rowsK()[0].textContent || '').includes('bet')
+      && !(rowsK()[0].textContent || '').includes('beta'));
+  }
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  await wait(300);
+  {
+    const hK = (window.findEl(0, 't6').html) || '';
+    check('⑬ 저장된 html 에 빈 줄·닻이 남지 않고 두 줄만 남는다',
+      (hK.match(/sdy-tl/g) || []).length === 2 && !hK.includes('\u200B')
+      && hK.includes('bet') && hK.includes('gamma'));
+  }
+  // ⑬-4 일반 글상자 — 새 문단 머리의 닻 때문에 백스페이스가 먹지 않던 경우
+  //   (엔터로 문단을 나누는 것은 브라우저 몫이라 jsdom 이 못 만든다 → 앱이 심는
+  //    '닻 있는 빈 문단'을 직접 두고 캐럿을 그 뒤에 놓아 검증한다)
+  {
+    const tbN = document.querySelector('#pagesStage .tb[data-id="t2"]');
+    const tcN = tbN.querySelector('.tb-content');
+    tcN.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+    await wait(150);
+    check('⑬ 일반 글상자가 편집 모드에 들어간다', tbN.classList.contains('edit'));
+    tcN.innerHTML = '<div>첫째</div><div><span class="sdy-type" style="font-family:Jua">\u200B</span></div>';
+    const anchor = tcN.querySelectorAll(':scope>div')[1].querySelector('.sdy-type');
+    const rN = window.document.createRange();
+    rN.setStart(anchor.firstChild, 1); rN.collapse(true);
+    const sN = window.getSelection(); sN.removeAllRanges(); sN.addRange(rN);
+    window.saveSel();
+    const evN = new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true });
+    tcN.dispatchEvent(evN);
+    check('⑬ 일반 상자 백스페이스를 앱이 가로채지 않는다(브라우저 기본 동작 유지)',
+      !evN.defaultPrevented);
+    check('⑬ 백스페이스가 닻(ZWSP)을 먼저 걷어 문단 합치기가 일어난다',
+      !tcN.innerHTML.includes('\u200B'));
+    await pressBackspace(tcN);
+    check('⑬ 일반 상자도 백스페이스 한 번에 문단이 합쳐진다',
+      tcN.querySelectorAll(':scope>div').length === 1
+      && tcN.querySelectorAll(':scope>div')[0].textContent.includes('첫째'));
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await wait(250);
+  }
+
   const fatal = errors.filter(e => !/isTrBusy|undefined is not an object/.test(String(e)));
   check('치명적 런타임 오류가 없다', fatal.length === 0);
   if (fatal.length) console.log(fatal.slice(0, 5).join('\n---\n'));
   console.log(`\n텍스트 엔진(논문 tight + 일반 상자 — 폰트·엔터·형광펜·탭·자간): PASS ${pass} / FAIL 0`);
 } catch (e) {
-  console.error('\n논문(tight) 텍스트 엔진 런타임 실패:', e);
+  console.error('\n논문(tight) 텍스트 엔진 런타임 실패:', e && (e.stack || e.message || String(e)), e && e.name);
   if (log) console.error('\nserver log:\n' + log.slice(-2500));
   process.exitCode = 1;
 } finally {

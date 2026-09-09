@@ -9948,6 +9948,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         c.addEventListener('beforeinput',e=>{
             if(!w.classList.contains('edit')) return;
             const it=e.inputType||'';
+            // 14.43 · 지우기(Backspace) — 표준 beforeinput 경로(소프트 키보드·IME)에서도
+            //   새 줄 머리의 닻(ZWSP)을 먼저 걷어 줄바꿈이 한 번에 지워지게 한다.
+            //   (keydown 분기와 같은 일을 한다 — 둘 다 불려도 닻은 한 번만 걷힌다.)
+            if(it==='deleteContentBackward'){
+                if(w._sdyTightLine&&_tightLineBackspace(c,w)){ e.preventDefault(); return; }
+                _dropAnchorsBeforeCaret(c);
+                return;
+            }
             if(it==='insertParagraph'||it==='insertLineBreak'){
                 // Enter(Shift+Enter) 줄바꿈: 캐럿 앞 글자의 서식을 다음 줄 입력으로
                 // 이어받는다. 예전엔 앞 글자가 서식된 채로 줄만 바꾸면 다음 줄이
@@ -9969,6 +9977,20 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                &&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!(e.isComposing||e.keyCode===229)){
                 e.preventDefault();
                 _tightLineEnter(c,w);
+                return;
+            }
+            // 14.43 · Backspace — '눈에 안 보이는 입력 닻'을 먼저 걷어낸다.
+            //   Enter 로 줄을 나누면(14.41) 새 줄 머리에 서식 이어받기용 .sdy-type
+            //   닻(ZWSP)이 놓인다. 그대로 두면 Backspace 는 그 닻을 '글자 하나'로
+            //   먼저 지운다 → 화면은 그대로인데 줄은 남고, input 핸들러가 닻을 다시
+            //   심어 줄바꿈이 영영 안 지워졌다(보고: "엔터 후 백스페이스가 안 먹고
+            //   이전 글자로 가서 딜리트를 눌러야 지워진다").
+            //   → 캐럿 앞이 '닻뿐'이면 닻을 미리 걷어 Backspace 한 번에 줄이 합쳐지게
+            //   한다. 실제 글자가 앞에 있으면 아무것도 건드리지 않는다(한 글자 지우기).
+            if(w.classList.contains('edit')&&e.key==='Backspace'
+               &&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!(e.isComposing||e.keyCode===229)){
+                if(w._sdyTightLine&&_tightLineBackspace(c,w)){ e.preventDefault(); return; }
+                _dropAnchorsBeforeCaret(c);   // 닻만 걷고 브라우저 기본(줄 합치기)에 맡긴다
                 return;
             }
             // 14.39.11 · 일반 글상자: Enter(Shift+Enter) 줄바꿈 시 앞 글자의
@@ -10002,7 +10024,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(em) c.setAttribute('data-empty','true'); else c.removeAttribute('data-empty');
             w.classList.toggle('empty',em);
             // 엔진이 입력 뒤 캐럿을 inline 밖으로 옮긴 경우 다음 입력 전에 다시 준비한다.
-            if(w.classList.contains('edit')) _ensurePendingTypingSpan(c);
+            // 14.43 · 지우기(Backspace/Delete) 뒤에는 닻을 다시 심지 않는다 — 방금
+            //   걷어낸 자리에 닻이 되살아나면 Backspace 가 또 닻만 먹고 줄바꿈을
+            //   지우지 못한다. (서식은 _pendingTyping 에 남아 다음 글자에 되살아난다.)
+            const _delIt=String((e&&e.inputType)||'');
+            if(w.classList.contains('edit')&&!(_delIt&&_delIt.indexOf('delete')===0))
+                _ensurePendingTypingSpan(c);
             // 타이핑 span 에 실제 글자가 들어왔으면 눈에 안 보이는 닻(ZWSP)을 치운다.
             // 조합 중에는 건드리지 않는다(위 compositionstart/end 참조).
             if(!c._sdyComposing&&!(e&&e.isComposing)){ try{ _cleanTypingMarks(c); }catch(_e){} }
@@ -10249,6 +10276,7 @@ function _tightToLineFlow(c){
         const fs=parseFloat(st.fontSize)||16;
         const txt=_tightWordText(s);
         if(!txt) return;
+        const top=isNaN(t)?0:t;
         const style=[
             st.fontSize?'font-size:'+st.fontSize:'',
             st.fontFamily?'font-family:'+st.fontFamily:'',
@@ -10259,17 +10287,34 @@ function _tightToLineFlow(c){
             st.textDecoration&&st.textDecoration!=='none'?'text-decoration:'+st.textDecoration:'',
             st.verticalAlign&&st.verticalAlign!=='baseline'?'vertical-align:'+st.verticalAlign:''
         ].filter(Boolean).join(';');
-        words.push({top:isNaN(t)?0:t, left:isNaN(l)?0:l, fs:fs,
+        // bot = 글자 칸의 아래쪽(원문 글자 크기만큼). 줄 묶음이 '세로로 겹치는가' 를
+        //   볼 때 쓴다 — 위/아래 첨자·기호는 top 이 홀로 튀므로 top 만 보면 안 된다.
+        words.push({top:top, bot:top+Math.max(2,fs), left:isNaN(l)?0:l, fs:fs,
             adv:_tightWordW(s)*scale[i], txt:txt, style:style, ff:st.fontFamily||''});
     });
     if(!words.length) return null;
-    // top 으로 2px 묶음 = 줄, 줄 안은 left 순
+    // 14.43 · 줄 묶음은 'top 이 2px 안'이 아니라 '세로 구간이 겹치는가'로 판정한다.
+    //   PDF 한 줄에는 크기가 다른 글자(제목·기호)나 위/아래 첨자가 섞인다. top 만
+    //   보면 그런 글자들이 딴 줄로 튀고, 각 줄(.sdy-tl)은 left:0 에 붙어 펼쳐지므로
+    //   원래 그 자리에 있던 원문 글자와 겹쳐 보였다(보고: "더블클릭하면 일부 글자가
+    //   왼쪽에 붙어 다른 글자와 겹친다"). 겹치는 폭이 '작은 쪽 글자 칸'의 절반
+    //   이상이면 같은 줄로 묶는다 — 반대로 줄 간격이 촘촘한 두 원문 줄은 겹치는
+    //   폭이 작아 갈리므로 절대 합쳐지지 않는다.
     const rows=[];
     words.sort((a,b)=>a.top-b.top||a.left-b.left);
     for(const wd of words){
         const last=rows[rows.length-1];
-        if(last&&Math.abs(wd.top-last.top)<2) last.items.push(wd);
-        else rows.push({top:wd.top, items:[wd]});
+        if(last){
+            const ov=Math.min(last.bot,wd.bot)-Math.max(last.top,wd.top);
+            const small=Math.min(last.bot-last.top,wd.bot-wd.top);
+            if(ov>0&&ov>=small*0.5){
+                last.items.push(wd);
+                if(wd.top<last.top) last.top=wd.top;      // 줄의 위쪽 = 가장 높은 글자
+                if(wd.bot>last.bot) last.bot=wd.bot;
+                continue;
+            }
+        }
+        rows.push({top:wd.top, bot:wd.bot, items:[wd]});
     }
     rows.forEach(r=>r.items.sort((a,b)=>a.left-b.left));
     const gapCache=new Map();
@@ -10441,6 +10486,113 @@ function _tightLineEnter(c,w){
         try{ saveSel(); }catch(e2){}
         if(w.classList.contains('edit')){ commitEditSnapshot(); _armTypingCheckpoint(w); }
     }catch(e){}
+}
+
+/* ════════════════════════════════════════════════════════════════
+   14.43 · Backspace 로 '엔터 줄바꿈'을 한 번에 지우기
+   ─────────────────────────────────────────────────────────────
+   Enter 는 새 줄 머리에 서식 이어받기용 .sdy-type 닻(ZWSP)을 심는다(14.41).
+   그 닻은 눈에 보이지 않지만 '글자 하나'이므로 Backspace 가 그것을 먼저 먹고
+   줄바꿈은 남는다 → 사용자는 "백스페이스가 안 먹는다"고 느낀다.
+   그래서 Backspace 를 누른 순간 '캐럿 앞이 닻뿐'인지 먼저 보고
+     · 닻뿐이면 닻을 걷어 브라우저 기본 동작(줄 합치기)이 그대로 일어나게 한다.
+     · 줄 흐름(tight · .sdy-tl)이면 14.42 가 내려놓은 아래 원문 줄까지 올려
+       직접 합친다(안 그러면 줄은 지워져도 빈 칸이 남는다).
+     · 실제 글자가 앞에 있으면 아무것도 건드리지 않는다(한 글자 지우기 그대로).
+   ════════════════════════════════════════════════════════════════ */
+const _SDY_ANCHOR_RE=/[\u200b\u200c\u200d\ufeff]/g;
+// 캐럿이 속한 '줄/문단' 요소 (줄 흐름은 .sdy-tl, 일반 상자는 div/p 또는 상자 자신)
+function _caretBlock(host,r){
+    let n=(r.startContainer&&r.startContainer.nodeType===3)
+        ?r.startContainer.parentElement:r.startContainer;
+    while(n&&n!==host){
+        if(n.classList&&(n.classList.contains('sdy-tl')||n.tagName==='DIV'||n.tagName==='P')) return n;
+        n=n.parentElement;
+    }
+    return host;
+}
+// '블록 맨 앞 ~ 캐럿' 사이에 실제 글자는 없고 닻(ZWSP)만 있는가
+function _anchorOnlyBefore(block,r){
+    try{
+        const seg=document.createRange();
+        seg.setStart(block,0);
+        seg.setEnd(r.startContainer,r.startOffset);
+        const raw=String(seg.toString()||'');
+        return raw.length>0&&raw.replace(_SDY_ANCHOR_RE,'').length===0;
+    }catch(e){ return false; }
+}
+// 닻만 걷어 브라우저 기본 Backspace(줄 합치기)가 일어나게 한다. 먹은 닻이 있으면 true.
+function _dropAnchorsBeforeCaret(host){
+    try{
+        const s=window.getSelection();
+        if(!s||!s.rangeCount||!s.isCollapsed) return false;      // 선택 지우기는 기본 동작
+        const r=s.getRangeAt(0);
+        if(!r||!host.contains(r.startContainer)) return false;
+        const block=_caretBlock(host,r);
+        if(!_anchorOnlyBefore(block,r)) return false;            // 앞에 실제 글자가 있다
+        const seg=document.createRange();
+        seg.setStart(block,0); seg.setEnd(r.startContainer,r.startOffset);
+        seg.deleteContents();
+        const cr=document.createRange();
+        cr.setStart(block,0); cr.collapse(true);
+        s.removeAllRanges(); s.addRange(cr);
+        return true;
+    }catch(e){ return false; }
+}
+// 14.43 · 줄 흐름(tight) 전용 — 캐럿이 줄 맨 앞일 때 윗줄과 합치고,
+//   Enter 가 밀어 내린 아래 원문 줄들을 다시 올린다(빈 칸이 남지 않게).
+function _tightLineBackspace(c,w){
+    try{
+        const sel=window.getSelection();
+        if(!sel||!sel.rangeCount||!sel.isCollapsed) return false;
+        const r=sel.getRangeAt(0);
+        if(!r||!c.contains(r.startContainer)) return false;
+        let line=(r.startContainer.nodeType===3)?r.startContainer.parentElement:r.startContainer;
+        while(line&&line!==c&&!(line.classList&&line.classList.contains('sdy-tl'))) line=line.parentElement;
+        if(!line||line===c) return false;
+        if(!_anchorOnlyBefore(line,r)) return false;             // 앞에 실제 글자 → 한 글자 지우기
+        const prev=line.previousElementSibling;
+        if(!prev||!prev.classList||!prev.classList.contains('sdy-tl')) return false;   // 첫 줄
+        const pitch=(parseFloat(line.style.top)||0)-(parseFloat(prev.style.top)||0);
+        // ① 줄 머리의 닻(ZWSP)을 걷어낸다 — 남으면 윗줄 끝에 빈 span 이 붙는다.
+        const seg=document.createRange();
+        seg.setStart(line,0); seg.setEnd(r.startContainer,r.startOffset);
+        seg.deleteContents();
+        // ② 남은 내용을 윗줄 끝으로 옮긴다 (엔터 직후의 빈 줄이면 옮길 것이 없다)
+        const rest=String(line.textContent||'').replace(_SDY_ANCHOR_RE,'');
+        const keep=rest.length>0||!!line.querySelector('img,svg,canvas');
+        if(keep){
+            // 윗줄이 '빈 줄'(<br> 하나)이면 그 <br> 을 먼저 걷어낸다
+            if(!String(prev.textContent||'').replace(_SDY_ANCHOR_RE,'').trim()
+               &&prev.lastChild&&prev.lastChild.tagName==='BR') prev.lastChild.remove();
+            while(line.firstChild){
+                const ch=line.firstChild;
+                // 닻을 걷어내고 남은 '빈 입력 대기 span' 은 옮기지 않는다
+                if(ch.nodeType===1&&ch.classList&&ch.classList.contains('sdy-type')
+                   &&!String(ch.textContent||'').replace(_SDY_ANCHOR_RE,'')){ ch.remove(); continue; }
+                prev.appendChild(ch);
+            }
+        }
+        const mark=prev.lastChild;
+        line.remove();
+        // ③ 아래 원문 줄을 한 줄 위로 — 14.42 가 내려놓은 만큼을 되돌린다.
+        if(pitch>0){
+            for(let nx=prev.nextElementSibling;nx;nx=nx.nextElementSibling){
+                if(nx.classList&&nx.classList.contains('sdy-tl'))
+                    nx.style.top=((parseFloat(nx.style.top)||0)-pitch).toFixed(1)+'px';
+            }
+        }
+        // ④ 캐럿 → 두 줄이 합쳐진 자리
+        const cr=document.createRange();
+        if(mark&&mark.parentNode===prev) cr.setStartAfter(mark); else cr.setStart(prev,0);
+        cr.collapse(true);
+        sel.removeAllRanges(); sel.addRange(cr);
+        w._caretV=(w._caretV||0)+1;
+        try{ saveSel(); }catch(_e){}
+        if(w.classList.contains('edit')){ commitEditSnapshot(); _armTypingCheckpoint(w); }
+        clearTimeout(w._t); w._t=setTimeout(()=>{ syncTextEl(w); },300);
+        return true;
+    }catch(e){ return false; }
 }
 
     let _histT=0, _lastTypeT=0, _scriptEditUndoable=false;
