@@ -228,10 +228,31 @@
             if(isNaN(pi)||!id) return null;
             const el=findEl(pi,id);
             if(!el||!el.tight) return null;
+            // 14.45 · 읽기 복귀: 줄 흐름(.sdy-tl) → 단어별 절대좌표로 역변환해
+            //   el.html 을 확정한다. 편집이 있었을 때만 1회 (손대지 않은 진입은
+            //   el.html 이 그대로라 건너뛰어 spurious dirty 를 막는다).
+            try{
+                const c0=w.querySelector('.tb-content');
+                const curHtml=(el&&el.html)||'';
+                const enterH=(w._sdyTightEnterHtml!=null)?w._sdyTightEnterHtml:null;
+                const changed=(enterH==null)||curHtml!==enterH;
+                const hasFlow=(c0&&c0.querySelector&&c0.querySelector(':scope > .sdy-tl'))
+                    ||curHtml.indexOf('sdy-tl')>=0;
+                if(changed&&hasFlow&&typeof _tightLineFlowToAbsolute==='function'){
+                    const src=_stripTypingMarkersHtml(imathCollapse(stripWF(c0?c0.innerHTML:curHtml)));
+                    const abs=_tightLineFlowToAbsolute(src,w._sdyTightOrig||null,el);
+                    if(abs!=null&&abs!==curHtml){
+                        el.html=abs;
+                        try{ w._sdyModelHtml=abs; w._sdyViewHtml=abs; }catch(e){}
+                        try{ markPageEdited(pi); saveDoc(); }catch(e){}
+                    }
+                }
+            }catch(e){}
             // 줄 흐름 플래그 정리
             delete w._sdyTightLine;
             delete w._sdyTightEdit;
             delete w._sdyWasTight;
+            delete w._sdyTightOrig; delete w._sdyTightEnterHtml;
             const newNode=buildTextEl(el,pi);
             if(!newNode) return null;
             // 기존 selected 참조 갱신
@@ -377,9 +398,15 @@
         //   (상하=줄 이동)·형광펜·드래그가 자연스럽다. 엔터는 캐럿 위치에서 줄을
         //   나눠 아래에 새 줄을 만든다(_tightLineEnter). 커밋 시 이 HTML 이
         //   el.html 로 확정된다(tight·pdfText 플래그는 유지).
+        //   14.45 · 편집 종료(읽기 복귀) 시에는 줄 흐름을 단어별 절대좌표로
+        //   역변환(_tightLineFlowToAbsolute)해 el.html 을 확정한다.
         try{
             const _el=findEl(+w.dataset.pageIdx,w.dataset.id);
             if(_el&&_el.tight&&!w._sdyTightEdit){
+                // 14.45 · 읽기 복귀 역변환용 원본 스태시 (줄 흐름 변환 전에!)
+                try{ w._sdyTightEnterHtml=(_el&&_el.html)||''; }catch(e){ w._sdyTightEnterHtml=''; }
+                try{ w._sdyTightOrig=(typeof _stashTightOrig==='function')?_stashTightOrig(c):null; }
+                catch(e){ w._sdyTightOrig=null; }
                 w._sdyTightEdit=1;
                 const _lf=(typeof _tightToLineFlow==='function')?_tightToLineFlow(c):null;
                 if(_lf){ c.innerHTML=''; c.appendChild(_lf); w._sdyTightLine=1; }

@@ -32,6 +32,8 @@
         nowrap(절대 한 줄)이다? 엔터로 나눈 새 줄도 nowrap? 이전 버전
         (white-space:normal)으로 저장된 줄 흐름도 다시 그릴 때만 nowrap 으로
         바로잡고(표시 전용), 실제 수정 커밋 전까지 저장 모델은 그대로?
+        14.45 · 읽기 복귀(커밋) 시 줄 흐름은 단어별 절대좌표 span 으로 역변환해
+        저장·표시한다. 안 건드린 단어의 좌표는 원본과 동일해야 한다.
    jsdom 은 레이아웃이 없으므로 '위치'는 저장 모델의 좌표(절대 스팬의
    left/top·pdfW/pdfBase/origTop, .sdy-tl 줄의 top)로, 서식은 span 스타일로
    단언한다. 실물 Chromium 커버: bench 계열. */
@@ -134,6 +136,46 @@ function selectSub(win, content, needle, from = 0, to = null) {
   win.saveSel();
   return r;
 }
+// 14.45 · 단어 절대좌표 저장 단언 도우미 (읽기 복귀 시 원본 형식 복원)
+const spanOf = (h, t) => {
+  const i = h.indexOf('>' + t + '<');
+  if (i < 0) return null;
+  const s = h.lastIndexOf('<span', i);
+  return s < 0 ? null : h.slice(s, i + 1);
+};
+// 중첩 run span 속 글자의 바깥 절대 스팬 (data-pdf-w 를 가진 조상까지)
+const outerSpanOf = (h, t) => {
+  const i = h.indexOf(t);
+  if (i < 0) return null;
+  let s = h.lastIndexOf('<span', i);
+  for (let k = 0; k < 3 && s >= 0; k++) {
+    const e = h.indexOf('>', s);
+    if (h.slice(s, e + 1).includes('data-pdf-w')) return h.slice(s, i + t.length + 1);
+    s = s > 0 ? h.lastIndexOf('<span', s - 1) : -1;
+  }
+  return null;
+};
+const hasGeom = (h, t, l, tp, w, b) => {
+  const s = spanOf(h, t);
+  return !!s && new RegExp('left:\\s*' + l + 'px').test(s)
+    && new RegExp('top:\\s*' + tp + 'px').test(s)
+    && s.includes('data-pdf-w="' + w + '"') && s.includes('data-pdf-base="' + b + '"');
+};
+const spanLeft = (h, t) => {
+  const s = spanOf(h, t);
+  const m = s && s.match(/left:\s*([0-9.]+)px/);
+  return m ? parseFloat(m[1]) : null;
+};
+const spanTop = (h, t) => {
+  const s = spanOf(h, t);
+  const m = s && s.match(/top:\s*([0-9.]+)px/);
+  return m ? parseFloat(m[1]) : null;
+};
+const outerSpanLeft = (h, t) => {
+  const s = outerSpanOf(h, t);
+  const m = s && s.match(/left:\s*([0-9.]+)px/);
+  return m ? parseFloat(m[1]) : null;
+};
 // 한 글자에 실제로 먹은 인라인 스타일
 function effStyle(win, content, needle) {
   const tn = textNodeOf(win, content, needle);
@@ -400,16 +442,26 @@ try {
     && (content2.textContent || '').includes('gamma'));
 
 
-  // Escape 커밋 — 저장된 html 에도 줄 흐름 + 서식이 남는다
+  // Escape 커밋 — 14.45 · 저장된 html 은 단어별 절대좌표로 복원된다
   document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
   await wait(300);
   {
     const el2 = window.findEl(0, 't1');
     const h2 = (el2 && el2.html) || '';
-    check('② 저장된 html 에 줄 흐름(.sdy-tl)이 남는다', h2.includes('sdy-tl'));
+    check('② 저장된 html 에 줄 흐름(.sdy-tl)·간격(.sdy-tg)이 남지 않는다',
+      !h2.includes('sdy-tl') && !h2.includes('sdy-tg') && h2.includes('data-pdf-w'));
     check('② 저장된 html 에 새 줄·입력 글자와 Jua 서식이 남는다',
       h2.includes('셋') && h2.includes('Jua'));
     check('② 저장 문자열에 입력 닻(ZWSP)이 남지 않는다', !h2.includes('\u200B'));
+    check('② 안 건드린 첫 줄(alpha·beta·gamma) 좌표가 그대로다',
+      hasGeom(h2, 'alpha', 0, 0, 46, 16) && hasGeom(h2, 'beta', 60, 0, 38, 16)
+      && hasGeom(h2, 'gamma', 120, 0, 48, 16));
+    check('② 안 건드린 단어(delta·epsilon) 좌표가 그대로다',
+      hasGeom(h2, 'delta', 0, 24, 44, 40) && hasGeom(h2, 'epsilon', 58, 24, 60, 40));
+    check('② 이어 쓴 단어(zeta일둘)는 zeta 자리(left 140)에 들어간다',
+      outerSpanLeft(h2, 'zeta일') === 140 && (h2.match(/data-pdf-w/g) || []).length === 7);
+    check('② 엔터로 만든 줄의 새 글자(셋)가 마지막 줄에 들어간다',
+      spanLeft(h2, '셋') === 0 && spanTop(h2, '셋') > 24);
   }
 
   // ══ ③ 다시 열어 드래그 선택 + 형광펜 → 글꼴/크기 보존 ──
@@ -451,6 +503,8 @@ try {
     check('③ 저장된 html 에 형광펜 배경이 남는다',
       h3.includes('255, 245, 157') || h3.includes('fff59d'));
     check('③ 저장된 html 에 부분 폰트(Gaegu)가 남는다', h3.includes('Gaegu'));
+    check('③ 저장된 html 에 줄 흐름이 남지 않는다(단어 절대좌표)',
+      !h3.includes('sdy-tl') && !h3.includes('sdy-tg'));
   }
 
   // ══ ④ 방향키(브라우저 기본 캐럿) 흘려보냄 + 교차 줄 Shift+선택→형광펜 ══
@@ -534,8 +588,8 @@ try {
     const h4 = (el4 && el4.html) || '';
     check('④ 저장된 html 에 교차 줄 형광펜이 남는다',
       h4.includes('206, 147, 216') || h4.includes('ce93d8'));
-    check('④ 저장된 html 에 새 줄·Jua 서식·줄 흐름이 그대로 남는다',
-      h4.includes('Jua') && h4.includes('sdy-tl'));
+    check('④ 저장된 html 에 새 줄·Jua 서식이 남고 줄 흐름은 남지 않는다',
+      h4.includes('Jua') && !h4.includes('sdy-tl') && !h4.includes('sdy-tg'));
   }
 
   // ══ ⑤ 문장(한 줄 전체) 선택 형광펜 — 단어 사이 간격까지 이어서 칠해진다 ══
@@ -543,8 +597,13 @@ try {
   //   문장 전체를 선택해 칠하면 ① 글자 단위가 아니라 연속 띠(문장 단위)로,
   //   단어 사이 간격에도 배경이 끊김 없이 이어지고 ② 좁은(글자 일부) 선택은
   //   이웃 간격까지 덮지 않으며 ③ 지우면 스페이서 원래 높이로 되돌아간다.
-  const tb5 = document.querySelector('#pagesStage .tb[data-id="t1"]');
-  const content5 = tb5.querySelector('.tb-content');
+  // 14.45 · 읽기 복귀 rebuild 가 노드를 교체하므로 매번 live 노드를 다시 조회한다
+  let tb5 = document.querySelector('#pagesStage .tb[data-id="t1"]');
+  let content5 = tb5.querySelector('.tb-content');
+  const requery5 = () => {
+    tb5 = document.querySelector('#pagesStage .tb[data-id="t1"]');
+    content5 = tb5.querySelector('.tb-content');
+  };
   content5.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
   await wait(150);
   const rowA5 = () => [...content5.querySelectorAll(':scope>.sdy-tl')]
@@ -592,12 +651,15 @@ try {
   await wait(300);
   {
     const h5 = (window.findEl(0, 't1').html) || '';
-    check('⑤ 저장된 html 에 간격까지 이어진 문장 형광펜이 남는다',
-      h5.includes('255, 171, 64') && /sdy-tg[^>]*255, 171, 64/.test(h5));
+    check('⑤ 저장된 html 에 간격까지 이어진 문장 형광펜이 남는다(단어 절대좌표)',
+      h5.includes('255, 171, 64') && !h5.includes('sdy-tg') && !h5.includes('sdy-tl')
+      && (h5.match(/255, 171, 64/g) || []).length >= 3);
   }
   // ⑤-2 단어 일부(좁은 선택) → 이웃 간격은 덮지 않는다
+  requery5();
   content5.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
   await wait(150);
+  check('⑤ 다시 편집에 들어가도 문장 형광펜이 보인다', tb5.classList.contains('edit') && !!rowA5());
   selRow5(rowA5(), false);
   window.applyHighlight('#90caf9');
   await wait(250);
@@ -612,6 +674,7 @@ try {
   document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
   await wait(300);
   // ⑤-3 문장 전체 다시 선택해 형광펜 지우기 → 스페이서도 원래대로
+  requery5();
   content5.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
   await wait(150);
   selRow5(rowA5(), true);
@@ -688,10 +751,11 @@ try {
   const tb7 = document.querySelector('#pagesStage .tb[data-id="t1"]');
   const content7 = tb7.querySelector('.tb-content');
   const rowTops7 = () => [...content7.querySelectorAll(':scope>.sdy-tl')].map(r => parseFloat(r.style.top));
-  const tnDul = textNodeOf(window, content7, '둘');
-  assert.ok(tnDul, '⑦ 자간 대상 글자(둘)를 찾지 못했다');
   content7.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
   await wait(150);
+  // 14.45 · 편집 진입 시 절대좌표→줄 흐름 변환이 일어나므로 진입 뒤에 조회한다
+  const tnDul = textNodeOf(window, content7, '둘');
+  assert.ok(tnDul, '⑦ 자간 대상 글자(둘)를 찾지 못했다');
   const spanDul = tnDul.parentElement;
   spanDul.style.letterSpacing = '3px';
   check('⑦ 자간(letter-spacing)이 글자 스팬에 적용된다',
@@ -730,8 +794,9 @@ try {
   {
     const h7 = (window.findEl(0, 't1').html) || '';
     check('⑦ 저장된 html 에 자간(letter-spacing)이 남는다', h7.includes('letter-spacing'));
-    check('⑦ 저장된 html 에 형광펜·Jua·줄 흐름이 남는다',
-      h7.includes('255, 245, 157') && h7.includes('Jua') && h7.includes('sdy-tl'));
+    check('⑦ 저장된 html 에 형광펜·Jua 가 남고 줄 흐름은 남지 않는다',
+      h7.includes('255, 245, 157') && h7.includes('Jua')
+      && !h7.includes('sdy-tl') && !h7.includes('sdy-tg'));
   }
 
   // ══ ⑧ 워드에서 매일 쓰는 편집 동작 — 일반 글상자에서 그대로 재현 ══
@@ -1105,11 +1170,19 @@ try {
   await wait(300);
   {
     const hA = (window.findEl(0, 't3').html) || '';
-    check('⑩ 저장된 html 에 중간 삽입·덮어쓰기·이어쓰기 결과가 모두 남는다',
+    check('⑩ 저장된 html 에 중간 삽입·덮어쓰기·이어쓰기 결과가 모두 남는다(줄 흐름 잔류 없음)',
       hA.includes('soXYuth') && hA.includes('NrthQ')
-      && hA.includes('Kwest') && hA.includes('R') && hA.includes('sdy-tl'));
+      && hA.includes('Kwest') && hA.includes('R')
+      && !hA.includes('sdy-tl') && !hA.includes('sdy-tg'));
     check('⑩ 저장된 html 에 안 건드린 원문 단어가 그대로 남는다',
-      hA.includes('east') && hA.includes('code') && hA.includes('data'));
+      hA.includes('east') && hA.includes('code'));
+    check('⑩ 안 건드린 원문 단어(east·code·data) 좌표가 그대로다',
+      hasGeom(hA, 'east', 104, 0, 36, 16) && hasGeom(hA, 'code', 52, 24, 38, 40)
+      && hasGeom(hA, 'data', 96, 24, 36, 40));
+    // NrthQR 은 부분 서식으로 중첩 분리돼 통짜로 못 찾으므로 분리 전 조각으로 조회
+    check('⑩ 고친 단어는 제자리(soXYuth 0·NrthQR 52·Kwest 0)에 들어간다',
+      spanLeft(hA, 'soXYuth') === 0 && outerSpanLeft(hA, 'NrthQ') === 52
+      && spanLeft(hA, 'Kwest') === 0);
   }
   const tbA2 = document.querySelector('#pagesStage .tb[data-id="t3"]');
   const tcA2 = tbA2.querySelector('.tb-content');
@@ -1215,10 +1288,13 @@ try {
   {
     const elB = window.findEl(0, 't4');
     const hB = (elB && elB.html) || '';
-    const topsSaved = [...hB.matchAll(/sdy-tl[^>]*top:\s*([0-9.]+)px/g)].map(m => parseFloat(m[1]));
-    check('⑪ 저장된 html 에 내려간 줄 위치(top 0·24·48·72)가 남는다',
-      topsSaved.length === 4
-      && topsSaved.every((v, i) => Math.abs(v - [0, 24, 48, 72][i]) < 0.01));
+    // 14.45 · 줄 위치는 단어 절대 스팬의 top 으로 저장된다
+    const tmpB = document.createElement('div'); tmpB.innerHTML = hB;
+    const topsSaved = [...new Set([...tmpB.querySelectorAll(':scope>span[data-pdf-w]')]
+      .map(s => parseFloat(s.style.top)))].sort((a, b) => a - b);
+    check('⑪ 저장된 html 에 내려간 줄 위치(top 0·24·48·72)가 남는다(단어 절대좌표)',
+      !hB.includes('sdy-tl') && !hB.includes('sdy-tg')
+      && JSON.stringify(topsSaved) === JSON.stringify([0, 24, 48, 72]));
     check('⑪ 저장된 html 에 새 문단·이동한 단어가 모두 남는다',
       hB.includes('중') && hB.includes('ipsum') && hB.includes('X')
       && hB.includes('dolor') && hB.includes('sit'));
@@ -1256,7 +1332,7 @@ try {
   check('⑫ 크기·기준선이 달라도 원문 두 줄이 그대로 두 줄로 묶인다', rowsM().length === 2);
   check('⑫ 첫 줄 글자가 왼쪽에 붙지 않고 읽는 순서대로 한 줄에 놓인다',
     flat(rowsM()[0]) === 'Results of the H 2 O study'
-    && rowsM()[0].querySelectorAll(':scope>span:not(.sdy-tg)').length === 7);
+    && rowsM()[0].querySelectorAll(':scope>span:not(.sdy-tg):not(.sdy-ts)').length === 7);
   check('⑫ 둘째 줄도 그대로다', flat(rowsM()[1]) === 'We measured');
   check('⑫ 줄의 세로 위치가 원문 그대로다(3.2 / 31.2)',
     Math.abs(topsM()[0] - 3.2) < 0.01 && Math.abs(topsM()[1] - 31.2) < 0.01);
@@ -1348,9 +1424,14 @@ try {
   await wait(300);
   {
     const hK = (window.findEl(0, 't6').html) || '';
-    check('⑬ 저장된 html 에 빈 줄·닻이 남지 않고 두 줄만 남는다',
-      (hK.match(/sdy-tl/g) || []).length === 2 && !hK.includes('\u200B')
-      && hK.includes('bet') && hK.includes('gamma'));
+    check('⑬ 저장된 html 에 빈 줄·닻·줄 흐름이 남지 않고 두 줄 단어만 남는다(단어 절대좌표)',
+      !hK.includes('sdy-tl') && !hK.includes('sdy-tg') && !hK.includes('\u200B')
+      && hK.includes('bet') && !hK.includes('beta') && hK.includes('gamma')
+      && (hK.match(/data-pdf-w/g) || []).length === 4);
+    check('⑬ 안 건드린 단어(alpha·gamma·delta) 좌표가 그대로다',
+      hasGeom(hK, 'alpha', 0, 0, 46, 16) && hasGeom(hK, 'gamma', 0, 24, 44, 40)
+      && hasGeom(hK, 'delta', 58, 24, 40, 40));
+    check('⑬ 고친 단어(bet)는 beta 자리(left 60)에 들어간다', spanLeft(hK, 'bet') === 60);
   }
   // ⑬-4 일반 글상자 — 새 문단 머리의 닻 때문에 백스페이스가 먹지 않던 경우
   //   (엔터로 문단을 나누는 것은 브라우저 몫이라 jsdom 이 못 만든다 → 앱이 심는
@@ -1390,6 +1471,8 @@ try {
   //   → 새로 만드는 줄 흐름·엔터로 나누는 줄 모두 nowrap(절대 한 줄)이고,
   //     이전 버전(white-space:normal)으로 저장된 줄 흐름은 다시 그릴 때만
   //     nowrap 으로 바로잡는다(표시 전용 — 저장 모델은 실제 수정 전까지 그대로).
+  //   14.45 · 실제 수정을 커밋하면 줄 흐름이 아니라 단어별 절대좌표로 확정된다
+  //     (스태시 없는 best-effort 역변환 — 마이그레이션은 범위 아님).
   const tbL = document.querySelector('#pagesStage .tb[data-id="t7"]');
   const tcL = tbL.querySelector('.tb-content');
   const rowsL = () => [...tcL.querySelectorAll(':scope>.sdy-tl')];
@@ -1412,8 +1495,9 @@ try {
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await wait(300);
     const hL = (window.findEl(0, 't7') || {}).html || '';
-    check('⑭ 수정을 커밋하면 저장 html 도 nowrap 으로 확정된다(다시 열어도 안 겹친다)',
-      /white-space:\s*nowrap/.test(hL) && !/white-space:\s*normal/.test(hL));
+    check('⑭ 수정을 커밋하면 저장 html 이 단어 절대좌표로 확정된다(줄 흐름 잔류 없음)',
+      !hL.includes('sdy-tl') && !hL.includes('sdy-tg')
+      && (hL.match(/data-pdf-w/g) || []).length === 4 && hL.includes('beta!'));
   }
 
   const fatal = errors.filter(e => !/isTrBusy|undefined is not an object/.test(String(e)));
