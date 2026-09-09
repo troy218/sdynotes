@@ -9926,6 +9926,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 }
             }
             _queueTightFit(c,el);  // 단어 단위 재개 가능 큐; 늦은 웹폰트는 공용 loadingdone에서 갱신
+            // 14.44 · 이전 버전(white-space:normal)으로 저장된 줄 흐름(.sdy-tl)도
+            //   다시 그릴 때 nowrap 으로 바로잡는다 — 줄 폭이 상자 폭을 1px 미만
+            //   넘어가 마지막 단어가 다음 줄로 접혀 아래 원문 줄과 겹치는 구버전
+            //   보기/편집을 되살리지 않는다. (표시 전용 — 아래에서 _sdyViewHtml 을
+            //   이 innerHTML 로 다시 기록하므로 저장/동기화 해시는 바뀌지 않는다.)
+            if(c.querySelector(':scope>.sdy-tl')){
+                for(let _r=c.firstElementChild;_r;_r=_r.nextElementSibling){
+                    if(_r.classList&&_r.classList.contains('sdy-tl')&&_r.style.whiteSpace!=='nowrap')
+                        _r.style.whiteSpace='nowrap';
+                }
+            }
         }
         // 14.14 · innerText 는 일부 환경(구형 WebView·테스트 DOM)에서 undefined.
         //   .trim() 이 그대로 터지면 텍스트 상자 전체가 안 그려져 빈 종이가 된다.
@@ -10219,6 +10230,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
      · 줄 안 단어 = 인라인 스팬(원본 폰트/크기/굵기/색/이탈릭 보존)
        → 드래그 선택·방향키(상하=줄 이동)·형광펜이 일반 텍스트처럼 동작.
      · 단어 간격 = 실공백 + (.sdy-tg) 실측 스페이서로 원본 갭 복원.
+     · 줄 = white-space:nowrap — 원문 줄은 절대 '한 줄'이다. 브라우저 글꼴·공백
+       실측 오차로 줄 폭이 상자 폭을 아주 조금(1px 미만) 넘어가도 마지막 단어가
+       다음 줄로 넘어가 아래 원문 줄과 겹치는 일이 없게 줄 안에서 줄바꿈하지
+       않는다. 새 문단이 필요하면 엔터로 줄을 나눈다(아래 _tightLineEnter).
    그 뒤는 브라우저 기본 동작 그대로다. tight fit 의 scaleX 재계산은
    '직접 자식 절대 스팬'만 대상이라 줄 흐름에서는 아무것도 안 움직인다.
    엔터만 캐럿 위치에서 줄을 나누어 아래(원문 줄 간격)에 새 줄을 만든다.
@@ -10330,7 +10345,10 @@ function _tightToLineFlow(c){
         const h=nextTop===Infinity?Math.max(maxFs*1.6,4):Math.max(2,nextTop-r.top);
         const d=document.createElement('div');
         d.className='sdy-tl';
-        d.style.cssText='position:absolute;left:0;width:100%;top:'+r.top.toFixed(1)+'px;height:'+h.toFixed(1)+'px;line-height:'+maxFs.toFixed(1)+'px;white-space:normal;';
+        // 14.44 · 원문 줄은 '한 줄' 고정 — nowrap. (실측 오차로 1px 미만 넘쳐도
+        //   브라우저가 줄 끝에서 접어 아래 원문 줄과 겹치게 하지 않는다. 새 줄은
+        //   엔터(_tightLineEnter)로만 만든다.)
+        d.style.cssText='position:absolute;left:0;width:100%;top:'+r.top.toFixed(1)+'px;height:'+h.toFixed(1)+'px;line-height:'+maxFs.toFixed(1)+'px;white-space:nowrap;';
         r.items.forEach((wd,wi)=>{
             if(wi>0){
                 const gap=wd.left-(r.items[wi-1].left+r.items[wi-1].adv);
@@ -10422,7 +10440,8 @@ function _tightLineEnter(c,w){
         const afterText=String(afterFrag.textContent||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
         const nl=document.createElement('div');
         nl.className='sdy-tl';
-        nl.style.cssText='position:absolute;left:0;width:100%;top:'+(top+pitch).toFixed(1)+'px;height:'+pitch.toFixed(1)+'px;white-space:normal;';
+        // 14.44 · 엔터로 만든 줄도 원문 줄과 같은 nowrap 단일 줄이어야 한다.
+        nl.style.cssText='position:absolute;left:0;width:100%;top:'+(top+pitch).toFixed(1)+'px;height:'+pitch.toFixed(1)+'px;white-space:nowrap;';
         if(!afterText){ while(afterFrag.firstChild) afterFrag.removeChild(afterFrag.firstChild); nl.appendChild(document.createElement('br')); }
         nl.appendChild(afterFrag);
         if(line.parentNode) line.parentNode.insertBefore(nl,line.nextSibling);

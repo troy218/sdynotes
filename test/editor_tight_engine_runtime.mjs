@@ -27,6 +27,11 @@
      ⑬ Enter 로 만든 줄을 Backspace 한 번에 지운다 — 새 줄 머리의 서식 이어받기
         닻(ZWSP)을 백스페이스가 먼저 먹어 줄바꿈이 남지 않고, 엔터가 밀어 내린
         아래 원문 줄도 제자리로 올라온다? (일반 글상자 문단도 같다)
+     ⑭ '마지막 단어가 다음 줄로 넘어가 겹침' — 편집 진입 줄 흐름(.sdy-tl)이
+        공백 실측 오차로 상자 폭을 1px 미만 넘으면 줄 끝에서 접히지 않도록
+        nowrap(절대 한 줄)이다? 엔터로 나눈 새 줄도 nowrap? 이전 버전
+        (white-space:normal)으로 저장된 줄 흐름도 다시 그릴 때만 nowrap 으로
+        바로잡고(표시 전용), 실제 수정 커밋 전까지 저장 모델은 그대로?
    jsdom 은 레이아웃이 없으므로 '위치'는 저장 모델의 좌표(절대 스팬의
    left/top·pdfW/pdfBase/origTop, .sdy-tl 줄의 top)로, 서식은 span 스타일로
    단언한다. 실물 Chromium 커버: bench 계열. */
@@ -206,6 +211,12 @@ try {
         { type: 'text', id: 't4', x: 40, y: 170, w: 200, h: 70, html: rowP1 + rowP2, fontSize: 16, tight: 1 },
         { type: 'text', id: 't5', x: 300, y: 170, w: 300, h: 90, html: rowM1 + rowM2, fontSize: 16, tight: 1, pdfText: 1 },
         { type: 'text', id: 't6', x: 40, y: 300, w: 240, h: 70, html: rowK1 + rowK2, fontSize: 16, tight: 1 },
+        // ⑭ 전용 — 14.40~14.43 시절 white-space:normal 로 저장된 '줄 흐름' 본문
+        //   (줄은 이미 .sdy-tl div 이고 모델도 그대로). 다시 그릴 때 nowrap 으로
+        //   바로잡혀야 하고, 실제로 고치기 전까지 저장 모델은 바뀌면 안 된다.
+        { type: 'text', id: 't7', x: 360, y: 300, w: 260, h: 70, fontSize: 16, tight: 1,
+          html: '<div class="sdy-tl" style="position:absolute;left:0;width:100%;top:0px;height:22px;line-height:20px;white-space:normal;">alpha beta</div>'
+              + '<div class="sdy-tl" style="position:absolute;left:0;width:100%;top:24px;height:22px;line-height:20px;white-space:normal;">gamma delta</div>' },
         { type: 'text', id: 't2', x: 520, y: 300, w: 220, h: 70, html: '가나다', fontSize: 16 },
       ],
     }],
@@ -312,6 +323,10 @@ try {
   const rowTopsBefore = () => [...content2.querySelectorAll(':scope>.sdy-tl')].map(r => parseFloat(r.style.top));
   const rowTop0 = rowTopsBefore();
   check('② 첫 줄의 원문 세로 위치가 보존된다', rowTop0[0] === 0);
+  // 14.44 · 원문 줄은 절대 '한 줄' — 공백 실측 오차로 상자 폭을 1px 미만 넘어가도
+  //   마지막 단어가 다음 줄로 접혀 아래 원문 줄과 겹치지 않도록 nowrap 이다.
+  check('② 줄 흐름의 각 줄이 nowrap(줄 안 절대 줄바꿈 없음)이다',
+    [...content2.querySelectorAll(':scope>.sdy-tl')].every(r => r.style.whiteSpace === 'nowrap'));
 
   // 2-1 마지막 원문 줄 끝에 서식 없이 한 글자 → 이어 쓰기
   const rows0 = content2.querySelectorAll(':scope>.sdy-tl');
@@ -1304,6 +1319,8 @@ try {
     await wait(130);
     check('⑬ Enter 로 새 줄이 생기고 아래 원문 줄이 내려간다(2→3)',
       rowsK().length === 3 && JSON.stringify(topsK()) === JSON.stringify([0, 24, 48]));
+    check('⑬ 엔터로 만든 새 줄도 nowrap 단일 줄이다(줄 안에서 접히지 않는다)',
+      rowsK()[1].style.whiteSpace === 'nowrap');
     const mk = rowsK()[1].querySelector('.sdy-type');
     check('⑬ 새 줄 머리에 서식 이어받기 닻(ZWSP)이 놓인다',
       !!mk && (mk.textContent || '').includes('\u200B'));
@@ -1362,6 +1379,41 @@ try {
       && tcN.querySelectorAll(':scope>div')[0].textContent.includes('첫째'));
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await wait(250);
+  }
+
+  // ══ ⑭ '마지막 단어가 다음 줄로 넘어가 겹침' — 줄 흐름 행은 nowrap 이다 ══
+  //   14.44 · 보고: "논문 고정글자를 편집하려 들어가면 위치는 그대로인데 단어 간격이
+  //   미세하게 변하고, 상자 폭을 살짝 넘는 판정이 나 마지막 단어가 다음 줄로 넘어가
+  //   아래 줄 글자와 겹친다." 원인 — 편집 진입 줄 흐름(.sdy-tl)을 white-space:normal
+  //   로 만들어, 실공백·스페이서 실측 오차로 줄 폭이 상자 폭을 아주 조금(1px 미만)
+  //   넘으면 브라우저가 줄 끝 공백에서 마지막 단어를 둘째 줄로 접었다.
+  //   → 새로 만드는 줄 흐름·엔터로 나누는 줄 모두 nowrap(절대 한 줄)이고,
+  //     이전 버전(white-space:normal)으로 저장된 줄 흐름은 다시 그릴 때만
+  //     nowrap 으로 바로잡는다(표시 전용 — 저장 모델은 실제 수정 전까지 그대로).
+  const tbL = document.querySelector('#pagesStage .tb[data-id="t7"]');
+  const tcL = tbL.querySelector('.tb-content');
+  const rowsL = () => [...tcL.querySelectorAll(':scope>.sdy-tl')];
+  const allNowrapL = () => rowsL().length > 0
+    && rowsL().every(r => r.style.whiteSpace === 'nowrap');
+  check('⑭ 구버전 줄 흐름(white-space:normal) 저장본도 다시 그릴 때 nowrap 으로 고쳐진다',
+    rowsL().length === 2 && allNowrapL());
+  check('⑭ 그릴 때 바로잡기는 표시 전용 — 실제로 고치기 전 저장 모델(html)은 그대로다',
+    ((window.findEl(0, 't7') || {}).html || '').includes('white-space:normal'));
+  tcL.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+  await wait(160);
+  check('⑭ 구버전 줄 흐름 상자가 편집 모드로 들어가도 줄이 여전히 nowrap 이다',
+    tbL.classList.contains('edit') && allNowrapL());
+  {
+    const tnL = textNodeOf(window, tcL, 'alpha');
+    assert.ok(tnL, '⑭ 원문 단어(alpha)를 찾지 못했다');
+    putCaret(tnL, (tnL.nodeValue || '').length);
+    typeAt(window, tcL, '!');
+    await wait(140);
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await wait(300);
+    const hL = (window.findEl(0, 't7') || {}).html || '';
+    check('⑭ 수정을 커밋하면 저장 html 도 nowrap 으로 확정된다(다시 열어도 안 겹친다)',
+      /white-space:\s*nowrap/.test(hL) && !/white-space:\s*normal/.test(hL));
   }
 
   const fatal = errors.filter(e => !/isTrBusy|undefined is not an object/.test(String(e)));
