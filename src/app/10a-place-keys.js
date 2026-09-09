@@ -312,6 +312,81 @@
     document.addEventListener('pointerdown',focusNoteFromAi,true);
     document.addEventListener('mousedown',focusNoteFromAi,true); // PointerEvent 없는 환경·런타임 테스트
 
+    // 글상자(일반 텍스트) 편집 중 Tab — Word 식 들여쓰기.
+    //   들여쓰기 단위는 .sdy-tab span(고정 폭) — 공백 문자가 아니라
+    //   '한 번에 지워지는' 토큰이라 Backspace 한 번에 단위째 사라진다.
+    //   PDF 줄 흐름(tight) 상자는 예외 — 거기선 기존처럼 편집 확정+상자 이동을 쓴다.
+    function sdyTabUnit(c){
+        const tab=document.createElement('span');
+        tab.className='sdy-tab';
+        tab.textContent='\u00A0';        // 폭은 CSS(.sdy-tab)가 고정
+        return tab;
+    }
+    function sdyTabInputNotify(c,type){
+        try{
+            if(typeof window!=='undefined'&&window.InputEvent)
+                c.dispatchEvent(new window.InputEvent('input',{bubbles:true,inputType:type,cancelable:false}));
+            else c.dispatchEvent(new Event('input',{bubbles:true}));
+        }catch(e){}
+    }
+    function sdyEditTabAt(c,shift){
+        try{
+            const sel=window.getSelection();
+            if(!sel||!sel.rangeCount) return false;
+            const r=sel.getRangeAt(0);
+            if(!c.contains(r.startContainer)) return false;
+            if(shift){
+                // 커서 바로 앞 들여쓰기 단위 하나 제거 (Shift+Tab = 내어쓰기).
+                // 입력 대기 마커(빈 .sdy-type)·빈 텍스트 껍데기가 사이에 껴 있어도
+                // 건너뛰고 가장 가까운 .sdy-tab 을 찾는다 — 실글자/단락 요소 앞에
+                // 들여쓰기가 없으면 아무 일도 하지 않는다.
+                const sc=r.startContainer, so=r.startOffset;
+                const blank=v=>String(v||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'')==='';
+                const findBack=n=>{
+                    let hops=0;
+                    while(n&&hops<6){
+                        if(n.nodeType===1&&n.classList){
+                            if(n.classList.contains('sdy-tab')) return n;
+                            const empty=n.classList.contains('sdy-type')&&blank(n.textContent);
+                            if(!empty) return null;   // 실내용 요소 앞이면 멈춘다
+                        }else if(n.nodeType===3){
+                            if(!blank(n.nodeValue)) return null;
+                        }else return null;
+                        n=n.previousSibling; hops++;
+                    }
+                    return null;
+                };
+                let tab=null, wasTextStart=false;
+                if(sc.nodeType===3){
+                    if(so===0){ tab=findBack(sc.previousSibling); wasTextStart=true; }
+                }else if(sc.nodeType===1){
+                    if(so>0) tab=findBack(sc.childNodes[so-1]);
+                    else tab=findBack(sc.previousSibling);
+                }
+                if(!tab) return false;
+                const par=tab.parentNode;
+                par.removeChild(tab);
+                const nr=document.createRange();
+                if(wasTextStart&&sc.isConnected){ nr.setStart(sc,0); nr.collapse(true); }
+                else{
+                    const ref=tab.nextSibling;
+                    if(ref) nr.setStart(ref,0); else nr.setStart(par,par.childNodes.length);
+                    nr.collapse(true);
+                }
+                sel.removeAllRanges(); sel.addRange(nr);
+                sdyTabInputNotify(c,'deleteContentBackward');
+                return true;
+            }
+            const tab=sdyTabUnit(c);
+            if(!r.collapsed) r.deleteContents();
+            r.insertNode(tab);
+            const nr=document.createRange();
+            nr.setStartAfter(tab); nr.collapse(true);
+            sel.removeAllRanges(); sel.addRange(nr);
+            sdyTabInputNotify(c,'insertText');
+            return true;
+        }catch(e){ return false; }
+    }
     document.addEventListener('keydown',e=>{
         // 발표 모드 조작
         if(presentOn){
@@ -342,17 +417,31 @@
         // ===== 스프레드시트식: 편집 중 Enter/Tab/Escape (커밋 + 셀 이동) =====
         {
             const ae=document.activeElement;
-            const inContent=!!(ae&&ae.classList&&ae.classList.contains('tb-content'));
+            const _tg=e.target;
+            // 포커스가 .tb-content 일 때가 기본이지만, 이벤트 원천(target)이
+            // .tb-content 인 경우(테스트·포커스가 늦게 따라붙는 환경)도 편집으로 본다.
+            const _src=(ae&&ae.classList&&ae.classList.contains('tb-content'))
+                ?ae:((_tg&&_tg.classList&&_tg.classList.contains('tb-content'))?_tg:null);
+            const inContent=!!_src;
             // 18.9 · Escape 는 '글상자 편집 중'이면 언제나 편집만 끝낸다.
             //   예전엔 포커스가 정확히 .tb-content 에 있을 때만 그렇게 했고,
             //   툴바 글자 크기칸을 만졌다가 Escape 를 누르면 편집 중인데도
             //   아래의 closeTopOverlay() 가 걸려 **노트 자체가 닫혀** 버렸다.
-            const w=inContent?ae.closest('.tb'):document.querySelector('.tb.edit');
+            const w=inContent?_src.closest('.tb'):document.querySelector('.tb.edit');
             // 한글 IME 조합 중에는 Enter(확정)를 가로채면 입력이 깨진다 → 그대로 둠
             const composing=e.isComposing||e.keyCode===229;
             if(w){
                 if(e.key==='Tab' && inContent && !composing){
                     e.preventDefault();
+                    // Tab = 들여쓰기 (일반 텍스트 상자). PDF 줄 흐름(tight)·표·LaTeX
+                    //   상자는 기존처럼 편집 확정 후 다음/이전 상자로 이동한다.
+                    const tightBox=w.classList&&(w.classList.contains('tight')
+                        ||w.classList.contains('pdf-text')||w._sdyTightLine);
+                    if(!tightBox){
+                        const c=w.querySelector('.tb-content');
+                        if(!(c&&sdyEditTabAt(c,e.shiftKey))) return;   // 못 지운 Shift+Tab 은 그대로
+                        return;
+                    }
                     exitEditKeepSel(w);
                     moveCellFrom(w, e.shiftKey?'prev':'next');
                     return;

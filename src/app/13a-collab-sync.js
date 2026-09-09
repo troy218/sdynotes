@@ -9,6 +9,14 @@
     // 화면이 가려져 있으면 아예 쉰다 → 배터리·버벅임 없음.
     let liveSyncTimer=null, _syncGap=1200, _syncBusy=false, _syncQuiet=0;
     const SYNC_FAST=1200, SYNC_SLOW=15000;
+    // 번역 모듈(src/translate.js)이 아직/실패로 뜨지 않았으면 '번역 중 아님'으로
+    //   간주한다. 예전엔 window.isTrBusy 를 있는 그대로 불러, translate.js 가
+    //   늦게/오류로 로드된 탭에서 liveDocTick 이 매 주기 ReferenceError 로 죽고
+    //   실시간 동기화(되돌리기 협업 등)까지 멈췄다.
+    function _trBusy(){
+        try{ return typeof window.isTrBusy==='function'&&!!window.isTrBusy(); }
+        catch(e){ return false; }
+    }
     function stopLiveDocSync(){
         if(liveSyncTimer){ clearTimeout(liveSyncTimer); liveSyncTimer=null; }
     }
@@ -45,7 +53,7 @@
     async function reloadImportedIfNewer(){
         // 가져온 PDF: 요소 ops 없이 슬라이스만 갱신된 번역/편집을 받는다.
         const d=doc;                    // 14.9 · 노트 전환 후 이어지는 리로드를 차단
-        if(!d||!d.__ref||isTrBusy()||_impReloading) return 0;
+        if(!d||!d.__ref||_trBusy()||_impReloading) return 0;
         _impReloading=true;
         try{
             const r=await fetch('/api/import/docfile/'+encodeURIComponent(d.__ref)+'?meta=1',{cache:'no-store'});
@@ -85,7 +93,7 @@
     async function liveDocTick(){
         if(!doc||!curNB){ _armSync(SYNC_SLOW); return; }
         // 안 보이는 탭에서는 쉬고, 편집·번역 중에는 건드리지 않는다
-        if(document.hidden||document.querySelector('#pagesStage .tb.edit')||isTrBusy()){
+        if(document.hidden||document.querySelector('#pagesStage .tb.edit')||_trBusy()){
             _armSync(SYNC_FAST); return;
         }
         if(_syncBusy){ _armSync(); return; }
@@ -694,7 +702,7 @@
                 }
             }
             // 요소 ops 가 비어도 가져온 문서 슬라이스(번역)가 갱신됐을 수 있다.
-            if(doc.__ref && !isTrBusy()){
+            if(doc.__ref && !_trBusy()){
                 try{ await reloadImportedIfNewer(); }catch(e){}
             }
             return ops;

@@ -686,6 +686,37 @@ function _tightLineEnter(c,w){
             r.collapse(true);
             if(!c.contains(r.startContainer)) return;
         }
+        // 14.41 · Enter 전 '이어받을 서식': 캐럿이 서식 입력 span(.sdy-type) 안이면
+        //   그 span 의 서식, 아니면 캐럿 앞 글자에 실제로 먹은 유효 서식.
+        //   예전엔 여기서 아무것도 물려주지 않아 '서식 유지 채로 Enter' 한 뒤
+        //   새 줄에 치는 글자가 상자 기본 서식으로 풀렸다 (보고).
+        let carry=null;
+        try{
+            const cc=r.startContainer;
+            let mk=null;
+            if(cc&&cc.nodeType===3&&cc.parentElement&&cc.parentElement.classList
+               &&cc.parentElement.classList.contains('sdy-type')) mk=cc.parentElement;
+            else if(cc&&cc.nodeType===1&&cc.classList&&cc.classList.contains('sdy-type')) mk=cc;
+            if(mk&&mk.style&&mk.style.cssText){
+                carry={};
+                for(const k of INLINE_STYLE_PROPS){
+                    const v=mk.style[k];
+                    if(v&&String(v).trim()) carry[k]=String(v).trim();
+                }
+            }
+            if((!carry||!Object.keys(carry).length)&&cc&&cc.nodeType===3){
+                // 캐럿이 빈 텍스트 노드(입력 직후 남는 껍데기 등)에 걸렸으면
+                // '그 앞 글자'의 서식을 이어받는다 — 빈 노드는 서식이 없어
+                // 엔터 뒤 새 줄이 기본 서식으로 풀리는 원인이 된다.
+                let t=cc;
+                const bare=String(t.nodeValue||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'');
+                if(!bare&&t.previousSibling&&t.previousSibling.nodeType===3) t=t.previousSibling;
+                const st=(typeof _typingStylesFromNode==='function')
+                    ?(_typingStylesFromNode(t,c)||{})
+                    :{};
+                if(Object.keys(st).length) carry=st;
+            }
+        }catch(_e){}
         let p=(r.startContainer.nodeType===3)?r.startContainer.parentElement:r.startContainer;
         let line=null;
         while(p&&p!==c){
@@ -714,15 +745,62 @@ function _tightLineEnter(c,w){
         if(!afterText){ while(afterFrag.firstChild) afterFrag.removeChild(afterFrag.firstChild); nl.appendChild(document.createElement('br')); }
         nl.appendChild(afterFrag);
         if(line.parentNode) line.parentNode.insertBefore(nl,line.nextSibling);
+        // 14.42 · 원문 '중간 줄'에서 Enter — 방금 끼운 새 줄이 절대 위치라
+        //   그대로 두면 다음 원문 줄과 같은 top 에 놓여 겹친다. 그래서 이 줄
+        //   아래의 모든 .sdy-tl 을 새 줄 높이만큼 아래로 내린다.
+        //   (원칙 '원문 줄은 입력에 절대 안 움직인다'는 의도치 않은 이동 금지
+        //   를 위한 것이고, 사용자가 중간에 문단을 끼워 넣는 명시적 Enter 는
+        //   뒤따르는 원문 줄이 한 줄 내려가 공간을 만드는 것이 자연스럽다 —
+        //   읽는 순서·줄 간격은 그대로 유지된다.) 마지막 줄 뒤라면 밀 줄이 없다.
+        if(line.nextSibling&&nl.nextSibling){
+            let nx=nl.nextSibling;
+            while(nx){
+                if(nx.nodeType===1&&nx.classList&&nx.classList.contains('sdy-tl')){
+                    const cur=parseFloat(nx.style.top)||0;
+                    nx.style.top=(cur+pitch).toFixed(1)+'px';
+                }
+                nx=nx.nextSibling;
+            }
+        }
         if(!String(line.textContent||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim()&&!line.querySelector('img')) line.appendChild(document.createElement('br'));
-        // 캐럿 → 새 줄의 맨 앞
-        const cr=document.createRange();
-        const f0=afterFrag.firstChild;
-        if(f0&&f0.nodeType===3) cr.setStart(f0,0);
-        else if(f0&&f0.nodeType===1&&f0.tagName!=='BR'){ cr.selectNodeContents(f0); cr.collapse(true); }
-        else cr.setStart(nl,0);
-        cr.collapse(true);
-        sel.removeAllRanges(); sel.addRange(cr);
+        // 캐럿 → 새 줄의 맨 앞. 물려줄 서식이 있고, 새 줄 첫 글자가 이미 그
+        //   서식을 갖고 있지 않으면 입력 대기 span(.sdy-type + 닻)을 새 줄
+        //   머리에 심고 그 안(닻 뒤)에 캐럿을 둔다 — 다음 글자부터 서식 유지.
+        let placed=false;
+        if(carry&&Object.keys(carry).length){
+            // 물려줄 서식이 있으면 새 줄 맨 앞에 입력 대기 span(.sdy-type+닻)을
+            // 항상 심고 그 안(닻 뒤)에 캐럿을 둔다. (빈 껍데기 span 이나 공백으로
+            // 시작하는 꼬리·빈 문단이어도 상관없다 — 다음 글자부터 carry 서식으로
+            // 시작된다.) 새 줄 첫 꼬리 글자가 이미 그 서식이어도 마커 span 하나가
+            // 더 붙는 것뿐이며, 캐럿이 '서식 span 안'에서 시작돼야 이어 쓰는
+            // 글자의 크기·글꼴이 보장된다(줄 바깥 기본 서식으로 튀지 않는다).
+            try{
+                const sp=document.createElement('span');
+                sp.className='sdy-type';
+                for(const k in carry){
+                    try{ _setInlineProp(sp,k,carry[k]); }catch(_e){}
+                }
+                sp.appendChild(document.createTextNode('\u200B'));
+                nl.insertBefore(sp,nl.firstChild);
+                const tn=sp.firstChild;
+                const cr=document.createRange();
+                cr.setStart(tn,1); cr.collapse(true);
+                sel.removeAllRanges(); sel.addRange(cr);
+                _typingSpan=sp;
+                try{ if(typeof _rememberTypingStyles==='function') _rememberTypingStyles(sp,c); }
+                catch(_e){ _pendingTyping={host:c,styles:carry}; }
+                placed=true;
+            }catch(_e){}
+        }
+        if(!placed){
+            const cr=document.createRange();
+            const f0=afterFrag.firstChild;
+            if(f0&&f0.nodeType===3) cr.setStart(f0,0);
+            else if(f0&&f0.nodeType===1&&f0.tagName!=='BR'){ cr.selectNodeContents(f0); cr.collapse(true); }
+            else cr.setStart(nl,0);
+            cr.collapse(true);
+            sel.removeAllRanges(); sel.addRange(cr);
+        }
         w._caretV=(w._caretV||0)+1;
         try{ saveSel(); }catch(e2){}
         if(w.classList.contains('edit')){ commitEditSnapshot(); _armTypingCheckpoint(w); }

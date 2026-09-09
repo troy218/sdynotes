@@ -338,7 +338,7 @@
     //   - 굵게 해제 시에도 '상자 자체가 굵게'인 경우에만 중립값(400)을 적는다.
     //     평범한 글자는 속성을 삭제해 상속으로 되돌린다(font-weight:400 덧대기 제거).
     // ═══════════════════════════════════════════════════════════════════
-    const FMT_PROPS=['fontWeight','fontStyle','textDecoration','color','backgroundColor','fontFamily','fontSize','verticalAlign'];
+    const FMT_PROPS=['fontWeight','fontStyle','textDecoration','color','backgroundColor','fontFamily','fontSize','letterSpacing','verticalAlign'];
     const INLINE_STYLE_PROPS=FMT_PROPS;          // 하위 호환 이름
     const FMT_BLOCK_TAGS=new Set(['DIV','P','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','PRE','UL','OL','TABLE','TR','TD','TH','SECTION','ARTICLE']);
     function _isPosSpan(el){

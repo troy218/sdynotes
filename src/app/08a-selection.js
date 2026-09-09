@@ -316,6 +316,8 @@
             if(_fid) setToolbarFont(_fid);
         }catch(e){}
         const c=w.querySelector('.tb-content');
+        c.contentEditable='true';
+        if(c.getAttribute('data-empty')==='true') c.innerHTML='';
         // 14.40 · 가져온 PDF 상자(tight) — 편집 진입 시 '줄 단위 절대위치 + 줄 내
         //   인라인 흐름'으로 한 번만 변환한다. 줄(원본 세로 위치)은 절대위치라
         //   절대 이동하지 않고, 줄 안은 일반 텍스트처럼 흘러 드래그 선택·방향키
@@ -332,8 +334,6 @@
                 w._sdyViewHtml=c.innerHTML;
             }
         }catch(e){}
-        c.contentEditable='true';
-        if(c.getAttribute('data-empty')==='true') c.innerHTML='';
         if(keepSel){ c.focus({preventScroll:true}); return; }
         c.focus();
         try{
