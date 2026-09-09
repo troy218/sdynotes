@@ -85,7 +85,8 @@
     "test:pdf": "node test/import_pdf_frontend_runtime.mjs && python3 test/import_pdf_layout_runtime.py",
     "bench:import": "node scripts/import-pdf-browser.mjs",
     "bundle": "node scripts/bundle-frontend.mjs",
-    "bundle:check": "node scripts/bundle-frontend.mjs --check"
+    "bundle:check": "node scripts/bundle-frontend.mjs --check",
+    "test:tight": "node test/editor_tight_engine_runtime.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",

@@ -16682,30 +16682,30 @@ function _tightLineEnter(c,w){
         // 타이핑 마커 span 도 연산을 함께 받는다 (다음 입력 글자의 서식 유지)
         if(op&&op.type!=='unlink'&&op.type!=='link'){
             out.forEach(tk=>{
-                if(tk.t==='type'){
-                    if(op.type==='set') _setInlineProp(tk.node,op.prop,op.value);
-                    else if(op.type==='remove') _clearInlineProp(tk.node,op.prop,op.value);
-                    else if(op.type==='clear') FMT_PROPS.forEach(p=>_clearInlineProp(tk.node,p,''));
+                if(tk.t!=='type'){
+                    // PDF 단어 간격 스페이서 — 선택 구간 안쪽이면 배경색을 함께
+                    //   칠해 형광펜 띠가 단어 사이에서 끊기지 않게 한다. 평소
+                    //   스페이서는 height:0(줄 간격에 영향 없음)이라 배경이
+                    //   보이지 않으므로, 칠할 때만 줄 높이(line-height)만큼
+                    //   키운다 — 줄 간격과 같은 값이라 줄 레이아웃은 그대로다.
+                    if(tk.t==='atom'&&tk.node&&tk.node.classList
+                       &&tk.node.classList.contains('sdy-tg')&&gapInside.get(tk.node)){
+                        const bEl=(block&&block.nodeType===1)?block:null;
+                        if(op.type==='set'&&op.prop==='backgroundColor'&&op.value){
+                            tk.node.style.backgroundColor=op.value;
+                            const lh=(bEl&&bEl.style)?(parseFloat(bEl.style.lineHeight)||0):0;
+                            if(lh>0) tk.node.style.height=lh+'px';
+                            else tk.node.style.removeProperty('height');
+                        }else if((op.type==='remove'&&op.prop==='backgroundColor')||op.type==='clear'){
+                            tk.node.style.removeProperty('background-color');
+                            tk.node.style.height='0px';
+                        }
+                    }
                     return;
                 }
-                // PDF 단어 간격 스페이서 — 선택 구간 안쪽이면 배경색을 함께 칠해
-                //   형광펜 띠가 단어 사이에서 끊기지 않게 한다. 평소 스페이서는
-                //   height:0(줄 간격에 영향 없음)이라 배경이 보이지 않으므로,
-                //   칠할 때만 줄 높이(line-height)만큼 키운다 — 줄 간격과 같은 값이라
-                //   줄 레이아웃은 그대로다.
-                if(tk.t==='atom'&&tk.node&&tk.node.classList
-                   &&tk.node.classList.contains('sdy-tg')&&gapInside.get(tk.node)){
-                    const bEl=(block&&block.nodeType===1)?block:null;
-                    if(op.type==='set'&&op.prop==='backgroundColor'&&op.value){
-                        tk.node.style.backgroundColor=op.value;
-                        const lh=(bEl&&bEl.style)?(parseFloat(bEl.style.lineHeight)||0):0;
-                        if(lh>0) tk.node.style.height=lh+'px';
-                        else tk.node.style.removeProperty('height');
-                    }else if((op.type==='remove'&&op.prop==='backgroundColor')||op.type==='clear'){
-                        tk.node.style.removeProperty('background-color');
-                        tk.node.style.height='0px';
-                    }
-                }
+                if(op.type==='set') _setInlineProp(tk.node,op.prop,op.value);
+                else if(op.type==='remove') _clearInlineProp(tk.node,op.prop,op.value);
+                else if(op.type==='clear') FMT_PROPS.forEach(p=>_clearInlineProp(tk.node,p,''));
             });
         }
         const frag=_fmtRender(out);
