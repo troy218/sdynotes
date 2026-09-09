@@ -9271,6 +9271,13 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         job=job||{readAt:0}; until=until==null?Infinity:until;
         if(!job.sps){
             job.sps=Array.from(c.children).filter(s=>s.tagName==='SPAN');
+            // 14.44.1 · 줄 흐름(.sdy-tl) DOM 은 직접 자식 span 이 없다 — 맞춤할 것이
+            //   없으므로 큐에서 바로 뺀다. (구버전엔 여기서 '빈 맞춤'을 완료 처리해
+            //   _applyTightFit 이 _sdyViewHtml 을 **현재(편집된) DOM** 으로 덮어썼고,
+            //   그 바람에 syncTextEl/commitEditingText 의 viewOnly 비교가 항상
+            //   '같음'이 되어 타이핑·지우기가 el.html 로 확정되지 않았다 — 편집을
+            //   끝내 읽기 모드로 돌아가면 고친 글자가 사라졌다.)
+            if(!job.sps.length) return null;
             const cached=_tightFitHit(c,el);
             if(cached&&cached.transforms.length===job.sps.length)
                 return {c,el,sps:job.sps,rec:cached,writeAt:0};
@@ -9361,6 +9368,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     function _applyTightFit(fit,until,max){
         const {c,el,sps,rec}=fit;
         if(!_tightFitLive(c,el)||el.html!==rec.html) return true;
+        // 14.44.1 · 빈 맞춤(줄 흐름 등 직접 자식 span 없음)은 아무것도 쓰지 않는다 —
+        //   아래의 _sdyViewHtml 갱신은 '표시용 변형을 DOM 에 실제로 쓴 뒤'에만
+        //   의미가 있다. 빈 맞춤이 이것을 편집된 DOM 으로 덮어쓰면 커밋의 변경
+        //   감지(viewOnly)가 깨져 편집이 저장되지 않는다.
+        if(!sps.length) return true;
         const w=c.parentElement;
         until=until==null?Infinity:until; max=max==null?Infinity:max;
         let count=0;
