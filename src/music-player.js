@@ -1,4 +1,5 @@
 (function(){
+if(window.__sdyMusicInit) return; window.__sdyMusicInit=true;
 const P={list:[],idx:-1,mode:'bar',pos:null,repeat:0,lq:'',lpage:0,collapsed:true,
          plMode:false, artMode:false, queue:null, sort:'recent', plays:{}, played:[]};
 // 12.6: 음악 탐색 상태를 기억해 가사·가수·전체곡을 오가도 보던 위치를 유지합니다.

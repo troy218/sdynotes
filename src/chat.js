@@ -2,6 +2,10 @@
 
 (function(){
   if(window.__ypInit) return; window.__ypInit = true;
+  // The chat module is also bundled for single-file/offline clients. Keep it
+  // harmless when a consumer evaluates the shared frontend without the chat
+  // markup (for example, an AI-only surface or an embedded editor).
+  if(!document.getElementById('ypApp')) return;
   var $=function(id){return document.getElementById(id);};
   var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
   var TTEK='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.2 V12.6"/><path d="M9.2 12.6 H14.8"/><path d="M9.2 12.6 V9.2"/><path d="M12 12.6 V8.6"/><path d="M14.8 12.6 V9.2"/><rect x="5.6" y="7.4" width="12.8" height="4.2" rx="2.1" fill="#ef4444"/><rect x="5.6" y="7.4" width="12.8" height="1.2" rx="0.6" fill="#fca5a5" opacity=".55"/></svg>';

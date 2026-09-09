@@ -1,5 +1,6 @@
 /* ═══════════ 11.2 · 집중 화면 (시계 · 스톱워치 · 타이머) ═══════════ */
 (function(){
+  if(window.__sdyFocusClockInit) return; window.__sdyFocusClockInit=true;
   const $=id=>document.getElementById(id);
   const ov=$('focusClock');
   if(!ov) return;

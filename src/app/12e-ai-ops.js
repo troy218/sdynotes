@@ -9,6 +9,11 @@
     // 겹치지 않는 첫 빈자리로 내린다. 명시 좌표(@mv·@bx)는 ①·②만 적용해
     // '옮겨 달라'는 요청을勝手に 뒤집지 않는다.
     const AI_GRID=8, AI_EDGE=28, AI_GAP=12, AI_MARGIN=40;
+    // These limits also exist in src/translate.js for the snapshot helpers,
+    // but that file is a separate script/IIFE. Keep the apply-side limits in
+    // this shared bundle scope instead of relying on an inaccessible lexical
+    // binding from the external module.
+    const AI_EDIT_MAX_OPS=120, AI_EDIT_MAX_TEXT=12000;
     /* 14.31.0 · 펜 그림 기본 크기 — 예전엔 본문 폭의 62%로 그려 "그림이 너무
        크다"는 말이 많았다. 이제 본문 폭의 40% · 최대 320px · 높이 360px 로
        담백하게 잡는다(요청에 크기가 있으면 그 값을 쓴다). */

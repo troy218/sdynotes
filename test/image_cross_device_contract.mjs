@@ -26,6 +26,7 @@ import fs from 'node:fs';
 import { installWindowGuard, closeDoms } from './jsdom_guard.mjs';
 const { JSDOM, VirtualConsole } = jsdom;
 const wait = ms => new Promise(r => setTimeout(r, ms));
+const REPO = path.resolve(new URL('..', import.meta.url).pathname);
 let pass = 0;
 const check = (name, cond) => { assert.ok(cond, name); pass++; console.log('  ✓ ' + name); };
 async function freePort() {
@@ -35,7 +36,7 @@ async function freePort() {
 }
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sdy-imgx-'));
 process.env.SDY_BASE_DIR = TMP;
-{ const REPO = path.resolve(new URL('..', import.meta.url).pathname); for (const f of ['sdynotes.html', 'sdynotes.js', 'sdynotes.css']) fs.copyFileSync(path.join(REPO, f), path.join(TMP, f)); }
+{ for (const f of ['sdynotes.html', 'sdynotes.js', 'sdynotes.css']) fs.copyFileSync(path.join(REPO, f), path.join(TMP, f)); }
   fs.mkdirSync(path.join(TMP, 'src'), { recursive: true });
   for (const f of fs.readdirSync(path.join(REPO, 'src'))) {
     const from = path.join(REPO, 'src', f), to = path.join(TMP, 'src', f);

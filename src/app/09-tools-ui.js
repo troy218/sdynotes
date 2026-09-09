@@ -1259,7 +1259,11 @@
         const pi=+paper.dataset.pageIdx;
         const p=pageLocal({clientX,clientY},pi);
         const origin=clampTableOrigin(tablePlace,p.x-tablePlace.w/2,p.y-tablePlace.h/2);
-        const r=paper.getBoundingClientRect(),sc=uiPageScale(pi),k=uiCssZoom();
+        const r=paper.getBoundingClientRect(),k=uiCssZoom();
+        // Use the same paper that was hit by the pointer. During virtualization
+        // paperAt(pi) can briefly return a stale shell; deriving the scale from
+        // this measured rectangle keeps the ghost and the inserted table aligned.
+        const ps=paperSize(),sc={x:r.width/ps.w/k,y:r.height/ps.h/k};
         g.style.width=Math.round(tablePlace.w*sc.x)+'px';
         g.style.height=Math.round(tablePlace.h*sc.y)+'px';
         // 종이 원점(화면 px)도 고스트가 쓰는 CSS px 로 바꾼 뒤 문서 좌표를 더한다.
@@ -1299,7 +1303,10 @@
         const p=over?pageLocal({clientX,clientY},pi):{x:s.w/2,y:Math.min(s.h*.22,180)};
         const dim=textBoxDefaultSize();
         const o=clampEl(p.x-dim.w/2,p.y-dim.h/2,dim.w,dim.h);
-        const r=paper.getBoundingClientRect(),sc=uiPageScale(pi),k=uiCssZoom();
+        const r=paper.getBoundingClientRect(),k=uiCssZoom();
+        // Derive the document-to-screen scale from the exact hit paper rather
+        // than a possibly stale virtualized shell returned by the page lookup.
+        const sc={x:r.width/s.w/k,y:r.height/s.h/k};
         const gCssW=Math.round(dim.w*sc.x), gCssH=Math.round(dim.h*sc.y);
         g.style.width=gCssW+'px';
         g.style.height=gCssH+'px';
