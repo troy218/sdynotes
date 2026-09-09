@@ -1740,9 +1740,8 @@
         .tb.sel .tb-move,.tb.edit .tb-move{display:flex;}
         /* 상자 안쪽은 항상 '글자 선택' 영역 — 이동은 손잡이로만 */
         .tb .tb-content{cursor:text;}
-        /* 들여쓰기(탭) 단위 — 글상자 본문 폰트 크기에 비례한 고정 폭. 글자가 아니라
-           '한 번에 지워지는' 스팬이라 Backspace 로 단위째 빠진다.
-           (기준 크기는 sdyTabUnit 이 span 에 직접 박아 넣어 첫 탭부터 늘 같다) */
+        /* 들여쓰기(탭) 단위 — 커서 폰트 크기에 비례한 고정 폭. 글자가 아니라
+           '한 번에 지워지는' 스팬이라 Backspace 로 단위째 빠진다. */
         .tb-content .sdy-tab{display:inline-block;width:2.5em;overflow:hidden;white-space:nowrap;}
         .tb-content sup,.tb-content sub{
             font-size:.72em;line-height:0;position:relative;vertical-align:baseline;
