@@ -10285,7 +10285,10 @@ function _tightGapW(c,ff,fs){
         return w;
     }catch(e){ return (fs||16)*0.28; }
 }
-function _tightToLineFlow(c){
+// 14.45 · 논문 상자 단어 읽기 — _tightToLineFlow(편집 진입)와 _stashTightOrig
+//   (읽기 복귀 역변환용 원본 스태시)가 같은 파싱·줄묶음을 공유한다. 줄묶음까지
+//   같아야 역변환의 행 매칭(top 비교)이 어긋나지 않는다.
+function _tightReadTightWords(c){
     if(!c) return null;
     const sps=Array.from(c.children).filter(s=>s.tagName==='SPAN');
     if(!sps.length) return null;   // 이미 줄 흐름(DIV 자식)이면 그대로
@@ -10303,13 +10306,17 @@ function _tightToLineFlow(c){
         return k;
     });
     const words=[];
+    const empties=[];   // 빈 줄 플레이스홀더(data-tight-empty)의 top
     pos.forEach((s,i)=>{
         const st=s.style;
         const t=parseFloat(s.dataset.origTop!=null?s.dataset.origTop:st.top);
         const l=parseFloat(st.left)||0;
         const fs=parseFloat(st.fontSize)||16;
         const txt=_tightWordText(s);
-        if(!txt) return;
+        if(!txt){
+            if(s.hasAttribute&&s.hasAttribute('data-tight-empty')&&!isNaN(t)) empties.push({top:t,fs:fs});
+            return;
+        }
         const top=isNaN(t)?0:t;
         const style=[
             st.fontSize?'font-size:'+st.fontSize:'',
@@ -10321,22 +10328,42 @@ function _tightToLineFlow(c){
             st.textDecoration&&st.textDecoration!=='none'?'text-decoration:'+st.textDecoration:'',
             st.verticalAlign&&st.verticalAlign!=='baseline'?'vertical-align:'+st.verticalAlign:''
         ].filter(Boolean).join(';');
+        // 줄 흐름 단어 내용 = 원본 span 안쪽(.zsp 제외). 부분 서식(형광펜 쪼개기 등)으로
+        // 중첩 span 이 생긴 단어도 서식째로 편집 진입해야 왕복이 안정된다.
+        let inner='';
+        try{
+            const cl=s.cloneNode(true);
+            cl.querySelectorAll('.zsp').forEach(z=>z.remove());
+            inner=cl.innerHTML;
+        }catch(e){ inner=''; }
+        if(!inner) inner=(typeof esc==='function')?esc(txt):txt;
         // bot = 글자 칸의 아래쪽(원문 글자 크기만큼). 줄 묶음이 '세로로 겹치는가' 를
         //   볼 때 쓴다 — 위/아래 첨자·기호는 top 이 홀로 튀므로 top 만 보면 안 된다.
         words.push({top:top, bot:top+Math.max(2,fs), left:isNaN(l)?0:l, fs:fs,
-            adv:_tightWordW(s)*scale[i], txt:txt, style:style, ff:st.fontFamily||''});
+            adv:_tightWordW(s)*scale[i], txt:txt, style:style, ff:st.fontFamily||'', inner:inner,
+            leftRaw:st.left||'', styleTop:st.top||'',
+            origTop:(s.dataset&&s.dataset.origTop!=null)?s.dataset.origTop:'',
+            pdfW:(s.dataset&&s.dataset.pdfW)||'', pdfBase:(s.dataset&&s.dataset.pdfBase)||'',
+            pdfWN:parseFloat((s.dataset&&s.dataset.pdfW)||'')||0,
+            dataFs:(s.dataset&&s.dataset.fs)||'',
+            bg:(st.backgroundColor&&st.backgroundColor!=='rgba(0, 0, 0, 0)')?st.backgroundColor:'',
+            fw:st.fontWeight||'', fst:st.fontStyle||'',
+            ls:(st.letterSpacing&&st.letterSpacing!=='normal')?st.letterSpacing:''});
     });
-    if(!words.length) return null;
-    // 14.43 · 줄 묶음은 'top 이 2px 안'이 아니라 '세로 구간이 겹치는가'로 판정한다.
-    //   PDF 한 줄에는 크기가 다른 글자(제목·기호)나 위/아래 첨자가 섞인다. top 만
-    //   보면 그런 글자들이 딴 줄로 튀고, 각 줄(.sdy-tl)은 left:0 에 붙어 펼쳐지므로
-    //   원래 그 자리에 있던 원문 글자와 겹쳐 보였다(보고: "더블클릭하면 일부 글자가
-    //   왼쪽에 붙어 다른 글자와 겹친다"). 겹치는 폭이 '작은 쪽 글자 칸'의 절반
-    //   이상이면 같은 줄로 묶는다 — 반대로 줄 간격이 촘촘한 두 원문 줄은 겹치는
-    //   폭이 작아 갈리므로 절대 합쳐지지 않는다.
+    if(!words.length&&!empties.length) return null;
+    return {pos:pos, scale:scale, words:words, empties:empties};
+}
+// 14.43 · 줄 묶음은 'top 이 2px 안'이 아니라 '세로 구간이 겹치는가'로 판정한다.
+//   PDF 한 줄에는 크기가 다른 글자(제목·기호)나 위/아래 첨자가 섞인다. top 만
+//   보면 그런 글자들이 딴 줄로 튀고, 각 줄(.sdy-tl)은 left:0 에 붙어 펼쳐지므로
+//   원래 그 자리에 있던 원문 글자와 겹쳐 보였다(보고: "더블클릭하면 일부 글자가
+//   왼쪽에 붙어 다른 글자와 겹친다"). 겹치는 폭이 '작은 쪽 글자 칸'의 절반
+//   이상이면 같은 줄로 묶는다 — 반대로 줄 간격이 촘촘한 두 원문 줄은 겹치는
+//   폭이 작아 갈리므로 절대 합쳐지지 않는다.
+function _tightGroupRows(words){
     const rows=[];
-    words.sort((a,b)=>a.top-b.top||a.left-b.left);
-    for(const wd of words){
+    const sorted=(words||[]).slice().sort((a,b)=>a.top-b.top||a.left-b.left);
+    for(const wd of sorted){
         const last=rows[rows.length-1];
         if(last){
             const ov=Math.min(last.bot,wd.bot)-Math.max(last.top,wd.top);
@@ -10351,16 +10378,53 @@ function _tightToLineFlow(c){
         rows.push({top:wd.top, bot:wd.bot, items:[wd]});
     }
     rows.forEach(r=>r.items.sort((a,b)=>a.left-b.left));
+    return rows;
+}
+// 14.45 · 편집 진입 시 원본 단어 배치를 스태시 — 읽기 복귀 역변환용.
+//   줄 흐름에는 없는 left/top/pdfW/pdfBase/origTop 을 들고 있다.
+function _stashTightOrig(c){
+    try{
+        const rd=(typeof _tightReadTightWords==='function')?_tightReadTightWords(c):null;
+        if(!rd||!rd.words||!rd.words.length) return null;
+        const rows=(typeof _tightGroupRows==='function')?_tightGroupRows(rd.words):null;
+        if(!rows||!rows.length) return null;
+        return {words:rd.words, rows:rows};
+    }catch(e){ return null; }
+}
+function _tightToLineFlow(c){
+    const rd=(typeof _tightReadTightWords==='function')?_tightReadTightWords(c):null;
+    if(!rd) return null;
+    const rows=(typeof _tightGroupRows==='function')?_tightGroupRows(rd.words):null;
+    if(!rows) return null;
+    // 14.45 · 빈 줄 플레이스홀더 → 빈 원문 줄. 글자가 있는 줄과 top 이 겹치면
+    //   글자 줄이 이긴다 (플레이스홀더는 내용이 생기면 사라지는 쪽).
+    (rd.empties||[]).forEach(e=>{
+        if(rows.some(r=>Math.abs(r.top-e.top)<0.06)) return;
+        rows.push({top:e.top, bot:e.top+Math.max(2,e.fs||16), items:[], empty:true, fs:e.fs||16});
+    });
+    rows.sort((a,b)=>a.top-b.top);
+    if(!rows.length) return null;
     const gapCache=new Map();
     const gapOf=(ff,fs)=>{
         const k=ff+'|'+fs;
         if(!gapCache.has(k)) gapCache.set(k,_tightGapW(c,ff,fs));
         return gapCache.get(k);
     };
+    const sameBg=(a,b)=>{
+        if(!a||!b) return '';
+        try{
+            if(typeof _colorToHex==='function'){
+                const x=_colorToHex(a), y=_colorToHex(b);
+                if(x&&x!=='transparent'&&x===y) return a;
+                return '';
+            }
+        }catch(e){}
+        return String(a).trim().toLowerCase()===String(b).trim().toLowerCase()?a:'';
+    };
     const frag=document.createDocumentFragment();
     rows.forEach((r,ri)=>{
         const nextTop=ri<rows.length-1?rows[ri+1].top:Infinity;
-        const maxFs=r.items.reduce((m,x)=>Math.max(m,x.fs),0);
+        const maxFs=r.items.length?r.items.reduce((m,x)=>Math.max(m,x.fs),0):(r.fs||16);
         const h=nextTop===Infinity?Math.max(maxFs*1.6,4):Math.max(2,nextTop-r.top);
         const d=document.createElement('div');
         d.className='sdy-tl';
@@ -10368,6 +10432,9 @@ function _tightToLineFlow(c){
         //   브라우저가 줄 끝에서 접어 아래 원문 줄과 겹치게 하지 않는다. 새 줄은
         //   엔터(_tightLineEnter)로만 만든다.)
         d.style.cssText='position:absolute;left:0;width:100%;top:'+r.top.toFixed(1)+'px;height:'+h.toFixed(1)+'px;line-height:'+maxFs.toFixed(1)+'px;white-space:nowrap;';
+        // 14.45 · 빈 원문 줄(플레이스홀더에서 복원) — 내용이 생기면 _tightToLineFlow
+        //   바깥(편집 입력)이 채우고, 역변환은 다시 플레이스홀더로 되돌린다.
+        if(!r.items.length){ d.appendChild(document.createElement('br')); frag.appendChild(d); return; }
         r.items.forEach((wd,wi)=>{
             if(wi>0){
                 const prev=r.items[wi-1];
@@ -10382,22 +10449,452 @@ function _tightToLineFlow(c){
                 spaceSpan.className='sdy-ts';
                 spaceSpan.style.cssText='font-size:'+spaceFs+'px;line-height:1;white-space:nowrap;';
                 spaceSpan.textContent=' ';
+                // 14.45 · 문장 형광펜 연속성 — 양옆 단어가 같은 배경이면
+                //   사이 공백·간격에도 배경을 이어 준다. (절대좌표 저장에는
+                //   간격 요소가 없어 단어 배경에서 되살리는 쪽이다.)
+                const contBg=sameBg(prev.bg,wd.bg);
+                if(contBg) spaceSpan.style.backgroundColor=contBg;
                 d.appendChild(spaceSpan);
                 if(extra>0.5){
                     const g=document.createElement('span');
                     g.className='sdy-tg';
                     g.style.cssText='display:inline-block;width:'+extra.toFixed(1)+'px;height:0;overflow:hidden;vertical-align:bottom;font-size:'+spaceFs+'px;line-height:1;';
+                    if(contBg){ g.style.backgroundColor=contBg; g.style.height=spaceFs+'px'; }
                     d.appendChild(g);
                 }
             }
             const sp=document.createElement('span');
             sp.style.cssText=wd.style+';line-height:1;white-space:nowrap;';
-            sp.textContent=wd.txt;
+            // 14.45 · 원본 안쪽 그대로(.zsp 제외) — 부분 서식 중첩 span 도 유지해 왕복 안정
+            sp.innerHTML=wd.inner;
             d.appendChild(sp);
         });
         frag.appendChild(d);
     });
     return frag;
+}
+/* ════════════════════════════════════════════════════════════════
+   14.45 · 읽기 복귀 역변환: 줄 흐름(.sdy-tl) → 단어별 절대좌표
+   ──────────────────────────────────────────────────────────────
+   편집 진입(_tightToLineFlow)이 버린 단어 배치(left/top/pdfW/pdfBase)를
+   진입 시 스태시(_stashTightOrig)와 맞춰 되살린다. _rebuildTightToReading
+   에서 편집 종료 시 1회만 돈다 (편집 중에는 캐럿/IME 때문에 절대 금지).
+   규칙:
+    · 안 건드린 단어(글자·너비 서식 동일) → left/top/pdfW/pdfBase/origTop을
+      원본 문자열 그대로 복원 (픽셀 동일)
+    · 그 자리에서 고친 단어 → 원본 left 우선, 폭·기준선만 실측
+    · 자리를 옮긴 단어(엔터 분리·백스페이스 합치기) → 줄 안에서 흐름 배치,
+      top/pdfBase 만 줄 이동량(delta)만큼 평행 이동
+    · 스태시 없음(구 줄 흐름 저장본) → 전부 실측 배치 (best-effort)
+   단어 분할은 줄 흐름의 실공백 + .sdy-tg 경계 마커로 읽는다.
+   _tightToLineFlow 가 단어 사이마다 정확히 하나의 실공백을 두므로, 손대지
+   않은 구간은 원본 span 단위 분할과 동일하게 갈린다. (원본 PDF 텍스트를
+   공백으로 자르는 게 아니라, 줄 흐름이 보장하는 구분자를 읽는 쪽이다.)
+   ════════════════════════════════════════════════════════════════ */
+let _tightSpaceCache=null;
+function _tNum(n){ const v=Math.round((+n)*1000)/1000; return String(v===0?0:v); }
+function _tShift(raw,delta){
+    if(raw==null||raw==='') return '';
+    if(!delta||Math.abs(delta)<0.0005) return String(raw);
+    return _tNum(parseFloat(raw)+delta);
+}
+// cssText 용 — 단위 없는 숫자면 px 를 붙인다 (left:56 은 무효 선언이라 파서가 버린다)
+function _tCss(v){
+    v=String(v==null?'':v);
+    if(/^[+-]?[0-9.]+$/.test(v)) return v+'px';
+    return v;
+}
+// 줄 흐름 텍스트 노드에 먹은 유효 인라인 서식 (줄 div 전까지만 거슬러 올라간다)
+function _tightCollectLineStyle(tnode,lineEl){
+    const st={};
+    try{
+        let p=tnode&&tnode.parentElement;
+        const props=(typeof FMT_PROPS!=='undefined'&&FMT_PROPS)
+            ||['fontWeight','fontStyle','textDecoration','color','backgroundColor','fontFamily','fontSize','letterSpacing','verticalAlign'];
+        while(p&&p!==lineEl){
+            if(p.style){ for(const k of props){ if(!st[k]&&p.style[k]) st[k]=String(p.style[k]); } }
+            if(typeof _tagStyle==='function'){
+                const tg=_tagStyle(p);
+                if(tg) for(const k in tg){ if(!st[k]&&tg[k]) st[k]=String(tg[k]); }
+            }
+            p=p.parentElement;
+        }
+    }catch(e){}
+    return st;
+}
+// run 분할 키 — 서식이 바뀌면 run 을 나눈다
+function _tightRunKey(st){
+    try{
+        st=st||{};
+        const nc=(typeof _normComparable==='function')?_normComparable:function(p,v){ return String(v==null?'':v).trim().toLowerCase(); };
+        return ['fontSize','fontFamily','fontWeight','fontStyle','color','backgroundColor','textDecoration','verticalAlign','letterSpacing']
+            .map(k=>nc(k,st[k]||'')).join('|');
+    }catch(e){ return ''; }
+}
+// 너비에 영향을 주는 서식(크기·글꼴·굵기·기울임·자간)이 원본과 같은가
+function _tightWidthSame(sw,st,box){
+    try{
+        st=st||{}; box=box||{};
+        const fsA=parseFloat(st.fontSize)||box.fs||16;
+        const fsB=parseFloat((sw&&sw.dataFs)||(sw&&sw.fs)||'')||box.fs||16;
+        if(Math.abs(fsA-fsB)>0.01) return false;
+        const ffA=(typeof _normFontCSS==='function')?_normFontCSS(st.fontFamily||''):String(st.fontFamily||'').trim().toLowerCase();
+        const ffB=(typeof _normFontCSS==='function')?_normFontCSS((sw&&sw.ff)||''):String((sw&&sw.ff)||'').trim().toLowerCase();
+        if(ffA!==ffB) return false;
+        const fwA=(typeof _normComparable==='function')?_normComparable('fontWeight',st.fontWeight||''):(st.fontWeight||'');
+        const fwB=(typeof _normComparable==='function')?_normComparable('fontWeight',(sw&&sw.fw)||''):((sw&&sw.fw)||'');
+        if(fwA!==fwB) return false;
+        const itA=String(st.fontStyle||'normal').toLowerCase();
+        const itB=String((sw&&sw.fst)||'normal').toLowerCase();
+        if(itA!==itB) return false;
+        const lsA=(st.letterSpacing&&st.letterSpacing!=='normal')?parseFloat(st.letterSpacing)||0:0;
+        const lsB=(sw&&sw.ls&&sw.ls!=='normal')?parseFloat(sw.ls)||0:0;
+        if(Math.abs(lsA-lsB)>0.001) return false;
+        return true;
+    }catch(e){ return false; }
+}
+// run 실측 — 맞춤 엔진(_pdfSpanMetrics)과 같은 캔버스·기준선 캐시를 쓴다
+function _tightMeasureRun(text,st,box){
+    box=box||{};
+    const fs=parseFloat((st&&st.fontSize)||'')||box.fs||16;
+    let w=0, base=fs*0.8;
+    try{
+        const sp=document.createElement('span');
+        sp.style.fontStyle=(st&&st.fontStyle)||'';
+        sp.style.fontWeight=(st&&st.fontWeight)||'';
+        sp.style.fontSize=fs+'px';
+        sp.style.fontFamily=(st&&st.fontFamily)||box.ff||'';
+        sp.textContent=text;
+        const bx=document.createElement('div');
+        if(box.ls) bx.style.letterSpacing=box.ls+'px';
+        const m=(typeof _pdfSpanMetrics==='function')?_pdfSpanMetrics(sp,bx,fs):null;
+        if(m){ w=m.w; base=(m.baseline!=null)?m.baseline:base; }
+        const sls=(st&&st.letterSpacing&&st.letterSpacing!=='normal')?parseFloat(st.letterSpacing)||0:0;
+        const bls=box.ls||0;
+        // span 고유 자간은 엔진이 안 보므로 여기서 더한다 (맞춤 scaleX 가 흡수)
+        if(sls&&sls!==bls) w+=(sls-bls)*Math.max(0,String(text).length-1);
+    }catch(e){ w=fs*0.6*String(text).length; }
+    return {w:Math.max(0,w), base:base};
+}
+function _tightSpaceW(st,box){
+    box=box||{};
+    try{
+        const fs=parseFloat((st&&st.fontSize)||'')||box.fs||16;
+        const key=[(st&&st.fontStyle)||'normal',(st&&st.fontWeight)||'400',fs,(st&&st.fontFamily)||box.ff||''].join('|');
+        _tightSpaceCache=_tightSpaceCache||new Map();
+        if(_tightSpaceCache.has(key)) return _tightSpaceCache.get(key);
+        let w=fs*0.32;
+        try{
+            _pdfMeasureCtx=_pdfMeasureCtx||document.createElement('canvas').getContext('2d');
+            if(_pdfMeasureCtx){
+                _pdfMeasureCtx.font=[(st&&st.fontStyle)||'normal',(st&&st.fontWeight)||'400',fs+'px',((st&&st.fontFamily)||box.ff||'sans-serif')].join(' ');
+                const m=_pdfMeasureCtx.measureText(' ');
+                if(m&&isFinite(m.width)&&m.width>0) w=m.width;
+            }
+        }catch(e){}
+        const sls=(st&&st.letterSpacing&&st.letterSpacing!=='normal')?parseFloat(st.letterSpacing)||0:(box.ls||0);
+        w+=sls;
+        _tightSpaceCache.set(key,w);
+        return w;
+    }catch(e){ return (parseFloat((st&&st.fontSize)||'')||box.fs||16)*0.32+(box.ls||0); }
+}
+// _sdyDiff hunk → 현재↔원본 단어 매핑. curAnchor = 교체된 원본 단어 idx
+// (순수 삽입 hunk 는 앵커 없음 — 흐름 배치한다. dropAnchor(hunk) 가 참인
+//  hunk 도 앵커를 버린다 — 교체된 줄 알았던 원본이 딴 줄에 살아있는 경우)
+function _tightHunkMap(hunks,baseLen,curLen,dropAnchor){
+    const curToBase=new Array(curLen).fill(null);
+    const curAnchor=new Array(curLen).fill(null);
+    try{
+        const hs=(hunks||[]).slice().sort((a,b)=>a.pos-b.pos);
+        let b=0,u=0,hi=0;
+        while(b<baseLen||u<curLen){
+            if(hi<hs.length&&b===(hs[hi].pos||0)){
+                const h=hs[hi];
+                const ins=(h.ins&&h.ins.length)||0;
+                if((h.del||0)>0){
+                    let drop=false;
+                    try{ drop=(typeof dropAnchor==='function')?dropAnchor(h):false; }catch(e){ drop=false; }
+                    // 교체 범위 안에서 순서대로 분배 (넘치는 꼬리는 마지막에 몰아 흐름 배치)
+                    if(!drop){ for(let k=0;k<ins;k++){ if(u+k<curLen) curAnchor[u+k]=Math.min(h.pos+k,h.pos+(h.del||1)-1); } }
+                }
+                b+=(h.del||0); u+=ins; hi++;
+                continue;
+            }
+            if(b>=baseLen||u>=curLen) break;
+            const np=hi<hs.length?hs[hi].pos:baseLen;
+            if(b>=np){ hi++; continue; }
+            const run=Math.min(np-b,baseLen-b,curLen-u);
+            for(let k=0;k<run;k++){ curToBase[u]=b; u++; b++; }
+        }
+    }catch(e){}
+    return {curToBase:curToBase,curAnchor:curAnchor};
+}
+function _tightApplyRunCss(el,rst,box,fsDefault){
+    try{
+        rst=rst||{}; box=box||{};
+        if(rst.fontStyle&&rst.fontStyle!=='normal') el.style.fontStyle=rst.fontStyle;
+        if(rst.fontWeight&&rst.fontWeight!=='normal') el.style.fontWeight=rst.fontWeight;
+        const fsn=parseFloat(rst.fontSize)||fsDefault||box.fs||16;
+        el.style.fontSize=rst.fontSize||(fsn+'px');
+        if(rst.fontFamily) el.style.fontFamily=rst.fontFamily;
+        if(rst.color) el.style.color=rst.color;
+        if(rst.backgroundColor&&rst.backgroundColor!=='rgba(0, 0, 0, 0)'&&String(rst.backgroundColor).toLowerCase()!=='transparent')
+            el.style.backgroundColor=rst.backgroundColor;
+        if(rst.textDecoration&&rst.textDecoration!=='none') el.style.textDecoration=rst.textDecoration;
+        if(rst.verticalAlign&&rst.verticalAlign!=='baseline') el.style.verticalAlign=rst.verticalAlign;
+        if(rst.letterSpacing&&rst.letterSpacing!=='normal') el.style.letterSpacing=rst.letterSpacing;
+        el.style.lineHeight=fsn+'px';
+        el.style.whiteSpace='nowrap';
+    }catch(e){}
+}
+function _tightLineFlowToAbsolute(srcHtml,stash,el){
+    try{
+        if(srcHtml==null) return null;
+        const src=String(srcHtml||'');
+        if(!src) return '';
+        if(src.indexOf('sdy-tl')<0){
+            // 줄 흐름이 아니면 손대지 않는다 (이미 절대좌표 → 그대로 · 멱등)
+            if(/data-pdf-w|data-tight-empty/.test(src)) return src;
+        }
+        // 원자 요소(그림·수식·링크·표·미디어)는 절대좌표에 담을 수 없어 버리느니
+        // 줄 흐름 그대로 둔다 (역변환 건너뜀 = 구 동작 유지, 유실 없음)
+        if(/<(img|svg|canvas|video|audio|iframe|table)\b|class=["'][^"']*\bimath\b|<a[\s>]/.test(src)) return null;
+        const box={fs:16, ff:'', ls:0};
+        try{ box.fs=parseFloat(el&&el.fontSize)||16; }catch(e){}
+        try{ box.ff=(typeof fontCSS==='function')?fontCSS((el&&el.font)||'pretendard'):''; }catch(e){}
+        try{ box.ls=parseFloat(el&&el.ls)||0; }catch(e){}
+        const d=document.createElement('div');
+        d.innerHTML=src;
+        // ── 줄 수집: .sdy-tl + 줄에 속하지 않은 stray ──
+        const lines=[];
+        let stray=null;
+        const flushStray=()=>{ if(stray&&stray.nodes.length){ lines.push(stray); } stray=null; };
+        Array.from(d.childNodes).forEach(ch=>{
+            if(ch.nodeType===1&&ch.classList&&ch.classList.contains('sdy-tl')){
+                flushStray();
+                lines.push({el:ch, top:parseFloat(ch.style.top)||0});
+                return;
+            }
+            if(ch.nodeType===1&&ch.tagName==='BR'){ flushStray(); return; }
+            const tx=String(ch.textContent||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'');
+            if(!tx.trim()) return;
+            const isBlock=ch.nodeType===1&&/^(DIV|P|H[1-6]|LI|UL|OL|BLOCKQUOTE|PRE|TABLE|TR|TD|TH)$/.test(ch.tagName||'');
+            if(isBlock){ flushStray(); lines.push({el:ch, top:null}); return; }
+            if(!stray) stray={el:null, top:null, nodes:[]};
+            stray.nodes.push(ch);
+        });
+        flushStray();
+        if(!lines.length) return '';
+        lines.forEach(l=>{
+            if(!l.el){
+                const holder=document.createElement('div');
+                l.nodes.forEach(n=>holder.appendChild(n.cloneNode(true)));
+                l.el=holder;
+            }
+        });
+        // stray 줄 top: 알려진 줄 뒤에 간격만큼 (없으면 스태시 첫 행·0)
+        const known=lines.filter(l=>l.top!=null).map(l=>l.top).sort((a,b)=>a-b);
+        let pitch=box.fs*1.6;
+        if(known.length>=2){
+            const dd=[];
+            for(let i=1;i<known.length;i++){ const v=known[i]-known[i-1]; if(v>0.5) dd.push(v); }
+            if(dd.length){ dd.sort((a,b)=>a-b); pitch=dd[Math.floor(dd.length/2)]; }
+        }
+        let nextTop=known.length?known[known.length-1]+pitch:(((stash&&stash.rows&&stash.rows[0]&&stash.rows[0].top)||0));
+        lines.forEach(l=>{ if(l.top==null){ l.top=nextTop; nextTop+=pitch; } });
+        lines.sort((a,b)=>a.top-b.top);
+        // ── 줄 → 단어 (실공백 + .sdy-tg 경계, 서식 run 분리) ──
+        const ZWSP_RE=/[\u200b\u200c\u200d\ufeff]/g;
+        const parsed=lines.map(l=>{
+            const words=[]; let cur=null;
+            const pushWord=()=>{ if(cur&&cur.runs.length) words.push(cur); cur=null; };
+            const feed=(text,style)=>{
+                String(text).split(/(\s+)/).forEach(p=>{
+                    if(!p) return;
+                    if(/^\s+$/.test(p)){ pushWord(); return; }
+                    if(!cur) cur={runs:[], key:null};
+                    const k=_tightRunKey(style);
+                    const last=cur.runs[cur.runs.length-1];
+                    if(last&&cur.key===k) last.text+=p;
+                    else{ cur.runs.push({text:p, style:style}); cur.key=k; }
+                });
+            };
+            const visit=node=>{
+                if(node.nodeType===3){
+                    const tx=String(node.nodeValue||'').replace(ZWSP_RE,'');
+                    if(!tx) return;
+                    if(!tx.trim()){ pushWord(); return; }
+                    feed(tx,_tightCollectLineStyle(node,l.el));
+                    return;
+                }
+                if(node.nodeType!==1) return;
+                if(node.tagName==='BR'){ pushWord(); return; }
+                const cls=node.classList;
+                if(cls&&(cls.contains('zsp')||cls.contains('sdy-tg'))){ pushWord(); return; }
+                Array.from(node.childNodes).forEach(visit);
+            };
+            Array.from(l.el.childNodes).forEach(visit);
+            pushWord();
+            return {top:l.top, words:words};
+        });
+        // ── 행 매칭 + 배치 ──
+        const rows=(stash&&stash.rows)||[];
+        const rowTexts=rows.map(r=>r.items.map(wd=>wd.txt));
+        // 전 줄 단어 수 — '교체된 줄 알았는데 딴 줄에 살아있음(옮겨감)' 판정용
+        const allTexts=new Map();
+        parsed.forEach(pl=>pl.words.forEach(pw=>{
+            const t=pw.runs.map(r=>r.text).join('');
+            allTexts.set(t,(allTexts.get(t)||0)+1);
+        }));
+        const wrap=document.createElement('div');
+        parsed.forEach(ln=>{
+            if(!ln.words.length){
+                // 빈 줄 → 플레이스홀더 (재진입 시 빈 줄 복원용)
+                const ph=document.createElement('span');
+                ph.setAttribute('data-tight-empty','1');
+                ph.style.cssText='position:absolute;left:0px;top:'+_tNum(ln.top)+'px;font-size:'+box.fs+'px;line-height:'+box.fs+'px;white-space:nowrap;';
+                wrap.appendChild(ph);
+                return;
+            }
+            const curTexts=ln.words.map(w=>w.runs.map(r=>r.text).join(''));
+            const lineCount=new Map();
+            curTexts.forEach(t=>lineCount.set(t,(lineCount.get(t)||0)+1));
+            let best=-1, bestMap=null, bestScore=null;
+            rowTexts.forEach((rt,ri)=>{
+                let hunks=[];
+                try{ hunks=(typeof _sdyDiff==='function')?_sdyDiff(rt,curTexts):[]; }catch(e){ hunks=[]; }
+                const matched=rt.length-hunks.reduce((n,h)=>n+((h&&h.del)||0),0);
+                const sameTop=Math.abs(rows[ri].top-ln.top)<0.06;
+                const score=[matched, sameTop?1:0, -Math.abs(rows[ri].top-ln.top)];
+                if(bestScore
+                   &&(score[0]<bestScore[0]
+                      ||(score[0]===bestScore[0]&&(score[1]<bestScore[1]
+                         ||(score[1]===bestScore[1]&&score[2]<=bestScore[2]))))) return;
+                bestScore=score; best=ri;
+                // 교체된 원본 단어들이 전부 딴 줄에 살아있으면 '옮겨감' → 앵커 무효
+                const dropAnchor=h=>{
+                    if(!h||!(h.del>0)) return false;
+                    for(let k=0;k<h.del;k++){
+                        const t=rt[h.pos+k];
+                        const elsewhere=(allTexts.get(t)||0)-(lineCount.get(t)||0);
+                        if(elsewhere<=0) return false;
+                    }
+                    return true;
+                };
+                bestMap=_tightHunkMap(hunks,rt.length,curTexts.length,dropAnchor);
+            });
+            // 같은 글자가 하나도 없으면 그 행은 무의미 — 스태시 없이 실측 배치
+            const row=(best>=0&&bestScore&&bestScore[0]>0)?rows[best]:null;
+            if(!row) bestMap=null;
+            const delta=row?(ln.top-row.top):0;
+            let cursor=0, prevBase=-1;
+            ln.words.forEach((w,wi)=>{
+                const bi=bestMap?bestMap.curToBase[wi]:null;
+                const sw=(row&&bi!=null)?row.items[bi]:null;
+                const ai=(!sw&&bestMap)?bestMap.curAnchor[wi]:null;
+                const aw=(row&&ai!=null)?row.items[ai]:null;
+                const anchor=sw?sw.left:(aw?aw.left:null);
+                const myBase=(bi!=null)?bi:ai;
+                // 제자리 체인 — 원본 이웃 자리를 잇는다 (교체된 단어도 자리를 잇는다)
+                const inPlace=(myBase!=null&&myBase===prevBase+1);
+                const domSt=(w.runs[0]&&w.runs[0].style)||{};
+                let natW=0, baseLn=0, spW=0, measured=false;
+                const measure=()=>{
+                    if(measured) return; measured=true;
+                    w.runs.forEach((run,ri2)=>{
+                        const m=_tightMeasureRun(run.text,run.style,box);
+                        natW+=m.w; if(ri2===0) baseLn=m.base;
+                    });
+                    spW=_tightSpaceW(domSt,box);
+                };
+                const single=w.runs.length===1;
+                let sameW=false;
+                try{ sameW=!!(sw&&single&&_tightWidthSame(sw,domSt,box)); }catch(e){ sameW=false; }
+                // 원본 간격 (제자리 체인에서만)
+                const origGap=()=>{
+                    if(prevBase<0||!row) return null;
+                    const pw=row.items[prevBase];
+                    const cw=sw||aw;
+                    if(!pw||!cw||!(pw.pdfWN>0)) return null;
+                    return Math.max(0,cw.left-(pw.left+pw.pdfWN));
+                };
+                // ── left ──
+                let leftV;
+                if(wi===0){ leftV=(myBase===0&&anchor!=null)?anchor:0; }
+                else if(inPlace&&(sw||aw)){
+                    // 원본 이웃 관계 그대로 → 원본 간격 유지 (겹치면 밀어낸다)
+                    const og=origGap();
+                    if(og!=null) leftV=Math.max(anchor,cursor+og);
+                    else { measure(); leftV=Math.max(anchor,cursor+spW); }
+                }
+                else if(sw){ measure(); leftV=cursor+spW; }                 // 자리 옮김 → 흐름 배치
+                else if(aw){ measure(); leftV=Math.max(anchor,cursor+spW); }// 그 자리 고침 → 원본 우선
+                else { measure(); leftV=cursor+spW; }                       // 새 단어 → 흐름 배치
+                // ── pdfW / pdfBase / tops ──
+                const fsNum=parseFloat(domSt.fontSize)||box.fs;
+                let pdfW, pdfBase, topS, origS, fsAttr;
+                if(sameW){
+                    pdfW=(sw.pdfW||'')!==''?sw.pdfW:_tNum((measure(),natW)||1);
+                    pdfBase=(sw.pdfBase||'')!==''?_tShift(sw.pdfBase,delta):_tNum(ln.top+(measure(),baseLn));
+                    topS=(sw.styleTop||'')!==''?_tShift(sw.styleTop,delta):_tNum(sw.top+delta);
+                    origS=(sw.origTop||'')!==''?_tShift(sw.origTop,delta):'';
+                    fsAttr=(sw.dataFs||'')!==''?sw.dataFs:_tNum(fsNum);
+                } else if(sw){
+                    // 글자는 같고 너비 서식만 바뀜 — 폭·기준선만 실측, 상대 top 은 유지
+                    measure();
+                    pdfW=_tNum(natW||1);
+                    pdfBase=_tNum(ln.top+baseLn);
+                    topS=(sw.styleTop||'')!==''?_tShift(sw.styleTop,delta):_tNum(sw.top+delta);
+                    origS=(sw.origTop||'')!==''?_tShift(sw.origTop,delta):'';
+                    fsAttr=_tNum(fsNum);
+                } else {
+                    measure();
+                    pdfW=_tNum(natW||1);
+                    pdfBase=_tNum(ln.top+baseLn);
+                    topS=_tNum(ln.top); origS=_tNum(ln.top);
+                    fsAttr=_tNum(fsNum);
+                }
+                // left 출력 — 원본과 수치 동일하면 원본 문자열 그대로
+                const anchW=sw||aw;
+                const leftS=(anchW&&anchW.leftRaw&&Math.abs(leftV-anchW.left)<0.001)?anchW.leftRaw:_tNum(leftV);
+                // ── span 조립 ──
+                const sp=document.createElement('span');
+                sp.style.cssText='position:absolute;left:'+_tCss(leftS)+';top:'+_tCss(topS)+';';
+                sp.setAttribute('data-fs',fsAttr);
+                sp.setAttribute('data-pdf-w',pdfW);
+                sp.setAttribute('data-pdf-base',pdfBase);
+                // dataset.origTop ↔ data-orig-top (대시!) — setAttribute('data-origTop')은
+                // 소문자화돼 data-origtop 이 되어 dataset 으로 못 읽는다
+                if(origS){ try{ sp.dataset.origTop=origS; }catch(e){ sp.setAttribute('data-orig-top',origS); } }
+                const fsLine=parseFloat(fsAttr)||fsNum||box.fs||16;
+                if(single){
+                    _tightApplyRunCss(sp,domSt,box,fsLine);
+                    sp.textContent=w.runs[0].text;
+                    const z=document.createElement('i'); z.className='zsp'; z.textContent=' ';
+                    sp.appendChild(z);
+                } else {
+                    _tightApplyRunCss(sp,{},box,fsLine);
+                    const b0=w.runs[0].style||{};
+                    if(b0.fontSize) sp.style.fontSize=b0.fontSize;
+                    if(b0.fontFamily) sp.style.fontFamily=b0.fontFamily;
+                    let lastRs=null;
+                    w.runs.forEach(run=>{
+                        const rs=document.createElement('span');
+                        _tightApplyRunCss(rs,run.style||{},box,parseFloat((run.style&&run.style.fontSize)||'')||fsLine);
+                        rs.textContent=run.text;
+                        sp.appendChild(rs); lastRs=rs;
+                    });
+                    // zsp 는 마지막 run 안에 — 형광펜 띠가 단어 경계까지 이어진다
+                    const z=document.createElement('i'); z.className='zsp'; z.textContent=' ';
+                    (lastRs||sp).appendChild(z);
+                }
+                wrap.appendChild(sp);
+                cursor=leftV+(parseFloat(pdfW)||0);
+                prevBase=(myBase!=null)?myBase:-2;   // 순수 삽입은 체인을 끊는다
+            });
+        });
+        return wrap.innerHTML;
+    }catch(e){ return null; }
 }
 // 14.40 · 줄 흐름 상자 엔터 — 캐럿 위치에서 줄을 나눈 뒤, 그 아래(원문 줄
 // 간격만큼)에 새 줄을 만든다. 원문 줄은 절대 위치라 어느 쪽도 이동하지 않는다.
@@ -11142,10 +11639,31 @@ function _tightLineBackspace(c,w){
             if(isNaN(pi)||!id) return null;
             const el=findEl(pi,id);
             if(!el||!el.tight) return null;
+            // 14.45 · 읽기 복귀: 줄 흐름(.sdy-tl) → 단어별 절대좌표로 역변환해
+            //   el.html 을 확정한다. 편집이 있었을 때만 1회 (손대지 않은 진입은
+            //   el.html 이 그대로라 건너뛰어 spurious dirty 를 막는다).
+            try{
+                const c0=w.querySelector('.tb-content');
+                const curHtml=(el&&el.html)||'';
+                const enterH=(w._sdyTightEnterHtml!=null)?w._sdyTightEnterHtml:null;
+                const changed=(enterH==null)||curHtml!==enterH;
+                const hasFlow=(c0&&c0.querySelector&&c0.querySelector(':scope > .sdy-tl'))
+                    ||curHtml.indexOf('sdy-tl')>=0;
+                if(changed&&hasFlow&&typeof _tightLineFlowToAbsolute==='function'){
+                    const src=_stripTypingMarkersHtml(imathCollapse(stripWF(c0?c0.innerHTML:curHtml)));
+                    const abs=_tightLineFlowToAbsolute(src,w._sdyTightOrig||null,el);
+                    if(abs!=null&&abs!==curHtml){
+                        el.html=abs;
+                        try{ w._sdyModelHtml=abs; w._sdyViewHtml=abs; }catch(e){}
+                        try{ markPageEdited(pi); saveDoc(); }catch(e){}
+                    }
+                }
+            }catch(e){}
             // 줄 흐름 플래그 정리
             delete w._sdyTightLine;
             delete w._sdyTightEdit;
             delete w._sdyWasTight;
+            delete w._sdyTightOrig; delete w._sdyTightEnterHtml;
             const newNode=buildTextEl(el,pi);
             if(!newNode) return null;
             // 기존 selected 참조 갱신
@@ -11291,9 +11809,15 @@ function _tightLineBackspace(c,w){
         //   (상하=줄 이동)·형광펜·드래그가 자연스럽다. 엔터는 캐럿 위치에서 줄을
         //   나눠 아래에 새 줄을 만든다(_tightLineEnter). 커밋 시 이 HTML 이
         //   el.html 로 확정된다(tight·pdfText 플래그는 유지).
+        //   14.45 · 편집 종료(읽기 복귀) 시에는 줄 흐름을 단어별 절대좌표로
+        //   역변환(_tightLineFlowToAbsolute)해 el.html 을 확정한다.
         try{
             const _el=findEl(+w.dataset.pageIdx,w.dataset.id);
             if(_el&&_el.tight&&!w._sdyTightEdit){
+                // 14.45 · 읽기 복귀 역변환용 원본 스태시 (줄 흐름 변환 전에!)
+                try{ w._sdyTightEnterHtml=(_el&&_el.html)||''; }catch(e){ w._sdyTightEnterHtml=''; }
+                try{ w._sdyTightOrig=(typeof _stashTightOrig==='function')?_stashTightOrig(c):null; }
+                catch(e){ w._sdyTightOrig=null; }
                 w._sdyTightEdit=1;
                 const _lf=(typeof _tightToLineFlow==='function')?_tightToLineFlow(c):null;
                 if(_lf){ c.innerHTML=''; c.appendChild(_lf); w._sdyTightLine=1; }

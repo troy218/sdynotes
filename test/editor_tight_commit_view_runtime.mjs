@@ -11,7 +11,10 @@
    jsdom 은 레이아웃이 없어 clientWidth 가 0 → 맞춤 큐가 원래 안 돌므로,
    실브라우저와 똑같이 '맞춤이 빈 스팬 목록을 완료 처리'하는 경로를 흉내내려
    .tb-content 의 clientWidth/clientHeight 를 실제 값으로 리턴하게 만든 뒤
-   편집한다. (편집 전/후 어느 순간에 디바운스가 끼어도 결과는 같아야 한다.) */
+   편집한다. (편집 전/후 어느 순간에 디바운스가 끼어도 결과는 같아야 한다.)
+   14.45 · 읽기 복귀 시 줄 흐름(.sdy-tl)을 단어별 절대좌표 span 으로 역변환해
+   저장·표시한다. 안 건드린 단어의 left/top/pdfW/pdfBase 는 원본과 동일해야
+   하고, .sdy-tl/.sdy-tg 가 저장·화면에 남으면 안 된다. */
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
@@ -171,6 +174,24 @@ try {
     const tbR = document.querySelector('#pagesStage .tb[data-id="t1"]');
     return tbR ? (tbR.querySelector('.tb-content') || {}).textContent || '' : '';
   };
+  // 14.45 · 단어 절대좌표 저장 단언 도우미
+  const spanOf = (h, t) => {
+    const i = h.indexOf('>' + t + '<');
+    if (i < 0) return null;
+    const s = h.lastIndexOf('<span', i);
+    return s < 0 ? null : h.slice(s, i + 1);
+  };
+  const hasGeom = (h, t, l, tp, w, b) => {
+    const s = spanOf(h, t);
+    return !!s && new RegExp('left:\\s*' + l + 'px').test(s)
+      && new RegExp('top:\\s*' + tp + 'px').test(s)
+      && s.includes('data-pdf-w="' + w + '"') && s.includes('data-pdf-base="' + b + '"');
+  };
+  const spanLeft = (h, t) => {
+    const s = spanOf(h, t);
+    const m = s && s.match(/left:\s*([0-9.]+)px/);
+    return m ? parseFloat(m[1]) : null;
+  };
   const enterEdit = () => {
     const tbN = document.querySelector('#pagesStage .tb[data-id="t1"]');
     const cN = tbN.querySelector('.tb-content');
@@ -194,8 +215,21 @@ try {
   await wait(400);
   check('① 미리보기(읽기) 복귀 후 화면에 편집 내용이 남는다',
     !document.querySelector('.tb.edit') && readText().includes('BETA1'));
-  check('① 미리보기 화면의 줄 흐름이 유지된다',
-    document.querySelectorAll('#pagesStage .tb[data-id="t1"] .tb-content > .sdy-tl').length === 2);
+  // 14.45 · 읽기 복귀 시 원본 미리보기 형식(단어 절대좌표 span) 복원
+  check('① 미리보기 화면이 단어 절대좌표로 복원된다(줄 흐름 잔류 없음)',
+    document.querySelectorAll('#pagesStage .tb[data-id="t1"] .tb-content > .sdy-tl').length === 0
+    && document.querySelectorAll('#pagesStage .tb[data-id="t1"] .tb-content > span[data-pdf-w]').length === 6);
+  {
+    const h1 = String((window.findEl(0, 't1') || {}).html || '');
+    check('① 저장 모델이 단어 절대좌표로 복원된다(줄 흐름·간격 잔류 없음)',
+      !h1.includes('sdy-tl') && !h1.includes('sdy-tg') && h1.includes('data-pdf-w'));
+    check('① 안 건드린 단어(alpha·gamma·delta·epsilon·zeta) 좌표가 그대로다',
+      hasGeom(h1, 'alpha', 0, 0, 46, 16) && hasGeom(h1, 'gamma', 120, 0, 48, 16)
+      && hasGeom(h1, 'delta', 0, 24, 44, 40) && hasGeom(h1, 'epsilon', 58, 24, 60, 40)
+      && hasGeom(h1, 'zeta', 140, 24, 36, 40));
+    check('① 고친 단어(BETA1)는 beta 자리(left 60)에 들어간다',
+      spanLeft(h1, 'BETA1') === 60 && !h1.includes('beta'));
+  }
 
   // ② 2회차 — gamma → GAMMA2, 다시 미리보기
   cur = enterEdit();
@@ -210,6 +244,15 @@ try {
   await wait(400);
   check('② 다시 미리보기로 돌아가도 두 편집이 모두 남는다',
     readText().includes('GAMMA2') && readText().includes('BETA1'));
+  {
+    const h1b = String((window.findEl(0, 't1') || {}).html || '');
+    check('② 저장 모델이 단어 절대좌표로 유지된다',
+      !h1b.includes('sdy-tl') && !h1b.includes('sdy-tg') && h1b.includes('data-pdf-w'));
+    check('② 첫 편집(BETA1)·안 건드린 단어(alpha) 좌표가 그대로다',
+      spanLeft(h1b, 'BETA1') === 60 && hasGeom(h1b, 'alpha', 0, 0, 46, 16));
+    check('② 두 번째 고친 단어(GAMMA2)는 gamma 자리(left 120)에 들어간다',
+      spanLeft(h1b, 'GAMMA2') === 120 && !h1b.includes('gamma'));
+  }
 
   const fatal = errors.filter(e => !/isTrBusy|undefined is not an object/.test(String(e)));
   check('치명적 런타임 오류가 없다', fatal.length === 0);
