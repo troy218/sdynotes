@@ -87,7 +87,14 @@
         const a=bounds(s), b=bounds(next);
         if(a.rr-a.l<=0.3||b.rr-b.l<=0.3||a.b-a.t<=0.3||b.b-b.t<=0.3
             ||b.l<=a.rr||!_hlSameLine(a,b)) return null;
-        return {l:a.rr,t:Math.min(a.t,b.t),rr:b.l,b:Math.max(a.b,b.b)};
+        //  고정 글자 형광펜 스페이스 튐 방지 — 두 단어 경계의 빈 영역은
+        //  두 단어의 교집합 높이로만 칠한다. 예전 max(아래)-min(위)는
+        //  글자 크기가 섞이면 스페이스가 위로 튀어나와 보였다.
+        const t=Math.max(a.t,b.t), btm=Math.min(a.b,b.b);
+        if(btm-t>0.3) return {l:a.rr,t:t,rr:b.l,b:btm};
+        const ha=a.b-a.t, hb=b.b-b.t, h=Math.min(ha,hb);
+        const avgT=(a.t+b.t)/2;
+        return {l:a.rr,t:avgT,rr:b.l,b:avgT+h};
     }
     // 텍스트 노드를 실제 화면 선 조각(뷰 좌표)으로 잰다
     function _hlFragRects(run,c){
@@ -715,14 +722,23 @@ function _tightToLineFlow(c){
         d.style.cssText='position:absolute;left:0;width:100%;top:'+r.top.toFixed(1)+'px;height:'+h.toFixed(1)+'px;line-height:'+maxFs.toFixed(1)+'px;white-space:nowrap;';
         r.items.forEach((wd,wi)=>{
             if(wi>0){
-                const gap=wd.left-(r.items[wi-1].left+r.items[wi-1].adv);
-                const nat=gapOf(r.items[wi-1].ff||wd.ff,r.items[wi-1].fs||wd.fs);
+                const prev=r.items[wi-1];
+                const gap=wd.left-(prev.left+prev.adv);
+                const nat=gapOf(prev.ff||wd.ff,prev.fs||wd.fs);
                 const extra=Math.round((Math.max(0,gap)-nat)*4)/4;
-                d.appendChild(document.createTextNode(' '));
+                // 고정 글자 스페이스 폰트 균일화 — plain text node(' ')는
+                // 부모(.tb-content) 폰트를 그대로 물려 큰 글자로 보였다.
+                // 이전 단어와 같은 크기의 span 으로 감싸 형광펜 높이가 튀지 않게 한다.
+                const spaceFs=prev.fs||wd.fs||16;
+                const spaceSpan=document.createElement('span');
+                spaceSpan.className='sdy-ts';
+                spaceSpan.style.cssText='font-size:'+spaceFs+'px;line-height:1;white-space:nowrap;';
+                spaceSpan.textContent=' ';
+                d.appendChild(spaceSpan);
                 if(extra>0.5){
                     const g=document.createElement('span');
                     g.className='sdy-tg';
-                    g.style.cssText='display:inline-block;width:'+extra.toFixed(1)+'px;height:0;overflow:hidden;vertical-align:bottom;';
+                    g.style.cssText='display:inline-block;width:'+extra.toFixed(1)+'px;height:0;overflow:hidden;vertical-align:bottom;font-size:'+spaceFs+'px;line-height:1;';
                     d.appendChild(g);
                 }
             }
@@ -895,13 +911,16 @@ function _caretBlock(host,r){
     return host;
 }
 // '블록 맨 앞 ~ 캐럿' 사이에 실제 글자는 없고 닻(ZWSP)만 있는가
+// 빈 줄(캐럿이 맨 앞, raw='')도 포함 — 그래야 Enter로 만든 빈 줄을
+// Backspace로 지울 때 14.42가 밀어낸 아래 원문 줄을 다시 올릴 수 있다.
 function _anchorOnlyBefore(block,r){
     try{
         const seg=document.createRange();
         seg.setStart(block,0);
         seg.setEnd(r.startContainer,r.startOffset);
         const raw=String(seg.toString()||'');
-        return raw.length>0&&raw.replace(_SDY_ANCHOR_RE,'').length===0;
+        // ZWSP만 있거나 아예 비어 있으면 anchor-only, 공백/글자가 있으면 false
+        return raw.replace(_SDY_ANCHOR_RE,'').length===0;
     }catch(e){ return false; }
 }
 // 닻만 걷어 브라우저 기본 Backspace(줄 합치기)가 일어나게 한다. 먹은 닻이 있으면 true.

@@ -109,6 +109,7 @@
                     // 빈 span. 입력 대기 마커(.sdy-type)만 원자 토큰으로 살려 둔다.
                     if(k.classList&&k.classList.contains('sdy-type')) tokens.push({t:'type',node:k});
                     // 14.40 · 논문 상자 단어 간격 스페이서 — 빈 span 이라서라도 토큰으로 온전하게 다룬다.
+                    // sdy-ts(스페이스 래퍼)는 빈 경우가 없으므로 여기서 다루지 않고 일반 텍스트로 걷는다.
                     if(tag==='SPAN'&&k.classList&&k.classList.contains('sdy-tg')) tokens.push({t:'atom',node:k});
                     continue;
                 }
@@ -287,12 +288,19 @@
                     //   키운다 — 줄 간격과 같은 값이라 줄 레이아웃은 그대로다.
                     if(tk.t==='atom'&&tk.node&&tk.node.classList
                        &&tk.node.classList.contains('sdy-tg')&&gapInside.get(tk.node)){
-                        const bEl=(block&&block.nodeType===1)?block:null;
                         if(op.type==='set'&&op.prop==='backgroundColor'&&op.value){
                             tk.node.style.backgroundColor=op.value;
-                            const lh=(bEl&&bEl.style)?(parseFloat(bEl.style.lineHeight)||0):0;
-                            if(lh>0) tk.node.style.height=lh+'px';
-                            else tk.node.style.removeProperty('height');
+                            // 고정 글자 스페이스 튐 방지 — 예전엔 lineHeight(maxFs)로 높이를 키워
+                            // 큰 글자 줄에서 배경이 위로 튀었다. 이제 스페이서 자체 폰트 크기(작은 값)로
+                            // 높이를 맞춰 주변 단어와 같은 높이를 유지한다.
+                            const fs=parseFloat(tk.node.style.fontSize)||0;
+                            if(fs>0) tk.node.style.height=fs+'px';
+                            else{
+                                const bEl=(block&&block.nodeType===1)?block:null;
+                                const lh=(bEl&&bEl.style)?(parseFloat(bEl.style.lineHeight)||0):0;
+                                if(lh>0) tk.node.style.height=lh+'px';
+                                else tk.node.style.removeProperty('height');
+                            }
                         }else if((op.type==='remove'&&op.prop==='backgroundColor')||op.type==='clear'){
                             tk.node.style.removeProperty('background-color');
                             tk.node.style.height='0px';
@@ -556,8 +564,8 @@
         if(!host||!host.querySelectorAll) return;
         const toRemove=[];
         host.querySelectorAll('span,b,strong,i,em,u,s,strike,mark,font').forEach(el=>{
-            // 14.40 · 단어 간격 스페이서는 빈 span 이라서가 아니다.
-            if(el.classList&&el.classList.contains('sdy-tg')) return;
+            // 14.40 · 단어 간격 스페이서(sdy-tg)와 스페이스 래퍼(sdy-ts)는 빈 span 취급 금지
+            if(el.classList&&(el.classList.contains('sdy-tg')||el.classList.contains('sdy-ts'))) return;
             if(!el.textContent&&!el.querySelector('img,br,svg,canvas')){ toRemove.push(el); return; }
             if(el.tagName==='SPAN'){
                 const style=el.getAttribute('style')||'';

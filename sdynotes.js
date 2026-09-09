@@ -9723,7 +9723,14 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const a=bounds(s), b=bounds(next);
         if(a.rr-a.l<=0.3||b.rr-b.l<=0.3||a.b-a.t<=0.3||b.b-b.t<=0.3
             ||b.l<=a.rr||!_hlSameLine(a,b)) return null;
-        return {l:a.rr,t:Math.min(a.t,b.t),rr:b.l,b:Math.max(a.b,b.b)};
+        //  고정 글자 형광펜 스페이스 튐 방지 — 두 단어 경계의 빈 영역은
+        //  두 단어의 교집합 높이로만 칠한다. 예전 max(아래)-min(위)는
+        //  글자 크기가 섞이면 스페이스가 위로 튀어나와 보였다.
+        const t=Math.max(a.t,b.t), btm=Math.min(a.b,b.b);
+        if(btm-t>0.3) return {l:a.rr,t:t,rr:b.l,b:btm};
+        const ha=a.b-a.t, hb=b.b-b.t, h=Math.min(ha,hb);
+        const avgT=(a.t+b.t)/2;
+        return {l:a.rr,t:avgT,rr:b.l,b:avgT+h};
     }
     // 텍스트 노드를 실제 화면 선 조각(뷰 좌표)으로 잰다
     function _hlFragRects(run,c){
@@ -10351,14 +10358,23 @@ function _tightToLineFlow(c){
         d.style.cssText='position:absolute;left:0;width:100%;top:'+r.top.toFixed(1)+'px;height:'+h.toFixed(1)+'px;line-height:'+maxFs.toFixed(1)+'px;white-space:nowrap;';
         r.items.forEach((wd,wi)=>{
             if(wi>0){
-                const gap=wd.left-(r.items[wi-1].left+r.items[wi-1].adv);
-                const nat=gapOf(r.items[wi-1].ff||wd.ff,r.items[wi-1].fs||wd.fs);
+                const prev=r.items[wi-1];
+                const gap=wd.left-(prev.left+prev.adv);
+                const nat=gapOf(prev.ff||wd.ff,prev.fs||wd.fs);
                 const extra=Math.round((Math.max(0,gap)-nat)*4)/4;
-                d.appendChild(document.createTextNode(' '));
+                // 고정 글자 스페이스 폰트 균일화 — plain text node(' ')는
+                // 부모(.tb-content) 폰트를 그대로 물려 큰 글자로 보였다.
+                // 이전 단어와 같은 크기의 span 으로 감싸 형광펜 높이가 튀지 않게 한다.
+                const spaceFs=prev.fs||wd.fs||16;
+                const spaceSpan=document.createElement('span');
+                spaceSpan.className='sdy-ts';
+                spaceSpan.style.cssText='font-size:'+spaceFs+'px;line-height:1;white-space:nowrap;';
+                spaceSpan.textContent=' ';
+                d.appendChild(spaceSpan);
                 if(extra>0.5){
                     const g=document.createElement('span');
                     g.className='sdy-tg';
-                    g.style.cssText='display:inline-block;width:'+extra.toFixed(1)+'px;height:0;overflow:hidden;vertical-align:bottom;';
+                    g.style.cssText='display:inline-block;width:'+extra.toFixed(1)+'px;height:0;overflow:hidden;vertical-align:bottom;font-size:'+spaceFs+'px;line-height:1;';
                     d.appendChild(g);
                 }
             }
@@ -10531,13 +10547,16 @@ function _caretBlock(host,r){
     return host;
 }
 // '블록 맨 앞 ~ 캐럿' 사이에 실제 글자는 없고 닻(ZWSP)만 있는가
+// 빈 줄(캐럿이 맨 앞, raw='')도 포함 — 그래야 Enter로 만든 빈 줄을
+// Backspace로 지울 때 14.42가 밀어낸 아래 원문 줄을 다시 올릴 수 있다.
 function _anchorOnlyBefore(block,r){
     try{
         const seg=document.createRange();
         seg.setStart(block,0);
         seg.setEnd(r.startContainer,r.startOffset);
         const raw=String(seg.toString()||'');
-        return raw.length>0&&raw.replace(_SDY_ANCHOR_RE,'').length===0;
+        // ZWSP만 있거나 아예 비어 있으면 anchor-only, 공백/글자가 있으면 false
+        return raw.replace(_SDY_ANCHOR_RE,'').length===0;
     }catch(e){ return false; }
 }
 // 닻만 걷어 브라우저 기본 Backspace(줄 합치기)가 일어나게 한다. 먹은 닻이 있으면 true.
@@ -11018,7 +11037,14 @@ function _tightLineBackspace(c,w){
 
     function deselectAll(keepTool){
         document.querySelectorAll('.tb.sel,.tb.edit').forEach(w=>{
+            const wasTight=!!(w._sdyTightLine||w._sdyTightEdit);
             if(w.classList.contains('edit')) commitEditingText(w);
+            // 편집 후 읽기 모드 복귀 — tight 는 줄 흐름 DOM 이 남아 미세 어긋남을
+            // 없애기 위해 buildTextEl 로 다시 그린다.
+            if(wasTight){
+                const rebuilt=_rebuildTightToReading(w);
+                if(rebuilt){ w=rebuilt; }
+            }
             w.classList.remove('sel','edit'); _editScanDirty=true;
             const c=w.querySelector('.tb-content');
             if(c){ c.contentEditable='false'; disableTextSelect(c); }
@@ -11091,6 +11117,42 @@ function _tightLineBackspace(c,w){
             delete w._sdyWasTight;
             delete w._sdyTightEdit;
         }catch(e){}
+    }
+    // 편집 후 읽기 모드 복귀 — tight 상자를 다시 buildTextEl 로 재구성해
+    // .tb-content 를 contentEditable=false 의 읽기 모드로 돌린다.
+    // 기존에는 _sdyTightEdit 플래그만 지워 .sdy-tl 줄 흐름 DOM 이 그대로 남아
+    // 미세하게 어긋나 보였던 문제를 고친다.
+    function _rebuildTightToReading(w){
+        try{
+            if(!w||!w.isConnected) return null;
+            const pi=+w.dataset.pageIdx;
+            const id=w.dataset.id;
+            if(isNaN(pi)||!id) return null;
+            const el=findEl(pi,id);
+            if(!el||!el.tight) return null;
+            // 줄 흐름 플래그 정리
+            delete w._sdyTightLine;
+            delete w._sdyTightEdit;
+            delete w._sdyWasTight;
+            const newNode=buildTextEl(el,pi);
+            if(!newNode) return null;
+            // 기존 selected 참조 갱신
+            const wasSel=w.classList.contains('sel')||w.classList.contains('edit');
+            w.replaceWith(newNode);
+            if(selected&&selected.el===w) selected.el=newNode;
+            // multiSel 에 있으면 갱신
+            if(typeof multiSel!=='undefined'&&multiSel&&multiSel.length){
+                for(let i=0;i<multiSel.length;i++){
+                    if(multiSel[i]&&multiSel[i].node===w) multiSel[i].node=newNode;
+                }
+            }
+            // 읽기 모드이므로 contentEditable 확실히 끄기
+            const c=newNode.querySelector('.tb-content');
+            if(c){ c.contentEditable='false'; disableTextSelect(c); }
+            // 형광펜 띠 재도색
+            try{ if(typeof _hlRepaintAll==='function') _hlRepaintAll(); }catch(_e){}
+            return newNode;
+        }catch(e){ return null; }
     }
     // 14.39.9 · tight 상자를 '원본 절대좌표 배치' 그대로 두고 편집 모드로 들어간다.
     //   글꼴·색·크기·굵기 같은 서식만 바꿀 때는 배치가 바뀌지 않는다.
@@ -11181,7 +11243,17 @@ function _tightLineBackspace(c,w){
         //   이걸 지우지 않으면 편집 중 색/형광펜을 칠할 때 엉뚱한 상자의
         //   선택이 복원되어 그쪽이 칠해진다.
         clearTextSelection();
-        document.querySelectorAll('.tb.edit').forEach(o=>{ if(o!==w){ commitEditingText(o); o.classList.remove('edit'); _editScanDirty=true; const c=o.querySelector('.tb-content'); if(c)c.contentEditable='false'; }});
+        document.querySelectorAll('.tb.edit').forEach(o=>{
+            if(o!==w){
+                const wasTight=!!(o._sdyTightLine||o._sdyTightEdit);
+                commitEditingText(o);
+                if(wasTight) _rebuildTightToReading(o);
+                if(o.isConnected){
+                    o.classList.remove('edit'); _editScanDirty=true;
+                    const c=o.querySelector('.tb-content'); if(c) c.contentEditable='false';
+                }
+            }
+        });
         document.querySelectorAll('.tb.sel,.paper-img.sel,.stroke-g.sel').forEach(o=>{ if(o!==w) o.classList.remove('sel'); });
         w.classList.add('edit'); w.classList.remove('sel');
         _ensureTbControls(w);            // 22.1 · 장식은 지금 이 순간 붙인다
@@ -11286,12 +11358,18 @@ function _tightLineBackspace(c,w){
     }
     // 편집 종료 + 상자를 '선택' 상태로 유지 (Enter/Tab/Escape 커밋용)
     function exitEditKeepSel(w){
+        const wasTight=!!(w._sdyTightLine||w._sdyTightEdit);
         commitEditingText(w);
-        w.classList.remove('edit'); _editScanDirty=true;
-        const c=w.querySelector('.tb-content');
+        let target=w;
+        if(wasTight){
+            const rebuilt=_rebuildTightToReading(w);
+            if(rebuilt) target=rebuilt;
+        }
+        target.classList.remove('edit'); _editScanDirty=true;
+        const c=target.querySelector('.tb-content');
         if(c){ c.contentEditable='false'; disableTextSelect(c); }
-        w.classList.add('sel'); _ensureTbControls(w);
-        selected={type:'text',el:w};
+        target.classList.add('sel'); _ensureTbControls(target);
+        selected={type:'text',el:target};
     }
     // 커밋 후 다른 셀로 선택 이동
     function moveCellFrom(w,mode){
@@ -11932,14 +12010,21 @@ function _tightLineBackspace(c,w){
         // 리사이즈
         if(t.closest('.handle')){
             e.preventDefault();
-            const host=t.closest('.tb')||t.closest('.paper-img');
+            let host=t.closest('.tb')||t.closest('.paper-img');
             if(host.classList.contains('edit')){
+                const wasTight=!!(host._sdyTightLine||host._sdyTightEdit);
                 commitEditingText(host);
-                host.classList.remove('edit'); _editScanDirty=true;
-                const cc=host.querySelector('.tb-content');
-                if(cc) cc.contentEditable='false';
-                host.classList.add('sel'); _ensureTbControls(host);
-                selected={type:'text',el:host};
+                if(wasTight){
+                    const rb=_rebuildTightToReading(host);
+                    if(rb) host=rb;
+                }
+                if(host.isConnected){
+                    host.classList.remove('edit'); _editScanDirty=true;
+                    const cc=host.querySelector('.tb-content');
+                    if(cc) cc.contentEditable='false';
+                    host.classList.add('sel'); _ensureTbControls(host);
+                    selected={type:'text',el:host};
+                }
             }
             pushHistory();
             const hEl=t.closest('.handle');
@@ -11965,14 +12050,21 @@ function _tightLineBackspace(c,w){
         // 테두리를 잡고 이동
         if(t.closest('.tb-edge')){
             e.preventDefault();
-            const w=t.closest('.tb')||t.closest('.paper-img');
+            let w=t.closest('.tb')||t.closest('.paper-img');
             // 편집 중이었다면 편집을 끝내고 '상자 선택' 상태로 바꾼다
             // (이래야 Delete 키가 글자가 아니라 상자를 지운다)
             if(w.classList.contains('edit')){
+                const wasTight=!!(w._sdyTightLine||w._sdyTightEdit);
                 commitEditingText(w);
-                w.classList.remove('edit'); _editScanDirty=true;
-                const cc=w.querySelector('.tb-content');
-                if(cc) cc.contentEditable='false';
+                if(wasTight){
+                    const rb=_rebuildTightToReading(w);
+                    if(rb) w=rb;
+                }
+                if(w.isConnected){
+                    w.classList.remove('edit'); _editScanDirty=true;
+                    const cc=w.querySelector('.tb-content');
+                    if(cc) cc.contentEditable='false';
+                }
             }
             if(!w.classList.contains('sel')){ deselectAll(true); w.classList.add('sel'); }
             else { w.classList.add('sel'); }
@@ -16765,6 +16857,7 @@ function _tightLineBackspace(c,w){
                     // 빈 span. 입력 대기 마커(.sdy-type)만 원자 토큰으로 살려 둔다.
                     if(k.classList&&k.classList.contains('sdy-type')) tokens.push({t:'type',node:k});
                     // 14.40 · 논문 상자 단어 간격 스페이서 — 빈 span 이라서라도 토큰으로 온전하게 다룬다.
+                    // sdy-ts(스페이스 래퍼)는 빈 경우가 없으므로 여기서 다루지 않고 일반 텍스트로 걷는다.
                     if(tag==='SPAN'&&k.classList&&k.classList.contains('sdy-tg')) tokens.push({t:'atom',node:k});
                     continue;
                 }
@@ -16943,12 +17036,19 @@ function _tightLineBackspace(c,w){
                     //   키운다 — 줄 간격과 같은 값이라 줄 레이아웃은 그대로다.
                     if(tk.t==='atom'&&tk.node&&tk.node.classList
                        &&tk.node.classList.contains('sdy-tg')&&gapInside.get(tk.node)){
-                        const bEl=(block&&block.nodeType===1)?block:null;
                         if(op.type==='set'&&op.prop==='backgroundColor'&&op.value){
                             tk.node.style.backgroundColor=op.value;
-                            const lh=(bEl&&bEl.style)?(parseFloat(bEl.style.lineHeight)||0):0;
-                            if(lh>0) tk.node.style.height=lh+'px';
-                            else tk.node.style.removeProperty('height');
+                            // 고정 글자 스페이스 튐 방지 — 예전엔 lineHeight(maxFs)로 높이를 키워
+                            // 큰 글자 줄에서 배경이 위로 튀었다. 이제 스페이서 자체 폰트 크기(작은 값)로
+                            // 높이를 맞춰 주변 단어와 같은 높이를 유지한다.
+                            const fs=parseFloat(tk.node.style.fontSize)||0;
+                            if(fs>0) tk.node.style.height=fs+'px';
+                            else{
+                                const bEl=(block&&block.nodeType===1)?block:null;
+                                const lh=(bEl&&bEl.style)?(parseFloat(bEl.style.lineHeight)||0):0;
+                                if(lh>0) tk.node.style.height=lh+'px';
+                                else tk.node.style.removeProperty('height');
+                            }
                         }else if((op.type==='remove'&&op.prop==='backgroundColor')||op.type==='clear'){
                             tk.node.style.removeProperty('background-color');
                             tk.node.style.height='0px';
@@ -17212,8 +17312,8 @@ function _tightLineBackspace(c,w){
         if(!host||!host.querySelectorAll) return;
         const toRemove=[];
         host.querySelectorAll('span,b,strong,i,em,u,s,strike,mark,font').forEach(el=>{
-            // 14.40 · 단어 간격 스페이서는 빈 span 이라서가 아니다.
-            if(el.classList&&el.classList.contains('sdy-tg')) return;
+            // 14.40 · 단어 간격 스페이서(sdy-tg)와 스페이스 래퍼(sdy-ts)는 빈 span 취급 금지
+            if(el.classList&&(el.classList.contains('sdy-tg')||el.classList.contains('sdy-ts'))) return;
             if(!el.textContent&&!el.querySelector('img,br,svg,canvas')){ toRemove.push(el); return; }
             if(el.tagName==='SPAN'){
                 const style=el.getAttribute('style')||'';
