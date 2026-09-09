@@ -1915,6 +1915,7 @@
            1px 미만 넘어가도 줄 끝에서 접혀 아래 원문 줄과 겹치지 않는다. */
         .tb-content .sdy-tl{position:absolute;left:0;width:100%;box-sizing:border-box;overflow:visible;white-space:nowrap;}
         .tb-content .sdy-tg{display:inline-block;height:0;overflow:hidden;}
+        .tb-content .sdy-ts{display:inline;white-space:nowrap;}
         /* 안 보이는 스페이스바: 흐름에서 빼 글자 맞춤은 안 건드리고,
            font-size:0 은 Chromium 이 ::selection / Selection.toString() 에서
            공백을 건너뛰게 하므로 쓰지 않는다. 글자는 투명, 하이라이트만 남는다. */

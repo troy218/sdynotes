@@ -135,7 +135,14 @@
 
     function deselectAll(keepTool){
         document.querySelectorAll('.tb.sel,.tb.edit').forEach(w=>{
+            const wasTight=!!(w._sdyTightLine||w._sdyTightEdit);
             if(w.classList.contains('edit')) commitEditingText(w);
+            // 편집 후 읽기 모드 복귀 — tight 는 줄 흐름 DOM 이 남아 미세 어긋남을
+            // 없애기 위해 buildTextEl 로 다시 그린다.
+            if(wasTight){
+                const rebuilt=_rebuildTightToReading(w);
+                if(rebuilt){ w=rebuilt; }
+            }
             w.classList.remove('sel','edit'); _editScanDirty=true;
             const c=w.querySelector('.tb-content');
             if(c){ c.contentEditable='false'; disableTextSelect(c); }
@@ -208,6 +215,42 @@
             delete w._sdyWasTight;
             delete w._sdyTightEdit;
         }catch(e){}
+    }
+    // 편집 후 읽기 모드 복귀 — tight 상자를 다시 buildTextEl 로 재구성해
+    // .tb-content 를 contentEditable=false 의 읽기 모드로 돌린다.
+    // 기존에는 _sdyTightEdit 플래그만 지워 .sdy-tl 줄 흐름 DOM 이 그대로 남아
+    // 미세하게 어긋나 보였던 문제를 고친다.
+    function _rebuildTightToReading(w){
+        try{
+            if(!w||!w.isConnected) return null;
+            const pi=+w.dataset.pageIdx;
+            const id=w.dataset.id;
+            if(isNaN(pi)||!id) return null;
+            const el=findEl(pi,id);
+            if(!el||!el.tight) return null;
+            // 줄 흐름 플래그 정리
+            delete w._sdyTightLine;
+            delete w._sdyTightEdit;
+            delete w._sdyWasTight;
+            const newNode=buildTextEl(el,pi);
+            if(!newNode) return null;
+            // 기존 selected 참조 갱신
+            const wasSel=w.classList.contains('sel')||w.classList.contains('edit');
+            w.replaceWith(newNode);
+            if(selected&&selected.el===w) selected.el=newNode;
+            // multiSel 에 있으면 갱신
+            if(typeof multiSel!=='undefined'&&multiSel&&multiSel.length){
+                for(let i=0;i<multiSel.length;i++){
+                    if(multiSel[i]&&multiSel[i].node===w) multiSel[i].node=newNode;
+                }
+            }
+            // 읽기 모드이므로 contentEditable 확실히 끄기
+            const c=newNode.querySelector('.tb-content');
+            if(c){ c.contentEditable='false'; disableTextSelect(c); }
+            // 형광펜 띠 재도색
+            try{ if(typeof _hlRepaintAll==='function') _hlRepaintAll(); }catch(_e){}
+            return newNode;
+        }catch(e){ return null; }
     }
     // 14.39.9 · tight 상자를 '원본 절대좌표 배치' 그대로 두고 편집 모드로 들어간다.
     //   글꼴·색·크기·굵기 같은 서식만 바꿀 때는 배치가 바뀌지 않는다.
@@ -298,7 +341,17 @@
         //   이걸 지우지 않으면 편집 중 색/형광펜을 칠할 때 엉뚱한 상자의
         //   선택이 복원되어 그쪽이 칠해진다.
         clearTextSelection();
-        document.querySelectorAll('.tb.edit').forEach(o=>{ if(o!==w){ commitEditingText(o); o.classList.remove('edit'); _editScanDirty=true; const c=o.querySelector('.tb-content'); if(c)c.contentEditable='false'; }});
+        document.querySelectorAll('.tb.edit').forEach(o=>{
+            if(o!==w){
+                const wasTight=!!(o._sdyTightLine||o._sdyTightEdit);
+                commitEditingText(o);
+                if(wasTight) _rebuildTightToReading(o);
+                if(o.isConnected){
+                    o.classList.remove('edit'); _editScanDirty=true;
+                    const c=o.querySelector('.tb-content'); if(c) c.contentEditable='false';
+                }
+            }
+        });
         document.querySelectorAll('.tb.sel,.paper-img.sel,.stroke-g.sel').forEach(o=>{ if(o!==w) o.classList.remove('sel'); });
         w.classList.add('edit'); w.classList.remove('sel');
         _ensureTbControls(w);            // 22.1 · 장식은 지금 이 순간 붙인다
@@ -403,12 +456,18 @@
     }
     // 편집 종료 + 상자를 '선택' 상태로 유지 (Enter/Tab/Escape 커밋용)
     function exitEditKeepSel(w){
+        const wasTight=!!(w._sdyTightLine||w._sdyTightEdit);
         commitEditingText(w);
-        w.classList.remove('edit'); _editScanDirty=true;
-        const c=w.querySelector('.tb-content');
+        let target=w;
+        if(wasTight){
+            const rebuilt=_rebuildTightToReading(w);
+            if(rebuilt) target=rebuilt;
+        }
+        target.classList.remove('edit'); _editScanDirty=true;
+        const c=target.querySelector('.tb-content');
         if(c){ c.contentEditable='false'; disableTextSelect(c); }
-        w.classList.add('sel'); _ensureTbControls(w);
-        selected={type:'text',el:w};
+        target.classList.add('sel'); _ensureTbControls(target);
+        selected={type:'text',el:target};
     }
     // 커밋 후 다른 셀로 선택 이동
     function moveCellFrom(w,mode){
@@ -1049,14 +1108,21 @@
         // 리사이즈
         if(t.closest('.handle')){
             e.preventDefault();
-            const host=t.closest('.tb')||t.closest('.paper-img');
+            let host=t.closest('.tb')||t.closest('.paper-img');
             if(host.classList.contains('edit')){
+                const wasTight=!!(host._sdyTightLine||host._sdyTightEdit);
                 commitEditingText(host);
-                host.classList.remove('edit'); _editScanDirty=true;
-                const cc=host.querySelector('.tb-content');
-                if(cc) cc.contentEditable='false';
-                host.classList.add('sel'); _ensureTbControls(host);
-                selected={type:'text',el:host};
+                if(wasTight){
+                    const rb=_rebuildTightToReading(host);
+                    if(rb) host=rb;
+                }
+                if(host.isConnected){
+                    host.classList.remove('edit'); _editScanDirty=true;
+                    const cc=host.querySelector('.tb-content');
+                    if(cc) cc.contentEditable='false';
+                    host.classList.add('sel'); _ensureTbControls(host);
+                    selected={type:'text',el:host};
+                }
             }
             pushHistory();
             const hEl=t.closest('.handle');
@@ -1082,14 +1148,21 @@
         // 테두리를 잡고 이동
         if(t.closest('.tb-edge')){
             e.preventDefault();
-            const w=t.closest('.tb')||t.closest('.paper-img');
+            let w=t.closest('.tb')||t.closest('.paper-img');
             // 편집 중이었다면 편집을 끝내고 '상자 선택' 상태로 바꾼다
             // (이래야 Delete 키가 글자가 아니라 상자를 지운다)
             if(w.classList.contains('edit')){
+                const wasTight=!!(w._sdyTightLine||w._sdyTightEdit);
                 commitEditingText(w);
-                w.classList.remove('edit'); _editScanDirty=true;
-                const cc=w.querySelector('.tb-content');
-                if(cc) cc.contentEditable='false';
+                if(wasTight){
+                    const rb=_rebuildTightToReading(w);
+                    if(rb) w=rb;
+                }
+                if(w.isConnected){
+                    w.classList.remove('edit'); _editScanDirty=true;
+                    const cc=w.querySelector('.tb-content');
+                    if(cc) cc.contentEditable='false';
+                }
             }
             if(!w.classList.contains('sel')){ deselectAll(true); w.classList.add('sel'); }
             else { w.classList.add('sel'); }
