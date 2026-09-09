@@ -1,5 +1,88 @@
-# SDYnotes 14.44.1 — Fastify + Python worker + Oracle 자체 저장소
+# SDYnotes 14.45.1 — Fastify + Python worker + Oracle 자체 저장소
 
+- **14.45.1 형광펜 두 번째 칠부터 미리보기로 안 돌아가고 '편집 모드 그대로' 굳는 문제 — 줄 흐름 자가 치유** · `src/app/07b-hl-band.js` `08a-selection.js` `11a-text-style.js`:
+  - **문제 (보고: "고정 텍스트 편집은 지난 업데이트로 글자가 제자리로 잘 돌아온다. 그런데
+    형광펜은 한 번만 칠하고 나가면 미리보기로 잘 복구되는데, 같은 상자를 다시 더블클릭해
+    나가면 그다음부터는 편집 모드 그대로가 된다").** 14.45 의 '퇴장 시 절대좌표 확정'은
+    **enterEdit 이 붙인 추적 플래그**(`_sdyTightLine`·`_sdyTightEdit`)만 믿는다. 형광펜·글자색
+    커맨드는 `applyHighlight` → `pushHistory` → `commitEditingText()` 를 **편집 도중**에 태우는데,
+    거기서 `delete w._sdyTightEdit` 을 무조건 한다(여는 쪽이 편집 진입뿐인 글상자·표만
+    지우던 것에서 14.42 에 서식 커맨드에도 열리도록 넓히면서 따라온 관성). 게다가
+    형광펜 띠가 다시 그려지며 노드가 교체되면 `_sdyTightLine` 도 같이 사라진다.
+    → 퇴장의 읽기 복구(`_rebuildTightToReading`)가 **통째로 건너뛰어진다.** 그 결과
+    `.sdy-tl` 편집 DOM 이 `el.html` 에 그대로 확정·저장되고, 그 다음부터는 진입할 때
+    '이미 줄 흐름'이라 변환이 안 붙고 퇴장에도 복구가 없어 **혼자 회복되지 않는 고착**이 된다.
+    (글자를 고치지 않아 모델이 그대로라 **화면은 멀쩡해 보이는데 저장본만 굳어** 있어,
+    "한 번은 잘 되다가 두 번째부터 깨지는" 모양으로 보인다.)
+    그리고 미리보기 상자에서 골라 칠할 때는 서식 엔진이 캐럿을 되살리려(`restoreSel`) 상자를
+    임시로 `contenteditable=true` 로 연 뒤 닫지 않아, **미리보기 상자가 편집 가능 상태**로 남는다.
+  - **고친 것.**
+    · 읽기 복구 판단을 플래그에서 **사실 판정**으로 바꾼다 — `_tightNeedsReading(w)` 는
+    플래그가 아니라 '모델이 tight 인데 화면에 줄 흐름이 있거나(`.sdy-tl`) 저장본
+    `el.html` 에 줄 흐름 표식이 있으면' 무조건 복구시키는다. 다섯 곳 퇴장 지점
+    (다른 상자 고르기·`ResizeHandle`·본문 밖 마우스다운·`deselectAll`·`exitEditKeepSel`)
+    모두 같은 판정을 쓴다.
+    · `_rebuildTightToReading` 은 '글자를 고치지 않아도'(enterH 차이 없음) **화면이나 모델에
+    줄 흐름이 남아 있으면** 반드시 절대좌표로 되돌린다. 모델만 굳은 경우엔 저장본을
+    되살려 변환하고(뷰가 흐름이면 뷰를 쓴다), 되돌린 결과가 이미 모델과 같으면
+    굳이 다시 그리지 않는다(캐럿 보존).
+    · `commitEditingText` 은 **아직 편집 중인** 상자에서 `_sdyTightEdit` 을 지우지 않는다 —
+    그 플래그는 '어떻게 열렸는가'를 마지막 퇴장까지 기억하는 표이고, 읽기 확정과
+    노드 교체가 일어나는 순간은 퇴장 쪽에서 새로 판정한다.
+    · `enterEdit` 은 '이미 줄 흐름으로 열려 있는' 상자가 되면 원문 스태시를 되살려
+    다시 잡는다 — 되돌리기로 모델은 절대좌표로 되돌아오고 뷰는 줄 흐름인 조합에서
+    스태시 없이 측정값만 좇아 좌표가 어긋나는 것을 막는다.
+    · `syncTextEl` 의 마지막 방어선 — **편집 중이 아닌** 상자에 `.sdy-tl` 을 모델로
+    확정하지 않는다(되돌려서 절대좌표로 저장). 형광펜처럼 상자를 열지 않고 쓰는 서식
+    커맨드가 읽기 상자를 태우는 경로에서 굳는 일 자체가 없어진다.
+    · `buildTextEl` **자가 치유** — 이미 줄 흐름이 굳어 저장된 노트는 그리는 순간
+    절대좌표로 되돌리고 저장한다(사용자가 다시 편집하지 않아도 그 다음부터 왕복이
+    정상 경로로 돌아온다). 손대지 않은 상자는 문자열 검사 한 번으로 끝나 렌더 비용이 없고,
+    예전 버전의 `white-space:normal` 줄 흐름은 14.44 의 '표시만 바로잡기'에 그대로
+    맡긴다(사용자가 실제로 고칠 때까지 저장본 모양을 바꾸지 않는다).
+    · `withSelection`(모든 인라인 서식 커맨드의 래퍼)은 `fn` 이 끝나고 상자가 편집
+    상태가 아니라면 `restoreSel` 이 연 `contenteditable` 을 닫는다.
+  - **영향 범위.** `07b-hl-band.js`(buildTextEl 자가 치유·syncTextEl 확정 방어),
+    `08a-selection.js`(퇴장 다섯 지점·enterEdit·`_rebuildTightToReading` 게이트·
+    `commitEditingText` 플래그 보존), `11a-text-style.js`(withSelection 마무리) 뿐이다.
+    줄 흐름↔절대좌표 변환 자체·형광펜 띠 기하·엔터/백스페이스 줄나눔·표·콜라보 동기화·
+    저장 포맷은 건드리지 않았다. 14.45 의 '원문 글자 크기는 실측이 아니라 모델 값' 약속도
+    그대로다 — 치유는 이미 고쳐 저장된(=사용자가 편집한) 상자에만 발동한다.
+  - **검증.** 신설 `test/editor_tight_hl_reentry_runtime.mjs` **PASS 46 / FAIL 0** —
+    같은 상자를 ①→②→③ 세 번 왕복해 미리보기 복구가 매번 되는지, ④ 이미 굳어 저장된
+    노트가 그릴 때 자가 치유되는지, ⑤ 읽기 상자에 서식을 줄 때 임시로 열린 편집 상태가
+    닫히는지, ⑥ 읽기 상자를 태운 확정에서 저장본에 줄 흐름이 굳지 않는지 본다
+    (고치기 전 ④⑤⑥ 실패 — ④⑥ 은 '줄 흐름이 저장본에 굳는' 본 증상 자체의 재현이다).
+    회귀: `test:tight` 178+15 · `test:hlband` 26+15 · `test:format` 41 · `test:selux` 53 ·
+    `test:uflow` 42 · `test:textbox` 53 · `test:txtedge` 17 · `test:txtclip` 18 ·
+    `test:txtstyle` 90 · `test:dblcaret` 17 · `test:fastops` 9 · `test:editlag` 20 ·
+    `test:table` 22 · `test:pages` 9 · `bundle:check` 통과.
+
+- **14.45.0 고정 위치(논문) 글자 — 읽기로 돌아갈 때 줄 흐름을 단어별 절대좌표로 되돌린다** · `src/app/07b-hl-band.js` `08a-selection.js` *(이 항목은 14.45.1 에서 뒤늦게 정리 — 지난 라운드 PR #182 가 README 없이 들어왔다)*:
+  - **문제.** 14.40~14.44 는 편집 진입에 단어별 절대좌표 span 을 줄 흐름(`.sdy-tl`)으로
+    펼치고, 나갈 때는 그 편집 DOM 을 그대로 `el.html` 에 확정했다. 줄 흐름은 줄 폭·단어
+    간격을 실측으로 복원하므로 다시 그릴 때마다 원문 좌표와 1px 안팎으로 어긋났고, 그
+    어긋난 폭이 저장본에 굳어 다음 편집의 줄 묶음까지 흐렸다(14.44.1 의 nowrap·`_sdyViewHtml`
+    고정으로 '마지막 단어가 다음 줄로 넘어가 겹침'은 사라졌지만, '읽기 복귀 = 편집 DOM
+    확정'이라는 구조 자체는 그대로였다).
+  - **고친 것.** 퇴장(`_rebuildTightToReading`)에서 `el.html` 을 **단어별 절대좌표 span** 으로
+    역변환해 확정한다. 진입(`enterEdit`) 때 `_stashTightOrig(c)` 로 원본 단어 배치
+    (left·top·fs·`data-pdf-w`·`data-pdf-base`·origTop·런 스타일)를 스태시로 잡아 두고,
+    `_tightLineFlowToAbsolute` 가 그 스태시를 좇아 **손대지 않은 단어는 좌표·폭·글자 크기를
+    픽셀 그대로** 되돌린다. 고친 단어만 폭을 다시 재고(원문 글자 크기는 실측이 아니라 모델 값
+    `data-pdf-base`), 엔터로 밀린 줄은 top 을 평행이동한다. 스태시가 없는 구 저장본은
+    best-effort 로 실측 배치를 절대좌표로 옮긴다(별도 마이그레이션 없음). img·수식(imath)·링크·
+    표·미디어 같은 원자 요소가 섞인 본문은 역변환을 건너뛰어 유실을 막고, 편집 중(캐럿·IME)에는
+    역변환을 하지 않는다. 14.44.1 의 nowrap·빈 스팬 맞춤 가드는 그대로다.
+  - **영향 범위.** `07b-hl-band.js`(단어 읽기 `_tightReadTightWords`·스태시·줄 흐름↔절대좌표
+    변환·빈 원문 줄과 문장 형광펜 연속성 복원), `08a-selection.js`(`enterEdit` 진입 스태시·
+    `_rebuildTightToReading`). 저장 포맷은 예전 절대좌표 모양 그대로라 열기·내보내기·인쇄·
+    콜라보는 새 필드를 알지 않아도 된다.
+  - **검증(그 라운드 기록).** `test:tight` commit_view 15 + engine 178 · hlband · format ·
+    words · translate · export · preview · undo · selux · typeflow · textbox · txtedge · sync ·
+    font · activation · pdf · heavy · lowend 통과 · `bundle:check` ✓ · `bump:check` 14.45.0 ✓.
+    14.44.1 에 생긴 `test/editor_tight_commit_view_runtime.mjs` 의 칸을 9 → 15 로 늘려
+    '안 고친 단어가 1회차·2회차 왕복 뒤에 픽셀 그대로 남는지', '형광펜이 남는지'를 본다.
 - **14.44.1 고정 위치(논문) 글자 편집 두 가지 — '미리보기로 돌아가면 편집 내용이 사라짐'과 '형광펜이 남는데 글자가 어긋나 정렬 안 됨'**:
   - **문제 (보고: "고정글자 모드에서 미리보기 → 편집 → 미리보기로 돌아갈 때
     편집 내용(기존 글자를 지우고 새 글자를 넣기 등)이 반영되지 않고 사라진다.
