@@ -176,6 +176,19 @@ const rowM2 = wordAt('We', 0, 40, 11, 20) + wordAt('measured', 26, 40, 11, 62);
 const rowK1 = word('alpha', 0, 0, 46) + word('beta', 60, 0, 38);
 const rowK2 = word('gamma', 0, 24, 44) + word('delta', 58, 24, 40);
 
+// ⑭ 전용 — '읽기 모드 단어 맞춤까지 끝난' 원본 (보고 상황 그 직후의 DOM).
+//   fit 은 화면 레이아웃이 있어야 도는데 jsdom 에는 레이아웃이 없다. 그래서 읽기
+//   모드가 만드는 결과를 그대로 심는다 — transform:scaleX(PDF 진행폭/자연폭) 이
+//   걸린 절대 스팬. 이 배율이 줄 흐름으로 어떻게 넘어가는지가 ⑭ 의 전부다.
+//   alpha: 자연 50 → PDF 40 (배율 0.8) / beta: 38 → 30 / gamma: 62 → 50
+const wordF = (text, left, top, pdfW, nat) =>
+  `<span data-word="1" data-fs="20" data-pdf-w="${pdfW}" data-pdf-base="${top + 16}" ` +
+  `style="position:absolute;left:${left}px;top:${top}px;font-size:20px;line-height:20px;` +
+  `white-space:nowrap;transform:scaleX(${(pdfW / nat).toFixed(5)});transform-origin:left center;">` +
+  `${text}<i class="zsp"> </i></span>`;
+const rowF1 = wordF('alpha', 0, 0, 40, 50) + wordF('beta', 50, 0, 30, 38) + wordF('gamma', 100, 0, 50, 62);
+const rowF2 = wordF('delta', 20, 24, 40, 44) + wordF('epsilon', 70, 24, 60, 75);
+
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['server/src/index.js'], {
@@ -206,6 +219,7 @@ try {
         { type: 'text', id: 't4', x: 40, y: 170, w: 200, h: 70, html: rowP1 + rowP2, fontSize: 16, tight: 1 },
         { type: 'text', id: 't5', x: 300, y: 170, w: 300, h: 90, html: rowM1 + rowM2, fontSize: 16, tight: 1, pdfText: 1 },
         { type: 'text', id: 't6', x: 40, y: 300, w: 240, h: 70, html: rowK1 + rowK2, fontSize: 16, tight: 1 },
+        { type: 'text', id: 't7', x: 40, y: 430, w: 160, h: 60, fontSize: 20, font: 'times', tight: 1, pdfText: 1, html: rowF1 + rowF2 },
         { type: 'text', id: 't2', x: 520, y: 300, w: 220, h: 70, html: '가나다', fontSize: 16 },
       ],
     }],
@@ -1360,6 +1374,87 @@ try {
     check('⑬ 일반 상자도 백스페이스 한 번에 문단이 합쳐진다',
       tcN.querySelectorAll(':scope>div').length === 1
       && tcN.querySelectorAll(':scope>div')[0].textContent.includes('첫째'));
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await wait(250);
+  }
+
+  // ══ ⑭ 편집 진입 때 '간격이 미세하게 변하며 마지막 단어가 다음 줄로 내려가 겹친다' ══
+  //   읽기 모드는 단어마다 transform:scaleX(PDF진행폭/자연폭) 로 원문 진폭에 맞춘다.
+  //   줄 흐름으로 바꾸면 ① 그 배율이 걸린 폭에 배율을 한 번 더 곱줘 간격을 재고
+  //   ② 단어 span 에 배율을 넘기지 않아 브라우저 자연 폭으로 그려진다. 둘 다 줄을
+  //   길게 하는 방향이라 한 줄이 상자보다 길어지고 → 마지막 단어가 아래 원문 줄로
+  //   내려가 글자가 겹친다(보고). 그래서 진입 뒤에는 '화면에 보이던 진행 폭'이
+  //   흐름 진행 폭과 같아야 한다: 진행폭 = 자연폭 + margin-right 보정 = PDF 진행폭.
+  const tbF = document.querySelector('#pagesStage .tb[data-id="t7"]');
+  const tcF = tbF.querySelector('.tb-content');
+  const PDFW = [40, 30, 50], NAT = [50, 38, 62], LEFT1 = [0, 50, 100];
+  const absF = [...tcF.querySelectorAll(':scope>span[data-pdf-w]')];
+  check('⑭ 읽기 모드 단어 맞춤(scaleX = PDF 진행폭/자연폭)이 걸린 상태다',
+    absF.length === 5 && absF.slice(0, 3).every((x, i) =>
+      Math.abs((parseFloat(x.style.transform.match(/[0-9.]+/)[0]) * NAT[i]) - PDFW[i]) < 0.01));
+  tcF.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+  await wait(180);
+  const rowsF = () => [...tcF.querySelectorAll(':scope>.sdy-tl')];
+  const spansF = row => [...row.querySelectorAll(':scope>span:not(.sdy-tg)')];
+  const tgsF = row => [...row.querySelectorAll('.sdy-tg')].map(g => parseFloat(g.style.width) || 0);
+  const cssNum = (el, prop) => parseFloat(el.style[prop]) || 0;
+  check('⑭ 편집 진입 후 두 줄이 그대로 두 줄이다', tbF.classList.contains('edit') && rowsF().length === 2);
+  {
+    const r1 = rowsF()[0], sps = spansF(r1);
+    // 흐름 진행 폭 = 자연 폭 + margin 보정. 이 합이 읽기 화면의 진행 폭(=PDF 진행
+    // 폭)과 같아야 다음 단어가 원문 left 에 앉고 줄이 상자를 넘지 않는다.
+    const adv = sps.map((el, i) => NAT[i] + cssNum(el, 'marginRight'));
+    check('⑭ 단어마다 읽기 모드 배율이 그대로 넘어간다(scaleX 유지)',
+      sps.length === 3 && sps.every(el => /scaleX\(\s*[0-9.]+\s*\)/.test(el.style.transform || '')));
+    check('⑭ 흐름 진행 폭 = 원문 진행 폭 — 간격이 배율만큼 부풀지 않는다',
+      adv.length === 3 && adv.every((a, i) => Math.abs(a - PDFW[i]) < 0.01));
+    check('⑭ 진행 폭 보정은 margin-right 로 한다(치자 폭은 고정하지 않는다)',
+      sps.every(el => el.style.display === 'inline-block' && el.style.marginRight !== '')
+      && sps.every(el => !/(^|;)\s*width:/.test(el.style.cssText)));
+    check('⑭ 간격 스페이서 폭 = 원문 갭 (PDF 진행 폭 기준)',
+      tgsF(r1).length === 2 && Math.abs(tgsF(r1)[0] - 10) < 0.01 && Math.abs(tgsF(r1)[1] - 20) < 0.01);
+    // 단어 자리 합이 원문 left/오른쪽 끝과 같다 → 상자를 넘지 않는다(줄바꿈 원인 차단).
+    const rightEdge = adv.reduce((x, a, i) => x + a + (i ? tgsF(r1)[i - 1] : 0), 0) + cssNum(r1, 'paddingLeft');
+    check('⑭ 줄의 오른쪽 끝이 원문과 같은 자리에 온다(단어가 밀려나지 않는다)',
+      Math.abs(rightEdge - (LEFT1[2] + PDFW[2])) < 0.01);
+    check('⑭ 줄 전체 폭이 상자를 넘지 않는다(넘침 판정 → 다음 줄로 넘어가 겹침)',
+      rightEdge <= (window.findEl(0, 't7').w || 160) + 0.5);
+    check('⑭ 줄은 한 줄로 남는다(넘쳐도 아랫줄과 겹치지 않게 nowrap)',
+      r1.style.whiteSpace === 'nowrap' && r1.style.textAlign === 'left');
+  }
+  {
+    const r2 = rowsF()[1];
+    check('⑭ 둘째 줄 첫 단어의 들여쓰기(left 20)가 유지된다', Math.abs(cssNum(r2, 'paddingLeft') - 20) < 0.01);
+    check('⑭ 둘째 줄 간격도 원문 갭 그대로다', tgsF(r2).length === 1 && Math.abs(tgsF(r2)[0] - 10) < 0.01);
+    check('⑭ 두 줄의 세로 위치는 원문 그대로다(0 / 24)',
+      Math.abs(cssNum(r2, 'top') - 24) < 0.01 && Math.abs(cssNum(rowsF()[0], 'top')) < 0.01);
+  }
+  // 입력하면 뒤 단어가 밀려나는 일반 흐름은 유지돼야 한다(치자 폭 고정 아님).
+  {
+    const r1 = rowsF()[0], lastT = lastTextNode(r1);
+    const r = window.document.createRange();
+    r.setStart(lastT, lastT.nodeValue.length); r.collapse(true);
+    const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    typeAt(window, tcF, 'x');
+    await wait(120);
+    // 치자 폭을 고정하지 않았으니(진행폭만 보정) 입력한 글자는 줄 안에서 흐른다.
+    check('⑭ 끝에서 입력하면 글자가 줄 안에 이어 붙고 줄 개수는 그대로다',
+      rowsF().length === 2 && /gamma\s*x/.test(rowsF()[0].textContent || ''));
+  }
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  await wait(320);
+  {
+    const hF = (window.findEl(0, 't7').html) || '';
+    check('⑭ 저장된 html 에 단어 맞춤·간격·줄 폭이 그대로 남는다(읽기/편집이 같은 자리)',
+      /sdy-tl/.test(hF) && /scaleX\(0\.8/.test(hF) && /margin-right:\s*-10px/.test(hF)
+      && /white-space:\s*nowrap/.test(hF) && /sdy-tg/.test(hF));
+    const tbF2 = document.querySelector('#pagesStage .tb[data-id="t7"]');
+    const tcF2 = tbF2.querySelector('.tb-content');
+    tcF2.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+    await wait(180);
+    const rows2 = [...tcF2.querySelectorAll(':scope>.sdy-tl')];
+    check('⑭ 다시 열어도 줄 두 개·세로 위치 0/24 가 그대로다',
+      rows2.length === 2 && Math.abs((parseFloat(rows2[1].style.top) || 0) - 24) < 0.01);
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await wait(250);
   }

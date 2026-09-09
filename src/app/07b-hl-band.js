@@ -601,6 +601,22 @@ function _tightWordText(s){
     cl.querySelectorAll('.zsp,br,img').forEach(z=>z.remove());
     return (cl.textContent||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
 }
+// 14.44 · 줄 흐름에서 단어가 '레이아웃으로 차지하는 폭'.
+//   transform 은 레이아웃에 영향이 없으므로 흐름 진행폭은 압축 이전(자연) 폭이다.
+//   절대 스팬의 offsetWidth 가 곧 그 값이고, 레이아웃이 없는 환경(jsdom·구형
+//   WebView)에서는 이전 배율로 되돌려 구한다.
+function _tightWordFlowW(s,adv){
+    let n=0, k=1;
+    const t=s.style&&s.style.transform;
+    if(t&&t.indexOf('scaleX')>=0){ const m=t.match(/scaleX\(\s*([0-9.]+)\s*\)/); if(m&&+m[1]>0) k=+m[1]; }
+    // 화면 실측(소수점까지)이 가장 정확하다 — transform 은 rect 에 반영되므로
+    // 배율로 되돌린다. 레이아웃이 없는 환경에서는 offsetWidth, 그것도 0 이면
+    // '보이던 폭 ÷ 배율'로 되돌린다.
+    try{ n=s.getBoundingClientRect().width/k||0; }catch(e){}
+    if(!(n>0)){ try{ n=s.offsetWidth||0; }catch(e){} }
+    if(!(n>0)) n=adv/k;
+    return n>0?n:adv;
+}
 // '자연 공백 폭' 실측 — 같은 글꼴 환경에서 공백 하나를 넣어 재는 것.
 // 스페이서 폭 = 원본 갭 − 이 값 으로 계산해 화면이 겉보기 그대로다.
 function _tightGapW(c,ff,fs){
@@ -626,14 +642,8 @@ function _tightToLineFlow(c){
             ||(s.dataset&&s.dataset.pdfW);
     });
     if(!pos.length) return null;
-    // 이전 맞춤(scaleX) 배율 — '있는 그대로'의 폭을 되돌린다
-    const scale=pos.map(s=>{
-        const t=s.style.transform; let k=1;
-        if(t&&t.indexOf('scaleX')>=0){ const m=t.match(/scaleX\(\s*([0-9.]+)\s*\)/); if(m) k=Math.max(0.05,+m[1]); }
-        return k;
-    });
     const words=[];
-    pos.forEach((s,i)=>{
+    pos.forEach(s=>{
         const st=s.style;
         const t=parseFloat(s.dataset.origTop!=null?s.dataset.origTop:st.top);
         const l=parseFloat(st.left)||0;
@@ -653,8 +663,19 @@ function _tightToLineFlow(c){
         ].filter(Boolean).join(';');
         // bot = 글자 칸의 아래쪽(원문 글자 크기만큼). 줄 묶음이 '세로로 겹치는가' 를
         //   볼 때 쓴다 — 위/아래 첨자·기호는 top 이 홀로 튀므로 top 만 보면 안 된다.
+        // 14.44 · '보이던 폭'을 그대로 옮긴다.
+        //   vis  = 읽기 화면에서 실제로 보이던 진행 폭(PDF 진폭). _tightWordW 가
+        //          이미 이전 scaleX 배율을 반영한 값이므로 배율을 또 곱하면 안
+        //          된다(곱하면 매 단어 간격이 (1−배율)×폭 만큼씩 부풀었다 — 보고).
+        //   flow = 줄 흐름에서 단어가 레이아웃으로 차지하는 폭(자연 폭).
+        //   흐름 진행폭을 vis 와 같게 만들려면 margin-right = vis−flow 보정이 필요하고,
+        //   글자 모양까지 화면과 같게 하려면 같은 배율의 scaleX 를 넘긴다.
+        const vis=_tightWordW(s);
+        const flow=_tightWordFlowW(s,vis);
+        const k2=vis>0&&flow>0?vis/flow:1;
         words.push({top:top, bot:top+Math.max(2,fs), left:isNaN(l)?0:l, fs:fs,
-            adv:_tightWordW(s)*scale[i], txt:txt, style:style, ff:st.fontFamily||''});
+            adv:vis, flow:flow, sx:(flow>0&&Math.abs(k2-1)>0.002)?Math.min(6,Math.max(0.1,k2)):0,
+            txt:txt, style:style, ff:st.fontFamily||''});
     });
     if(!words.length) return null;
     // 14.43 · 줄 묶음은 'top 이 2px 안'이 아니라 '세로 구간이 겹치는가'로 판정한다.
@@ -694,9 +715,24 @@ function _tightToLineFlow(c){
         const h=nextTop===Infinity?Math.max(maxFs*1.6,4):Math.max(2,nextTop-r.top);
         const d=document.createElement('div');
         d.className='sdy-tl';
-        d.style.cssText='position:absolute;left:0;width:100%;top:'+r.top.toFixed(1)+'px;height:'+h.toFixed(1)+'px;line-height:'+maxFs.toFixed(1)+'px;white-space:normal;';
+        // 14.44 · 줄 폭 두 가지.
+        //   · padding-left — 원문 첫 단어의 left(들여쓰기·중앙 정렬)를 그대로 둔다.
+        //     left:0 에서 펼쳐 첫 단어를 0 에 붙이면 줄 전체가 왼쪽으로 밀리고 그
+        //    만큼 단어가 좁아진다(보고된 '간격이 미세하게 변한다'의 나머지 절반).
+        //   · white-space:nowrap — 줄 높이는 '다음 줄까지'로 박혀 있어서 한 줄이
+        //     상자보다 1px 만 넘쳐도 마지막 단어가 아래로 내려가 원문 글자와
+        //     겹친다(보고). 넘치는 글자는 오른쪽으로 흐르게 한다 — 겹침은 없다.
+        //   · text-align:left — 단어 자리는 이미 원문 left 로 결정된다. 상자의
+        //     정렬을 줄 안에 다시 적용하면 두 번 어긋난다.
+        const pad0=Math.max(0,r.items[0].left||0);
+        d.style.cssText='position:absolute;left:0;width:100%;top:'+r.top.toFixed(1)+'px;height:'+h.toFixed(1)+'px;'
+            +'line-height:'+maxFs.toFixed(1)+'px;white-space:nowrap;text-align:left;'
+            +(pad0>0.5?'padding-left:'+pad0.toFixed(1)+'px;':'');
         r.items.forEach((wd,wi)=>{
             if(wi>0){
+                // 간격 = 원문 left 차이 − 앞 단어가 흐름에서 차지한 폭(adv).
+                // adv 는 '화면에 보이던 폭'이므로 그대로 두면 줄의 오른쪽 끝이
+                // 원문과 같은 자리에 온다 (14.44 — 배율을 한 번 더 곱하지 않는다).
                 const gap=wd.left-(r.items[wi-1].left+r.items[wi-1].adv);
                 const nat=gapOf(r.items[wi-1].ff||wd.ff,r.items[wi-1].fs||wd.fs);
                 const extra=Math.round((Math.max(0,gap)-nat)*4)/4;
@@ -709,7 +745,20 @@ function _tightToLineFlow(c){
                 }
             }
             const sp=document.createElement('span');
-            sp.style.cssText=wd.style+';line-height:1;white-space:nowrap;';
+            // 읽기 모드의 단어 맞춤(scaleX)을 줄 흐름으로도 넘긴다. transform 은
+            //   레이아웃에 영향이 없으므로 흐름 진행폭은 자연 폭(flow) 이 된다 →
+            //   margin-right 로 (adv−flow) 를 보정해 진행폭을 원문 진행폭 adv 와
+            //   같게 만든다. 그래서 단어가 각자 원문 left 에 앉고 줄은 상자를
+            //   넘치지 않는다. 글자는 읽기 화면과 같은 배율로 압축돼 '눈에 보이는
+            //   간격'도 그대로다. 치자 폭을 고정하지는 않는다(width 미지정) —
+            //   입력하면 뒤 단어가 밀려나는 일반 텍스트 흐름(14.40 설계)은 유지.
+            let fit='';
+            if(wd.sx){
+                const mg=Math.round((wd.adv-wd.flow)*100)/100;
+                fit=';display:inline-block;transform:scaleX('+wd.sx.toFixed(5)+');transform-origin:left center'
+                   +';margin-right:'+mg.toFixed(2)+'px';
+            }
+            sp.style.cssText=wd.style+';line-height:1;white-space:nowrap'+fit+';';
             sp.textContent=wd.txt;
             d.appendChild(sp);
         });
@@ -786,7 +835,10 @@ function _tightLineEnter(c,w){
         const afterText=String(afterFrag.textContent||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
         const nl=document.createElement('div');
         nl.className='sdy-tl';
-        nl.style.cssText='position:absolute;left:0;width:100%;top:'+(top+pitch).toFixed(1)+'px;height:'+pitch.toFixed(1)+'px;white-space:normal;';
+        // 14.44 · 나눈 아래쪽 줄도 '한 줄은 한 줄' — 넘치는 글자는 오른쪽으로
+        //   흐르게 한다. white-space:normal 이면 세로 위치가 박힌 다음 원문 줄과
+        //   겹친다(위와 같은 이유).
+        nl.style.cssText='position:absolute;left:0;width:100%;top:'+(top+pitch).toFixed(1)+'px;height:'+pitch.toFixed(1)+'px;white-space:nowrap;text-align:left;';
         if(!afterText){ while(afterFrag.firstChild) afterFrag.removeChild(afterFrag.firstChild); nl.appendChild(document.createElement('br')); }
         nl.appendChild(afterFrag);
         if(line.parentNode) line.parentNode.insertBefore(nl,line.nextSibling);
