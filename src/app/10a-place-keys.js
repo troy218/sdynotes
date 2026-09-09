@@ -77,7 +77,10 @@
         const pi=+paper.dataset.pageIdx, s=paperSize();
         const p=over?pageLocal({clientX,clientY},pi):{x:s.w/2,y:Math.min(s.h*.22,180)};
         const o=clampEl(p.x-placeMode.w/2,p.y-placeMode.h/2,placeMode.w,placeMode.h);
-        const r=paper.getBoundingClientRect(),sc=uiPageScale(pi),k=uiCssZoom();
+        const r=paper.getBoundingClientRect(),k=uiCssZoom();
+        // Keep the preview tied to the exact paper hit by the pointer. This is
+        // important while virtualized page shells are being mounted/unmounted.
+        const sc={x:r.width/s.w/k,y:r.height/s.h/k};
         g.style.width=Math.round(placeMode.w*sc.x)+'px';
         g.style.height=Math.round(placeMode.h*sc.y)+'px';
         g.style.left=Math.round(r.left/k+o.x*sc.x)+'px';
@@ -162,9 +165,13 @@
         //   이제 상자 높이 = 글줄 높이(line-height 1.5) + 위아래 패딩(8px×2) + 여유(4px)
         //   로 글자 크기에 맞춰 유동적으로 변한다.
         const h=Math.max(36,Math.round(fs*1.5+20));
+        // Keep the normal 16px insertion box at the long-standing 200×48
+        // default. Other font sizes still use the proportional sizing above.
+        // This keeps placement predictable when the tool is first activated
+        // while avoiding the oversized fixed box for genuinely small text.
         return {
-            w:Math.max(Math.round(TB_W*0.8),Math.round(Math.min(420,fs*8))),
-            h
+            w:fs===16?TB_W:Math.max(Math.round(TB_W*0.8),Math.round(Math.min(420,fs*8))),
+            h:fs===16?TB_H:h
         };
     }
 

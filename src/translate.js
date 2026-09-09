@@ -1,4 +1,6 @@
 (function(){
+    if(window.__sdyTranslateInit) return;
+    window.__sdyTranslateInit=true;
     // ============ 자동 번역 (영어 <-> 한국어) ============
     // ---- 번역 작업 중단(취소) ----
     // 진행 중인 번역은 진행바의 [중단] 버튼이나 Esc 로 언제든 멈출 수 있다.

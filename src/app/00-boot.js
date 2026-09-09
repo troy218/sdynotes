@@ -5,6 +5,74 @@
 /* APP-PART:00-boot.js:BEGIN */
 /* 분리된 JS */
 
+/*
+   번역/AI 편집 도우미는 원래 별도 src/translate.js 에서 노출된다.
+   sdynotes.js 는 오프라인·단일 파일로도 먼저 실행될 수 있으므로, 번역
+   스크립트가 아직 로드되지 않은 순간에도 앱 파트가 ReferenceError 로
+   죽지 않게 작은 지연 브리지를 둔다. translate.js 가 준비되면 같은
+   이름의 window.* 구현으로 자동 위임한다.
+*/
+function sdyTranslateBridge(name,args,fallback){
+    try{
+        const fn=window[name];
+        if(typeof fn==='function') return fn.apply(window,args||[]);
+    }catch(e){}
+    return typeof fallback==='function'?fallback():undefined;
+}
+function sdyFallbackHtmlText(value){
+    const raw=String(value==null?'':value);
+    try{
+        const box=document.createElement('div'); box.innerHTML=raw;
+        return String(box.textContent||'').replace(/\u00a0/g,' ');
+    }catch(e){ return raw.replace(/<br\s*\/?>(?=.)/gi,'\n').replace(/<[^>]*>/g,''); }
+}
+const plainTextFromHtml=(value)=>sdyTranslateBridge('plainTextFromHtml',[value],()=>sdyFallbackHtmlText(value));
+const tightTextFromHtml=(value)=>sdyTranslateBridge('tightTextFromHtml',[value],()=>sdyFallbackHtmlText(value));
+const tightSelectionText=(selection)=>sdyTranslateBridge('tightSelectionText',[selection],()=>String(selection||''));
+const fitTranslated=(...args)=>sdyTranslateBridge('fitTranslated',args,()=>{});
+const collectPageEls=(...args)=>sdyTranslateBridge('collectPageEls',args,()=>[]);
+const aiEditStrokeBox=(el)=>sdyTranslateBridge('aiEditStrokeBox',[el],()=>{
+    let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
+    (el&&el.pts||[]).forEach(pt=>{
+        if(!pt||!Number.isFinite(+pt[0])||!Number.isFinite(+pt[1])) return;
+        x1=Math.min(x1,+pt[0]); y1=Math.min(y1,+pt[1]);
+        x2=Math.max(x2,+pt[0]); y2=Math.max(y2,+pt[1]);
+    });
+    if(!Number.isFinite(x1)) x1=y1=x2=y2=0;
+    const dx=+(el&&el.dx)||0,dy=+(el&&el.dy)||0;
+    return {x:x1+dx,y:y1+dy,w:Math.max(0,x2-x1),h:Math.max(0,y2-y1),baseX:x1,baseY:y1};
+});
+const aiEditBox=(el)=>sdyTranslateBridge('aiEditBox',[el],()=>{
+    if(el&&el.type==='stroke') return aiEditStrokeBox(el);
+    return {x:+(el&&el.x)||0,y:+(el&&el.y)||0,w:+(el&&el.w)||0,h:+(el&&el.h)||0};
+});
+const aiEditText=(el)=>sdyTranslateBridge('aiEditText',[el],()=>{
+    if(!el) return '';
+    return el.type==='latex'?String(el.latex||''):
+        el.type==='text'?plainTextFromHtml(el.html):'';
+});
+const aiEditSnapshot=(...args)=>sdyTranslateBridge('aiEditSnapshot',args,()=>{
+    const d=window._sdy&&window._sdy.doc;
+    if(!d||!Array.isArray(d.pages)) return '';
+    const lines=[];
+    d.pages.forEach((pg,pi)=>{
+        (pg&&pg.els||[]).forEach(el=>{
+            if(!el||!el.id) return;
+            const b=aiEditBox(el);
+            const kind=el.type==='stroke'?'그림획':(el.type==='image'?'사진':(el.type==='latex'?'수식':'글상자'));
+            lines.push('  id='+el.id+' type='+kind+' x='+Math.round(b.x)+' y='+Math.round(b.y)
+                +' w='+Math.round(b.w)+' h='+Math.round(b.h)
+                +(el.type==='text'?' text='+JSON.stringify(aiEditText(el)):'')
+                +(el.type==='stroke'&&el.color?' pen='+el.color:''));
+        });
+        if(!pg||!(pg.els||[]).length) lines.push('  ('+(pi+1)+'쪽 빈 쪽)');
+    });
+    return lines.join('\\n');
+});
+const aiEditRevision=(...args)=>sdyTranslateBridge('aiEditRevision',args,()=>{
+    try{ return String(JSON.stringify(window._sdy&&window._sdy.doc)||''); }catch(e){ return ''; }
+});
+
 /* === script block 1 === */
 
     // 장식 글꼴(손글씨·제목용 12종)은 첫 화면을 그린 뒤에 받는다.
