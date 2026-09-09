@@ -911,13 +911,16 @@ function _caretBlock(host,r){
     return host;
 }
 // '블록 맨 앞 ~ 캐럿' 사이에 실제 글자는 없고 닻(ZWSP)만 있는가
+// 빈 줄(캐럿이 맨 앞, raw='')도 포함 — 그래야 Enter로 만든 빈 줄을
+// Backspace로 지울 때 14.42가 밀어낸 아래 원문 줄을 다시 올릴 수 있다.
 function _anchorOnlyBefore(block,r){
     try{
         const seg=document.createRange();
         seg.setStart(block,0);
         seg.setEnd(r.startContainer,r.startOffset);
         const raw=String(seg.toString()||'');
-        return raw.length>0&&raw.replace(_SDY_ANCHOR_RE,'').length===0;
+        // ZWSP만 있거나 아예 비어 있으면 anchor-only, 공백/글자가 있으면 false
+        return raw.replace(_SDY_ANCHOR_RE,'').length===0;
     }catch(e){ return false; }
 }
 // 닻만 걷어 브라우저 기본 Backspace(줄 합치기)가 일어나게 한다. 먹은 닻이 있으면 true.
