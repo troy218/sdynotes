@@ -245,59 +245,6 @@
             lyr.appendChild(rr);
         }
     }
-    // 14.45.1 · '줄 흐름이 저장본에 굳어 버린' tight 상자를 그릴 때 한 번 고친다.
-    //   형광펜처럼 상자를 열지 않고 쓰는 서식 커맨드가 읽기 복구를 건너뛰면 .sdy-tl
-    //   편집 DOM 이 el.html 그대로 확정·저장된다. 그 상태의 상자는 다시 그릴 때마다
-    //   '편집 모드 그대로' 보이고, 편집 진입/퇴장도 계속 흐져서 혼자 회복되지 않는다.
-    //   여기서 원문 스태시 없이(=실측 배치) 절대좌표로 되돌려 놓으면 이후 왕복이
-    //   정상 경로로 돌아온다. 손대지 않은 상자(줄 흐름 표식이 없는 저장본)는
-    //   문자열 검사 한 번으로 끝이라 렌더 비용이 없다.
-    //   단 예전 버전이 남긴 white-space:normal 줄은 여기서 건드리지 않는다 — 그건
-    //   14.44 의 '그릴 때 표시만 바로잡기'가 이미 다루고, 사용자가 실제로 고칠
-    //   때까지 저장본 모양을 바꿀 이유가 없다. 최신 편집 DOM 이 굳은 것(nowrap)만
-    //   되돌린다.
-    // 14.45.1 · '편집 중이 아닌' 상자에는 .sdy-tl 줄 흐름을 저장본(el.html)으로 확정하지
-    //   않는다 — 절대좌표로 되돌려 저장한다. 형광펜·글자색처럼 상자를 열지 않고 쓰는
-    //   서식 커맨드는 읽기 상자의 syncTextEl 도 태우는데, 그때 편집 DOM 이 그대로
-    //   확정되면 그 다음부터 '편집 모드 그대로'가 복원되고 그 상태에선 진입/퇴장이
-    //   계속 흐져 혼자 회복되지 않는다. 편집 중에는 모델이 잠시 줄 흐름인 게 정상이라
-    //   부르지 않고, 예전 버전의 white-space:normal 줄 흐름도 여기서 바꾸지 않는다.
-    function _tightNoFlowCommit(html,el){
-        try{
-            if(!el||!el.tight||!_tightFlowIsFreshEdit(html)) return html;
-            if(typeof _tightLineFlowToAbsolute!=='function') return html;
-            const abs=_tightLineFlowToAbsolute(html,null,el);
-            return (abs&&abs!==html&&abs.indexOf('sdy-tl')<0)?abs:html;
-        }catch(e){ return html; }
-    }
-    // '방금 굳은' 줄 흐름인가? — 지금 편집 DOM(줄 행은 nowrap)에서 그대로 옮겨진
-    // 것은 그렇다. 예전 버전이 남긴 white-space:normal 줄은 사용자가 실제로
-    // 고칠 때까지 저장본 모양을 바꾸지 않으므로 여기서는 패스한다.
-    function _tightFlowIsFreshEdit(html){
-        try{
-            const d=document.createElement('div'); d.innerHTML=String(html||'');
-            const rows=[];
-            for(const x of d.children){ if(x.classList&&x.classList.contains('sdy-tl')) rows.push(x); }
-            if(!rows.length) return false;
-            return rows.every(r=>String(r.style.whiteSpace||'').indexOf('nowrap')>=0);
-        }catch(e){ return false; }
-    }
-    function _tightHealFlowHtml(el,pageIdx){
-        try{
-            if(!el||!el.tight) return;
-            const h=String(el.html||'');
-            if(h.indexOf('sdy-tl')<0) return;
-            if(!_tightFlowIsFreshEdit(h)) return;
-            // 지금 편집 중인 상자는 모델이 잠시 줄 흐름인 게 정상이다 — 퇴장에서 확정된다.
-            const cur=(typeof paperQ==='function')?paperQ(pageIdx,'.tb[data-id="'+el.id+'"]'):null;
-            if(cur&&cur.classList&&cur.classList.contains('edit')) return;
-            if(typeof _tightLineFlowToAbsolute!=='function') return;
-            const abs=_tightLineFlowToAbsolute(_stripTypingMarkersHtml(imathCollapse(stripWF(h))),null,el);
-            if(!abs||abs===h||abs.indexOf('sdy-tl')>=0) return;
-            el.html=abs;
-            try{ markPageEdited(pageIdx); saveDoc(); }catch(_e){}
-        }catch(e){}
-    }
     function buildTextEl(el,pageIdx){
         const w=document.createElement('div');
         w.className='tb'; w.dataset.id=el.id; w.dataset.pageIdx=pageIdx;
@@ -329,8 +276,6 @@
         // 값만 보이거나(특히 구형 <font> 데이터) 일부 글자가 기본값으로
         // 돌아가는 경우가 있었다. decodeTextMarkup 은 각 요소의 속성을
         // 독립적으로 복원하므로 저장/재렌더링이 반복돼도 글자별 값이 유지된다.
-        // 14.45.1 · 줄 흐름이 굳어 있는 tight 상자는 절대좌표로 되돌려 그린다.
-        if(el.tight) _tightHealFlowHtml(el,pageIdx);
         const _tHtml=decodeTextMarkup(_normalizePaletteHtml(el.html||''));
         c.innerHTML=_tHtml;
         // 14.29.2 · 문장 안에 섞인 $수식$ 그리기 — 수식 표식(imath)이 없으면
@@ -620,15 +565,13 @@
         if(el.tight&&c.querySelector(':scope>.sdy-tl')) w._sdyTightLine=1;
         const viewOnly=c.innerHTML===w._sdyViewHtml;
         // 타이핑 닻(ZWSP·빈 sdy-type span)은 저장 문자열에서 걷어낸다 — 문서에 남지 않게.
-        let html=viewOnly?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
+        const html=viewOnly?el.html:_stripTypingMarkersHtml(imathCollapse(stripWF(c.innerHTML)));
         const fs=parseFloat(c.style.fontSize)||16;
         // Formatting commands may have changed model-only fields (font, align,
         // cellBg, etc.) before calling us. Those edits still need a dirty page;
         // only a genuinely unchanged view/model pair can take the no-op path.
         if(html===el.html&&fs===el.fontSize&&w._sdyModelKey===JSON.stringify(el)) return;
         const textChanged=html!==el.html;   // 글자 본문이 실제로 바뀌었는가 (저장 전 비교)
-        // 14.45.1 · 편집 중이 아닌 상자에 줄 흐름을 확정하지 않는다 (여기서 확실히 막는다).
-        if(el.tight&&!w.classList.contains('edit')) html=_tightNoFlowCommit(html,el);
         markPageEdited(+w.dataset.pageIdx);
         el.html=html; el.fontSize=fs;
         // 14.39.9 · tight 상자는 텍스트를 고쳐도 절대좌표 배치를 유지한다.

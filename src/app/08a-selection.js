@@ -135,7 +135,7 @@
 
     function deselectAll(keepTool){
         document.querySelectorAll('.tb.sel,.tb.edit').forEach(w=>{
-            const wasTight=_tightNeedsReading(w);
+            const wasTight=!!(w._sdyTightLine||w._sdyTightEdit);
             if(w.classList.contains('edit')) commitEditingText(w);
             // 편집 후 읽기 모드 복귀 — tight 는 줄 흐름 DOM 이 남아 미세 어긋남을
             // 없애기 위해 buildTextEl 로 다시 그린다.
@@ -220,36 +220,6 @@
     // .tb-content 를 contentEditable=false 의 읽기 모드로 돌린다.
     // 기존에는 _sdyTightEdit 플래그만 지워 .sdy-tl 줄 흐름 DOM 이 그대로 남아
     // 미세하게 어긋나 보였던 문제를 고친다.
-    //
-    // 14.45.1 · '복구가 필요한 상자'를 편집 진입 플래그로만 판정하지 않는다.
-    //   플래그는 신뢰할 수 없는 순간에 사라진다 —
-    //     · 형광펜·글자색처럼 pushHistory() 로 서식하는 길은 커맨드 *앞에서*
-    //       commitEditingText() 를 태운다. 그 안의 '편집 종료 플래그 정리'가
-    //       아직 편집 중인데 _sdyTightEdit 를 지워 버린다(14.45.1 보고:
-    //       "형광펜은 한 번 나가면 미리보기로 돌아오는데, 다시 더블클릭해서
-    //        나가면 그다음부터 편집 모드 그대로").
-    //     · 맞춤(_applyTightFit)·되돌리기·협업 재그리기는 .tb 노드를 통째로
-    //       교체한다 → 노드에 붙은 플래그는 그 순간 사라진다.
-    //   플래그만 보면 퇴장 경로가 복구를 통째로 건너뛰고, 그때 .sdy-tl 줄 흐름
-    //   HTML 이 el.html 그대로 확정·저장된다 → 다시 그릴 때마다 '편집 모드
-    //   그대로'가 복원된다. 그래서 플래그가 없어도 상자가 아직 줄 흐름
-    //   DOM/저장본을 들고 있으면 복구가 필요하다고 본다.
-    function _tightNeedsReading(w,el){
-        try{
-            if(!w||!w.isConnected) return false;
-            if(w._sdyTightLine||w._sdyTightEdit||w._sdyWasTight) return true;
-            if(!el) el=findEl(+w.dataset.pageIdx,w.dataset.id);
-            if(!el||!el.tight) return false;
-            return _tightFlowInView(w)||/sdy-tl/.test(String(el.html||''));
-        }catch(e){ return false; }
-    }
-    // .tb-content 의 직접 자식에 줄 흐름 행(.sdy-tl)이 살아 있는가
-    function _tightFlowInView(w){
-        try{
-            const c=w&&w.querySelector&&w.querySelector('.tb-content');
-            return !!(c&&c.querySelector&&c.querySelector(':scope > .sdy-tl'));
-        }catch(e){ return false; }
-    }
     function _rebuildTightToReading(w){
         try{
             if(!w||!w.isConnected) return null;
@@ -257,30 +227,19 @@
             const id=w.dataset.id;
             if(isNaN(pi)||!id) return null;
             const el=findEl(pi,id);
-            if(!el||!el.tight){
-                // 더 이상 tight 상자가 아니면(흐름 상자로 확정됨) 줄 흐름 플래그만
-                // 정리하고 나온다 — 켜진 채 남으면 다음 퇴장·맞춤 판정을 헷갈리게 한다.
-                if(w._sdyTightLine||w._sdyTightEdit||w._sdyWasTight){
-                    delete w._sdyTightLine; delete w._sdyTightEdit; delete w._sdyWasTight;
-                    delete w._sdyTightOrig; delete w._sdyTightEnterHtml;
-                }
-                return null;
-            }
+            if(!el||!el.tight) return null;
             // 14.45 · 읽기 복귀: 줄 흐름(.sdy-tl) → 단어별 절대좌표로 역변환해
             //   el.html 을 확정한다. 편집이 있었을 때만 1회 (손대지 않은 진입은
             //   el.html 이 그대로라 건너뛰어 spurious dirty 를 막는다).
-            // 14.45.1 · 단, '저장본에 줄 흐름이 남아 있는' 상자는 편집 여부와
-            //   상관없이 반드시 변환한다 — 한 번이라도 흐른 채로 확정된 문서는
-            //   그대로 다시 그리면 편집 모드 모습이 되기 때문이다(자가 치유).
             try{
                 const c0=w.querySelector('.tb-content');
                 const curHtml=(el&&el.html)||'';
                 const enterH=(w._sdyTightEnterHtml!=null)?w._sdyTightEnterHtml:null;
                 const changed=(enterH==null)||curHtml!==enterH;
-                const domFlow=_tightFlowInView(w);
-                const modelFlow=curHtml.indexOf('sdy-tl')>=0;
-                if((changed||modelFlow)&&(domFlow||modelFlow)&&typeof _tightLineFlowToAbsolute==='function'){
-                    const src=_stripTypingMarkersHtml(imathCollapse(stripWF(domFlow?c0.innerHTML:curHtml)));
+                const hasFlow=(c0&&c0.querySelector&&c0.querySelector(':scope > .sdy-tl'))
+                    ||curHtml.indexOf('sdy-tl')>=0;
+                if(changed&&hasFlow&&typeof _tightLineFlowToAbsolute==='function'){
+                    const src=_stripTypingMarkersHtml(imathCollapse(stripWF(c0?c0.innerHTML:curHtml)));
                     const abs=_tightLineFlowToAbsolute(src,w._sdyTightOrig||null,el);
                     if(abs!=null&&abs!==curHtml){
                         el.html=abs;
@@ -378,10 +337,7 @@
                 try{ markPageEdited(+w.dataset.pageIdx); }catch(e){}
             }
             // 편집 종료 시 _sdyTightEdit 플래그 정리 (tight 배치는 유지)
-            // 14.45.1 · 단, '아직 편집 중'이면 지우지 않는다. pushHistory(서식 커맨드 앞)와
-            //   오토세이브가 편집 도중에도 이 함수를 부른다 — 그때 플래그를 먼저
-            //   떨어뜨리면 정작 퇴장 경로가 읽기 복구를 건너뛴다(형광펜 회귀).
-            if(w._sdyTightEdit&&!w.classList.contains('edit')) delete w._sdyTightEdit;
+            if(w._sdyTightEdit) delete w._sdyTightEdit;
             // 빈 상자도 남겨둔다 (연한 점선 + 안내 문구로 위치 표시)
             const plain=String((c.innerText!=null?c.innerText:c.textContent)||'');
             const isEmpty=!plain.trim()&&!c.querySelector('img');
@@ -408,7 +364,7 @@
         clearTextSelection();
         document.querySelectorAll('.tb.edit').forEach(o=>{
             if(o!==w){
-                const wasTight=_tightNeedsReading(o);
+                const wasTight=!!(o._sdyTightLine||o._sdyTightEdit);
                 commitEditingText(o);
                 if(wasTight) _rebuildTightToReading(o);
                 if(o.isConnected){
@@ -446,12 +402,7 @@
         //   역변환(_tightLineFlowToAbsolute)해 el.html 을 확정한다.
         try{
             const _el=findEl(+w.dataset.pageIdx,w.dataset.id);
-            // 이미 줄 흐름으로 열려 있는 상자를 다시 진입한 경우에만 스킵한다.
-            // 14.45.1 · 예전 조건은 '플래그가 있으면' 무조건 건너뛰었는데, 퇴장이 복구를
-            //   건너뛴 상자(플래그만 남고 화면은 절대좌표로 되돌아온 경우)는 두 번째
-            //   진입에서 원문 스태시를 다시 잡지 않아 읽기 복구가 어긋났다.
-            const _alreadyFlow=!!(w._sdyTightEdit&&_tightFlowInView(w));
-            if(_el&&_el.tight&&!_alreadyFlow){
+            if(_el&&_el.tight&&!w._sdyTightEdit){
                 // 14.45 · 읽기 복귀 역변환용 원본 스태시 (줄 흐름 변환 전에!)
                 try{ w._sdyTightEnterHtml=(_el&&_el.html)||''; }catch(e){ w._sdyTightEnterHtml=''; }
                 try{ w._sdyTightOrig=(typeof _stashTightOrig==='function')?_stashTightOrig(c):null; }
@@ -532,7 +483,7 @@
     }
     // 편집 종료 + 상자를 '선택' 상태로 유지 (Enter/Tab/Escape 커밋용)
     function exitEditKeepSel(w){
-        const wasTight=_tightNeedsReading(w);
+        const wasTight=!!(w._sdyTightLine||w._sdyTightEdit);
         commitEditingText(w);
         let target=w;
         if(wasTight){
@@ -1186,7 +1137,7 @@
             e.preventDefault();
             let host=t.closest('.tb')||t.closest('.paper-img');
             if(host.classList.contains('edit')){
-                const wasTight=_tightNeedsReading(host);
+                const wasTight=!!(host._sdyTightLine||host._sdyTightEdit);
                 commitEditingText(host);
                 if(wasTight){
                     const rb=_rebuildTightToReading(host);
@@ -1228,7 +1179,7 @@
             // 편집 중이었다면 편집을 끝내고 '상자 선택' 상태로 바꾼다
             // (이래야 Delete 키가 글자가 아니라 상자를 지운다)
             if(w.classList.contains('edit')){
-                const wasTight=_tightNeedsReading(w);
+                const wasTight=!!(w._sdyTightLine||w._sdyTightEdit);
                 commitEditingText(w);
                 if(wasTight){
                     const rb=_rebuildTightToReading(w);
