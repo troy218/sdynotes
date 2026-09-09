@@ -327,6 +327,18 @@
         const tab=document.createElement('span');
         tab.className='sdy-tab';
         tab.textContent='\u00A0';        // 폭은 CSS(.sdy-tab)가 고정
+        // ★ 탭 폭(2.5em)의 기준 글자 크기를 글상자 본문(.tb-content)으로 못 박는다.
+        //   예전엔 기준이 '커서가 마침 들어 있는 자리'였다. 그래서
+        //     · 첫 탭  → 커서가 본문(.tb-content, 예: 16px)에 있으니 2.5×16 = 40px
+        //     · 다음 탭 → 방금 input 이벤트가 입력 대기 span(.sdy-type, 예: 24px)을
+        //                 만들어 커서를 그 안으로 옮겨 두었으니 2.5×24 = 60px
+        //   같은 상자인데도 첫 들여쓰기만 좁고 그다음부터 넓어졌다.
+        //   width 의 em 은 그 요소 '자신의' 글자 크기로 풀리므로, 여기에서 본문
+        //   크기를 명시해 두면 커서가 어떤 서식 span 안에 있든 폭이 늘 같다.
+        try{
+            const fs=window.getComputedStyle(c).fontSize;
+            if(fs&&fs!=='normal') tab.style.fontSize=fs;
+        }catch(e){}
         return tab;
     }
     function sdyTabInputNotify(c,type){
