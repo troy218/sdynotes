@@ -213,6 +213,24 @@
             while(i1<kids.length-1&&!isBlk(kids[i1+1])) i1++;
             tokens=tokens.filter(tk=>{ const i=topIdx(tk.node); return i>=i0&&i<=i1; });
         }
+        // 논문(PDF) 단어 간격 스페이서(.sdy-tg)가 선택 구간 '안쪽'인가?
+        //   스페이서는 글자가 없어 오프셋이 없으므로, 앞·뒤 글자 토큰의 오프셋으로
+        //   판단한다 — 양쪽 글자가 모두 선택된 틈(선택이 그 틈을 가로질러 갈 때)만
+        //   '안쪽'으로 친다. 그래야 글자 하나만 골라 칠할 때 이웃 빈 간격까지
+        //   덮어쓰지 않는다.
+        const gapInside=new Map();
+        {
+            const toks=tokens;
+            for(let i=0;i<toks.length;i++){
+                const tk=toks[i];
+                if(tk.t!=='atom'||!tk.node||!tk.node.classList
+                   ||!tk.node.classList.contains('sdy-tg')) continue;
+                let pe=null,ns=null;
+                for(let j=i-1;j>=0;j--){ if(toks[j].t==='text'&&toks[j].end!=null){ pe=toks[j].end; break; } }
+                for(let j=i+1;j<toks.length;j++){ if(toks[j].t==='text'&&toks[j].start!=null){ ns=toks[j].start; break; } }
+                gapInside.set(tk.node, pe!=null&&ns!=null&&start<ns&&end>pe);
+            }
+        }
         // 세그먼트 분할 + 연산 적용
         const out=[];
         for(const tk of tokens){
@@ -261,7 +279,27 @@
         // 타이핑 마커 span 도 연산을 함께 받는다 (다음 입력 글자의 서식 유지)
         if(op&&op.type!=='unlink'&&op.type!=='link'){
             out.forEach(tk=>{
-                if(tk.t!=='type') return;
+                if(tk.t!=='type'){
+                    // PDF 단어 간격 스페이서 — 선택 구간 안쪽이면 배경색을 함께
+                    //   칠해 형광펜 띠가 단어 사이에서 끊기지 않게 한다. 평소
+                    //   스페이서는 height:0(줄 간격에 영향 없음)이라 배경이
+                    //   보이지 않으므로, 칠할 때만 줄 높이(line-height)만큼
+                    //   키운다 — 줄 간격과 같은 값이라 줄 레이아웃은 그대로다.
+                    if(tk.t==='atom'&&tk.node&&tk.node.classList
+                       &&tk.node.classList.contains('sdy-tg')&&gapInside.get(tk.node)){
+                        const bEl=(block&&block.nodeType===1)?block:null;
+                        if(op.type==='set'&&op.prop==='backgroundColor'&&op.value){
+                            tk.node.style.backgroundColor=op.value;
+                            const lh=(bEl&&bEl.style)?(parseFloat(bEl.style.lineHeight)||0):0;
+                            if(lh>0) tk.node.style.height=lh+'px';
+                            else tk.node.style.removeProperty('height');
+                        }else if((op.type==='remove'&&op.prop==='backgroundColor')||op.type==='clear'){
+                            tk.node.style.removeProperty('background-color');
+                            tk.node.style.height='0px';
+                        }
+                    }
+                    return;
+                }
                 if(op.type==='set') _setInlineProp(tk.node,op.prop,op.value);
                 else if(op.type==='remove') _clearInlineProp(tk.node,op.prop,op.value);
                 else if(op.type==='clear') FMT_PROPS.forEach(p=>_clearInlineProp(tk.node,p,''));
@@ -727,6 +765,9 @@
                 const bg=n.style&&n.style.backgroundColor;
                 if(bg&&bg!=='transparent'&&bg!=='rgba(0, 0, 0, 0)')
                     n.style.removeProperty('background-color');
+                // 형광펜 때문에 키워 둔 PDF 단어 간격 스페이서 높이도 되돌린다.
+                if(n.classList&&n.classList.contains('sdy-tg')&&n.style)
+                    n.style.height='0px';
             });
             if(c.style) c.style.removeProperty('background-color');
             // 구버전 문서/표 셀은 배경색이 el.cellBg 로 저장돼 있었다.

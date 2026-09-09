@@ -414,7 +414,7 @@
             //   일부 환경(구형 WebView·테스트 DOM)에는 아예 없다. 인라인 엔진으로
             //   선택 구간의 서식 속성을 하나씩 확실히 걷어낸다.
             ['fontWeight','fontStyle','textDecoration','color','backgroundColor',
-             'fontFamily','fontSize','verticalAlign'].forEach(p=>{
+             'fontFamily','fontSize','letterSpacing','verticalAlign'].forEach(p=>{
                 try{ _removeFromSelection(p); }catch(e){}
             });
             // 링크 해제도 직접 처리한다. execCommand('unlink') 가 없는 WebView/jsdom 에서도
@@ -436,7 +436,7 @@
         // 18.5 · 캐럿(선택 없음) → 앞으로 입력될 글자의 서식만 지운다
         if(_typingHost()){
             caretWrapStyle({fontWeight:'',fontStyle:'',textDecoration:'',color:'',
-                            backgroundColor:'',fontFamily:'',fontSize:''});
+                            backgroundColor:'',fontFamily:'',fontSize:'',letterSpacing:''});
             toast('앞으로 입력될 글자 서식 지움',1000);
             return;
         }
@@ -570,7 +570,10 @@
         const tf=_typingHost()?activeTypingFS():0;
         let base=tf;
         if(!base&&hasInlineTextSel()) base=curFontSize;   // 드래그 선택: 그대로 이어감
-        if(!base){ syncFSFromTarget(); base=curFontSize; } // 지금 보이는 크기에서 증감
+        if(!base){
+            if(!hasInlineTextSel()) syncFSFromTarget();   // 지금 화면 크기에서 증감 (낡은 툴바 값 금지)
+            base=curFontSize;
+        }
         const step=(base<=10 ? (d>0?1:-1) : d);
         setFS(base+step);
     }

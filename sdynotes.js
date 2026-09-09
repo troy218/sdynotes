@@ -10254,6 +10254,37 @@ function _tightLineEnter(c,w){
             r.collapse(true);
             if(!c.contains(r.startContainer)) return;
         }
+        // 14.41 · Enter 전 '이어받을 서식': 캐럿이 서식 입력 span(.sdy-type) 안이면
+        //   그 span 의 서식, 아니면 캐럿 앞 글자에 실제로 먹은 유효 서식.
+        //   예전엔 여기서 아무것도 물려주지 않아 '서식 유지 채로 Enter' 한 뒤
+        //   새 줄에 치는 글자가 상자 기본 서식으로 풀렸다 (보고).
+        let carry=null;
+        try{
+            const cc=r.startContainer;
+            let mk=null;
+            if(cc&&cc.nodeType===3&&cc.parentElement&&cc.parentElement.classList
+               &&cc.parentElement.classList.contains('sdy-type')) mk=cc.parentElement;
+            else if(cc&&cc.nodeType===1&&cc.classList&&cc.classList.contains('sdy-type')) mk=cc;
+            if(mk&&mk.style&&mk.style.cssText){
+                carry={};
+                for(const k of INLINE_STYLE_PROPS){
+                    const v=mk.style[k];
+                    if(v&&String(v).trim()) carry[k]=String(v).trim();
+                }
+            }
+            if((!carry||!Object.keys(carry).length)&&cc&&cc.nodeType===3){
+                // 캐럿이 빈 텍스트 노드(입력 직후 남는 껍데기 등)에 걸렸으면
+                // '그 앞 글자'의 서식을 이어받는다 — 빈 노드는 서식이 없어
+                // 엔터 뒤 새 줄이 기본 서식으로 풀리는 원인이 된다.
+                let t=cc;
+                const bare=String(t.nodeValue||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'');
+                if(!bare&&t.previousSibling&&t.previousSibling.nodeType===3) t=t.previousSibling;
+                const st=(typeof _typingStylesFromNode==='function')
+                    ?(_typingStylesFromNode(t,c)||{})
+                    :{};
+                if(Object.keys(st).length) carry=st;
+            }
+        }catch(_e){}
         let p=(r.startContainer.nodeType===3)?r.startContainer.parentElement:r.startContainer;
         let line=null;
         while(p&&p!==c){
@@ -10282,15 +10313,62 @@ function _tightLineEnter(c,w){
         if(!afterText){ while(afterFrag.firstChild) afterFrag.removeChild(afterFrag.firstChild); nl.appendChild(document.createElement('br')); }
         nl.appendChild(afterFrag);
         if(line.parentNode) line.parentNode.insertBefore(nl,line.nextSibling);
+        // 14.42 · 원문 '중간 줄'에서 Enter — 방금 끼운 새 줄이 절대 위치라
+        //   그대로 두면 다음 원문 줄과 같은 top 에 놓여 겹친다. 그래서 이 줄
+        //   아래의 모든 .sdy-tl 을 새 줄 높이만큼 아래로 내린다.
+        //   (원칙 '원문 줄은 입력에 절대 안 움직인다'는 의도치 않은 이동 금지
+        //   를 위한 것이고, 사용자가 중간에 문단을 끼워 넣는 명시적 Enter 는
+        //   뒤따르는 원문 줄이 한 줄 내려가 공간을 만드는 것이 자연스럽다 —
+        //   읽는 순서·줄 간격은 그대로 유지된다.) 마지막 줄 뒤라면 밀 줄이 없다.
+        if(line.nextSibling&&nl.nextSibling){
+            let nx=nl.nextSibling;
+            while(nx){
+                if(nx.nodeType===1&&nx.classList&&nx.classList.contains('sdy-tl')){
+                    const cur=parseFloat(nx.style.top)||0;
+                    nx.style.top=(cur+pitch).toFixed(1)+'px';
+                }
+                nx=nx.nextSibling;
+            }
+        }
         if(!String(line.textContent||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim()&&!line.querySelector('img')) line.appendChild(document.createElement('br'));
-        // 캐럿 → 새 줄의 맨 앞
-        const cr=document.createRange();
-        const f0=afterFrag.firstChild;
-        if(f0&&f0.nodeType===3) cr.setStart(f0,0);
-        else if(f0&&f0.nodeType===1&&f0.tagName!=='BR'){ cr.selectNodeContents(f0); cr.collapse(true); }
-        else cr.setStart(nl,0);
-        cr.collapse(true);
-        sel.removeAllRanges(); sel.addRange(cr);
+        // 캐럿 → 새 줄의 맨 앞. 물려줄 서식이 있고, 새 줄 첫 글자가 이미 그
+        //   서식을 갖고 있지 않으면 입력 대기 span(.sdy-type + 닻)을 새 줄
+        //   머리에 심고 그 안(닻 뒤)에 캐럿을 둔다 — 다음 글자부터 서식 유지.
+        let placed=false;
+        if(carry&&Object.keys(carry).length){
+            // 물려줄 서식이 있으면 새 줄 맨 앞에 입력 대기 span(.sdy-type+닻)을
+            // 항상 심고 그 안(닻 뒤)에 캐럿을 둔다. (빈 껍데기 span 이나 공백으로
+            // 시작하는 꼬리·빈 문단이어도 상관없다 — 다음 글자부터 carry 서식으로
+            // 시작된다.) 새 줄 첫 꼬리 글자가 이미 그 서식이어도 마커 span 하나가
+            // 더 붙는 것뿐이며, 캐럿이 '서식 span 안'에서 시작돼야 이어 쓰는
+            // 글자의 크기·글꼴이 보장된다(줄 바깥 기본 서식으로 튀지 않는다).
+            try{
+                const sp=document.createElement('span');
+                sp.className='sdy-type';
+                for(const k in carry){
+                    try{ _setInlineProp(sp,k,carry[k]); }catch(_e){}
+                }
+                sp.appendChild(document.createTextNode('\u200B'));
+                nl.insertBefore(sp,nl.firstChild);
+                const tn=sp.firstChild;
+                const cr=document.createRange();
+                cr.setStart(tn,1); cr.collapse(true);
+                sel.removeAllRanges(); sel.addRange(cr);
+                _typingSpan=sp;
+                try{ if(typeof _rememberTypingStyles==='function') _rememberTypingStyles(sp,c); }
+                catch(_e){ _pendingTyping={host:c,styles:carry}; }
+                placed=true;
+            }catch(_e){}
+        }
+        if(!placed){
+            const cr=document.createRange();
+            const f0=afterFrag.firstChild;
+            if(f0&&f0.nodeType===3) cr.setStart(f0,0);
+            else if(f0&&f0.nodeType===1&&f0.tagName!=='BR'){ cr.selectNodeContents(f0); cr.collapse(true); }
+            else cr.setStart(nl,0);
+            cr.collapse(true);
+            sel.removeAllRanges(); sel.addRange(cr);
+        }
         w._caretV=(w._caretV||0)+1;
         try{ saveSel(); }catch(e2){}
         if(w.classList.contains('edit')){ commitEditSnapshot(); _armTypingCheckpoint(w); }
@@ -10882,6 +10960,8 @@ function _tightLineEnter(c,w){
             if(_fid) setToolbarFont(_fid);
         }catch(e){}
         const c=w.querySelector('.tb-content');
+        c.contentEditable='true';
+        if(c.getAttribute('data-empty')==='true') c.innerHTML='';
         // 14.40 · 가져온 PDF 상자(tight) — 편집 진입 시 '줄 단위 절대위치 + 줄 내
         //   인라인 흐름'으로 한 번만 변환한다. 줄(원본 세로 위치)은 절대위치라
         //   절대 이동하지 않고, 줄 안은 일반 텍스트처럼 흘러 드래그 선택·방향키
@@ -10898,8 +10978,6 @@ function _tightLineEnter(c,w){
                 w._sdyViewHtml=c.innerHTML;
             }
         }catch(e){}
-        c.contentEditable='true';
-        if(c.getAttribute('data-empty')==='true') c.innerHTML='';
         if(keepSel){ c.focus({preventScroll:true}); return; }
         c.focus();
         try{
@@ -14749,6 +14827,81 @@ function _tightLineEnter(c,w){
     document.addEventListener('pointerdown',focusNoteFromAi,true);
     document.addEventListener('mousedown',focusNoteFromAi,true); // PointerEvent 없는 환경·런타임 테스트
 
+    // 글상자(일반 텍스트) 편집 중 Tab — Word 식 들여쓰기.
+    //   들여쓰기 단위는 .sdy-tab span(고정 폭) — 공백 문자가 아니라
+    //   '한 번에 지워지는' 토큰이라 Backspace 한 번에 단위째 사라진다.
+    //   PDF 줄 흐름(tight) 상자는 예외 — 거기선 기존처럼 편집 확정+상자 이동을 쓴다.
+    function sdyTabUnit(c){
+        const tab=document.createElement('span');
+        tab.className='sdy-tab';
+        tab.textContent='\u00A0';        // 폭은 CSS(.sdy-tab)가 고정
+        return tab;
+    }
+    function sdyTabInputNotify(c,type){
+        try{
+            if(typeof window!=='undefined'&&window.InputEvent)
+                c.dispatchEvent(new window.InputEvent('input',{bubbles:true,inputType:type,cancelable:false}));
+            else c.dispatchEvent(new Event('input',{bubbles:true}));
+        }catch(e){}
+    }
+    function sdyEditTabAt(c,shift){
+        try{
+            const sel=window.getSelection();
+            if(!sel||!sel.rangeCount) return false;
+            const r=sel.getRangeAt(0);
+            if(!c.contains(r.startContainer)) return false;
+            if(shift){
+                // 커서 바로 앞 들여쓰기 단위 하나 제거 (Shift+Tab = 내어쓰기).
+                // 입력 대기 마커(빈 .sdy-type)·빈 텍스트 껍데기가 사이에 껴 있어도
+                // 건너뛰고 가장 가까운 .sdy-tab 을 찾는다 — 실글자/단락 요소 앞에
+                // 들여쓰기가 없으면 아무 일도 하지 않는다.
+                const sc=r.startContainer, so=r.startOffset;
+                const blank=v=>String(v||'').replace(/[\u200b\u200c\u200d\ufeff]/g,'')==='';
+                const findBack=n=>{
+                    let hops=0;
+                    while(n&&hops<6){
+                        if(n.nodeType===1&&n.classList){
+                            if(n.classList.contains('sdy-tab')) return n;
+                            const empty=n.classList.contains('sdy-type')&&blank(n.textContent);
+                            if(!empty) return null;   // 실내용 요소 앞이면 멈춘다
+                        }else if(n.nodeType===3){
+                            if(!blank(n.nodeValue)) return null;
+                        }else return null;
+                        n=n.previousSibling; hops++;
+                    }
+                    return null;
+                };
+                let tab=null, wasTextStart=false;
+                if(sc.nodeType===3){
+                    if(so===0){ tab=findBack(sc.previousSibling); wasTextStart=true; }
+                }else if(sc.nodeType===1){
+                    if(so>0) tab=findBack(sc.childNodes[so-1]);
+                    else tab=findBack(sc.previousSibling);
+                }
+                if(!tab) return false;
+                const par=tab.parentNode;
+                par.removeChild(tab);
+                const nr=document.createRange();
+                if(wasTextStart&&sc.isConnected){ nr.setStart(sc,0); nr.collapse(true); }
+                else{
+                    const ref=tab.nextSibling;
+                    if(ref) nr.setStart(ref,0); else nr.setStart(par,par.childNodes.length);
+                    nr.collapse(true);
+                }
+                sel.removeAllRanges(); sel.addRange(nr);
+                sdyTabInputNotify(c,'deleteContentBackward');
+                return true;
+            }
+            const tab=sdyTabUnit(c);
+            if(!r.collapsed) r.deleteContents();
+            r.insertNode(tab);
+            const nr=document.createRange();
+            nr.setStartAfter(tab); nr.collapse(true);
+            sel.removeAllRanges(); sel.addRange(nr);
+            sdyTabInputNotify(c,'insertText');
+            return true;
+        }catch(e){ return false; }
+    }
     document.addEventListener('keydown',e=>{
         // 발표 모드 조작
         if(presentOn){
@@ -14779,17 +14932,31 @@ function _tightLineEnter(c,w){
         // ===== 스프레드시트식: 편집 중 Enter/Tab/Escape (커밋 + 셀 이동) =====
         {
             const ae=document.activeElement;
-            const inContent=!!(ae&&ae.classList&&ae.classList.contains('tb-content'));
+            const _tg=e.target;
+            // 포커스가 .tb-content 일 때가 기본이지만, 이벤트 원천(target)이
+            // .tb-content 인 경우(테스트·포커스가 늦게 따라붙는 환경)도 편집으로 본다.
+            const _src=(ae&&ae.classList&&ae.classList.contains('tb-content'))
+                ?ae:((_tg&&_tg.classList&&_tg.classList.contains('tb-content'))?_tg:null);
+            const inContent=!!_src;
             // 18.9 · Escape 는 '글상자 편집 중'이면 언제나 편집만 끝낸다.
             //   예전엔 포커스가 정확히 .tb-content 에 있을 때만 그렇게 했고,
             //   툴바 글자 크기칸을 만졌다가 Escape 를 누르면 편집 중인데도
             //   아래의 closeTopOverlay() 가 걸려 **노트 자체가 닫혀** 버렸다.
-            const w=inContent?ae.closest('.tb'):document.querySelector('.tb.edit');
+            const w=inContent?_src.closest('.tb'):document.querySelector('.tb.edit');
             // 한글 IME 조합 중에는 Enter(확정)를 가로채면 입력이 깨진다 → 그대로 둠
             const composing=e.isComposing||e.keyCode===229;
             if(w){
                 if(e.key==='Tab' && inContent && !composing){
                     e.preventDefault();
+                    // Tab = 들여쓰기 (일반 텍스트 상자). PDF 줄 흐름(tight)·표·LaTeX
+                    //   상자는 기존처럼 편집 확정 후 다음/이전 상자로 이동한다.
+                    const tightBox=w.classList&&(w.classList.contains('tight')
+                        ||w.classList.contains('pdf-text')||w._sdyTightLine);
+                    if(!tightBox){
+                        const c=w.querySelector('.tb-content');
+                        if(!(c&&sdyEditTabAt(c,e.shiftKey))) return;   // 못 지운 Shift+Tab 은 그대로
+                        return;
+                    }
                     exitEditKeepSel(w);
                     moveCellFrom(w, e.shiftKey?'prev':'next');
                     return;
@@ -16085,7 +16252,7 @@ function _tightLineEnter(c,w){
     //   - 굵게 해제 시에도 '상자 자체가 굵게'인 경우에만 중립값(400)을 적는다.
     //     평범한 글자는 속성을 삭제해 상속으로 되돌린다(font-weight:400 덧대기 제거).
     // ═══════════════════════════════════════════════════════════════════
-    const FMT_PROPS=['fontWeight','fontStyle','textDecoration','color','backgroundColor','fontFamily','fontSize','verticalAlign'];
+    const FMT_PROPS=['fontWeight','fontStyle','textDecoration','color','backgroundColor','fontFamily','fontSize','letterSpacing','verticalAlign'];
     const INLINE_STYLE_PROPS=FMT_PROPS;          // 하위 호환 이름
     const FMT_BLOCK_TAGS=new Set(['DIV','P','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','PRE','UL','OL','TABLE','TR','TD','TH','SECTION','ARTICLE']);
     function _isPosSpan(el){
@@ -16449,6 +16616,24 @@ function _tightLineEnter(c,w){
             while(i1<kids.length-1&&!isBlk(kids[i1+1])) i1++;
             tokens=tokens.filter(tk=>{ const i=topIdx(tk.node); return i>=i0&&i<=i1; });
         }
+        // 논문(PDF) 단어 간격 스페이서(.sdy-tg)가 선택 구간 '안쪽'인가?
+        //   스페이서는 글자가 없어 오프셋이 없으므로, 앞·뒤 글자 토큰의 오프셋으로
+        //   판단한다 — 양쪽 글자가 모두 선택된 틈(선택이 그 틈을 가로질러 갈 때)만
+        //   '안쪽'으로 친다. 그래야 글자 하나만 골라 칠할 때 이웃 빈 간격까지
+        //   덮어쓰지 않는다.
+        const gapInside=new Map();
+        {
+            const toks=tokens;
+            for(let i=0;i<toks.length;i++){
+                const tk=toks[i];
+                if(tk.t!=='atom'||!tk.node||!tk.node.classList
+                   ||!tk.node.classList.contains('sdy-tg')) continue;
+                let pe=null,ns=null;
+                for(let j=i-1;j>=0;j--){ if(toks[j].t==='text'&&toks[j].end!=null){ pe=toks[j].end; break; } }
+                for(let j=i+1;j<toks.length;j++){ if(toks[j].t==='text'&&toks[j].start!=null){ ns=toks[j].start; break; } }
+                gapInside.set(tk.node, pe!=null&&ns!=null&&start<ns&&end>pe);
+            }
+        }
         // 세그먼트 분할 + 연산 적용
         const out=[];
         for(const tk of tokens){
@@ -16497,7 +16682,27 @@ function _tightLineEnter(c,w){
         // 타이핑 마커 span 도 연산을 함께 받는다 (다음 입력 글자의 서식 유지)
         if(op&&op.type!=='unlink'&&op.type!=='link'){
             out.forEach(tk=>{
-                if(tk.t!=='type') return;
+                if(tk.t!=='type'){
+                    // PDF 단어 간격 스페이서 — 선택 구간 안쪽이면 배경색을 함께
+                    //   칠해 형광펜 띠가 단어 사이에서 끊기지 않게 한다. 평소
+                    //   스페이서는 height:0(줄 간격에 영향 없음)이라 배경이
+                    //   보이지 않으므로, 칠할 때만 줄 높이(line-height)만큼
+                    //   키운다 — 줄 간격과 같은 값이라 줄 레이아웃은 그대로다.
+                    if(tk.t==='atom'&&tk.node&&tk.node.classList
+                       &&tk.node.classList.contains('sdy-tg')&&gapInside.get(tk.node)){
+                        const bEl=(block&&block.nodeType===1)?block:null;
+                        if(op.type==='set'&&op.prop==='backgroundColor'&&op.value){
+                            tk.node.style.backgroundColor=op.value;
+                            const lh=(bEl&&bEl.style)?(parseFloat(bEl.style.lineHeight)||0):0;
+                            if(lh>0) tk.node.style.height=lh+'px';
+                            else tk.node.style.removeProperty('height');
+                        }else if((op.type==='remove'&&op.prop==='backgroundColor')||op.type==='clear'){
+                            tk.node.style.removeProperty('background-color');
+                            tk.node.style.height='0px';
+                        }
+                    }
+                    return;
+                }
                 if(op.type==='set') _setInlineProp(tk.node,op.prop,op.value);
                 else if(op.type==='remove') _clearInlineProp(tk.node,op.prop,op.value);
                 else if(op.type==='clear') FMT_PROPS.forEach(p=>_clearInlineProp(tk.node,p,''));
@@ -16963,6 +17168,9 @@ function _tightLineEnter(c,w){
                 const bg=n.style&&n.style.backgroundColor;
                 if(bg&&bg!=='transparent'&&bg!=='rgba(0, 0, 0, 0)')
                     n.style.removeProperty('background-color');
+                // 형광펜 때문에 키워 둔 PDF 단어 간격 스페이서 높이도 되돌린다.
+                if(n.classList&&n.classList.contains('sdy-tg')&&n.style)
+                    n.style.height='0px';
             });
             if(c.style) c.style.removeProperty('background-color');
             // 구버전 문서/표 셀은 배경색이 el.cellBg 로 저장돼 있었다.
@@ -17611,7 +17819,7 @@ function _tightLineEnter(c,w){
             //   일부 환경(구형 WebView·테스트 DOM)에는 아예 없다. 인라인 엔진으로
             //   선택 구간의 서식 속성을 하나씩 확실히 걷어낸다.
             ['fontWeight','fontStyle','textDecoration','color','backgroundColor',
-             'fontFamily','fontSize','verticalAlign'].forEach(p=>{
+             'fontFamily','fontSize','letterSpacing','verticalAlign'].forEach(p=>{
                 try{ _removeFromSelection(p); }catch(e){}
             });
             // 링크 해제도 직접 처리한다. execCommand('unlink') 가 없는 WebView/jsdom 에서도
@@ -17633,7 +17841,7 @@ function _tightLineEnter(c,w){
         // 18.5 · 캐럿(선택 없음) → 앞으로 입력될 글자의 서식만 지운다
         if(_typingHost()){
             caretWrapStyle({fontWeight:'',fontStyle:'',textDecoration:'',color:'',
-                            backgroundColor:'',fontFamily:'',fontSize:''});
+                            backgroundColor:'',fontFamily:'',fontSize:'',letterSpacing:''});
             toast('앞으로 입력될 글자 서식 지움',1000);
             return;
         }
@@ -17767,7 +17975,10 @@ function _tightLineEnter(c,w){
         const tf=_typingHost()?activeTypingFS():0;
         let base=tf;
         if(!base&&hasInlineTextSel()) base=curFontSize;   // 드래그 선택: 그대로 이어감
-        if(!base){ syncFSFromTarget(); base=curFontSize; } // 지금 보이는 크기에서 증감
+        if(!base){
+            if(!hasInlineTextSel()) syncFSFromTarget();   // 지금 화면 크기에서 증감 (낡은 툴바 값 금지)
+            base=curFontSize;
+        }
         const step=(base<=10 ? (d>0?1:-1) : d);
         setFS(base+step);
     }
@@ -20297,6 +20508,14 @@ function _tightLineEnter(c,w){
     // 화면이 가려져 있으면 아예 쉰다 → 배터리·버벅임 없음.
     let liveSyncTimer=null, _syncGap=1200, _syncBusy=false, _syncQuiet=0;
     const SYNC_FAST=1200, SYNC_SLOW=15000;
+    // 번역 모듈(src/translate.js)이 아직/실패로 뜨지 않았으면 '번역 중 아님'으로
+    //   간주한다. 예전엔 window.isTrBusy 를 있는 그대로 불러, translate.js 가
+    //   늦게/오류로 로드된 탭에서 liveDocTick 이 매 주기 ReferenceError 로 죽고
+    //   실시간 동기화(되돌리기 협업 등)까지 멈췄다.
+    function _trBusy(){
+        try{ return typeof window.isTrBusy==='function'&&!!window.isTrBusy(); }
+        catch(e){ return false; }
+    }
     function stopLiveDocSync(){
         if(liveSyncTimer){ clearTimeout(liveSyncTimer); liveSyncTimer=null; }
     }
@@ -20333,7 +20552,7 @@ function _tightLineEnter(c,w){
     async function reloadImportedIfNewer(){
         // 가져온 PDF: 요소 ops 없이 슬라이스만 갱신된 번역/편집을 받는다.
         const d=doc;                    // 14.9 · 노트 전환 후 이어지는 리로드를 차단
-        if(!d||!d.__ref||isTrBusy()||_impReloading) return 0;
+        if(!d||!d.__ref||_trBusy()||_impReloading) return 0;
         _impReloading=true;
         try{
             const r=await fetch('/api/import/docfile/'+encodeURIComponent(d.__ref)+'?meta=1',{cache:'no-store'});
@@ -20373,7 +20592,7 @@ function _tightLineEnter(c,w){
     async function liveDocTick(){
         if(!doc||!curNB){ _armSync(SYNC_SLOW); return; }
         // 안 보이는 탭에서는 쉬고, 편집·번역 중에는 건드리지 않는다
-        if(document.hidden||document.querySelector('#pagesStage .tb.edit')||isTrBusy()){
+        if(document.hidden||document.querySelector('#pagesStage .tb.edit')||_trBusy()){
             _armSync(SYNC_FAST); return;
         }
         if(_syncBusy){ _armSync(); return; }
@@ -20982,7 +21201,7 @@ function _tightLineEnter(c,w){
                 }
             }
             // 요소 ops 가 비어도 가져온 문서 슬라이스(번역)가 갱신됐을 수 있다.
-            if(doc.__ref && !isTrBusy()){
+            if(doc.__ref && !_trBusy()){
                 try{ await reloadImportedIfNewer(); }catch(e){}
             }
             return ops;
