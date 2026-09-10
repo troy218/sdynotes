@@ -1211,6 +1211,141 @@ _CMEX_STD = {
 }
 
 
+# ── 14.47 · Symbol 글꼴 PUA 디코딩 ──────────────────────────────
+#  Word/수식 편집기로 만든 PDF(Revision Questions …)는 Monotype SymbolMT 를
+#  Identity-H 로 심고 ToUnicode 를 'F000 + Symbol 바이트' 로 적는다.
+#  base-14 Symbol 을 쓰는 PDF(fpure …)는 MuPDF 가 큰 괄호 '조각'을 F8xx PUA 로
+#  내놓는다. 디코딩 없이는 행렬 구분자가 씨앗도 못 되고, LaTeX 에는 梁 같은
+#  깨진 글자만 남는다.
+#
+#  값 표기: 유니코드 한 글자(낱기호) | ("piece", 쪽, 종류, 위치) |
+#           None(그리기 토막·미지정 → 버림)
+#  표에 없는 코드는 False 취급(모름 → 손대지 않고 예전 동작 유지).
+#
+#  Monotype 배치는 0x20-0x7F = Adobe Symbol, 0xA0-0xDF = Adobe 0x80-0xBF 를
+#  +0x20 옮긴 것이다. ′ ∞ → ° × ∈ ⇔ 와 조각 13종은 렌더·문맥으로 직접 검증했고,
+#  나머지는 같은 규칙의 best-effort 다(검증점은 코드 옆 ✓).
+def _pc(side, kind, pos):
+    return ("piece", side, kind, pos)
+
+
+_MS_SYMBOL_LOW = {
+    0x20: " ", 0x21: "!", 0x22: "∀", 0x23: "#",
+    0x24: "∃", 0x25: "%", 0x26: "&", 0x27: "∋",
+    0x28: "(", 0x29: ")", 0x2A: "∗", 0x2B: "+",
+    0x2C: ",", 0x2D: "−", 0x2E: ".", 0x2F: "/",
+    0x30: "0", 0x31: "1", 0x32: "2", 0x33: "3",
+    0x34: "4", 0x35: "5", 0x36: "6", 0x37: "7",
+    0x38: "8", 0x39: "9", 0x3A: ":", 0x3B: ";",
+    0x3C: "<", 0x3D: "=", 0x3E: ">", 0x3F: "?",
+    0x40: "≅", 0x41: "Α", 0x42: "Β", 0x43: "Χ",
+    0x44: "Δ", 0x45: "Ε", 0x46: "Φ", 0x47: "Γ",
+    0x48: "Η", 0x49: "Ι", 0x4A: "ϑ", 0x4B: "Κ",
+    0x4C: "Λ", 0x4D: "Μ", 0x4E: "Ν", 0x4F: "Ο",
+    0x50: "Π", 0x51: "Θ", 0x52: "Ρ", 0x53: "Σ",
+    0x54: "Τ", 0x55: "Υ", 0x56: "ς", 0x57: "Ω",
+    0x58: "Ξ", 0x59: "Ψ", 0x5A: "Ζ", 0x5B: "[",
+    0x5C: "∴", 0x5D: "]", 0x5E: "⊥", 0x5F: "_",
+    0x60: None,  # radicalex — 루트 윗줄 토막이라 낱자로 쓸 수 없다
+    0x61: "α", 0x62: "β", 0x63: "χ", 0x64: "δ",  # ✓ α π θ
+    0x65: "ε", 0x66: "φ", 0x67: "γ", 0x68: "η",
+    0x69: "ι", 0x6A: "ϕ", 0x6B: "κ", 0x6C: "λ",
+    0x6D: "μ", 0x6E: "ν", 0x6F: "ο", 0x70: "π",
+    0x71: "θ", 0x72: "ρ", 0x73: "σ", 0x74: "τ",
+    0x75: "υ", 0x76: "ϖ", 0x77: "ω", 0x78: "ξ",
+    0x79: "ψ", 0x7A: "ζ", 0x7B: "{", 0x7C: "|",
+    0x7D: "}", 0x7E: "∼", 0x7F: None,
+    # 0x80-0x9F: Adobe 위치 그대로(best-effort, 두 표본 PDF 에선 미사용)
+    0x80: "€", 0x81: "ϒ", 0x82: "′", 0x83: "≤",
+    0x84: "⁄", 0x85: "∞", 0x86: "ƒ", 0x87: "♣",
+    0x88: "♦", 0x89: "♥", 0x8A: "♠", 0x8B: "↔",
+    0x8C: "←", 0x8D: "↑", 0x8E: "→", 0x8F: "↓",
+    0x90: "°", 0x91: "±", 0x92: "″", 0x93: "≥",
+    0x94: "×", 0x95: "∝", 0x96: "∂", 0x97: "•",
+    0x98: "÷", 0x99: "≠", 0x9A: "≡", 0x9B: "≈",
+    0x9C: "…", 0x9D: None, 0x9E: None, 0x9F: "⏎",
+    # 0xA0-0xBF = Adobe 0x80-0x9F
+    0xA0: "€", 0xA1: "ϒ", 0xA2: "′", 0xA3: "≤",  # ✓ A2 프라임
+    0xA4: "⁄", 0xA5: "∞", 0xA6: "ƒ", 0xA7: "♣",  # ✓ A5 무한대
+    0xA8: "♦", 0xA9: "♥", 0xAA: "♠", 0xAB: "↔",
+    0xAC: "←", 0xAD: "↑", 0xAE: "→", 0xAF: "↓",  # ✓ AE 화살표
+    0xB0: "°", 0xB1: "±", 0xB2: "″", 0xB3: "≥",  # ✓ B0 도(°)
+    0xB4: "×", 0xB5: "∝", 0xB6: "∂", 0xB7: "•",  # ✓ B4 곱셈
+    0xB8: "÷", 0xB9: "≠", 0xBA: "≡", 0xBB: "≈",
+    0xBC: "…", 0xBD: None, 0xBE: None, 0xBF: "⏎",
+    # 0xC0-0xDF = Adobe 0xA0-0xBF
+    0xC0: "ℵ", 0xC1: "ℑ", 0xC2: "ℜ", 0xC3: "℘",
+    0xC4: "⊗", 0xC5: "⊕", 0xC6: "∅", 0xC7: "∩",
+    0xC8: "∪", 0xC9: "⊃", 0xCA: "⊇", 0xCB: "⊄",
+    0xCC: "⊂", 0xCD: "⊆", 0xCE: "∈", 0xCF: "∉",  # ✓ CE 원소
+    0xD0: "∠", 0xD1: "∇", 0xD2: "®", 0xD3: "©",
+    0xD4: "™", 0xD5: "∏", 0xD6: "√", 0xD7: "⋅",
+    0xD8: "¬", 0xD9: "∧", 0xDA: "∨", 0xDB: "⇔",  # ✓ DB iff
+    0xDC: "⇐", 0xDD: "⇑", 0xDE: "⇒", 0xDF: "⇓",
+    # 0xE0-0xFF: 검증된 조각 + ∑ ⟩ 만 인정, 나머지는 버린다
+    0xE0: None, 0xE1: None, 0xE2: None, 0xE3: None,
+    0xE4: None, 0xE5: "∑",
+    0xE6: _pc("open", "paren", "tp"), 0xE7: _pc("open", "paren", "ex"),  # ✓
+    0xE8: _pc("open", "paren", "bt"), 0xE9: _pc("open", "bracket", "tp"),  # ✓
+    0xEA: _pc("open", "bracket", "ex"), 0xEB: _pc("open", "bracket", "bt"),  # ✓
+    0xEC: _pc("open", "brace", "tp"), 0xED: _pc("open", "brace", "mid"),  # ✓
+    0xEE: _pc("open", "brace", "bt"), 0xEF: _pc(None, "braceex", "ex"),
+    0xF0: None, 0xF1: "⟩", 0xF2: None, 0xF3: None,
+    0xF4: None, 0xF5: None,
+    0xF6: _pc("close", "paren", "tp"), 0xF7: _pc("close", "paren", "ex"),  # ✓
+    0xF8: _pc("close", "paren", "bt"), 0xF9: _pc("close", "bracket", "tp"),  # ✓
+    0xFA: _pc("close", "bracket", "ex"), 0xFB: _pc("close", "bracket", "bt"),  # ✓
+    0xFC: _pc("close", "brace", "tp"), 0xFD: _pc("close", "brace", "mid"),
+    0xFE: _pc("close", "brace", "bt"), 0xFF: None,
+}
+_MS_SYMBOL = {0xF000 + k: v for k, v in _MS_SYMBOL_LOW.items()}
+
+# base-14 Symbol 조각(MuPDF 가 F8xx PUA 로 내놓는 것). 19종 전부 렌더·기하 검증.
+_F800_SYMBOL = {
+    0xF8EB: _pc("open", "paren", "tp"), 0xF8EC: _pc("open", "paren", "ex"),
+    0xF8ED: _pc("open", "paren", "bt"),
+    0xF8EE: _pc("open", "bracket", "tp"), 0xF8EF: _pc("open", "bracket", "ex"),
+    0xF8F0: _pc("open", "bracket", "bt"),
+    0xF8F1: _pc("open", "brace", "tp"), 0xF8F2: _pc("open", "brace", "mid"),
+    0xF8F3: _pc("open", "brace", "bt"), 0xF8F4: _pc(None, "braceex", "ex"),
+    0xF8F6: _pc("close", "paren", "tp"), 0xF8F7: _pc("close", "paren", "ex"),
+    0xF8F8: _pc("close", "paren", "bt"),
+    0xF8F9: _pc("close", "bracket", "tp"), 0xF8FA: _pc("close", "bracket", "ex"),
+    0xF8FB: _pc("close", "bracket", "bt"),
+    0xF8FC: _pc("close", "brace", "tp"), 0xF8FD: _pc("close", "brace", "mid"),
+    0xF8FE: _pc("close", "brace", "bt"),
+}
+
+# 조각 (쪽, 종류) → LaTeX 구분자 / 텍스트 경로 낱글자
+_PIECE_TEX = {("open", "paren"): "(", ("close", "paren"): ")",
+              ("open", "bracket"): "[", ("close", "bracket"): "]",
+              ("open", "brace"): r"\{", ("close", "brace"): r"\}"}
+_PIECE_TEXT = {("open", "paren"): "(", ("close", "paren"): ")",
+               ("open", "bracket"): "[", ("close", "bracket"): "]",
+               ("open", "brace"): "{", ("close", "brace"): "}"}
+
+
+def _is_symbol_font(fname):
+    """Symbol 계열 글꼴인가 (PUA 디코딩 게이트).
+
+    'Symbol'·'SymbolMT' 와 서브셋(ABCDEF+Symbol)만 통과한다.
+    비례형 SymbolProp 계열은 배치가 다를 수 있어 제외한다.
+    """
+    n = re.sub(r"[^a-z0-9]", "", (fname or "").split("+")[-1].lower())
+    return n.startswith("symbol") and "prop" not in n
+
+
+def _symbol_pua_lookup(code):
+    """Symbol 글꼴 PUA 코드 → 디코딩 값.
+
+    유니코드 한 글자 | ("piece", 쪽, 종류, 위치) | None(버림) |
+    False(표에 없음 → 손대지 않음).
+    """
+    if 0xF000 <= code <= 0xF0FF:
+        return _MS_SYMBOL.get(code, False)
+    return _F800_SYMBOL.get(code, False)
+
+
 def classify_glyph(name):
     """CMEX 글리프 이름 → (역할, LaTeX 토막)
 
@@ -1454,6 +1589,16 @@ _SYM = {
     "ˉ": r"\bar", "´": r"\acute", "`": r"\grave", "˘": r"\breve",
     "ˇ": r"\check", "˙": r"\dot", "¨": r"\ddot", "˚": r"\mathring",
     "◦": r"\circ", "□": r"\square",
+    # 14.47 · Symbol PUA 디코딩으로 들어오는 낱기호들 (KaTeX 지원 명령만)
+    "°": r"\degree", "•": r"\bullet", "⁄": "/", "€": r"\text{€}",
+    "ϒ": r"\Upsilon", "″": "''", "ℵ": r"\aleph", "ℑ": r"\Im", "ℜ": r"\Re",
+    "℘": r"\wp", "∅": r"\emptyset", "⊇": r"\supseteq", "⊄": r"\not\subset",
+    "⊆": r"\subseteq", "∠": r"\angle", "®": r"\text{®}", "©": r"\text{©}",
+    "™": r"\text{™}", "¬": r"\neg", "⇐": r"\Leftarrow", "⇑": r"\Uparrow",
+    "⇓": r"\Downarrow", "◊": r"\diamond", "↑": r"\uparrow", "↓": r"\downarrow",
+    "♣": r"\clubsuit", "♦": r"\diamondsuit", "♥": r"\heartsuit",
+    "♠": r"\spadesuit", "ƒ": r"\text{ƒ}", "⏎": r"\text{⏎}",
+    "∗": r"\ast", "∴": r"\therefore", "∋": r"\ni",
 }
 _MATHOP = re.compile(r"^(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|"
                      r"exp|log|ln|lim|det|dim|ker|deg|gcd|max|min|sup|inf|arg|Tr|tr)$")
@@ -2029,6 +2174,18 @@ def region_boxes(doc, page, rect, gtables=None, rd=None):
                     else:
                         if not c.strip():
                             continue
+                        if c and _is_symbol_font(fname):
+                            # 14.47 · Symbol PUA(F0xx/F8xx) 디코딩. 낱기호는
+                            # 유니코드로, 큰 괄호 조각은 role 'pua' 로 둔다.
+                            dec = _symbol_pua_lookup(ord(c))
+                            if dec is None:
+                                continue      # 그리기 토막·미지정 코드
+                            if isinstance(dec, tuple):
+                                out.append(Box(bb[0], bb[1], bb[2], bb[3],
+                                               c, size, "pua"))
+                                continue
+                            if dec is not False:
+                                c = dec
                         tex = _tok_tex(c)
                         if c in ("|",):
                             role = "vbar"
@@ -2109,48 +2266,116 @@ def _attach_accents(boxes):
         return boxes
 
 
+def _merge_piece_columns(pieces):
+    """Symbol PUA 조각 상자들을 큰 구분자로 합친다. (14.47)
+
+    조각 상자는 tex 에 원본 PUA 문자 한 글자를 들고 있다. 같은 x-기둥에
+    잇달아 쌓인 조각들 = 큰 구분자 하나. 2조각 쌓기(위+아래)가 가장 흔하다.
+    종류가 섞인 기둥은 깨진 PDF 이므로 버린다. 홀로 남는 조각은 구분자
+    (곧은 토막은 세로 막대)로 살린다 — PUA 가 LaTeX 로 새는 것보다 낫다.
+    """
+    try:
+        dec = []
+        for b in pieces:
+            t = (b.tex or "")
+            if len(t) != 1:
+                continue
+            v = _symbol_pua_lookup(ord(t))
+            if not isinstance(v, tuple):
+                continue
+            dec.append((b, v))
+        if not dec:
+            return []
+        dec.sort(key=lambda z: (round(z[0].x0, 1), z[0].y0))
+        cols = []
+        for b, v in dec:
+            for c in cols:
+                last = c[-1][0]
+                if (abs(b.x0 - last.x0) <= 2.5
+                        and b.y0 <= last.y1 + max(4.0, b.h * 0.45)):
+                    c.append((b, v))
+                    break
+            else:
+                cols.append([(b, v)])
+        out = []
+        for c in cols:
+            c.sort(key=lambda z: z[0].y0)
+            ps = [b for b, _ in c]
+            x0 = min(b.x0 for b in ps); x1 = max(b.x1 for b in ps)
+            y0 = min(b.y0 for b in ps); y1 = max(b.y1 for b in ps)
+            sz = max(b.size for b in ps)
+            sided = [v for _, v in c if v[1] in ("open", "close")]
+            if not sided:
+                # 곧은 토막(braceex 등)만 쌓인 기둥 = 키 큰 세로 막대
+                out.append(Box(x0, y0, x1, y1, "|", sz, "vbar"))
+                continue
+            kinds = {(v[1], v[2]) for v in sided}
+            if len(kinds) != 1:
+                continue
+            (side, kind), = kinds
+            if len(ps) >= 2:
+                out.append(Box(x0, y0, x1, y1, _PIECE_TEX[(side, kind)], sz, side))
+            elif c[0][1][3] == "ex":
+                out.append(Box(x0, y0, x1, y1, "|", sz, "vbar"))
+            else:
+                out.append(Box(x0, y0, x1, y1, _PIECE_TEX[(side, kind)], sz, side))
+        return out
+    except Exception:
+        return []
+
+
+# 구 경로(CMEX 등) PUA 표시 — region_boxes 가 남기는 6글자 문자열
+_PUA_LEGACY_TEX = "\\ue000"
+
+
 def _assemble_pua_pieces(boxes):
     """세로로 쌓인 큰-괄호 조각(PUA)들을 한 덩어리(기둥)로 조립한다.
 
     PDF에 따라 큰 괄호 조각이 ToUnicode 없이 읽혀 U+F8F1 같은 PUA 문자로
     나온다. 한 x-기둥에 잇달아 쌓인 조각들 = 큰 괄호 하나. 기둥이 내용의
     왼쪽 끝이면 여는 괄호, 오른쪽 끝이면 닫는 괄호로 쓴다(cases 중괄호 등).
+
+    14.47 · Symbol 글꼴 조각(원본 PUA 문자를 들고 있는 것)은 종류·쪽을
+    디코딩해 합친다. 구 경로(CMEX 등, "\\ue000" 표시)는 예전 규칙 그대로 둔다.
     """
     try:
         pieces = [b for b in boxes if b.role == "pua"]
-        if len(pieces) < 2:
-            boxes2 = [b for b in boxes if b.role != "pua"]
-            boxes2.sort(key=lambda b: (b.x0, b.y0))
-            return boxes2
+        if not pieces:
+            return boxes
+        legacy = [b for b in pieces if (b.tex or "") == _PUA_LEGACY_TEX]
+        coded = [b for b in pieces if (b.tex or "") != _PUA_LEGACY_TEX]
         keep = [b for b in boxes if b.role != "pua"]
-        pieces.sort(key=lambda b: (b.x0, b.y0))
-        cols = []
-        for p in pieces:
+        if coded:
+            keep.extend(_merge_piece_columns(coded))
+        if len(legacy) >= 2:
+            legacy.sort(key=lambda b: (b.x0, b.y0))
+            cols = []
+            for p in legacy:
+                for c in cols:
+                    if (abs(c[0][1].x0 - p.x0) <= 1.5
+                            and p.y0 <= c[-1][1].y1 + 3.0):
+                        c.append((p.y0, p))
+                        c.sort(key=lambda u: u[0])
+                        break
+                else:
+                    cols.append([(p.y0, p)])
             for c in cols:
-                if (abs(c[0][1].x0 - p.x0) <= 1.5
-                        and p.y0 <= c[-1][1].y1 + 3.0):
-                    c.append((p.y0, p))
-                    c.sort(key=lambda u: u[0])
-                    break
-            else:
-                cols.append([(p.y0, p)])
-        for c in cols:
-            ps = [u[1] for u in c]
-            if len(ps) < 3:
-                continue                      # 3조각 미만은 확실한 괄호가 아니다
-            span = max(b.y1 for b in ps) - min(b.y0 for b in ps)
-            tallest = max(b.y1 - b.y0 for b in ps)
-            if span < tallest * 1.7:
-                continue   # 세로로 '쌓인' 모양이 아니다(underbrace 좌우 절반 등)
-            x0 = min(b.x0 for b in ps); x1 = max(b.x1 for b in ps)
-            y0 = min(b.y0 for b in ps); y1 = max(b.y1 for b in ps)
-            lo = min([b.x0 for b in keep] + [x0])
-            hi = max([b.x1 for b in keep] + [x1])
-            fracL = (x0 - lo) / max(1e-6, hi - lo)
-            if fracL >= 0.65:
-                keep.append(Box(x0, y0, x1, y1, r"\}", ps[0].size, "close"))
-            else:
-                keep.append(Box(x0, y0, x1, y1, r"\{", ps[0].size, "open"))
+                ps = [u[1] for u in c]
+                if len(ps) < 3:
+                    continue                  # 3조각 미만은 확실한 괄호가 아니다
+                span = max(b.y1 for b in ps) - min(b.y0 for b in ps)
+                tallest = max(b.y1 - b.y0 for b in ps)
+                if span < tallest * 1.7:
+                    continue   # 세로로 '쌓인' 모양이 아니다(underbrace 좌우 절반 등)
+                x0 = min(b.x0 for b in ps); x1 = max(b.x1 for b in ps)
+                y0 = min(b.y0 for b in ps); y1 = max(b.y1 for b in ps)
+                lo = min([b.x0 for b in keep] + [x0])
+                hi = max([b.x1 for b in keep] + [x1])
+                fracL = (x0 - lo) / max(1e-6, hi - lo)
+                if fracL >= 0.65:
+                    keep.append(Box(x0, y0, x1, y1, r"\}", ps[0].size, "close"))
+                else:
+                    keep.append(Box(x0, y0, x1, y1, r"\{", ps[0].size, "open"))
         keep.sort(key=lambda b: (b.x0, b.y0))
         return keep
     except Exception:
@@ -2355,6 +2580,61 @@ _MAT_ENV_RE = re.compile(r"\\begin\{(?:matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vm
 # TeX 은 \cdots \vdots \ddots 를 '마침표 세 개'로 조판한다 → 한 칸으로 모은다.
 _MAT_DOTS = {".", "·", "⋅", "⋯", "⋮", "⋱", "…", "•"}
 
+# 칸 안 미세 병합에서 부호로 인정하는 글자 (_tok_tex 적용 뒤 모양)
+_MICRO_SIGNS = {"-", "+"}
+
+
+def _micro_merge_row(row):
+    """한 줄 안에서 숫자 조각(부호·자릿수·소수점)을 한 상자로 합친다. (14.47)
+
+    '−1' 의 부호는 왼쪽으로 삐죽 나와 앞 칸과의 간격을 갉아먹는다. 합치지
+    않으면 열 경계 점프가 안 잡혀 멀쩡한 행렬을 놓친다. 구분자·첨자·점열은
+    건드리지 않는다 — 괄호 짝·중괄호·줄임표 판정이 그대로 돌게.
+    크기가 12% 넘게 다르면(위/아래 첨자) 합치지 않는다. 자릿수 임계값은
+    빡빡하게(1.0pt) 둔다 — 열 간격이 좁은 행렬에서 진짜 열 경계를
+    삼켜 버리면 칸이 뭉개지기 때문이다. 부호는 자폭을 품어 2.5pt 로 둔다.
+    """
+    try:
+        rr = sorted(row, key=lambda b: b.x0)
+        out = []
+        i, n = 0, len(rr)
+        while i < n:
+            cur = rr[i]
+            i += 1
+            if cur.atomic or cur.role is not None:
+                out.append(cur)
+                continue
+            while i < n:
+                nxt = rr[i]
+                if (nxt.atomic or nxt.role is not None
+                        or abs(nxt.size - cur.size)
+                        > 0.12 * max(cur.size, nxt.size)):
+                    break
+                if len((nxt.tex or "").strip()) != 1:
+                    break            # 명령(\alpha 등)은 합치지 않는다
+                gap = nxt.x0 - cur.x1
+                la = (cur.tex or "")[-1:]
+                rb = (nxt.tex or "")[:1]
+                join = False
+                if la in _MICRO_SIGNS and rb.isalnum() and gap <= 2.5:
+                    join = True      # −1 · +x
+                elif la.isdigit() and rb.isdigit() and gap <= 1.0:
+                    join = True      # 12
+                elif gap <= 1.0 and ((la.isdigit() and rb in ".,")
+                                     or (la in ".," and rb.isdigit())):
+                    join = True      # 3.5 · 1,000
+                if not join or gap < -0.5:
+                    break
+                cur = Box(cur.x0, min(cur.y0, nxt.y0), nxt.x1,
+                          max(cur.y1, nxt.y1),
+                          (cur.tex or "") + (nxt.tex or ""),
+                          max(cur.size, nxt.size))
+                i += 1
+            out.append(cur)
+        return out
+    except Exception:
+        return row
+
 
 def _is_matrix_delim(b):
     """이 상자가 행렬을 감쌀 수 있는 큰 구분자인가.
@@ -2488,6 +2768,10 @@ def _matrix_grid(boxes, rules=None):
                 if min(r[2], cx1) - max(r[0], cx0) > 0.35 * cw:
                     return None
 
+        # ── 14.47 · 칸 안 숫자 조각(−1·12·3.5)을 먼저 합친다 ──
+        rows = [_micro_merge_row(r) for r in rows]
+        inner = [b for r in rows for b in r]
+
         # ── 열: '칸 안쪽 간격'과 '칸 사이 간격'의 도약으로 가른다 ──
         #   닿아 있는 글자(커닝·아래첨자)의 0~1pt 간격은 칸을 가르는 간격이
         #   될 수 없다. 그걸 그대로 넣으면 '점 세 개'(\cdots) 사이의 3pt 가
@@ -2508,6 +2792,13 @@ def _matrix_grid(boxes, rules=None):
             if hi / lo >= 3.0:
                 cands.append((hi / lo, (lo + hi) / 2.0))
         cands.sort(key=lambda z: -z[0])
+        if not cands and gs:
+            # 14.47 · 도약이 하나도 없으면(열 간격이 거의 균일하면) 최소
+            # 간격의 절반을 후보로 둔다. 최소 간격 '바로 아래'는 줄마다
+            # 1pt 안팎으로 흔들리는 지터에 열이 뭉개져 버린다(Bmatrix 회귀).
+            # 절반이면 진짜 열 간격은 반드시 갈라지고(2배 여유) 칸 안
+            # 커닝만 합쳐진다.
+            cands.append((0.0, min(gs) * 0.5))
         # 마지막 후보: 칸을 가를 간격이 없다 → 글자 하나가 한 칸. 같은 열의
         # 다른 줄 글자는 서로 겹치므로(gap ≤ 0) 여전히 한 칸으로 모인다.
         cands.append((0.0, 0.0))
@@ -2683,14 +2974,25 @@ def _try_matrix(boxes, rules, depth, opener=None, closer=None):
     try:
         bs = sorted([b for b in boxes if (b.tex or "").strip() or b.atomic],
                     key=lambda b: (b.x0, b.y0))
-        if len(bs) < 4:
+        if opener is None and len(bs) < 4:
+            # 14.47 · 이 검사는 '구분자+내용' 자동 탐색용이다. opener/closer
+            # 경로(boxes = 내용물만)까지 막으면 [x;y] 같은 글자 두 개짜리
+            # 열 벡터가 전부 \left[ 로 떨어졌다.
             return None
+
+        def _vspan(o, c, content):
+            """14.47 · 구분자 세로 범위 밖의 글자(행·열 이름표)는 칸이 아니다."""
+            y0 = min(o.y0, c.y0); y1 = max(o.y1, c.y1)
+            tol = (y1 - y0) * 0.10 + 2.0
+            return [b for b in content if y0 - tol <= b.cy <= y1 + tol]
+
         cands = []
         if opener is not None and closer is not None:
             # 큰 괄호 글리프의 bbox 는 잉크보다 훨씬 넓어(83pt '[' 의 박스 폭
             # 28pt) 첫 칸을 덮는다. x 로 자르지 말고 호출자가 준 안쪽 목록을 믿는다.
             content = [b for b in boxes if b is not opener and b is not closer]
             content = [b for b in content if (b.tex or "").strip() or b.atomic]
+            content = _vspan(opener, closer, content)
             if len(content) >= 2 and _delims_wrap(opener, closer, content):
                 cands.append((opener, closer, content))
         else:
@@ -2699,12 +3001,20 @@ def _try_matrix(boxes, rules, depth, opener=None, closer=None):
                 if j <= i + 1:
                     continue
                 o, c = bs[i], bs[j]
-                content = bs[i + 1:j]
+                content = _vspan(o, c, bs[i + 1:j])
                 if len(content) < 2 or not _delims_wrap(o, c, content):
+                    continue
+                # 14.47 · 내용물 안에 또 다른 큰 괄호가 있으면 두 행렬에
+                # 걸친 엉터리 쌍이다(닫는 괄호를 잃은 이웃 탓) → 건너뛴다.
+                # 첨가 행렬의 세로 막대(vbar)는 구분선이므로 제외하지 않는다.
+                if any(b.role in ("open", "close") for b in content):
                     continue
                 # 닫는 구분자 바로 뒤에 '작은' 글자(위/아래 첨자)가 붙으면
                 # 여기서 붙이지 않는다 — _linear 가 첨자까지 처리하는 편이 낫다.
-                rest = [b for b in bs if b.x0 >= c.x0 - 0.5]
+                # 14.47 · '바로 뒤'만 본다. 줄 끝까지 다 보면 옆 행렬의 윗줄이
+                # 중심에서 4pt만 벗어나도 이 쌍이 죽어 버렸다(B 행렬 추락).
+                rest = [b for b in bs
+                        if c.x0 - 0.5 <= b.x0 <= c.x1 + max(5.0, o.size * 0.4)]
                 ref_h = max(o.size * 0.72, o.h, 1.0)
                 if any(b.size < o.size * 0.95 or abs(b.cy - c.cy) > ref_h * 0.15
                        for b in rest):
@@ -2985,7 +3295,7 @@ def _trim_band_labels(rd, bands):
     return out
 
 
-def _expand_math_bands(rd, bands):
+def _expand_math_bands(rd, bands, row_prose=None):
     """cases처럼 키 큰 밴드만, 짧은 이웃 수식 토큰을 좌우로 끌어들인다.
 
     아무 밴드나 키우면 본문 문장이 수식에 빨려 들어가므로
@@ -2993,6 +3303,9 @@ def _expand_math_bands(rd, bands):
     """
     if not bands:
         return bands
+    # 14.47 · 행 단위 산문 판정(쪼개진 줄 조각이 산문 행에 딸려 들어가지 않게)
+    if row_prose is None:
+        row_prose = _row_prose_flags(rd)
     glyphs = []
     for blk in rd.get("blocks", []):
         if blk.get("type") != 0:
@@ -3003,12 +3316,9 @@ def _expand_math_bands(rd, bands):
                 continue
             if (bb[2] - bb[0]) > 120:
                 continue
-            txt = "".join(_span_text(sp) for sp in ln.get("spans", []))
-            words = re.findall(r"[A-Za-z]+", txt)
-            prose_hits = [w for w in words if w.lower() in _COMMON_PROSE]
-            non_math = [w for w in words if len(w) >= 3 and not _is_math_identifier(w)]
-            if prose_hits or len(non_math) >= 2:
+            if row_prose.get(id(ln), False):
                 continue
+            txt = "".join(_span_text(sp) for sp in ln.get("spans", []))
             # (5.46)/(3) is the equation NUMBER, never part of the formula.
             # Absorbing it put literal '( 5 . 4 6 )' inside the rendered math.
             if _is_equation_label(txt):
@@ -3080,12 +3390,12 @@ def _matrix_band_seeds(page, rd, doc, gtables, rules, is_prose=None, limit=60):
     """
     try:
         cands, heights = [], []
+        _seed_pieces = []     # 14.47 · Symbol 큰 괄호 조각(산문 줄에서도 수집)
         for blk in rd.get("blocks", []):
             if blk.get("type") != 0:
                 continue
             for ln in blk.get("lines", []):
-                if is_prose and is_prose(ln):
-                    continue
+                skip = bool(is_prose and is_prose(ln))
                 for sp in ln.get("spans", []):
                     fname = sp.get("font") or ""
                     short = fname.split("+")[-1]
@@ -3100,6 +3410,8 @@ def _matrix_band_seeds(page, rd, doc, gtables, rules, is_prose=None, limit=60):
                         if not bb or not c or c.isspace():
                             continue
                         if ext:
+                            if skip:
+                                continue
                             gname = table.get(ord(c)) if c else None
                             if not gname and c:
                                 gname = _CMEX_STD.get(ord(c))
@@ -3109,6 +3421,18 @@ def _matrix_band_seeds(page, rd, doc, gtables, rules, is_prose=None, limit=60):
                                     heights.append(bb[3] - bb[1])
                                 continue
                         else:
+                            if c and _is_symbol_font(fname):
+                                dec = _symbol_pua_lookup(ord(c))
+                                if dec is None:
+                                    continue
+                                if isinstance(dec, tuple):
+                                    _seed_pieces.append(Box(
+                                        bb[0], bb[1], bb[2], bb[3], c, size, "pua"))
+                                    continue
+                                if dec is not False:
+                                    c = dec
+                            if skip:
+                                continue
                             tex = _tok_tex(c)
                             if (tex or "").strip() not in _MAT_DELIM_TEX:
                                 if c.strip() and bb[3] > bb[1]:
@@ -3116,6 +3440,10 @@ def _matrix_band_seeds(page, rd, doc, gtables, rules, is_prose=None, limit=60):
                                 continue
                             role = "vbar" if c == "|" else None
                         cands.append(Box(bb[0], bb[1], bb[2], bb[3], tex, size, role))
+        if _seed_pieces:
+            # 조각 기둥을 큰 구분자로 합쳐 후보에 올린다. 조립 검증(아래)이
+            # 행렬이 아닐 걸 걸러주므로 씨앗 단계에선 관대해도 된다.
+            cands.extend(_merge_piece_columns(_seed_pieces))
         if len(cands) < 2:
             return []
         body_h = _median(heights) or 10.0
@@ -3159,6 +3487,74 @@ def _matrix_band_seeds(page, rd, doc, gtables, rules, is_prose=None, limit=60):
         return []
 
 
+def _row_prose_flags(rd):
+    """같은 행(row)에 놓인 줄들을 묶어 산문 여부를 판정한다. (14.47)
+
+    MuPDF 는 산문 속 Symbol 글자·첨자를 별개의 '줄'로 쪼갠다. 줄 단위로만
+    보면 "{", "A =" 같은 조각이 산문 판정을 피하고, 밑줄 규칙선과 만나
+    가짜 수식 밴드가 된다(Q36 행이 수식 수프로 굳던 원인).
+    같은 행(세로로 60% 이상 겹치고 높이가 비슷하고 가로로 이웃한 줄)의
+    글자를 합쳐 판정하면 조각도 제 행의 문맥을 따라간다.
+    """
+    try:
+        lines = []
+        for blk in rd.get("blocks", []):
+            if blk.get("type") != 0:
+                continue
+            for ln in blk.get("lines", []):
+                if ln.get("bbox"):
+                    lines.append(ln)
+        order = sorted(range(len(lines)), key=lambda i: lines[i]["bbox"][1])
+        parent = list(range(len(lines)))
+
+        def find(a):
+            while parent[a] != a:
+                parent[a] = parent[parent[a]]
+                a = parent[a]
+            return a
+
+        for ii, i in enumerate(order):
+            bi = lines[i]["bbox"]
+            hi = max(1e-6, bi[3] - bi[1])
+            for j in order[ii + 1:]:
+                bj = lines[j]["bbox"]
+                if bj[1] >= bi[3]:
+                    break              # y0 순 정렬이므로 이후는 겹칠 수 없다
+                ov = min(bi[3], bj[3]) - max(bi[1], bj[1])
+                if ov <= 0:
+                    continue
+                hj = max(1e-6, bj[3] - bj[1])
+                if ov <= 0.6 * min(hi, hj):
+                    continue
+                if max(hi, hj) > 2.2 * min(hi, hj):
+                    continue     # 키 큰 조각(구분자)은 다른 행까지 엮지 않는다
+                hgap = max(0.0, max(bi[0] - bj[2], bj[0] - bi[2]))
+                if hgap > 16.0:
+                    continue     # 다른 단·멀리 떨어진 식은 같은 행이 아니다
+                ri, rj = find(i), find(j)
+                if ri != rj:
+                    parent[rj] = ri
+        groups = {}
+        for i, ln in enumerate(lines):
+            groups.setdefault(find(i), []).append(ln)
+        out = {}
+        for members in groups.values():
+            txt = " ".join("".join(_span_text(sp) for sp in ln.get("spans", []))
+                           for ln in members)
+            words = re.findall(r"[A-Za-z]+", txt)
+            prose = False
+            if words:
+                prose_hits = [w for w in words if w.lower() in _COMMON_PROSE]
+                non_math = [w for w in words
+                            if len(w) >= 3 and not _is_math_identifier(w)]
+                prose = bool(prose_hits or len(non_math) >= 2)
+            for ln in members:
+                out[id(ln)] = prose
+        return out
+    except Exception:
+        return {}
+
+
 def _big_math_bands(page, avoid=None):
     """이 쪽에서 '큰 수식' 이 놓인 줄 영역(밴드)들을 찾는다. (9.3)
 
@@ -3194,7 +3590,13 @@ def _big_math_bands(page, avoid=None):
     # (본문 안에 복잡한 인라인 수식이 있어 확장글꼴이 섞여 있어도 마찬가지 —
     #  그런 줄이 씨앗이 되면 옆의 디스플레이 수식과 합쳐지고, 산문과 겹쳐
     #  밴드 전체가 버려지면서 진짜 수식까지 사라졌다)
+    # 14.47 · 행 단위 판정: 쪼개진 줄 조각이 제 행의 문맥을 따라간다.
+    _row_prose = _row_prose_flags(rd)
+
     def _is_prose(ln):
+        flag = _row_prose.get(id(ln))
+        if flag is not None:
+            return flag
         txt = "".join(_span_text(sp) for sp in ln.get("spans", []))
         words = re.findall(r"[A-Za-z]+", txt)
         if not words:
@@ -3237,11 +3639,12 @@ def _big_math_bands(page, avoid=None):
                     near_rule = True
                     break
             if has_ext or near_rule:
-                seeds.append([bb[0], bb[1], bb[2], bb[3]])
+                seeds.append([bb[0], bb[1], bb[2], bb[3], False])
     # 14.46 · 행렬: 확장 글꼴 괄호가 없는 PDF 에서도 '큰 구분자 + 격자'를
     #   씨앗으로 올린다. 실제로 행렬로 조립되는 후보만 들어온다.
     try:
-        seeds.extend(_matrix_band_seeds(page, rd, doc, gtables, rules, _is_prose))
+        for _ms in _matrix_band_seeds(page, rd, doc, gtables, rules, _is_prose):
+            seeds.append([_ms[0], _ms[1], _ms[2], _ms[3], True])
     except Exception:
         pass
     if not seeds:
@@ -3251,7 +3654,9 @@ def _big_math_bands(page, avoid=None):
     # 세로로 '실제로 겹치는' 조각만 한 식으로 본다. 단순히 맞닿았다고
     # 합치면 위아래로 나란한 별개의 식 두 개가 한 덩어리가 된다.
     seeds.sort(key=lambda r: (r[1], r[0]))
-    bands = []      # [x0,y0,x1,y1,capH] — capH: 이 밴드가 자랈 수 있는 최대 높이
+    # [x0,y0,x1,y1,capH,matrix_only] — capH: 자랄 수 있는 최대 높이,
+    # matrix_only: 행렬 씨앗만으로 이뤄진 밴드(14.47 · 팽창·산문충돌 면제)
+    bands = []
     for r in seeds:
         placed = False
         for m in bands:
@@ -3265,11 +3670,12 @@ def _big_math_bands(page, avoid=None):
                 m[0] = min(m[0], r[0]); m[1] = min(m[1], r[1])
                 m[2] = max(m[2], r[2]); m[3] = max(m[3], r[3])
                 m[4] = max(cap, 46.0)
+                m[5] = bool(m[5] and r[4])
                 placed = True
                 break
         if not placed:
             bands.append([r[0], r[1], r[2], r[3],
-                          max(46.0, (r[3] - r[1]) * 1.35)])
+                          max(46.0, (r[3] - r[1]) * 1.35), bool(r[4])])
 
     # 10.0 · 분수선을 사이에 둔 두 밴드는 한 식이다.
     #   분자 밴드와 분모 밴드는 세로로 전혀 겹치지 않아, 위의 '세로 겹침'
@@ -3295,6 +3701,7 @@ def _big_math_bands(page, avoid=None):
                     m0[0] = min(m0[0], m[0]); m0[1] = min(m0[1], m[1])
                     m0[2] = max(m0[2], m[2]); m0[3] = max(m0[3], m[3])
                     m0[4] = max(m0[4], m[4], 46.0)
+                    m0[5] = bool(m0[5] and m[5])
                     bands.remove(m)
 
     for _ in range(4):
@@ -3352,6 +3759,7 @@ def _big_math_bands(page, avoid=None):
                     a[0] = min(a[0], b[0]); a[1] = min(a[1], b[1])
                     a[2] = max(a[2], b[2]); a[3] = max(a[3], b[3])
                     a[4] = max(a[4], b[4], 46.0)
+                    a[5] = bool(a[5] and b[5])
                     bands.pop(j)
                     grew = True
                     if j < i:
@@ -3392,9 +3800,14 @@ def _big_math_bands(page, avoid=None):
         final_bands.append(b)
 
     # 산문 줄과 세로로 겹쳐 버린 밴드는 신뢰할 수 없다 → 큰 수식 처리 포기
-    bands = [m[:4] for m in final_bands]
+    # 14.47 · 행렬 씨앗 밴드는 검증된 구분자 상자 그대로라 줄-bbox 충돌 검사를
+    # 면제한다. 산문 글자를 삼켰는지는 뒤의 글자 단위 검사(_touches_prose)가 본다.
+    bands = final_bands
     good = []
     for m in bands:
+        if m[5]:
+            good.append(m[:4])
+            continue
         clash = False
         for blk in rd.get("blocks", []):
             if blk.get("type") != 0:
@@ -3413,11 +3826,11 @@ def _big_math_bands(page, avoid=None):
             if clash:
                 break
         if not clash:
-            good.append(m)
+            good.append(m[:4])
     bands = good
 
     # 14.3 · cases/큰 괄호 밴드는 좌우 이웃 수식 토큰(s_k(t)=, k>0, …)까지 포함한다.
-    bands = _expand_math_bands(rd, bands)
+    bands = _expand_math_bands(rd, bands, _row_prose)
     # 식 번호 '(5.46)' 이 밴드 안에 들어왔으면 잘라낸다 — 수식이 아니라 글자다.
     bands = _trim_band_labels(rd, bands)
 
@@ -3738,15 +4151,30 @@ def _sanitize_line_glyphs(ln, gtables):
     """
     try:
         for sp in ln.get("spans", []):
-            short = (sp.get("font") or "").split("+")[-1].upper()
-            if not ("CMEX" in short or "TXEX" in short or "EXTRA" in short
+            fname = sp.get("font") or ""
+            short = fname.split("+")[-1].upper()
+            sym = _is_symbol_font(fname)
+            if not (sym or "CMEX" in short or "TXEX" in short or "EXTRA" in short
                     or "LMEX" in short or "MSAM" in short or "MSBM" in short):
                 continue
-            table = gtables.get(sp.get("font")) or gtables.get(
-                (sp.get("font") or "").split("+")[-1]) or {}
+            table = {} if sym else (gtables.get(sp.get("font")) or gtables.get(
+                (sp.get("font") or "").split("+")[-1]) or {})
             for ch in (sp.get("chars") or []):
                 c = ch.get("c") or ""
                 if not c:
+                    continue
+                if sym:
+                    # 14.47 · 낱기호는 유니코드로, 조각은 위 토막만
+                    # 구분자 한 글자로(아래 토막까지 살리면 괄호가 두 겹 된다).
+                    dec = _symbol_pua_lookup(ord(c))
+                    if dec is None:
+                        ch["c"] = ""
+                    elif isinstance(dec, tuple):
+                        _side, _kind, _pos = dec[1], dec[2], dec[3]
+                        ch["c"] = (_PIECE_TEXT.get((_side, _kind), "")
+                                   if _pos == "tp" else "")
+                    elif dec is not False:
+                        ch["c"] = dec
                     continue
                 gname = table.get(ord(c)) if c else None
                 if not gname:
@@ -3918,6 +4346,16 @@ _LATEX_SYMBOLS = {
     "◦": r"\circ", "□": r"\square",
     # 14.46 · 행렬 줄임표 (인라인 수식 경로도 같은 기호를 쓴다)
     "⋯": r"\cdots", "⋮": r"\vdots", "⋱": r"\ddots",
+    # 14.47 · Symbol PUA 디코딩으로 들어오는 낱기호들 (_SYM 과 같은 값)
+    "°": r"\degree", "•": r"\bullet", "⁄": "/", "€": r"\text{€}",
+    "ϒ": r"\Upsilon", "″": "''", "ℵ": r"\aleph",
+    "℘": r"\wp", "∅": r"\emptyset", "⊇": r"\supseteq", "⊄": r"\not\subset",
+    "⊆": r"\subseteq", "∠": r"\angle", "®": r"\text{®}", "©": r"\text{©}",
+    "™": r"\text{™}", "¬": r"\neg", "⇐": r"\Leftarrow", "⇑": r"\Uparrow",
+    "⇓": r"\Downarrow", "◊": r"\diamond", "↑": r"\uparrow", "↓": r"\downarrow",
+    "♣": r"\clubsuit", "♦": r"\diamondsuit", "♥": r"\heartsuit",
+    "♠": r"\spadesuit", "ƒ": r"\text{ƒ}", "⏎": r"\text{⏎}",
+    "∗": r"\ast", "∴": r"\therefore", "∋": r"\ni",
 }
 _LATEX_GREEK = {
     # 같은 모양 다른 코드포인트도 함께 (µ MICRO SIGN, Ω OHM SIGN, ∆ INCREMENT)
