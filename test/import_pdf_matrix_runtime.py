@@ -193,6 +193,72 @@ class MatrixAssembleTest(unittest.TestCase):
         self.assertTrue(importer._latex_is_sane(t))
         self.assertFalse(importer._tex_is_figure_junk(t))
 
+    def test_signed_entry_three_by_three(self):
+        """14.47 · '-1' 처럼 부호가 삐죽 나온 칸도 열을 잃지 않는다."""
+        o, c = delims("[", "]", 90.0, 175.0)
+        boxes = [o,
+                 bx(130, 100, 136, 113, "1"),
+                 bx(160, 100, 166, 113, "-"), bx(166.6, 100, 172.6, 113, "1"),
+                 bx(190, 100, 196, 113, "0")]
+        boxes += grid([["2", "3", "4"], ["0", "1", "2"]], y0=125.0, ch=25.0)
+        boxes += [c]
+        self.assertEqual(
+            _asm(boxes),
+            r"\begin{bmatrix} 1 & -1 & 0 \\ 2 & 3 & 4 \\ 0 & 1 & 2 \end{bmatrix}")
+
+    def test_two_box_vector_between_matrices(self):
+        """14.47 · 행렬 사이 낀 [x;y] 두 글자 벡터가 \\left[ 로 떨어지지 않는다."""
+        o1, c1 = delims("[", "]")
+        o2 = bx(260.0, 100.0, 266.0, 160.0, "[", 40.0, "open")
+        c2 = bx(300.0, 100.0, 306.0, 160.0, "]", 40.0, "close")
+        o3 = bx(330.0, 100.0, 336.0, 160.0, "[", 40.0, "open")
+        c3 = bx(470.0, 100.0, 476.0, 160.0, "]", 40.0, "close")
+        boxes = ([o1] + grid([["a", "b"], ["c", "d"]], y0=110.0, ch=30.0) + [c1]
+                 + [o2, bx(275, 110, 281, 123, "x"), bx(275, 140, 281, 153, "y"), c2]
+                 + [o3] + grid([["e", "f"], ["g", "h"]], x0=350.0, y0=110.0, ch=30.0) + [c3])
+        self.assertEqual(
+            _asm(boxes),
+            r"\begin{bmatrix} a & b \\ c & d \end{bmatrix} "
+            r"\begin{bmatrix} x \\ y \end{bmatrix} "
+            r"\begin{bmatrix} e & f \\ g & h \end{bmatrix}")
+
+    def test_middle_matrix_with_fraction_cell(self):
+        """14.47 · 가운데 행렬(B) + 분수 칸: 옆 행렬 때문에 쌍이 죽지 않는다."""
+        o1, c1 = delims("[", "]")
+        o2 = bx(258.0, 100.0, 264.0, 160.0, "[", 40.0, "open")
+        c2 = bx(304.0, 100.0, 310.0, 160.0, "]", 40.0, "close")
+        o3 = bx(330.0, 100.0, 336.0, 160.0, "[", 40.0, "open")
+        c3 = bx(470.0, 100.0, 476.0, 160.0, "]", 40.0, "close")
+        mid = [bx(272, 110, 278, 123, "5"),
+               bx(290, 108, 296, 120, "1", 7.0), bx(290, 116, 296, 128, "2", 7.0),
+               bx(270, 140, 276, 153, "2"), bx(276, 140, 282, 153, "0"),
+               bx(290, 140, 296, 153, "2")]
+        boxes = ([o1] + grid([["a", "b"], ["c", "d"]], y0=110.0, ch=30.0) + [c1]
+                 + [o2] + mid + [c2]
+                 + [o3] + grid([["e", "f"], ["g", "h"]], x0=350.0, y0=110.0, ch=30.0) + [c3])
+        self.assertEqual(
+            _asm(boxes, [[290.0, 118.0, 296.0, 118.0]]),
+            r"\begin{bmatrix} a & b \\ c & d \end{bmatrix} "
+            r"\begin{bmatrix} 5 & \frac{1}{2} \\ 20 & 2 \end{bmatrix} "
+            r"\begin{bmatrix} e & f \\ g & h \end{bmatrix}")
+
+    def test_touching_digits_with_real_geometry(self):
+        """14.47 · 글자 크기 9pt·높이 12pt 실측 기하에서도 자릿수가 붙는다."""
+        o = bx(115.0, 287.0, 119.0, 313.0, "[", 9.0, "open")
+        c = bx(155.0, 287.0, 159.0, 313.0, "]", 9.0, "close")
+        boxes = [o,
+                 bx(128.5, 287.4, 133.0, 299.4, "4", 9.0),
+                 bx(148.4, 287.4, 152.9, 299.4, "1", 9.0),
+                 bx(119.1, 301.3, 124.0, 313.0, "-", 9.0),
+                 bx(124.0, 300.9, 128.5, 312.9, "1", 9.0),
+                 bx(128.5, 300.9, 133.0, 312.9, "9", 9.0),
+                 bx(143.4, 301.3, 148.4, 313.0, "-", 9.0),
+                 bx(148.4, 300.9, 152.9, 312.9, "5", 9.0),
+                 c]
+        self.assertEqual(
+            _asm(boxes),
+            r"\begin{bmatrix} 4 & 1 \\ -19 & -5 \end{bmatrix}")
+
 
 class MatrixPageTest(unittest.TestCase):
     """표본 PDF 한 쪽을 통째로 불러온 결과."""
@@ -229,14 +295,15 @@ class MatrixPageTest(unittest.TestCase):
         got = self._latex("physics")
         want = [
             r"\begin{bmatrix} 0 & 1 \\ 1 & 0 \end{bmatrix}",                  # 파울리
-            r"\begin{pmatrix} c & - s \\ s & c \end{pmatrix}",                # 회전
+            r"\begin{pmatrix} c & -s \\ s & c \end{pmatrix}",                 # 회전
+            # 14.47 · 칸 안 부호+숫자는 붙여 쓴다('-s'. 렌더는 '- s' 와 같다)
             r"\begin{bmatrix} 1 & \cdots & 0 \\ \vdots & \ddots & \vdots "
             r"\\ 0 & \cdots & 1 \end{bmatrix}",                               # 줄임표
             r"\begin{pmatrix} x \\ y \\ z \end{pmatrix}",                     # 열 벡터
-            r"\begin{bmatrix} h _{1 1} & h _{1 2} & h _{1 3} & h _{1 4} "
-            r"\\ h _{2 1} & h _{2 2} & h _{2 3} & h _{2 4} "
-            r"\\ h _{3 1} & h _{3 2} & h _{3 3} & h _{3 4} "
-            r"\\ h _{4 1} & h _{4 2} & h _{4 3} & h _{4 4} \end{bmatrix}",
+            r"\begin{bmatrix} h _{11} & h _{12} & h _{13} & h _{14} "
+            r"\\ h _{21} & h _{22} & h _{23} & h _{24} "
+            r"\\ h _{31} & h _{32} & h _{33} & h _{34} "
+            r"\\ h _{41} & h _{42} & h _{43} & h _{44} \end{bmatrix}",
         ]
         for w in want:
             self.assertTrue(any(w in g for g in got),
@@ -261,12 +328,12 @@ class MatrixPageTest(unittest.TestCase):
     def test_arch_page_restores_all_matrices(self):
         got = self._latex("arch")
         want = [
-            r"\begin{bmatrix} d _{1 1} & d _{1 2} & d _{1 3} & d _{1 4} "
-            r"\\ d _{2 1} & d _{2 2} & d _{2 3} & d _{2 4} "
-            r"\\ d _{3 1} & d _{3 2} & d _{3 3} & d _{3 4} "
-            r"\\ d _{4 1} & d _{4 2} & d _{4 3} & d _{4 4} \end{bmatrix}",
-            r"\begin{array}{cc|c} a _{1 1} & a _{1 2} & b _{1} "
-            r"\\ a _{2 1} & a _{2 2} & b _{2} \end{array}",       # 첨가 행렬
+            r"\begin{bmatrix} d _{11} & d _{12} & d _{13} & d _{14} "
+            r"\\ d _{21} & d _{22} & d _{23} & d _{24} "
+            r"\\ d _{31} & d _{32} & d _{33} & d _{34} "
+            r"\\ d _{41} & d _{42} & d _{43} & d _{44} \end{bmatrix}",
+            r"\begin{array}{cc|c} a _{11} & a _{12} & b _{1} "
+            r"\\ a _{21} & a _{22} & b _{2} \end{array}",       # 첨가 행렬
             r"\begin{Bmatrix} A & 0 \\ 0 & C \end{Bmatrix}",      # 블록 행렬
         ]
         for w in want:
