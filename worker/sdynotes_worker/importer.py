@@ -756,7 +756,10 @@ def _bind_accents(t):
     """
     if not t or "\\" not in t:
         return t
-    acc = r"\\(?:" + _ACCENT_NAMES + r")"
+    # 14.46 · 끝에 \b 가 없으면 \ddot 이 \ddots 를 잡아먹는다
+    #   ('\\ddot' + 's' → \ddot{s}). 줄임표(\dots \ddots)가 매번 \dot{s} 로
+    #   깨졌다 — 행렬에서 줄임표는 가장 흔한 칸 내용이다.
+    acc = r"\\(?:" + _ACCENT_NAMES + r")\b"
     atom = r"\\[A-Za-z]+(?:\{[^{}]*\})?|\{[^{}]*\}|[A-Za-z0-9]"
     for _ in range(4):
         prev = t
@@ -1442,6 +1445,8 @@ _SYM = {
     "ℕ": r"\mathbb{N}", "ℚ": r"\mathbb{Q}", "−": "-", "≡": r"\equiv",
     "≫": r"\gg", "≪": r"\ll", "∼": r"\sim", "∘": r"\circ",
     "⊗": r"\otimes", "⊕": r"\oplus", "′": "'", "″": "''", "…": r"\dots",
+    # 14.46 · 행렬의 줄임표. KaTeX 는 ⋯ ⋮ ⋱ 를 그대로 받지 못한다.
+    "⋯": r"\cdots", "⋮": r"\vdots", "⋱": r"\ddots", "‖": r"\|",
     "⟨": r"\langle", "⟩": r"\rangle", "∧": r"\wedge", "∨": r"\vee",
     # TeX accent glyphs are extracted as standalone Unicode characters.  The
     # old mapping of circumflex to \int was especially damaging for \hat{s}.
@@ -1641,6 +1646,12 @@ def assemble(boxes, rules, depth=0):
         return " ".join(b.tex for b in sorted(boxes, key=lambda b: b.x0))
 
     if depth == 0:
+        # 14.46 · 행렬이 먼저다. cases(왼쪽 중괄호만)와 달리 구분자가 좌우에
+        # 짝으로 있으므로 \begin{bmatrix} 로 확정할 수 있고, 글자 수가 많아도
+        # aligned 로 찢기 전에 행·열(&amp; \\)을 살려야 한다.
+        mx = _try_matrix(boxes, rules, depth)
+        if mx:
+            return mx
         cased = _try_cases(boxes, rules, depth)
         if cased:
             return cased
@@ -1725,68 +1736,16 @@ def _linear(boxes, rules, depth):
         b = bs[i]
 
         # ── 큰 괄호: 짝을 찾아 그 안을 통째로 재귀 ──
-        if b.role == "open":
-            depthc = 0
-            j = -1
-            for k in range(i, n):
-                if bs[k].role == "open":  depthc += 1
-                elif bs[k].role == "close":
-                    depthc -= 1
-                    if depthc == 0:
-                        j = k
-                        break
-            if j > i:
-                inner = assemble(bs[i + 1:j], rules, depth + 1)
-                last = bs[j]
-                ref_sz = bs[j].size
-                ref_h = max(ref_sz * 0.72, bs[j].h, norm_h)
-                base_cy = bs[j].cy
-                cluster, pend = [], []
-                m_idx = j + 1
-                while m_idx < n:
-                    c = bs[m_idx]
-                    if c.atomic:
-                        if (c.size < ref_sz * 0.95 and (last.y1 - c.y1) >= ref_h * 0.25
-                                and c.x0 - max([z.x1 for z in (cluster + pend)] or [last.x1]) <= ref_h * 0.5):
-                            cluster.extend(pend); pend = []
-                            cluster.append(c)
-                            m_idx += 1
-                            continue
-                        break
-                    if c.role is not None:
-                        break
-                    prev_x1 = max([z.x1 for z in (cluster + pend)] or [last.x1])
-                    if c.x0 - prev_x1 > ref_h * 0.5:
-                        break
-                    small = c.size < ref_sz * 0.95
-                    same_run = bool(cluster) and abs(c.cy - cluster[-1].cy) < ref_h * 0.25
-                    if not (small or same_run):
-                        break
-                    off = abs(c.cy - base_cy)
-                    if off >= ref_h * 0.12:
-                        cluster.extend(pend); pend = []
-                        cluster.append(c)
-                        m_idx += 1
-                        continue
-                    if small and c.size < ref_sz * 0.9:
-                        pend.append(c)
-                        m_idx += 1
-                        continue
-                    break
-                if pend:
-                    m_idx -= len(pend)
-                subs = [c for c in cluster if c.cy > base_cy]
-                sups = [c for c in cluster if c.cy < base_cy]
-                grp = r"\left" + b.tex + " " + inner + r" \right" + bs[j].tex
-                if sups: grp += "^{" + assemble(sups, rules, depth + 1) + "}"
-                if subs: grp += "_{" + assemble(subs, rules, depth + 1) + "}"
-                out.append(grp)
-                i = m_idx
+        # 14.46 · 일반 글리프를 세로로 늘려 그린 큰 괄호(unicode-math·Word 계열)도
+        #         같은 경로로 본다. 단 그 경우는 '행렬로 조립될 때만' 바꾼다 —
+        #         _delim_group 이 None 을 주면 평범한 글자로 읽어 예전 출력이 그대로
+        #         나오므로 어떤 수식도 새로 깨지 않는다.
+        if b.role == "open" or (_is_matrix_delim(b) and b.h >= norm_h * 1.45):
+            grp = _delim_group(bs, i, rules, depth, norm_h)
+            if grp is not None:
+                out.append(grp[0])
+                i = grp[1]
                 continue
-            # 짝이 없으면 그냥 큰 괄호 하나
-            out.append(r"\left" + b.tex + r" \right.")
-            i += 1
-            continue
 
         if b.role == "close":
             out.append(r"\left. \right" + b.tex)
@@ -2010,16 +1969,21 @@ def _linear(boxes, rules, depth):
     return " ".join(x for x in out if x).strip()
 
 
-def region_boxes(doc, page, rect, gtables=None):
-    """페이지의 한 영역에서 Box 목록을 만든다 (CMEX 글리프 해석 포함)."""
+def region_boxes(doc, page, rect, gtables=None, rd=None):
+    """페이지의 한 영역에서 Box 목록을 만든다 (CMEX 글리프 해석 포함).
+
+    rd 를 넘기면 페이지 rawdict 를 다시 읽지 않는다 — 행렬 후보를 여러 개
+    확인할 때 같은 쪽을 수십 번 다시 파싱하지 않게.
+    """
     if gtables is None:
         gtables = font_glyph_tables(doc, page)
     x0, y0, x1, y1 = rect
     out = []
-    try:
-        rd = page.get_text("rawdict")
-    except Exception:
-        return out
+    if rd is None:
+        try:
+            rd = page.get_text("rawdict")
+        except Exception:
+            return out
     for blk in rd.get("blocks", []):
         if blk.get("type") != 0:
             continue
@@ -2043,6 +2007,11 @@ def region_boxes(doc, page, rect, gtables=None):
                         continue
                     role = None
                     tex = None
+                    if ext and (not c or c.isspace()):
+                        # 14.46 · MuPDF 는 멀리 떨어진 두 글리프 사이에 '가짜
+                        # 빈칸'을 넣는다. 확장 글꼴 빈칸을 글리프로 읽으면
+                        # CMEX 코드 32 = integral 이 되어 식 한가운데 ∫ 가 생긴다.
+                        continue
                     if ext:
                         gname = table.get(ord(c)) if c else None
                         if not gname and c:
@@ -2353,6 +2322,513 @@ def _try_cases(boxes, rules, depth):
         return None
 
 
+# ═══════════════════════════════════════════════════════════
+#  14.46 · 행렬 복원기 (matrix reconstruction)
+# ═══════════════════════════════════════════════════════════
+#  물리(파울리 행렬·회전 행렬·해밀토니안)와 컴퓨터 구조(의존 행렬·상태
+#  전이 행렬·블록 행렬) 논문의 행렬은 '큰 구분자 두 개 + 그 사이 격자' 다.
+#
+#  그런데 이 구조를 그동안 전혀 살리지 못했다.
+#
+#   ① 조립: 큰 괄호를 찾아도 안쪽을 x 순서로만 읽었다. 2×2 행렬이
+#      \\left[ a_{11} a_{12} a_{21} a_{22} \\right] 처럼 한 줄로 뭉개져
+#      행·열이 사라졌다. 칸이 여섯 개를 넘으면 \begin{aligned} 로 찢겨
+#      열 구분(&)조차 없이 세로로만 늘어놓았다.
+#   ② 인식: 확장 글꼴(CMEX/txex) 괄호가 아니면 '큰 수식' 씨앗이 되지
+#      못했다. unicode-math·Word 처럼 일반 글리프를 세로로 늘려 큰 괄호를
+#      그리는 PDF에서는 행렬이 수식으로 아예 잡히지 않아, 칸 숫자가
+#      본문 글자로 흩어지고 닫는 괄호는 마지막 줄에 '1 0[ ]' 처럼 덧붙었다.
+#
+#  이 복원기는 ① 글자 격자(행·열)를 기하로 복원해 KaTeX 행렬 환경으로
+#  조립하고, ② 조립까지 되는 후보만 '큰 수식 밴드' 씨앗으로 올린다.
+#  격자로 확정되지 않으면 예전 경로(큰 괄호/aligned/분수)를 그대로 쓴다.
+
+# 구분자: 열림 → 닫힘.  | 와 \| 는 양쪽 모두(행렬식·노름).
+_MAT_PAIR = {"(": ")", "[": "]", r"\{": r"\}", "|": "|", r"\|": r"\|",
+             r"\langle": r"\rangle", r"\lfloor": r"\rfloor", r"\lceil": r"\rceil"}
+_MAT_CLOSE_OK = set(_MAT_PAIR.values())
+_MAT_DELIM_TEX = set(_MAT_PAIR) | _MAT_CLOSE_OK
+# KaTeX 행렬 환경이 있는 구분자. 나머지(⟨ ⌊ ⌈) 는 \left…\begin{matrix} 로 감싼다.
+_MAT_ENV = {"(": "pmatrix", "[": "bmatrix", r"\{": "Bmatrix",
+            "|": "vmatrix", r"\|": "Vmatrix"}
+_MAT_ENV_RE = re.compile(r"\\begin\{(?:matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|array)\}")
+# TeX 은 \cdots \vdots \ddots 를 '마침표 세 개'로 조판한다 → 한 칸으로 모은다.
+_MAT_DOTS = {".", "·", "⋅", "⋯", "⋮", "⋱", "…", "•"}
+
+
+def _is_matrix_delim(b):
+    """이 상자가 행렬을 감쌀 수 있는 큰 구분자인가.
+
+    확장 글꼴 글리프(role open/close/vbar)와, 일반 글꼴을 세로로 늘려 그린
+    괄호(unicode-math·Word 계열 PDF)를 모두 인정한다.
+    """
+    if b is None or b.atomic:
+        return False
+    if b.role is not None and b.role not in ("open", "close", "vbar"):
+        return False
+    return (b.tex or "").strip() in _MAT_DELIM_TEX
+
+
+def _matrix_delim_pair(bs, i):
+    """bs[i] 의 구분자와 짝이 맞는 닫는 구분자의 위치 (없으면 -1).
+
+    안쪽의 같은 종류 괄호는 깊이로 센다 — (a + (b)) 의 짝은 마지막 ) 다.
+    | 처럼 열고 닫는 모양이 같은 구분자는 '깊이가 1일 때 같은 글자'를 짝으로 본다.
+    """
+    n = len(bs)
+    if i < 0 or i >= n or not _is_matrix_delim(bs[i]):
+        return -1
+    ot = (bs[i].tex or "").strip()
+    if ot not in _MAT_PAIR:          # 닫는 구분자로는 행렬을 열 수 없다
+        return -1
+    want = _MAT_PAIR[ot]
+    depth = 1
+    sym = []          # 안에서 열린 '양쪽 다 되는' 구분자(| \|)의 종류
+    for k in range(i + 1, n):
+        c = bs[k]
+        if not _is_matrix_delim(c):
+            continue
+        ct = (c.tex or "").strip()
+        opens, closes = ct in _MAT_PAIR, ct in _MAT_CLOSE_OK
+        if opens and closes:
+            # | · \| : 짝이 맞는 것이 먼저 열려 있으면 닫고, 아니면 연다.
+            # (첨가 행렬 [A | b] 의 가운데 막대가 바깥 괄호의 짝을 뺏지 않게)
+            if sym and sym[-1] == ct:
+                sym.pop()
+            elif not sym and ct == ot and ct == want:
+                return k
+            else:
+                sym.append(ct)
+            continue
+        if opens:
+            depth += 1
+            continue
+        depth -= 1
+        if depth <= 0:
+            return k if ct == want else -1
+    return -1
+
+
+def _delims_wrap(o, c, content):
+    """두 구분자가 내용을 좌우·세로로 품고, 내용 글자보다 훨씬 큰가."""
+    if not content or (c.x0 + c.x1) <= (o.x0 + o.x1):
+        return False
+    # 큰 괄호 글리프의 bbox 는 좌우 여백까지 품어 폭이 20pt 를 넘는다(60pt '(').
+    # x1 으로 비교하면 열 벡터의 ')' 가 '(' 안에 들어와 짝을 잃는다 → 중심으로 본다.
+    if min(b.x0 for b in content) < o.x0 - 0.6 or max(b.x1 for b in content) > c.x1 + 0.6:
+        return False
+    hs = [b.h for b in content if not b.atomic] or [b.h for b in content]
+    hb = _median(hs) or 10.0
+    y0 = min(b.y0 for b in content)
+    y1 = max(b.y1 for b in content)
+    span = max(1e-6, y1 - y0)
+    for d in (o, c):
+        if d.h < hb * 1.45:                      # 본문 글자보다 키가 커야 큰 괄호다
+            return False
+        if d.y0 > y0 + span * 0.20 or d.y1 < y1 - span * 0.20:
+            return False                          # 내용을 위아래로 품지 못했다
+    return True
+
+
+def _matrix_grid(boxes, rules=None):
+    """구분자 안쪽 상자들이 (행 × 열) 격자인가.
+
+    되면 {rows, grid, ncol, hb} 를, 아니면 None 을 돌려준다.
+    분수(\\frac) 처럼 '가로 규칙선이 두 줄 사이를 지나는' 배치는 행렬이
+    아니다 — 이 판정이 없으면 (a+b)/(c+d) 가 3열 행렬로 둔갑한다.
+    """
+    try:
+        bs = [b for b in boxes if (b.tex or "").strip() or b.atomic]
+        if len(bs) < 2:
+            return None
+        plain = [b for b in bs if not b.atomic and b.role is None]
+        hb = _median([b.h for b in plain] or [b.h for b in bs]) or 10.0
+        if hb <= 0.5:
+            return None
+
+        # ── 첨가 행렬의 세로 막대([A | b])는 '칸'이 아니라 열 구분선이다 ──
+        #   키가 크면 칸 위아래를 모두 걸쳐서 줄 가르기를 망친다(한 줄로 뭉개짐).
+        #   따로 빼 두고 나중에 열 하나로 되돌린다.
+        sep = [b for b in bs if (b.role == "vbar" or (b.tex or "").strip() in ("|", r"\|"))
+               and b.h >= hb * 1.4]
+        if sep:
+            keep = {id(b) for b in sep}
+            inner = [b for b in bs if id(b) not in keep]
+        else:
+            inner = bs
+
+        # ── 행: 세로로 실제로 겹치는 글자들이 같은 줄 ──
+        order = sorted(inner, key=lambda b: (b.cy, b.x0))
+        rows = [[order[0]]]
+        ry0, ry1 = order[0].y0, order[0].y1
+        for b in order[1:]:
+            ov = min(ry1, b.y1) - max(ry0, b.y0)
+            joined = ov > 0.35 * min(max(ry1 - ry0, 0.5), max(b.h, 0.5))
+            if not joined:
+                # 칸이 높이만 다르고 중심이 같으면 같은 줄(예: 'a' 와 '∫')
+                if abs(b.cy - (ry0 + ry1) / 2.0) <= max(1.6, hb * 0.34):
+                    joined = True
+            if joined:
+                rows[-1].append(b)
+                ry0 = min(ry0, b.y0); ry1 = max(ry1, b.y1)
+            else:
+                rows.append([b]); ry0, ry1 = b.y0, b.y1
+        if len(rows) < 2:
+            return None
+
+        # ── 분수선이 줄 사이를 가로지르면 분수다 ──
+        if rules:
+            centers = sorted(_median([b.cy for b in r]) for r in rows)
+            cx0 = min(b.x0 for b in bs); cx1 = max(b.x1 for b in bs)
+            cw = max(1e-6, cx1 - cx0)
+            for r in rules:
+                rcy = (r[1] + r[3]) / 2.0
+                if not any(centers[k] < rcy < centers[k + 1] for k in range(len(centers) - 1)):
+                    continue
+                if min(r[2], cx1) - max(r[0], cx0) > 0.35 * cw:
+                    return None
+
+        # ── 열: '칸 안쪽 간격'과 '칸 사이 간격'의 도약으로 가른다 ──
+        #   닿아 있는 글자(커닝·아래첨자)의 0~1pt 간격은 칸을 가르는 간격이
+        #   될 수 없다. 그걸 그대로 넣으면 '점 세 개'(\cdots) 사이의 3pt 가
+        #   칸 간격으로 잘못 뽑혀 줄임표가 세 칸으로 쪼개졌다.
+        #   도약이 여러 개면 '모든 줄의 칸 수가 같은' 것부터 고른다 —
+        #   [a a | b] 처럼 칸 간격이 고르지 않은 행렬이 두 칸으로 뭉개지지 않게.
+        gaps = []
+        for r in rows:
+            rr = sorted(r, key=lambda b: b.x0)
+            for a, b in zip(rr, rr[1:]):
+                gaps.append(b.x0 - a.x1)
+        gs = sorted(g for g in gaps if g >= 1.0)
+        cands = []
+        for i in range(len(gs) - 1):
+            lo, hi = gs[i], gs[i + 1]
+            if hi - lo < 3.0 or lo <= 0:
+                continue
+            if hi / lo >= 3.0:
+                cands.append((hi / lo, (lo + hi) / 2.0))
+        cands.sort(key=lambda z: -z[0])
+        # 마지막 후보: 칸을 가를 간격이 없다 → 글자 하나가 한 칸. 같은 열의
+        # 다른 줄 글자는 서로 겹치므로(gap ≤ 0) 여전히 한 칸으로 모인다.
+        cands.append((0.0, 0.0))
+
+        def _split(thr):
+            cols = []
+            for b in sorted(inner, key=lambda z: z.x0):
+                if cols and b.x0 - cols[-1][1] <= thr:
+                    cols[-1][1] = max(cols[-1][1], b.x1)
+                    cols[-1][2].append(b)
+                else:
+                    cols.append([b.x0, b.x1, [b]])
+            # 세로 막대를 열 하나로 되돌린다 (막대가 놓인 자리 = 열 구분선)
+            for off, b in enumerate(sorted(sep, key=lambda z: z.x0)):
+                k = 0
+                for ci in range(len(cols)):
+                    if b.x0 >= cols[ci][1]:
+                        k = ci + 1
+                    elif b.x1 <= cols[ci][0]:
+                        break
+                    else:
+                        k = ci + 1
+                        break
+                cols.insert(min(k + off, len(cols)), [b.x0, b.x1, [b]])
+            return cols
+
+        def _fill(cols):
+            ncol = len(cols)
+            grid = [[[] for _ in range(ncol)] for _ in rows]
+            for ri, r in enumerate(rows):
+                for b in r:
+                    best_k, best_ov = 0, -1e9
+                    for k in range(ncol):
+                        ov = min(b.x1, cols[k][1]) - max(b.x0, cols[k][0])
+                        if ov > best_ov:
+                            best_ov, best_k = ov, k
+                    grid[ri][best_k].append(b)
+            for b in sep:                   # 막대는 모든 줄의 같은 칸에 놓인다
+                best_k, best_ov = 0, -1e9
+                for k in range(ncol):
+                    ov = min(b.x1, cols[k][1]) - max(b.x0, cols[k][0])
+                    if ov > best_ov:
+                        best_ov, best_k = ov, k
+                for ri in range(len(rows)):
+                    grid[ri][best_k].append(b)
+            return ncol, grid
+
+        cols = grid = None
+        for _r, thr in cands:
+            cc = _split(thr)
+            nc, gg = _fill(cc)
+            # ── 한 글자가 두 열에 걸치면 칸 나누기가 틀렸다 ──
+            bad = False
+            for b in inner:
+                if b.atomic:
+                    continue
+                hits = sum(1 for cx0, cx1, _cb in cc
+                           if min(b.x1, cx1) - max(b.x0, cx0) > 0.35 * max(0.5, b.w))
+                if hits > 1:
+                    bad = True
+                    break
+            if bad:
+                continue
+            counts = [sum(1 for cell in row if cell) for row in gg]
+            if len(set(counts)) > 1:          # 줄마다 칸 수가 다르면 격자가 아니다
+                continue
+            if counts and counts[0] >= 2 and nc >= 2:
+                cols, grid = cc, gg
+                break
+            if nc < 2 and len(rows) >= 2 and counts and counts[0] >= 1:
+                # 열 벡터(3×1) — 칸이 하나뿐이어도 격자다
+                cols, grid = cc, gg
+                break
+        if cols is None:
+            return None
+        ncol = len(cols)
+        filled = sum(1 for r in grid for cell in r if cell)
+        if filled < max(len(rows), ncol) or filled < 0.5 * len(rows) * ncol:
+            return None
+        if ncol < 2:
+            # 한 줄짜리 '열 벡터'는 칸이 반듯하게 정렬돼야 한다.
+            # (X^{a}_{b} 처럼 첨자가 위아래로 붙은 덩어리를 열 벡터로 오인하지 않게)
+            sizes = [b.size for b in inner if not b.atomic]
+            if sizes and max(sizes) > min(sizes) * 1.25:
+                return None
+            cxs = [_median([b.x0 + b.x1 for b in r]) / 2.0 for r in rows]
+            if max(cxs) - min(cxs) > max(1.6, hb * 0.4):
+                return None
+        return {"rows": rows, "grid": grid, "cols": cols, "ncol": ncol,
+                "hb": hb, "sep": sep}
+    except Exception:
+        return None
+
+
+def _dots_tex(cell):
+    """점만 있는 칸 → \\cdots / \\vdots / \\ddots (TeX 은 점 세 개로 조판한다)."""
+    if not (2 <= len(cell) <= 6):
+        return None
+    if any(b.atomic or b.role is not None for b in cell):
+        return None
+    if any((b.tex or "").strip() not in _MAT_DOTS for b in cell):
+        return None
+    xs = sorted((b.x0 + b.x1) / 2.0 for b in cell)
+    ys = sorted((b.y0 + b.y1) / 2.0 for b in cell)
+    dx, dy = xs[-1] - xs[0], ys[-1] - ys[0]
+    if dy > dx * 1.8:
+        return r"\vdots"
+    if dx > dy * 1.8:
+        return r"\cdots"
+    if dx > 0.5 and dy > 0.5:
+        return r"\ddots"
+    return r"\cdots"
+
+
+def _matrix_bar_columns(g):
+    """첨가 행렬([A | b])의 세로 막대가 선 열 번호들."""
+    rows, grid, ncol = g["rows"], g["grid"], g["ncol"]
+    if ncol < 3:
+        return set()
+    y0 = min(b.y0 for r in rows for b in r)
+    y1 = max(b.y1 for r in rows for b in r)
+    span = max(1e-6, y1 - y0)
+    out = set()
+    for k in range(1, ncol - 1):
+        bs = [b for i in range(len(rows)) for b in grid[i][k]]
+        if not bs:
+            continue
+        if not all(b.role == "vbar" or (b.tex or "").strip() in ("|", r"\|") for b in bs):
+            continue
+        if (max(b.y1 for b in bs) - min(b.y0 for b in bs)) < span * 0.5:
+            continue
+        out.add(k)
+    return out
+
+
+def _matrix_piece(g, o, c, rules, depth):
+    """격자 + 구분자 → KaTeX 행렬 문자열."""
+    grid, ncol, rows = g["grid"], g["ncol"], g["rows"]
+    ot = (o.tex or "").strip()
+    ct = (c.tex or "").strip()
+    bars = _matrix_bar_columns(g)
+    body_rows = []
+    for ri in range(len(rows)):
+        cells = []
+        for k in range(ncol):
+            if k in bars:
+                continue
+            cell = grid[ri][k]
+            dots = _dots_tex(cell)
+            cells.append(dots if dots else assemble(sorted(cell, key=lambda b: (b.x0, b.y0)),
+                                                    rules, depth + 1))
+        body_rows.append(" & ".join(cells))
+    body = r" \\ ".join(body_rows)
+    if bars:
+        # 첨가 행렬: 열 구분선이 있는 array 를 큰 괄호로 감싼다.
+        spec = "".join("|" if k in bars else "c" for k in range(ncol)).strip("|")
+        return (r"\left" + ot + r" \begin{array}{" + spec + "} " + body
+                + r" \end{array} \right" + ct)
+    env = _MAT_ENV.get(ot)
+    if env and _MAT_PAIR.get(ot) == ct:
+        return r"\begin{" + env + "} " + body + r" \end{" + env + "}"
+    return (r"\left" + ot + r" \begin{matrix} " + body
+            + r" \end{matrix} \right" + ct)
+
+
+def _try_matrix(boxes, rules, depth, opener=None, closer=None):
+    r"""큰 구분자 + 격자 → \begin{bmatrix} … \end{bmatrix}.
+
+    opener/closer 를 주면 그 두 구분자 사이만 본다(_linear 의 큰 괄호 짝).
+    없으면 상자들 안에서 짝을 직접 찾고, 앞/뒤에 붙은 조각(A = , ^{-1})은
+    assemble 로 다시 조립해 붙인다.
+    """
+    try:
+        bs = sorted([b for b in boxes if (b.tex or "").strip() or b.atomic],
+                    key=lambda b: (b.x0, b.y0))
+        if len(bs) < 4:
+            return None
+        cands = []
+        if opener is not None and closer is not None:
+            # 큰 괄호 글리프의 bbox 는 잉크보다 훨씬 넓어(83pt '[' 의 박스 폭
+            # 28pt) 첫 칸을 덮는다. x 로 자르지 말고 호출자가 준 안쪽 목록을 믿는다.
+            content = [b for b in boxes if b is not opener and b is not closer]
+            content = [b for b in content if (b.tex or "").strip() or b.atomic]
+            if len(content) >= 2 and _delims_wrap(opener, closer, content):
+                cands.append((opener, closer, content))
+        else:
+            for i in range(len(bs)):
+                j = _matrix_delim_pair(bs, i)
+                if j <= i + 1:
+                    continue
+                o, c = bs[i], bs[j]
+                content = bs[i + 1:j]
+                if len(content) < 2 or not _delims_wrap(o, c, content):
+                    continue
+                # 닫는 구분자 바로 뒤에 '작은' 글자(위/아래 첨자)가 붙으면
+                # 여기서 붙이지 않는다 — _linear 가 첨자까지 처리하는 편이 낫다.
+                rest = [b for b in bs if b.x0 >= c.x0 - 0.5]
+                ref_h = max(o.size * 0.72, o.h, 1.0)
+                if any(b.size < o.size * 0.95 or abs(b.cy - c.cy) > ref_h * 0.15
+                       for b in rest):
+                    continue
+                cands.append((o, c, content))
+        if not cands:
+            return None
+        # 글자를 가장 많이 품은 쌍이 행렬 본체일 확률이 가장 높다
+        o, c, content = max(cands, key=lambda z: len(z[2]))
+        g = _matrix_grid(content, rules)
+        if not g:
+            return None
+        piece = _matrix_piece(g, o, c, rules, depth)
+        if not piece:
+            return None
+        if opener is not None and closer is not None:
+            return piece
+        keep = {id(z) for z in content} | {id(o), id(c)}
+        left = [b for b in bs if id(b) not in keep and b.x0 < o.x0]
+        right = [b for b in bs if id(b) not in keep and b.x0 > c.x0]
+        out = []
+        if left:
+            t = assemble(left, rules, depth + 1)
+            if t:
+                out.append(t)
+        out.append(piece)
+        if right:
+            t = assemble(right, rules, depth + 1)
+            if t:
+                out.append(t)
+        return " ".join(out).strip()
+    except Exception:
+        return None
+
+
+def _delim_group(bs, i, rules, depth, norm_h):
+    """bs[i] 의 큰 구분자 + 짝 → (LaTeX, 다음 위치).
+
+    확장 글꼴(role 'open') 큰 괄호는 예전대로 \left…\right 로 감싼다.
+    안쪽이 행렬 격자면 행렬 환경으로 바꾼다(&amp; 와 \\\\ 는 괄호 밖에서 쓸 수 없다).
+    일반 글꼴을 늘려 그린 큰 괄호는 '행렬로 조립될 때만' 바꾼다 — 조립이
+    안 되면(None) 예전처럼 평범한 글자로 읽어 어떤 출력도 바뀌지 않는다.
+    """
+    b = bs[i]
+    native = b.role == "open"
+    if not native and not _is_matrix_delim(b):
+        return None
+    if not native and b.h < norm_h * 1.45:
+        return None
+    n = len(bs)
+    if native:
+        # 확장 글꼴 큰 괄호 — 예전대로 role 로 짝을 센다 (출력이 바뀌지 않는다)
+        depthc = 0
+        j = -1
+        for k in range(i, n):
+            if bs[k].role == "open":
+                depthc += 1
+            elif bs[k].role == "close":
+                depthc -= 1
+                if depthc == 0:
+                    j = k
+                    break
+    else:
+        j = _matrix_delim_pair(bs, i)
+    if j <= i:
+        if native:
+            return (r"\left" + (b.tex or "") + r" \right.", i + 1)
+        return None
+    mtx = _try_matrix(bs[i + 1:j], rules, depth + 1, opener=b, closer=bs[j])
+    if mtx is None and not native:
+        return None
+    last = bs[j]
+    ref_sz = last.size
+    ref_h = max(ref_sz * 0.72, last.h, norm_h)
+    base_cy = last.cy
+    cluster, pend = [], []
+    m_idx = j + 1
+    while m_idx < n:
+        c = bs[m_idx]
+        if c.atomic:
+            if (c.size < ref_sz * 0.95 and (last.y1 - c.y1) >= ref_h * 0.25
+                    and c.x0 - max([z.x1 for z in (cluster + pend)] or [last.x1]) <= ref_h * 0.5):
+                cluster.extend(pend); pend = []
+                cluster.append(c)
+                m_idx += 1
+                continue
+            break
+        if c.role is not None:
+            break
+        prev_x1 = max([z.x1 for z in (cluster + pend)] or [last.x1])
+        if c.x0 - prev_x1 > ref_h * 0.5:
+            break
+        small = c.size < ref_sz * 0.95
+        same_run = bool(cluster) and abs(c.cy - cluster[-1].cy) < ref_h * 0.25
+        if not (small or same_run):
+            break
+        off = abs(c.cy - base_cy)
+        if off >= ref_h * 0.12:
+            cluster.extend(pend); pend = []
+            cluster.append(c)
+            m_idx += 1
+            continue
+        if small and c.size < ref_sz * 0.9:
+            pend.append(c)
+            m_idx += 1
+            continue
+        break
+    if pend:
+        m_idx -= len(pend)
+    subs = [c for c in cluster if c.cy > base_cy]
+    sups = [c for c in cluster if c.cy < base_cy]
+    if mtx is not None:
+        grp = mtx
+    else:
+        grp = (r"\left" + (b.tex or "") + " "
+               + assemble(bs[i + 1:j], rules, depth + 1)
+               + r" \right" + (last.tex or ""))
+    if sups:
+        grp += "^{" + assemble(sups, rules, depth + 1) + "}"
+    if subs:
+        grp += "_{" + assemble(subs, rules, depth + 1) + "}"
+    return (grp, m_idx)
+
+
 _CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -2590,6 +3066,99 @@ def _drop_contained_math(regs):
     return keep
 
 
+def _matrix_band_seeds(page, rd, doc, gtables, rules, is_prose=None, limit=60):
+    """큰 구분자가 감싼 '글자 격자'를 행렬 밴드 후보로 찾는다. (14.46)
+
+    씨앗 조건이 확장 글꼴(CMEX/txex)이거나 분수선 근처인 줄뿐이면, 일반
+    글리프를 세로로 늘려 큰 괄호를 그리는 PDF(unicode-math·Word 계열)의
+    행렬은 수식으로 아예 잡히지 않는다. 칸 숫자는 본문 글자로 흩어지고
+    닫는 괄호는 마지막 줄에 덧붙는다('1 0[ ]').
+
+    여기서는 글자 배치만으로 후보를 만들고, **실제로 행렬로 조립되는지
+    assemble 로 확인한 것만** 씨앗으로 올린다 — 조립 결과가 행렬이 아니면
+    아무것도 바뀌지 않는다.
+    """
+    try:
+        cands, heights = [], []
+        for blk in rd.get("blocks", []):
+            if blk.get("type") != 0:
+                continue
+            for ln in blk.get("lines", []):
+                if is_prose and is_prose(ln):
+                    continue
+                for sp in ln.get("spans", []):
+                    fname = sp.get("font") or ""
+                    short = fname.split("+")[-1]
+                    up = short.upper()
+                    ext = any(k in up for k in ("CMEX", "TXEX", "EXTRA", "LMEX",
+                                                "MSAM", "MSBM", "ESINT"))
+                    table = gtables.get(fname) or gtables.get(short) or {}
+                    size = float(sp.get("size") or 10)
+                    for ch in (sp.get("chars") or []):
+                        c = ch.get("c") or ""
+                        bb = ch.get("bbox")
+                        if not bb or not c or c.isspace():
+                            continue
+                        if ext:
+                            gname = table.get(ord(c)) if c else None
+                            if not gname and c:
+                                gname = _CMEX_STD.get(ord(c))
+                            role, tex = classify_glyph(gname)
+                            if role not in ("open", "close", "vbar"):
+                                if bb[3] > bb[1]:
+                                    heights.append(bb[3] - bb[1])
+                                continue
+                        else:
+                            tex = _tok_tex(c)
+                            if (tex or "").strip() not in _MAT_DELIM_TEX:
+                                if c.strip() and bb[3] > bb[1]:
+                                    heights.append(bb[3] - bb[1])
+                                continue
+                            role = "vbar" if c == "|" else None
+                        cands.append(Box(bb[0], bb[1], bb[2], bb[3], tex, size, role))
+        if len(cands) < 2:
+            return []
+        body_h = _median(heights) or 10.0
+        # 본문 글자보다 훨씬 큰 구분자만 ('(' 처럼 보통 크기 괄호는 제외)
+        cands = [b for b in cands if b.h >= max(11.0, body_h * 1.55)]
+        if len(cands) < 2:
+            return []
+        cands.sort(key=lambda b: b.x0)
+        out = []
+        for i, o in enumerate(cands):
+            if len(out) >= limit:
+                break
+            ot = (o.tex or "").strip()
+            for k in range(i + 1, len(cands)):
+                c = cands[k]
+                if (c.x0 + c.x1) <= (o.x0 + o.x1):
+                    continue
+                if c.x0 - o.x1 > 520.0:
+                    break
+                if _MAT_PAIR.get(ot) != (c.tex or "").strip():
+                    continue
+                if min(o.y1, c.y1) - max(o.y0, c.y0) < 0.65 * min(o.h, c.h):
+                    continue
+                x0, x1 = o.x0 - 0.6, c.x1 + 0.6
+                y0, y1 = min(o.y0, c.y0) - 0.6, max(o.y1, c.y1) + 0.6
+                sub = [r for r in (rules or [])
+                       if r[0] < x1 and r[2] > x0 and y0 - 3 <= (r[1] + r[3]) / 2.0 <= y1 + 3]
+                boxes = region_boxes(doc, page, (x0, y0, x1, y1), gtables, rd=rd)
+                if len(boxes) < 4:
+                    continue
+                try:
+                    tex = _tidy_latex(assemble(boxes, sub))
+                except Exception:
+                    continue
+                if tex and _MAT_ENV_RE.search(tex) and _latex_is_sane(tex):
+                    out.append([x0, y0, x1, y1])
+                    break
+        return out
+    except Exception as e:
+        print(f"[import] 행렬 후보 탐색 건너뜀: {e}")
+        return []
+
+
 def _big_math_bands(page, avoid=None):
     """이 쪽에서 '큰 수식' 이 놓인 줄 영역(밴드)들을 찾는다. (9.3)
 
@@ -2669,6 +3238,12 @@ def _big_math_bands(page, avoid=None):
                     break
             if has_ext or near_rule:
                 seeds.append([bb[0], bb[1], bb[2], bb[3]])
+    # 14.46 · 행렬: 확장 글꼴 괄호가 없는 PDF 에서도 '큰 구분자 + 격자'를
+    #   씨앗으로 올린다. 실제로 행렬로 조립되는 후보만 들어온다.
+    try:
+        seeds.extend(_matrix_band_seeds(page, rd, doc, gtables, rules, _is_prose))
+    except Exception:
+        pass
     if not seeds:
         return [], rules, gtables
 
@@ -3105,6 +3680,12 @@ def _tex_is_figure_junk(tex):
     """그림 라벨·underbrace 조각·엉켜든 글자가 '수식 밴드'로 오인된 결과인지."""
     try:
         raw = tex or ""
+        # 14.46 · 행렬은 글자 하나가 한 칸이라 '두 줄이 엉킨 그림 라벨' 판정과
+        #   그대로 겹친다. 2×2 짜리 \begin{bmatrix} a & b \\ c & d \end{bmatrix}
+        #   는 '관계식 없음 + 낱글자' 로 걸려 밴드가 통째로 버려졌다.
+        #   행·열 환경이 있으면 그림이 아니라 수식이다.
+        if _MAT_ENV_RE.search(raw):
+            return False
         # \left. / \right. 의 베어 점은 도트 지도자(목차 점선)가 아니다
         raw = re.sub(r"\\(?:left|right)\s*\.", " ", raw)
         t = re.sub(r"\\[a-zA-Z]+", " ", raw)
@@ -3335,6 +3916,8 @@ _LATEX_SYMBOLS = {
     "ˉ": r"\bar", "´": r"\acute", "`": r"\grave", "˘": r"\breve",
     "ˇ": r"\check", "˙": r"\dot", "¨": r"\ddot", "˚": r"\mathring",
     "◦": r"\circ", "□": r"\square",
+    # 14.46 · 행렬 줄임표 (인라인 수식 경로도 같은 기호를 쓴다)
+    "⋯": r"\cdots", "⋮": r"\vdots", "⋱": r"\ddots",
 }
 _LATEX_GREEK = {
     # 같은 모양 다른 코드포인트도 함께 (µ MICRO SIGN, Ω OHM SIGN, ∆ INCREMENT)
