@@ -823,7 +823,8 @@ def _is_display_formula_line(ln):
     return ratio >= 0.35 or any(sym in text for sym in ["≥", "≤", "=", "→", "∈", "λ", "ϵ", "α", "δ", "η", "γ", "θ"])
 
 
-def _display_region_of_line(ln, page=None, gtables=None, rules=None):
+def _display_region_of_line(ln, page=None, gtables=None, rules=None,
+                             vlines=None):
     """디스플레이 수식 줄에서 '식 본체'만의 영역을 돌려준다. (13.4)
 
     논문 수식 줄은 대개  ─  ψ(x) = A e^{ikx}          (3)  ─  처럼
@@ -937,7 +938,8 @@ def _display_region_of_line(ln, page=None, gtables=None, rules=None):
     # 14.0 · 줄 단위 1D 조립은 중첩 분수를 못 살린다. 2D 복원기가 되면 그걸 쓴다.
     if page is not None:
         try:
-            tex2 = region_to_latex(page.parent, page, (x0, y0, x1, y1), gtables, rules)
+            tex2 = region_to_latex(page.parent, page, (x0, y0, x1, y1), gtables,
+                                    rules, vlines)
             if tex2 and _latex_is_sane(tex2) and not _tex_is_figure_junk(tex2):
                 tex = tex2
         except Exception:
@@ -1507,6 +1509,85 @@ _CM_BI = re.compile(
     + _NUM + r")\s+(" + _NUM + r")\s+cm\s+BI\b", re.S)
 
 
+def _match_vector_sqrt(segs, px0, py1, pw, ph):
+    # 한 path 의 직선 조각들에서 벡터 sqrt 를 찾는다. (14.48)
+    # p21/p29/p37 의 sqrt 는 글리프가 아니라 '고리+빗변+윗변' 벡터 path 다.
+    # 윗변(가로 3~48pt)이 path 맨 위에 있고, 그 왼쪽 끝에서 가파른 빗변이
+    # 왼쪽-아래로 내려가며, 발밑에 왼쪽으로 뻗은 고리가 있으면 sqrt 다.
+    # 되면 (몸통상자, 윗변) = (bx0,by0,bx1,by1,rx0,ry,rx1) 을, 아니면
+    # None 을 돌려준다. 곡선·큰 도형(다이어그램 호·축)은 크기와 고리
+    # 조건에서 걸러진다.
+    if pw > 55.0 or ph > 32.0 or pw < 4.0 or ph < 5.0:
+        return None
+    for (x0, y0, x1, y1) in segs:
+        w = abs(x1 - x0)
+        if not (3.0 <= w <= 48.0 and abs(y1 - y0) <= 0.6):
+            continue
+        bx0, bx1 = min(x0, x1), max(x0, x1)
+        by = (y0 + y1) / 2.0
+        if any(min(v0, v1) < by - 1.0 for (_u0, v0, _u1, v1) in segs):
+            continue                    # 윗변이 맨 위가 아니다
+        foot = None
+        _di = -1
+        for _i, (u0, v0, u1, v1) in enumerate(segs):
+            for (sx, sy, ex, ey) in ((u0, v0, u1, v1), (u1, v1, u0, v0)):
+                if abs(sx - bx0) > 0.8 or abs(sy - by) > 0.8:
+                    continue
+                dx, dy = ex - sx, ey - sy
+                if -5.0 <= dx <= -0.8 and 5.0 <= dy <= 30.0:
+                    foot = (ex, ey)
+                    _di = _i
+        if foot is None:
+            continue
+        if px0 >= foot[0] - 1.0:
+            continue                    # 왼쪽으로 뻗은 고리가 없다
+        if not any(_i != _di and (
+                (abs(u0 - foot[0]) <= 1.2 and abs(v0 - foot[1]) <= 1.2)
+                or (abs(u1 - foot[0]) <= 1.2 and abs(v1 - foot[1]) <= 1.2))
+                for _i, (u0, v0, u1, v1) in enumerate(segs)):
+            continue                    # 발밑에 맞닿은 조각이 없다
+        return (px0, by, bx0, py1, bx0, by, bx1)
+    return None
+
+
+def _vector_sqrts(page):
+    # 페이지의 벡터 sqrt 목록 [(몸통상자, 윗변)]. (14.48 · 글리프 없는 루트)
+    out = []
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        return out
+    for d in drawings:
+        try:
+            items = d.get("items", ())
+        except Exception:
+            continue
+        segs = []
+        ok = True
+        for it in items:
+            if it[0] != "l":
+                ok = False
+                break
+            try:
+                segs.append((float(it[1][0]), float(it[1][1]),
+                             float(it[2][0]), float(it[2][1])))
+            except Exception:
+                ok = False
+                break
+        if not ok or len(segs) < 3:
+            continue
+        r = d.get("rect")
+        try:
+            pw = float(r.x1 - r.x0); ph = float(r.y1 - r.y0)
+            px0 = float(r.x0); py1 = float(r.y1)
+        except Exception:
+            continue
+        m = _match_vector_sqrt(segs, px0, py1, pw, ph)
+        if m is not None:
+            out.append(m)
+    return out
+
+
 def page_rules(page):
     """가로 규칙선 = 분수선·루트 윗줄. (분수선을 못 찾으면 \\frac 복원이 불가능하다)
 
@@ -1520,6 +1601,54 @@ def page_rules(page):
             r = d.get("rect")
             if r and r.width >= 3 and r.height <= 2.6:
                 out.append([float(r.x0), float(r.y0), float(r.x1), float(r.y1)])
+            else:
+                # 14.48 · 복합 path 속 가로 조각도 건진다: p26의 det 막대는
+                # 양쪽 세로 막대와 (2,2)칸 분수선을 한 path에 합쳐 그려서
+                # rect(32×6.7)가 탈락해 9/5 분수가 깨졌다. 표 격자(긴 가로선)가
+                # 분수선으로 둔갑하지 않게 폭 60pt 이하 조각만 받는다(넓은
+                # 진짜 분수선은 단일 path라 위 rect 경로로 이미 잡힌다).
+                # 대각선·세로선과 끝점이 맞닿은 가로는 벡터 √의 윗변이지
+                # 분수선이 아니다(p29 회귀) → 그런 조각은 건드리지 않는다.
+                try:
+                    _segs = []
+                    for it in d.get("items", ()):
+                        if it[0] != "l":
+                            continue
+                        _segs.append((float(it[1][0]), float(it[1][1]),
+                                      float(it[2][0]), float(it[2][1])))
+                except Exception:
+                    _segs = []
+                # 14.48 · 벡터 sqrt 면 윗변을 규칙선으로 낸다(뒤에서 근호
+                # 윗줄(radbar)로 짝지어진다. 몸통은 region_boxes 가 합성).
+                try:
+                    _m = _match_vector_sqrt(
+                        _segs, float(r.x0), float(r.y1),
+                        float(r.x1 - r.x0), float(r.y1 - r.y0)) \
+                        if r is not None else None
+                except Exception:
+                    _m = None
+                if _m is not None:
+                    out.append([_m[4], _m[5], _m[6], _m[5]])
+                    continue
+                for (x0, y0, x1, y1) in _segs:
+                    w = abs(x1 - x0)
+                    if not (3.0 <= w <= 60.0 and abs(y1 - y0) <= 0.6):
+                        continue
+                    _conn = False
+                    for (u0, v0, u1, v1) in _segs:
+                        if abs(v1 - v0) <= 0.6:
+                            continue
+                        for (px, py) in ((x0, y0), (x1, y1)):
+                            if (min(abs(px - u0), abs(px - u1)) <= 0.8
+                                    and min(abs(py - v0), abs(py - v1)) <= 0.8):
+                                _conn = True
+                                break
+                        if _conn:
+                            break
+                    if _conn:
+                        continue
+                    out.append([min(x0, x1), min(y0, y1),
+                                max(x0, x1), max(y0, y1)])
     except Exception:
         pass
     try:
@@ -1548,6 +1677,45 @@ def page_rules(page):
     return ded
 
 
+def page_vlines(page):
+    """키 큰 세로 벡터선 목록. (14.48 · 글리프 없는 행렬식 막대)
+
+    det A = |a b; c d| 처럼 행렬식 막대를 벡터 선으로 그린 PDF 가 있다.
+    글리프가 없어 구분자 씨앗이 못 되므로, 곧고(기울기 ≤ 0.6pt) 길게
+    (≥ 18pt — 한 줄짜리 절댓값 |x| 는 제외) 그은 세로선을 모아 둔다.
+    가로 규칙선(분수선)은 page_rules 가 따로 모으므로 여기서 뺀다.
+    """
+    out = []
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        return out
+    for d in drawings:
+        for it in d.get("items", ()):
+            try:
+                if it[0] == "l":
+                    x0, y0 = float(it[1][0]), float(it[1][1])
+                    x1, y1 = float(it[2][0]), float(it[2][1])
+                    if abs(x1 - x0) <= 0.6 and abs(y1 - y0) >= 18.0:
+                        out.append([min(x0, x1) - 0.3, min(y0, y1),
+                                    max(x0, x1) + 0.3, max(y0, y1)])
+                elif it[0] == "re":
+                    r = it[1]
+                    rx0, ry0, rx1, ry1 = (float(r[0]), float(r[1]),
+                                          float(r[2]), float(r[3]))
+                    if rx1 - rx0 <= 2.0 and ry1 - ry0 >= 18.0:
+                        out.append([rx0, ry0, rx1, ry1])
+            except Exception:
+                continue
+    ded = []
+    for v in out:
+        if not any(abs(v[0] - q[0]) < 0.6 and abs(v[1] - q[1]) < 0.6
+                   and abs(v[3] - q[3]) < 0.6 for q in ded):
+            ded.append(v)
+    ded.sort(key=lambda v: (v[0], v[1]))
+    return ded
+
+
 # ═══════════════════════════════════════════════════════════
 #  2차원 배치 → 1차원 LaTeX
 # ═══════════════════════════════════════════════════════════
@@ -1566,6 +1734,11 @@ _GREEK = {
     "Θ": r"\Theta", "Λ": r"\Lambda", "Ξ": r"\Xi", "Π": r"\Pi",
     "Σ": r"\Sigma", "Φ": r"\Phi", "Ψ": r"\Psi", "Ω": r"\Omega",
 }
+# 14.48 · 낱토큰 분수 junk 판정용 그리스 명령어 집합 (var 계열 포함).
+_GREEK_FRAC_CMDS = frozenset(
+    list(_GREEK.values())
+    + [r"\varepsilon", r"\vartheta", r"\varpi", r"\varrho",
+       r"\varsigma", r"\varphi"])
 _SYM = {
     "∞": r"\infty", "∂": r"\partial", "∇": r"\nabla", "∫": r"\int",
     "∮": r"\oint", "∑": r"\sum", "∏": r"\prod", "√": r"\sqrt",
@@ -1701,6 +1874,28 @@ def _classify_rules(boxes, rules):
                 break
         if owner is not None:
             radbar[id(owner)] = r
+            continue
+        # 14.48 · 미리 조립된 근호 원자(-√3)의 윗변도 근호선이다. 병합으로
+        # 주인 몸통이 사라지면 분수선으로 둔갑해, (√3)² 꼴의 위첨자가
+        # 분자로 빨려 들어간다. 몸통('\sqrt', 역할 radical)은 진짜
+        # 주인이므로 제외 — 원자 조립품('\sqrt{…')만 본다. 윗변은 원자
+        # '위쪽'에서 '몸통 오른쪽'(x0+2pt — 부호·몸통 너비분 안쪽)에
+        # 시작해 피제곱수 끝(x1) 안에 끝나야 한다 — '−√3/2' 의 바깥
+        # 분수선(한가운데)이나 'X/−√3' 의 분수선(왼쪽부터)은 살려야
+        # 한다(p21). 더미 키로 넣어 분수에서만 빼고, 누구의 막대로도
+        # 쓰이지 않는다.
+        rcy = (r[1] + r[3]) / 2.0
+        orphan = False
+        for b in boxes:
+            if not b.atomic or r"\sqrt{" not in (b.tex or ""):
+                continue
+            if (r[0] >= b.x0 + 2.0 and r[2] <= b.x1 + 2.5
+                    and b.y0 - 4.5 <= rcy
+                    <= b.y0 + 0.45 * max(b.h, 1.0)):
+                orphan = True
+                break
+        if orphan:
+            radbar[("consumed", id(r))] = r
         else:
             frac.append(r)
     return frac, radbar
@@ -1811,11 +2006,70 @@ def assemble(boxes, rules, depth=0):
     fracs, radbar = _classify_rules(boxes, rules)
 
     # ── ① 가장 바깥(가장 넓은) 분수선으로 위/아래를 가른다 ──
+    # 14.48 · 쌓음짝이 먼저 분수가 되면 원자 상자(fb)가 남는다. fb 는
+    # x-span 이 같아 _covered 를 통과하고 분자·분모 행세를 한다 —
+    # 같은 폭인데 막대와 떨어진(위/아래로 분리된) 원자는 남의 분수다.
+    def _mate_frac(b, rx0, rx1, rcy):
+        if not b.atomic:
+            return False
+        if abs(b.x0 - rx0) > 1.5 or abs(b.x1 - rx1) > 1.5:
+            return False
+        return b.y1 < rcy - 1.0 or b.y0 > rcy + 1.0
+    # 14.48 · 행렬 도둑질 금지: 격자로 조립되는 구분자 쌍의 안쪽 상자들을
+    # 미리 모아 둔다. 분수 규칙선이 그 안쪽 상자만으로 분자·분모를 삼으면
+    # 건너뛴다 — [1/2, √3/2; √3/2, −1/2] 의 셀 규칙선이 이웃 셀의 '−' 를
+    # 분모로 끌고 가 행렬이 \left[ mush 로 무너졌다(p29 ⑥). 격자가 안
+    # 되는 괄호(진짜 분수 [(a+b)/(c+d)] 는 1행이라 격자 실패)는 예전 그대로다.
+    _guarded = []
+    if fracs and any(b.role in ("open", "close") for b in boxes):
+        try:
+            _gbs = sorted(boxes, key=lambda b: (b.x0, b.y0))
+            for _gi in range(len(_gbs)):
+                if _gbs[_gi].role != "open" and not _is_matrix_delim(_gbs[_gi]):
+                    continue
+                _gj = _matrix_delim_pair(_gbs, _gi)
+                if _gj <= _gi + 1:
+                    continue
+                _go, _gc = _gbs[_gi], _gbs[_gj]
+                _gcon = [b for b in _gbs[_gi + 1:_gj]
+                         if (b.tex or "").strip() or b.atomic]
+                if len(_gcon) < 2 or not _delims_wrap(_go, _gc, _gcon):
+                    continue
+                if any(b.role in ("open", "close") for b in _gcon):
+                    continue
+                _y0 = min(_go.y0, _gc.y0); _y1 = max(_go.y1, _gc.y1)
+                _tol = (_y1 - _y0) * 0.10 + 2.0
+                _gcon = [b for b in _gcon if _y0 - _tol <= b.cy <= _y1 + _tol]
+                if len(_gcon) >= 2 and _matrix_grid(_gcon, rules) is not None:
+                    _guarded.append(set(map(id, _gcon)))
+        except Exception:
+            _guarded = []
     best = None
     for r in fracs:
         rx0, ry0, rx1, ry1 = r
         rcy = (ry0 + ry1) / 2.0
-        span = [b for b in boxes if _covered(b, rx0, rx1)]
+        # 14.48 · 세로로 쌓인 분수(한 칸에 1/4 over 3/4): x-span 이 같은
+        # 규칙선들은 '쌓음짝' — 짝 사이 중간점으로 상자를 나눠 각 선이
+        # 제 분자·분모만 갖는다. 그냥 두면 먼저 뽑힌 선이 아래 분수까지
+        # 삼켜 \frac{\frac{1}{34}}{4} 꼴이 됐다. 중첩 분수는 바깥 선이
+        # 넓으므로(폭 차 ≥ 2pt) 짝이 안 돼 예전 경로 그대로다.
+        lo, hi = -1e9, 1e9
+        for m in fracs:
+            if m is r:
+                continue
+            if abs(m[0] - rx0) > 1.0 or abs(m[2] - rx1) > 1.0:
+                continue
+            mcy = (m[1] + m[3]) / 2.0
+            if abs(mcy - rcy) < 1.0:
+                continue
+            mid = (mcy + rcy) / 2.0
+            if mcy < rcy:
+                lo = max(lo, mid)
+            else:
+                hi = min(hi, mid)
+        span = [b for b in boxes
+                if _covered(b, rx0, rx1) and lo < b.cy < hi
+                and not _mate_frac(b, rx0, rx1, rcy)]
         above = [b for b in span if b.cy < rcy - 0.5]
         below = [b for b in span if b.cy > rcy + 0.5]
         if not above or not below:
@@ -1827,18 +2081,24 @@ def assemble(boxes, rules, depth=0):
         slack = max(2.5, 0.045 * (rx1 - rx0))
         if any(b.x0 < rx0 - slack or b.x1 > rx1 + slack for b in above + below):
             continue
+        # 14.48 · 행렬 도둑질 금지 (위 _guarded): 안쪽 상자만으로 분자·분모를
+        # 삼는 규칙선은 건너뛴다 — _linear 의 _delim_group 이 격자로 조립한다.
+        if _guarded and any(all(id(b) in _gs for b in above + below)
+                            for _gs in _guarded):
+            continue
         # 분자·분모가 둘 다 분수선 폭의 일부라도 실제로 차지해야 한다
         if not above or not below:
             continue
         w = rx1 - rx0
         if best is None or w > best[0]:
-            best = (w, rcy, rx0, rx1, r)
+            best = (w, rcy, rx0, rx1, r, lo, hi)
 
     if best is not None:
-        _w, rcy, rx0, rx1, used = best
+        _w, rcy, rx0, rx1, used, blo, bhi = best
         num, den, rest = [], [], []
         for b in boxes:
-            if _covered(b, rx0, rx1):
+            if (_covered(b, rx0, rx1) and blo < b.cy < bhi
+                    and not _mate_frac(b, rx0, rx1, rcy)):
                 bar = radbar.get(id(b))
                 eff_cy = (bar[1] + bar[3]) / 2.0 if (b.role == "radical" and bar) else b.cy
                 (num if eff_cy < rcy else den).append(b)
@@ -1873,6 +2133,9 @@ def _linear(boxes, rules, depth):
     base_sz = _median([b.size for b in bs if not b.atomic] or [10.0])
     # 본문 글자 높이(첨자 판정 기준): 큰 글리프를 뺀 중앙값
     norm_h = _median([b.h for b in bs if not b.atomic and b.role is None] or [base_sz])
+    # 본문 글자 크기(구분자 첨자 수집의 상한): 역할 없는 글자만의 중앙값
+    body_sz = _median([b.size for b in bs if not b.atomic and b.role is None]
+                      or [base_sz])
     out = []
     taken = []          # 방금 평범하게 찍은 글자들 (큰 연산자 한계로 회수될 수 있다)
     i = 0
@@ -2030,6 +2293,21 @@ def _linear(boxes, rules, depth):
             word += bs[i].tex
             last = bs[i]
             i += 1
+        # 14.48 · 숫자 런 합치기: 분자 '21'이 '2 1'로 흩어지면 분수가 깨진다
+        # (p26의 21/5 네 군데). 숫자+소수점만 합치고, '3x'의 띄어쓰기
+        # 관례(숫자+문자)는 건드리지 않는다. 위/아래로 어긋난 숫자는
+        # 다른 줄(분자·분모)이므로 합치지 않는다.
+        while (i < n and not bs[i].atomic and bs[i].role is None
+               and len(bs[i].tex) == 1 and bs[i].tex in "0123456789."
+               and len(word) >= 1
+               and all(c in "0123456789." for c in word)
+               and bs[i].style == b.style
+               and abs(bs[i].cy - b.cy) < norm_h * 0.3
+               and bs[i].x0 - bs[i - 1].x1 < norm_h * 0.18
+               and abs(bs[i].size - b.size) < 0.4):
+            word += bs[i].tex
+            last = bs[i]
+            i += 1
         if _MATHOP.match(word):
             out.append("\\" + word if word not in ("Tr", "tr") else r"\mathrm{Tr}")
         else:
@@ -2047,6 +2325,12 @@ def _linear(boxes, rules, depth):
                     r"\equiv", r"\le", r"\ge", "<", ">", r"\ne", r"\simeq"):
             continue
         ref_sz = b.size
+        # 14.48 · 키 큰 괄호((A−λI)의 '(' — sz 12.1, 본문 10.5)가 본문 크기
+        # 이웃을 '작다'고 착각해 위·아래첨자로 삼켰다((^{A−λI})·) ^{…}_{…}).
+        # 구분자 베이스는 본문 크기(body_sz)를 상한으로 삼아 진짜 작은
+        # 글자(위첨자 ⁻¹ 등)만 수집한다. 글자 베이스(X⁻¹ 등)는 그대로 둔다.
+        if (b.tex or "") in _MAT_DELIM_TEX:
+            ref_sz = min(ref_sz, body_sz)
         # 기준 높이는 글자마다 들쭉날쭉하다('-' 는 낮고 'l' 은 높다).
         # 글꼴 크기를 1차 기준으로 쓰고, 높이는 보조로만 본다.
         ref_h = max(ref_sz * 0.72, b.h)
@@ -2114,11 +2398,14 @@ def _linear(boxes, rules, depth):
     return " ".join(x for x in out if x).strip()
 
 
-def region_boxes(doc, page, rect, gtables=None, rd=None):
+def region_boxes(doc, page, rect, gtables=None, rd=None, vlines=None):
     """페이지의 한 영역에서 Box 목록을 만든다 (CMEX 글리프 해석 포함).
 
     rd 를 넘기면 페이지 rawdict 를 다시 읽지 않는다 — 행렬 후보를 여러 개
     확인할 때 같은 쪽을 수십 번 다시 파싱하지 않게.
+    vlines(page_vlines 결과)를 넘기면 짝을 이룬 세로 벡터선을 | 구분자로
+    합성한다 — 글리프 없는 행렬식 막대(det A = |a b; c d|)를 살리려고.
+    짝 없이 홀로 선 것은 건드리지 않는다(표 테두리·장식선 오인 방지).
     """
     if gtables is None:
         gtables = font_glyph_tables(doc, page)
@@ -2201,6 +2488,92 @@ def region_boxes(doc, page, rect, gtables=None, rd=None):
                     style = None if ext else _math_font_style(fname)
                     out.append(Box(bb[0], bb[1], bb[2], bb[3], tex, size, role,
                                    style=style))
+    if vlines:
+        # 14.48 · 짝 이룬 세로 벡터선 → | 구분자 합성 (행렬식 막대).
+        try:
+            _vl = [v for v in vlines
+                   if x0 - 1 <= (v[0] + v[2]) / 2 <= x1 + 1
+                   and y0 - 1 <= (v[1] + v[3]) / 2 <= y1 + 1]
+            _vl.sort(key=lambda v: (v[0] + v[2]) / 2)
+            _paired = set()
+            for _i, _a in enumerate(_vl):
+                if _i in _paired:
+                    continue
+                _acx = (_a[0] + _a[2]) / 2
+                _ah = _a[3] - _a[1]
+                for _j in range(_i + 1, len(_vl)):
+                    _b = _vl[_j]
+                    _bcx = (_b[0] + _b[2]) / 2
+                    _bh = _b[3] - _b[1]
+                    if _bcx - _acx > 520.0:
+                        break
+                    if max(_ah, _bh) > 1.35 * min(_ah, _bh):
+                        continue
+                    if (min(_a[3], _b[3]) - max(_a[1], _b[1])
+                            < 0.65 * min(_ah, _bh)):
+                        continue
+                    if not any(_acx < (bb.x0 + bb.x1) / 2 < _bcx
+                               and max(_a[1], _b[1]) - 2
+                               <= (bb.y0 + bb.y1) / 2
+                               <= min(_a[3], _b[3]) + 2
+                               for bb in out if bb.role != "vbar"):
+                        continue           # 사이에 글자 없이 — 빈 칸 쌍이다
+                    _paired.add(_i)
+                    _paired.add(_j)
+                    break
+            if _paired:
+                _sz = _median([b.size for b in out] or [10.0])
+                for _i in sorted(_paired):
+                    _v = _vl[_i]
+                    _vcx = (_v[0] + _v[2]) / 2
+                    _vcy = (_v[1] + _v[3]) / 2
+                    if any(b.role == "vbar"
+                           and abs((b.x0 + b.x1) / 2 - _vcx) <= 1.5
+                           and b.y0 - 2 <= _vcy <= b.y1 + 2 for b in out):
+                        continue           # 글리프 막대가 이미 있다
+                    out.append(Box(_v[0], _v[1], _v[2], _v[3],
+                                   "|", _sz, "vbar"))
+        except Exception:
+            pass
+    # 14.48 · 벡터 sqrt 몸통 합성 (글리프 없는 루트: p21/p29/p37).
+    # 윗변 규칙선은 page_rules 가 이미 냈다 — 여기서 몸통 상자를 얹으면
+    # 기존 근호 조립(짝짓기+내용 선택)이 그대로 돈다. 윗변 아래에 글자가
+    # 없으면 장식이므로 합성하지 않는다. 페이지당 한 번만 계산한다.
+    try:
+        _vs = gtables.get("_vsqrt", None)
+        if _vs is None:
+            _vs = _vector_sqrts(page)
+            try:
+                gtables["_vsqrt"] = _vs
+            except Exception:
+                pass
+        if _vs:
+            _sz2 = _median([b.size for b in out] or [10.0])
+            for (_bx0, _by0, _bx1, _by1, _rx0, _ry, _rx1) in _vs:
+                _ccx = (_bx0 + _bx1) / 2.0
+                _ccy = (_by0 + _by1) / 2.0
+                if not (x0 - 1 <= _ccx <= x1 + 1
+                        and y0 - 1 <= _ccy <= y1 + 1):
+                    continue
+                _inside = [b for b in out
+                           if b.x0 >= _rx0 - 2.5 and b.x1 <= _rx1 + 2.5
+                           and abs(b.cy - _ry) <= 14.0]
+                if not _inside:
+                    continue
+                if any(b.role == "radical"
+                       and abs((b.x0 + b.x1) / 2 - _ccx) <= 2.0
+                       and abs((b.y0 + b.y1) / 2 - _ccy) <= 3.0
+                       for b in out):
+                    continue
+                # 몸통 크기는 피제곱수 크기를 따른다. 영역 중앙값(괄호·부호의
+                # 9pt)을 쓰면 대분수 탈출(_mixed)의 분수 기준 크기(_fm)가
+                # 부풀어 격자가 통째로 버려졌다(p22 (c)).
+                _bsz = _median([b.size for b in _inside
+                                if not b.atomic] or [_sz2])
+                out.append(Box(_bx0, _by0, _bx1, _by1,
+                               r"\sqrt", _bsz, "radical"))
+    except Exception:
+        pass
     out.sort(key=lambda b: (b.x0, b.y0))
     out = _merge_vbars(out)
     out = _merge_stacked_delims(out)
@@ -2273,6 +2646,13 @@ def _merge_piece_columns(pieces):
     잇달아 쌓인 조각들 = 큰 구분자 하나. 2조각 쌓기(위+아래)가 가장 흔하다.
     종류가 섞인 기둥은 깨진 PDF 이므로 버린다. 홀로 남는 조각은 구분자
     (곧은 토막은 세로 막대)로 살린다 — PUA 가 LaTeX 로 새는 것보다 낫다.
+
+    14.48 · 같은 x-기둥에 여러 행렬이 나란히 놓이면(교과서 들여쓰기) 서로
+    다른 줄의 괄호가 하나의 기둥으로 합쳐지는 일이 있었다. 줄 사이가
+    1pt 로 달라붙으면 간격 검사로는 절대 못 가른다 — 조각 순서로 가른다.
+    1단계에서 x-기둥으로 묶고(순서 무관), 2단계에서 y순으로 읽으며
+    tp(위)가 오면 새 괄호를 시작하고 bt(아래)가 오면 괄호를 닫는다.
+    ex/mid(가운데)는 이어 붙인다. 쪽·종류가 바뀌어도 새 괄호다.
     """
     try:
         dec = []
@@ -2287,24 +2667,60 @@ def _merge_piece_columns(pieces):
         if not dec:
             return []
         dec.sort(key=lambda z: (round(z[0].x0, 1), z[0].y0))
-        cols = []
+        # 1단계: x-기둥으로 묶는다 (대표 x0 기준, 드리프트 없음)
+        xgroups = []
         for b, v in dec:
-            for c in cols:
-                last = c[-1][0]
-                if (abs(b.x0 - last.x0) <= 2.5
-                        and b.y0 <= last.y1 + max(4.0, b.h * 0.45)):
-                    c.append((b, v))
+            for g in xgroups:
+                if abs(b.x0 - g[0]) <= 2.5:
+                    g[1].append((b, v))
                     break
             else:
-                cols.append([(b, v)])
+                xgroups.append([b.x0, [(b, v)]])
+        # 2단계: 기둥 안에서 y순으로 괄호를 가른다
+        # 기둥: [조각 목록, x0, y0, y1, (쪽, 종류) 또는 None]
+        cols = []
+        for _, items in xgroups:
+            items.sort(key=lambda z: z[0].y0)
+            cur = None    # [조각, x0, y0, y1, 종류, 맨아래 조각, 닫힘]
+            for b, v in items:
+                part = v[3]
+                kind = (v[1], v[2]) if v[1] in ("open", "close") else None
+                if cur is None:
+                    cur = [[(b, v)], b.x0, b.y0, b.y1, kind,
+                           part, part == "bt"]
+                    continue
+                tol = max(4.0, b.h * 0.45)
+                gap = b.y0 - cur[3]
+                ovl = min(b.y1, cur[3]) - max(b.y0, cur[2])
+                dup = (part == cur[5] and ovl > 0.5 * max(b.h, 0.5))
+                keep_kind = (kind is None or cur[4] is None
+                             or kind == cur[4])
+                go_on = ((dup or (cur[5] != "bt" and part != "tp"))
+                         and keep_kind and (dup or gap <= tol))
+                if go_on:
+                    cur[0].append((b, v))
+                    cur[1] = min(cur[1], b.x0)
+                    cur[2] = min(cur[2], b.y0)
+                    cur[3] = max(cur[3], b.y1)
+                    if kind is not None:
+                        cur[4] = kind
+                    if not dup:
+                        cur[5] = part
+                        cur[6] = (part == "bt")
+                else:
+                    cols.append(cur[:5])
+                    cur = [[(b, v)], b.x0, b.y0, b.y1, kind,
+                           part, part == "bt"]
+            if cur is not None:
+                cols.append(cur[:5])
         out = []
         for c in cols:
-            c.sort(key=lambda z: z[0].y0)
-            ps = [b for b, _ in c]
+            c[0].sort(key=lambda z: z[0].y0)
+            ps = [b for b, _ in c[0]]
             x0 = min(b.x0 for b in ps); x1 = max(b.x1 for b in ps)
             y0 = min(b.y0 for b in ps); y1 = max(b.y1 for b in ps)
             sz = max(b.size for b in ps)
-            sided = [v for _, v in c if v[1] in ("open", "close")]
+            sided = [v for _, v in c[0] if v[1] in ("open", "close")]
             if not sided:
                 # 곧은 토막(braceex 등)만 쌓인 기둥 = 키 큰 세로 막대
                 out.append(Box(x0, y0, x1, y1, "|", sz, "vbar"))
@@ -2315,7 +2731,7 @@ def _merge_piece_columns(pieces):
             (side, kind), = kinds
             if len(ps) >= 2:
                 out.append(Box(x0, y0, x1, y1, _PIECE_TEX[(side, kind)], sz, side))
-            elif c[0][1][3] == "ex":
+            elif c[0][0][1][3] == "ex":
                 out.append(Box(x0, y0, x1, y1, "|", sz, "vbar"))
             else:
                 out.append(Box(x0, y0, x1, y1, _PIECE_TEX[(side, kind)], sz, side))
@@ -2352,8 +2768,10 @@ def _assemble_pua_pieces(boxes):
             cols = []
             for p in legacy:
                 for c in cols:
+                    cy0 = min(u[1].y0 for u in c)
+                    cy1 = max(u[1].y1 for u in c)
                     if (abs(c[0][1].x0 - p.x0) <= 1.5
-                            and p.y0 <= c[-1][1].y1 + 3.0):
+                            and p.y0 <= cy1 + 3.0 and p.y1 >= cy0 - 3.0):
                         c.append((p.y0, p))
                         c.sort(key=lambda u: u[0])
                         break
@@ -2409,6 +2827,10 @@ def _merge_stacked_delims(boxes):
 
     cases 중괄호는 위·아래 조각 두 개로 조판되는 일이 많다. 합치지 않으면
     \\left\\{ \\right. 가 두 번 나오고, 그 안의 분수가 한 덩어리로 뭉개진다.
+
+    14.48 · 같은 x의 다른 줄 괄호까지 합쳐지지 않게 양쪽 범위를 본다
+    (_merge_piece_columns 와 같은 추락 방지 — 정렬이 뒤집히면 위 조각이
+    아래 기둥에 흡수돼 수백 pt짜리 가짜 구분자가 됐다).
     """
     kinds = ("open", "close")
     special = [b for b in boxes if b.role in kinds]
@@ -2428,7 +2850,7 @@ def _merge_stacked_delims(boxes):
             c = special[j]
             if c.role != b.role or (c.tex or "") != (b.tex or ""):
                 continue
-            if abs(c.x0 - x0) <= 2.8 and c.y0 <= y1 + 6.0:
+            if abs(c.x0 - x0) <= 2.8 and c.y0 <= y1 + 6.0 and c.y1 >= y0 - 6.0:
                 y0 = min(y0, c.y0); y1 = max(y1, c.y1)
                 x0 = min(x0, c.x0); x1 = max(x1, c.x1)
                 used.add(j)
@@ -2492,6 +2914,22 @@ def _try_cases(boxes, rules, depth):
         if not tall:
             return None
         brace = min(tall, key=lambda b: (b.x0, -b.h))
+        # 14.48 · 닫는 짝이 있으면 cases 가 아니라 중괄호 묶음이다.
+        # T₂{T₁[x;y]}=(T₂T₁)[x;y] 처럼 한 줄 식을 {...} 로 묶으면
+        # 여는 쪽만 보고 cases 로 둔갑해 [x;y] 행렬이 갈려 버렸다.
+        # 진짜 cases 에는 닫는 중괄호가 없다.
+        for m in boxes:
+            if id(m) == id(brace):
+                continue
+            if m.role != "close" or (m.tex or "") not in ("}", r"\}"):
+                continue
+            if m.x0 < brace.x1:
+                continue
+            if max(brace.h, m.h) > 1.35 * min(brace.h, m.h):
+                continue
+            if min(brace.y1, m.y1) - max(brace.y0, m.y0) < 0.6 * brace.h:
+                continue
+            return None
         prefix = [b for b in boxes if id(b) != id(brace) and b.x1 <= brace.x0 + 1.2]
         right = [b for b in boxes if id(b) != id(brace) and b.x0 >= brace.x1 - 2.5]
         if len(right) < 3:
@@ -2582,9 +3020,134 @@ _MAT_DOTS = {".", "·", "⋅", "⋯", "⋮", "⋱", "…", "•"}
 
 # 칸 안 미세 병합에서 부호로 인정하는 글자 (_tok_tex 적용 뒤 모양)
 _MICRO_SIGNS = {"-", "+"}
+# 칸 안 미세 병합에서 프라임으로 인정하는 글자 (x' → 한 칸)
+_MICRO_PRIMES = {"'", "′", "’", "″"}
 
 
-def _micro_merge_row(row):
+def _micro_merge_signed_sqrt(rr, i, cur, rules):
+    """[부호, 근호몸통, 피제곱수…] → 원자 '- \\sqrt{…}' 상자. (14.48)
+
+    '−√3' 의 부호·몸통·피제곱수를 미리 조립해 한 상자로 합친다. 합치지
+    않으면 부호가 별도 열로 갈라져 2열 행렬이 4열이 됐다(p29 B/C/T).
+    피제곱수에 구분자·중괄호·근호가 또 있으면(중첩) 손대지 않는다 —
+    미리 조립하면 바깥 재귀와 어긋난다. 근호 막대는 rules 에 남는다
+    (피제곱수 조립에서만 제외) — _classify_rules 의 고아 막대 방벽이
+    분수선 둔갑을 막는다.
+    """
+    try:
+        n = len(rr)
+        if i >= n:
+            return None
+        body = rr[i]
+        if body.atomic or body.role != "radical":
+            return None
+        # 14.48 · 부호는 크기 관대(50%): '−√3/2' 의 부호(10.5pt 본문
+        # 크기)가 피제곱수(7pt)보다 크다. 빡빡하면(12%) 병합이 안 돼
+        # 부호가 별도 열로 갈라지고 열 점프가 무너져 격자 자체가
+        # 실패했다(p21 인라인 행렬 통째 누락). 위/아래첨자 오합병은
+        # 아래 세로겹침(vov)이 막는다 — 첨자는 본줄과 겹치지 않는다.
+        if abs(body.size - cur.size) > 0.5 * max(cur.size, body.size):
+            return None
+        gap = body.x0 - cur.x1
+        if gap > 5.0 or gap < -0.5:
+            return None
+        if (min(cur.y1, body.y1) - max(cur.y0, body.y0)
+                <= 0.35 * min(max(cur.h, 0.5), max(body.h, 0.5))):
+            return None
+        bar = None
+        for r in rules or []:
+            rcy = (r[1] + r[3]) / 2.0
+            if (abs(r[0] - body.x1) <= 4.5
+                    and body.y0 - 4.5 <= rcy <= body.y1 + 4.5):
+                bar = r
+                break
+        if bar is None:
+            return None
+        bcy = (bar[1] + bar[3]) / 2.0
+        # 14.48 · 윗변 '위'에 글자가 있으면 부호의 근호가 아니다.
+        # '−1/√5' 에서 분자 '1'이 창 안에 들어와 √(1/5) 로 둔갑했다
+        # (p22) — 윗변은 근호 맨 위이므로 진짜 피제곱수는 아래에만 있다.
+        for k in range(i + 1, n):
+            c = rr[k]
+            if c.atomic or c.role is not None:
+                break
+            if c.x0 > bar[2] + 2.5:
+                break
+            if not (c.x0 >= bar[0] - 2.5 and c.x1 <= bar[2] + 2.5):
+                continue
+            if c.cy < bcy - 2.5:
+                return None
+        # 14.48 · 바깥 분수선 아래는 피제곱수가 아니다. '−√3/2' 에서
+        # 분모 '2'는 근호 윗변 아래·분수선 아래에 있어 창(±14pt)엔
+        # 들어오지만 분모지 피제곱수가 아니다 — 그냥 두면 √(3/2) 로
+        # 둔갑했다(p21). 근호 안에 통째로 든 규칙선(√(1/2) 꼴)은
+        # 바깥선이 아니므로 제외하지 않는다.
+        outer_rcy = None
+        for r in rules or []:
+            if r is bar:
+                continue
+            rcy = (r[1] + r[3]) / 2.0
+            if rcy <= bcy:
+                continue
+            if r[0] >= bar[2] + 2.5 or r[2] <= body.x0 - 2.5:
+                continue
+            if r[0] >= body.x1 - 1.0 and r[2] <= bar[2] + 2.5:
+                continue          # 근호 안 규칙선(√(1/2)의 분수선)
+            paired = False
+            for m in rr:
+                if m.role != "radical":
+                    continue
+                if (abs(r[0] - m.x1) <= 4.5
+                        and m.y0 - 4.5 <= rcy <= m.y1 + 4.5):
+                    paired = True
+                    break
+            if paired:
+                continue          # 이웃 근호의 윗변
+            if outer_rcy is None or rcy < outer_rcy:
+                outer_rcy = rcy
+        rad = []
+        skipped = []
+        j = i + 1
+        while j < n:
+            c = rr[j]
+            if c.atomic or c.role is not None:
+                break
+            if outer_rcy is not None and c.cy >= outer_rcy:
+                skipped.append(c)
+                j += 1
+                continue          # 바깥 분수선 아래(분모)는 피제곱수에서
+                                  # 빼지만 행에는 남긴다(아래서 반환)
+            if not (c.x0 >= bar[0] - 2.5 and c.x1 <= bar[2] + 2.5
+                    and abs(c.cy - bcy) <= 14.0):
+                break
+            if c.x0 - (rad[-1].x1 if rad else body.x1) > 5.0:
+                break
+            rad.append(c)
+            j += 1
+        if not rad:
+            return None
+        if any((c.tex or "").strip() in _MAT_DELIM_TEX for c in rad):
+            return None
+        try:
+            sub = [r for r in rules if r is not bar]
+            rtex = _tidy_latex(assemble(rad, sub, 2))
+        except Exception:
+            return None
+        if not rtex:
+            return None
+        tex = (cur.tex or "") + r" \sqrt{" + rtex + "}"
+        # 14.48 · 상자 범위는 몸통+피제곱수(분수 부분)까지만 — 부호는
+        # 앞에 삐죽 나온 접두어다. 부호까지 품으면 '−√3/2' 의 분수선이
+        # 여유(slack) 검사에 걸려 분수가 안 됐다(p21 /2 증발).
+        return (Box(body.x0, min(body.y0, min(b.y0 for b in rad)),
+                    max(b.x1 for b in rad),
+                    max(body.y1, max(b.y1 for b in rad)),
+                    tex, max(cur.size, body.size), None, True), j, skipped)
+    except Exception:
+        return None
+
+
+def _micro_merge_row(row, rules=None):
     """한 줄 안에서 숫자 조각(부호·자릿수·소수점)을 한 상자로 합친다. (14.47)
 
     '−1' 의 부호는 왼쪽으로 삐죽 나와 앞 칸과의 간격을 갉아먹는다. 합치지
@@ -2593,6 +3156,17 @@ def _micro_merge_row(row):
     크기가 12% 넘게 다르면(위/아래 첨자) 합치지 않는다. 자릿수 임계값은
     빡빡하게(1.0pt) 둔다 — 열 간격이 좁은 행렬에서 진짜 열 경계를
     삼켜 버리면 칸이 뭉개지기 때문이다. 부호는 자폭을 품어 2.5pt 로 둔다.
+
+    14.48 · 부호+글자 병합은 '−1'(부호+숫자)과 '−x'(부호+한 글자)까지만이다.
+    '−sinθ' 의 '−s' 를 합쳐 버리면 sin 이 낱말로 묶이지 않아 칸이
+    '-s in \\theta' 로 깨졌다 → 뒤에 글자가 또 오면(연산자 이름) 합치지
+    않는다. 'x'' 의 프라임도 앞 글자와 합친다 — 합치지 않으면 프라임이
+    별도 열로 갈라져 [x';y'] 가 2열 행렬이 됐다.
+    14.48 · 분수선은 병합 금지선이다. 분자·분모가 한 줄(row)에 들어와도
+    (분수 다리) 서로 합치면 안 되고, 부호가 분자를 뺏어서도 안 된다
+    (−3/5 → '−3'+5). 막대가 두 상자 사이에 있거나 다음 상자가
+    분자(바로 아래 막대)면 합치지 않는다. 세로로 안 겹치는 이웃도
+    같은 줄 글자가 아니므로 합치지 않는다.
     """
     try:
         rr = sorted(row, key=lambda b: b.x0)
@@ -2604,6 +3178,14 @@ def _micro_merge_row(row):
             if cur.atomic or cur.role is not None:
                 out.append(cur)
                 continue
+            # 14.48 · 부호+근호 병합: '−√3' 을 한 상자로 합친다(위 함수).
+            if not cur.atomic and (cur.tex or "") in _MICRO_SIGNS and rules:
+                _mg = _micro_merge_signed_sqrt(rr, i, cur, rules)
+                if _mg is not None:
+                    out.append(_mg[0])
+                    out.extend(_mg[2])
+                    i = _mg[1]
+                    continue
             while i < n:
                 nxt = rr[i]
                 if (nxt.atomic or nxt.role is not None
@@ -2615,14 +3197,56 @@ def _micro_merge_row(row):
                 gap = nxt.x0 - cur.x1
                 la = (cur.tex or "")[-1:]
                 rb = (nxt.tex or "")[:1]
+                # 같은 시각 줄(세로로 겹침)이 아니면 이웃이 아니다
+                if (min(cur.y1, nxt.y1) - max(cur.y0, nxt.y0)
+                        <= 0.35 * min(max(cur.h, 0.5), max(nxt.h, 0.5))):
+                    break
+                if rules:
+                    ccx = (cur.x0 + cur.x1) / 2.0
+                    ncx = (nxt.x0 + nxt.x1) / 2.0
+                    ccy = (cur.y0 + cur.y1) / 2.0
+                    ncy = (nxt.y0 + nxt.y1) / 2.0
+                    fenced = False
+                    num_next = False
+                    for r in rules:
+                        rcy = (r[1] + r[3]) / 2.0
+                        cok = r[0] - 1.0 <= ccx <= r[2] + 1.0
+                        nok = r[0] - 1.0 <= ncx <= r[2] + 1.0
+                        if cok and nok and (ccy - rcy) * (ncy - rcy) < 0:
+                            fenced = True      # 막대 사이에 낀 분자·분모
+                            break
+                        if nok and (nxt.y0 <= rcy <= nxt.y1
+                                    or 0 < rcy - nxt.y1 <= 4.0):
+                            num_next = True    # 다음 상자가 분자다
+                    if fenced:
+                        break
+                    if num_next and rb not in _MICRO_PRIMES:
+                        break                  # 부호·자릿수가 분자를 뺏지 못한다
                 join = False
                 if la in _MICRO_SIGNS and rb.isalnum() and gap <= 2.5:
-                    join = True      # −1 · +x
+                    if rb.isalpha():
+                        # −sin · −cos: 연산자 이름의 첫 글자를 삼키면 안 된다.
+                        # 뒤에 같은 크기 글자가 바로 오면 낱말이므로 둔다.
+                        fol = rr[i + 1] if i + 1 < n else None
+                        wordy = (fol is not None and not fol.atomic
+                                 and fol.role is None
+                                 and len((fol.tex or "").strip()) == 1
+                                 and (fol.tex or "").strip().isalnum()
+                                 and abs(fol.size - cur.size)
+                                 <= 0.12 * max(cur.size, fol.size)
+                                 and fol.x0 - nxt.x1 <= 2.5)
+                        if not wordy:
+                            join = True      # −x (한 글자 기호)
+                    else:
+                        join = True          # −1
                 elif la.isdigit() and rb.isdigit() and gap <= 1.0:
                     join = True      # 12
                 elif gap <= 1.0 and ((la.isdigit() and rb in ".,")
                                      or (la in ".," and rb.isdigit())):
                     join = True      # 3.5 · 1,000
+                elif (rb in _MICRO_PRIMES and gap <= 2.5
+                        and (la.isalnum() or la in (")", "]", "'", "′"))):
+                    join = True      # x' · y'' (프라임은 앞 글자에 붙는다)
                 if not join or gap < -0.5:
                     break
                 cur = Box(cur.x0, min(cur.y0, nxt.y0), nxt.x1,
@@ -2710,7 +3334,7 @@ def _delims_wrap(o, c, content):
     return True
 
 
-def _matrix_grid(boxes, rules=None):
+def _matrix_grid(boxes, rules=None, braces=False):
     """구분자 안쪽 상자들이 (행 × 열) 격자인가.
 
     되면 {rows, grid, ncol, hb} 를, 아니면 None 을 돌려준다.
@@ -2748,6 +3372,41 @@ def _matrix_grid(boxes, rules=None):
                 # 칸이 높이만 다르고 중심이 같으면 같은 줄(예: 'a' 와 '∫')
                 if abs(b.cy - (ry0 + ry1) / 2.0) <= max(1.6, hb * 0.34):
                     joined = True
+            if not joined and rules:
+                # 14.48 · 분수 다리: 분수선 위·아래에 맞닿은 분자·분모는
+                # 같은 줄이다. 순수 분수 칸(3/5)은 분자·분모가 세로로
+                # 겹치지 않아 줄이 갈라져 행렬 행 수가 뻥튀기됐다.
+                # (다리 상대는 막대 반대편·맞닿은 글자로 한정 — 아래칸
+                # 분자가 윗줄에 붙는 일은 막대 거리(>3pt)가 막는다)
+                bcy = (b.y0 + b.y1) / 2.0
+                bcx = (b.x0 + b.x1) / 2.0
+                for r in rules:
+                    rcy = (r[1] + r[3]) / 2.0
+                    # 14.48 · 근호 윗줄은 분수 다리가 아니다. 아랫줄 근호
+                    # 윗변이 윗줄 분모와 아랫줄 분자를 이어 행을 합쳐
+                    # 격자를 깨뜨렸다(p22 (c)).
+                    if any(o.role == "radical"
+                           and abs(r[0] - o.x1) <= 4.5
+                           and o.y0 - 4.5 <= rcy <= o.y1 + 4.5
+                           for o in bs):
+                        continue
+                    if not (r[0] - 1.0 <= bcx <= r[2] + 1.0):
+                        continue
+                    if min(abs(b.y0 - rcy), abs(b.y1 - rcy)) > 3.0:
+                        continue
+                    for bb in rows[-1]:
+                        if not (r[0] - 1.0
+                                <= (bb.x0 + bb.x1) / 2.0 <= r[2] + 1.0):
+                            continue
+                        bbcy = (bb.y0 + bb.y1) / 2.0
+                        if (bbcy - rcy) * (bcy - rcy) >= 0:
+                            continue
+                        if min(abs(bb.y0 - rcy), abs(bb.y1 - rcy)) > 3.0:
+                            continue
+                        joined = True
+                        break
+                    if joined:
+                        break
             if joined:
                 rows[-1].append(b)
                 ry0 = min(ry0, b.y0); ry1 = max(ry1, b.y1)
@@ -2758,18 +3417,42 @@ def _matrix_grid(boxes, rules=None):
 
         # ── 분수선이 줄 사이를 가로지르면 분수다 ──
         if rules:
-            centers = sorted(_median([b.cy for b in r]) for r in rows)
+            _crs = sorted((_median([b.cy for b in r]), _i)
+                          for _i, r in enumerate(rows))
             cx0 = min(b.x0 for b in bs); cx1 = max(b.x1 for b in bs)
             cw = max(1e-6, cx1 - cx0)
             for r in rules:
                 rcy = (r[1] + r[3]) / 2.0
-                if not any(centers[k] < rcy < centers[k + 1] for k in range(len(centers) - 1)):
+                # 14.48 · 근호 윗줄은 분수선이 아니다 (벡터 sqrt 합성).
+                if any(b.role == "radical"
+                       and abs(r[0] - b.x1) <= 4.5
+                       and b.y0 - 4.5 <= rcy <= b.y1 + 4.5 for b in bs):
                     continue
-                if min(r[2], cx1) - max(r[0], cx0) > 0.35 * cw:
-                    return None
+                for k in range(len(_crs) - 1):
+                    if not (_crs[k][0] < rcy < _crs[k + 1][0]):
+                        continue
+                    if min(r[2], cx1) - max(r[0], cx0) <= 0.35 * cw:
+                        continue
+                    # 14.48 · 대분수(1½) 탈출. 막대 양옆 줄 안에, 분수 조각보다
+                    # 확실히 크고(10.5pt vs 7pt) 막대 밖으로 삐져나온 숫자가
+                    # 있으면 순수 분수가 아니라 대분수 칸이다 — 격자로 살린다.
+                    # 크기가 같으면(x + 분수) 예전대로 분수로 보고 버린다.
+                    _adj = rows[_crs[k][1]] + rows[_crs[k + 1][1]]
+                    _fsz = [b.size for b in _adj if not b.atomic
+                            and r[0] - 1.5 <= (b.x0 + b.x1) / 2.0 <= r[2] + 1.5
+                            and (b.y0 <= rcy <= b.y1
+                                 or 0 < rcy - b.y1 <= 4.0
+                                 or 0 < b.y0 - rcy <= 4.0)]
+                    _fm = max(_fsz) if _fsz else 0.0
+                    _mixed = (_fm > 0 and any(
+                        not b.atomic and b.size > _fm * 1.25
+                        and (b.x0 < r[0] - 1.0 or b.x1 > r[2] + 1.0)
+                        for b in _adj))
+                    if not _mixed:
+                        return None
 
         # ── 14.47 · 칸 안 숫자 조각(−1·12·3.5)을 먼저 합친다 ──
-        rows = [_micro_merge_row(r) for r in rows]
+        rows = [_micro_merge_row(r, rules) for r in rows]
         inner = [b for r in rows for b in r]
 
         # ── 열: '칸 안쪽 간격'과 '칸 사이 간격'의 도약으로 가른다 ──
@@ -2780,7 +3463,12 @@ def _matrix_grid(boxes, rules=None):
         #   [a a | b] 처럼 칸 간격이 고르지 않은 행렬이 두 칸으로 뭉개지지 않게.
         gaps = []
         for r in rows:
-            rr = sorted(r, key=lambda b: b.x0)
+            # 14.48 · 근호 몸통은 열을 가르는 글자가 아니다. 피제곱수 왼쪽에
+            # 붙은 몸통이 1pt 미만 간격을 만들면 열 후보가 사라져 격자가
+            # 깨졌다([1;-√3]). 몸통은 칸 배치(_fill)에서 겹침으로 제 칸을
+            # 찾아간다.
+            rr = sorted([b for b in r if b.role != "radical"],
+                        key=lambda b: b.x0)
             for a, b in zip(rr, rr[1:]):
                 gaps.append(b.x0 - a.x1)
         gs = sorted(g for g in gaps if g >= 1.0)
@@ -2798,14 +3486,25 @@ def _matrix_grid(boxes, rules=None):
             # 1pt 안팎으로 흔들리는 지터에 열이 뭉개져 버린다(Bmatrix 회귀).
             # 절반이면 진짜 열 간격은 반드시 갈라지고(2배 여유) 칸 안
             # 커닝만 합쳐진다.
-            cands.append((0.0, min(gs) * 0.5))
+            # 14.48 · 단, 간격이 '균일하게 작으면' 그건 열 간격이 아니라
+            # 식 안쪽 간격(x − a)이다 — 가르면 [x-a;y-b] 가 2열이 됐다.
+            # 진짜 열 간격은 글자 높이의 1/3 이상은 벌려 조판한다.
+            if min(gs) >= max(3.0, hb * 0.32):
+                cands.append((0.0, min(gs) * 0.5))
+        # 14.48 · '전부 합치기' 후보: 간격이 균일하게 작으면 그건 열 간격이
+        # 아니라 식 안쪽 간격(x − a)이므로 한 열이다. 0.0(글자별 분리)은
+        # [x-a;y-b] 를 2열로 가르던 함정이므로 그보다 먼저 둔다.
+        # (위 절반 후보와 상호배타: 절반은 min ≥ 기준일 때만 있다)
+        if gs and max(gs) < max(3.0, hb * 0.32):
+            cands.append((0.0, max(gs)))
         # 마지막 후보: 칸을 가를 간격이 없다 → 글자 하나가 한 칸. 같은 열의
         # 다른 줄 글자는 서로 겹치므로(gap ≤ 0) 여전히 한 칸으로 모인다.
         cands.append((0.0, 0.0))
 
         def _split(thr):
             cols = []
-            for b in sorted(inner, key=lambda z: z.x0):
+            _norad = [z for z in inner if z.role != "radical"]
+            for b in sorted(_norad if _norad else inner, key=lambda z: z.x0):
                 if cols and b.x0 - cols[-1][1] <= thr:
                     cols[-1][1] = max(cols[-1][1], b.x1)
                     cols[-1][2].append(b)
@@ -2846,8 +3545,76 @@ def _matrix_grid(boxes, rules=None):
                     grid[ri][best_k].append(b)
             return ncol, grid
 
+        def _rowsplit(thr):
+            # 14.48 · 행별로 먼저 가르고 x-겹침으로 열을 합친다.
+            # 전역 x-묶음(_split)은 엇갈린 열에서 행을 넘나드는 유령
+            # 간격을 만들어 점프 후보를 1열로 붕괴시켰다(p35 행렬식:
+            # 유령 8.6 < thr 8.62). 행별 간격은 gs 그 자체라 점프가
+            # 정확히 열 경계다. 전부 같은 칸 수(≥2)로 갈려야 격자.
+            try:
+                if sep or braces:
+                    return None
+                _rc = []
+                for r in rows:
+                    rr = sorted([b for b in r if b.role != "radical"],
+                                key=lambda b: b.x0)
+                    if not rr:
+                        return None
+                    _cur, _cs = [rr[0]], []
+                    for a, b in zip(rr, rr[1:]):
+                        if b.x0 - a.x1 > thr:
+                            _cs.append(_cur)
+                            _cur = []
+                        _cur.append(b)
+                    _cs.append(_cur)
+                    _rc.append(_cs)
+                _n = len(_rc[0])
+                if _n < 2 or any(len(c) != _n for c in _rc):
+                    return None
+                # 같은 순서 칸끼리 겹쳐야 같은 열이다
+                for k in range(_n):
+                    _ks = sorted((c[k] for c in _rc),
+                                  key=lambda c: min(b.x0 for b in c))
+                    for _p, _q in zip(_ks, _ks[1:]):
+                        _ov = min(max(b.x1 for b in _p),
+                                  max(b.x1 for b in _q)) \
+                            - max(min(b.x0 for b in _p),
+                                  min(b.x0 for b in _q))
+                        if _ov < -0.5:
+                            return None
+                _cc = []
+                for k in range(_n):
+                    _cb = [b for c in _rc for b in c[k]]
+                    _cc.append([min(b.x0 for b in _cb),
+                                max(b.x1 for b in _cb), _cb])
+                for k in range(_n - 1):
+                    if min(_cc[k][1], _cc[k + 1][1]) \
+                            - max(_cc[k][0], _cc[k + 1][0]) > 0:
+                        return None
+                for b in inner:
+                    if b.atomic:
+                        continue
+                    _hits = sum(1 for cx0, cx1, _cb in _cc
+                                if min(b.x1, cx1) - max(b.x0, cx0)
+                                > 0.35 * max(0.5, b.w))
+                    if _hits > 1:
+                        return None
+                _nc, _gg = _fill(_cc)
+                _cts = [sum(1 for cell in row if cell) for row in _gg]
+                if len(set(_cts)) > 1 or not _cts or _cts[0] < 2 \
+                        or _nc < 2:
+                    return None
+                return _cc, _gg
+            except Exception:
+                return None
+
         cols = grid = None
+        _vec = None
         for _r, thr in cands:
+            if _r == 0 and _vec is not None:
+                # 14.48 · 보류된 벡터가 있으면 글자별 분리(0.0)는 볼 것도
+                # 없다 — 낱글자 열은 어떤 벡터든 일관된 다열로 둔갑시킨다.
+                continue
             cc = _split(thr)
             nc, gg = _fill(cc)
             # ── 한 글자가 두 열에 걸치면 칸 나누기가 틀렸다 ──
@@ -2870,8 +3637,88 @@ def _matrix_grid(boxes, rules=None):
                 break
             if nc < 2 and len(rows) >= 2 and counts and counts[0] >= 1:
                 # 열 벡터(3×1) — 칸이 하나뿐이어도 격자다
+                if _r > 0:
+                    # 14.48 · 점프 후보가 1열로 붕괴했으면 행-우선으로
+                    # 재시도한다. 이 지경이면 기존 동작은 보류(None행)
+                    # 뿐이라 격자가 나오면 무조건 이득이다.
+                    _rw = _rowsplit(thr)
+                    if _rw is not None:
+                        cols, grid = _rw
+                        break
+                    # 14.48 · 점프 후보의 벡터는 '보류'하고 낮은 점프를
+                    # 계속 본다. 높은 점프의 1열이 진짜 다열을 가리면
+                    # 울퉁불퉁 행렬이 통째로 None 이 됐다(27pt 벡터가
+                    # 5pt 2열을 가림). 비율 0 후보(전부 합치기·낱글자)는
+                    # 예전대로 즉시 확정 — [x-a;y-b] 가 낱글자로 갈라지면
+                    # 안 되므로 순서를 손대지 않는다.
+                    if _vec is None:
+                        _vec = (cc, gg)
+                    continue
                 cols, grid = cc, gg
                 break
+        if cols is None and not braces and not sep:
+            # 14.48 · 최후 수단: 줄마다 따로 가른다(울퉁불퉁 행렬).
+            # 칸 폭이 들쭉날쭉하면(윗줄 열 간격 46pt·아랫줄 8pt) 전역
+            # x-묶음이 어긋나 유령 열이 생겨 None 이 됐다. 줄별 점프가
+            # 전부 같은 칸 수로 갈리고 왼쪽이 정렬되면 격자로 인정한다.
+            # (중괄호는 cases 일 수 있어 제외 — Bmatrix 로 둔갑 방지)
+            try:
+                _rcells = []
+                for r in rows:
+                    rr = sorted(r, key=lambda b: b.x0)
+                    _gaps = sorted(g for g in
+                                   (rr[k + 1].x0 - rr[k].x1
+                                    for k in range(len(rr) - 1)) if g >= 1.0)
+                    _thr = None
+                    _best = 0.0
+                    for k in range(len(_gaps) - 1):
+                        _lo, _hi = _gaps[k], _gaps[k + 1]
+                        if _hi - _lo >= 3.0 and _lo > 0 \
+                                and _hi / _lo >= 3.0 \
+                                and _hi / _lo > _best:
+                            _best = _hi / _lo
+                            _thr = (_lo + _hi) / 2.0
+                    if _thr is not None:
+                        _cells, _cur = [], [rr[0]]
+                        for k in range(len(rr) - 1):
+                            if rr[k + 1].x0 - rr[k].x1 > _thr:
+                                _cells.append(_cur)
+                                _cur = []
+                            _cur.append(rr[k + 1])
+                        _cells.append(_cur)
+                    else:
+                        _cells = [list(rr)]
+                    _rcells.append(_cells)
+                _ncell = len(_rcells[0])
+                _same = (_ncell >= 2 and all(len(c) == _ncell
+                                             for c in _rcells))
+                _align = _same and all(
+                    max(min(b.x0 for b in c[k]) for c in _rcells)
+                    - min(min(b.x0 for b in c[k]) for c in _rcells) <= 4.0
+                    for k in range(_ncell))
+                if _align:
+                    _cc = []
+                    for k in range(_ncell):
+                        _cb = [b for c in _rcells for b in c[k]]
+                        _cc.append([min(b.x0 for b in _cb),
+                                    max(b.x1 for b in _cb), _cb])
+                    _bad = False
+                    for b in inner:
+                        if b.atomic:
+                            continue
+                        _hits = sum(1 for cx0, cx1, _cb in _cc
+                                    if min(b.x1, cx1) - max(b.x0, cx0)
+                                    > 0.35 * max(0.5, b.w))
+                        if _hits > 1:
+                            _bad = True
+                            break
+                    if not _bad:
+                        cols, grid = _cc, _rcells
+            except Exception:
+                pass
+        if cols is None and _vec is not None:
+            # 보류했던 열 벡터 (낮은 점프·울퉁불퉁 폴백이 다 실패했을 때만)
+            cols, grid = _vec
         if cols is None:
             return None
         ncol = len(cols)
@@ -2882,11 +3729,39 @@ def _matrix_grid(boxes, rules=None):
             # 한 줄짜리 '열 벡터'는 칸이 반듯하게 정렬돼야 한다.
             # (X^{a}_{b} 처럼 첨자가 위아래로 붙은 덩어리를 열 벡터로 오인하지 않게)
             sizes = [b.size for b in inner if not b.atomic]
+            # 14.48 · 분수 조각(규칙선 위/아래에 닿은 작은 글자)은 크기 검사에서
+            # 뺀다. 칸에 분수가 있으면 10.5pt/7pt 가 섞여 격자가 통째로
+            # 버려졌다([x'-1/4; y'-3/4]이 \left[ \right] 쓰레기가 됨).
+            # 규칙선 없는 위/아래첨자(X^a_b)는 여전히 걸러진다.
+            if rules and sizes:
+                def _frac_part(b):
+                    cx = (b.x0 + b.x1) / 2.0
+                    for r in rules:
+                        if not (r[0] - 1.5 <= cx <= r[2] + 1.5):
+                            continue
+                        rcy = (r[1] + r[3]) / 2.0
+                        if b.y0 <= rcy <= b.y1:
+                            return True
+                        if 0 < rcy - b.y1 <= 4.0 or 0 < b.y0 - rcy <= 4.0:
+                            return True
+                    return False
+                big = [b.size for b in inner
+                       if not b.atomic and not _frac_part(b)]
+                if big:
+                    sizes = big
             if sizes and max(sizes) > min(sizes) * 1.25:
                 return None
             cxs = [_median([b.x0 + b.x1 for b in r]) / 2.0 for r in rows]
             if max(cxs) - min(cxs) > max(1.6, hb * 0.4):
-                return None
+                # 14.48 · 가운데가 어긋나도 양쪽 끝이 맞으면 열 벡터다.
+                # 칸 폭이 다른 벡터([x; y−1]·[−y+1; −x])는 왼쪽 끝이
+                # 맞아떨어진다. X^a_b 처럼 첨자가 오른쪽으로 삐져나온
+                # 것은 양쪽 끝도 어긋나므로 여전히 걸러진다.
+                _lx = [min(b.x0 for b in r) for r in rows]
+                _rx = [max(b.x1 for b in r) for r in rows]
+                if (max(_lx) - min(_lx) > 2.5
+                        and max(_rx) - min(_rx) > 2.5):
+                    return None
         return {"rows": rows, "grid": grid, "cols": cols, "ncol": ncol,
                 "hb": hb, "sep": sep}
     except Exception:
@@ -3024,7 +3899,9 @@ def _try_matrix(boxes, rules, depth, opener=None, closer=None):
             return None
         # 글자를 가장 많이 품은 쌍이 행렬 본체일 확률이 가장 높다
         o, c, content = max(cands, key=lambda z: len(z[2]))
-        g = _matrix_grid(content, rules)
+        # 14.48 · 중괄호는 울퉁불퉁 폴백 대상이 아니다(cases 보호)
+        g = _matrix_grid(content, rules,
+                         braces=(o.tex or "").strip() in ("\\{", "\\}"))
         if not g:
             return None
         piece = _matrix_piece(g, o, c, rules, depth)
@@ -3229,9 +4106,9 @@ def _latex_is_sane(t):
     return True
 
 
-def region_to_latex(doc, page, rect, gtables=None, rules=None):
+def region_to_latex(doc, page, rect, gtables=None, rules=None, vlines=None):
     """PDF 영역 → LaTeX 한 줄."""
-    boxes = region_boxes(doc, page, rect, gtables)
+    boxes = region_boxes(doc, page, rect, gtables, vlines=vlines)
     if not boxes:
         return ""
     if rules is None:
@@ -3240,6 +4117,10 @@ def region_to_latex(doc, page, rect, gtables=None, rules=None):
     # 10.0 · 분수선은 분자·분모 중 '넓은 쪽' 폭이라 밴드보다 더 넓은 경우가
     #  흔하다. 통째로 들어오는 선만 쓰면 그런 분수선이 전부 버려져 \frac 이
     #  만들어지지 않았다 → 밴드와 가로로 겹치는 선은 모두 포함한다.
+    # 14.48 · 삐져나온 선을 여기서 거르면 안 된다. 바깥 분수선(여백 넓음)과
+    #  삼각형 밑변(p21 가짜 θ/1)은 삐져나옴만으로 구분 불가(19pt<32pt) —
+    #  다리 검증까지 깨져 중첩 분수가 통째로 사라졌다. 가짜 분수는
+    #  _tex_is_figure_junk(낱글자 분수 규칙)에서 텍스트로 돌린다.
     rs = [r for r in rules
           if r[0] < x1 + 3 and r[2] > x0 - 3 and y0 - 3 <= (r[1] + r[3]) / 2 <= y1 + 3]
     return _tidy_latex(assemble(boxes, rs))
@@ -3343,6 +4224,18 @@ def _expand_math_bands(rd, bands, row_prose=None):
                     continue
                 if nx1 - nx0 > (m[2] - m[0]) + 90:
                     continue
+                # 14.48 · 이웃 밴드를 덮치는 팽창은 건너뛴다 (성장 가드와
+                # 같은 이유 — 겹친 둘 다 preserve 에서 죽는다).
+                _hit = False
+                for _o in out:
+                    if _o is m:
+                        continue
+                    if (min(nx1, _o[2]) - max(nx0, _o[0]) > 0.5
+                            and min(ny1, _o[3]) - max(ny0, _o[1]) > 0.5):
+                        _hit = True
+                        break
+                if _hit:
+                    continue
                 if (nx0, ny0, nx1, ny1) != (m[0], m[1], m[2], m[3]):
                     m[0], m[1], m[2], m[3] = nx0, ny0, nx1, ny1
                     grew = True
@@ -3376,7 +4269,8 @@ def _drop_contained_math(regs):
     return keep
 
 
-def _matrix_band_seeds(page, rd, doc, gtables, rules, is_prose=None, limit=60):
+def _matrix_band_seeds(page, rd, doc, gtables, rules, is_prose=None, limit=60,
+                        vlines=None):
     """큰 구분자가 감싼 '글자 격자'를 행렬 밴드 후보로 찾는다. (14.46)
 
     씨앗 조건이 확장 글꼴(CMEX/txex)이거나 분수선 근처인 줄뿐이면, 일반
@@ -3444,6 +4338,11 @@ def _matrix_band_seeds(page, rd, doc, gtables, rules, is_prose=None, limit=60):
             # 조각 기둥을 큰 구분자로 합쳐 후보에 올린다. 조립 검증(아래)이
             # 행렬이 아닐 걸 걸러주므로 씨앗 단계에선 관대해도 된다.
             cands.extend(_merge_piece_columns(_seed_pieces))
+        if vlines:
+            # 14.48 · 벡터 세로선도 | 후보로 올린다 (글리프 없는 행렬식).
+            # 짝·높이·조립 검증이 가짜를 걸러준다.
+            for _v in vlines:
+                cands.append(Box(_v[0], _v[1], _v[2], _v[3], "|", 10.0, "vbar"))
         if len(cands) < 2:
             return []
         body_h = _median(heights) or 10.0
@@ -3467,11 +4366,17 @@ def _matrix_band_seeds(page, rd, doc, gtables, rules, is_prose=None, limit=60):
                     continue
                 if min(o.y1, c.y1) - max(o.y0, c.y0) < 0.65 * min(o.h, c.h):
                     continue
+                # 14.48 · 짝 괄호 높이가 다르면(1.35배↑) 다른 줄끼리 엮인
+                # 것이다. 높이 2배짜리 가짜 쌍이 쓰레기 bmatrix 로 씨앗
+                # 검증까지 통과해 두 식을 한 밴드로 합쳐 버렸다(p10 붕괴).
+                if max(o.h, c.h) > 1.35 * min(o.h, c.h):
+                    continue
                 x0, x1 = o.x0 - 0.6, c.x1 + 0.6
                 y0, y1 = min(o.y0, c.y0) - 0.6, max(o.y1, c.y1) + 0.6
                 sub = [r for r in (rules or [])
                        if r[0] < x1 and r[2] > x0 and y0 - 3 <= (r[1] + r[3]) / 2.0 <= y1 + 3]
-                boxes = region_boxes(doc, page, (x0, y0, x1, y1), gtables, rd=rd)
+                boxes = region_boxes(doc, page, (x0, y0, x1, y1), gtables, rd=rd,
+                                       vlines=vlines)
                 if len(boxes) < 4:
                     continue
                 try:
@@ -3555,6 +4460,31 @@ def _row_prose_flags(rd):
         return {}
 
 
+def _both_matrix_tex(doc, page, a, b, gtables, rules, rd):
+    """두 밴드가 '각각' 행렬로 조립되는가. (14.48 · 10.4 쌓임 방지)
+
+    줄바꿈된 한 등식의 조각은 행렬로 안 되지만, 위아래로 쌓인 별개
+    식(Thus 3단 유도)은 양쪽 다 행렬로 된다. 후자를 합치면 aligned
+    쓰레기가 되므로, 10.4 병합 전에 검사해 합치지 않는다.
+    조립 검증(씨앗 검사와 같은 코드)이라 거짓 양성이 나올 수 없다.
+    """
+    try:
+        for bb in (a, b):
+            x0, y0, x1, y1 = bb[0], bb[1], bb[2], bb[3]
+            sub = [r for r in (rules or [])
+                   if r[0] < x1 and r[2] > x0
+                   and y0 - 3 <= (r[1] + r[3]) / 2.0 <= y1 + 3]
+            boxes = region_boxes(doc, page, (x0, y0, x1, y1), gtables, rd=rd)
+            if len(boxes) < 4:
+                return False
+            tex = _tidy_latex(assemble(boxes, sub))
+            if not tex or not _MAT_ENV_RE.search(tex):
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def _big_math_bands(page, avoid=None):
     """이 쪽에서 '큰 수식' 이 놓인 줄 영역(밴드)들을 찾는다. (9.3)
 
@@ -3577,6 +4507,10 @@ def _big_math_bands(page, avoid=None):
         rules = page_rules(page)
     except Exception:
         rules = []
+    try:
+        _vlines = page_vlines(page)
+    except Exception:
+        _vlines = []
 
     # 10.4 · 표 안쪽의 가로선은 분수선이 아니다 (표→\frac 오인 방지)
     if avoid:
@@ -3643,7 +4577,8 @@ def _big_math_bands(page, avoid=None):
     # 14.46 · 행렬: 확장 글꼴 괄호가 없는 PDF 에서도 '큰 구분자 + 격자'를
     #   씨앗으로 올린다. 실제로 행렬로 조립되는 후보만 들어온다.
     try:
-        for _ms in _matrix_band_seeds(page, rd, doc, gtables, rules, _is_prose):
+        for _ms in _matrix_band_seeds(page, rd, doc, gtables, rules, _is_prose,
+                                         vlines=_vlines):
             seeds.append([_ms[0], _ms[1], _ms[2], _ms[3], True])
     except Exception:
         pass
@@ -3654,8 +4589,10 @@ def _big_math_bands(page, avoid=None):
     # 세로로 '실제로 겹치는' 조각만 한 식으로 본다. 단순히 맞닿았다고
     # 합치면 위아래로 나란한 별개의 식 두 개가 한 덩어리가 된다.
     seeds.sort(key=lambda r: (r[1], r[0]))
-    # [x0,y0,x1,y1,capH,matrix_only] — capH: 자랄 수 있는 최대 높이,
-    # matrix_only: 행렬 씨앗만으로 이뤄진 밴드(14.47 · 팽창·산문충돌 면제)
+    # [x0,y0,x1,y1,capH,matrix_only,has_matrix] — capH: 자랄 수 있는
+    # 최대 높이, matrix_only: 행렬 씨앗만으로 이뤄진 밴드(14.47 · 팽창·
+    # 산문충돌 면제), has_matrix: 행렬 씨앗을 하나라도 품은 밴드(14.48 ·
+    # 쌓인 별개 식 흡수 거부 조건).
     bands = []
     for r in seeds:
         placed = False
@@ -3671,11 +4608,13 @@ def _big_math_bands(page, avoid=None):
                 m[2] = max(m[2], r[2]); m[3] = max(m[3], r[3])
                 m[4] = max(cap, 46.0)
                 m[5] = bool(m[5] and r[4])
+                m[6] = bool(m[6] or r[4])
                 placed = True
                 break
         if not placed:
             bands.append([r[0], r[1], r[2], r[3],
-                          max(46.0, (r[3] - r[1]) * 1.35), bool(r[4])])
+                          max(46.0, (r[3] - r[1]) * 1.35), bool(r[4]),
+                          bool(r[4])])
 
     # 10.0 · 분수선을 사이에 둔 두 밴드는 한 식이다.
     #   분자 밴드와 분모 밴드는 세로로 전혀 겹치지 않아, 위의 '세로 겹침'
@@ -3693,15 +4632,62 @@ def _big_math_bands(page, avoid=None):
             if vgap <= max(14.0, (m[3] - m[1]) * 0.8) and (inside or hov >= 0.4 * rw):
                 grp.append(m)
         if len(grp) >= 2:
+            # 14.48 · 장식용 가로선(절 구분선·박스 테두리)이 분수선으로 둔갑해
+            #   남의 밴드들을 합치던 사고 방지. 진짜 분수선은 분자·분모가
+            #   폭을 메우지만, 장식선은 밴드 사이가 텅 비어 있다.
+            #   단 100pt 이하 짧은 선은 면제한다 — 다리 시점의 밴드는
+            #   자라기 전 씨앗이라 낱글자 분자(a/b)의 폭 메움이 50%에
+            #   못 미쳐 진짜 분수 다리까지 끊겼다. 짧은 선+양면 밴드는
+            #   분수다(절 구분선은 텍스트 폭 300pt+라 여전히 걸린다).
+            if rw > 100.0:
+                spans = sorted((max(m[0], r[0]), min(m[2], r[2])) for m in grp)
+                covered, _cs, _ce = 0.0, spans[0][0], spans[0][1]
+                for _s, _e in spans[1:]:
+                    if _s <= _ce:
+                        _ce = max(_ce, _e)
+                    else:
+                        covered += max(0.0, _ce - _cs)
+                        _cs, _ce = _s, _e
+                covered += max(0.0, _ce - _cs)
+                if covered < 0.5 * rw:
+                    continue
+            # 14.48 · 검증된 행렬 밴드는 이웃과 합치지 않는다 — 합치는 순간
+            #   matrix_only 가 깨져 산문 충돌 검사에 통째로 버려졌다.
+            if any(m[5] for m in grp) and not all(m[5] for m in grp):
+                continue
+            # 14.48 · 막대가 밴드 안에 통째로 들었으면 분자·분모가 이미
+            #   한 밴드다 — 다리를 놓을 이유가 없다. 놓으면 건너편의
+            #   쌓인 별개 식까지 합쳐진다(Thus 3단 유도 붕괴).
+            if any(m[1] < rcy < m[3] for m in grp):
+                continue
             grp.sort(key=lambda m: m[1])
-            # 분수선을 기준으로 위·아래가 마주 보는 쌍일 때만 합친다
-            if grp[0][3] <= rcy + 3.0 and grp[-1][1] >= rcy - 3.0:
+            # 분수선을 기준으로 위·아래가 마주 보는 쌍일 때만 합친다.
+            # 14.48 · 양쪽 끝이 막대에서 8pt 안에 있어야 한다 — 멀리
+            #   떨어진 쌓인 식이 중간 밴드에 묻어 통째로 합쳐졌다.
+            #   단 속에 자기 규칙선을 품은 합성 분자·분모(중첩 분수!)는
+            #   14pt까지 허용한다 — 안쪽 분수의 clearance 때문에 막대와
+            #   멀어진다. (1+a/b)/2 분자가 11.2pt 벌어져 다리가 끊기고
+            #   중첩 분수가 통째로 사라졌다.
+            def _inner_rule(m):
+                for _rr in rules:
+                    _rc = (_rr[1] + _rr[3]) / 2.0
+                    if abs(_rc - rcy) <= 1.0:
+                        continue
+                    if m[1] + 2.0 < _rc < m[3] - 2.0 \
+                            and min(m[2], _rr[2]) - max(m[0], _rr[0]) > 0:
+                        return True
+                return False
+            _cap0 = 14.0 if _inner_rule(grp[0]) else 8.0
+            _cap1 = 14.0 if _inner_rule(grp[-1]) else 8.0
+            if (grp[0][3] <= rcy + 3.0 and grp[-1][1] >= rcy - 3.0
+                    and grp[0][3] >= rcy - _cap0 and grp[-1][1] <= rcy + _cap1):
                 m0 = grp[0]
                 for m in grp[1:]:
                     m0[0] = min(m0[0], m[0]); m0[1] = min(m0[1], m[1])
                     m0[2] = max(m0[2], m[2]); m0[3] = max(m0[3], m[3])
                     m0[4] = max(m0[4], m[4], 46.0)
                     m0[5] = bool(m0[5] and m[5])
+                    m0[6] = bool(m0[6] or m[6])
                     bands.remove(m)
 
     for _ in range(4):
@@ -3716,7 +4702,20 @@ def _big_math_bands(page, avoid=None):
                 if not bb or _is_prose(ln):
                     continue
                 lh = max(2.0, bb[3] - bb[1])
+                # 14.48 · 검증된 행렬 밴드 안에 중심이 든 줄은 그 밴드 소유다.
+                # 키 큰 괄호 조각 줄(lh*2.2 도달)은 옆 행렬까지 건너와 빨려
+                # 들어가 두 행렬+산문이 한 밴드로 합쳐졌다(Q36 붕괴).
+                _lcx = (bb[0] + bb[2]) / 2.0
+                _lcy = (bb[1] + bb[3]) / 2.0
+                _owner = None
+                for _o in bands:
+                    if (_o[5] and _o[0] <= _lcx <= _o[2]
+                            and _o[1] <= _lcy <= _o[3]):
+                        _owner = _o
+                        break
                 for m in bands:
+                    if _owner is not None and m is not _owner:
+                        continue
                     vov = min(bb[3], m[3]) - max(bb[1], m[1])
                     vgap = max(0.0, max(bb[1] - m[3], m[1] - bb[3]))
                     hov = min(bb[2], m[2]) - max(bb[0], m[0])
@@ -3730,10 +4729,53 @@ def _big_math_bands(page, avoid=None):
                           or hov >= 0.4 * min(bb[2] - bb[0], m[2] - m[0]))
                     if not ok:
                         continue
+                    # 14.48 · 행렬 밴드는 위·아래로 쌓인 별개 식을 빨지 않는다.
+                    # 관계식(=·≤·≥·≈·≠)이 줄 중간에 있으면 다음 식이다(Q4의
+                    # 3x+7y=9가 [3 7;1 6]⁻¹ 밴드에 붙어 죽던 mush). 관계식으로
+                    # '시작'하는 줄(= 5x…·, y=…·⇒…)은 윗 식의 꼬리이므로
+                    # 그대로 흡수한다. 같은 줄(vov 큼)은 나란한 식이 아니라
+                    # 같은 식(Q2의 B = …)이므로 거부하지 않는다.
+                    if m[6] and vov <= 0.5:
+                        _lt = "".join(_span_text(sp)
+                                      for sp in ln.get("spans", [])).strip()
+                        if _lt and _lt[0] not in "=≈≃≠≤≥<>⇒⇔→,;:" \
+                                and any(c in "=≈≃≠≤≥<>⇒⇔→" for c in _lt):
+                            continue
                     nx0 = min(m[0], bb[0]); nx1 = max(m[2], bb[2])
                     ny0 = min(m[1], bb[1]); ny1 = max(m[3], bb[3])
                     if ny1 - ny0 > m[4]:
                         continue          # 키 제한 초과 — 여기서 자라면 폭주다
+                    # 14.48 · 자라면서 이웃 밴드를 덮치면 겹친 둘 다 죽는다
+                    # (preserve 겹침 제거 → 식이 흔적도 없이 사라짐: Q2 A+B
+                    # 밴드가 C 밴드를 덮쳐 셋 다 증발). 같은 줄(row)의
+                    # 이웃이면 한 식이다 → 합친다(긴 식의 씨앗 잇기).
+                    # 위·아래로 쌓인 밴드면 별개의 식이다 → 덮치지 않고
+                    # 건너뛴다(그 줄은 제 밴드(다음 후보)가 가져간다).
+                    _hit = None
+                    for _o in bands:
+                        if _o is m:
+                            continue
+                        if (min(nx1, _o[2]) - max(nx0, _o[0]) > 0.5
+                                and min(ny1, _o[3]) - max(ny0, _o[1]) > 0.5):
+                            _hit = _o
+                            break
+                    if _hit is not None:
+                        _vv = min(m[3], _hit[3]) - max(m[1], _hit[1])
+                        _mh = min(m[3] - m[1], _hit[3] - _hit[1])
+                        _uh = max(ny1, _hit[3]) - min(ny0, _hit[1])
+                        if (_vv > 0.5 * _mh
+                                and _uh <= max(m[4], _hit[4])):
+                            m[0] = min(nx0, _hit[0])
+                            m[1] = min(ny0, _hit[1])
+                            m[2] = max(nx1, _hit[2])
+                            m[3] = max(ny1, _hit[3])
+                            m[4] = max(m[4], _hit[4])
+                            m[5] = bool(m[5] and _hit[5])
+                            m[6] = bool(m[6] or _hit[6])
+                            bands.remove(_hit)
+                            grew = True
+                            break
+                        continue
                     if (nx0, ny0, nx1, ny1) != (m[0], m[1], m[2], m[3]):
                         m[0], m[1], m[2], m[3] = nx0, ny0, nx1, ny1
                         grew = True
@@ -3760,10 +4802,14 @@ def _big_math_bands(page, avoid=None):
                     a[2] = max(a[2], b[2]); a[3] = max(a[3], b[3])
                     a[4] = max(a[4], b[4], 46.0)
                     a[5] = bool(a[5] and b[5])
+                    a[6] = bool(a[6] or b[6])
                     bands.pop(j)
                     grew = True
                     if j < i:
                         i -= 1
+                    # 14.48 · pop 뒤에는 인덱스가 어긋나므로 무조건 break
+                    # (j≥i 병합이면 조건부 break가 안 걸려 IndexError로
+                    # 죽고, 페이지 전체가 줄-경로로 떨어져 조각났다).
                     break
             else:
                 i += 1
@@ -3772,6 +4818,9 @@ def _big_math_bands(page, avoid=None):
 
         # 10.4 · 한 등식이 여러 줄로 쪼개진 경우: 세로로 바로 붙은 두 밴드가
         #   가로로 많이 겹치면 한 식으로 합친다 (줄바꿈된 긴 등식).
+        # 14.48 · 단, 양쪽이 각각 행렬로 조립되면 쌓인 별개 식이다(Thus
+        #   3단 유도) — 합치면 aligned 쓰레기가 되므로 합치지 않는다.
+        #   줄바꿈된 한 등식은 쪼개진 조각이 행렬로 안 되므로 그대로 합쳐진다.
         for _pass in range(2):
             hit = False
             for i in range(len(bands)):
@@ -3781,9 +4830,12 @@ def _big_math_bands(page, avoid=None):
                     hov = min(a[2], b[2]) - max(a[0], b[0])
                     if (vgap <= 4.0 and hov >= 0.6 * min(a[2] - a[0], b[2] - b[0])
                             and max(a[3], b[3]) - min(a[1], b[1]) <= 55.0):
+                        if _both_matrix_tex(doc, page, a, b, gtables, rules, rd):
+                            continue
                         a[0] = min(a[0], b[0]); a[1] = min(a[1], b[1])
                         a[2] = max(a[2], b[2]); a[3] = max(a[3], b[3])
                         a[4] = max(a[4], b[4], 55.0)
+                        a[6] = bool(a[6] or b[6])
                         bands.pop(j)
                         hit = True
                         break
@@ -3849,9 +4901,21 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
         rd = page.get_text("rawdict")
     except Exception:
         return [], []
+    try:
+        _pg_vlines = page_vlines(page)
+    except Exception:
+        _pg_vlines = []
 
     lines = []
     math_regions = []
+    # 14.48 · 행 단위 산문 판정. MuPDF 는 산문+수식 한 줄을 글꼴·높이별로
+    #   여러 '줄'로 쪼갠다. 조각만 보면 'Z = 0' 이 독립 수식처럼 보여
+    #   행렬 한쪽만 걸치는 깨진 수식('\left[ \right.')을 만들었다.
+    #   조각이 제 행의 문맥(산문)을 따라가면 이런 중복이 사라진다.
+    try:
+        _line_row_prose = _row_prose_flags(rd)
+    except Exception:
+        _line_row_prose = {}
     prose_glyphs = []
     for block in rd.get("blocks", []):
         for line in block.get("lines", []):
@@ -3883,8 +4947,60 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
     try:
         bands, _rules, _gt = _big_math_bands(page, avoid=(avoid or []) + (math_avoid or []))
         doc = page.parent
-        bands = [bb for bb in bands if not _touches_prose(bb)
-                 and not _pdf_intersects(bb, (avoid or []) + (math_avoid or []))]
+        # 14.48 · 산문을 삼킨 밴드는 버리지 말고 산문 밖으로 오그린다.
+        # 검증된 행렬 씨앗이 옆 한 단어('matrix')까지 삼켰다가 밴드째
+        # 버려지면 진짜 행렬까지 사라졌다. 산문을 뺀 최소 상자로 다시
+        # 감싸고, 가운데 박힌 산문(오그리기로 안 빠지면)은 포기한다.
+        salvaged = []
+        salvaged_full = set()
+        for bb in bands:
+            if _pdf_intersects(bb, (avoid or []) + (math_avoid or [])):
+                continue
+            if not _touches_prose(bb):
+                salvaged.append(bb)
+                continue
+            try:
+                _sboxes = region_boxes(doc, page, tuple(bb), _gt,
+                                         vlines=_pg_vlines)
+            except Exception:
+                continue
+            keep = [b for b in _sboxes
+                    if not any(abs((b.x0 + b.x1) / 2 - px) <= 1.5
+                               and abs((b.y0 + b.y1) / 2 - py) <= 1.5
+                               for px, py in prose_glyphs)]
+            if not keep:
+                continue
+            nbb = [min(b.x0 for b in keep), min(b.y0 for b in keep),
+                   max(b.x1 for b in keep), max(b.y1 for b in keep)]
+            # 14.48 · 오그리기가 행렬을 깨뜨리면(FULL은 온전한데 nbb가
+            # aligned/insane) FULL을 살린다: p18 (ii)의 '(ii) find [⋯]⁻¹'은
+            # 산문 접두어와 함께 조립돼야 여는 괄호가 제 행을 찾는다.
+            # 오그리기가 깨끗하면(단일·정상) 그대로 nbb를 쓴다.
+            _MAT_ENVS = (r"\begin{bmatrix}", r"\begin{vmatrix}",
+                         r"\begin{pmatrix}", r"\begin{Bmatrix}")
+            try:
+                _nt = region_to_latex(doc, page, tuple(nbb), _gt,
+                                      _rules, _pg_vlines)
+            except Exception:
+                _nt = ""
+            if (not _touches_prose(nbb) and _nt and len(_nt) <= 1200
+                    and _latex_is_sane(_nt)
+                    and r"\begin{aligned}" not in _nt):
+                salvaged.append(nbb)
+                continue
+            try:
+                _ft = region_to_latex(doc, page, tuple(bb), _gt,
+                                      _rules, _pg_vlines)
+            except Exception:
+                _ft = ""
+            if (_ft and len(_ft) <= 1200 and _latex_is_sane(_ft)
+                    and r"\begin{aligned}" not in _ft
+                    and any(e in _ft for e in _MAT_ENVS)):
+                salvaged.append(bb)
+                salvaged_full.add(id(bb))
+                continue
+            continue
+        bands = salvaged
         for bi, bb in enumerate(bands):
             # Overlapping reconstructed bands can steal each other's limits or
             # subscripts. Keep those ambiguous equations in the original vector
@@ -3893,12 +5009,15 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
                                              for i, other in enumerate(bands)):
                 avoid = list(avoid or []) + [bb]
                 continue
-            if _pdf_intersects(bb, (avoid or []) + (math_avoid or [])) or _touches_prose(bb):
+            if _pdf_intersects(bb, (avoid or []) + (math_avoid or [])) \
+                    or (_touches_prose(bb)
+                        and id(bb) not in salvaged_full):
                 continue
             if (bb[2] - bb[0]) < 6 or (bb[3] - bb[1]) < 6:
                 continue
             try:
-                tex = region_to_latex(doc, page, tuple(bb), _gt, _rules)
+                tex = region_to_latex(doc, page, tuple(bb), _gt, _rules,
+                                        _pg_vlines)
             except Exception:
                 tex = ""
             if not tex or len(tex) > 1200 or not _latex_is_sane(tex):
@@ -3944,6 +5063,25 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
                 return True
         return False
 
+    def _cuts_big_band(bb):
+        """14.48 · 영역이 검증된 밴드를 '걸쳐서' 자르는가.
+
+        밴드를 통째로 품은 영역(온전한 식)은 괜찮지만, 밴드 일부만 걸치는
+        영역은 산문 줄 조각이 수식에 손을 뻗친 것이다 — 행렬의 여는 괄호만
+        걸치면 '\\left[ \\right.' 깨짐이 된다. 그런 영역은 버리고 밴드
+        수식(검증됨)만 살린다.
+        """
+        if not bb:
+            return False
+        for m in big_bands:
+            ix0, iy0 = max(bb[0], m[0]), max(bb[1], m[1])
+            ix1, iy1 = min(bb[2], m[2]), min(bb[3], m[3])
+            if ix1 - ix0 > 2.0 and iy1 - iy0 > 2.0:
+                ba = max(1e-6, (m[2] - m[0]) * (m[3] - m[1]))
+                if ((ix1 - ix0) * (iy1 - iy0)) / ba < 0.8:
+                    return True
+        return False
+
     seen_chars = {}
     def _duplicate_char(c, bb, font, flags, color):
         # Deduplicate actual coincident glyphs, including PDFs with invisible
@@ -3955,6 +5093,12 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
         seen_chars.setdefault(key, []).append(bb)
         return False
 
+    # 14.48 · 슈퍼라인 병합용 전체 줄 목록(아래 디스플레이 분기에서 참조).
+    try:
+        _all_rd_lines = [ln for _b in rd.get("blocks", [])
+                         if _b.get("type") == 0 for ln in _b.get("lines", [])]
+    except Exception:
+        _all_rd_lines = []
     for bi, blk in enumerate(rd.get("blocks", [])):
         if blk.get("type") != 0:
             continue
@@ -3973,13 +5117,17 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
                 continue
             _sanitize_line_glyphs(ln, _gt)   # 10.1 · 확장글꼴 글자 정리
             # 독립 수식으로 확실한 줄만 줄 전체를 LaTeX로 보존한다.
+            # 14.48 · 산문 행의 조각(위 _line_row_prose)은 독립 수식이 아니다.
             if (not _pdf_intersects(ln.get("bbox", (0, 0, 0, 0)), (avoid or []) + (math_avoid or []))
-                    and _is_display_formula_line(ln)):
+                    and _is_display_formula_line(ln)
+                    and not _line_row_prose.get(id(ln), False)
+                    and not ln.get("_swallowed")):
                 try:
                     # 9.0 · 줄 bbox 를 통째로 쓰지 않는다. 식 번호 '(3)' 을 떼고
                     #       식 본체 영역만 LaTeX 로 잡아야 폭이 부풀지 않아
                     #       옆·아래 글자와 겹치지 않는다.
-                    reg = _display_region_of_line(ln, page, _gt, _rules)
+                    reg = _display_region_of_line(ln, page, _gt, _rules,
+                                                   _pg_vlines)
                     if reg:
                         x0, y0, x1, y1, mtext, msz = reg
                     else:
@@ -3987,8 +5135,75 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
                         ls=[float(s.get("size") or 10) for s in ln.get("spans",[]) if _span_text(s).strip()]
                         mtext="".join(_span_text(s) for s in ln.get("spans", [])).strip()
                         msz=sorted(ls)[len(ls)//2] if ls else 10
+                    # 14.48 · 슈퍼라인: 디스플레이 줄이 MuPDF 에게 여러
+                    # '줄'로 쪼개지면(분수 층·키 큰 괄호·글꼴 바뀜) 조각들을
+                    # 합쳐 한 식으로 복원한다. 그냥 두면 식이 잘려
+                    # "y' = 4/5" + 흩어진 글자(p37), ") − 1 = …" + "x'' = (…"
+                    # (p28), ") = (7+24m" 따로(p12), "det X = …" 머리 증발(p8)이
+                    # 됐다. 같은 베이스라인 + 가로로 겹치거나 맞닿은(≤2pt)
+                    # 조각만 합치고, 산문·밴드 줄은 건드리지 않는다.
+                    # 합친 영역이 정상(sane)이 아니면 원래대로 둔다.
+                    try:
+                        _ux0, _uy0, _ux1, _uy1 = x0, y0, x1, y1
+                        _ucy = (y0 + y1) / 2.0
+                        _swallow = []
+                        for _pass in range(10):
+                            _grew = False
+                            for _ln2 in _all_rd_lines:
+                                if _ln2 is ln or _ln2.get("_swallowed") \
+                                        or _ln2.get("_math_cut"):
+                                    continue
+                                _bb2 = _ln2.get("bbox")
+                                if not _bb2:
+                                    continue
+                                _c2 = (_bb2[1] + _bb2[3]) / 2.0
+                                if abs(_c2 - _ucy) > 5.0:
+                                    continue
+                                if min(_bb2[3], _uy1) - max(_bb2[1], _uy0) <= 0:
+                                    continue
+                                _gap2 = max(0.0, max(_bb2[0] - _ux1,
+                                                     _ux0 - _bb2[2]))
+                                if _gap2 > 2.0:
+                                    continue
+                                if _in_big(_bb2):
+                                    continue
+                                if _line_row_prose.get(id(_ln2), False):
+                                    continue
+                                _t2 = "".join(_span_text(_sp)
+                                              for _sp in _ln2.get("spans", []))
+                                if not _t2.strip():
+                                    continue
+                                _w2 = []
+                                for _sp in _ln2.get("spans", []):
+                                    _nm = (_sp.get("font") or "").lower().replace("-", "").replace(" ", "")
+                                    if any(_k in _nm for _k in MATH_FONTS):
+                                        continue
+                                    _w2.extend(re.findall(r"[A-Za-z]{2,}", _span_text(_sp)))
+                                if any(_w.lower() in _COMMON_PROSE or (len(_w) >= 3 and not _is_math_identifier(_w)) for _w in _w2):
+                                    continue
+                                _swallow.append(_ln2)
+                                _ux0 = min(_ux0, _bb2[0]); _uy0 = min(_uy0, _bb2[1])
+                                _ux1 = max(_ux1, _bb2[2]); _uy1 = max(_uy1, _bb2[3])
+                                _grew = True
+                            if not _grew:
+                                break
+                        if _swallow and (_ux1 - _ux0) <= 600.0:
+                            _tex2 = region_to_latex(page.parent, page,
+                                                    (_ux0, _uy0, _ux1, _uy1),
+                                                    _gt, _rules, _pg_vlines)
+                            if (_tex2 and len(_tex2) <= 1200
+                                    and _latex_is_sane(_tex2)
+                                    and not _tex_is_figure_junk(_tex2)
+                                    and not _touches_prose((_ux0, _uy0, _ux1, _uy1))
+                                    and not _cuts_big_band((_ux0, _uy0, _ux1, _uy1))):
+                                x0, y0, x1, y1, mtext = _ux0, _uy0, _ux1, _uy1, _tex2
+                                for _ln2 in _swallow:
+                                    _ln2["_swallowed"] = True
+                    except Exception:
+                        pass
                     if (x1 > x0 and y1 > y0 and mtext and not _tex_is_figure_junk(mtext)
-                            and not _touches_prose((x0, y0, x1, y1))):
+                            and not _touches_prose((x0, y0, x1, y1))
+                            and not _cuts_big_band((x0, y0, x1, y1))):
                         math_regions.append({"x0": x0, "y0": y0, "x1": x1, "y1": y1,
                                              "display": True, "text": mtext, "size": msz})
                         # 식 번호는 아래 일반 텍스트 경로가 알아서 상자로 만든다.
@@ -4099,6 +5314,29 @@ def _tex_is_figure_junk(tex):
         #   행·열 환경이 있으면 그림이 아니라 수식이다.
         if _MAT_ENV_RE.search(raw):
             return False
+        # 14.48 · '기호 하나 + 숫자 하나'(θ 1)는 그림 라벨이다. 삼각형
+        #   도형의 각 라벨 θ 와 변 라벨 1 이 한 밴드로 묶여 가짜 분수
+        #   (θ/1)가 됐다가, 분수선 차단 뒤엔 'θ 1' 수식으로 남았다(p21).
+        #   진짜 디스플레이 수식이 이렇게 짧을 수 없고, 텍스트로 두면
+        #   글자가 제자리에 보존된다.
+        if re.fullmatch(r"\\[a-zA-Z]+\s+[0-9]{1,3}", (raw or "").strip()):
+            return True
+        if re.fullmatch(r"[0-9]{1,3}\s+\\[a-zA-Z]+", (raw or "").strip()):
+            return True
+        # 14.48 · 낱토큰 분수(한쪽이 그리스문자)는 그림 라벨이다. 삼각형
+        #   밑변(고립 가로선!)이 θ(위)+1(아래)과 만나 진짜 같은 가짜
+        #   \frac{\theta}{1} 을 만들었다(p21). 분자·분모가 둘 다
+        #   낱토큰(명령어 하나/글자 하나)이고 한쪽이 그리스문자면
+        #   라벨이다 — 진짜 디스플레이 분수는 식이 딸려 통째로
+        #   낱글자인 일이 없다. 텍스트로 두면 글자·밑변이 보존된다.
+        _fm = re.fullmatch(r"\\frac\{([^{}]*)\}\{([^{}]*)\}",
+                            (raw or "").strip())
+        if _fm:
+            _gs = [_g.strip() for _g in _fm.groups()]
+            if all(re.fullmatch(r"\\[a-zA-Z]+|[0-9A-Za-z]", _g)
+                   for _g in _gs) and any(
+                       _g in _GREEK_FRAC_CMDS for _g in _gs):
+                return True
         # \left. / \right. 의 베어 점은 도트 지도자(목차 점선)가 아니다
         raw = re.sub(r"\\(?:left|right)\s*\.", " ", raw)
         t = re.sub(r"\\[a-zA-Z]+", " ", raw)
@@ -4226,6 +5464,13 @@ def _absorb_orphan_scripts(lines, math_regions):
                     # 맨숫자 위첨자는 본문에서는 인용 번호다. 다만 '독립 수식(display)'
                     # 줄의 식 끝에 붙은 것은 인용이 아니라 지수(mc²)다.
                     if not r.get("display") and _is_citation_token(txt, superscript=True):
+                        continue
+                    # 14.48 · 산문 단어는 흡수하지 않는다. 키 큰 식(괄호)은
+                    # 허용 간격이 넓어져(rh*0.62) 옆줄 산문까지 지수로
+                    # 빨아들였다 — '(x′,y′)−…' 식이 '^{For}^{each}…' 를
+                    # 달고 산문 쪽엔 구멍이 났다(p14).
+                    _tw = re.sub(r"[^A-Za-z]", "", txt)
+                    if _tw.lower() in _COMMON_PROSE or (len(_tw) >= 3 and not _is_math_identifier(_tw)):
                         continue
                     if not re.fullmatch(r"[0-9A-Za-zα-ωΑ-Ω+\-*/=,.]{1,4}", txt):
                         continue
