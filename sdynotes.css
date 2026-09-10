@@ -6889,6 +6889,417 @@ body.sdy-turbo .page-wrap{will-change:auto!important;}
   .buglog-line b{min-width:0;}
 }
 
+
+
+/* ================================================================
+   14.47 · PRO 테마 — 프리미엄 전문가용 다크 (기본 테마)
+   ────────────────────────────────────────────────────────────────
+   설정의 '테마' 행에서 고른다. '프로'(기본값) / '클래식'(기존 라이트).
+   루트에는 data-theme + .theme-pro(.theme-classic)가 붙는다.
+   .dark 클래스는 하위 호환 별칭으로 프로에서 함께 켜지므로, 파일 곳곳의
+   .dark 규칙(플래시카드·에디터 크롬 등)은 프로에서도 그대로 동작한다.
+   색상 변수는 아래 html.theme-pro 정의(특이도 0,1,1)가 .dark(0,1,0)를
+   덮어쓰므로, 기본·.dark 규칙보다 뒤에 둔다.
+   위치: 17.0 모바일 최종 블록 바로 앞. phone_layout 계약이 '파일 끝 =
+   모바일 @media 전용' 임을 검사하므로 이 블록을 모바일 블록 뒤에 두면
+   안 된다. (pro 선택자는 html.theme-pro 접두(0,2,1+)라 순서와 무관하게
+   기본·.dark 규칙을 이기고, 모바일 블록과 겹치는 속성은 border-radius
+   뿐이라 그 값은 모바일과 맞춰 두었다.)
+   ================================================================ */
+
+/* ── 14.47-A · 테마 선택 UI (설정창 '테마' 행) — 두 테마 공용 ── */
+.set-row.theme-row{flex-direction:column;align-items:stretch;gap:10px;}
+.set-row.theme-row .set-label ~ *{margin-left:0;}
+.theme-picks{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.theme-pick{
+  appearance:none;-webkit-appearance:none;text-align:left;cursor:pointer;
+  display:flex;flex-direction:column;gap:7px;padding:11px 12px 10px;
+  border:1.5px solid var(--border);border-radius:13px;
+  background:var(--bg2);color:var(--text1);
+  transition:border-color .18s,box-shadow .18s,transform .18s,background .18s;
+}
+.theme-pick:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--accent) 55%,var(--border));}
+.theme-pick.on{
+  border-color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 9%,var(--bg2));
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent),
+             0 8px 22px -10px color-mix(in srgb,var(--accent) 45%,transparent);
+}
+.tp-swatch{display:flex;align-items:flex-end;gap:3px;height:30px;padding:6px;
+  border-radius:9px;border:1px solid var(--border);overflow:hidden;}
+.tp-swatch i{display:block;flex:1;border-radius:2.5px;min-width:0;}
+.tp-swatch.pro{background:#0B0F18;border-color:#232C42;}
+.tp-swatch.pro i:nth-child(1){height:58%;background:#263050;}
+.tp-swatch.pro i:nth-child(2){height:100%;background:linear-gradient(180deg,#6B7CFF,#8B5CF6);}
+.tp-swatch.pro i:nth-child(3){height:74%;background:#151C2B;border:1px solid #2E3A58;}
+.tp-swatch.classic{background:#FFFFFF;border-color:#E2E5EE;}
+.tp-swatch.classic i:nth-child(1){height:58%;background:#DDE1EC;}
+.tp-swatch.classic i:nth-child(2){height:100%;background:linear-gradient(180deg,#4F6EF7,#8B5CF6);}
+.tp-swatch.classic i:nth-child(3){height:74%;background:#F3F4F9;border:1px solid #E2E5EE;}
+.tp-name{display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:800;letter-spacing:-.01em;}
+.tp-badge{font-style:normal;font-size:9.5px;font-weight:800;letter-spacing:.05em;
+  padding:2px 6px;border-radius:99px;color:#fff;background:var(--grad);
+  box-shadow:0 2px 8px color-mix(in srgb,var(--accent) 40%,transparent);}
+.tp-desc{font-size:11px;color:var(--text3);line-height:1.4;}
+@media(max-width:380px){.theme-picks{grid-template-columns:1fr;}}
+
+/* ── 14.47-B · PRO 색상·유리 토큰 ── */
+html.theme-pro{
+  --bg:#0A0D14;--bg2:#0F1420;--card:#151C2B;
+  --text1:#E9EDF5;--text2:#9AA6BC;--text3:#5E6A83;
+  --border:#222B40;
+  --accent:#6B7CFF;--accent2:#5465E8;
+  --shadow:0 2px 12px rgba(0,0,0,.45);
+  --shadow-lg:0 26px 64px -18px rgba(0,0,0,.75);
+  --line:#2B3552;--dot:#3E4B6E;
+  --grad:linear-gradient(135deg,#5B7CFF 0%,#7C5CFF 55%,#A855F7 120%);
+  --g-blur:16px;--g-blur-lg:24px;
+  --g-fill:rgba(21,28,43,.60);
+  --g-fill-strong:rgba(12,16,26,.84);
+  --g-in:rgba(148,163,190,.10);
+  --g-brd:rgba(148,163,190,.17);
+  --g-line:rgba(148,163,190,.12);
+  --g-hi:inset 0 1px 0 rgba(255,255,255,.09);
+  --g-shadow:0 1px 2px rgba(0,0,0,.50),0 16px 38px -14px rgba(0,0,0,.65);
+  --g-shadow-lg:0 2px 8px rgba(0,0,0,.55),0 36px 80px -24px rgba(0,0,0,.82);
+  --pro-ring:0 0 0 1px rgba(107,124,255,.30),0 12px 34px -12px rgba(107,124,255,.50);
+  color-scheme:dark;
+}
+html.theme-classic{color-scheme:light;}
+
+/* ── 14.47-C · 배경·오로라 ── */
+html.theme-pro #sdyAmbient{
+  background:radial-gradient(130% 100% at 50% 0%,#0D1322 0%,#0A0C16 46%,#070A12 100%);
+}
+html.theme-pro #sdyAmbient::before{
+  background:radial-gradient(60% 40% at 50% -6%,rgba(130,150,255,.14),transparent 70%);
+}
+html.theme-pro #sdyAmbient::after{ /* 가장자리 비네팅 — 화면에 깊이 */
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(95% 95% at 50% 42%,transparent 52%,rgba(0,0,0,.40) 100%);
+}
+html.theme-pro #sdyAmbient .ga.a{background:radial-gradient(circle at 50% 50%,rgba(91,124,255,.40) 0%,transparent 62%);}
+html.theme-pro #sdyAmbient .ga.b{background:radial-gradient(circle at 50% 50%,rgba(139,92,246,.36) 0%,transparent 62%);}
+html.theme-pro #sdyAmbient .ga.c{background:radial-gradient(circle at 50% 50%,rgba(224,97,155,.26) 0%,transparent 62%);}
+
+/* ── 14.47-D · 헤더·브랜드·검색·링크바 ── */
+html.theme-pro .header{
+  background:rgba(10,13,20,.74);
+  border-bottom:1px solid rgba(148,163,190,.10);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 10px 30px -18px rgba(0,0,0,.85);
+}
+html.theme-pro .header::after{
+  background:linear-gradient(90deg,transparent,rgba(107,124,255,.50) 22%,rgba(139,92,246,.45) 50%,rgba(224,97,155,.35) 78%,transparent);
+  opacity:.65;
+}
+/* 브랜드 — 장난스러운 손글씨 대신 단정한 산세리프로 */
+html.theme-pro .app-brand h1{
+  font-family:'Pretendard Variable',Pretendard,-apple-system,'Segoe UI',sans-serif;
+  font-weight:800;font-size:21px;letter-spacing:-.03em;
+  background:none;color:#F2F5FA;-webkit-text-fill-color:currentColor;
+  text-shadow:0 1px 12px rgba(107,124,255,.25);
+}
+html.theme-pro .app-brand .logo-dot{
+  background:linear-gradient(135deg,#5B7CFF,#8B5CF6 60%,#A855F7);
+  border:1px solid rgba(255,255,255,.20);
+  box-shadow:0 4px 16px rgba(91,124,255,.50),inset 0 1px 0 rgba(255,255,255,.35);
+  position:relative;
+}
+html.theme-pro .app-brand .logo-dot::after{
+  content:'PRO';position:absolute;right:-10px;top:-8px;
+  font-family:'Pretendard Variable',Pretendard,sans-serif;
+  font-size:8px;font-weight:800;letter-spacing:.07em;line-height:1;
+  padding:3px 5px;border-radius:6px;color:#fff;background:var(--grad);
+  border:1px solid rgba(255,255,255,.25);
+  box-shadow:0 3px 10px rgba(91,124,255,.55);
+  pointer-events:none;
+}
+html.theme-pro .header #searchInput{
+  background:rgba(148,163,190,.09)!important;
+  border-color:rgba(148,163,190,.18)!important;
+  color:var(--text1);
+}
+html.theme-pro .header #searchInput::placeholder{color:#5E6A83;}
+html.theme-pro .header #searchInput:focus{
+  border-color:rgba(107,124,255,.60)!important;
+  box-shadow:0 0 0 3px rgba(107,124,255,.22);
+  background:rgba(148,163,190,.13)!important;
+}
+html.theme-pro .header .tool-btn:hover{
+  box-shadow:0 0 0 1px rgba(148,163,190,.22),0 4px 14px rgba(0,0,0,.45);
+}
+html.theme-pro .link-chip{
+  background:rgba(148,163,190,.08);border-color:rgba(148,163,190,.16);
+}
+html.theme-pro .breadcrumb button{color:#8FA0FF;font-weight:700;}
+html.theme-pro .breadcrumb button:hover{background:rgba(107,124,255,.12);}
+
+/* ── 14.47-E · 홈 · 카드 ── */
+html.theme-pro .home-section-title{color:#DDE4F2;font-weight:800;}
+html.theme-pro .home-section-title i{
+  background:linear-gradient(135deg,#5B7CFF,#8B5CF6);color:#fff;
+  width:24px;height:24px;border-radius:8px;font-size:14px;
+  display:inline-flex;align-items:center;justify-content:center;flex:none;
+  box-shadow:0 3px 10px rgba(91,124,255,.45),inset 0 1px 0 rgba(255,255,255,.25);
+}
+html.theme-pro .recent-title{color:var(--text2);}
+html.theme-pro .home-add-note{
+  background:linear-gradient(180deg,rgba(30,38,58,.88),rgba(17,23,37,.88));
+  border-color:rgba(148,163,190,.22);color:#CBD5E8;
+  box-shadow:0 10px 26px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08)!important;
+}
+html.theme-pro .home-add-note:hover,
+html.theme-pro .home-stack-upper.fanned .home-add-note{
+  color:#fff;border-color:rgba(107,124,255,.60);
+  background:linear-gradient(180deg,rgba(52,62,94,.92),rgba(26,32,54,.92));
+  box-shadow:var(--pro-ring),inset 0 1px 0 rgba(255,255,255,.10)!important;
+}
+html.theme-pro .home-add-icon{
+  background:var(--grad);color:#fff;border-color:transparent;
+  box-shadow:0 3px 12px rgba(91,124,255,.55),inset 0 1px 0 rgba(255,255,255,.30);
+}
+html.theme-pro .home-add-note:hover .home-add-icon,
+html.theme-pro .home-stack-upper.fanned .home-add-icon{
+  color:#fff!important;background:var(--grad)!important;border-color:transparent!important;
+}
+/* 카드 — 깊은 유리 + 윗빛 + 호버 시 엑센트 링 */
+html.theme-pro .note-card,html.theme-pro .folder-card{
+  background:linear-gradient(180deg,rgba(27,35,54,.80),rgba(15,20,33,.80));
+  border-color:rgba(148,163,190,.16);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.07),
+             0 1px 2px rgba(0,0,0,.50),0 18px 40px -16px rgba(0,0,0,.65);
+}
+html.theme-pro .note-card::after{
+  background:linear-gradient(115deg,transparent 32%,rgba(255,255,255,.09) 48%,transparent 62%);
+}
+html.theme-pro .note-card-name{background:rgba(9,13,22,.55);}
+html.theme-pro .folder-thumb{background:radial-gradient(80% 80% at 50% 30%,rgba(107,124,255,.10),transparent 70%);}
+html.theme-pro .folder-thumb>i{filter:drop-shadow(0 6px 14px rgba(0,0,0,.55));}
+html.theme-pro .add-card{
+  border-color:rgba(148,163,190,.30);background:rgba(21,28,43,.38);color:#8B95AC;
+}
+html.theme-pro .add-card:hover{
+  border-color:rgba(107,124,255,.65);color:#B9C4FF;
+  background:rgba(107,124,255,.08);
+  box-shadow:var(--pro-ring);
+}
+html.theme-pro .pin-badge,html.theme-pro .card-menu,
+html.theme-pro .folder-lock,html.theme-pro .unlock-badge{
+  background:rgba(13,17,27,.88);border:1px solid rgba(148,163,190,.20);
+  box-shadow:0 4px 12px rgba(0,0,0,.50);
+}
+html.theme-pro .page-count-badge{background:rgba(4,6,11,.72);border:1px solid rgba(255,255,255,.12);}
+html.theme-pro .emoji-badge:hover{background:rgba(148,163,190,.14);}
+html.theme-pro .note-stack .note-card:hover,
+html.theme-pro .note-stack .folder-card:hover{
+  box-shadow:0 28px 60px rgba(0,0,0,.65),0 0 0 1px rgba(107,124,255,.30)!important;
+}
+@media(hover:hover){
+  html.theme-pro .note-card:hover,html.theme-pro .folder-card:hover{
+    transform:translateY(-6px) scale(1.012);
+    border-color:rgba(107,124,255,.55);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),
+               0 26px 56px -16px rgba(0,0,0,.78),var(--pro-ring);
+  }
+  html.theme-pro .recent-row .note-card:hover{transform:translateY(-5px);}
+}
+@media(hover:none){
+  html.theme-pro .note-card:hover,html.theme-pro .folder-card:hover,
+  html.theme-pro .add-card:hover,html.theme-pro .home-add-note:hover{transform:none;}
+}
+
+/* ── 14.47-F · 에디터 ── */
+html.theme-pro .editor{background:#0B0F18;}
+html.theme-pro .editor-toolbar{
+  background:rgba(11,15,24,.82)!important;
+  border-bottom:1px solid rgba(148,163,190,.12)!important;
+  box-shadow:0 10px 30px -12px rgba(0,0,0,.75),inset 0 1px 0 rgba(255,255,255,.05)!important;
+}
+html.theme-pro .tb-group{
+  background:rgba(148,163,190,.09)!important;
+  border:1px solid rgba(148,163,190,.14)!important;
+}
+html.theme-pro .tool-btn:hover{
+  background:rgba(148,163,190,.17)!important;color:#fff!important;
+  box-shadow:0 4px 14px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08);
+}
+html.theme-pro .tool-btn.active{
+  box-shadow:0 3px 14px -2px rgba(107,124,255,.65),inset 0 1px 0 rgba(255,255,255,.25);
+}
+html.theme-pro .tool-btn.core-tool{
+  color:#8FA6FF!important;background:rgba(91,124,255,.15)!important;
+}
+html.theme-pro .tool-sep{background:rgba(148,163,190,.16)!important;}
+html.theme-pro .font-btn{
+  background:rgba(148,163,190,.10)!important;
+  border:1px solid rgba(148,163,190,.16)!important;
+  color:#DDE4F2!important;
+}
+html.theme-pro .pg-nav{
+  background:rgba(148,163,190,.09)!important;
+  border:1px solid rgba(148,163,190,.14)!important;
+}
+html.theme-pro #edTitle{color:#EDF1F8;}
+html.theme-pro #edTitle:focus{
+  background:rgba(148,163,190,.12)!important;
+  box-shadow:0 0 0 3px rgba(107,124,255,.22);
+}
+html.theme-pro #saveState{color:#7C88A1!important;font-weight:600;}
+html.theme-pro #fsInput{
+  background:rgba(148,163,190,.10);border-color:rgba(148,163,190,.16);color:#DDE4F2;
+}
+/* 종이 — 어두운 캔버스 위에 또렷이 뜨는 문서 */
+html.theme-pro .editor-body{background:#07090E!important;}
+html.theme-pro .paper{
+  border:1px solid rgba(148,163,190,.15)!important;
+  box-shadow:0 26px 60px -12px rgba(0,0,0,.78),0 2px 8px rgba(0,0,0,.50)!important;
+}
+html.theme-pro .paper.focused{
+  box-shadow:0 0 0 calc(7px / var(--pz,1)) rgba(107,124,255,.20),
+             0 26px 60px -12px rgba(0,0,0,.78)!important;
+}
+html.theme-pro .page-label{color:#7C88A1;}
+html.theme-pro .page-wrap.focused .page-label{color:#9DABFF;}
+html.theme-pro .add-page-zone{
+  border-color:rgba(148,163,190,.25);color:#7C88A1;background:rgba(21,28,43,.30);
+}
+html.theme-pro .add-page-zone:hover,html.theme-pro .add-page-zone.near{
+  border-color:rgba(107,124,255,.60);color:#B9C4FF;background:rgba(107,124,255,.08);
+  box-shadow:var(--pro-ring);
+}
+html.theme-pro .side-panel{background:#0C1119;}
+html.theme-pro .sp-sec{color:#A6B1C7;}
+html.theme-pro .sp-item:hover,html.theme-pro .sp-sec:hover{background:rgba(148,163,190,.10);}
+html.theme-pro .more-tabs button.on{
+  background:rgba(107,124,255,.16);color:#fff;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+}
+html.theme-pro .tbl-bar,html.theme-pro .find-bar,html.theme-pro .wf-bar{
+  background:rgba(13,17,27,.92);
+  border:1px solid rgba(148,163,190,.20);
+  border-radius:14px; /* 모바일 최종 블록과 같은 값 — 폰에서도 동일 */
+  box-shadow:var(--g-shadow-lg);
+  backdrop-filter:blur(16px) saturate(150%);
+  -webkit-backdrop-filter:blur(16px) saturate(150%);
+}
+html.theme-pro .tbl-bar button:hover,html.theme-pro .find-bar button:hover,
+html.theme-pro .tbl-color:hover{background:rgba(148,163,190,.14);color:#fff;}
+html.theme-pro .select-bar{
+  background:rgba(13,17,27,.92);border:1px solid rgba(148,163,190,.20);
+  border-radius:18px; /* 모바일 최종 블록과 같은 값 — 폰에서도 동일 */
+  box-shadow:var(--g-shadow-lg);
+  backdrop-filter:blur(16px) saturate(150%);
+  -webkit-backdrop-filter:blur(16px) saturate(150%);
+}
+html.theme-pro .tb-content a{color:#7EA2FF;}
+
+/* ── 14.47-G · 모달·설정·입력 ── */
+html.theme-pro .modal-bg{background:rgba(2,4,9,.62);}
+html.theme-pro .modal-box:not(.cards-box){
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.09),
+             0 40px 90px -24px rgba(0,0,0,.88),
+             0 0 0 1px rgba(107,124,255,.10);
+}
+html.theme-pro .modal-box:not(.cards-box) h3{color:#EDF1F8;letter-spacing:-.01em;}
+html.theme-pro .set-row select,
+html.theme-pro .set-row input[type=number],
+html.theme-pro .set-row input[type=text],
+html.theme-pro .modal-box:not(.cards-box) input:not([type=range]):not([type=checkbox]):not([type=file]),
+html.theme-pro .modal-box:not(.cards-box) select,
+html.theme-pro .modal-box:not(.cards-box) textarea{
+  background:rgba(148,163,190,.09);
+  border-color:rgba(148,163,190,.18);
+  color:var(--text1);
+}
+html.theme-pro .set-row select:focus,
+html.theme-pro .modal-box:not(.cards-box) input:focus,
+html.theme-pro .modal-box:not(.cards-box) select:focus,
+html.theme-pro .modal-box:not(.cards-box) textarea:focus{
+  border-color:rgba(107,124,255,.60);
+  box-shadow:0 0 0 3px rgba(107,124,255,.20);
+  outline:none;
+}
+html.theme-pro .accent-swatch.on{
+  border-color:#fff;box-shadow:0 0 0 2px rgba(107,124,255,.55),0 0 12px rgba(107,124,255,.5);
+}
+html.theme-pro .size-preset-card{background:rgba(148,163,190,.07);}
+html.theme-pro .size-preset-card:hover{box-shadow:var(--pro-ring);}
+html.theme-pro .trash-item button:hover{box-shadow:0 0 0 1px rgba(107,124,255,.35);}
+html.theme-pro .import-btn:hover{border-color:rgba(107,124,255,.55);color:#B9C4FF;}
+html.theme-pro .vault-tool:hover{background:rgba(148,163,190,.12);}
+
+/* ── 14.47-H · 토스트·메뉴·팝오버 ── */
+html.theme-pro .toast{
+  background:rgba(13,17,27,.90);
+  border:1px solid rgba(148,163,190,.20);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.10),var(--g-shadow-lg);
+}
+html.theme-pro .ctx-menu{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),var(--g-shadow-lg),
+             0 0 0 1px rgba(107,124,255,.10);
+}
+html.theme-pro .ctx-item:hover{background:rgba(107,124,255,.14);}
+html.theme-pro .srv-pop,html.theme-pro .notif-pop,html.theme-pro .more-panel,
+html.theme-pro .mp-list,html.theme-pro #plPickPop,html.theme-pro #mpVolPop,
+html.theme-pro #musicListPop{
+  box-shadow:var(--g-hi),var(--g-shadow-lg),0 0 0 1px rgba(107,124,255,.10);
+}
+html.theme-pro .notif-item:hover{background:rgba(148,163,190,.10);}
+html.theme-pro #welcomeToast{
+  background:rgba(13,17,27,.92);border:1px solid rgba(148,163,190,.20);
+  box-shadow:var(--g-shadow-lg);
+}
+
+/* ── 14.47-I · 음악 ── */
+html.theme-pro .mp.mp-bar{
+  box-shadow:var(--g-hi),var(--g-shadow-lg),0 0 0 1px rgba(107,124,255,.10);
+}
+html.theme-pro #mpFill{
+  background:linear-gradient(90deg,#6B7CFF,#A855F7);
+  box-shadow:0 0 10px rgba(107,124,255,.75);
+}
+html.theme-pro .mp-knob{background:#fff;border-color:#6B7CFF;box-shadow:0 0 10px rgba(107,124,255,.8);}
+html.theme-pro .mp-prog{background:rgba(148,163,190,.16);}
+html.theme-pro .mp.mp-bar .mp-prog{background:rgba(148,163,190,.16);}
+html.theme-pro .mp-buf{background:rgba(148,163,190,.28);}
+html.theme-pro #mpReopen:hover{box-shadow:var(--g-hi),var(--g-shadow-lg),var(--pro-ring);}
+html.theme-pro .mp-li:hover,html.theme-pro .mpb-li:hover{background:rgba(107,124,255,.10);}
+html.theme-pro .mp-li.on,html.theme-pro .mpb-li.on{background:rgba(107,124,255,.14);}
+
+/* ── 14.47-J · 스플래시·로딩·진행 ── */
+html.theme-pro #splash .sp-logo{
+  box-shadow:0 12px 36px rgba(91,124,255,.55),inset 0 1px 0 rgba(255,255,255,.30);
+  border:1px solid rgba(255,255,255,.18);
+}
+html.theme-pro #splash .sp-title{
+  background:linear-gradient(92deg,#9DB2FF,#B79CFF 55%,#F0A6C8);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+html.theme-pro #splash .sp-bar{background:rgba(148,163,190,.16);}
+html.theme-pro #edLoading{background:color-mix(in srgb,var(--bg) 82%,transparent);}
+html.theme-pro #trProg{
+  background:rgba(13,17,27,.94);border-color:rgba(148,163,190,.20);
+}
+html.theme-pro #staleBar{background:rgba(13,17,27,.94);}
+
+/* ── 14.47-K · 타이포·스크롤·포커스·모션 ── */
+html.theme-pro ::selection{background:rgba(107,124,255,.38);color:#fff;}
+html.theme-pro *::-webkit-scrollbar-thumb{background:#2C3650;border-color:var(--bg);}
+html.theme-pro *::-webkit-scrollbar-thumb:hover{background:#3D4A6E;}
+html.theme-pro *{scrollbar-color:#2C3650 transparent;}
+html.theme-pro input::placeholder,html.theme-pro textarea::placeholder{color:#5E6A83;}
+html.theme-pro button:focus-visible,html.theme-pro input:focus-visible,
+html.theme-pro select:focus-visible{
+  outline:2px solid rgba(107,124,255,.75);outline-offset:2px;
+}
+html.theme-pro .find-hit{background:rgba(250,204,21,.40);}
+html.theme-pro .tb-move{background:#8FA0FF;}
+@media (prefers-reduced-motion:reduce){
+  html.theme-pro .note-card::after{transition:none;}
+  html.theme-pro .app-brand .logo-dot::after{box-shadow:none;}
+}
+
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 

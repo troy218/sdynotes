@@ -1,9 +1,20 @@
 <!DOCTYPE html>
 <!-- 유지보수/배포 문서: ZIP 루트의 README.md.
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
-<html lang="ko">
+<html lang="ko" data-theme="pro" class="theme-pro dark">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.46.0">
+<link rel="stylesheet" href="sdynotes.css?v=14.47.0">
+    <script>
+    /* 14.47 · 테마 선적용 — 첫 페인트 전에 저장된 테마를 입혀 화면 깜빡임을 막는다.
+       저장값이 없으면 새 기본인 'pro'(프리미엄 다크)로 시작한다. */
+    try{var _s=JSON.parse(localStorage.getItem('sdy3')||'null')||{};
+    var _th=(_s.theme==='classic')?'classic':'pro';
+    document.documentElement.dataset.theme=_th;
+    document.documentElement.classList.toggle('theme-pro',_th==='pro');
+    document.documentElement.classList.toggle('theme-classic',_th!=='pro');
+    document.documentElement.classList.toggle('dark',_th==='pro');
+    }catch(e){}
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <!-- 버전 · 작업 끝나면 아래 5곳을 같은 번호로 함께 올려라 (z +1)
@@ -17,7 +28,7 @@
          · 이 파일·sdynotes.js·sdynotes.css·src 모듈을 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.46.0">
+    <meta name="application-version" content="14.47.0">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -33,7 +44,7 @@
     
     
 </head>
-<body class="sdy-booting">
+<body class="sdy-booting theme-pro">
 
     <!-- 15.1 · 유리 디자인 오로라 배경 — 음악 전체화면(.mpb-ambient)과 같은 질감.
          배경화면이 있으면(body.has-wall) #wallLayer(z-index:-1)가 이 위를 덮는다. -->
@@ -900,9 +911,21 @@
             <h3 class="text-lg font-bold mb-2">설정</h3>
 
             <!-- 9.4 · 꼭 필요한 것만 남겼다 (기본 글꼴·앱 제목은 제거) -->
-            <div class="set-row">
-                <span class="set-label text-sm">다크 모드<span class="dim">어두운 배경으로 전환</span></span>
-                <div id="darkTgl" class="tgl" onclick="tglDark()"><div class="dot"></div></div>
+            <!-- 14.47 · 테마 선택 — 구 다크 모드 토글을 대체 (프로=기본·프리미엄 다크 / 클래식=기존 라이트) -->
+            <div class="set-row theme-row">
+                <span class="set-label text-sm">테마<span class="dim">프로 · 전문가용 디자인 (기본) / 클래식</span></span>
+                <div class="theme-picks" id="themePicks">
+                    <button type="button" class="theme-pick" data-theme="pro" onclick="pickTheme('pro')">
+                        <span class="tp-swatch pro"><i></i><i></i><i></i></span>
+                        <span class="tp-name">프로<i class="tp-badge">기본</i></span>
+                        <span class="tp-desc">깊이 있는 다크 · 전문가용</span>
+                    </button>
+                    <button type="button" class="theme-pick" data-theme="classic" onclick="pickTheme('classic')">
+                        <span class="tp-swatch classic"><i></i><i></i><i></i></span>
+                        <span class="tp-name">클래식</span>
+                        <span class="tp-desc">기존 밝은 화면</span>
+                    </button>
+                </div>
             </div>
             <div class="set-row accent-row">
                 <span class="set-label text-sm">강조색<span class="dim">앱 전체 포인트 색상</span></span>
@@ -2594,17 +2617,17 @@
 <!-- 14.23.0 · 노트 해돌이(AI 도우미) UI 는 편집기 안 #noteOtter 옆으로 옮겼다 — 아이콘 버튼·뜨는 창은 없다. -->
 
 
-<script src="sdynotes.js?v=14.46.0" defer></script>
-<script src="src/music-player.js?v=14.46.0" defer></script>
-<script src="src/focus-clock.js?v=14.46.0" defer></script>
-<script src="src/live-updates.js?v=14.46.0" defer></script>
-<script src="src/idle-worker.js?v=14.46.0" defer></script>
-<script src="src/mobile-viewport.js?v=14.46.0" defer></script>
-<script src="src/auth.js?v=14.46.0" defer></script>
-<script src="src/ai-assistant.js?v=14.46.0" defer></script>
-<script src="src/chat.js?v=14.46.0" defer></script>
-<script src="src/translate.js?v=14.46.0" defer></script>
-<script src="src/cards.js?v=14.46.0" defer></script>
-<script src="src/server-status.js?v=14.46.0" defer></script>
+<script src="sdynotes.js?v=14.47.0" defer></script>
+<script src="src/music-player.js?v=14.47.0" defer></script>
+<script src="src/focus-clock.js?v=14.47.0" defer></script>
+<script src="src/live-updates.js?v=14.47.0" defer></script>
+<script src="src/idle-worker.js?v=14.47.0" defer></script>
+<script src="src/mobile-viewport.js?v=14.47.0" defer></script>
+<script src="src/auth.js?v=14.47.0" defer></script>
+<script src="src/ai-assistant.js?v=14.47.0" defer></script>
+<script src="src/chat.js?v=14.47.0" defer></script>
+<script src="src/translate.js?v=14.47.0" defer></script>
+<script src="src/cards.js?v=14.47.0" defer></script>
+<script src="src/server-status.js?v=14.47.0" defer></script>
 </body>
 </html>

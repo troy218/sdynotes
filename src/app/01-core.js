@@ -138,7 +138,16 @@
     const ADD_ZONE_H=120;   // 새 페이지 추가 영역 높이
 
     let notebooks=[],curNB=null,curMemo=null;
-    let S=JSON.parse(localStorage.getItem('sdy3')||'null')||{dark:false,defPaper:'blank',defFS:16,defFont:'pretendard',accent:'#4f6ef7',appTitle:'',cardSize:'l'};
+    let S=JSON.parse(localStorage.getItem('sdy3')||'null')||{theme:'pro',defPaper:'blank',defFS:16,defFont:'pretendard',accent:'#4f6ef7',appTitle:'',cardSize:'l'};
+    // 14.47 · 테마 이전 — 예전 S.dark(true/false)는 S.theme('pro'/'classic')으로 합쳐졌다.
+    //   저장된 값이 없으면 새 기본인 'pro'(프리미엄 전문가용 다크)로 시작한다.
+    //   (다크 모드 토글은 설정에서 테마 선택으로 대체됨)
+    if(!S.theme||(S.theme!=='pro'&&S.theme!=='classic')){
+        S.theme='pro';
+        try{ delete S.dark; }catch(e){}
+    }
+    // 현재 테마 ('pro' | 'classic') — 비교는 이 함수로 통일한다
+    function sdyTheme(){ return S.theme==='classic'?'classic':'pro'; }
     function saveS(){localStorage.setItem('sdy3',JSON.stringify(S));}
 
     // ===== 문서 모델 =====
@@ -375,11 +384,26 @@
         }catch(e){ return String(hex); }
     }
     function applyTheme(){
-        document.documentElement.classList.toggle('dark',S.dark);
+        // 14.47 · 테마 적용 — 'pro'(기본·프리미엄 다크) / 'classic'(기존 라이트)
+        const th=sdyTheme();
+        S.theme=th;
+        const root=document.documentElement;
+        try{ root.dataset.theme=th; }catch(e){}
+        root.classList.toggle('theme-pro',th==='pro');
+        root.classList.toggle('theme-classic',th!=='pro');
+        // 14.47 · .dark 는 하위 호환 별칭으로 프로 테마에서 함께 켠다.
+        //   CSS 곳곳의 .dark 규칙(플래시카드·에디터 크롬 등 70여 곳)을
+        //   프로 테마에서 그대로 재사용하기 위함이다. 색상 변수(--bg 등)는
+        //   특이도가 더 높은 html.theme-pro 정의가 .dark 정의를 덮어쓴다.
+        root.classList.toggle('dark',th==='pro');
+        try{ document.body.classList.toggle('theme-pro',th==='pro'); }catch(e){}
+        try{ document.body.classList.toggle('theme-classic',th!=='pro'); }catch(e){}
         // 강조색
         const acc=S.accent||'#4f6ef7';
         document.documentElement.style.setProperty('--accent',acc);
         document.documentElement.style.setProperty('--accent2',shade(acc,-0.18));
+        // 설정창의 테마 선택 UI도 함께 갱신 (열려 있을 때)
+        try{ if(typeof paintThemePicks==='function') paintThemePicks(); }catch(e){}
         // 앱 제목
         const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'동엽신의 끄적끄적';
         const h1=document.querySelector('.app-brand h1');

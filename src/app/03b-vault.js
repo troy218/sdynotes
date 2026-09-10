@@ -392,9 +392,16 @@
     })();
 
     const ACCENT_COLORS=['#4f6ef7','#8b5cf6','#e0619b','#ef4444','#f59e0b','#10b981','#14b8a6','#0ea5e9','#111827'];
+    // 14.47 · 설정창 테마 선택 UI 갱신 (프로/클래식 중 현재값에 .on)
+    function paintThemePicks(){
+        const wrap=document.getElementById('themePicks'); if(!wrap) return;
+        const th=(typeof sdyTheme==='function')?sdyTheme():(S.theme||'pro');
+        wrap.querySelectorAll('.theme-pick').forEach(b=>
+            b.classList.toggle('on',b.dataset.theme===th));
+    }
     function openSettings(){
         document.getElementById('setModal').style.display='flex';
-        document.getElementById('darkTgl').classList.toggle('on',S.dark);
+        paintThemePicks();
         document.getElementById('defPaper').value=S.defPaper;
         // 강조색 스와치
         const ap=document.getElementById('accentPicks');
@@ -427,7 +434,7 @@
     // 설정을 전부 기본값으로 되돌린다 (노트 데이터는 건드리지 않음)
     function resetSettings(){
         if(!confirm('설정을 기본값으로 되돌릴까요?\n(노트·폴더·휴지통 데이터는 그대로 유지됩니다)')) return;
-        S={dark:false, defPaper:'blank', defFS:16, defFont:'pretendard',
+        S={theme:'pro', defPaper:'blank', defFS:16, defFont:'pretendard',
            accent:'#4f6ef7', appTitle:'', cardSize:'m', wall:'', wallVeil:34, wallVideo:false};
         saveS();
         try{ pushSettings(); }catch(e){}

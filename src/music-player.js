@@ -1424,19 +1424,20 @@ window.addEventListener('online',()=>{
 document.addEventListener('sdy-playlists-updated',()=>{
   try{ if($('musicListPop').style.display==='flex'||P.plMode) renderListPop(); }catch(e){}
 });
-// 테마(다크모드·강조색)가 바뀌면 음악 플레이어·LP 디스크도 즉시 따라간다
+// 테마(프로/클래식·강조색)가 바뀌면 음악 플레이어·LP 디스크도 즉시 따라간다
 try{
-  let _lastAccent=readAccent(), _lastDark=document.documentElement.classList.contains('dark');
+  const _themeKey=()=>document.documentElement.dataset.theme||(document.documentElement.classList.contains('theme-pro')?'pro':'classic');
+  let _lastAccent=readAccent(), _lastTheme=_themeKey();
   const _syncTheme=()=>{
     const acc=readAccent();
-    const dark=document.documentElement.classList.contains('dark');
-    if(acc===_lastAccent && dark===_lastDark) return;
-    _lastAccent=acc; _lastDark=dark;
+    const th=_themeKey();
+    if(acc===_lastAccent && th===_lastTheme) return;
+    _lastAccent=acc; _lastTheme=th;
     makeDefCover();               // LP 디스크(기본 커버) 색 갱신
     renderTitle();                // 컨트롤바 커버·상태 재반영
   };
   new MutationObserver(_syncTheme).observe(document.documentElement,
-    {attributes:true, attributeFilter:['class','style']});
+    {attributes:true, attributeFilter:['class','style','data-theme']});
 }catch(e){}
 
 // ═══════════════════════════════════════════════════════════
