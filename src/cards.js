@@ -859,7 +859,7 @@ function _startQueue(q,mode){
     document.getElementById('cdTestReport').style.display='none';
     _fcardTitle((_isTest?'시험 · ':'')+((_deckCur&&_deckCur.title)||'암기 카드'));
     showCard();
-    otterSay(_isTest?'긴장되지? 지켜볼게 해돌이~':'시~작! 같이 해보자 해돌이~','love',1600);
+    otterSay(_isTest?'긴장되지? 지켜볼게 해돌~':'시~작! 같이 해보자 해돌~','love',1600);
 }
 
 /* ── 해달 '해돌이' 컨트롤 ─────────────────────────
@@ -910,18 +910,18 @@ function otterBurst(n,emojis){
         setTimeout(()=>s.remove(),1300);
     }
 }
-function otterThink(){ otterSay('음… 생각 좀 해볼게 해돌이~','think',1500); }
+function otterThink(){ otterSay('음… 생각 좀 해볼게 해돌~','think',1500); }
 function otterCheer(streak){
-    if(streak>=5)      otterSay('와! 연속 '+streak+'개! 천재 해돌이~!','love',2400);
-    else if(streak>=3) otterSay('흐름 좋아! 계속 가자 해돌이~!','happy',1800);
-    else               otterSay('좋아! 기억 속에 쏙~ 해돌이!','happy',1500);
+    if(streak>=5)      otterSay('와! 연속 '+streak+'개! 천재 해돌~!','love',2400);
+    else if(streak>=3) otterSay('흐름 좋아! 계속 가자 해돌~!','happy',1800);
+    else               otterSay('좋아! 기억 속에 쏙~ 해돌~!','happy',1500);
 }
-function otterSad(){ otterSay('괜찮아~ 한 번 더 보면 돼 해돌이~!','sad',2000); }
-function otterHint(){ otterSay('힌트 살짝! 👀 해돌이~','think',1600); }
+function otterSad(){ otterSay('괜찮아~ 한 번 더 보면 돼 해돌~!','sad',2000); }
+function otterHint(){ otterSay('힌트 살짝! 👀 해돌~','think',1600); }
 function otterFinish(pct){
-    if(pct>=90) otterSay('대박! 완벽 마스터 해돌이~! 🏆','love',3200);
+    if(pct>=90) otterSay('대박! 완벽 마스터 해돌~! 🏆','love',3200);
     else if(pct>=60) otterSay('수고했어! 해돌이 칭찬해~','happy',2600);
-    else otterSay('다음에 또 같이 공부하자 해돌이~!','happy',2200);
+    else otterSay('다음에 또 같이 공부하자 해돌~!','happy',2200);
 }
 document.addEventListener('DOMContentLoaded',()=>{
     // hint 버튼 이벤트 훅
@@ -1121,7 +1121,7 @@ function flipCard(){
     document.getElementById('cdFlip').classList.toggle('flipped',_flipped);
     // 답을 본 뒤에만 '알아요 / 아직이에요' 를 묻는다
     if(_flipped&&!_answered) document.getElementById('cdFlipGrade').style.display='grid';
-    if(_flipped&&!_answered) otterSay('답 기억나? 해돌이~','wow',1200);
+    if(_flipped&&!_answered) otterSay('답 기억나? 해돌~','wow',1200);
     else if(!_flipped) otterSet('think');
 }
 function flipGrade(g){

@@ -42,10 +42,17 @@
         if(st) st.hidden=!on;
         if(cp) cp.hidden=on||!_homeAiLast;
     }
+    // ai-assistant.js가 먼저 준비한 공통 보정기를 쓰고, 단독 로드 때도 같은
+    // 말끝을 지킨다. 이름 자체(해돌이)는 바꾸지 않고 말끝 표기만 고친다.
+    function homeAiVoice(t){
+        try{ if(typeof window.sdyHaedolVoice==='function') return window.sdyHaedolVoice(t); }catch(e){}
+        return String(t==null?'':t).replace(/해돌이~([!?]?)/g,'해돌~$1').replace(/해돌이([!?])/g,'해돌~$1');
+    }
     function homeAiSayHtml(t){
-        try{ if(typeof mdToHtml==='function') return mdToHtml(String(t||'')); }catch(e){}
+        t=String(t==null?'':t);
+        try{ if(typeof mdToHtml==='function') return mdToHtml(t); }catch(e){}
         const d=document.createElement('div');
-        d.textContent=String(t==null?'':t);
+        d.textContent=t;
         return '<span style="white-space:pre-wrap">'+d.innerHTML+'</span>';
     }
     function homeAiOut(t,busy){
@@ -148,19 +155,22 @@
                 homeAiOut(String((d&&d.error)||'답을 받지 못했어요 · 잠시 뒤에 다시 물어봐 주세요'),false);
                 return;
             }
-            const raw=String(d.text||'');
+            let raw=String(d.text||'');
+            // help은 해돌이가 직접 말하는 답, app은 @명령 원문이다. 명령 안의
+            // 노트 제목·사용자 텍스트가 바뀌지 않도록 전자에만 보정을 적용한다.
+            if(_homeAiTask==='help') raw=homeAiVoice(raw);
             // 서버가 실행 명령(@…)을 함께 줬으면 노트 해돌이와 같은 실행기로 돌린다
             const hasOps=/^\s*@/m.test(raw);
             if(hasOps&&typeof window.sdyAiAppParse==='function'&&typeof window.sdyAiAppApply==='function'){
                 const parsed=window.sdyAiAppParse(raw);
-                const say=String(parsed.say||'').trim();
+                const say=homeAiVoice(String(parsed.say||'').trim());
                 homeAiOut(say||'실행할게요…',false);
                 Promise.resolve(window.sdyAiAppApply(parsed.ops)).then(function(res){
                     res=res||{applied:0,failed:0,notes:[]};
                     const counts=[];
                     if(res.applied) counts.push('실행 '+res.applied+'개');
                     if(res.failed) counts.push('건너뜀 '+res.failed+'개');
-                    const out=[say||'요청대로 했어요 해돌이~'];
+                    const out=[say||'요청대로 했어요 해돌~'];
                     if(counts.length) out.push(counts.join(' · '));
                     if(res.notes&&res.notes.length) out.push('· '+res.notes.join('\n· '));
                     _homeAiLast=out.join('\n\n');

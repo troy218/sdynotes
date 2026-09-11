@@ -97,12 +97,12 @@ function fakeAnswer(messages = []) {
       && question.split(/\s+/).some((w) => w.length >= 2 && note.includes(w.replace(/[??.!,]/g, '')));
     if (overlap) {
       if (/없|모르/.test(body)) return '[[note]]\n노트에는 없는 내용이에요.';
-      return '[[note]]\n노트를 볼면 ' + head.slice(0, 90) + ' — 여기까지 적혀 있어요. 해돌이~';
+      return '[[note]]\n노트를 볼면 ' + head.slice(0, 90) + ' — 여기까지 적혀 있어요. 해돌~';
     }
     return '[[free]]\n질문 고마워요! ' + (question ? '"' + question.slice(0, 30) + '" 는 ' : '')
-      + '지금 노트 흐름대로면 핵심을 먼저 적고 근거를 붙이는 게 좋아요. 해돌이~';
+      + '지금 노트 흐름대로면 핵심을 먼저 적고 근거를 붙이는 게 좋아요. 해돌~';
   }
-  return head.slice(0, 220) + (body.length > 220 ? ' …' : '') + ' — 이 노트는 이런 이야기네요. 해돌이~';
+  return head.slice(0, 220) + (body.length > 220 ? ' …' : '') + ' — 이 노트는 이런 이야기네요. 해돌~';
 }
 
 const server = http.createServer(async (req, res) => {

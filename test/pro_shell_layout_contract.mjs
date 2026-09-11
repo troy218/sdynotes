@@ -1,7 +1,8 @@
-/* 14.61 · 프로 셸 레이아웃 + 홈 배경 버츄얼라이저 계약
+/* 14.66 · 기본(일반) 테마 셸 + 홈 배경 버츄얼라이저 계약
    14.62 · 사용자 보고 일곱 가지 계약 추가 (테마 문구·토글·엽스코드 이동·로고
    치우침·제목 Enter·해돌이 말풍선/질문칸·상단바 통합·체크상자 배치)
    14.64 · 사이드바 접기 제거 + 상태 줄 + 도구 한 줄 + 파동 버츄얼라이저 + 원형 음반
+   14.66 · 대역별 파장·세기 연동 상하/좌우 유영·색 그라데이션·정지 잔향
    ---------------------------------------------------------------------------
    사용자 보고 4가지를 잠그는 정적 계약이다 (실측 레이아웃은 브라우저 몫 —
    jsdom 은 계단식 레이아웃을 계산하지 못 하므로 규칙의 존재·우선순위를 검증):
@@ -12,10 +13,10 @@
    2) 사이드바 폭 확대(248→280) + 도구 버튼이 오버플로에 잘리지 않게 —
       버튼은 flex:1 1 0 으로 한 줄에 균등 분배, 검색 입력은 아래 줄 통짜.
    3) 앱 타이틀 'SDYnotes' — <title>·스플래시·브랜드 h1·JS 폴백이 전부 SDYnotes.
-   4) 홈 배경 버츄얼라이저 — 14.64 부터 '그래프'가 아니라 서로 다른 주파수의
-      사인 파동 6겹. 겹마다 담당 대역이 있고, 시간 완화(공격 0.16s/낙하 0.85s)로
-      대역별로 빠르게 숨쉬며, 단색 도형 재질(fillRect·createPattern)을 쓰지 않는다.
-      파동은 화면 중앙이 아니라 아래쪽(base≥0.7)에 모인다.
+   4) 기본(일반) 테마 홈 배경 버츄얼라이저 — 저음의 긴 파장부터 고음의 짧은
+      파장까지 사인 파동 6겹. 각 대역의 세기가 높이·상하/좌우 유영을 함께 밀고,
+      시간 완화(공격 0.16s/낙하 0.85s)와 정지 잔향(1.35s)으로 부드럽게 잦아든다.
+      파동은 화면 중앙이 아니라 아래쪽(base≥0.7)에 모이고 단색 도형을 쓰지 않는다.
    실행: npm run test:proshell */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -102,7 +103,7 @@ check('HTML: 브랜드 h1 SDYnotes', /<h1[^>]*>SDYnotes<\/h1>/.test(html));
 check('JS: 앱 제목 폴백 SDYnotes', /String\(S\.appTitle\)\.trim\(\)\)\?S\.appTitle\.trim\(\):'SDYnotes'/.test(js));
 check('JS/HTML: 기본 타이틀에 옛 이름 흔적 없음', !js.includes("'동엽신의 끄적끄적'") && !html.includes('동엽신의 끄적끄적'));
 
-/* ── 4) 홈 배경 버츄얼라이저 — 서로 다른 주파수의 파동 6겹 ───────────────── */
+/* ── 4) 기본(일반) 테마 홈 배경 버츄얼라이저 — 서로 다른 주파수의 파동 6겹 ───── */
 // 홈 배경 전용 IIFE 만 추출한다 (플레이어 안 이퀄라이저 eqViz 는 막대가 맞다)
 const iifeAt = js.indexOf("getElementById('proHomeEq')");
 assert.ok(iifeAt > 0, '번들에 proHomeEq 배경 그리기가 있다');
@@ -126,6 +127,17 @@ check('VIZ: 위상이 아주 느리게 흐른다(0.031 rad/s 이하)',
   /sp:\s*-?0\.0(3[01]|27|23|2|16|13)/.test(iife));
 check('VIZ: 겹마다 강조색에서 살짝 돌린 색(HSL)',
   /function hexToHsl\(/.test(iife) && /\(\(hsl\[0\]\+W\.hue\)%360\+360\)%360/.test(iife));
+check('VIZ: 저음은 긴 파장·고음은 짧은 파장(k=0.82 → 6.20)',
+  /band:\[\s*40,\s*170\], k:0\.82/.test(iife) && /band:\[5000,14000\], k:6\.20/.test(iife));
+check('VIZ: 세기에 따라 위로 뜨고 상하·좌우 두 겹 움직임을 만든다',
+  /const xDrift=w\*W\.xTravel/.test(iife) && /const yDrift=h\*W\.yTravel/.test(iife) &&
+  /yc=h\*W\.base-h\*W\.lift\*energy\+yDrift/.test(iife) && /energy=e\*releaseFade/.test(iife));
+check('VIZ: 파장별 색차 + 선의 좌우 그라데이션을 유지한다',
+  /hueDrift/.test(iife) && /const line=ctx\.createLinearGradient\(-w\*\.08,yc,w\*1\.08,yc\)/.test(iife) &&
+  /line\.addColorStop/.test(iife));
+check('VIZ: 일시정지 뒤에도 꼬리 감쇠(RELEASE_TAU)로 그린 뒤 비운다',
+  /const SEG_MAX=240, RELEASE_TAU=1\.35/.test(iife) && /A\.addEventListener\('pause',\(\)=>stop\(false\)\)/.test(iife) &&
+  /let quiet=releaseFade<\.012/.test(iife) && /if\(!live&&quiet\) finishRelease\(\)/.test(iife));
 check('VIZ: 몸통은 윗선에서 바닥까지 사라지는 세로 그라데이션',
   /createLinearGradient\(0, yc-amp\*1\.8, 0, top\)/.test(iife) && /ctx\.fill\(\)/.test(iife));
 check('VIZ: 중점 2차 베지어로 부드럽게 잇는다(각진 꺾임 없음)',
@@ -144,7 +156,7 @@ check('CSS: 플로팅 음반 .mp-float 은 border-radius:50%!important',
 check('CSS: 14.54 사각화 뒤에 원형 규칙이 온다(우선순위)',
   css.lastIndexOf('.mp.mp-float{border-radius:50%!important;}') > css.indexOf('14.54 · 전역 사각화'));
 
-console.log('\n14.61~14.64 프로 셸 레이아웃·버츄얼라이저 계약 — 전부 통과');
+console.log('\n14.66 기본(일반) 테마 셸·버츄얼라이저 계약 — 전부 통과');
 
 /* ═══════════ 14.62 · 사용자 보고 일곱 가지 ═══════════ */
 const css14 = css.replace(/\n/g, '');
@@ -203,4 +215,4 @@ check('14.64 · CSS: 접힘 상태 규칙은 사라졌다(접기 제거)',
 check('14.63 · CSS: 좁은 레일(≤1023)도 중앙 정렬 유지',
   /@media \(max-width:1023px\)\{\s*html\.theme-pro \.pro-brand\{align-items:center;text-align:center;padding:12px 0 10px;\}/.test(css.replace(/\n/g, '')));
 
-console.log('\n14.61 + 14.62 + 14.63 + 14.64 계약 — 전부 통과');
+console.log('\n14.61 + 14.62 + 14.63 + 14.64 + 14.66 계약 — 전부 통과');

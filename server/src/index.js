@@ -25,6 +25,7 @@ import { registerAiTools } from './routes/aiTools.js';
 import { registerNotify } from './routes/notify.js';
 import { registerLive } from './routes/live.js';
 import { registerMisc } from './routes/misc.js';
+import { registerPapers } from './routes/papers.js';
 import { registerMusic } from './routes/music.js';
 import { registerChat } from './routes/chat.js';
 import { registerDb } from './routes/db.js';
@@ -69,6 +70,7 @@ registerAiTools(app); // 14.30.0 · 해돌이 인터넷 도구 (웹 검색 · �
 registerNotify(app);
 registerLive(app);
 registerMisc(app);
+registerPapers(app); // 등록한 키워드로 찾는 arXiv 오늘의 추천 논문
 registerMusic(app, { worker });
 registerChat(app);
 registerDb(app);

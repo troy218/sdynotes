@@ -70,8 +70,9 @@ let g = await get('/api/ai/status');
 let j = JSON.parse(g.body);
 ok('status: enabled=true', g.status === 200 && j.enabled === true);
 ok('status: 모델명을 알려 준다', j.model === 'test-model-x');
-ok('status: 할 일 6종(outline/chat/edit/app/draw/bug)', Array.isArray(j.tasks) && j.tasks.length === 6
-  && j.tasks.map((t) => t.id).join(',') === 'outline,chat,edit,app,draw,bug'
+ok('status: 할 일 7종(outline/chat/edit/app/help/draw/bug)', Array.isArray(j.tasks) && j.tasks.length === 7
+  && j.tasks.map((t) => t.id).join(',') === 'outline,chat,edit,app,help,draw,bug'
+  && j.tasks.some((t) => t.id === 'help' && t.label === '앱 도움말')
   && j.tasks.some((t) => t.id === 'draw' && t.label === '그림 그리기')
   && j.tasks.some((t) => t.id === 'bug' && t.label === '버그 일지'));
 ok('status: 키가 응답에 새지 않는다', !g.body.includes(FAKE_KEY) && !g.body.includes(FAKE_KEY.slice(3)));
@@ -149,6 +150,9 @@ ok('요청 없는 편집은 외부 호출 없이 400', r.status === 400 && /어�
 ok('질문 프롬프트는 편집 요청이면 [[edit]] 으로 넘기라고 한다',
   /\[\[edit\]\]/.test(ai.AI_TASKS.chat.system) && /\[\[note\]\]/.test(ai.AI_TASKS.chat.system)
   && /\[\[free\]\]/.test(ai.AI_TASKS.chat.system));
+ok('해돌이 이름과 사용자 대상 말끝(해돌~)을 chat/help 프롬프트가 고정한다',
+  /이름은 “해돌이”다/.test(ai.AI_TASKS.chat.system) && /말끝은 반드시 “해돌~”/.test(ai.AI_TASKS.chat.system)
+  && /말끝은 반드시 “해돌~”/.test(ai.AI_TASKS.help.system));
 ok('편집 프롬프트는 부분 수정·서식·표·이동·클립보드·되묻기를 문서화한다',
   ['@rp', '@ap', '@st', '@tbl', '@tsz', '@tmv', '@tcell', '@goto', '@newpage',
     '@title', '@clip', '@clipin', '@copy', '@ask'].every((c) => editMessages[0].content.includes(c)));

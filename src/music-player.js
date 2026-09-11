@@ -4706,67 +4706,63 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                    eq: sdyEqObj,
                    _state:()=>P};
 
-// ── 14.59 · 프로 홈 배경 버츄얼라이저 — 재생 중에만 은은하게 일렁인다 ──
-//  · #proHomeEq 는 그 자체가 <canvas> 다(#mainView 뒤 z:-1). 그 위에 바로 그린다.
-//  · 기존 Web Audio 그래프를 재사용한다: _eqAnalyser 가 있으면 그
-//    getByteFrequencyData 를 쓰고, 없으면 eqBuild() 로 한 번만 연결을 시도한다.
-//    두 번째 MediaElementSource 를 만들지 않아 무음 버그가 없다.
-//  · 14.61 → 14.64 로 그림을 갈아엎었다. 예전엔 스펙트럼을 그대로 그린
-//    '그래프(연속 곡선)'였지만, 사용자 요청("그래프 형식이 아니라 다른 주파수의
-//    파동 여러개가 겹친 형태, 예쁘고 덜 촐랑거리고 부드럽게")에 맞춰
-//    **서로 다른 주파수의 사인 파동 6겹이 겹쳐 흐르는** 형태로 바꿨다.
-//    · 겹마다 담당 대역(저음 40Hz ~ 고음 14kHz)만 보고, 그 대역 에너지로
-//      천천히 부풀었다 잦아든다. 스펙트럼 빈을 그대로 따라가지 않으므로
-//      막대처럼 튀지 않는다.
-//    · 공격 0.16초 / 낙하 0.85초 지수 완화 — 대역별로 빠르게 숨쉰다(촐랑거림 없이).
-//    · 위상은 0.013~0.031 rad/s 로 아주 느리게 흐른다(촐랑거림 방지).
-//    · 몸통은 윗선에서 화면 바닥까지 사라지는 세로 그라데이션 + 가는 윗선.
-//    · 터보(저사양)·모션감소·에디터 열림에서는 rAF 자체가 돌지 않는다.
+// ── 14.66 · 기본(일반) 테마 홈 배경 버츄얼라이저 ────────────────────────
+//  · 저음부터 고음까지 각 대역은 자기 에너지와 파장을 가진 곡선 한 겹이다.
+//    저음일수록 길게, 고음일수록 짧게 접혀서 실제 주파수의 성격이 보인다.
+//  · 각 겹은 세기에 따라 높이·상하 흔들림·좌우 유영이 달라진다. 두 개의 서로
+//    다른 느린 운동을 합쳐, 반복 티가 나는 단순 왕복 대신 유기적인 흐름을 만든다.
+//  · pause/ended 때 캔버스를 비우지 않는다. 마지막 에너지와 꼬리 투명도를 별도로
+//    감쇠시킨 뒤에만 idle로 전환해, 음악이 잦아들 듯 부드럽게 사라진다.
+//  · #proHomeEq 는 그 자체가 <canvas> 다(#mainView 뒤 z:-1). Web Audio 그래프의
+//    _eqAnalyser만 재사용하므로 MediaElementSource를 두 번 만들지 않는다.
 (function(){
   const cvs=document.getElementById('proHomeEq');
   if(!cvs) return;
   let ctx=null; try{ ctx=cvs.getContext('2d',{alpha:true}); }catch(e){}
-  if(!ctx) return;
+  // 일부 웹뷰·테스트 DOM은 빈 2D 컨텍스트만 흉내 낸다. 파형을 그릴 기본 API가
+  // 없으면 오디오나 홈 초기화를 깨뜨리지 않고 이 장식만 건너뛴다.
+  if(!ctx||['clearRect','save','restore','beginPath','moveTo','lineTo','quadraticCurveTo',
+    'closePath','fill','stroke','createLinearGradient'].some(k=>typeof ctx[k]!=='function')) return;
+  let canGradient=false;
+  try{ const probe=ctx.createLinearGradient(0,0,1,1); canGradient=!!probe&&typeof probe.addColorStop==='function'; }catch(e){}
+  if(!canGradient) return;
 
-  // ① 파동 겹 정의 — 겹마다 다른 주파수 대역·파장·흐르는 속도·색을 가진다.
-  //    amp/alpha 는 '차분할 때 얼마나 잔잔한가'를 정한다(에너지 0.30~1 배).
-  //      band : [저Hz, 고Hz] — 이 대역의 에너지만 이 겹의 높이를 만든다
-  //      k    : 화면 폭에 몇 번 접히는가(작을수록 길고 완만한 파동)
-  //      sp   : 위상 흐름 rad/s (음수 = 반대 방향)
-  //      base : 파동의 중심 높이(화면 높이 비율)
+  // band: 담당 FFT 대역, k: 화면 폭에 드러나는 진동 수(작을수록 긴 파장).
+  // lift/yTravel/xTravel은 모두 에너지와 곱해져 강한 대역만 크게 유영하게 한다.
   const WAVES=[
-    { band:[  40,  170], k:1.05, sp: 0.031, base:0.92, amp:0.085, alpha:0.30, hue:  0, width:1.6 },
-    { band:[ 120,  400], k:1.45, sp:-0.027, base:0.88, amp:0.076, alpha:0.27, hue: 16, width:1.5 },
-    { band:[ 320,  900], k:1.95, sp: 0.023, base:0.84, amp:0.066, alpha:0.24, hue:-14, width:1.4 },
-    { band:[ 800, 2200], k:2.60, sp:-0.020, base:0.80, amp:0.056, alpha:0.21, hue: 30, width:1.3 },
-    { band:[2000, 5500], k:3.40, sp: 0.016, base:0.76, amp:0.047, alpha:0.18, hue:-24, width:1.2 },
-    { band:[5000,14000], k:4.30, sp:-0.013, base:0.72, amp:0.039, alpha:0.15, hue: 42, width:1.1 },
+    { band:[  40,  170], k:0.82, sp: 0.031, base:0.92, amp:0.085, alpha:0.30, hue:-26, hueDrift:5, width:1.6, lift:.015, yTravel:.008, ySpeed:.46, ySpeed2:.21, xTravel:.010, xSpeed:.29, xSpeed2:.13, warp:.13 },
+    { band:[ 120,  400], k:1.35, sp:-0.027, base:0.88, amp:0.076, alpha:0.27, hue:-14, hueDrift:6, width:1.5, lift:.018, yTravel:.010, ySpeed:.57, ySpeed2:.26, xTravel:.012, xSpeed:.34, xSpeed2:.17, warp:.15 },
+    { band:[ 320,  900], k:2.12, sp: 0.023, base:0.84, amp:0.066, alpha:0.24, hue:  0, hueDrift:7, width:1.4, lift:.021, yTravel:.012, ySpeed:.65, ySpeed2:.31, xTravel:.015, xSpeed:.39, xSpeed2:.20, warp:.17 },
+    { band:[ 800, 2200], k:3.12, sp:-0.020, base:0.80, amp:0.056, alpha:0.21, hue: 15, hueDrift:8, width:1.3, lift:.024, yTravel:.014, ySpeed:.74, ySpeed2:.36, xTravel:.018, xSpeed:.44, xSpeed2:.24, warp:.19 },
+    { band:[2000, 5500], k:4.46, sp: 0.016, base:0.76, amp:0.047, alpha:0.18, hue: 29, hueDrift:9, width:1.2, lift:.027, yTravel:.016, ySpeed:.84, ySpeed2:.41, xTravel:.021, xSpeed:.50, xSpeed2:.28, warp:.21 },
+    { band:[5000,14000], k:6.20, sp:-0.013, base:0.72, amp:0.039, alpha:0.15, hue: 43, hueDrift:10,width:1.1, lift:.030, yTravel:.018, ySpeed:.95, ySpeed2:.47, xTravel:.024, xSpeed:.56, xSpeed2:.32, warp:.23 },
   ];
   const NW=WAVES.length;
-  // 대역 틸트 — 고음은 같은 세기라도 스펙트럼에서 작게 잡히므로 살짝 들어 올린다
   WAVES.forEach(w=>{
     const mid=Math.sqrt(w.band[0]*w.band[1]);
-    w.tilt=Math.min(1.22, 0.78+0.40*Math.sqrt(mid/9000));
+    // 고음은 같은 세기라도 FFT에서 작게 잡히므로 아주 조금 보정한다.
+    w.tilt=Math.min(1.22,0.78+0.40*Math.sqrt(mid/9000));
   });
-  const env=new Float32Array(NW);      // 겹별 완화된 에너지(0~1)
-  const bandMax=new Float32Array(NW);
-  for(let i=0;i<NW;i++){ env[i]=0.26; bandMax[i]=0.35; }
+  const env=new Float32Array(NW);       // 각 대역의 부드러운 세기
+  const bandMax=new Float32Array(NW);   // 곡마다 달라지는 대역 최대값
+  for(let i=0;i<NW;i++){ env[i]=0; bandMax[i]=0.35; }
 
-  let raf=0, last=0, dpr=1, w=0, h=0, started=false;
-  let buf=null, fbuf=null;
-  const SEG_MAX=240;
+  let raf=0,last=0,dpr=1,w=0,h=0,started=false,releasing=false,releaseFade=1;
+  let buf=null,fbuf=null;
+  const SEG_MAX=240, RELEASE_TAU=1.35;
 
   function isPro(){ try{ const el=document.documentElement; return el.classList.contains('theme-pro')||el.dataset.theme==='pro'; }catch(e){ return false; } }
-  function shouldRun(){
+  // 테마/접근성/화면 상태만 확인한다. pause 뒤 잔향은 A.src가 사라져도 계속 그릴 수 있다.
+  function surfaceReady(){
     if(!isPro()) return false;
     if(document.body.classList.contains('sdy-turbo')) return false;
     try{ if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false; }catch(e){}
     const ed=document.getElementById('editorView');
     if(ed&&ed.classList.contains('open')) return false;
-    if(!A||!A.src) return false;
-    if(A.paused||A.ended) return false;
-    if(!cvs.isConnected) return false;
-    return true;
+    return !!cvs.isConnected;
+  }
+  function shouldRun(){
+    return surfaceReady()&&!!(A&&A.src&&!A.paused&&!A.ended);
   }
   function accentHex(){
     try{
@@ -4781,216 +4777,220 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!isFinite(n)) return [37,99,235];
     return [(n>>16)&255,(n>>8)&255,n&255];
   }
-  // 겹마다 색을 살짝 돌리기 위한 HSL 변환(강조색 기준)
   function hexToHsl(hex){
     try{
       const c=hexToRgb(hex).map(v=>v/255);
-      const mx=Math.max(c[0],c[1],c[2]), mn=Math.min(c[0],c[1],c[2]);
+      const mx=Math.max(c[0],c[1],c[2]),mn=Math.min(c[0],c[1],c[2]);
       const l=(mx+mn)/2;
-      let hh=0, s=0;
+      let hh=0,ss=0;
       if(mx!==mn){
         const d=mx-mn;
-        s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+        ss=l>0.5?d/(2-mx-mn):d/(mx+mn);
         if(mx===c[0]) hh=(c[1]-c[2])/d+(c[1]<c[2]?6:0);
         else if(mx===c[1]) hh=(c[2]-c[0])/d+2;
         else hh=(c[0]-c[1])/d+4;
         hh*=60;
       }
-      return [hh, s*100, l*100];
-    }catch(e){ return [222, 84, 55]; }
+      return [hh,ss*100,l*100];
+    }catch(e){ return [222,84,55]; }
   }
   function resize(){
     const r=cvs.getBoundingClientRect();
-    let rw=r.width, rh=r.height;
+    let rw=r.width,rh=r.height;
     if(rw<10||rh<10){
-      // CSS 가 아직 못 잡았을 때(첫 프레임·display:none) — 뷰포트에서 유추
-      const vw=window.innerWidth||1280, vh=window.innerHeight||800;
+      const vw=window.innerWidth||1280,vh=window.innerHeight||800;
       const side=document.getElementById('proSide');
       const sw=side?side.getBoundingClientRect().width:0;
-      rw=Math.max(200, vw-(isPro()?sw:0));
-      rh=Math.max(140, vh-88);
+      rw=Math.max(200,vw-(isPro()?sw:0)); rh=Math.max(140,vh-88);
     }
-    dpr=Math.min(1.6, window.devicePixelRatio||1);
-    w=rw; h=rh;
-    cvs.width=Math.max(1, Math.round(rw*dpr));
-    cvs.height=Math.max(1, Math.round(rh*dpr));
+    dpr=Math.min(1.6,window.devicePixelRatio||1); w=rw; h=rh;
+    cvs.width=Math.max(1,Math.round(rw*dpr)); cvs.height=Math.max(1,Math.round(rh*dpr));
     try{ ctx.setTransform(dpr,0,0,dpr,0,0); }catch(e){ try{ ctx.scale(dpr,dpr); }catch(e2){} }
   }
   let resizeT=null;
   function scheduleResize(){ clearTimeout(resizeT); resizeT=setTimeout(resize,120); }
   try{ new ResizeObserver(scheduleResize).observe(cvs); }catch(e){}
-  try{ new ResizeObserver(scheduleResize).observe(cvs); }catch(e){}
   try{ new ResizeObserver(scheduleResize).observe(document.getElementById('proSide')||document.body); }catch(e){}
-  window.addEventListener('resize', scheduleResize, {passive:true});
+  window.addEventListener('resize',scheduleResize,{passive:true});
   try{ resize(); }catch(e){}
 
   async function tryBuild(){
     if(_eqAnalyser) return true;
     if(_eqBusy) return false;
-    try{ const ok=await eqBuild(); if(ok) return true; }catch(e){}
-    return false;
+    try{ return !!(await eqBuild()); }catch(e){ return false; }
   }
-  function setPlaying(on){
-    cvs.classList.toggle('playing', !!on);
-    cvs.classList.toggle('idle', !on);
+  function setVisualState(live,tail){
+    const visible=!!(live||tail);
+    cvs.classList.toggle('playing',visible);
+    cvs.classList.toggle('releasing',!!tail);
+    cvs.classList.toggle('idle',!visible);
   }
-  // 대역 평균 — FFT 빈은 선형이라 주파수를 로그로 눌러 담는다(사람 귀 기준)
-  function bandRaw(lo, hi, bins, nyq){
+  // FFT bin은 선형이므로 대역을 로그 간격으로 정한 WAVES에 맞춰 평균한다.
+  function bandRaw(lo,hi,bins,nyq){
     if(!bins) return 0;
-    const f1=Math.max(lo, 20), f2=Math.min(hi, nyq*0.98);
+    const f1=Math.max(lo,20),f2=Math.min(hi,nyq*.98);
     if(f2<=f1) return 0;
-    const b1=Math.round(f1/nyq*(bins-1)), b2=Math.round(f2/nyq*(bins-1));
-    let ss=0, c=0;
-    for(let j=Math.max(0,b1); j<=Math.min(bins-1,b2); j++){ ss+=fbuf[j]; c++; }
-    return c?ss/c:0;
+    const b1=Math.round(f1/nyq*(bins-1)),b2=Math.round(f2/nyq*(bins-1));
+    let sum=0,count=0;
+    for(let j=Math.max(0,b1);j<=Math.min(bins-1,b2);j++){ sum+=fbuf[j]; count++; }
+    return count?sum/count:0;
+  }
+  function finishRelease(){
+    releasing=false; releaseFade=1;
+    if(raf){ cancelAnimationFrame(raf); raf=0; }
+    last=0;
+    for(let i=0;i<NW;i++) env[i]=0;
+    setVisualState(false,false);
+    try{ ctx.clearRect(0,0,w,h); }catch(e){}
   }
   function draw(now){
-    if(!shouldRun()){
-      setPlaying(false);
-      raf=0; last=0;
-      try{ ctx.clearRect(0,0,w,h); }catch(e){}
-      return;
-    }
+    const live=shouldRun();
+    if(!live&&!releasing){ finishRelease(); return; }
     raf=requestAnimationFrame(draw);
-    const t=((now||0))/1000;
-    const dt=Math.min(.05, Math.max(.001, ((now||0)-(last||now-16))/1000));
+    const t=(now||0)/1000;
+    const dt=Math.min(.05,Math.max(.001,((now||0)-(last||now-16))/1000));
     last=now||0;
 
-    // ③ 스펙트럼 확보 (없으면 조용히 한 번 물려 본다)
-    let hasData=false, bins=0, nyq=16500;
-    if(_eqAnalyser){
+    let hasData=false,bins=0,nyq=16500;
+    if(live&&_eqAnalyser){
       bins=_eqAnalyser.frequencyBinCount||1024;
       if(!buf||buf.length!==bins){ buf=new Uint8Array(bins); fbuf=new Float32Array(bins); }
       try{ _eqAnalyser.getByteFrequencyData(buf); hasData=true; }catch(e){ hasData=false; }
-      if(hasData){ for(let i=0;i<bins;i++) fbuf[i]=buf[i]/255; }
-      const sr=(_eqCtx&&_eqCtx.sampleRate)||44100;
-      nyq=Math.max(1000, sr/2);
-    }else{
+      if(hasData) for(let i=0;i<bins;i++) fbuf[i]=buf[i]/255;
+      const sr=(_eqCtx&&_eqCtx.sampleRate)||44100; nyq=Math.max(1000,sr/2);
+    }else if(live){
       if(!started){ started=true; tryBuild(); }
-      else if(Math.random()<0.04) tryBuild();
+      else if(Math.random()<.04) tryBuild();
+    }
+
+    // pause에서는 target=0과 releaseFade가 함께 내려간다. 재생 중에는 기존의
+    // 빠른 공격(.16s) / 자연스러운 낙하(.85s)를 유지한다.
+    releaseFade+=(live?1-releaseFade:-releaseFade)*(1-Math.exp(-dt/(live ? .18 : RELEASE_TAU)));
+    for(let i=0;i<NW;i++){
+      const W=WAVES[i];
+      let raw=live ? .24 : 0;             // 분석 불가 스트림도 재생 중에는 은은히 숨쉰다
+      if(live&&hasData&&bins){
+        raw=bandRaw(W.band[0], W.band[1], bins, nyq)*W.tilt;
+        if(raw>bandMax[i]) bandMax[i]=bandMax[i]*.90+raw*.10;
+        else bandMax[i]=Math.max(.20,bandMax[i]*.994+raw*.006);
+        raw=Math.min(1,raw/Math.max(.22,bandMax[i]));
+      }else if(live){
+        bandMax[i]=Math.max(.22,bandMax[i]*.996+raw*.004);
+      }
+      const target=live?Math.pow(Math.max(0,raw),.82):0;
+      const tau=!live?RELEASE_TAU:(target>env[i]?0.16:0.85);
+      env[i]+=(target-env[i])*(1-Math.exp(-dt/tau));
+      if(!(env[i]>=0)) env[i]=0;
     }
 
     ctx.clearRect(0,0,w,h);
     if(w<20||h<20) return;
-
-    // ④ 겹별 에너지 — 공격은 짧게, 낙하도 빠르게(0.85초). 대역별로 즉각 숨쉰다.
-    for(let i=0;i<NW;i++){
-      const W=WAVES[i];
-      let raw=0.24;                       // 데이터가 없어도 아주 낮은 숨결은 남는다
-      if(hasData&&bins){
-        raw=bandRaw(W.band[0], W.band[1], bins, nyq)*W.tilt;
-        if(raw>bandMax[i]) bandMax[i]=bandMax[i]*0.90+raw*0.10;
-        else bandMax[i]=Math.max(0.20, bandMax[i]*0.994+raw*0.006);
-        raw=Math.min(1, raw/Math.max(0.22, bandMax[i]));
-      }else{
-        bandMax[i]=Math.max(0.22, bandMax[i]*0.996+raw*0.004);
-      }
-      const target=Math.pow(Math.max(0, raw), 0.82);
-      const tau=target>env[i]?0.16:0.85;
-      env[i]+=(target-env[i])*(1-Math.exp(-dt/tau));
-      if(!(env[i]>=0)) env[i]=0;          // (NaN 방어)
-    }
-
-    // ⑤ 색 — 겹마다 강조색에서 조금씩 돌린 색(같은 계열이라 어지럽지 않다).
-    //    채도는 올리고 밝기는 낮춰 깊고 짙게.
     const hsl=hexToHsl(accentHex());
-    const sat=Math.max(40, Math.min(94, hsl[1]*1.08));
-    const lig=Math.max(22, Math.min(58, hsl[2]-6));
-    const seg=Math.max(64, Math.min(SEG_MAX, Math.round(w/8)));
-    const xs=new Float32Array(seg+1), ys=new Float32Array(seg+1);
+    const sat=Math.max(40,Math.min(94,hsl[1]*1.08));
+    const lig=Math.max(22,Math.min(58,hsl[2]-6));
+    const seg=Math.max(64,Math.min(SEG_MAX,Math.round(w/8)));
+    const xs=new Float32Array(seg+1),ys=new Float32Array(seg+1);
 
-    ctx.save();
-    ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.save(); ctx.lineJoin='round'; ctx.lineCap='round';
     for(let i=0;i<NW;i++){
-      const W=WAVES[i];
-      const e=env[i];
-      // 음악이 조용하면 잔잔한 결만 남고, 세지면 천천히 부풀어 오른다
-      const amp=W.amp*h*(0.30+0.70*e)*(0.86+0.14*Math.sin(t*0.07+i*1.7));
-      const yc=h*W.base;
-      const ph=t*W.sp+i*0.9;
+      const W=WAVES[i],e=env[i],energy=e*releaseFade;
+      // 세면 크게 위로 떠오르고, 서로 다른 두 상하·좌우 움직임을 겹쳐 유영한다.
+      const xDrift=w*W.xTravel*(.20+.80*energy)*(
+        Math.sin(t*W.xSpeed+i*1.91)+.46*Math.sin(t*W.xSpeed2+i*.73));
+      const yDrift=h*W.yTravel*(.18+.82*energy)*(
+        .66*Math.sin(t*W.ySpeed+i*1.37+e*1.4)+.34*Math.sin(t*W.ySpeed2+i*.61));
+      const yc=h*W.base-h*W.lift*energy+yDrift;
+      const amp=W.amp*h*(.30+.70*e)*releaseFade*(.86+.14*Math.sin(t*.07+i*1.7));
+      const ph=t*W.sp+i*.9;
       const turns=Math.PI*2*W.k;
+      const pad=64+Math.abs(xDrift);
       for(let s=0;s<=seg;s++){
         const u=s/seg;
-        const x=-24+(w+48)*u;
-        // 기본 파동 + 느린 변조 + 아주 옅은 배음 — 자연스러운 물결 모양
-        const body=Math.sin(u*turns+ph)*(0.80+0.20*Math.sin(u*turns*0.5-ph*0.6+i));
-        const overtone=Math.sin(u*turns*0.37+ph*1.7+0.6)*0.26;
-        xs[s]=x;
-        ys[s]=yc-body*amp-overtone*amp*(0.5+0.5*e);
+        const x=-pad+xDrift+(w+pad*2)*u;
+        // 주파수별 carrier에 속도가 다른 warp·배음을 얹어, 파장 성격은 지키되
+        // 단순 사인파처럼 반복돼 보이지 않게 한다.
+        const warp=Math.sin(u*turns*.22-t*W.xSpeed*.48+i)*W.warp*(.25+.75*energy);
+        const carrier=Math.sin(u*turns+ph);
+        const sideband=Math.cos(u*turns+ph);
+        const body=(carrier*Math.cos(warp)+sideband*Math.sin(warp))*(
+          .80+.20*Math.sin(u*turns*.50-ph*.6+i));
+        const overtone=Math.sin(u*turns*.37+ph*1.7+.6)*.26;
+        xs[s]=x; ys[s]=yc-body*amp-overtone*amp*(.5+.5*e);
       }
-      const hh=((hsl[0]+W.hue)%360+360)%360;
-      const top=Math.min(h+6, h*1.0);
-      // 몸통 — 윗선에서 화면 바닥까지 사라지는 세로 그라데이션
-      const g=ctx.createLinearGradient(0, yc-amp*1.8, 0, top);
-      g.addColorStop(0,   `hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${lig.toFixed(0)}%,${(W.alpha*(0.55+0.45*e)).toFixed(3)})`);
-      g.addColorStop(0.55,`hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${(lig+4).toFixed(0)}%,${(W.alpha*0.30*(0.55+0.45*e)).toFixed(3)})`);
-      g.addColorStop(1,   `hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${(lig+8).toFixed(0)}%,0)`);
-      ctx.fillStyle=g;
-      ctx.beginPath();
-      ctx.moveTo(xs[0], h+4);
-      ctx.lineTo(xs[0], ys[0]);
+      // 저음은 청록 쪽, 고음은 보라 쪽으로 아주 조금 이동한다. 각 선에도 좌우
+      // 미세 그라데이션을 넣어 색의 밝기는 유지하면서 파장 차이를 드러낸다.
+      const baseHue=((hsl[0]+W.hue)%360+360)%360;
+      const hh=((baseHue+Math.sin(t*.22+i)*W.hueDrift*(.20+.80*energy))%360+360)%360;
+      const top=Math.min(h+6,h*1.0),fadeAlpha=W.alpha*(.55+.45*e)*releaseFade;
+      const fill=ctx.createLinearGradient(0, yc-amp*1.8, 0, top);
+      fill.addColorStop(0,`hsla(${(hh-5).toFixed(0)},${sat.toFixed(0)}%,${lig.toFixed(0)}%,${fadeAlpha.toFixed(3)})`);
+      fill.addColorStop(.55,`hsla(${(hh+4).toFixed(0)},${sat.toFixed(0)}%,${(lig+4).toFixed(0)}%,${(fadeAlpha*.30).toFixed(3)})`);
+      fill.addColorStop(1,`hsla(${(hh+10).toFixed(0)},${sat.toFixed(0)}%,${(lig+8).toFixed(0)}%,0)`);
+      ctx.fillStyle=fill;
+      ctx.beginPath(); ctx.moveTo(xs[0],h+4); ctx.lineTo(xs[0],ys[0]);
       for(let s=1;s<seg;s++){
-        const mx=(xs[s]+xs[s+1])/2, my=(ys[s]+ys[s+1])/2;
+        const mx=(xs[s]+xs[s+1])/2,my=(ys[s]+ys[s+1])/2;
         ctx.quadraticCurveTo(xs[s], ys[s], mx, my);
       }
-      ctx.lineTo(xs[seg], ys[seg]);
-      ctx.lineTo(xs[seg], h+4);
-      ctx.closePath();
-      ctx.fill();
-      // 윗선 — 파동의 결을 또렷하게(아주 가늘게)
-      ctx.strokeStyle=`hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${lig.toFixed(0)}%,${(Math.min(0.72, W.alpha*1.9)*(0.5+0.5*e)).toFixed(3)})`;
-      ctx.lineWidth=W.width;
-      ctx.beginPath();
-      ctx.moveTo(xs[0], ys[0]);
+      ctx.lineTo(xs[seg],ys[seg]); ctx.lineTo(xs[seg],h+4); ctx.closePath(); ctx.fill();
+      const line=ctx.createLinearGradient(-w*.08,yc,w*1.08,yc);
+      const lineAlpha=Math.min(.72,W.alpha*1.9)*(.5+.5*e)*releaseFade;
+      line.addColorStop(0,`hsla(${(hh-8).toFixed(0)},${sat.toFixed(0)}%,${lig.toFixed(0)}%,${(lineAlpha*.72).toFixed(3)})`);
+      line.addColorStop(.52,`hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${(lig+4).toFixed(0)}%,${lineAlpha.toFixed(3)})`);
+      line.addColorStop(1,`hsla(${(hh+10).toFixed(0)},${sat.toFixed(0)}%,${(lig+8).toFixed(0)}%,${(lineAlpha*.72).toFixed(3)})`);
+      ctx.strokeStyle=line; ctx.lineWidth=W.width;
+      ctx.beginPath(); ctx.moveTo(xs[0],ys[0]);
       for(let s=1;s<seg;s++){
-        const mx=(xs[s]+xs[s+1])/2, my=(ys[s]+ys[s+1])/2;
+        const mx=(xs[s]+xs[s+1])/2,my=(ys[s]+ys[s+1])/2;
         ctx.quadraticCurveTo(xs[s], ys[s], mx, my);
       }
-      ctx.lineTo(xs[seg], ys[seg]);
-      ctx.stroke();
+      ctx.lineTo(xs[seg],ys[seg]); ctx.stroke();
     }
     ctx.restore();
+
+    let quiet=releaseFade<.012;
+    if(!live) for(let i=0;i<NW;i++) if(env[i]>.008){ quiet=false; break; }
+    if(!live&&quiet) finishRelease();
   }
   function start(){
-    if(raf) return;
     if(!shouldRun()) return;
-    setPlaying(true);
+    releasing=false; releaseFade=1; setVisualState(true,false);
+    if(raf) return;
     last=window.performance?performance.now():Date.now();
     if(!_eqAnalyser) tryBuild();
-    raf=requestAnimationFrame(draw);
-    started=true;
+    raf=requestAnimationFrame(draw); started=true;
   }
-  function stop(){
-    setPlaying(false);
-    if(raf){ cancelAnimationFrame(raf); raf=0; }
-    last=0;
-    try{ ctx.clearRect(0,0,w,h); }catch(e){}
+  function stop(immediate){
+    if(immediate||!surfaceReady()) { finishRelease(); return; }
+    // 재생 도중 쌓인 env를 지우지 않고 release draw loop에 넘긴다.
+    releasing=true; setVisualState(false,true);
+    if(!raf){ last=window.performance?performance.now():Date.now(); raf=requestAnimationFrame(draw); }
   }
-  // ⑥ 재생/일시정지·화면 전환에 따라 시작과 정지
-  A.addEventListener('play', ()=>{ if(isPro()){ scheduleResize(); start(); } });
-  A.addEventListener('pause', stop);
-  A.addEventListener('ended', stop);
-  A.addEventListener('emptied', stop);
+  A.addEventListener('play',()=>{ if(isPro()){ scheduleResize(); start(); } });
+  A.addEventListener('pause',()=>stop(false));
+  A.addEventListener('ended',()=>stop(false));
+  A.addEventListener('emptied',()=>stop(false));
   try{
-    new MutationObserver(()=>{
-      if(shouldRun()){ scheduleResize(); start(); }
-      else stop();
-    }).observe(document.documentElement,{attributes:true,attributeFilter:['class','data-theme']});
+    new MutationObserver(()=>{ if(shouldRun()){ scheduleResize(); start(); } else stop(!surfaceReady()); })
+      .observe(document.documentElement,{attributes:true,attributeFilter:['class','data-theme']});
   }catch(e){}
   try{
     const ed=document.getElementById('editorView');
-    if(ed) new MutationObserver(()=>{ if(shouldRun()) start(); else stop(); })
+    if(ed) new MutationObserver(()=>{ if(shouldRun()) start(); else stop(!surfaceReady()); })
       .observe(ed,{attributes:true,attributeFilter:['class']});
   }catch(e){}
   try{
-    new MutationObserver(()=>{ scheduleResize(); if(shouldRun()) start(); else stop(); })
+    new MutationObserver(()=>{ scheduleResize(); if(shouldRun()) start(); else stop(!surfaceReady()); })
       .observe(document.body,{attributes:true,attributeFilter:['class']});
   }catch(e){}
-  try{ window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', ()=>{ if(shouldRun()) start(); else stop(); }); }catch(e){}
-  document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ if(raf){ cancelAnimationFrame(raf); raf=0; } } else if(shouldRun()) start(); });
+  try{ window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{ if(shouldRun()) start(); else stop(!surfaceReady()); }); }catch(e){}
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden){ if(raf){ cancelAnimationFrame(raf); raf=0; } }
+    else if(shouldRun()) start();
+    else if(releasing&&surfaceReady()&&!raf){ last=window.performance?performance.now():Date.now(); raf=requestAnimationFrame(draw); }
+  });
   if(shouldRun()) start();
-  // 외부 디버그 손잡이 (테스트가 파형을 직접 확인할 수 있게 파동 정의도 함께 노출)
-  try{ window.sdyProEq={canvas:cvs, waves:WAVES, start, stop, resize, isPro, shouldRun}; }catch(e){}
+  try{ window.sdyProEq={canvas:cvs,waves:WAVES,start,stop,resize,isPro,shouldRun,surfaceReady}; }catch(e){}
 })();
 
 })();
