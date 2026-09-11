@@ -8832,3 +8832,19 @@ html.theme-pro #mpBig,html.theme-pro .ctx-menu.show,html.theme-pro #uploadProg .
     transform:translateY(-50%);width:clamp(104px,12vw,150px);
   }
 }
+
+/* 14.58 · Pro feather logo — 전문 SVG (아웃라인+척추+닙+플러리시+잉크점).
+   클래식에서는 기존 remix 아이콘만 보이고, 프로에서는 SVG만 보인다.
+   viewBox 0 0 32, 벡터-논스케일링 스트로크로 모든 해상도에서 날카롭게,
+   currentColor 로 dot 배경(파랑) 위 흰 선을 유지한다. */
+.logo-dot{display:flex;align-items:center;justify-content:center;}
+.logo-dot .logo-pro,
+.sp-logo .logo-pro{display:none;flex:none;}
+.logo-dot .logo-pro{width:18px;height:18px;color:#fff;}
+.sp-logo .logo-pro{width:36px;height:36px;color:#fff;}
+html.theme-pro .logo-dot .logo-classic,
+html.theme-pro .sp-logo .logo-classic{display:none!important;}
+html.theme-pro .logo-dot .logo-pro,
+html.theme-pro .sp-logo .logo-pro{display:block;}
+html.theme-pro .pro-brand .logo-dot .logo-pro{width:16px;height:16px;}
+.sp-logo{display:flex;align-items:center;justify-content:center;}
