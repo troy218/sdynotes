@@ -1156,7 +1156,14 @@
       if(!drag) return;
       var nx=ox+window.sdyUiCss(e.clientX-sx), ny=oy+window.sdyUiCss(e.clientY-sy);
       var c=sdyClampFloatingRect(app,nx,ny);
-      app.style.left=c.x+'px'; app.style.top=c.y+'px'; app.style.right='auto'; app.style.bottom='auto';
+      // 14.62 · 인라인도 !important 로 — 기본(프로) 테마는 #ypApp 위치를
+      //   left:292px!important 등으로 고정해 두어, 보통 인라인 스타일로는
+      //   밀어도 시각적으로 안 움직였다(캐주얼에서만 되던 이유). 인라인
+      //   !important 는 스타일시트 !important 보다 강해 어느 테마에서도 움직인다.
+      app.style.setProperty('left',c.x+'px','important');
+      app.style.setProperty('top',c.y+'px','important');
+      app.style.setProperty('right','auto','important');
+      app.style.setProperty('bottom','auto','important');
     });
     window.addEventListener('pointerup',function(){ drag=false; head.style.cursor=''; });
   }

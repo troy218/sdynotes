@@ -49,6 +49,13 @@
             if(lb) lb.textContent=pm.items.length>1?`그림 ${pm.idx+1}/${pm.items.length}`:'그림 넣기';
             body.innerHTML=`<div class="pg-scale" style="width:${it.box.w}px;height:${it.box.h}px;`+
                 `background-image:url('${it.url}')"></div>`;
+        }else if(pm.kind==='check'){
+            // 14.62 · 체크상자 고스트 — 만들어질 글상자와 같은 크기에 ☐ 를 보인다
+            if(ic) ic.className='ri-checkbox-line';
+            if(lb) lb.textContent='체크상자';
+            body.innerHTML=`<div class="pg-scale" style="width:${pm.w}px;height:${pm.h}px;`+
+                `display:flex;align-items:center;font-size:${curFontSize||16}px;color:var(--text2);`+
+                `background:#fff;border:1px dashed var(--border);border-radius:6px;">☐</div>`;
         }else{
             if(ic) ic.className='ri-function-line';
             if(lb) lb.textContent='수식 넣기';
@@ -61,6 +68,19 @@
         const p=paperAt(curPageIdx), r=p&&p.getBoundingClientRect();
         movePlaceGhost(r?r.left+r.width/2:innerWidth/2,
                        r?r.top+Math.min(r.height*.22,200):innerHeight/3);
+    }
+    // 14.62 · 체크상자 배치 — 글상자 도구처럼 고스트가 커서를 따라다니고
+    //   종이를 누르면 그 자리에 확정된다. (기존엔 lastMouse 자리에 바로 생겼다)
+    function beginCheckPlacement(){
+        cancelPlaceMode();
+        if(penActive) finishDrawing();
+        setTextTool(false); if(tablePlace) cancelTablePlacement();
+        if(pinMode) togglePinMode();
+        deselectAll();
+        const dim=textBoxDefaultSize();
+        placeMode={kind:'check',w:dim.w,h:dim.h};
+        placeGhostShow();
+        toast('종이에서 원하는 위치를 눌러 체크상자를 놓으세요',2200);
     }
     function movePlaceGhost(clientX,clientY){
         const g=document.getElementById('placeGhost'); if(!g||!placeMode) return;
@@ -112,6 +132,28 @@
                 fontSize:pm.fontSize,displayMath:pm.display?1:0});
             if(renderedPages.has(pi)) renderPageEls(pi);
             markPageEdited(pi); saveDoc(); cancelPlaceMode(); toast('수식을 넣었습니다',1300);
+            return;
+        }
+        if(pm.kind==='check'){
+            // 14.62 · 누른 자리에 체크상자 글상자를 확정하고 이어서 입력한다
+            pushHistory();
+            const dim=textBoxDefaultSize();
+            const c=clampEl(x-dim.w/2,y-dim.h/2,dim.w,dim.h);
+            const el={type:'text',id:uid('t'),x:Math.round(c.x),y:Math.round(c.y),
+                      w:Math.max(300,dim.w),h:dim.h,
+                      html:'<span data-ck="0">☐</span>&nbsp;',
+                      fontSize:curFontSize||16,font:curFont};
+            doc.pages[pi].els.push(el);
+            if(renderedPages.has(pi)) renderPageEls(pi);
+            markPageEdited(pi); saveDoc(); cancelPlaceMode();
+            const node=paperQ(pi,`.tb[data-id="${el.id}"]`);
+            if(node){
+                enterEdit(node,false);
+                const cbox=node.querySelector('.tb-content');
+                const r=document.createRange(); r.selectNodeContents(cbox); r.collapse(false);
+                const s2=window.getSelection(); s2.removeAllRanges(); s2.addRange(r);
+            }
+            toast('체크상자를 넣었습니다 · 이어서 입력하세요',2000);
             return;
         }
         cancelPlaceMode();

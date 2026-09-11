@@ -124,10 +124,12 @@
             bookmarks._responsiveReady=true;
             const narrow=()=>window.innerWidth<1024;
             let wasNarrow=narrow();
-            bookmarks.open=false;
+            // 14.61 · 처음 상태 — PC(≥1024)는 펼침, 좁은 화면은 접음 (theme 계약)
+            bookmarks.open=!narrow();
             window.addEventListener('resize',()=>{
                 const next=narrow();
-                if(next!==wasNarrow){ wasNarrow=next; }
+                // 14.61 · 경계를 넘으면 처음 상태 규칙과 같게 — 좁으면 접고, PC 폭이면 펼친다
+                if(next!==wasNarrow){ wasNarrow=next; bookmarks.open=!next; }
             });
             document.addEventListener('click',event=>{
                 if(narrow()&&bookmarks.open&&!bookmarks.contains(event.target)) bookmarks.open=false;

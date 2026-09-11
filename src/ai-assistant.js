@@ -202,8 +202,15 @@
   }
   window.sdyAiHistToggle=function(){
     var h=$('aiHist'); if(!h) return;
-    h.hidden=!h.hidden;
-    if(!h.hidden) histPaint();
+    var opening=h.hidden;                     // 닫혀 있었다 → 이번에 연다
+    h.hidden=!opening;
+    if(opening){
+      // 14.62 · 대화기록을 열면 기존 말풍선은 닫는다 — 답변 말풍선(#aiSay)과
+      //   해돌이 머리 위 작은 혼잣말 말풍선(#noteOtterBubble) 둘 다.
+      sayHide();
+      var nb=$('noteOtterBubble'); if(nb) nb.classList.remove('show');
+      histPaint();
+    }
   };
 
   /* ── 해돌이 판단 표식 — 서버가 답 첫 줄에 [[note]] / [[free]] 를 달아 준다 ──
@@ -2377,7 +2384,7 @@
       var textW=Math.ceil(aiQMir.getBoundingClientRect().width);
       // 글씨 + 좌우 패딩(30) + 상태 점(9) + 사이(8) + 여유(14)
       // 14.39.9 · 가로로 먼저 충분히 늘어난 뒤에 줄바꿈이 일어나도록 최대 폭을 키웠다.
-      var want=Math.max(180,Math.min(480,textW+61));
+      var want=Math.max(240,Math.min(560,textW+80));   // 14.62 · 기본 폭을 더 길게
       field.style.setProperty('--ai-q-w',want+'px');
       q.style.height='auto';
       var h=q.scrollHeight||0;

@@ -643,7 +643,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 14.49 · PRO 앱 셸 — 프로/클래식에 따라 브랜드·브레드크럼 자리를 갈아엎는다
         try{ if(typeof _proShellSwap==='function') _proShellSwap(); }catch(e){}
         // 앱 제목
-        const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'동엽신의 끄적끄적';
+        const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'SDYnotes';
         const h1=document.querySelector('.app-brand h1');
         if(h1) h1.textContent=t;
         document.title=t;
@@ -809,10 +809,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             bookmarks._responsiveReady=true;
             const narrow=()=>window.innerWidth<1024;
             let wasNarrow=narrow();
-            bookmarks.open=false;
+            // 14.61 · 처음 상태 — PC(≥1024)는 펼침, 좁은 화면은 접음 (theme 계약)
+            bookmarks.open=!narrow();
             window.addEventListener('resize',()=>{
                 const next=narrow();
-                if(next!==wasNarrow){ wasNarrow=next; }
+                // 14.61 · 경계를 넘으면 처음 상태 규칙과 같게 — 좁으면 접고, PC 폭이면 펼친다
+                if(next!==wasNarrow){ wasNarrow=next; bookmarks.open=!next; }
             });
             document.addEventListener('click',event=>{
                 if(narrow()&&bookmarks.open&&!bookmarks.contains(event.target)) bookmarks.open=false;
@@ -2888,8 +2890,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 g.appendChild(empty);
             }
             if(!selectMode&&!proOn){
-                const add=document.createElement('div');
+                // 14.61 · 추가 타일도 진짜 버튼으로 — 키보드로 누를 수 있어야 한다
+                const add=document.createElement('button');
+                add.type='button';
                 add.className='add-card';
+                add.setAttribute('aria-label','새 노트 만들기');
                 add.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
                 add.onclick=openCreateModal;
                 g.appendChild(add);
@@ -14907,25 +14912,9 @@ function _tightLineBackspace(c,w){
             toast('체크상자를 넣었습니다 · 눌러서 체크',1800);
             return;
         }
-        // 편집 중이 아니면 새 글상자를 만들어 체크상자로 시작한다
-        pushHistory();
-        const pi=curPageIdx, size=paperSize();
-        const x=Math.round(lastMouse.pageIdx===pi&&lastMouse.x?lastMouse.x:(size.w-300)/2);
-        const y=Math.round(lastMouse.pageIdx===pi&&lastMouse.y?lastMouse.y:140);
-        const dim=textBoxDefaultSize();
-        const el={type:'text',id:uid('t'),x,y,w:Math.max(300,dim.w),h:dim.h,
-                  html:'<span data-ck="0">☐</span>&nbsp;',
-                  fontSize:curFontSize||16,font:curFont};
-        doc.pages[pi].els.push(el);
-        markPageEdited(pi); renderPageEls(pi); saveDoc();
-        const node=paperQ(pi,`.tb[data-id="${el.id}"]`);
-        if(node){
-            enterEdit(node,false);
-            const c=node.querySelector('.tb-content');
-            const r=document.createRange(); r.selectNodeContents(c); r.collapse(false);
-            const s2=window.getSelection(); s2.removeAllRanges(); s2.addRange(r);
-        }
-        toast('체크상자를 넣었습니다 · 이어서 입력하세요',2000);
+        // 14.62 · 편집 중이 아니면 글상자 도구처럼 배치 모드 — 고스트가 커서를
+        //   따라다니고 종이를 누르면 그 자리에 확정한다 (beginCheckPlacement).
+        beginCheckPlacement();
     }
 
     // 체크 박스 클릭 (편집 중이 아니어도 눌린다)
@@ -15787,6 +15776,13 @@ function _tightLineBackspace(c,w){
             if(lb) lb.textContent=pm.items.length>1?`그림 ${pm.idx+1}/${pm.items.length}`:'그림 넣기';
             body.innerHTML=`<div class="pg-scale" style="width:${it.box.w}px;height:${it.box.h}px;`+
                 `background-image:url('${it.url}')"></div>`;
+        }else if(pm.kind==='check'){
+            // 14.62 · 체크상자 고스트 — 만들어질 글상자와 같은 크기에 ☐ 를 보인다
+            if(ic) ic.className='ri-checkbox-line';
+            if(lb) lb.textContent='체크상자';
+            body.innerHTML=`<div class="pg-scale" style="width:${pm.w}px;height:${pm.h}px;`+
+                `display:flex;align-items:center;font-size:${curFontSize||16}px;color:var(--text2);`+
+                `background:#fff;border:1px dashed var(--border);border-radius:6px;">☐</div>`;
         }else{
             if(ic) ic.className='ri-function-line';
             if(lb) lb.textContent='수식 넣기';
@@ -15799,6 +15795,19 @@ function _tightLineBackspace(c,w){
         const p=paperAt(curPageIdx), r=p&&p.getBoundingClientRect();
         movePlaceGhost(r?r.left+r.width/2:innerWidth/2,
                        r?r.top+Math.min(r.height*.22,200):innerHeight/3);
+    }
+    // 14.62 · 체크상자 배치 — 글상자 도구처럼 고스트가 커서를 따라다니고
+    //   종이를 누르면 그 자리에 확정된다. (기존엔 lastMouse 자리에 바로 생겼다)
+    function beginCheckPlacement(){
+        cancelPlaceMode();
+        if(penActive) finishDrawing();
+        setTextTool(false); if(tablePlace) cancelTablePlacement();
+        if(pinMode) togglePinMode();
+        deselectAll();
+        const dim=textBoxDefaultSize();
+        placeMode={kind:'check',w:dim.w,h:dim.h};
+        placeGhostShow();
+        toast('종이에서 원하는 위치를 눌러 체크상자를 놓으세요',2200);
     }
     function movePlaceGhost(clientX,clientY){
         const g=document.getElementById('placeGhost'); if(!g||!placeMode) return;
@@ -15850,6 +15859,28 @@ function _tightLineBackspace(c,w){
                 fontSize:pm.fontSize,displayMath:pm.display?1:0});
             if(renderedPages.has(pi)) renderPageEls(pi);
             markPageEdited(pi); saveDoc(); cancelPlaceMode(); toast('수식을 넣었습니다',1300);
+            return;
+        }
+        if(pm.kind==='check'){
+            // 14.62 · 누른 자리에 체크상자 글상자를 확정하고 이어서 입력한다
+            pushHistory();
+            const dim=textBoxDefaultSize();
+            const c=clampEl(x-dim.w/2,y-dim.h/2,dim.w,dim.h);
+            const el={type:'text',id:uid('t'),x:Math.round(c.x),y:Math.round(c.y),
+                      w:Math.max(300,dim.w),h:dim.h,
+                      html:'<span data-ck="0">☐</span>&nbsp;',
+                      fontSize:curFontSize||16,font:curFont};
+            doc.pages[pi].els.push(el);
+            if(renderedPages.has(pi)) renderPageEls(pi);
+            markPageEdited(pi); saveDoc(); cancelPlaceMode();
+            const node=paperQ(pi,`.tb[data-id="${el.id}"]`);
+            if(node){
+                enterEdit(node,false);
+                const cbox=node.querySelector('.tb-content');
+                const r=document.createRange(); r.selectNodeContents(cbox); r.collapse(false);
+                const s2=window.getSelection(); s2.removeAllRanges(); s2.addRange(r);
+            }
+            toast('체크상자를 넣었습니다 · 이어서 입력하세요',2000);
             return;
         }
         cancelPlaceMode();
@@ -24501,6 +24532,11 @@ function _tightLineBackspace(c,w){
         curNB.title=this.value.trim()||'새 노트';
         queueSync(curNB.id);
     });
+    // 14.62 · 제목 줄에서 Enter — 저장(change)은 그대로 가고 포커스도 바로 푼다.
+    //   예전엔 저장은 되지만 마우스로 다른 곳을 눌러야 커서가 남았다.
+    document.getElementById('edTitle').addEventListener('keydown',function(e){
+        if(e.key==='Enter'){ e.preventDefault(); this.blur(); }
+    });
     document.getElementById('setModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeSettings();});
     document.getElementById('delModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeDelModal();});
     document.getElementById('createModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeCreateModal();});
@@ -25380,7 +25416,7 @@ function _tightLineBackspace(c,w){
             // 개인화된 앱 제목이 있으면 스플래시에도 반영
             const st=document.querySelector('#splash .sp-title');
             if(st){
-                const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'동엽신의 끄적끄적';
+                const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'SDYnotes';
                 st.textContent=t;
             }
             _sp('노트 불러오는 중…',30);
@@ -30019,21 +30055,25 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                    _state:()=>P};
 
 // ── 14.59 · 프로 홈 은은한 이퀄라이저 — 프로 모드 홈 배경 전용, 재생 중에만 은은하게 일렁인다 ──
-//  · #proHomeEq 캔버스는 #mainView 뒤(z:-1)에 깔리고(클래식에선 display:none), 재생 시에만 opacity .11 로 떠오른다.
+//  · #proHomeEq 캔버스는 #mainView 뒤(z:-1)에 깔리고(클래식에선 display:none), 재생 시에만 opacity 로 떠오른다.
 //  · 기존 Web Audio 그래프를 재사용한다: _eqAnalyser가 있으면 그 getByteFrequencyData 를 쓰고,
 //    없으면 eqBuild() 로 한 번만 연결을 시도한다. 두 번째 MediaElementSource 를 만들지 않아 무음 버그가 없다.
-//  · 28개 바 + 아래쪽 물결(gradient fill) — AGC/감마/attack-fall 은 eqViz 와 같은 물리, 터보·모션감소·에디터에선 rAF 자체를 돌지 않는다.
+//  · 14.61 · 뼈대를 바꿨다: 28개 막대(이산 그래프) 대신 **연속 곡선** —
+//    화면 가장 바닥에서부터 피어오르는 부드러운 물결 + 시간이 흐르며 이동하는
+//    그라데이션(세로 페이드 + 좌→우로 흐르는 색 띠 + 미끄러지는 윗선).
+//    주파수 96칼럼(로그 축)을 이웃 3칸 공간 스무딩 ×2 + attack/fall 시간 스무딩으로
+//    이어 중점 2차 베지어로 그린다. 터보·모션감소·에디터에선 rAF 자체를 돌지 않는다.
 (function(){
   const cvs=document.getElementById('proHomeEq');
   if(!cvs) return;
   let ctx=null; try{ ctx=cvs.getContext('2d',{alpha:true}); }catch(e){}
   if(!ctx) return;
-  const BAR_N=28;
-  let env=new Float32Array(BAR_N), peak=new Float32Array(BAR_N), hold=new Float32Array(BAR_N), bandMax=new Float32Array(BAR_N);
-  for(let i=0;i<BAR_N;i++) bandMax[i]=0.35;
+  const COL_N=96;
+  let env=new Float32Array(COL_N), raws=new Float32Array(COL_N), sm=new Float32Array(COL_N), bandMax=new Float32Array(COL_N);
+  for(let i=0;i<COL_N;i++) bandMax[i]=0.35;
   let raf=0, last=0, dpr=1, w=0, h=0, started=false;
   let buf=null, fbuf=null;
-  const FALL=2.45, PEAK_FALL=.85, HOLD=.18;
+  const FALL=2.1;
   function isPro(){ try{ const h=document.documentElement; return h.classList.contains('theme-pro') || h.dataset.theme==='pro'; }catch(e){ return false; } }
   function shouldRun(){
     if(!isPro()) return false;
@@ -30059,9 +30099,27 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!isFinite(n)) return [37,99,235];
     return [(n>>16)&255,(n>>8)&255,n&255];
   }
+  // 14.61 · 그라데이션 서브 컬러용 — 강조색을 HSL 로 돌려 보색 방향으로 살짝 틀어 준다
+  function hexToHsl(hex){
+    try{
+      const c=hexToRgb(hex).map(v=>v/255);
+      const mx=Math.max(c[0],c[1],c[2]), mn=Math.min(c[0],c[1],c[2]);
+      const l=(mx+mn)/2;
+      let hh=0, s=0;
+      if(mx!==mn){
+        const d=mx-mn;
+        s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+        if(mx===c[0]) hh=(c[1]-c[2])/d+(c[1]<c[2]?6:0);
+        else if(mx===c[1]) hh=(c[2]-c[0])/d+2;
+        else hh=(c[0]-c[1])/d+4;
+        hh*=60;
+      }
+      return [hh, s*100, l*100];
+    }catch(e){ return [222, 84, 55]; }
+  }
   function resize(){
     const r=cvs.getBoundingClientRect();
-    // CSS 가 width:calc(100% - 248px) 등으로 잡아 주므로, 실측이 0이면 부모 폭에서 유추
+    // CSS 가 width:calc(100% - 280px) 등으로 잡아 주므로, 실측이 0이면 부모 폭에서 유추
     let rw=r.width, rh=r.height;
     if(rw<10||rh<10){
       const vw=innerWidth, vh=innerHeight;
@@ -30139,143 +30197,139 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ctx.clearRect(0,0,w,h);
     if(w<20||h<20) return;
 
-    // 색 — 프로 강조색을 은은한 알파로 쓴다
+    // 색 — 프로 강조색 + 살짝 돌린 서브 컬러(그라데이션 이동이 보이게)
     const acc=accentHex();
     const rgb=hexToRgb(acc);
     const accRgb=`${rgb[0]},${rgb[1]},${rgb[2]}`;
+    const hsl=hexToHsl(acc);
+    const hue2=(hsl[0]+42+360)%360;
+    const hslA=(a,dl)=>`hsla(${hue2.toFixed(0)},${Math.round(hsl[1])}%,${Math.min(74,Math.round(hsl[2]+(dl||12)))}%,${a})`;
 
-    // 바 레이아웃 — 좌우 18px 여백, 높이의 42% 를 최대 막대 높이로
-    const padX=18, gap=Math.max(3, Math.min(7, w*0.006));
-    const availW=w - padX*2 - gap*(BAR_N-1);
-    const bw=Math.max(4, availW/BAR_N);
-    const baseY=h*0.78;
-    const maxH=h*0.42;
+    // 레이아웃 — 시작점은 화면 '가장 바닥'(baseY=h) 끝. 좌우 여백 없이 끝까지 이어진다.
+    const baseY=h+2;
+    const maxH=h*0.46;
 
     // 주파수 매핑 — 42Hz ~ 16kHz 를 로그로 나눈다 (사람 귀처럼 저음이 넓게)
     const lo=42, hi=16800;
     const sr=(_eqCtx&&_eqCtx.sampleRate)||44100, nyq=Math.max(1000,sr/2);
-    let envMax=0;
-    // 이번 프레임의 목표 높이들을 먼저 계산 (attack/fall 적용 전 raw)
-    const raws=new Float32Array(BAR_N);
-    for(let i=0;i<BAR_N;i++){
-      const f=lo*Math.pow(hi/lo, i/(BAR_N-1));
-      let v=0.06 + 0.04*Math.sin(i*0.9 + now*0.00055);
+    // 이번 프레임의 목표 높이들 (attack/fall 적용 전 raw)
+    for(let i=0;i<COL_N;i++){
+      const f=lo*Math.pow(hi/lo, i/(COL_N-1));
+      // 데이터가 없어도 완전히 평평하진 않게 — 아주 낮은 숨결
+      let v=0.10 + 0.05*Math.sin(i*0.055 + now*0.00050) + 0.025*Math.sin(i*0.021 - now*0.0011);
       if(hasData && binCount){
         const c=Math.round(f/nyq*(binCount-1));
-        const half=Math.max(1, Math.round(c*0.11+2));
+        const half=Math.max(1, Math.round(c*0.05+2));
         let ss=0,cnt=0;
         for(let j=Math.max(0,c-half); j<=Math.min(binCount-1,c+half); j++){ ss+=fbuf[j]; cnt++; }
         let raw=cnt?ss/cnt:0;
-        // 틸트 — 고음이 작게 잡히므로 살짝 들어 올린다 (스펙트럼 바와 같은 보정)
+        // 틸트 — 고음이 작게 잡히므로 살짝 들어 올린다
         const tilt=Math.min(1.14, 0.74+0.42*Math.sqrt(f/12000));
         raw*=tilt;
-        // AGC — 밴드별 최대치를 추적해 조용한 곡도 화면을 채우게
+        // AGC — 밴드별 최대치를 추적해 조용한 곡도 물결이 살아 있게
         if(raw>bandMax[i]) bandMax[i]=bandMax[i]*0.94+raw*0.06;
         else bandMax[i]=Math.max(0.18, bandMax[i]*0.998+raw*0.002);
         const norm=Math.max(0.22, bandMax[i]);
-        v=Math.min(1, raw/norm*0.88);
+        v=Math.min(1, raw/norm*0.85);
         // 감마 — 작은 신호도 보이게
-        v=Math.pow(Math.max(0, v), 0.78);
-        // 음소거·무음 구간은 바닥에 가깝게
-        if(!hasData) v*=0.25;
+        v=Math.pow(Math.max(0, v), 0.75);
       } else {
-        // 데이터가 아직 없으면 — 아주 낮은 높이로만 (가짜 루프 아님, 그냥 자리 표시)
-        v*=0.18;
         bandMax[i]=Math.max(0.22, bandMax[i]*0.995+v*0.005);
       }
       raws[i]=v;
     }
-    // attack/fall — 올라갈 땐 즉시, 내려갈 땐 부드럽게
-    for(let i=0;i<BAR_N;i++){
-      const v=raws[i];
+    // 공간 스무딩 — 이웃 3칸 가중 평균 ×2회: 칼럼 사이 계단(이산)을 지운다
+    sm.set(raws);
+    for(let k=0;k<2;k++){
+      let left=sm[COL_N-1];
+      for(let i=0;i<COL_N;i++){
+        const cur=sm[i], nxt=sm[(i+1)%COL_N];
+        sm[i]=(left+cur*2+nxt)/4;
+        left=cur;
+      }
+    }
+    // attack/fall — 올라갈 땐 즉시, 내려갈 땐 부드럽게 (시간축 스무딩)
+    for(let i=0;i<COL_N;i++){
+      const v=sm[i];
       if(v>env[i]) env[i]=v;
       else env[i]=Math.max(v, env[i]-FALL*dt);
-      if(env[i]>envMax) envMax=env[i];
-      if(env[i]>=peak[i]){ peak[i]=env[i]; hold[i]=HOLD; }
-      else {
-        hold[i]=Math.max(0, hold[i]-dt);
-        if(hold[i]<=0) peak[i]=Math.max(env[i], peak[i]-PEAK_FALL*dt);
-      }
     }
 
-    // ── 아래 물결 (filled wave) — 가장 은은한 레이어 ──
+    // 곡선 점 — 좌우는 화면 밖까지 살짝 이어 끊김이 없게
+    const xs=new Float32Array(COL_N), ys=new Float32Array(COL_N);
+    for(let i=0;i<COL_N;i++){
+      xs[i]=-10 + (w+20)*(i/(COL_N-1));
+      ys[i]=baseY - env[i]*maxH
+            - Math.sin(i*0.055 + now*0.0009)*3.2*env[i]
+            - Math.cos(i*0.021 - now*0.0007)*1.6;
+    }
+    // 중점 2차 베지어로 이은 부드러운 곡선 — 아래는 화면 밖까지 닫는다
+    const strokePath=()=>{
+      ctx.beginPath();
+      ctx.moveTo(xs[0], ys[0]);
+      for(let i=1;i<COL_N-1;i++){
+        const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
+        ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
+      }
+      ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
+    };
+
     ctx.save();
     ctx.globalAlpha=1;
-    const waveGrad=ctx.createLinearGradient(0, baseY-maxH*0.55, 0, h);
-    waveGrad.addColorStop(0, `rgba(${accRgb},0.095)`);
-    waveGrad.addColorStop(0.55, `rgba(${accRgb},0.045)`);
-    waveGrad.addColorStop(1, `rgba(${accRgb},0)`);
-    ctx.fillStyle=waveGrad;
+
+    // ① 몸통 채움 — 세로 그라데이션(위가 진하고 화면 바닥에서 사라진다)
+    const vg=ctx.createLinearGradient(0, baseY-maxH, 0, baseY);
+    vg.addColorStop(0, `rgba(${accRgb},0.5)`);
+    vg.addColorStop(0.55, `rgba(${accRgb},0.18)`);
+    vg.addColorStop(1, `rgba(${accRgb},0)`);
+    ctx.fillStyle=vg;
     ctx.beginPath();
-    // 왼쪽 밖에서 시작해 오른쪽 밖까지 — 양 끝은 baseY 근처로 닫는다
-    const tWave=now*0.00042;
-    ctx.moveTo(-12, baseY);
-    for(let i=0;i<BAR_N;i++){
-      const x=padX + i*(bw+gap) + bw/2;
-      // 물결은 바 높이의 62% 정도만 쓴다 — 바보다 낮고 부드럽게
-      const e=env[i];
-      const y=baseY - e*maxH*0.62 - Math.sin(i*0.55 + tWave*1.2)*2.2*e - Math.cos(i*0.32 - tWave*0.9)*1.1;
-      if(i===0) ctx.lineTo(x, y);
-      else {
-        const px=padX + (i-1)*(bw+gap) + bw/2;
-        const py=baseY - env[i-1]*maxH*0.62 - Math.sin((i-1)*0.55 + tWave*1.2)*2.2*env[i-1] - Math.cos((i-1)*0.32 - tWave*0.9)*1.1;
-        const mx=(x+px)/2;
-        ctx.quadraticCurveTo(px, py, mx, (y+py)/2);
-        if(i===BAR_N-1) ctx.lineTo(x, y);
-      }
+    ctx.moveTo(xs[0], baseY);
+    ctx.lineTo(xs[0], ys[0]);
+    for(let i=1;i<COL_N-1;i++){
+      const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
+      ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
     }
-    ctx.lineTo(w+12, baseY);
-    ctx.lineTo(w+12, h+12);
-    ctx.lineTo(-12, h+12);
+    ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
+    ctx.lineTo(xs[COL_N-1], baseY);
     ctx.closePath();
     ctx.fill();
-    // 물결 윗선 — 아주 얇은 하이라이트
-    ctx.strokeStyle=`rgba(${accRgb},0.14)`;
-    ctx.lineWidth=1.1;
-    ctx.lineJoin='round'; ctx.lineCap='round';
+
+    // ② 흐르는 색 띠 — 같은 물결 모양 위를 서브 컬러 띠가 왼→오로 흘러 간다.
+    //    띠는 화면 밖에서 완전히 사라진 뒤 처음부터 다시 나오므로 이음새가 없다.
+    const bandW=Math.max(120, w*0.42);
+    const cyc=w+bandW;
+    const bx=((now*0.05)%cyc)-bandW;
+    const bg=ctx.createLinearGradient(bx, 0, bx+bandW, 0);
+    bg.addColorStop(0, hslA(0));
+    bg.addColorStop(0.5, hslA(0.38));
+    bg.addColorStop(1, hslA(0));
+    ctx.fillStyle=bg;
     ctx.beginPath();
-    for(let i=0;i<BAR_N;i++){
-      const x=padX + i*(bw+gap) + bw/2;
-      const y=baseY - env[i]*maxH*0.62 - Math.sin(i*0.55 + tWave*1.2)*2.2*env[i] - Math.cos(i*0.32 - tWave*0.9)*1.1;
-      if(i===0) ctx.moveTo(x, y);
-      else {
-        const px=padX + (i-1)*(bw+gap) + bw/2;
-        const py=baseY - env[i-1]*maxH*0.62 - Math.sin((i-1)*0.55 + tWave*1.2)*2.2*env[i-1] - Math.cos((i-1)*0.32 - tWave*0.9)*1.1;
-        const mx=(x+px)/2;
-        ctx.quadraticCurveTo(px, py, mx, (y+py)/2);
-      }
+    ctx.moveTo(xs[0], baseY);
+    ctx.lineTo(xs[0], ys[0]);
+    for(let i=1;i<COL_N-1;i++){
+      const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
+      ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
     }
+    ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
+    ctx.lineTo(xs[COL_N-1], baseY);
+    ctx.closePath();
+    ctx.fill();
+
+    // ③ 물결 윗선 — 강조색↔서브 컬러가 계속 미끄러지는 그라데이션 선.
+    //    주기가 정확히 화면 폭이라 순환해도 이음새가 보이지 않는다.
+    const sx0=-(((now*0.06)%w)+w)%w;
+    const sg=ctx.createLinearGradient(sx0, 0, sx0+w, 0);
+    sg.addColorStop(0, `rgba(${accRgb},0.42)`);
+    sg.addColorStop(0.5, hslA(0.46,16));
+    sg.addColorStop(1, `rgba(${accRgb},0.42)`);
+    ctx.strokeStyle=sg;
+    ctx.lineWidth=1.6;
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    strokePath();
     ctx.stroke();
     ctx.restore();
-
-    // ── 둥근 바 28개 — 은은한 본체 + 피크 캡 ──
-    for(let i=0;i<BAR_N;i++){
-      const x=padX + i*(bw+gap);
-      const e=env[i];
-      const bh=Math.max(3, e*maxH);
-      const y=baseY - bh;
-      // 본체 — accent 를 아주 옅게 (프로 라이트 #F4F5F8 위에서 부담 없게)
-      const aBody=0.075 + e*0.22;
-      ctx.fillStyle=`rgba(${accRgb},${aBody.toFixed(3)})`;
-      // 둥근 막대 — roundRect 가 있으면 쓰고, 없으면 rect
-      const rRad=Math.min(4, bw*0.42);
-      if(ctx.roundRect){
-        ctx.beginPath(); ctx.roundRect(x, y, bw, bh, rRad); ctx.fill();
-      } else {
-        ctx.fillRect(x, y, bw, bh);
-      }
-      // 피크 캡 — 잠깐 머무는 점 (스펙트럼 바의 상징, 은은하게)
-      const pk=peak[i];
-      if(pk>0.025){
-        const ph=Math.max(2.5, pk*maxH);
-        const py=baseY - ph - 1.5;
-        const aPeak=0.16 + pk*0.22;
-        ctx.fillStyle=`rgba(${accRgb},${Math.min(0.38,aPeak).toFixed(3)})`;
-        if(ctx.roundRect){
-          ctx.beginPath(); ctx.roundRect(x, py, bw, 2.8, 1.4); ctx.fill();
-        } else ctx.fillRect(x, py, bw, 2.8);
-      }
-    }
   }
 
   function start(){
@@ -30848,8 +30902,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   window.sdyAiHistToggle=function(){
     var h=$('aiHist'); if(!h) return;
-    h.hidden=!h.hidden;
-    if(!h.hidden) histPaint();
+    var opening=h.hidden;                     // 닫혀 있었다 → 이번에 연다
+    h.hidden=!opening;
+    if(opening){
+      // 14.62 · 대화기록을 열면 기존 말풍선은 닫는다 — 답변 말풍선(#aiSay)과
+      //   해돌이 머리 위 작은 혼잣말 말풍선(#noteOtterBubble) 둘 다.
+      sdyBundleSayHide();
+      var nb=$('noteOtterBubble'); if(nb) nb.classList.remove('show');
+      histPaint();
+    }
   };
 
   /* ── 해돌이 판단 표식 — 서버가 답 첫 줄에 [[note]] / [[free]] 를 달아 준다 ──
@@ -33023,7 +33084,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       var textW=Math.ceil(aiQMir.getBoundingClientRect().width);
       // 글씨 + 좌우 패딩(30) + 상태 점(9) + 사이(8) + 여유(14)
       // 14.39.9 · 가로로 먼저 충분히 늘어난 뒤에 줄바꿈이 일어나도록 최대 폭을 키웠다.
-      var want=Math.max(180,Math.min(480,textW+61));
+      var want=Math.max(240,Math.min(560,textW+80));   // 14.62 · 기본 폭을 더 길게
       field.style.setProperty('--ai-q-w',want+'px');
       q.style.height='auto';
       var h=q.scrollHeight||0;
@@ -34325,7 +34386,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       if(!drag) return;
       var nx=ox+window.sdyUiCss(e.clientX-sx), ny=oy+window.sdyUiCss(e.clientY-sy);
       var c=sdyClampFloatingRect(app,nx,ny);
-      app.style.left=c.x+'px'; app.style.top=c.y+'px'; app.style.right='auto'; app.style.bottom='auto';
+      // 14.62 · 인라인도 !important 로 — 기본(프로) 테마는 #ypApp 위치를
+      //   left:292px!important 등으로 고정해 두어, 보통 인라인 스타일로는
+      //   밀어도 시각적으로 안 움직였다(캐주얼에서만 되던 이유). 인라인
+      //   !important 는 스타일시트 !important 보다 강해 어느 테마에서도 움직인다.
+      app.style.setProperty('left',c.x+'px','important');
+      app.style.setProperty('top',c.y+'px','important');
+      app.style.setProperty('right','auto','important');
+      app.style.setProperty('bottom','auto','important');
     });
     window.addEventListener('pointerup',function(){ drag=false; head.style.cursor=''; });
   }

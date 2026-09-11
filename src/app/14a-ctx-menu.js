@@ -945,6 +945,11 @@
         curNB.title=this.value.trim()||'새 노트';
         queueSync(curNB.id);
     });
+    // 14.62 · 제목 줄에서 Enter — 저장(change)은 그대로 가고 포커스도 바로 푼다.
+    //   예전엔 저장은 되지만 마우스로 다른 곳을 눌러야 커서가 남았다.
+    document.getElementById('edTitle').addEventListener('keydown',function(e){
+        if(e.key==='Enter'){ e.preventDefault(); this.blur(); }
+    });
     document.getElementById('setModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeSettings();});
     document.getElementById('delModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeDelModal();});
     document.getElementById('createModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeCreateModal();});

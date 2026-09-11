@@ -6611,7 +6611,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    말풍선 아래쪽까지 올라오는데, 그때 버튼이 말풍선에 깔려 안 눌리면 곤란하다. */
 .ai-askbar{position:absolute;left:140px;bottom:14px;z-index:9;
     display:flex;flex-direction:column;align-items:center;gap:6px;
-    max-width:min(640px,calc(100% - 160px));
+    max-width:min(720px,calc(100% - 160px));   /* 14.62 · 물어보기 칸을 가로로 더 길게 */
     transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
 .ai-askbar.draw-on{bottom:calc(64px + 32px);}      /* 그리기 툴바가 뜨면 해돌이와 같이 위로 */
 /* 범위 버튼 줄 — '이 페이지' 와 '전체 페이지' 를 질문칸 위 가운데에 나란히 둔다.
@@ -6634,7 +6634,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    여러 줄이 되면 .multi 가 붙어 모서리가 각져 보이고, 상자는 아래에 고정된
    채로 위를 향해 자란다(검색창이 bottom 고정이라 자연스레 위로 자람). */
 .ai-askbar-field{display:flex;align-items:center;gap:8px;
-    width:min(var(--ai-q-w,230px),620px,100%);
+    width:min(var(--ai-q-w,320px),660px,100%);   /* 14.62 · 기본 230→320px, 상한 620→660px */
     border:1px solid var(--g-brd);background:var(--g-fill-strong);
     backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%);
     box-shadow:var(--g-hi),var(--g-shadow);
@@ -7326,13 +7326,25 @@ html.theme-pro #proShell{display:block;}
 /* 사이드바 — 캔버스(#F4F5F8)보다 살짝 밝은 화이트 + 헤어라인.
    z:90 → 에디터(100)·더보기시트(1400)·모달(1900)·집중(2100)보다 아래 */
 html.theme-pro #proSide{
-  position:fixed;top:0;left:0;bottom:0;width:248px;z-index:90;
+  position:fixed;top:0;left:0;bottom:0;width:280px;z-index:90;
   display:flex;flex-direction:column;min-height:0;
   background:#FBFCFE;
   border-right:1px solid var(--border);
   font-family:'Pretendard Variable',Pretendard,-apple-system,'Segoe UI',sans-serif;
 }
-html.theme-pro #mainView{left:248px!important;}
+/* 14.61 · #mainView 밀기 — static 요소엔 left 가 무효라 예전엔 사이드바(248px)
+   밑으로 홈 내용이 깔려 '첫 노트가 사이드바에 가려지는' 버그가 있었다.
+   margin-left 로 실제 흐름에서 밀어 낸다 (데스크톱 280px, 레일·접음 60px). */
+@media (min-width:1024px){
+  html.theme-pro #mainView{margin-left:280px!important;}
+  html.theme-pro.pro-collapsed #mainView{margin-left:60px!important;}
+}
+/* 641~1023(레일) — #mainView 가 fixed 로 되는 ≤640/짧은-coarse 폰에선 margin 0
+   (inset:0 + left:60px 가 이미 밀어 준다). 그 사이 태블릿·좁은 창만 margin. */
+@media (min-width:641px) and (max-width:1023px){
+  html.theme-pro #mainView{margin-left:60px!important;}
+}
+html.theme-pro #mainView{left:280px!important;}
 /* 브랜드 — 프로에선 헤더가 아닌 사이드바 상단 */
 html.theme-pro .pro-brand{padding:20px 12px 14px;display:flex;flex-direction:column;align-items:center;text-align:center;}
 html.theme-pro .pro-brand .app-brand{margin-left:0!important;gap:9px;justify-content:center;}
@@ -7511,16 +7523,22 @@ html.theme-pro .folder-card:hover .folder-thumb>i{transform:none!important;}
 /* ── 14.52-T · 접었다/펼치기 — PRO 데스크톱 248↔60 레일 토글 (.pro-collapsed) ──
   狭 뷰포트(≤1023)는 무조건 레일이므로 토글 버튼을 숨긴다. */
 html.theme-pro #proSide{transition:width .22s cubic-bezier(.22,.9,.32,1.06);}
-html.theme-pro #mainView{transition:left .22s cubic-bezier(.22,.9,.32,1.06);}
-.pro-side-toggle{position:absolute;top:12px;right:-11px;z-index:11;
-  width:22px;height:22px;border-radius:999px;border:1px solid var(--border);
+html.theme-pro #mainView{transition:left .22s cubic-bezier(.22,.9,.32,1.06),margin-left .22s cubic-bezier(.22,.9,.32,1.06);}
+/* ── 14.62 · 접었다/펼치기 토글 — 브랜드 행(로고) 중앙에 맞춘 세로 필 ──
+   로고 중심(패딩 20px + 로고 30px/2 = 35px)에 필 중심을 맞춘다(top:23px,
+   높이 24px). 접힌 상태에서는 브랜드 패딩이 12px 로 줄어 든다(중심 27px). */
+.pro-side-toggle{position:absolute;top:23px;right:-12px;z-index:11;
+  width:24px;height:24px;border-radius:999px;border:1px solid var(--border);
   background:#FFFFFF;color:var(--text3);display:flex;align-items:center;justify-content:center;
-  cursor:pointer;box-shadow:0 1px 6px rgba(23,28,41,.10);
-  transition:transform .18s,background .15s,color .15s,border-color .15s;}
-.pro-side-toggle:hover{background:var(--bg2);color:var(--text1);border-color:var(--border);}
-.pro-side-toggle i{font-size:12px;line-height:1;transition:transform .22s;}
+  cursor:pointer;box-shadow:0 1px 2px rgba(23,28,41,.05),0 3px 10px -3px rgba(23,28,41,.16);
+  transition:background .16s,color .16s,border-color .16s,box-shadow .16s,transform .16s;}
+.pro-side-toggle:hover{background:var(--bg2);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 34%,var(--border));
+  box-shadow:0 1px 2px rgba(23,28,41,.06),0 6px 16px -6px rgba(23,28,41,.22);transform:scale(1.06);}
+.pro-side-toggle:active{transform:scale(.94);}
+.pro-side-toggle i{font-size:13px;line-height:1;transition:transform .22s;}
 html.theme-classic .pro-side-toggle{display:none!important;}
 @media (max-width:1023px){.pro-side-toggle{display:none!important;}}
+html.theme-pro.pro-collapsed .pro-side-toggle{top:15px;}
 html.theme-pro.pro-collapsed #proSide{width:60px;}
 html.theme-pro.pro-collapsed #mainView{left:60px!important;}
 html.theme-pro.pro-collapsed .pro-brand{padding:12px 0 10px;display:flex;justify-content:center;}
@@ -7572,9 +7590,9 @@ html.theme-pro #mpBig{
   box-shadow:0 1px 2px rgba(23,28,41,.06),0 24px 70px -18px rgba(23,28,41,.32)!important;
   backdrop-filter:none;-webkit-backdrop-filter:none;
 }
-/* 사이드바를 끼고도 콘텐츠 영역 안으로 — 바·목록은 콘텐츠 중앙 정렬 */
-html.theme-pro .mp.mp-bar{left:calc(50% + 124px);}
-html.theme-pro .mp-list{left:calc(50% + 124px);}
+/* 사이드바를 끼고도 콘텐츠 영역 안으로 — 바·목록은 콘텐츠 중앙 정렬 (사이드바 280px → 절반 140px) */
+html.theme-pro .mp.mp-bar{left:calc(50% + 140px);}
+html.theme-pro .mp-list{left:calc(50% + 140px);}
 @media (max-width:1023px){
   html.theme-pro .mp.mp-bar{left:calc(50% + 30px);}
   html.theme-pro .mp-list{left:calc(50% + 30px);}
@@ -7703,9 +7721,9 @@ html.theme-pro .ypg-btn.main{
 html.theme-pro .ypg-btn.main:hover{background:var(--accent2);border-color:var(--accent2);}
 html.theme-pro .ypg-btn.main>i{color:#fff;}
 html.theme-pro .ypg-btn.main em{color:rgba(255,255,255,.78);}
-/* 14.52-S · PRO 엽스코드 패널은 사이드바 오른쪽에 도킹 — 음악 바와 같은 오프셋 */
+/* 14.52-S · PRO 엽스코드 패널은 사이드바 오른쪽에 도킹 — 음악 바와 같은 오프셋 (사이드바 280px + 12px) */
 @media (min-width:641px){
-  html.theme-pro #ypApp{left:260px!important;right:auto!important;bottom:14px!important;top:auto!important;}
+  html.theme-pro #ypApp{left:292px!important;right:auto!important;bottom:14px!important;top:auto!important;}
 }
 @media (min-width:641px) and (max-width:1023px){
   html.theme-pro #ypApp{left:72px!important;width:min(370px,calc(100vw - 84px))!important;}
@@ -7714,7 +7732,7 @@ html.theme-pro .ypg-btn.main em{color:rgba(255,255,255,.78);}
 /* ── 14.51-R · 플로팅 요소 위치 — 프로 셸(사이드바/레일) 기준 재배치 ── */
 /* 데스크톱: 선택막대를 콘텐츠 영역 중앙으로 (화면 중앙이 아닌) */
 @media (min-width:641px){
-  html.theme-pro .select-bar{left:calc(50% + 124px);}
+  html.theme-pro .select-bar{left:calc(50% + 140px);}
 }
 /* 레일 폭대(641~1023, 60px 레일): 음악바·곡 목록이 레일 밑으로 빠지지 않게 */
 @media (min-width:641px) and (max-width:1023px){
@@ -7729,13 +7747,13 @@ html.theme-pro .ypg-btn.main em{color:rgba(255,255,255,.78);}
   html.theme-pro .mpb{left:72px!important;}
   html.theme-pro #ypApp{left:72px!important;}
   html.theme-pro .select-bar{left:72px!important;}
-  /* 같은 미디어라도 폭이 1024px 이상이면 248px 사이드바 쪽으로 */
+  /* 같은 미디어라도 폭이 1024px 이상이면 280px 사이드바 쪽으로 */
   @media (min-width:1024px){
-    html.theme-pro .mp.mp-bar{left:260px!important;}
-    html.theme-pro .mp-list{left:260px!important;width:calc(100vw - 260px)!important;}
-    html.theme-pro .mpb{left:260px!important;}
-    html.theme-pro #ypApp{left:260px!important;}
-    html.theme-pro .select-bar{left:260px!important;}
+    html.theme-pro .mp.mp-bar{left:292px!important;}
+    html.theme-pro .mp-list{left:292px!important;width:calc(100vw - 292px)!important;}
+    html.theme-pro .mpb{left:292px!important;}
+    html.theme-pro #ypApp{left:292px!important;}
+    html.theme-pro .select-bar{left:292px!important;}
   }
 }
 
@@ -8017,7 +8035,10 @@ html.theme-pro .pro-results-clear:focus-visible{
     content:none!important;display:none!important;
   }
   html.theme-pro .pro-tools .tool-btn:hover{background:#eef0f5;border-color:#dfe3eb;}
-  html.theme-pro .pro-tools .search-wrap{margin-bottom:0;flex:1 1 140px;min-width:110px;max-width:180px;}
+  /* 14.61 · 사이드바 폭(280px)에서도 관리자 아이콘이 오버픽(Alias: 가로 스크롤
+     숨김)에 잘리지 않게 — 도구 행은 줄바꿈 허용, 검색은 아래 줄 통짜로. */
+  html.theme-pro .pro-tools .hdr-right{flex-wrap:wrap;overflow-x:visible;overflow-y:visible;row-gap:8px;}
+  html.theme-pro .pro-tools .search-wrap{margin-bottom:0;flex:1 1 100%;min-width:0;max-width:none;width:auto;margin-left:0;}
   html.theme-pro .pro-tools #srvGauge{order:0;margin-left:2px;flex:none;min-width:34px;}
   html.theme-pro .pro-tools #offlineBadge{order:0;max-width:140px;flex:none;}
 }
@@ -8044,23 +8065,26 @@ html.theme-pro .editor-toolbar .tool-btn.active{
 html.theme-pro .editor.focus-on .editor-toolbar{display:none!important;}
 html.theme-pro .editor-toolbar button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none!important;}
 @media(min-width:821px) and (min-height:561px), (min-width:821px) and (pointer:fine){
+  /* 14.62 · 제목과 도구(글꼴)를 한 줄로 — 예전 'title / tools 2줄' 그리드를
+     Word 처럼 '왼쪽 제목 · 가운데 도구 · 오른쪽 액션' 한 줄로 통합한다.
+     좁아지면 도구 칸 안에서만 줄바꿈한다. */
   html.theme-pro .editor-toolbar{
-    display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;
-    grid-template-areas:"title actions" "tools tools";
+    display:grid!important;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)!important;
+    grid-template-areas:"title tools actions"!important;
     height:auto!important;min-height:0!important;padding:6px 16px 7px!important;
-    gap:4px 12px;overflow:visible!important;
+    gap:4px 12px;overflow:visible!important;align-items:center!important;
   }
-  html.theme-pro .editor-toolbar .tb-left{grid-area:title;}
-  html.theme-pro .editor-toolbar .tb-right{grid-area:actions;gap:8px;}
+  html.theme-pro .editor-toolbar .tb-left{grid-area:title;min-width:0;}
+  html.theme-pro .editor-toolbar .tb-right{grid-area:actions;gap:8px;justify-self:end;flex-wrap:nowrap;}
   html.theme-pro .editor-toolbar .tb-title-wrap{flex-wrap:wrap;gap:0 12px;}
   html.theme-pro .editor-toolbar #edTitle{
-    width:100%;max-width:440px;min-width:80px;height:32px;
+    width:100%;max-width:300px;min-width:80px;height:32px;
     font-size:14px!important;font-weight:500!important;padding:5px 8px!important;
   }
   html.theme-pro .editor-toolbar #saveState{font-size:11px!important;}
   html.theme-pro .editor-toolbar .tb-mid{
-    grid-area:tools;justify-self:stretch;justify-content:flex-start;flex-wrap:wrap;
-    gap:6px!important;border-top:1px solid var(--border);padding-top:5px;
+    grid-area:tools;justify-self:center;justify-content:center;flex-wrap:wrap;
+    gap:6px!important;border-top:none;padding-top:0;max-width:100%;
   }
   html.theme-pro .editor-toolbar .tb-mid > .tool-sep{display:none;}
   html.theme-pro .editor-toolbar .tb-group{
@@ -8235,7 +8259,9 @@ html.theme-pro .logo-dot .logo-classic,
 html.theme-pro .sp-logo .logo-classic{display:none!important;}
 html.theme-pro .logo-dot .logo-pro,
 html.theme-pro .sp-logo .logo-pro{display:block;}
-html.theme-pro .pro-brand .logo-dot .logo-pro{width:16px;height:16px;}
+/* 14.62 · 펜 글리프가 viewBox(32) 오른쪽(9~28) 에 몰려 있어 살짝 오른쪽으로
+   치우쳐 보인다 — 사이드바 브랜드 로고만 0.8px 왼쪽으로 되돌려 시각 중심을 맞춘다 */
+html.theme-pro .pro-brand .logo-dot .logo-pro{width:16px;height:16px;transform:translateX(-.8px);}
 .sp-logo{display:flex;align-items:center;justify-content:center;}
 
 /* 14.59 · 프로 홈 은은한 이퀄라이저 배경 — 음악이 울릴 때만 살며시 일렁인다
@@ -8243,15 +8269,15 @@ html.theme-pro .pro-brand .logo-dot .logo-pro{width:16px;height:16px;}
    터치는 통과(pointer-events:none)하고 노트/그리드를 절대 가리지 않는다.
    성능: will-change opacity, rAF 한 루프, dpr 1.6 상한, turbo·모션감소는 표시 안 함. */
 #proHomeEq{
-  position:fixed;inset:0;left:248px;z-index:-1;pointer-events:none;
-  width:calc(100% - 248px);height:100%;
-  opacity:0;transition:opacity .85s cubic-bezier(.22,.9,.32,1);
-  filter:blur(.45px) saturate(1.02);
+  position:fixed;inset:0;left:280px;z-index:-1;pointer-events:none;
+  width:calc(100% - 280px);height:100%;
+  opacity:0;transition:opacity .85s cubic-bezier(.22,.9,.32,1),left .22s cubic-bezier(.22,.9,.32,1.06);
+  filter:blur(.5px) saturate(1.05);
   will-change:opacity;
 }
 html.theme-pro #proHomeEq{opacity:0;}
-/* 재생 중엔 0.09~0.13 선 — 라이트 캔버스(#F4F5F8)에서 노트·그리드보다 항상 옅게 */
-html.theme-pro #proHomeEq.playing{opacity:.11;}
+/* 재생 중엔 0.10~0.16 선 — 라이트 캔버스(#F4F5F8)에서 노트·그리드보다 항상 옅게 */
+html.theme-pro #proHomeEq.playing{opacity:.14;}
 html.theme-pro #proHomeEq.idle{opacity:0;}
 /* 클래식·다크에선 표시 안 함 */
 html.theme-classic #proHomeEq,
@@ -8937,3 +8963,21 @@ html.theme-pro .editor.open{
     transform:translateY(-50%);width:clamp(104px,12vw,150px);
   }
 }
+
+/* 14.61 · add-card 가 진짜 <button> 이 된 뒤 UA 기본 모양을 클래스 규칙으로 되돌린다 */
+button.add-card{appearance:none;-webkit-appearance:none;font:inherit;color:inherit;padding:0;}
+button.add-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* ═══ 14.63 · 브랜드 왼쪽 정렬 — 로고·SDYnotes 를 사이드바 왼쪽에 맞춘다 ═══
+   너무 붙이지 않게 왼쪽 20px 여백 — 폴더·내비 항목 아이콘(왼쪽 22px)과 비슷한 간격.
+   좁은 화면 레일(≤1023)과 접힘 상태는 아이콘 레일이므로 그대로 중앙 정렬. */
+html.theme-pro .pro-brand{align-items:flex-start;text-align:left;padding:20px 12px 14px 20px;}
+html.theme-pro .pro-brand .app-brand{justify-content:flex-start;}
+html.theme-pro .pro-brand .app-brand h1{text-align:left;}
+html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
+@media (max-width:1023px){
+  html.theme-pro .pro-brand{align-items:center;text-align:center;padding:12px 0 10px;}
+  html.theme-pro .pro-brand .app-brand{justify-content:center;}
+}
+html.theme-pro.pro-collapsed .pro-brand{align-items:center;text-align:center;padding:12px 0 10px;}
+html.theme-pro.pro-collapsed .pro-brand .app-brand{justify-content:center;}

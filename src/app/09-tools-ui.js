@@ -505,25 +505,9 @@
             toast('체크상자를 넣었습니다 · 눌러서 체크',1800);
             return;
         }
-        // 편집 중이 아니면 새 글상자를 만들어 체크상자로 시작한다
-        pushHistory();
-        const pi=curPageIdx, size=paperSize();
-        const x=Math.round(lastMouse.pageIdx===pi&&lastMouse.x?lastMouse.x:(size.w-300)/2);
-        const y=Math.round(lastMouse.pageIdx===pi&&lastMouse.y?lastMouse.y:140);
-        const dim=textBoxDefaultSize();
-        const el={type:'text',id:uid('t'),x,y,w:Math.max(300,dim.w),h:dim.h,
-                  html:'<span data-ck="0">☐</span>&nbsp;',
-                  fontSize:curFontSize||16,font:curFont};
-        doc.pages[pi].els.push(el);
-        markPageEdited(pi); renderPageEls(pi); saveDoc();
-        const node=paperQ(pi,`.tb[data-id="${el.id}"]`);
-        if(node){
-            enterEdit(node,false);
-            const c=node.querySelector('.tb-content');
-            const r=document.createRange(); r.selectNodeContents(c); r.collapse(false);
-            const s2=window.getSelection(); s2.removeAllRanges(); s2.addRange(r);
-        }
-        toast('체크상자를 넣었습니다 · 이어서 입력하세요',2000);
+        // 14.62 · 편집 중이 아니면 글상자 도구처럼 배치 모드 — 고스트가 커서를
+        //   따라다니고 종이를 누르면 그 자리에 확정한다 (beginCheckPlacement).
+        beginCheckPlacement();
     }
 
     // 체크 박스 클릭 (편집 중이 아니어도 눌린다)

@@ -4594,21 +4594,25 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                    _state:()=>P};
 
 // ── 14.59 · 프로 홈 은은한 이퀄라이저 — 프로 모드 홈 배경 전용, 재생 중에만 은은하게 일렁인다 ──
-//  · #proHomeEq 캔버스는 #mainView 뒤(z:-1)에 깔리고(클래식에선 display:none), 재생 시에만 opacity .11 로 떠오른다.
+//  · #proHomeEq 캔버스는 #mainView 뒤(z:-1)에 깔리고(클래식에선 display:none), 재생 시에만 opacity 로 떠오른다.
 //  · 기존 Web Audio 그래프를 재사용한다: _eqAnalyser가 있으면 그 getByteFrequencyData 를 쓰고,
 //    없으면 eqBuild() 로 한 번만 연결을 시도한다. 두 번째 MediaElementSource 를 만들지 않아 무음 버그가 없다.
-//  · 28개 바 + 아래쪽 물결(gradient fill) — AGC/감마/attack-fall 은 eqViz 와 같은 물리, 터보·모션감소·에디터에선 rAF 자체를 돌지 않는다.
+//  · 14.61 · 뼈대를 바꿨다: 28개 막대(이산 그래프) 대신 **연속 곡선** —
+//    화면 가장 바닥에서부터 피어오르는 부드러운 물결 + 시간이 흐르며 이동하는
+//    그라데이션(세로 페이드 + 좌→우로 흐르는 색 띠 + 미끄러지는 윗선).
+//    주파수 96칼럼(로그 축)을 이웃 3칸 공간 스무딩 ×2 + attack/fall 시간 스무딩으로
+//    이어 중점 2차 베지어로 그린다. 터보·모션감소·에디터에선 rAF 자체를 돌지 않는다.
 (function(){
   const cvs=document.getElementById('proHomeEq');
   if(!cvs) return;
   let ctx=null; try{ ctx=cvs.getContext('2d',{alpha:true}); }catch(e){}
   if(!ctx) return;
-  const BAR_N=28;
-  let env=new Float32Array(BAR_N), peak=new Float32Array(BAR_N), hold=new Float32Array(BAR_N), bandMax=new Float32Array(BAR_N);
-  for(let i=0;i<BAR_N;i++) bandMax[i]=0.35;
+  const COL_N=96;
+  let env=new Float32Array(COL_N), raws=new Float32Array(COL_N), sm=new Float32Array(COL_N), bandMax=new Float32Array(COL_N);
+  for(let i=0;i<COL_N;i++) bandMax[i]=0.35;
   let raf=0, last=0, dpr=1, w=0, h=0, started=false;
   let buf=null, fbuf=null;
-  const FALL=2.45, PEAK_FALL=.85, HOLD=.18;
+  const FALL=2.1;
   function isPro(){ try{ const h=document.documentElement; return h.classList.contains('theme-pro') || h.dataset.theme==='pro'; }catch(e){ return false; } }
   function shouldRun(){
     if(!isPro()) return false;
@@ -4634,9 +4638,27 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!isFinite(n)) return [37,99,235];
     return [(n>>16)&255,(n>>8)&255,n&255];
   }
+  // 14.61 · 그라데이션 서브 컬러용 — 강조색을 HSL 로 돌려 보색 방향으로 살짝 틀어 준다
+  function hexToHsl(hex){
+    try{
+      const c=hexToRgb(hex).map(v=>v/255);
+      const mx=Math.max(c[0],c[1],c[2]), mn=Math.min(c[0],c[1],c[2]);
+      const l=(mx+mn)/2;
+      let hh=0, s=0;
+      if(mx!==mn){
+        const d=mx-mn;
+        s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+        if(mx===c[0]) hh=(c[1]-c[2])/d+(c[1]<c[2]?6:0);
+        else if(mx===c[1]) hh=(c[2]-c[0])/d+2;
+        else hh=(c[0]-c[1])/d+4;
+        hh*=60;
+      }
+      return [hh, s*100, l*100];
+    }catch(e){ return [222, 84, 55]; }
+  }
   function resize(){
     const r=cvs.getBoundingClientRect();
-    // CSS 가 width:calc(100% - 248px) 등으로 잡아 주므로, 실측이 0이면 부모 폭에서 유추
+    // CSS 가 width:calc(100% - 280px) 등으로 잡아 주므로, 실측이 0이면 부모 폭에서 유추
     let rw=r.width, rh=r.height;
     if(rw<10||rh<10){
       const vw=innerWidth, vh=innerHeight;
@@ -4714,143 +4736,139 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ctx.clearRect(0,0,w,h);
     if(w<20||h<20) return;
 
-    // 색 — 프로 강조색을 은은한 알파로 쓴다
+    // 색 — 프로 강조색 + 살짝 돌린 서브 컬러(그라데이션 이동이 보이게)
     const acc=accentHex();
     const rgb=hexToRgb(acc);
     const accRgb=`${rgb[0]},${rgb[1]},${rgb[2]}`;
+    const hsl=hexToHsl(acc);
+    const hue2=(hsl[0]+42+360)%360;
+    const hslA=(a,dl)=>`hsla(${hue2.toFixed(0)},${Math.round(hsl[1])}%,${Math.min(74,Math.round(hsl[2]+(dl||12)))}%,${a})`;
 
-    // 바 레이아웃 — 좌우 18px 여백, 높이의 42% 를 최대 막대 높이로
-    const padX=18, gap=Math.max(3, Math.min(7, w*0.006));
-    const availW=w - padX*2 - gap*(BAR_N-1);
-    const bw=Math.max(4, availW/BAR_N);
-    const baseY=h*0.78;
-    const maxH=h*0.42;
+    // 레이아웃 — 시작점은 화면 '가장 바닥'(baseY=h) 끝. 좌우 여백 없이 끝까지 이어진다.
+    const baseY=h+2;
+    const maxH=h*0.46;
 
     // 주파수 매핑 — 42Hz ~ 16kHz 를 로그로 나눈다 (사람 귀처럼 저음이 넓게)
     const lo=42, hi=16800;
     const sr=(_eqCtx&&_eqCtx.sampleRate)||44100, nyq=Math.max(1000,sr/2);
-    let envMax=0;
-    // 이번 프레임의 목표 높이들을 먼저 계산 (attack/fall 적용 전 raw)
-    const raws=new Float32Array(BAR_N);
-    for(let i=0;i<BAR_N;i++){
-      const f=lo*Math.pow(hi/lo, i/(BAR_N-1));
-      let v=0.06 + 0.04*Math.sin(i*0.9 + now*0.00055);
+    // 이번 프레임의 목표 높이들 (attack/fall 적용 전 raw)
+    for(let i=0;i<COL_N;i++){
+      const f=lo*Math.pow(hi/lo, i/(COL_N-1));
+      // 데이터가 없어도 완전히 평평하진 않게 — 아주 낮은 숨결
+      let v=0.10 + 0.05*Math.sin(i*0.055 + now*0.00050) + 0.025*Math.sin(i*0.021 - now*0.0011);
       if(hasData && binCount){
         const c=Math.round(f/nyq*(binCount-1));
-        const half=Math.max(1, Math.round(c*0.11+2));
+        const half=Math.max(1, Math.round(c*0.05+2));
         let ss=0,cnt=0;
         for(let j=Math.max(0,c-half); j<=Math.min(binCount-1,c+half); j++){ ss+=fbuf[j]; cnt++; }
         let raw=cnt?ss/cnt:0;
-        // 틸트 — 고음이 작게 잡히므로 살짝 들어 올린다 (스펙트럼 바와 같은 보정)
+        // 틸트 — 고음이 작게 잡히므로 살짝 들어 올린다
         const tilt=Math.min(1.14, 0.74+0.42*Math.sqrt(f/12000));
         raw*=tilt;
-        // AGC — 밴드별 최대치를 추적해 조용한 곡도 화면을 채우게
+        // AGC — 밴드별 최대치를 추적해 조용한 곡도 물결이 살아 있게
         if(raw>bandMax[i]) bandMax[i]=bandMax[i]*0.94+raw*0.06;
         else bandMax[i]=Math.max(0.18, bandMax[i]*0.998+raw*0.002);
         const norm=Math.max(0.22, bandMax[i]);
-        v=Math.min(1, raw/norm*0.88);
+        v=Math.min(1, raw/norm*0.85);
         // 감마 — 작은 신호도 보이게
-        v=Math.pow(Math.max(0, v), 0.78);
-        // 음소거·무음 구간은 바닥에 가깝게
-        if(!hasData) v*=0.25;
+        v=Math.pow(Math.max(0, v), 0.75);
       } else {
-        // 데이터가 아직 없으면 — 아주 낮은 높이로만 (가짜 루프 아님, 그냥 자리 표시)
-        v*=0.18;
         bandMax[i]=Math.max(0.22, bandMax[i]*0.995+v*0.005);
       }
       raws[i]=v;
     }
-    // attack/fall — 올라갈 땐 즉시, 내려갈 땐 부드럽게
-    for(let i=0;i<BAR_N;i++){
-      const v=raws[i];
+    // 공간 스무딩 — 이웃 3칸 가중 평균 ×2회: 칼럼 사이 계단(이산)을 지운다
+    sm.set(raws);
+    for(let k=0;k<2;k++){
+      let left=sm[COL_N-1];
+      for(let i=0;i<COL_N;i++){
+        const cur=sm[i], nxt=sm[(i+1)%COL_N];
+        sm[i]=(left+cur*2+nxt)/4;
+        left=cur;
+      }
+    }
+    // attack/fall — 올라갈 땐 즉시, 내려갈 땐 부드럽게 (시간축 스무딩)
+    for(let i=0;i<COL_N;i++){
+      const v=sm[i];
       if(v>env[i]) env[i]=v;
       else env[i]=Math.max(v, env[i]-FALL*dt);
-      if(env[i]>envMax) envMax=env[i];
-      if(env[i]>=peak[i]){ peak[i]=env[i]; hold[i]=HOLD; }
-      else {
-        hold[i]=Math.max(0, hold[i]-dt);
-        if(hold[i]<=0) peak[i]=Math.max(env[i], peak[i]-PEAK_FALL*dt);
-      }
     }
 
-    // ── 아래 물결 (filled wave) — 가장 은은한 레이어 ──
+    // 곡선 점 — 좌우는 화면 밖까지 살짝 이어 끊김이 없게
+    const xs=new Float32Array(COL_N), ys=new Float32Array(COL_N);
+    for(let i=0;i<COL_N;i++){
+      xs[i]=-10 + (w+20)*(i/(COL_N-1));
+      ys[i]=baseY - env[i]*maxH
+            - Math.sin(i*0.055 + now*0.0009)*3.2*env[i]
+            - Math.cos(i*0.021 - now*0.0007)*1.6;
+    }
+    // 중점 2차 베지어로 이은 부드러운 곡선 — 아래는 화면 밖까지 닫는다
+    const strokePath=()=>{
+      ctx.beginPath();
+      ctx.moveTo(xs[0], ys[0]);
+      for(let i=1;i<COL_N-1;i++){
+        const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
+        ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
+      }
+      ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
+    };
+
     ctx.save();
     ctx.globalAlpha=1;
-    const waveGrad=ctx.createLinearGradient(0, baseY-maxH*0.55, 0, h);
-    waveGrad.addColorStop(0, `rgba(${accRgb},0.095)`);
-    waveGrad.addColorStop(0.55, `rgba(${accRgb},0.045)`);
-    waveGrad.addColorStop(1, `rgba(${accRgb},0)`);
-    ctx.fillStyle=waveGrad;
+
+    // ① 몸통 채움 — 세로 그라데이션(위가 진하고 화면 바닥에서 사라진다)
+    const vg=ctx.createLinearGradient(0, baseY-maxH, 0, baseY);
+    vg.addColorStop(0, `rgba(${accRgb},0.5)`);
+    vg.addColorStop(0.55, `rgba(${accRgb},0.18)`);
+    vg.addColorStop(1, `rgba(${accRgb},0)`);
+    ctx.fillStyle=vg;
     ctx.beginPath();
-    // 왼쪽 밖에서 시작해 오른쪽 밖까지 — 양 끝은 baseY 근처로 닫는다
-    const tWave=now*0.00042;
-    ctx.moveTo(-12, baseY);
-    for(let i=0;i<BAR_N;i++){
-      const x=padX + i*(bw+gap) + bw/2;
-      // 물결은 바 높이의 62% 정도만 쓴다 — 바보다 낮고 부드럽게
-      const e=env[i];
-      const y=baseY - e*maxH*0.62 - Math.sin(i*0.55 + tWave*1.2)*2.2*e - Math.cos(i*0.32 - tWave*0.9)*1.1;
-      if(i===0) ctx.lineTo(x, y);
-      else {
-        const px=padX + (i-1)*(bw+gap) + bw/2;
-        const py=baseY - env[i-1]*maxH*0.62 - Math.sin((i-1)*0.55 + tWave*1.2)*2.2*env[i-1] - Math.cos((i-1)*0.32 - tWave*0.9)*1.1;
-        const mx=(x+px)/2;
-        ctx.quadraticCurveTo(px, py, mx, (y+py)/2);
-        if(i===BAR_N-1) ctx.lineTo(x, y);
-      }
+    ctx.moveTo(xs[0], baseY);
+    ctx.lineTo(xs[0], ys[0]);
+    for(let i=1;i<COL_N-1;i++){
+      const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
+      ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
     }
-    ctx.lineTo(w+12, baseY);
-    ctx.lineTo(w+12, h+12);
-    ctx.lineTo(-12, h+12);
+    ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
+    ctx.lineTo(xs[COL_N-1], baseY);
     ctx.closePath();
     ctx.fill();
-    // 물결 윗선 — 아주 얇은 하이라이트
-    ctx.strokeStyle=`rgba(${accRgb},0.14)`;
-    ctx.lineWidth=1.1;
-    ctx.lineJoin='round'; ctx.lineCap='round';
+
+    // ② 흐르는 색 띠 — 같은 물결 모양 위를 서브 컬러 띠가 왼→오로 흘러 간다.
+    //    띠는 화면 밖에서 완전히 사라진 뒤 처음부터 다시 나오므로 이음새가 없다.
+    const bandW=Math.max(120, w*0.42);
+    const cyc=w+bandW;
+    const bx=((now*0.05)%cyc)-bandW;
+    const bg=ctx.createLinearGradient(bx, 0, bx+bandW, 0);
+    bg.addColorStop(0, hslA(0));
+    bg.addColorStop(0.5, hslA(0.38));
+    bg.addColorStop(1, hslA(0));
+    ctx.fillStyle=bg;
     ctx.beginPath();
-    for(let i=0;i<BAR_N;i++){
-      const x=padX + i*(bw+gap) + bw/2;
-      const y=baseY - env[i]*maxH*0.62 - Math.sin(i*0.55 + tWave*1.2)*2.2*env[i] - Math.cos(i*0.32 - tWave*0.9)*1.1;
-      if(i===0) ctx.moveTo(x, y);
-      else {
-        const px=padX + (i-1)*(bw+gap) + bw/2;
-        const py=baseY - env[i-1]*maxH*0.62 - Math.sin((i-1)*0.55 + tWave*1.2)*2.2*env[i-1] - Math.cos((i-1)*0.32 - tWave*0.9)*1.1;
-        const mx=(x+px)/2;
-        ctx.quadraticCurveTo(px, py, mx, (y+py)/2);
-      }
+    ctx.moveTo(xs[0], baseY);
+    ctx.lineTo(xs[0], ys[0]);
+    for(let i=1;i<COL_N-1;i++){
+      const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
+      ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
     }
+    ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
+    ctx.lineTo(xs[COL_N-1], baseY);
+    ctx.closePath();
+    ctx.fill();
+
+    // ③ 물결 윗선 — 강조색↔서브 컬러가 계속 미끄러지는 그라데이션 선.
+    //    주기가 정확히 화면 폭이라 순환해도 이음새가 보이지 않는다.
+    const sx0=-(((now*0.06)%w)+w)%w;
+    const sg=ctx.createLinearGradient(sx0, 0, sx0+w, 0);
+    sg.addColorStop(0, `rgba(${accRgb},0.42)`);
+    sg.addColorStop(0.5, hslA(0.46,16));
+    sg.addColorStop(1, `rgba(${accRgb},0.42)`);
+    ctx.strokeStyle=sg;
+    ctx.lineWidth=1.6;
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    strokePath();
     ctx.stroke();
     ctx.restore();
-
-    // ── 둥근 바 28개 — 은은한 본체 + 피크 캡 ──
-    for(let i=0;i<BAR_N;i++){
-      const x=padX + i*(bw+gap);
-      const e=env[i];
-      const bh=Math.max(3, e*maxH);
-      const y=baseY - bh;
-      // 본체 — accent 를 아주 옅게 (프로 라이트 #F4F5F8 위에서 부담 없게)
-      const aBody=0.075 + e*0.22;
-      ctx.fillStyle=`rgba(${accRgb},${aBody.toFixed(3)})`;
-      // 둥근 막대 — roundRect 가 있으면 쓰고, 없으면 rect
-      const rRad=Math.min(4, bw*0.42);
-      if(ctx.roundRect){
-        ctx.beginPath(); ctx.roundRect(x, y, bw, bh, rRad); ctx.fill();
-      } else {
-        ctx.fillRect(x, y, bw, bh);
-      }
-      // 피크 캡 — 잠깐 머무는 점 (스펙트럼 바의 상징, 은은하게)
-      const pk=peak[i];
-      if(pk>0.025){
-        const ph=Math.max(2.5, pk*maxH);
-        const py=baseY - ph - 1.5;
-        const aPeak=0.16 + pk*0.22;
-        ctx.fillStyle=`rgba(${accRgb},${Math.min(0.38,aPeak).toFixed(3)})`;
-        if(ctx.roundRect){
-          ctx.beginPath(); ctx.roundRect(x, py, bw, 2.8, 1.4); ctx.fill();
-        } else ctx.fillRect(x, py, bw, 2.8);
-      }
-    }
   }
 
   function start(){
