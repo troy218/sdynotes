@@ -343,6 +343,8 @@
             // 14.65 · 카드를 다시 그릴 필요가 없어도 사이드바 폴더 목록은 맞춰 둔다
             //   (색·아이콘은 홈 카드와 사이드바 두 곳에 그려진다)
             try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+            // 14.65 · 검색창 해돌이 줄(결과 있음/없음 안내)도 지금 상태로 맞춘다
+            try{ if(typeof window.sdyHomeAiInput==='function') window.sdyHomeAiInput(); }catch(e){}
             try{ requestAnimationFrame(()=>{ rescalePreviews(); _layoutHomeStacks(); }); }catch(e){}
             return;
         }

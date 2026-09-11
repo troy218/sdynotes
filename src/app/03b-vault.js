@@ -417,6 +417,89 @@
     }
     function closeSettings(){ document.getElementById('setModal').style.display='none'; navDrop(closeSettings); }
 
+    /* ===== 14.65 · 해돌이 '설정 안내' =====
+       홈 검색창의 해돌이(help task)와 노트 안 해돌이(app task)가 **같은 글**을 근거로
+       "설정에 무엇이 있는지 · 지금 무엇으로 되어 있는지 · 어디를 누르면 바뀌는지"를
+       자세히 답한다. 설정 항목이 늘면 여기에 한 줄만 더하면 해돌이가 바로 안다.
+       (모델은 여기 적힌 것만 사실로 말하도록 프롬프트에 못 박혀 있다) */
+    const PAPER_NAME={blank:'빈 종이',lined:'줄 노트',grid:'격자',dotted:'도트'};
+    function settingsGuideRows(){
+        var themeNow='기본';
+        try{ if(typeof sdyTheme==='function'&&sdyTheme()==='classic') themeNow='캐주얼'; }catch(e){}
+        return [
+            {name:'테마', keys:['테마','theme','기본','캐주얼','클래식','다크','라이트'], sel:'.theme-row',
+             now:themeNow,
+             how:'설정 → 테마에서 [기본(깔끔한 라이트)] 또는 [캐주얼(익숙한 편안한 화면)] 을 누르면 즉시 바뀝니다.'},
+            {name:'강조색', keys:['강조색','포인트','accent'], sel:'.accent-row',
+             now:String(S.accent||'#4f6ef7'),
+             how:'설정 → 강조색에서 색 동그라미를 누르면 버튼·링크 등 앱 전체 포인트 색이 바뀝니다.'},
+            {name:'배경화면', keys:['배경','배경화면','월페이퍼','wallpaper'], sel:'#setRowWall',
+             now:(S.wall?(wallIsVideo()?'동영상 배경 사용 중':'사진 배경 사용 중'):'없음(기본 배경)'),
+             how:'설정 → 배경화면 → [사진·동영상 선택] (캐주얼 테마에서만 보입니다). [지우기]를 누르면 기본 배경으로 돌아갑니다.'},
+            {name:'기본 종이', keys:['종이','기본종이','줄','격자','도트','paper'], sel:'#defPaper',
+             now:(PAPER_NAME[S.defPaper]||'빈 종이'),
+             how:'설정 → 기본 종이에서 새 노트의 종이(빈 종이·줄 노트·격자·도트)를 고릅니다.'},
+            {name:'휴지통', keys:['휴지통','삭제','복구'], sel:'#trashCount',
+             now:(function(){ try{ return (notebooks||[]).filter(n=>n&&n.trash).length+'개'; }catch(e){ return '확인 중'; } })(),
+             how:'설정 → 휴지통 → [보기]. 삭제한 노트는 30일 동안 보관되고 그 뒤 자동으로 지워집니다.'},
+            {name:'버그 일지', keys:['버그','일지','신고'], sel:'#bugCount',
+             now:(function(){ try{ return (typeof window.sdyBuglogCount==='function'?window.sdyBuglogCount():0)+'건'; }catch(e){ return '확인 중'; } })(),
+             how:'설정 → 버그 일지 → [보기]. 노트에서 해돌이에게 "버그 신고: …"라고 말하면 정리되어 이곳에 쌓입니다.'},
+            {name:'사용법·단축키', keys:['사용법','단축키','키','도움말'], sel:'#setRowKeys',
+             now:'', how:'설정 → 사용법 · 단축키 → [열기] 에서 전체 단축키와 기능 안내를 봅니다.'},
+            {name:'기본값 복원', keys:['초기화','기본값','리셋','복원'], sel:'#setRowReset',
+             now:'', how:'설정 맨 아래 [기본값으로 복원] 을 누르면 테마·강조색·배경·종이·앱 제목이 처음 상태로 돌아갑니다.'}
+        ];
+    }
+    // 설정 창 밖에 있는 것들 — 해돌이가 '어디서 하지?'를 답할 수 있게 함께 적어 둔다.
+    const SETTINGS_ELSEWHERE=[
+        ['음악·이퀄라이저','플레이어의 EQ 버튼(또는 홈 왼쪽 아래 음악 탭)에서 켜기·프리셋 10종(원음·베이스 부스트·보컬 강조·팝·록·힙합·R&B·클래식·재즈·일렉트로닉)·볼륨을 다룹니다. 말로도 됩니다 — "이퀄라이저 보컬 강조로 켜줘", "볼륨 70으로 해줘".'],
+        ['곡 음량 자동 맞춤','곡마다 다른 음량은 서버가 송출할 때 자동으로 -14 LUFS 에 맞춥니다. 설정에 없는 항목이고 사용자가 고르는 옵션도 아닙니다.'],
+        ['집중 화면(시계·스톱워치·타이머)','상단 시계 버튼 또는 "10분 타이머 맞춰줘" — 집중 화면 안에 셋이 함께 있습니다.'],
+        ['지점 저장 / 지점 복원','노트 편집기의 더보기(⋯) 메뉴 → 지점 저장 으로 지금 상태를 남기고, 지점 복원 으로 그때로 되돌립니다.'],
+        ['폴더 색·아이콘','폴더 카드를 우클릭(또는 ⋮) → 색 · 아이콘 변경. 고른 색은 홈 카드와 사이드바에 바로 반영됩니다.'],
+        ['찾기·번역·내보내기','노트 편집기 도구에서 찾기(Ctrl+F), 자동 번역(쪽/문서), PDF 내보내기를 합니다.'],
+        ['엽스코드(채팅)','상단 엽스코드 버튼 또는 "엽스코드 열어줘". 노트를 함께 보며 대화하는 공간입니다.'],
+        ['알림','상단 종 버튼 — 읽지 않은 알림 개수가 배지로 붙고, 누르면 목록이 열립니다.']
+    ];
+    function settingsGuideText(){
+        var lines=['[이 앱의 설정 — 이름 · 지금 값 · 바꾸는 법]'];
+        settingsGuideRows().forEach(function(r){
+            lines.push('- '+r.name+(r.now?(' · 지금: '+r.now):'')+' · '+r.how);
+        });
+        lines.push('');
+        lines.push('[설정 창 밖의 주요 기능 — 어디서 하나]');
+        SETTINGS_ELSEWHERE.forEach(function(it){ lines.push('- '+it[0]+' · '+it[1]); });
+        return lines.join('\n');
+    }
+    /* 설정 창을 열고 이름이 맞는 줄로 이동한다 — 해돌이가 "@settings | 테마"
+       처럼 항목까지 지정해 실행할 때 쓴다. 찾으면 항목 이름을, 못 찾으면 false 를
+       돌려주어 호출한 쪽이 그냥 설정만 열 수 있게 한다. */
+    function settingsJump(what){
+        var q=String(what==null?'':what).trim().toLowerCase();
+        if(!q) return false;
+        var rows=settingsGuideRows();
+        var hit=rows.find(function(r){ return r.name.toLowerCase()===q; })
+             || rows.find(function(r){ return r.keys.some(function(k){ return q.indexOf(k)>=0; }); })
+             || rows.find(function(r){ return r.name.toLowerCase().indexOf(q)>=0; });
+        if(!hit) return false;
+        try{ openSettings(); }catch(e){ return false; }
+        try{
+            var el=hit.sel?document.querySelector(hit.sel):null;
+            var row=el&&el.closest?el.closest('.set-row'):null;
+            if(row&&row.scrollIntoView) row.scrollIntoView({block:'center',behavior:'smooth'});
+            if(row&&row.classList){
+                row.classList.remove('set-row-hit');
+                void row.offsetWidth;                    // 애니메이션 재시작
+                row.classList.add('set-row-hit');
+                setTimeout(function(){ try{ row.classList.remove('set-row-hit'); }catch(e){} },2200);
+            }
+        }catch(e){}
+        return hit.name;
+    }
+    try{ window.sdySettingsGuideText=settingsGuideText; }catch(e){}
+    try{ window.sdySettingsJump=settingsJump; }catch(e){}
+
     // ===== 설정 옵션 동작 =====
     function pickAccent(c){
         S.accent=c; saveS(); applyTheme();

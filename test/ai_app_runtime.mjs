@@ -113,6 +113,9 @@ try {
       window.AudioContext = class {
         constructor() { this.destination = {}; this.currentTime = 0; }
         createMediaElementSource() { return { connect() {} }; }
+        // 14.65 · 곡별 음량 게인 + 레벨 분석기 — 실제 브라우저의 AudioContext 와
+        //   같은 창구를 갖춘다(없으면 eqBuild 가 예외로 죽어 EQ 켜기가 실패한다).
+        createGain() { return { gain: { value: 1, setTargetAtTime() {}, cancelScheduledValues() {} }, connect() {} }; }
         createBiquadFilter() {
           return {
             frequency: { value: 0 },
@@ -121,7 +124,8 @@ try {
             connect() {}
           };
         }
-        createAnalyser() { return { connect() {}, fftSize: 1024, frequencyBinCount: 512, smoothingTimeConstant: 0.5, minDecibels: -85, maxDecibels: -25, getByteFrequencyData() {} }; }
+        createAnalyser() { return { connect() {}, fftSize: 1024, frequencyBinCount: 512, smoothingTimeConstant: 0.5, minDecibels: -85, maxDecibels: -25,
+          getByteFrequencyData() {}, getFloatTimeDomainData(buf) { if (buf) buf.fill(0); } }; }
         resume() { return Promise.resolve(); }
       };
       window.URL.createObjectURL = () => 'blob:test';

@@ -8425,6 +8425,50 @@ html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
   html.theme-pro .pro-brand .app-brand{justify-content:center;}
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   14.65 · 홈 검색창의 해돌이 — 노트 검색과 같은 칸에서 묻고 답한다
+   ──────────────────────────────────────────────────────────────────────
+   검색 결과가 있으면 노트가 먼저 보이고, 물음표 말투이거나 결과가 없으면
+   검색창 Enter 가 해돌이에게 간다. 답은 #homeAiCard 에 산문으로 앉는다.
+   ══════════════════════════════════════════════════════════════════════ */
+.home-ai-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px;}
+.home-ai-ask{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border:1px solid var(--border);
+  border-radius:999px;background:var(--bg2);color:var(--text1);font-size:12.5px;font-weight:600;cursor:pointer;
+  transition:border-color .15s,box-shadow .15s,transform .15s;}
+.home-ai-ask:hover{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,110,247,.12);}
+.home-ai-ask:active{transform:translateY(1px);}
+.home-ai-spark{font-size:14px;line-height:1;color:var(--accent);}
+.home-ai-name i{color:var(--accent);font-size:13px;}
+.home-ai-kbd{font:600 10.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 5px;border:1px solid var(--border);
+  border-radius:4px;background:var(--bg1);color:var(--text3);}
+.home-ai-sub{font-size:11.5px;color:var(--text3);}
+.home-ai-card{margin:0 0 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg1);
+  box-shadow:0 10px 28px rgba(15,23,42,.10);overflow:hidden;}
+.home-ai-head{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border);
+  background:var(--bg2);}
+.home-ai-name{font-size:12.5px;font-weight:700;color:var(--text1);}
+.home-ai-kind{font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;
+  background:rgba(79,110,247,.12);color:var(--accent);}
+.home-ai-gap{flex:1;}
+.home-ai-mini{width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border:none;
+  border-radius:6px;background:transparent;color:var(--text3);cursor:pointer;font-size:15px;}
+.home-ai-mini:hover{background:var(--bg1);color:var(--text1);}
+.home-ai-out{padding:12px 14px;font-size:13.5px;line-height:1.75;color:var(--text1);max-height:52vh;overflow:auto;}
+.home-ai-out.busy{color:var(--text2);white-space:pre-wrap;}
+.home-ai-dots i{display:inline-block;width:5px;height:5px;margin-right:4px;border-radius:50%;
+  background:var(--text3);animation:homeAiDot 1s infinite ease-in-out;}
+.home-ai-dots i:nth-child(2){animation-delay:.15s;}
+.home-ai-dots i:nth-child(3){animation-delay:.3s;}
+@keyframes homeAiDot{0%,80%,100%{opacity:.25;transform:translateY(0);}40%{opacity:1;transform:translateY(-3px);}}
+.home-ai-acts{display:flex;flex-wrap:wrap;gap:8px;padding:0 14px 12px;}
+.home-ai-act{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid var(--border);
+  border-radius:7px;background:var(--bg2);color:var(--text1);font-size:12px;font-weight:600;cursor:pointer;}
+.home-ai-act:hover{border-color:var(--accent);color:var(--accent);}
+.home-ai-meta{padding:8px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);}
+/* 해돌이가 설정 창에서 짚어 준 줄 — 잠깐 반짝여 시선을 끈다 */
+.set-row-hit{animation:setRowHit 2.2s ease;}
+@keyframes setRowHit{0%{background:rgba(79,110,247,.18);}70%{background:rgba(79,110,247,.10);}100%{background:transparent;}}
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 
@@ -9031,4 +9075,18 @@ html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
     position:absolute;left:clamp(12px,3vw,56px);top:50%;bottom:auto;
     transform:translateY(-50%);width:clamp(104px,12vw,150px);
   }
+}
+
+@media (max-width:640px){
+  /* 14.65 · 프로 테마 폰 — 60px 아이콘 레일만큼 오른쪽이 잘리던 것.
+     #mainView 는 inset:0 + width:100% 인데 레일 규칙이 left:60px 만 이겨서
+     폭이 그대로 100% → 오른쪽 60px(카드·배지·버튼 끝)이 화면 밖으로 나갔다. */
+  html.theme-pro #mainView{left:60px!important;width:calc(100% - 60px)!important;}
+  /* 14.65 · 홈 검색 해돌이 — 좁은 화면은 답 카드가 화면을 다 먹지 않게 */
+  .home-ai-bar{gap:8px;}
+  .home-ai-ask{padding:7px 11px;font-size:12px;}
+  .home-ai-sub{display:none;}
+  .home-ai-card{margin-bottom:12px;border-radius:9px;}
+  .home-ai-out{padding:11px 12px;font-size:13px;line-height:1.7;max-height:46vh;}
+  .home-ai-acts{padding:0 12px 10px;}
 }

@@ -2508,6 +2508,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // 14.65 · 카드를 다시 그릴 필요가 없어도 사이드바 폴더 목록은 맞춰 둔다
             //   (색·아이콘은 홈 카드와 사이드바 두 곳에 그려진다)
             try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+            // 14.65 · 검색창 해돌이 줄(결과 있음/없음 안내)도 지금 상태로 맞춘다
+            try{ if(typeof window.sdyHomeAiInput==='function') window.sdyHomeAiInput(); }catch(e){}
             try{ requestAnimationFrame(()=>{ rescalePreviews(); _layoutHomeStacks(); }); }catch(e){}
             return;
         }
@@ -5177,6 +5179,275 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     try{ window.sdyBuglogCount=function(){ return getBugEntries().length; }; }catch(e){}
 /* APP-PART:02f-buglog.js:END */
 
+/* === src/app/02g-home-ai.js
+   홈 검색창의 해돌이 — 노트 검색과 **같은 칸**에서 묻고 답한다 (14.65)
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:02g-home-ai.js:BEGIN */
+    // ============ 14.65 · 홈 검색창 해돌이 ============
+    //  사용자 요청: "홈 화면 검색 기능에 기본적인 AI 기능 탑재 — 노트해돌이처럼,
+    //  설정 관련 내용을 더 자세히."
+    //   · 노트 안 해돌이(ai-assistant.js)는 노트가 열려 있을 때만 말풍선을 띄운다.
+    //     홈에는 노트가 없으므로 같은 AI 를 부르되 답은 홈에 앉는 카드(#homeAiCard)로
+    //     보여 준다 — 검색창을 새로 만들지 않고 '검색'과 '묻기'를 한 칸에 겹쳤다.
+    //   · 설정·사용법 질문은 서버 task 'help'(앱 도움말)가 맡는다. 앱 상태(스냅샷)
+    //     와 설정 안내(window.sdySettingsGuideText)를 근거로만 답하므로 없는 기능을
+    //     지어내지 않는다. "설정 열어줘"처럼 실행이 필요하면 서버가 @ 명령을 함께
+    //     주고, 여기서 노트 해돌이와 **같은 실행기**(sdyAiAppParse/Apply)로 돌린다.
+    //   · 검색 결과가 있으면 노트가 먼저다. 물음표 말투이거나 결과가 하나도 없을 때만
+    //     Enter 가 해돌이에게 간다(그 외 Enter 는 첫 번째 노트를 연다).
+    const HOME_AI_ASKQ=/[?？]\s*$|(어떻게|어떡|뭐야|뭐지|뭔가요|무엇|무슨|왜|언제|어디|얼마|있나요|있어요|되나요|돼요|인가요|일까요|알려\s*줘|가르쳐|설명해|방법|사용법|단축키|설정|기능|도와줘|추천)/;
+    const HOME_AI_CMD=/열어|켜줘|켜\s*줘|틀어|재생|꺼줘|꺼\s*줘|보여줘|보여\s*줘|만들어|추가해|삭제해|바꿔|바꾸|정리해|내보내|번역해|시작해|멈춰|해줘|해\s*줘/;
+    let _homeAiCtl=null, _homeAiLast='', _homeAiBusy=false;
+    let _homeAiTurns=[], _homeAiTask='help';
+
+    function homeAiEl(id){ try{ return document.getElementById(id); }catch(e){ return null; } }
+    function homeAiQuery(){
+        const el=homeAiEl('searchInput');
+        return String(el&&el.value!=null?el.value:'').trim();
+    }
+    function homeAiToken(){
+        try{ return (window.__sdyAuthState&&window.__sdyAuthState.token)||''; }catch(e){ return ''; }
+    }
+    // 홈에 보이는 노트/폴더 카드 수 — 검색 결과가 있는지 판단용
+    function homeAiHits(){
+        try{ return document.querySelectorAll('#noteGrid .note-card,#noteGrid .folder-card').length; }catch(e){ return 0; }
+    }
+    function homeAiLooksLikeQuestion(q){
+        const t=String(q||'');
+        if(t.length<2) return false;
+        if(HOME_AI_ASKQ.test(t)) return true;
+        if(HOME_AI_CMD.test(t)) return true;
+        if(/^\s*[/!]/.test(t)) return true;                 // /앱 · !편집 같은 접두사
+        if(typeof window.sdyAiLooksLikeApp==='function'){
+            try{ if(window.sdyAiLooksLikeApp(t)) return true; }catch(e){}
+        }
+        return false;
+    }
+    // 해돌이에게 물어볼 상황인가 — 물음표 말투거나, 검색 결과가 없거나, 접두사가 있을 때
+    function homeAiWanted(q){
+        const t=String(q||'').trim();
+        if(t.length<2) return false;
+        if(homeAiLooksLikeQuestion(t)) return true;
+        if(/^\s*\/앱|^\s*앱:/.test(t)) return true;
+        return homeAiHits()===0;
+    }
+    function homeAiPaintBar(){
+        const bar=homeAiEl('homeAiBar'), sub=homeAiEl('homeAiSub');
+        if(!bar) return;
+        const q=homeAiQuery();
+        const want=homeAiWanted(q);
+        bar.hidden=!want;
+        if(!want||!sub) return;
+        const hits=homeAiHits();
+        sub.textContent=hits
+            ? ('노트 '+hits+'개 찾음 · Enter 는 해돌이에게 물어봐요')
+            : '검색 결과 없음 · Enter 로 해돌이에게 물어보기';
+    }
+    function homeAiKind(kind){
+        const el=homeAiEl('homeAiKind');
+        if(!el) return;
+        el.hidden=!kind;
+        el.textContent=kind||'';
+    }
+    function homeAiMeta(t){
+        const el=homeAiEl('homeAiMeta');
+        if(!el) return;
+        el.hidden=!t;
+        el.textContent=t||'';
+    }
+    function homeAiBusy(on){
+        _homeAiBusy=!!on;
+        const st=homeAiEl('homeAiStop'), cp=homeAiEl('homeAiCopy');
+        if(st) st.hidden=!on;
+        if(cp) cp.hidden=on||!_homeAiLast;
+    }
+    function homeAiSayHtml(t){
+        try{ if(typeof mdToHtml==='function') return mdToHtml(String(t||'')); }catch(e){}
+        const d=document.createElement('div');
+        d.textContent=String(t==null?'':t);
+        return '<span style="white-space:pre-wrap">'+d.innerHTML+'</span>';
+    }
+    function homeAiOut(t,busy){
+        const o=homeAiEl('homeAiOut');
+        if(!o) return;
+        if(busy){ o.classList.add('busy'); o.innerHTML='<span class="home-ai-dots"><i></i><i></i><i></i></span>'; return; }
+        o.classList.remove('busy');
+        o.innerHTML=busy?'':homeAiSayHtml(t);
+    }
+    function homeAiShowActs(list){
+        const box=homeAiEl('homeAiActs');
+        if(!box) return;
+        box.innerHTML='';
+        (list||[]).forEach(function(a){
+            const b=document.createElement('button');
+            b.type='button'; b.className='home-ai-act';
+            b.innerHTML=a.icon?('<i class="'+a.icon+'" aria-hidden="true"></i>'):'';
+            b.appendChild(document.createTextNode(a.label));
+            b.onclick=a.onClick;
+            box.appendChild(b);
+        });
+        box.hidden=!(list&&list.length);
+    }
+    function homeAiOpenCard(){ const c=homeAiEl('homeAiCard'); if(c) c.hidden=false; }
+    function sdyHomeAiClose(){
+        try{ if(_homeAiCtl) _homeAiCtl.abort(); }catch(e){}
+        _homeAiCtl=null; homeAiBusy(false);
+        const c=homeAiEl('homeAiCard'); if(c) c.hidden=true;
+    }
+    function sdyHomeAiStop(){
+        try{ if(_homeAiCtl) _homeAiCtl.abort(); }catch(e){}
+        _homeAiCtl=null; homeAiBusy(false);
+        homeAiMeta('멈췄어요');
+    }
+    function sdyHomeAiCopy(){
+        if(!_homeAiLast) return;
+        try{
+            navigator.clipboard.writeText(_homeAiLast);
+            if(typeof toast==='function') toast('답을 복사했어요',1200);
+        }catch(e){}
+    }
+    // 검색창 입력 → 필터(기존 searchNotes) + 해돌이 줄 갱신
+    function sdyHomeAiInput(){ try{ homeAiPaintBar(); }catch(e){} }
+    // 검색창 Enter — 해돌이에게 갈지, 첫 노트를 열지
+    function sdyHomeAiKey(ev){
+        if(!ev) return true;
+        try{ if(ev.isComposing||ev.keyCode===229) return true; }catch(e){}
+        if(ev.key!=='Enter'||ev.shiftKey||ev.altKey||ev.ctrlKey||ev.metaKey) return true;
+        const q=homeAiQuery();
+        if(!q) return true;
+        const bar=homeAiEl('homeAiBar');
+        if(bar&&!bar.hidden){
+            ev.preventDefault();
+            sdyHomeAiAsk();
+            return false;
+        }
+        // 물음표 말투가 아니고 결과가 있으면 → 첫 번째 카드를 연다(검색창의 자연스러운 기대)
+        let first=null;
+        try{ first=document.querySelector('#noteGrid .note-card,#noteGrid .folder-card'); }catch(e){}
+        if(first){
+            ev.preventDefault();
+            try{ first.click(); }catch(e){}
+            return false;
+        }
+        return true;
+    }
+    /* 해돌이에게 묻는다 — /앱 접두사나 '시켜 달라'는 말투면 앱 실행(app),
+       나머지는 도움말(help). 두 task 모두 앱 상태(+설정 안내)를 근거로 받는다. */
+    function sdyHomeAiAsk(){
+        const q0=homeAiQuery();
+        if(!q0){ const el=homeAiEl('searchInput'); if(el) try{ el.focus(); }catch(e){} return; }
+        if(_homeAiBusy){ homeAiMeta('아직 답하는 중이에요 · 멈추기를 누르면 멈춰요'); return; }
+        let text=q0, forced=false;
+        const m=/^\s*(\/앱|앱:)\s*/.exec(text);
+        if(m){ forced=true; text=text.slice(m[0].length).trim(); }
+        if(!text) text=q0;
+        let task='help';
+        if(forced) task='app';
+        else{
+            try{ if(typeof window.sdyAiLooksLikeApp==='function'&&window.sdyAiLooksLikeApp(text)) task='app'; }catch(e){}
+        }
+        _homeAiTask=task;
+        let snap='';
+        try{ if(typeof window.sdyAiAppSnapshot==='function') snap=String(window.sdyAiAppSnapshot()||''); }catch(e){}
+        let guide='';
+        try{ if(typeof window.sdySettingsGuideText==='function') guide=String(window.sdySettingsGuideText()||''); }catch(e){}
+        const ctx=[snap,guide].filter(Boolean).join('\n\n');
+
+        homeAiOpenCard();
+        homeAiKind(task==='app'?'앱 실행':'앱 도움말');
+        _homeAiLast='';
+        homeAiOut('',true);
+        homeAiMeta('');
+        homeAiShowActs([]);
+        homeAiBusy(true);
+        _homeAiCtl=new AbortController();
+        const myCtl=_homeAiCtl;
+
+        fetch('/api/ai/ask',{
+            method:'POST',
+            headers:{'Content-Type':'application/json','x-sdy-auth':homeAiToken()},
+            body:JSON.stringify({task:task,text:ctx,question:text,
+                                 context:_homeAiTurns.slice(-4).join('\n\n'),stream:false}),
+            signal:myCtl.signal
+        }).then(function(r){ return r.json().catch(function(){ return {}; }); })
+        .then(function(d){
+            if(myCtl!==_homeAiCtl) return;                  // 그 사이 닫거나 다시 물었으면 무시
+            _homeAiCtl=null; homeAiBusy(false);
+            if(!d||!d.ok){
+                homeAiSayHtml('');
+                homeAiOut(String((d&&d.error)||'답을 받지 못했어요 · 잠시 뒤에 다시 물어봐 주세요'),false);
+                return;
+            }
+            const raw=String(d.text||'');
+            // 서버가 실행 명령(@…)을 함께 줬으면 노트 해돌이와 같은 실행기로 돌린다
+            const hasOps=/^\s*@/m.test(raw);
+            if(hasOps&&typeof window.sdyAiAppParse==='function'&&typeof window.sdyAiAppApply==='function'){
+                const parsed=window.sdyAiAppParse(raw);
+                const say=String(parsed.say||'').trim();
+                homeAiOut(say||'실행할게요…',false);
+                Promise.resolve(window.sdyAiAppApply(parsed.ops)).then(function(res){
+                    res=res||{applied:0,failed:0,notes:[]};
+                    const counts=[];
+                    if(res.applied) counts.push('실행 '+res.applied+'개');
+                    if(res.failed) counts.push('건너뜀 '+res.failed+'개');
+                    const out=[say||'요청대로 했어요 해돌~'];
+                    if(counts.length) out.push(counts.join(' · '));
+                    if(res.notes&&res.notes.length) out.push('· '+res.notes.join('\n· '));
+                    _homeAiLast=out.join('\n\n');
+                    homeAiOut(_homeAiLast,false);
+                    homeAiBusy(false);
+                    homeAiMeta('명령 '+(parsed.ops.length||0)+'개 처리');
+                    if(/설정/.test(text)) homeAiShowActs(homeAiActsFor(text));
+                }).catch(function(){
+                    homeAiMeta('실행 중 문제가 생겼어요');
+                });
+            }else{
+                _homeAiLast=raw;
+                homeAiOut(raw,false);
+                homeAiMeta(d.cached?'미리 준비해 둔 답':'');
+            }
+            if(_homeAiTask==='help'&&/설정/.test(text)) homeAiShowActs(homeAiActsFor(text));
+            _homeAiTurns.push('Q: '+text+'\nA: '+String(_homeAiLast||raw).slice(0,600));
+            _homeAiTurns=_homeAiTurns.slice(-6);
+        })
+        .catch(function(err){
+            if(myCtl!==_homeAiCtl) return;
+            _homeAiCtl=null; homeAiBusy(false);
+            if(err&&err.name==='AbortError'){ homeAiMeta('멈췄어요'); return; }
+            homeAiOut('답을 받지 못했어요 · 인터넷이나 AI 키를 확인해 주세요',false);
+        });
+    }
+    // 설정 관련 질문이면 답 카드 아래에 '설정 열기'를 붙인다 — 답을 읽고 바로 눌러 확인
+    function homeAiActsFor(q){
+        const acts=[];
+        acts.push({label:'설정 열기',icon:'ri-settings-3-line',onClick:function(){
+            try{
+                if(/테마|강조|배경|종이|휴지통|버그|단축키|복원/.test(String(q||''))&&typeof window.sdySettingsJump==='function'){
+                    if(window.sdySettingsJump(q)!==false) return;
+                }
+                if(typeof openSettings==='function') openSettings();
+            }catch(e){}
+        }});
+        return acts;
+    }
+    try{
+        window.sdyHomeAiAsk=sdyHomeAiAsk;
+        window.sdyHomeAiClose=sdyHomeAiClose;
+        window.sdyHomeAiStop=sdyHomeAiStop;
+        window.sdyHomeAiCopy=sdyHomeAiCopy;
+        window.sdyHomeAiInput=sdyHomeAiInput;
+        window.sdyHomeAiKey=sdyHomeAiKey;
+    }catch(e){}
+    // 검색창에 포커스가 오거나 홈 그리드가 다시 그려질 때 줄 상태를 맞춘다
+    //   (검색어는 화면을 오가도 남아 있을 수 있다 — renderGrid 가 sdyHomeAiInput 을 부른다)
+    (function(){
+        var el=homeAiEl('searchInput');
+        if(el&&el.addEventListener) el.addEventListener('focus',function(){ try{ homeAiPaintBar(); }catch(e){} });
+    })();
+    try{ homeAiPaintBar(); }catch(e){}
+/* APP-PART:02g-home-ai.js:END */
+
 /* === src/app/03a-admin.js ===
    관리자 모드
    소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
@@ -5856,6 +6127,89 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         openNav(closeSettings);
     }
     function closeSettings(){ document.getElementById('setModal').style.display='none'; navDrop(closeSettings); }
+
+    /* ===== 14.65 · 해돌이 '설정 안내' =====
+       홈 검색창의 해돌이(help task)와 노트 안 해돌이(app task)가 **같은 글**을 근거로
+       "설정에 무엇이 있는지 · 지금 무엇으로 되어 있는지 · 어디를 누르면 바뀌는지"를
+       자세히 답한다. 설정 항목이 늘면 여기에 한 줄만 더하면 해돌이가 바로 안다.
+       (모델은 여기 적힌 것만 사실로 말하도록 프롬프트에 못 박혀 있다) */
+    const PAPER_NAME={blank:'빈 종이',lined:'줄 노트',grid:'격자',dotted:'도트'};
+    function settingsGuideRows(){
+        var themeNow='기본';
+        try{ if(typeof sdyTheme==='function'&&sdyTheme()==='classic') themeNow='캐주얼'; }catch(e){}
+        return [
+            {name:'테마', keys:['테마','theme','기본','캐주얼','클래식','다크','라이트'], sel:'.theme-row',
+             now:themeNow,
+             how:'설정 → 테마에서 [기본(깔끔한 라이트)] 또는 [캐주얼(익숙한 편안한 화면)] 을 누르면 즉시 바뀝니다.'},
+            {name:'강조색', keys:['강조색','포인트','accent'], sel:'.accent-row',
+             now:String(S.accent||'#4f6ef7'),
+             how:'설정 → 강조색에서 색 동그라미를 누르면 버튼·링크 등 앱 전체 포인트 색이 바뀝니다.'},
+            {name:'배경화면', keys:['배경','배경화면','월페이퍼','wallpaper'], sel:'#setRowWall',
+             now:(S.wall?(wallIsVideo()?'동영상 배경 사용 중':'사진 배경 사용 중'):'없음(기본 배경)'),
+             how:'설정 → 배경화면 → [사진·동영상 선택] (캐주얼 테마에서만 보입니다). [지우기]를 누르면 기본 배경으로 돌아갑니다.'},
+            {name:'기본 종이', keys:['종이','기본종이','줄','격자','도트','paper'], sel:'#defPaper',
+             now:(PAPER_NAME[S.defPaper]||'빈 종이'),
+             how:'설정 → 기본 종이에서 새 노트의 종이(빈 종이·줄 노트·격자·도트)를 고릅니다.'},
+            {name:'휴지통', keys:['휴지통','삭제','복구'], sel:'#trashCount',
+             now:(function(){ try{ return (notebooks||[]).filter(n=>n&&n.trash).length+'개'; }catch(e){ return '확인 중'; } })(),
+             how:'설정 → 휴지통 → [보기]. 삭제한 노트는 30일 동안 보관되고 그 뒤 자동으로 지워집니다.'},
+            {name:'버그 일지', keys:['버그','일지','신고'], sel:'#bugCount',
+             now:(function(){ try{ return (typeof window.sdyBuglogCount==='function'?window.sdyBuglogCount():0)+'건'; }catch(e){ return '확인 중'; } })(),
+             how:'설정 → 버그 일지 → [보기]. 노트에서 해돌이에게 "버그 신고: …"라고 말하면 정리되어 이곳에 쌓입니다.'},
+            {name:'사용법·단축키', keys:['사용법','단축키','키','도움말'], sel:'#setRowKeys',
+             now:'', how:'설정 → 사용법 · 단축키 → [열기] 에서 전체 단축키와 기능 안내를 봅니다.'},
+            {name:'기본값 복원', keys:['초기화','기본값','리셋','복원'], sel:'#setRowReset',
+             now:'', how:'설정 맨 아래 [기본값으로 복원] 을 누르면 테마·강조색·배경·종이·앱 제목이 처음 상태로 돌아갑니다.'}
+        ];
+    }
+    // 설정 창 밖에 있는 것들 — 해돌이가 '어디서 하지?'를 답할 수 있게 함께 적어 둔다.
+    const SETTINGS_ELSEWHERE=[
+        ['음악·이퀄라이저','플레이어의 EQ 버튼(또는 홈 왼쪽 아래 음악 탭)에서 켜기·프리셋 10종(원음·베이스 부스트·보컬 강조·팝·록·힙합·R&B·클래식·재즈·일렉트로닉)·볼륨을 다룹니다. 말로도 됩니다 — "이퀄라이저 보컬 강조로 켜줘", "볼륨 70으로 해줘".'],
+        ['곡 음량 자동 맞춤','곡마다 다른 음량은 서버가 송출할 때 자동으로 -14 LUFS 에 맞춥니다. 설정에 없는 항목이고 사용자가 고르는 옵션도 아닙니다.'],
+        ['집중 화면(시계·스톱워치·타이머)','상단 시계 버튼 또는 "10분 타이머 맞춰줘" — 집중 화면 안에 셋이 함께 있습니다.'],
+        ['지점 저장 / 지점 복원','노트 편집기의 더보기(⋯) 메뉴 → 지점 저장 으로 지금 상태를 남기고, 지점 복원 으로 그때로 되돌립니다.'],
+        ['폴더 색·아이콘','폴더 카드를 우클릭(또는 ⋮) → 색 · 아이콘 변경. 고른 색은 홈 카드와 사이드바에 바로 반영됩니다.'],
+        ['찾기·번역·내보내기','노트 편집기 도구에서 찾기(Ctrl+F), 자동 번역(쪽/문서), PDF 내보내기를 합니다.'],
+        ['엽스코드(채팅)','상단 엽스코드 버튼 또는 "엽스코드 열어줘". 노트를 함께 보며 대화하는 공간입니다.'],
+        ['알림','상단 종 버튼 — 읽지 않은 알림 개수가 배지로 붙고, 누르면 목록이 열립니다.']
+    ];
+    function settingsGuideText(){
+        var lines=['[이 앱의 설정 — 이름 · 지금 값 · 바꾸는 법]'];
+        settingsGuideRows().forEach(function(r){
+            lines.push('- '+r.name+(r.now?(' · 지금: '+r.now):'')+' · '+r.how);
+        });
+        lines.push('');
+        lines.push('[설정 창 밖의 주요 기능 — 어디서 하나]');
+        SETTINGS_ELSEWHERE.forEach(function(it){ lines.push('- '+it[0]+' · '+it[1]); });
+        return lines.join('\n');
+    }
+    /* 설정 창을 열고 이름이 맞는 줄로 이동한다 — 해돌이가 "@settings | 테마"
+       처럼 항목까지 지정해 실행할 때 쓴다. 찾으면 항목 이름을, 못 찾으면 false 를
+       돌려주어 호출한 쪽이 그냥 설정만 열 수 있게 한다. */
+    function settingsJump(what){
+        var q=String(what==null?'':what).trim().toLowerCase();
+        if(!q) return false;
+        var rows=settingsGuideRows();
+        var hit=rows.find(function(r){ return r.name.toLowerCase()===q; })
+             || rows.find(function(r){ return r.keys.some(function(k){ return q.indexOf(k)>=0; }); })
+             || rows.find(function(r){ return r.name.toLowerCase().indexOf(q)>=0; });
+        if(!hit) return false;
+        try{ openSettings(); }catch(e){ return false; }
+        try{
+            var el=hit.sel?document.querySelector(hit.sel):null;
+            var row=el&&el.closest?el.closest('.set-row'):null;
+            if(row&&row.scrollIntoView) row.scrollIntoView({block:'center',behavior:'smooth'});
+            if(row&&row.classList){
+                row.classList.remove('set-row-hit');
+                void row.offsetWidth;                    // 애니메이션 재시작
+                row.classList.add('set-row-hit');
+                setTimeout(function(){ try{ row.classList.remove('set-row-hit'); }catch(e){} },2200);
+            }
+        }catch(e){}
+        return hit.name;
+    }
+    try{ window.sdySettingsGuideText=settingsGuideText; }catch(e){}
+    try{ window.sdySettingsJump=settingsJump; }catch(e){}
 
     // ===== 설정 옵션 동작 =====
     function pickAccent(c){
@@ -31357,6 +31711,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         lines.push('이퀄라이저: '+(eqSt.on?'켜짐':'꺼짐')+' · 프리셋: '+(eqSt.presetName||'원음'));
       }
     }catch(e){}
+    // 14.65 · 설정 안내 — 노트 안 해돌이(app task)와 홈 검색 해돌이(help task)가
+    //   '설정이 뭐가 있는지 · 지금 뭐로 되어 있는지 · 어디를 누르면 바뀌는지'를
+    //   같은 근거로 자세히 답하게, 설정 창 쪽에서 만든 글을 그대로 싣는다.
+    try{
+      if(typeof window.sdySettingsGuideText==='function'){
+        var guide=String(window.sdySettingsGuideText()||'');
+        if(guide) lines.push(guide);
+      }
+    }catch(e){}
     try{
       var st=(window.sdyTimerState&&window.sdyTimerState())||null;
       if(st) lines.push('집중 화면: '+(st.open?'열림':'닫힘')+' · 모드 '+st.mode
@@ -32214,7 +32577,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       if(cmd==='stickers'||cmd==='sticker'){ ops.push({cmd:'stickers'}); return; }
       if(cmd==='cards'||cmd==='card'){ ops.push({cmd:'cards'}); return; }
-      if(cmd==='settings'||cmd==='setting'){ ops.push({cmd:'settings'}); return; }
+      if(cmd==='settings'||cmd==='setting'){
+        // 14.65 · '@settings | 테마' — 설정 창을 열고 그 줄로 이동한다(항목 없으면 그냥 연다)
+        var sf=cutN(rest,1);
+        var sitem=sf.cuts.length?decode(sf.rest).slice(0,40):'';
+        ops.push({cmd:'settings',item:sitem}); return;
+      }
       // 14.39.x · @chat — 엽스코드(채팅) 열기/닫기
       if(cmd==='chat'||cmd==='yp'||cmd==='yeps'||cmd==='엽스'||cmd==='엽스코드'||cmd==='채팅'){
         var cf=cutN(rest,1);
@@ -32291,7 +32659,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         if(op.cmd==='translate') return translateOp(op);
         if(op.cmd==='stickers'){ var st=needFn('openStickers'); if(!st){ bad('스티커 창을 열지 못했어요'); return; } try{ st(); }catch(e){ bad('스티커 창을 열지 못했어요'); return; } ok(); return; }
         if(op.cmd==='cards'){ var cd=needFn('openCards'); if(!cd){ bad('단어카드 창을 열지 못했어요'); return; } try{ cd(); }catch(e){ bad('단어카드 창을 열지 못했어요'); return; } ok(); return; }
-        if(op.cmd==='settings'){ var sg=needFn('openSettings'); if(!sg){ bad('설정 창을 열지 못했어요'); return; } try{ sg(); }catch(e){ bad('설정 창을 열지 못했어요'); return; } ok(); return; }
+        if(op.cmd==='settings'){
+          // 항목이 적혀 있으면 그 줄로 이동(설정 창 열기 + 반짝임). 못 찾으면 그냥 연다.
+          if(op.item&&typeof window.sdySettingsJump==='function'){
+            try{ if(window.sdySettingsJump(op.item)!==false){ ok(); return; } }catch(e){}
+          }
+          var sg=needFn('openSettings'); if(!sg){ bad('설정 창을 열지 못했어요'); return; }
+          try{ sg(); }catch(e){ bad('설정 창을 열지 못했어요'); return; } ok(); return;
+        }
         if(op.cmd==='chat') return chatOp(op);
         bad('알 수 없는 동작이에요');
       }).catch(function(){ bad('실행 중 문제가 생겼어요'); });

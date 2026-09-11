@@ -167,7 +167,10 @@ try {
   check('테마 재전환 시 북마크 ID 중복 없음', d1.querySelectorAll('#linkBar').length === 1 && !!d1.querySelector('#proBookmarkSlot #linkBar'));
   w1.saveLinks(oldLinks);w1.renderLinks();
 
-  check('검색 입력에 접근성 이름 있음', d1.querySelector('#searchInput').getAttribute('aria-label') === '노트 검색');
+  // 14.65 · 검색창이 '노트 검색 + 해돌이에게 묻기' 두 일을 하게 되어 이름도 함께 늘렸다
+  check('검색 입력에 접근성 이름 있음',
+    /^노트 검색/.test(d1.querySelector('#searchInput').getAttribute('aria-label') || '')
+    && /해돌이/.test(d1.querySelector('#searchInput').getAttribute('aria-label') || ''));
   const toolbar=d1.querySelector('.editor-toolbar');
   check('편집 툴바 그룹에 이름 있음', toolbar.getAttribute('aria-label') === '노트 편집 도구');
   check('서식·넣기·그리기·찾기 묶음 구분', [...toolbar.querySelectorAll('.tb-mid [data-tool-group]')].map(el=>el.dataset.toolGroup).join(',') === '글자 서식,넣기,그리기,찾기');

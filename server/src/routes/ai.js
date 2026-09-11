@@ -211,6 +211,7 @@ export const AI_TASKS = {
       + '@stickers — 스티커 창을 연다\n'
       + '@cards — 단어카드 창을 연다\n'
       + '@settings — 설정 창을 연다\n'
+      + '@settings | 항목 — 설정 창을 열고 그 항목으로 이동한다(항목 이름: 테마·강조색·배경화면·종이·휴지통·버그일지·사용법·기본값). 무엇을 어디서 바꾸는지 묻는 질문이 함께 왔으면 @settings | 항목 으로 그 자리를 열어 주고 @done 에 어디를 누르면 되는지 한 줄로 쓴다\n'
       + '@chat on — 엽스코드(채팅방)를 연다\n'
       + '@chat off — 엽스코드(채팅방)를 닫는다\n'
       + '@chat toggle — 엽스코드가 열려 있으면 닫고 닫혀 있으면 연다("열어 줘"·"닫아 줘"처럼 열기/닫기가 분명하면 on/off를 쓰고, "엽스코드"처럼 낱말만 말했으면 on을 쓴다)\n'
@@ -230,6 +231,31 @@ export const AI_TASKS = {
     needText: true,     // 앱 상태 스냅샷(노트 목록·음악·집중 화면)은 항상 있다
     needQuestion: true,
     noCache: true,      // 같은 재생·열기 계획이 재적용되지 않도록 매번 새로 생성한다
+  },
+  // 14.65 · 홈 검색창의 해돌이 — '이 앱 어떻게 쓰지?'·'설정 뭐 있어?' 같은
+  //   사용법·설정 질문을 앱 상태와 설정 안내만 근거로 자세히 답한다. 앱 실행과
+  //   달리 결과가 산문이라 사용자가 그대로 읽고 따라 할 수 있다. 실행이 필요하면
+  //   답 끝에 @ 명령을 덧붙이고, 브라우저가 그 줄만 떼어 실행한다(설정 값 변경은
+  //   명령으로 못 하므로 설정 창을 열어 주고 누를 자리를 글로 알려 준다).
+  help: {
+    label: '앱 도움말',
+    system: '너는 노트 앱 "Sdy Notes"의 안내 도우미 해돌이다. 입력으로 "앱 상태와 설정 안내"(앱 상태 + 이 앱의 화면·설정·기능 안내), "질문", (있으면) "이전 대화"를 받는다. '
+      + '이 앱을 처음 쓰는 사람에게 화면을 짚어 주듯 친절하고 자세하게 답한다. '
+      + '★근거 규칙: 앱 상태와 설정 안내에 적힌 것만 사실로 말한다. 거기 없는 메뉴·설정·단축키·기능 이름을 지어내지 않는다. 확실하지 않으면 "설정 창(⚙)에서 확인해 주세요"라고 말한다. '
+      + '★형식 규칙: 첫 줄에 답의 주제를 # 또는 ## 제목 한 줄로 쓰고, 여러 단계·여러 항목은 "- " 목록이나 1. 2. 3. 번호로 나눈다. '
+      + '어디를 누르는지는 순서대로 적는다(예: "오른쪽 위 **⚙ 설정** → **테마**"). 버튼·설정 이름·핵심 낱말은 **굵게** 표시한다. 인사말·군더더기 없이 바로 답하고, 8문장을 넘기지 않는다. '
+      + '★실행 규칙: 사용자가 무엇을 열어 주거나 보여 달라고 하면 답 끝에 @ 명령을 덧붙인다 — 각 줄은 @로 시작하고 마지막 줄은 반드시 "@done 한 줄 요약"이다. 쓸 수 있는 명령: '
+      + '@settings — 설정 창 열기 / '
+      + '@settings | 항목 — 설정 창을 열고 그 항목으로 이동(항목: 테마·강조색·배경화면·종이·휴지통·버그일지·사용법·기본값) / '
+      + '@music play | 검색어 · @music pause · @music resume · @music next · @music prev · @music vol | 0~100 · @music big · @music mix | 곡수 / '
+      + '@eq on · @eq off · @eq toggle · @eq preset | 프리셋명 · @eq open · @eq reset / '
+      + '@note new · @note open | 제목 · @note close / @timer 분 | 메모 · @timer off / @clock · @sw / @present on · @present off / @export pdf · @export / @find 글 / @stickers · @cards / @chat on · @chat off / @translate page | 언어 · @translate doc | 언어. '
+      + '★설정 값을 바꾸는 일(테마 바꾸기·강조색·배경화면·기본 종이 등)은 명령으로 못 한다 — @settings | 항목 으로 설정 창을 열어 주고 "어디를 누르면 되는지"를 글로 알려 준다. '
+      + '★질문이 이 앱과 무관한 일반 상식이면 아는 대로 짧게(4문장 이내) 답하고 @ 명령은 쓰지 않는다. 모르는 것은 모른다고 말한다. '
+      + '노트 제목·노래 제목 같은 사용자 데이터는 앱 상태에 적힌 것만 말한다.',
+    needText: true,
+    needQuestion: true,
+    noCache: true,
   },
   // 14.31.0 · 펜 그림 — 모델이 SVG 선화(경로)를 만들면 브라우저가 그 경로를
   //   펜 획(pts 폴리라인)으로 바꿔 종이 위에 그린다. "그림을 그리되 진짜 펜으로"
@@ -411,7 +437,9 @@ function rateHit(key, now = Date.now(), n = AI_RATE_N) {
 export function aiMessages(task, text, question, context, ref) {
   const spec = AI_TASKS[task] || AI_TASKS.outline;
   const user = [];
-  const textLabel = task === 'edit' ? '문서 상태' : (task === 'app' ? '앱 상태' : '노트 본문');
+  const textLabel = task === 'edit' ? '문서 상태'
+    : (task === 'app' ? '앱 상태'
+      : (task === 'help' ? '앱 상태와 설정 안내' : '노트 본문'));
   const questionLabel = task === 'edit' ? '편집 요청' : (task === 'app' ? '실행 요청' : '질문');
   // chat 은 노트가 있을 때만 본문을 싣고, edit 은 페이지 메타데이터가 든
   // 문서 상태를, app 은 노트 목록·음악·집중 화면이 든 앱 상태를 싣는다.
@@ -419,12 +447,12 @@ export function aiMessages(task, text, question, context, ref) {
   if (spec.needText || (task === 'chat' && text)) {
     user.push(task === 'edit'
       ? textLabel + ':\n<document>\n' + text + '\n</document>'
-      : (task === 'app'
+      : (task === 'app' || task === 'help'
         ? textLabel + ':\n<appstate>\n' + text + '\n</appstate>'
         : textLabel + ':\n"""' + text + '"""'));
   }
   const ctx = String(context == null ? '' : context).trim().slice(0, AI_MAX_CONTEXT);
-  if ((task === 'edit' || task === 'app') && ctx) user.push('이전 대화:\n' + ctx);
+  if ((task === 'edit' || task === 'app' || task === 'help') && ctx) user.push('이전 대화:\n' + ctx);
   if (spec.needQuestion || (task === 'chat' && question)) {
     user.push(questionLabel + ': ' + question);
   }
@@ -925,7 +953,7 @@ export function registerAi(app) {
     }
     // 14.26.0 · context — @ask 되묻기 뒤 후속 편집·실행용 문맥(edit·app 전용).
     //   14.27.0 · 여러 턴을 묶어 보낼 수 있게 상한을 AI_MAX_CONTEXT 로 올렸다.
-    const context = (task === 'edit' || task === 'app')
+    const context = (task === 'edit' || task === 'app' || task === 'help')
       ? String(b.context == null ? '' : b.context).slice(0, AI_MAX_CONTEXT) : '';
     return {
       job: {

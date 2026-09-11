@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko" data-theme="pro" class="theme-pro">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.64.0">
+<link rel="stylesheet" href="sdynotes.css?v=14.65.0">
     <script>
     /* 14.47 · 테마 선적용 — 첫 페인트 전에 저장된 테마를 입혀 화면 깜빡임을 막는다.
        저장값이 없으면 새 기본인 'pro'(14.48 · 밝은 전문 디자인)로 시작한다. */
@@ -28,7 +28,7 @@
          · 이 파일·sdynotes.js·sdynotes.css·src 모듈을 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.64.0">
+    <meta name="application-version" content="14.65.0">
     <title>SDYnotes</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -465,8 +465,10 @@
                             title="관리자 모드"><i class="ri-shield-keyhole-line"></i></button>
                     <div class="search-wrap" style="position:relative;">
                         <i class="ri-search-line" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;"></i>
-                        <input id="searchInput" aria-label="노트 검색" type="search" placeholder="노트 검색..." oninput="searchNotes(this.value)" style="width:220px;height:38px;padding:0 12px 0 36px;border:1px solid var(--border);border-radius:4px;background:var(--bg2);color:var(--text1);font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s;"
-                               onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(79,110,247,.14)'"
+                        <input id="searchInput" aria-label="노트 검색 · 해돌이에게 묻기" type="search"
+                               placeholder="노트 검색 · 해돌이에게 묻기…"
+                               oninput="searchNotes(this.value);sdyHomeAiInput()" onkeydown="return sdyHomeAiKey(event)" style="width:220px;height:38px;padding:0 12px 0 36px;border:1px solid var(--border);border-radius:4px;background:var(--bg2);color:var(--text1);font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s;"
+                               onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(79,110,247,.14)';sdyHomeAiInput()"
                                onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
                     </div>
                     <button onclick="openSettings()" class="tool-btn"><i class="ri-settings-3-line"></i></button>
@@ -475,6 +477,29 @@
         </header>
         <main class="w-full px-6 pt-8 pb-10">
             <div id="breadcrumb" class="breadcrumb" style="display:none;"></div>
+            <!-- 14.65 · 홈 검색창의 해돌이 — 노트 검색과 같은 칸에서 묻는다.
+                 검색 결과가 있으면 노트가 먼저, 없거나 물음표 말투면 해돌이가 답한다. -->
+            <div id="homeAiBar" class="home-ai-bar" hidden>
+                <button id="homeAiAsk" class="home-ai-ask" type="button" onclick="sdyHomeAiAsk()">
+                    <i class="ri-sparkling-2-line home-ai-spark" aria-hidden="true"></i>
+                    <span class="home-ai-txt">해돌이에게 물어보기</span>
+                    <kbd class="home-ai-kbd">Enter</kbd>
+                </button>
+                <span class="home-ai-sub" id="homeAiSub"></span>
+            </div>
+            <div id="homeAiCard" class="home-ai-card" hidden role="dialog" aria-label="해돌이의 답">
+                <div class="home-ai-head">
+                    <b class="home-ai-name"><i class="ri-sparkling-2-line" aria-hidden="true"></i> 해돌이</b>
+                    <span id="homeAiKind" class="home-ai-kind" hidden></span>
+                    <span class="home-ai-gap"></span>
+                    <button id="homeAiStop" class="home-ai-mini" type="button" title="멈추기" aria-label="멈추기" onclick="sdyHomeAiStop()" hidden><i class="ri-close-circle-line" aria-hidden="true"></i></button>
+                    <button id="homeAiCopy" class="home-ai-mini" type="button" title="답 복사" aria-label="답 복사" onclick="sdyHomeAiCopy()" hidden><i class="ri-file-copy-line" aria-hidden="true"></i></button>
+                    <button id="homeAiX" class="home-ai-mini" type="button" title="닫기" aria-label="닫기" onclick="sdyHomeAiClose()"><i class="ri-close-line" aria-hidden="true"></i></button>
+                </div>
+                <div id="homeAiOut" class="home-ai-out" aria-live="polite"></div>
+                <div id="homeAiActs" class="home-ai-acts" hidden></div>
+                <div id="homeAiMeta" class="home-ai-meta" hidden></div>
+            </div>
             <div id="proResults" class="pro-results" role="status" aria-live="polite" hidden></div>
             <div id="noteGrid" class="note-grid" style="margin-top:12px;"></div>
         </main>
@@ -1002,13 +1027,13 @@
                     <button onclick="openBuglog()" style="padding:7px 12px;border-radius:4px;background:var(--bg2);color:var(--text1);border:1px solid var(--border);font-size:12.5px;cursor:pointer;">보기</button>
                 </div>
             </div>
-            <div class="set-row">
+            <div class="set-row" id="setRowKeys">
                 <span class="set-label text-sm">사용법 · 단축키<span class="dim">전체 기능 안내</span></span>
                 <button onclick="closeSettings();openKeys()" style="padding:6px 12px;border-radius:3px;
                         background:var(--bg2);color:var(--text1);border:1px solid var(--border);
                         font-size:12.5px;cursor:pointer;">열기</button>
             </div>
-            <button onclick="resetSettings()" style="margin-top:18px;width:100%;padding:11px;border-radius:4px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);font-size:13.5px;font-weight:600;cursor:pointer;">기본값으로 복원</button>
+            <button id="setRowReset" onclick="resetSettings()" style="margin-top:18px;width:100%;padding:11px;border-radius:4px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);font-size:13.5px;font-weight:600;cursor:pointer;">기본값으로 복원</button>
             <button onclick="closeSettings()" style="margin-top:8px;width:100%;padding:11px;border-radius:4px;background:var(--accent);color:#fff;border:none;font-size:14px;font-weight:600;cursor:pointer;">닫기</button>
         </div>
         <!-- 18.2 · 커피 해돌이 — 설정 창 오른쪽 아래 (누르면 커피 선물) -->
@@ -2657,17 +2682,17 @@
 <!-- 14.23.0 · 노트 해돌이(AI 도우미) UI 는 편집기 안 #noteOtter 옆으로 옮겼다 — 아이콘 버튼·뜨는 창은 없다. -->
 
 
-<script src="sdynotes.js?v=14.64.0" defer></script>
-<script src="src/music-player.js?v=14.64.0" defer></script>
-<script src="src/focus-clock.js?v=14.64.0" defer></script>
-<script src="src/live-updates.js?v=14.64.0" defer></script>
-<script src="src/idle-worker.js?v=14.64.0" defer></script>
-<script src="src/mobile-viewport.js?v=14.64.0" defer></script>
-<script src="src/auth.js?v=14.64.0" defer></script>
-<script src="src/ai-assistant.js?v=14.64.0" defer></script>
-<script src="src/chat.js?v=14.64.0" defer></script>
-<script src="src/translate.js?v=14.64.0" defer></script>
-<script src="src/cards.js?v=14.64.0" defer></script>
-<script src="src/server-status.js?v=14.64.0" defer></script>
+<script src="sdynotes.js?v=14.65.0" defer></script>
+<script src="src/music-player.js?v=14.65.0" defer></script>
+<script src="src/focus-clock.js?v=14.65.0" defer></script>
+<script src="src/live-updates.js?v=14.65.0" defer></script>
+<script src="src/idle-worker.js?v=14.65.0" defer></script>
+<script src="src/mobile-viewport.js?v=14.65.0" defer></script>
+<script src="src/auth.js?v=14.65.0" defer></script>
+<script src="src/ai-assistant.js?v=14.65.0" defer></script>
+<script src="src/chat.js?v=14.65.0" defer></script>
+<script src="src/translate.js?v=14.65.0" defer></script>
+<script src="src/cards.js?v=14.65.0" defer></script>
+<script src="src/server-status.js?v=14.65.0" defer></script>
 </body>
 </html>
