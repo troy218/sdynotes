@@ -5042,37 +5042,39 @@ body.has-wall #sdyAmbient{opacity:0;}
 /* === style block 12 === */
 
 /* ── 오늘의 추천 논문 ─────────────────────────────────────────
-   로고와 같은 깊은 파랑을 띠에 고정해, 테마·강조색을 바꿔도 추천 정보가
-   눈에 잘 들어오게 한다. 움직이는 것은 제목 줄 하나뿐이라 홈을 가리지 않는다. */
+   증시 현황판처럼 헤더 바로 아래 천장에 붙은 완전한 띠. 라운드·그림자·위 여백
+   없이 mainView 폭 전체를 꽉 채운다. 고정된 제목 칸은 없고, 날짜 멘트 리드부터
+   논문 항목까지 줄 자체가 한 방향으로 흘러간다. */
 .paper-ticker{
-    width:100%;max-width:920px;height:34px;margin:0 auto 8px;
+    width:100%;height:36px;margin:0;
     display:flex;align-items:stretch;overflow:hidden;
-    color:#f8fbff;background:#14366e;border:1px solid #0d2857;border-radius:8px;
-    box-shadow:0 5px 16px rgba(20,54,110,.18);
+    color:#f8fbff;background:#14366e;border-bottom:1px solid #0d2857;
     font-family:'Pretendard Variable',Pretendard,-apple-system,'Segoe UI',sans-serif;
 }
 .paper-ticker[hidden]{display:none!important;}
-.paper-ticker-label{
-    position:relative;z-index:2;flex:0 0 auto;display:flex;align-items:center;gap:6px;
-    padding:0 12px;color:#fff;background:#102e61;border-right:1px solid rgba(255,255,255,.22);
-    font-size:11.5px;letter-spacing:-.015em;white-space:nowrap;
-}
-.paper-ticker-label i{font-size:14px;color:#aee7ff;}
-.paper-ticker-label b{font-weight:800;}
 .paper-ticker-viewport{
     position:relative;min-width:0;flex:1;overflow:hidden;display:flex;align-items:center;
-    mask-image:linear-gradient(to right,transparent 0,#000 3%,#000 97%,transparent 100%);
-    -webkit-mask-image:linear-gradient(to right,transparent 0,#000 3%,#000 97%,transparent 100%);
+    mask-image:linear-gradient(to right,transparent 0,#000 22px,#000 calc(100% - 22px),transparent 100%);
+    -webkit-mask-image:linear-gradient(to right,transparent 0,#000 22px,#000 calc(100% - 22px),transparent 100%);
 }
 .paper-ticker-run{
     display:flex;align-items:center;width:max-content;min-width:100%;
     will-change:transform;
-    animation:paperTickerScroll var(--paper-ticker-duration,72s) linear infinite;
+    animation:paperTickerScroll var(--paper-ticker-duration,40s) linear infinite;
 }
 .paper-ticker-set{display:flex;align-items:center;flex:none;padding-right:40px;}
+/* 띠 안을 함께 흐르는 리드 멘트 — '2026. 9. 11. 따끈따끈한 최신 논문'
+   고정 칸 대신 1번 항목이 나오기 전에 띠가 직접 실어 나른다. */
+.paper-ticker-lead{
+    flex:none;display:inline-flex;align-items:center;gap:7px;padding:0 22px;
+    color:#fff;background:#0d2857;border-right:1px solid rgba(255,255,255,.25);
+    font-size:12px;letter-spacing:-.015em;white-space:nowrap;line-height:36px;
+}
+.paper-ticker-lead i{font-size:14px;color:#aee7ff;}
+.paper-ticker-lead b{font-weight:800;font-variant-numeric:tabular-nums;}
 .paper-ticker-paper{
     display:inline-flex;align-items:center;gap:7px;max-width:620px;padding:0 20px;
-    color:#f8fbff;text-decoration:none;white-space:nowrap;line-height:34px;
+    color:#f8fbff;text-decoration:none;white-space:nowrap;line-height:36px;
     font-size:12.5px;font-weight:650;letter-spacing:-.012em;
     border-right:1px solid rgba(225,241,255,.30);
     transition:background .16s ease,color .16s ease;

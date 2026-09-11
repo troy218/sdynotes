@@ -475,6 +475,14 @@
                 </div>
             </div>
         </header>
+        <!-- 등록한 arXiv 키워드가 있을 때만 JS가 보이는 최신 논문 띠 —
+             헤더 바로 아래 천장에 붙은 증시 현황판 같은 완전한 띠(라운드 없음·여백 없음).
+             '오늘의 추천 논문' 고정 칸은 없고, 날짜 멘트부터 항목까지 줄 자체가 흘러간다. -->
+        <section id="paperTicker" class="paper-ticker" aria-label="오늘의 추천 논문" hidden>
+            <div class="paper-ticker-viewport">
+                <div id="paperTickerRun" class="paper-ticker-run" aria-live="polite"></div>
+            </div>
+        </section>
         <main class="w-full px-6 pt-8 pb-10">
             <div id="breadcrumb" class="breadcrumb" style="display:none;"></div>
             <!-- 홈 검색창의 해돌이 — 검색과 같은 칸에서 묻는다. Enter 를 누르면
@@ -493,13 +501,6 @@
                 <div id="homeAiMeta" class="home-ai-meta" hidden></div>
             </div>
             <div id="proResults" class="pro-results" role="status" aria-live="polite" hidden></div>
-            <!-- 등록한 arXiv 키워드가 있을 때만 JS가 보이는 오늘의 추천 논문 띠 -->
-            <section id="paperTicker" class="paper-ticker" aria-label="오늘의 추천 논문" hidden>
-                <div class="paper-ticker-label"><i class="ri-book-open-line" aria-hidden="true"></i><b>오늘의 추천 논문</b></div>
-                <div class="paper-ticker-viewport">
-                    <div id="paperTickerRun" class="paper-ticker-run" aria-live="polite"></div>
-                </div>
-            </section>
             <div id="noteGrid" class="note-grid" style="margin-top:12px;"></div>
         </main>
     </div>
