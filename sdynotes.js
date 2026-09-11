@@ -654,31 +654,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         curFont=FONTS.some(f=>f.id===S.defFont)?S.defFont:'pretendard';   // 옛 defFont 'noto' 는 폴백으로 프리텐다드
         // 배경 사진
         applyWallpaper();
-        try{ if(typeof applyProCollapsed==='function') applyProCollapsed(); }catch(e){}
+        // 14.64 · 사이드바 접기 제거 — 사이드바는 항상 펼침(좁은 화면은 60px 아이콘 레일).
+        //   예전 버전에서 접어 뒀던 브라우저에는 html.pro-collapsed 클래스와 저장값이
+        //   남아 있으므로, 테마를 입힐 때마다 한 번 지워 흔적을 없앤다.
+        try{ root.classList.remove('pro-collapsed'); localStorage.removeItem('proSideCollapsed'); }catch(e){}
     }
-    // ── 14.52-T · PRO 사이드바 접기/펼치기 — 좁은 화면(레일)은 무조건 접힘이므로 저장값과 무관
-    function applyProCollapsed(){
-        var collapsed=false;
-        try{ collapsed=localStorage.getItem('proSideCollapsed')==='1'; }catch(e){}
-        var pro=(typeof sdyTheme==='function'&&sdyTheme()==='pro');
-        // 좁은 화면에서는 레일이 기본이라 collapsed 와 무관하게 토글이 숨겨지나(html 로 control),
-        // 상태 클래스는 1024+에서만 의미가 있다. 그래도 pro 아닐 때는 꺼 둔다.
-        document.documentElement.classList.toggle('pro-collapsed', !!(pro&&collapsed));
-        var btn=document.getElementById('proSideToggle');
-        if(btn){
-            var isCollapsed=document.documentElement.classList.contains('pro-collapsed');
-            btn.setAttribute('aria-label', isCollapsed?'사이드바 펼치기':'사이드바 접기');
-            btn.title=isCollapsed?'사이드바 펼치기':'사이드바 접기';
-            try{ btn.querySelector('i').className=isCollapsed?'ri-arrow-right-double-line':'ri-arrow-left-double-line'; }catch(e){}
-        }
-    }
-    function toggleProSide(){
-        var cur=false;
-        try{ cur=localStorage.getItem('proSideCollapsed')==='1'; }catch(e){}
-        try{ localStorage.setItem('proSideCollapsed', cur?'0':'1'); }catch(e){}
-        applyProCollapsed();
-    }
-    try{ window.applyProCollapsed=applyProCollapsed; window.toggleProSide=toggleProSide; }catch(e){}
 
 
 /* APP-PART:01-core.js:END */
@@ -838,6 +818,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(labels[button.id]) button.dataset.proLabel=labels[button.id];
                 if(!button.getAttribute('aria-label')) button.setAttribute('aria-label',button.title||'설정');
             });
+        }
+        // 14.64 · 서버 상태(계기판)와 오프라인 배지는 도구 줄에 섞이면 사이드바 폭에서
+        //   잘리므로 맨 위 전용 줄(#proStateRow)로 옮긴다. 캐주얼로 돌아가면 헤더 도구
+        //   줄 첫 자리로 되돌려 기존 화면 그대로.
+        const stateRow=document.getElementById('proStateRow');
+        const gauge=document.getElementById('srvGauge');
+        const offline=document.getElementById('offlineBadge');
+        if(tools&&stateRow){
+            if(pro){
+                if(gauge&&gauge.parentElement!==stateRow) stateRow.insertBefore(gauge,stateRow.firstChild);
+                if(offline&&offline.parentElement!==stateRow) stateRow.appendChild(offline);
+            }else{
+                if(gauge&&gauge.parentElement!==tools) tools.insertBefore(gauge,tools.firstChild);
+                if(offline&&offline.parentElement!==tools) tools.insertBefore(offline,tools.firstChild);
+            }
         }
         try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
     }
@@ -15975,7 +15970,17 @@ function _tightLineBackspace(c,w){
     let _navNoHist=false;             // pushState 를 못 쓰는 환경(샌드박스 iframe·file://)
     let _navCollapsing=false;         // 보초를 걷는 history.back() 의 popstate 는 무시한다
     let _navCollapseT=null;           // …그 popstate 가 끝내 안 오는 환경 대비 안전망
+    // 14.65 · 뒤로가기(popstate)가 부른 닫기 동작은 장부에서 이미 뺀 층이다.
+    //   그 안에서 다시 navDrop 이 불려도 '보초 걷기(history.back())'를 하면 안 된다.
+    //   그 back() 이 뒤로가기를 한 번 더 먹어, 폴더 안에서 문서를 닫고 한 번 더
+    //   누르면 홈으로 가는 대신 사이트를 빠져나가 버렸다(사용자 보고).
+    let _navInClose=false;
     function _navClose(it){ if(it&&it.close){ try{ it.close(); }catch(err){} } }
+    // popstate 가 부른 닫기 동안에는 navDrop 이 보초를 건드리지 않게 잠근다.
+    function _navCloseFromPop(it){
+        _navInClose=true;
+        try{ _navClose(it); }finally{ _navInClose=false; }
+    }
     // 보초를 얹거나(첫 층) 이미 얹힌 보초의 층 수만 고친다(다음 층부터).
     // replaceState 라서 층이 늘어도 히스토리 항목은 하나다.
     function _navStamp(){
@@ -15987,6 +15992,10 @@ function _tightLineBackspace(c,w){
     }
     function openNav(close){ _nav.push({close}); _navStamp(); }
     function navDrop(close){
+        // popstate 가 부른 닫기(= 이미 장부에서 빠진 층)면 여기서 보초를 걷지 않는다.
+        // 걷는 back() 이 뒤로가기를 한 번 더 소비해 층 하나를 건너뛰거나 앱을
+        // 빠져나가던 원인이라, 마무리는 popstate 처리부가 맡는다.
+        if(_navInClose) return;
         const i=_nav.findIndex(x=>x.close===close);
         if(i>=0) _nav.splice(i,1);
         if(_nav.length){ _navStamp(); return; }
@@ -16001,8 +16010,36 @@ function _tightLineBackspace(c,w){
             _navCollapseT=setTimeout(()=>{ _navCollapseT=null; _navCollapsing=false; },1500);
         }
     }
+    // 14.65 · 열린 층이 없을 때 뒤로가기 한 번이 할 일 — 폴더 밖으로(결국 홈까지)
+    //   한 단계 올라가거나, 길을 잃고 열려 있는 에디터를 닫는다. 했으면 true.
+    //   (홈에서는 할 일이 없다 → 그때만 뒤로가기가 앱을 나간다.)
+    function _navHomeStep(){
+        try{
+            if(typeof curFolder!=='undefined' && curFolder){
+                openFolder(folderParent(curFolder), true);
+                // 아직 상위 폴더 안이면 보초를 다시 얹어 다음 뒤로가기도 잡는다.
+                // (홈까지 올라왔으면 보초를 남기지 않는다 — 그때는 평소처럼 나간다)
+                if(curFolder) _navStamp();
+                return true;
+            }
+        }catch(e){}
+        try{
+            if(document.getElementById('editorView').classList.contains('open')){
+                _navCloseFromPop(closeEditor);
+                return true;
+            }
+        }catch(e){}
+        return false;
+    }
+    // 14.65 · 아직 홈이 아닌가 — 폴더 안이거나 에디터가 열려 있으면 뒤로가기를
+    //   한 번 더 받아 줄 보초를 남긴다(그래야 다음 뒤로가기가 사이트를 나가는
+    //   대신 홈으로 올라간다).
+    function _navAwayFromHome(){
+        try{ if(typeof curFolder!=='undefined' && curFolder) return true; }catch(e){}
+        try{ return document.getElementById('editorView').classList.contains('open'); }catch(e){ return false; }
+    }
     function navBack(){
-        if(!_nav.length) return;
+        if(!_nav.length){ _navHomeStep(); return; }
         // 히스토리를 못 쓰는 환경에서 history.back() 을 부르면 앱 밖으로 나가
         // 페이지가 다시 실린다(= 그 자체가 화면 깜빡임). 그럴 땐 곧바로 닫는다.
         if(_navNoHist||!_navGuard){ _navClose(_nav.pop()); _navStamp(); return; }
@@ -16024,17 +16061,24 @@ function _tightLineBackspace(c,w){
             // 없으므로, 열려 있는 것 중 보초가 기억하는 층 수를 넘는 것만 정리한다.
             _navGuard=true;
             const n=(typeof st.n==='number')?st.n:_nav.length;
-            while(_nav.length>n) _navClose(_nav.pop());
+            while(_nav.length>n) _navCloseFromPop(_nav.pop());
             return;
         }
         // 보초 아래(앱이 처음 실린 항목)로 내려왔다.
         _navGuard=false;
-        if(!_nav.length) return;      // 열린 것이 없다 → 다음 뒤로가기가 앱을 나간다
+        // 14.65 · 열린 층이 없어도 곧바로 사이트를 나가지 않는다.
+        //   아직 폴더 안이면 한 단계 위로(결국 홈까지) 올리고, 에디터가 열려
+        //   있으면 닫는다. 그래야 어느 길로 들어왔든 뒤로가기가 '홈까지'
+        //   올라가고, 정말 홈에서 한 번 더 눌렀을 때만 앱을 나간다.
+        if(!_nav.length){
+            if(_navHomeStep()) return;
+            return;      // 홈이다 → 다음 뒤로가기가 앱을 나간다
+        }
         // 뒤로가기 한 번 = 가장 위 열린 것 하나 닫기.
-        _navClose(_nav.pop());
-        // 아직 층이 남았다면 보초를 다시 얹는다 — 다음 뒤로가기도 앱을
-        // 빠져나가는 대신 그다음 층을 닫아야 한다.
-        if(_nav.length) _navStamp();
+        _navCloseFromPop(_nav.pop());
+        // 아직 층이 남았거나 폴더 안·에디터라면 보초를 다시 얹는다 — 다음
+        // 뒤로가기도 앱을 빠져나가는 대신 그다음 층(결국 홈)을 향해야 한다.
+        if(_nav.length || _navAwayFromHome()) _navStamp();
     });
 
     // 열려 있는 것 중 가장 위를 닫는다 (Esc / 뒤로가기 공용). 닫았으면 true.
@@ -30054,27 +30098,57 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                    eq: sdyEqObj,
                    _state:()=>P};
 
-// ── 14.59 · 프로 홈 은은한 이퀄라이저 — 프로 모드 홈 배경 전용, 재생 중에만 은은하게 일렁인다 ──
-//  · #proHomeEq 캔버스는 #mainView 뒤(z:-1)에 깔리고(클래식에선 display:none), 재생 시에만 opacity 로 떠오른다.
-//  · 기존 Web Audio 그래프를 재사용한다: _eqAnalyser가 있으면 그 getByteFrequencyData 를 쓰고,
-//    없으면 eqBuild() 로 한 번만 연결을 시도한다. 두 번째 MediaElementSource 를 만들지 않아 무음 버그가 없다.
-//  · 14.61 · 뼈대를 바꿨다: 28개 막대(이산 그래프) 대신 **연속 곡선** —
-//    화면 가장 바닥에서부터 피어오르는 부드러운 물결 + 시간이 흐르며 이동하는
-//    그라데이션(세로 페이드 + 좌→우로 흐르는 색 띠 + 미끄러지는 윗선).
-//    주파수 96칼럼(로그 축)을 이웃 3칸 공간 스무딩 ×2 + attack/fall 시간 스무딩으로
-//    이어 중점 2차 베지어로 그린다. 터보·모션감소·에디터에선 rAF 자체를 돌지 않는다.
+// ── 14.59 · 프로 홈 배경 버츄얼라이저 — 재생 중에만 은은하게 일렁인다 ──
+//  · #proHomeEq 는 그 자체가 <canvas> 다(#mainView 뒤 z:-1). 그 위에 바로 그린다.
+//  · 기존 Web Audio 그래프를 재사용한다: _eqAnalyser 가 있으면 그
+//    getByteFrequencyData 를 쓰고, 없으면 eqBuild() 로 한 번만 연결을 시도한다.
+//    두 번째 MediaElementSource 를 만들지 않아 무음 버그가 없다.
+//  · 14.61 → 14.64 로 그림을 갈아엎었다. 예전엔 스펙트럼을 그대로 그린
+//    '그래프(연속 곡선)'였지만, 사용자 요청("그래프 형식이 아니라 다른 주파수의
+//    파동 여러개가 겹친 형태, 예쁘고 덜 촐랑거리고 부드럽게")에 맞춰
+//    **서로 다른 주파수의 사인 파동 6겹이 겹쳐 흐르는** 형태로 바꿨다.
+//    · 겹마다 담당 대역(저음 40Hz ~ 고음 14kHz)만 보고, 그 대역 에너지로
+//      천천히 부풀었다 잦아든다. 스펙트럼 빈을 그대로 따라가지 않으므로
+//      막대처럼 튀지 않는다.
+//    · 공격 0.55초 / 낙하 2.4초 지수 완화 — 물결이 '숨쉰다'.
+//    · 위상은 0.013~0.031 rad/s 로 아주 느리게 흐른다(촐랑거림 방지).
+//    · 몸통은 윗선에서 화면 바닥까지 사라지는 세로 그라데이션 + 가는 윗선.
+//    · 터보(저사양)·모션감소·에디터 열림에서는 rAF 자체가 돌지 않는다.
 (function(){
   const cvs=document.getElementById('proHomeEq');
   if(!cvs) return;
   let ctx=null; try{ ctx=cvs.getContext('2d',{alpha:true}); }catch(e){}
   if(!ctx) return;
-  const COL_N=96;
-  let env=new Float32Array(COL_N), raws=new Float32Array(COL_N), sm=new Float32Array(COL_N), bandMax=new Float32Array(COL_N);
-  for(let i=0;i<COL_N;i++) bandMax[i]=0.35;
+
+  // ① 파동 겹 정의 — 겹마다 다른 주파수 대역·파장·흐르는 속도·색을 가진다.
+  //    amp/alpha 는 '차분할 때 얼마나 잔잔한가'를 정한다(에너지 0.30~1 배).
+  //      band : [저Hz, 고Hz] — 이 대역의 에너지만 이 겹의 높이를 만든다
+  //      k    : 화면 폭에 몇 번 접히는가(작을수록 길고 완만한 파동)
+  //      sp   : 위상 흐름 rad/s (음수 = 반대 방향)
+  //      base : 파동의 중심 높이(화면 높이 비율)
+  const WAVES=[
+    { band:[  40,  170], k:1.05, sp: 0.031, base:0.64, amp:0.085, alpha:0.30, hue:  0, width:1.6 },
+    { band:[ 120,  400], k:1.45, sp:-0.027, base:0.58, amp:0.076, alpha:0.27, hue: 16, width:1.5 },
+    { band:[ 320,  900], k:1.95, sp: 0.023, base:0.52, amp:0.066, alpha:0.24, hue:-14, width:1.4 },
+    { band:[ 800, 2200], k:2.60, sp:-0.020, base:0.46, amp:0.056, alpha:0.21, hue: 30, width:1.3 },
+    { band:[2000, 5500], k:3.40, sp: 0.016, base:0.41, amp:0.047, alpha:0.18, hue:-24, width:1.2 },
+    { band:[5000,14000], k:4.30, sp:-0.013, base:0.36, amp:0.039, alpha:0.15, hue: 42, width:1.1 },
+  ];
+  const NW=WAVES.length;
+  // 대역 틸트 — 고음은 같은 세기라도 스펙트럼에서 작게 잡히므로 살짝 들어 올린다
+  WAVES.forEach(w=>{
+    const mid=Math.sqrt(w.band[0]*w.band[1]);
+    w.tilt=Math.min(1.22, 0.78+0.40*Math.sqrt(mid/9000));
+  });
+  const env=new Float32Array(NW);      // 겹별 완화된 에너지(0~1)
+  const bandMax=new Float32Array(NW);
+  for(let i=0;i<NW;i++){ env[i]=0.26; bandMax[i]=0.35; }
+
   let raf=0, last=0, dpr=1, w=0, h=0, started=false;
   let buf=null, fbuf=null;
-  const FALL=2.1;
-  function isPro(){ try{ const h=document.documentElement; return h.classList.contains('theme-pro') || h.dataset.theme==='pro'; }catch(e){ return false; } }
+  const SEG_MAX=240;
+
+  function isPro(){ try{ const el=document.documentElement; return el.classList.contains('theme-pro')||el.dataset.theme==='pro'; }catch(e){ return false; } }
   function shouldRun(){
     if(!isPro()) return false;
     if(document.body.classList.contains('sdy-turbo')) return false;
@@ -30099,7 +30173,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!isFinite(n)) return [37,99,235];
     return [(n>>16)&255,(n>>8)&255,n&255];
   }
-  // 14.61 · 그라데이션 서브 컬러용 — 강조색을 HSL 로 돌려 보색 방향으로 살짝 틀어 준다
+  // 겹마다 색을 살짝 돌리기 위한 HSL 변환(강조색 기준)
   function hexToHsl(hex){
     try{
       const c=hexToRgb(hex).map(v=>v/255);
@@ -30119,227 +30193,161 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   function resize(){
     const r=cvs.getBoundingClientRect();
-    // CSS 가 width:calc(100% - 280px) 등으로 잡아 주므로, 실측이 0이면 부모 폭에서 유추
     let rw=r.width, rh=r.height;
     if(rw<10||rh<10){
-      const vw=innerWidth, vh=innerHeight;
+      // CSS 가 아직 못 잡았을 때(첫 프레임·display:none) — 뷰포트에서 유추
+      const vw=window.innerWidth||1280, vh=window.innerHeight||800;
       const side=document.getElementById('proSide');
       const sw=side?side.getBoundingClientRect().width:0;
-      rw=Math.max(200, vw - (isPro()?sw:0));
-      rh=Math.max(140, vh - 88);
+      rw=Math.max(200, vw-(isPro()?sw:0));
+      rh=Math.max(140, vh-88);
     }
     dpr=Math.min(1.6, window.devicePixelRatio||1);
     w=rw; h=rh;
     cvs.width=Math.max(1, Math.round(rw*dpr));
     cvs.height=Math.max(1, Math.round(rh*dpr));
-    // 2d context 는 devicePixelRatio 로 스케일 — 그리기 좌표는 CSS px 로 쓴다
     try{ ctx.setTransform(dpr,0,0,dpr,0,0); }catch(e){ try{ ctx.scale(dpr,dpr); }catch(e2){} }
   }
   let resizeT=null;
   function scheduleResize(){ clearTimeout(resizeT); resizeT=setTimeout(resize,120); }
   try{ new ResizeObserver(scheduleResize).observe(cvs); }catch(e){}
+  try{ new ResizeObserver(scheduleResize).observe(cvs); }catch(e){}
   try{ new ResizeObserver(scheduleResize).observe(document.getElementById('proSide')||document.body); }catch(e){}
   window.addEventListener('resize', scheduleResize, {passive:true});
-  // 초기 한 번
   try{ resize(); }catch(e){}
 
-  function ensureAnalyser(){
-    if(_eqAnalyser) return true;
-    // EQ 가 꺼져 있어도, 프로 홈 이퀄라이저는 조용히 그래프를 한 번 물려 본다.
-    // eqBuild() 는 내부에서 CORS 를 검사하고 실패하면 false 를 돌려 준다.
-    if(_eqBusy) return false;
-    // 비동기이지만, 호출부에선 다음 프레임에 데이터가 생긴다.
-    // 여기선 동기적으로 _eqAnalyser 존재 여부만 보고, 없으면 다음 틱에 다시 시도한다.
-    return false;
-  }
   async function tryBuild(){
     if(_eqAnalyser) return true;
     if(_eqBusy) return false;
-    try{
-      const ok=await eqBuild();
-      if(ok) return true;
-    }catch(e){}
+    try{ const ok=await eqBuild(); if(ok) return true; }catch(e){}
     return false;
   }
   function setPlaying(on){
     cvs.classList.toggle('playing', !!on);
     cvs.classList.toggle('idle', !on);
-    // CSS 가 opacity 를 .11 로 올린다 — JS 는 클래스만 바꾼다
+  }
+  // 대역 평균 — FFT 빈은 선형이라 주파수를 로그로 눌러 담는다(사람 귀 기준)
+  function bandRaw(lo, hi, bins, nyq){
+    if(!bins) return 0;
+    const f1=Math.max(lo, 20), f2=Math.min(hi, nyq*0.98);
+    if(f2<=f1) return 0;
+    const b1=Math.round(f1/nyq*(bins-1)), b2=Math.round(f2/nyq*(bins-1));
+    let ss=0, c=0;
+    for(let j=Math.max(0,b1); j<=Math.min(bins-1,b2); j++){ ss+=fbuf[j]; c++; }
+    return c?ss/c:0;
   }
   function draw(now){
     if(!shouldRun()){
-      // 멈췄거나 에디터가 열렸으면 서서히 사라지고 루프 정지
       setPlaying(false);
       raf=0; last=0;
-      // 캔버스를 투명하게 한 번 지워 잔상을 없앤다
       try{ ctx.clearRect(0,0,w,h); }catch(e){}
       return;
     }
     raf=requestAnimationFrame(draw);
+    const t=((now||0))/1000;
     const dt=Math.min(.05, Math.max(.001, ((now||0)-(last||now-16))/1000));
     last=now||0;
 
-    // 데이터 소스 확보 — 없으면 이번 프레임은 낮은 높이로만 그리고 다음 프레임에 재시도
-    let hasData=false;
-    let binCount=0;
+    // ③ 스펙트럼 확보 (없으면 조용히 한 번 물려 본다)
+    let hasData=false, bins=0, nyq=16500;
     if(_eqAnalyser){
-      binCount=_eqAnalyser.frequencyBinCount||1024;
-      if(!buf||buf.length!==binCount){ buf=new Uint8Array(binCount); fbuf=new Float32Array(binCount); }
+      bins=_eqAnalyser.frequencyBinCount||1024;
+      if(!buf||buf.length!==bins){ buf=new Uint8Array(bins); fbuf=new Float32Array(bins); }
       try{ _eqAnalyser.getByteFrequencyData(buf); hasData=true; }catch(e){ hasData=false; }
-      if(hasData){ for(let i=0;i<binCount;i++) fbuf[i]=buf[i]/255; }
-    } else {
-      // 한 번도 안 물려 있으면 조용히 물려 본다 (다음 프레임부터 데이터가 온다)
-      if(!started) { started=true; tryBuild().then(()=>{}); }
-      else if(Math.random()<0.04) tryBuild().then(()=>{});
+      if(hasData){ for(let i=0;i<bins;i++) fbuf[i]=buf[i]/255; }
+      const sr=(_eqCtx&&_eqCtx.sampleRate)||44100;
+      nyq=Math.max(1000, sr/2);
+    }else{
+      if(!started){ started=true; tryBuild(); }
+      else if(Math.random()<0.04) tryBuild();
     }
 
-    // 배경은 항상 지운다 — 잔상을 남기지 않는다
     ctx.clearRect(0,0,w,h);
     if(w<20||h<20) return;
 
-    // 색 — 프로 강조색 + 살짝 돌린 서브 컬러(그라데이션 이동이 보이게)
-    const acc=accentHex();
-    const rgb=hexToRgb(acc);
-    const accRgb=`${rgb[0]},${rgb[1]},${rgb[2]}`;
-    const hsl=hexToHsl(acc);
-    const hue2=(hsl[0]+42+360)%360;
-    const hslA=(a,dl)=>`hsla(${hue2.toFixed(0)},${Math.round(hsl[1])}%,${Math.min(74,Math.round(hsl[2]+(dl||12)))}%,${a})`;
-
-    // 레이아웃 — 시작점은 화면 '가장 바닥'(baseY=h) 끝. 좌우 여백 없이 끝까지 이어진다.
-    const baseY=h+2;
-    const maxH=h*0.46;
-
-    // 주파수 매핑 — 42Hz ~ 16kHz 를 로그로 나눈다 (사람 귀처럼 저음이 넓게)
-    const lo=42, hi=16800;
-    const sr=(_eqCtx&&_eqCtx.sampleRate)||44100, nyq=Math.max(1000,sr/2);
-    // 이번 프레임의 목표 높이들 (attack/fall 적용 전 raw)
-    for(let i=0;i<COL_N;i++){
-      const f=lo*Math.pow(hi/lo, i/(COL_N-1));
-      // 데이터가 없어도 완전히 평평하진 않게 — 아주 낮은 숨결
-      let v=0.10 + 0.05*Math.sin(i*0.055 + now*0.00050) + 0.025*Math.sin(i*0.021 - now*0.0011);
-      if(hasData && binCount){
-        const c=Math.round(f/nyq*(binCount-1));
-        const half=Math.max(1, Math.round(c*0.05+2));
-        let ss=0,cnt=0;
-        for(let j=Math.max(0,c-half); j<=Math.min(binCount-1,c+half); j++){ ss+=fbuf[j]; cnt++; }
-        let raw=cnt?ss/cnt:0;
-        // 틸트 — 고음이 작게 잡히므로 살짝 들어 올린다
-        const tilt=Math.min(1.14, 0.74+0.42*Math.sqrt(f/12000));
-        raw*=tilt;
-        // AGC — 밴드별 최대치를 추적해 조용한 곡도 물결이 살아 있게
-        if(raw>bandMax[i]) bandMax[i]=bandMax[i]*0.94+raw*0.06;
-        else bandMax[i]=Math.max(0.18, bandMax[i]*0.998+raw*0.002);
-        const norm=Math.max(0.22, bandMax[i]);
-        v=Math.min(1, raw/norm*0.85);
-        // 감마 — 작은 신호도 보이게
-        v=Math.pow(Math.max(0, v), 0.75);
-      } else {
-        bandMax[i]=Math.max(0.22, bandMax[i]*0.995+v*0.005);
+    // ④ 겹별 에너지 — 공격은 짧게, 낙하는 길게(2.4초). 이게 '촐랑거림'을 없앤다.
+    for(let i=0;i<NW;i++){
+      const W=WAVES[i];
+      let raw=0.24;                       // 데이터가 없어도 아주 낮은 숨결은 남는다
+      if(hasData&&bins){
+        raw=bandRaw(W.band[0], W.band[1], bins, nyq)*W.tilt;
+        if(raw>bandMax[i]) bandMax[i]=bandMax[i]*0.90+raw*0.10;
+        else bandMax[i]=Math.max(0.20, bandMax[i]*0.998+raw*0.002);
+        raw=Math.min(1, raw/Math.max(0.22, bandMax[i]));
+      }else{
+        bandMax[i]=Math.max(0.22, bandMax[i]*0.996+raw*0.004);
       }
-      raws[i]=v;
-    }
-    // 공간 스무딩 — 이웃 3칸 가중 평균 ×2회: 칼럼 사이 계단(이산)을 지운다
-    sm.set(raws);
-    for(let k=0;k<2;k++){
-      let left=sm[COL_N-1];
-      for(let i=0;i<COL_N;i++){
-        const cur=sm[i], nxt=sm[(i+1)%COL_N];
-        sm[i]=(left+cur*2+nxt)/4;
-        left=cur;
-      }
-    }
-    // attack/fall — 올라갈 땐 즉시, 내려갈 땐 부드럽게 (시간축 스무딩)
-    for(let i=0;i<COL_N;i++){
-      const v=sm[i];
-      if(v>env[i]) env[i]=v;
-      else env[i]=Math.max(v, env[i]-FALL*dt);
+      const target=Math.pow(Math.max(0, raw), 0.82);
+      const tau=target>env[i]?0.55:2.40;
+      env[i]+=(target-env[i])*(1-Math.exp(-dt/tau));
+      if(!(env[i]>=0)) env[i]=0;          // (NaN 방어)
     }
 
-    // 곡선 점 — 좌우는 화면 밖까지 살짝 이어 끊김이 없게
-    const xs=new Float32Array(COL_N), ys=new Float32Array(COL_N);
-    for(let i=0;i<COL_N;i++){
-      xs[i]=-10 + (w+20)*(i/(COL_N-1));
-      ys[i]=baseY - env[i]*maxH
-            - Math.sin(i*0.055 + now*0.0009)*3.2*env[i]
-            - Math.cos(i*0.021 - now*0.0007)*1.6;
-    }
-    // 중점 2차 베지어로 이은 부드러운 곡선 — 아래는 화면 밖까지 닫는다
-    const strokePath=()=>{
-      ctx.beginPath();
-      ctx.moveTo(xs[0], ys[0]);
-      for(let i=1;i<COL_N-1;i++){
-        const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
-        ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
-      }
-      ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
-    };
+    // ⑤ 색 — 겹마다 강조색에서 조금씩 돌린 색(같은 계열이라 어지럽지 않다)
+    const hsl=hexToHsl(accentHex());
+    const sat=Math.max(26, Math.min(86, hsl[1]*0.92));
+    const lig=Math.max(38, Math.min(66, hsl[2]+10));
+    const seg=Math.max(64, Math.min(SEG_MAX, Math.round(w/8)));
+    const xs=new Float32Array(seg+1), ys=new Float32Array(seg+1);
 
     ctx.save();
-    ctx.globalAlpha=1;
-
-    // ① 몸통 채움 — 세로 그라데이션(위가 진하고 화면 바닥에서 사라진다)
-    const vg=ctx.createLinearGradient(0, baseY-maxH, 0, baseY);
-    vg.addColorStop(0, `rgba(${accRgb},0.5)`);
-    vg.addColorStop(0.55, `rgba(${accRgb},0.18)`);
-    vg.addColorStop(1, `rgba(${accRgb},0)`);
-    ctx.fillStyle=vg;
-    ctx.beginPath();
-    ctx.moveTo(xs[0], baseY);
-    ctx.lineTo(xs[0], ys[0]);
-    for(let i=1;i<COL_N-1;i++){
-      const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
-      ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
-    }
-    ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
-    ctx.lineTo(xs[COL_N-1], baseY);
-    ctx.closePath();
-    ctx.fill();
-
-    // ② 흐르는 색 띠 — 같은 물결 모양 위를 서브 컬러 띠가 왼→오로 흘러 간다.
-    //    띠는 화면 밖에서 완전히 사라진 뒤 처음부터 다시 나오므로 이음새가 없다.
-    const bandW=Math.max(120, w*0.42);
-    const cyc=w+bandW;
-    const bx=((now*0.05)%cyc)-bandW;
-    const bg=ctx.createLinearGradient(bx, 0, bx+bandW, 0);
-    bg.addColorStop(0, hslA(0));
-    bg.addColorStop(0.5, hslA(0.38));
-    bg.addColorStop(1, hslA(0));
-    ctx.fillStyle=bg;
-    ctx.beginPath();
-    ctx.moveTo(xs[0], baseY);
-    ctx.lineTo(xs[0], ys[0]);
-    for(let i=1;i<COL_N-1;i++){
-      const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
-      ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
-    }
-    ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
-    ctx.lineTo(xs[COL_N-1], baseY);
-    ctx.closePath();
-    ctx.fill();
-
-    // ③ 물결 윗선 — 강조색↔서브 컬러가 계속 미끄러지는 그라데이션 선.
-    //    주기가 정확히 화면 폭이라 순환해도 이음새가 보이지 않는다.
-    const sx0=-(((now*0.06)%w)+w)%w;
-    const sg=ctx.createLinearGradient(sx0, 0, sx0+w, 0);
-    sg.addColorStop(0, `rgba(${accRgb},0.42)`);
-    sg.addColorStop(0.5, hslA(0.46,16));
-    sg.addColorStop(1, `rgba(${accRgb},0.42)`);
-    ctx.strokeStyle=sg;
-    ctx.lineWidth=1.6;
     ctx.lineJoin='round'; ctx.lineCap='round';
-    strokePath();
-    ctx.stroke();
+    for(let i=0;i<NW;i++){
+      const W=WAVES[i];
+      const e=env[i];
+      // 음악이 조용하면 잔잔한 결만 남고, 세지면 천천히 부풀어 오른다
+      const amp=W.amp*h*(0.30+0.70*e)*(0.86+0.14*Math.sin(t*0.07+i*1.7));
+      const yc=h*W.base;
+      const ph=t*W.sp+i*0.9;
+      const turns=Math.PI*2*W.k;
+      for(let s=0;s<=seg;s++){
+        const u=s/seg;
+        const x=-24+(w+48)*u;
+        // 기본 파동 + 느린 변조 + 아주 옅은 배음 — 자연스러운 물결 모양
+        const body=Math.sin(u*turns+ph)*(0.80+0.20*Math.sin(u*turns*0.5-ph*0.6+i));
+        const overtone=Math.sin(u*turns*0.37+ph*1.7+0.6)*0.26;
+        xs[s]=x;
+        ys[s]=yc-body*amp-overtone*amp*(0.5+0.5*e);
+      }
+      const hh=((hsl[0]+W.hue)%360+360)%360;
+      const top=Math.min(h+6, h*1.0);
+      // 몸통 — 윗선에서 화면 바닥까지 사라지는 세로 그라데이션
+      const g=ctx.createLinearGradient(0, yc-amp*1.8, 0, top);
+      g.addColorStop(0,   `hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${lig.toFixed(0)}%,${(W.alpha*(0.55+0.45*e)).toFixed(3)})`);
+      g.addColorStop(0.55,`hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${(lig+4).toFixed(0)}%,${(W.alpha*0.30*(0.55+0.45*e)).toFixed(3)})`);
+      g.addColorStop(1,   `hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${(lig+8).toFixed(0)}%,0)`);
+      ctx.fillStyle=g;
+      ctx.beginPath();
+      ctx.moveTo(xs[0], h+4);
+      ctx.lineTo(xs[0], ys[0]);
+      for(let s=1;s<seg;s++){
+        const mx=(xs[s]+xs[s+1])/2, my=(ys[s]+ys[s+1])/2;
+        ctx.quadraticCurveTo(xs[s], ys[s], mx, my);
+      }
+      ctx.lineTo(xs[seg], ys[seg]);
+      ctx.lineTo(xs[seg], h+4);
+      ctx.closePath();
+      ctx.fill();
+      // 윗선 — 파동의 결을 또렷하게(아주 가늘게)
+      ctx.strokeStyle=`hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${lig.toFixed(0)}%,${(Math.min(0.72, W.alpha*1.9)*(0.5+0.5*e)).toFixed(3)})`;
+      ctx.lineWidth=W.width;
+      ctx.beginPath();
+      ctx.moveTo(xs[0], ys[0]);
+      for(let s=1;s<seg;s++){
+        const mx=(xs[s]+xs[s+1])/2, my=(ys[s]+ys[s+1])/2;
+        ctx.quadraticCurveTo(xs[s], ys[s], mx, my);
+      }
+      ctx.lineTo(xs[seg], ys[seg]);
+      ctx.stroke();
+    }
     ctx.restore();
   }
-
   function start(){
     if(raf) return;
     if(!shouldRun()) return;
     setPlaying(true);
-    // 이미 rAF 가 돌고 있으면 중복 시작 방지
-    last=performance.now();
-    // 다음 프레임에 빌드가 끝나 있으면 그때부터 데이터가 들어온다
-    if(!_eqAnalyser) tryBuild().then(()=>{});
+    last=window.performance?performance.now():Date.now();
+    if(!_eqAnalyser) tryBuild();
     raf=requestAnimationFrame(draw);
     started=true;
   }
@@ -30349,12 +30357,11 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     last=0;
     try{ ctx.clearRect(0,0,w,h); }catch(e){}
   }
-  // 재생 상태에 따라 시작/정지
-  A.addEventListener('play', ()=>{ if(isPro()){ scheduleResize(); start(); }});
+  // ⑥ 재생/일시정지·화면 전환에 따라 시작과 정지
+  A.addEventListener('play', ()=>{ if(isPro()){ scheduleResize(); start(); } });
   A.addEventListener('pause', stop);
   A.addEventListener('ended', stop);
   A.addEventListener('emptied', stop);
-  // 테마·사이드바·에디터 전환 — CSS 가 숨겨도 JS 루프는 멈춘다
   try{
     new MutationObserver(()=>{
       if(shouldRun()){ scheduleResize(); start(); }
@@ -30371,11 +30378,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       .observe(document.body,{attributes:true,attributeFilter:['class']});
   }catch(e){}
   try{ window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', ()=>{ if(shouldRun()) start(); else stop(); }); }catch(e){}
-  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) { if(raf){ cancelAnimationFrame(raf); raf=0; } } else if(shouldRun()) start(); });
-  // 초기 상태 — 이미 재생 중이면 바로 시작
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ if(raf){ cancelAnimationFrame(raf); raf=0; } } else if(shouldRun()) start(); });
   if(shouldRun()) start();
-  // 외부 디버그 손잡이
-  try{ window.sdyProEq={canvas:cvs, start, stop, resize, ctx, isPro, shouldRun}; }catch(e){}
+  // 외부 디버그 손잡이 (테스트가 파형을 직접 확인할 수 있게 파동 정의도 함께 노출)
+  try{ window.sdyProEq={canvas:cvs, waves:WAVES, start, stop, resize, isPro, shouldRun}; }catch(e){}
 })();
 
 })();

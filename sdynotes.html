@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko" data-theme="pro" class="theme-pro">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.62.1">
+<link rel="stylesheet" href="sdynotes.css?v=14.64.0">
     <script>
     /* 14.47 · 테마 선적용 — 첫 페인트 전에 저장된 테마를 입혀 화면 깜빡임을 막는다.
        저장값이 없으면 새 기본인 'pro'(14.48 · 밝은 전문 디자인)로 시작한다. */
@@ -28,7 +28,7 @@
          · 이 파일·sdynotes.js·sdynotes.css·src 모듈을 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.62.1">
+    <meta name="application-version" content="14.64.0">
     <title>SDYnotes</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -398,7 +398,12 @@
     <div id="proShell" class="pro-shell">
     <aside id="proSide" class="pro-side" aria-label="메뉴">
         <div class="pro-brand" id="proBrandSlot"></div>
-        <button id="proSideToggle" class="pro-side-toggle" type="button" onclick="toggleProSide()" title="사이드바 접기/펼치기" aria-label="사이드바 접기"><i class="ri-arrow-left-double-line" aria-hidden="true"></i></button>
+        <!-- 14.64 · 상태 줄 — 서버 계기판·오프라인 배지는 도구 줄에 섞여 잘리지 않게
+             사이드바 맨 위 전용 줄에 둔다. (_proShellSwap 이 #srvGauge·#offlineBadge 를
+             이 자리로 옮기고, 캐주얼 테마로 돌아가면 헤더 도구 줄로 되돌린다) -->
+        <div class="pro-state" id="proStateRow" aria-label="서버 상태">
+            <span id="srvStateText" class="pro-state-text">서버 확인 중</span>
+        </div>
         <details id="proBookmarks" class="pro-bookmarks">
             <summary title="북마크" aria-label="북마크 목록"><i class="ri-bookmark-fill" aria-hidden="true"></i><span>북마크</span><span id="proBookmarkCount" class="pro-bookmark-count">0</span><i class="ri-arrow-down-s-line pro-bookmark-chevron" aria-hidden="true"></i></summary>
             <div id="proBookmarkSlot" class="pro-bookmark-panel" aria-label="북마크 링크"></div>
@@ -428,8 +433,10 @@
                 <div class="flex items-center gap-3 hdr-right" style="margin-right:8px;">
                     <div id="offlineBadge" class="offline-badge" style="display:none"
                          onclick="flushOutbox(false)" title="눌러서 지금 동기화"></div>
-                    <!-- 서버 상태 계기판 -->
-                    <div id="srvGauge" class="srv-gauge" onclick="openSrvPop(event)" title="서버 상태">
+                    <!-- 서버 상태 계기판 — 프로 테마에서는 JS 가 사이드바 맨 위(#proStateRow)로 옮긴다 -->
+                    <div id="srvGauge" class="srv-gauge" onclick="openSrvPop(event)" role="button" tabindex="0"
+                         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openSrvPop(event);}"
+                         title="서버 상태">
                         <svg viewBox="0 0 40 25" aria-hidden="true">
                             <!-- 빨강·노랑·초록 구간을 한 그림에 (자동차 계기판처럼) -->
                             <path class="srv-zone z-bad"  d="M4 21 A16 16 0 0 1 15.06 5.78"></path>
@@ -654,6 +661,8 @@
                             <button onclick="mi(()=>openExportModal())"><i class="ri-share-box-line"></i><span>내보내기</span></button>
                             <button onclick="mi(()=>lockCurrentNote())" id="lockBtn"><i class="ri-lock-unlock-line"></i><span>노트 잠금</span></button>
                             <button onclick="makeCheckpoint()"><i class="ri-save-3-line"></i><span>지점 저장</span></button>
+                            <!-- 14.65 · 저장해 둔 지점을 열어 되돌리는 창 — 저장만 있고 여는 길이 없어 못 찾던 복원 기능 -->
+                            <button onclick="mi(()=>openCheckpoints())"><i class="ri-history-line"></i><span>지점 복원</span></button>
                             <button onclick="mi(()=>showDelModal())" class="danger"><i class="ri-delete-bin-6-line"></i><span>노트 삭제</span></button>
                         </div>
                     </div>
@@ -2648,17 +2657,17 @@
 <!-- 14.23.0 · 노트 해돌이(AI 도우미) UI 는 편집기 안 #noteOtter 옆으로 옮겼다 — 아이콘 버튼·뜨는 창은 없다. -->
 
 
-<script src="sdynotes.js?v=14.62.1" defer></script>
-<script src="src/music-player.js?v=14.62.1" defer></script>
-<script src="src/focus-clock.js?v=14.62.1" defer></script>
-<script src="src/live-updates.js?v=14.62.1" defer></script>
-<script src="src/idle-worker.js?v=14.62.1" defer></script>
-<script src="src/mobile-viewport.js?v=14.62.1" defer></script>
-<script src="src/auth.js?v=14.62.1" defer></script>
-<script src="src/ai-assistant.js?v=14.62.1" defer></script>
-<script src="src/chat.js?v=14.62.1" defer></script>
-<script src="src/translate.js?v=14.62.1" defer></script>
-<script src="src/cards.js?v=14.62.1" defer></script>
-<script src="src/server-status.js?v=14.62.1" defer></script>
+<script src="sdynotes.js?v=14.64.0" defer></script>
+<script src="src/music-player.js?v=14.64.0" defer></script>
+<script src="src/focus-clock.js?v=14.64.0" defer></script>
+<script src="src/live-updates.js?v=14.64.0" defer></script>
+<script src="src/idle-worker.js?v=14.64.0" defer></script>
+<script src="src/mobile-viewport.js?v=14.64.0" defer></script>
+<script src="src/auth.js?v=14.64.0" defer></script>
+<script src="src/ai-assistant.js?v=14.64.0" defer></script>
+<script src="src/chat.js?v=14.64.0" defer></script>
+<script src="src/translate.js?v=14.64.0" defer></script>
+<script src="src/cards.js?v=14.64.0" defer></script>
+<script src="src/server-status.js?v=14.64.0" defer></script>
 </body>
 </html>

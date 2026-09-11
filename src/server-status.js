@@ -18,6 +18,19 @@ function srvPaint(d){
     g.classList.toggle('good',lvl==='good');
     g.classList.toggle('warn',lvl==='warn');
     g.classList.toggle('bad', lvl==='bad');
+    // 14.64 · 사이드바 맨 위 상태 줄 — 계기판 옆 문구와 색 등급도 함께 갱신한다.
+    //   (계기판만 있으면 숫자를 읽을 수 없어 '원활/다소 바쁨/부하 높음'을 글자로 보여 준다)
+    const st=document.getElementById('srvStateText');
+    const row=document.getElementById('proStateRow');
+    if(row){
+        row.classList.toggle('good',lvl==='good');
+        row.classList.toggle('warn',lvl==='warn');
+        row.classList.toggle('bad', lvl==='bad');
+    }
+    if(st){
+        st.textContent=(lvl==='good'?'서버 원활':lvl==='warn'?'서버 다소 바쁨':'서버 부하 높음')
+            +(d&&d.score!=null?` · ${score}점`:'');
+    }
     // 반원(180°) 위에서 점수 위치로 바늘을 돌린다.
     // 0점=왼쪽 끝(-90°), 100점=오른쪽 끝(+90°)
     const nd=document.getElementById('srvNeedle');
@@ -91,10 +104,16 @@ function openSrvPop(e){
     if(pop.classList.contains('show')){ pop.classList.remove('show'); return; }
     if(_srvLast) srvFill(_srvLast);
     pop.classList.add('show');
-    const g=document.getElementById('srvGauge').getBoundingClientRect();
+    const gEl=document.getElementById('srvGauge');
+    const g=gEl.getBoundingClientRect();
     const w=pop.offsetWidth, h=pop.offsetHeight;
-    pop.style.left=Math.max(8,Math.min(g.right-w, window.innerWidth-w-8))+'px';
-    pop.style.top =Math.min(g.bottom+8, window.innerHeight-h-8)+'px';
+    // 14.64 · 계기판이 사이드바 안에 있으면(프로 테마) 팝오버는 사이드바 오른쪽 바깥,
+    //   즉 콘텐츠 영역 위에 띄운다 — 사이드바 위에 겹쳐 뜨면 가려서 읽기 어렵다.
+    const side=document.getElementById('proSide');
+    const inSide=!!(side&&side.contains(gEl));
+    const wantLeft=inSide ? (side.getBoundingClientRect().right+10) : (g.right-w);
+    pop.style.left=Math.max(8,Math.min(wantLeft, window.innerWidth-w-8))+'px';
+    pop.style.top =Math.min(inSide?g.top:g.bottom+8, window.innerHeight-h-8)+'px';
     srvPoll();
 }
 document.addEventListener('click',e=>{

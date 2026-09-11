@@ -248,7 +248,17 @@
     let _navNoHist=false;             // pushState 를 못 쓰는 환경(샌드박스 iframe·file://)
     let _navCollapsing=false;         // 보초를 걷는 history.back() 의 popstate 는 무시한다
     let _navCollapseT=null;           // …그 popstate 가 끝내 안 오는 환경 대비 안전망
+    // 14.65 · 뒤로가기(popstate)가 부른 닫기 동작은 장부에서 이미 뺀 층이다.
+    //   그 안에서 다시 navDrop 이 불려도 '보초 걷기(history.back())'를 하면 안 된다.
+    //   그 back() 이 뒤로가기를 한 번 더 먹어, 폴더 안에서 문서를 닫고 한 번 더
+    //   누르면 홈으로 가는 대신 사이트를 빠져나가 버렸다(사용자 보고).
+    let _navInClose=false;
     function _navClose(it){ if(it&&it.close){ try{ it.close(); }catch(err){} } }
+    // popstate 가 부른 닫기 동안에는 navDrop 이 보초를 건드리지 않게 잠근다.
+    function _navCloseFromPop(it){
+        _navInClose=true;
+        try{ _navClose(it); }finally{ _navInClose=false; }
+    }
     // 보초를 얹거나(첫 층) 이미 얹힌 보초의 층 수만 고친다(다음 층부터).
     // replaceState 라서 층이 늘어도 히스토리 항목은 하나다.
     function _navStamp(){
@@ -260,6 +270,10 @@
     }
     function openNav(close){ _nav.push({close}); _navStamp(); }
     function navDrop(close){
+        // popstate 가 부른 닫기(= 이미 장부에서 빠진 층)면 여기서 보초를 걷지 않는다.
+        // 걷는 back() 이 뒤로가기를 한 번 더 소비해 층 하나를 건너뛰거나 앱을
+        // 빠져나가던 원인이라, 마무리는 popstate 처리부가 맡는다.
+        if(_navInClose) return;
         const i=_nav.findIndex(x=>x.close===close);
         if(i>=0) _nav.splice(i,1);
         if(_nav.length){ _navStamp(); return; }
@@ -274,8 +288,36 @@
             _navCollapseT=setTimeout(()=>{ _navCollapseT=null; _navCollapsing=false; },1500);
         }
     }
+    // 14.65 · 열린 층이 없을 때 뒤로가기 한 번이 할 일 — 폴더 밖으로(결국 홈까지)
+    //   한 단계 올라가거나, 길을 잃고 열려 있는 에디터를 닫는다. 했으면 true.
+    //   (홈에서는 할 일이 없다 → 그때만 뒤로가기가 앱을 나간다.)
+    function _navHomeStep(){
+        try{
+            if(typeof curFolder!=='undefined' && curFolder){
+                openFolder(folderParent(curFolder), true);
+                // 아직 상위 폴더 안이면 보초를 다시 얹어 다음 뒤로가기도 잡는다.
+                // (홈까지 올라왔으면 보초를 남기지 않는다 — 그때는 평소처럼 나간다)
+                if(curFolder) _navStamp();
+                return true;
+            }
+        }catch(e){}
+        try{
+            if(document.getElementById('editorView').classList.contains('open')){
+                _navCloseFromPop(closeEditor);
+                return true;
+            }
+        }catch(e){}
+        return false;
+    }
+    // 14.65 · 아직 홈이 아닌가 — 폴더 안이거나 에디터가 열려 있으면 뒤로가기를
+    //   한 번 더 받아 줄 보초를 남긴다(그래야 다음 뒤로가기가 사이트를 나가는
+    //   대신 홈으로 올라간다).
+    function _navAwayFromHome(){
+        try{ if(typeof curFolder!=='undefined' && curFolder) return true; }catch(e){}
+        try{ return document.getElementById('editorView').classList.contains('open'); }catch(e){ return false; }
+    }
     function navBack(){
-        if(!_nav.length) return;
+        if(!_nav.length){ _navHomeStep(); return; }
         // 히스토리를 못 쓰는 환경에서 history.back() 을 부르면 앱 밖으로 나가
         // 페이지가 다시 실린다(= 그 자체가 화면 깜빡임). 그럴 땐 곧바로 닫는다.
         if(_navNoHist||!_navGuard){ _navClose(_nav.pop()); _navStamp(); return; }
@@ -297,17 +339,24 @@
             // 없으므로, 열려 있는 것 중 보초가 기억하는 층 수를 넘는 것만 정리한다.
             _navGuard=true;
             const n=(typeof st.n==='number')?st.n:_nav.length;
-            while(_nav.length>n) _navClose(_nav.pop());
+            while(_nav.length>n) _navCloseFromPop(_nav.pop());
             return;
         }
         // 보초 아래(앱이 처음 실린 항목)로 내려왔다.
         _navGuard=false;
-        if(!_nav.length) return;      // 열린 것이 없다 → 다음 뒤로가기가 앱을 나간다
+        // 14.65 · 열린 층이 없어도 곧바로 사이트를 나가지 않는다.
+        //   아직 폴더 안이면 한 단계 위로(결국 홈까지) 올리고, 에디터가 열려
+        //   있으면 닫는다. 그래야 어느 길로 들어왔든 뒤로가기가 '홈까지'
+        //   올라가고, 정말 홈에서 한 번 더 눌렀을 때만 앱을 나간다.
+        if(!_nav.length){
+            if(_navHomeStep()) return;
+            return;      // 홈이다 → 다음 뒤로가기가 앱을 나간다
+        }
         // 뒤로가기 한 번 = 가장 위 열린 것 하나 닫기.
-        _navClose(_nav.pop());
-        // 아직 층이 남았다면 보초를 다시 얹는다 — 다음 뒤로가기도 앱을
-        // 빠져나가는 대신 그다음 층을 닫아야 한다.
-        if(_nav.length) _navStamp();
+        _navCloseFromPop(_nav.pop());
+        // 아직 층이 남았거나 폴더 안·에디터라면 보초를 다시 얹는다 — 다음
+        // 뒤로가기도 앱을 빠져나가는 대신 그다음 층(결국 홈)을 향해야 한다.
+        if(_nav.length || _navAwayFromHome()) _navStamp();
     });
 
     // 열려 있는 것 중 가장 위를 닫는다 (Esc / 뒤로가기 공용). 닫았으면 true.
