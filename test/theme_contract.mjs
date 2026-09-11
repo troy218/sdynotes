@@ -166,7 +166,10 @@ try {
   check('집중 모드에서는 새 툴바도 숨김', w1.getComputedStyle(toolbar).display === 'none');
   d1.querySelector('#editorView').classList.remove('focus-on');
 
-  check('추가 타일은 키보드로 누를 수 있는 버튼', !!d1.querySelector('#noteGrid button.add-card[aria-label]'));
+  // 14.61 · 프로는 타일 대신 pro-add-note 버튼(새 노트 만들기), 캐주얼은 add-card 버튼 —
+  // 어느 테마든 '키보드로 누를 수 있는 추가 버튼'이면 계약 통과
+  check('추가 타일은 키보드로 누를 수 있는 버튼',
+    !!d1.querySelector('#noteGrid button.add-card[aria-label]') || !!d1.querySelector('#noteGrid button.pro-add-note[aria-label]'));
   check('전체 노트 내비에 현재 위치 표시', !!d1.querySelector('#proNav [aria-current="page"]'));
   w1.searchNotes('no-match-ui-regression-92817');
   check('검색 결과 수 표시', !d1.querySelector('#proResults').hidden && d1.querySelector('#proResults').textContent.includes('0개'));
@@ -190,7 +193,7 @@ try {
   check('14.50 · CSS: 엽스코드 밝은 프레임', /html\.theme-pro #ypApp\{[^}]*background:#FFFFFF/.test(cssText));
   check('14.50 · 음악바·엽스코드·게이트 DOM 존재', !!d1.getElementById('musicPlayer') && !!d1.getElementById('ypApp') && !!d1.getElementById('ypGate'));
   // 14.51 · 플로팅 위치 — 사이드바 기준 재배치 규칙 존재
-  check('14.51 · CSS: 선택막대 콘텐츠 중앙 정렬', /html\.theme-pro \.select-bar\{left:calc\(50% \+ 124px\)/.test(cssText));
+  check('14.51 · CSS: 선택막대 콘텐츠 중앙 정렬', /html\.theme-pro \.select-bar\{left:calc\(50% \+ 140px\)/.test(cssText));
   check('14.51 · CSS: 모바일 시트가 레일 존 회피', /html\.theme-pro #ypApp\{left:72px!important;\}/.test(cssText));
   // 14.52 · 사각화 + 남은 도구 플랫 + 테마 이름 변경(기본/캐주얼)
   check('14.52 · CSS: fcard 창 사각(10px!important)', /html\.theme-pro \.fcard-win, html\.theme-pro \.fcard-win\.moved,\s*html\.theme-pro \.modal-bg \.modal-box\.cards-box\{border-radius:10px!important;\}/.test(cssText));

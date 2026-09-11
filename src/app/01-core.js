@@ -407,7 +407,7 @@
         // 14.49 · PRO 앱 셸 — 프로/클래식에 따라 브랜드·브레드크럼 자리를 갈아엎는다
         try{ if(typeof _proShellSwap==='function') _proShellSwap(); }catch(e){}
         // 앱 제목
-        const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'동엽신의 끄적끄적';
+        const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'SDYnotes';
         const h1=document.querySelector('.app-brand h1');
         if(h1) h1.textContent=t;
         document.title=t;

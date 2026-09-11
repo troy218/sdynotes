@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.60.0",
+  "version": "14.62.0",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -89,7 +89,8 @@
     "bundle": "node scripts/bundle-frontend.mjs",
     "bundle:check": "node scripts/bundle-frontend.mjs --check",
     "test:tight": "node test/editor_tight_commit_view_runtime.mjs && node test/editor_tight_engine_runtime.mjs",
-    "test:theme": "node test/theme_contract.mjs"
+    "test:theme": "node test/theme_contract.mjs",
+    "test:proshell": "node test/pro_shell_layout_contract.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",

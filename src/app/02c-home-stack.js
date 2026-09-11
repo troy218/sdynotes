@@ -727,8 +727,11 @@
                 g.appendChild(empty);
             }
             if(!selectMode&&!proOn){
-                const add=document.createElement('div');
+                // 14.61 · 추가 타일도 진짜 버튼으로 — 키보드로 누를 수 있어야 한다
+                const add=document.createElement('button');
+                add.type='button';
                 add.className='add-card';
+                add.setAttribute('aria-label','새 노트 만들기');
                 add.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
                 add.onclick=openCreateModal;
                 g.appendChild(add);

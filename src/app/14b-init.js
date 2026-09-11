@@ -868,7 +868,7 @@
             // 개인화된 앱 제목이 있으면 스플래시에도 반영
             const st=document.querySelector('#splash .sp-title');
             if(st){
-                const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'동엽신의 끄적끄적';
+                const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'SDYnotes';
                 st.textContent=t;
             }
             _sp('노트 불러오는 중…',30);
