@@ -113,9 +113,44 @@
             if(pro){ if(slot&&brand.parentElement!==slot) slot.appendChild(brand); }
             else { if(brand.parentElement!==wfull) wfull.insertBefore(brand,wfull.firstChild); }
         }
-        if(bc){
-            if(pro){ if(bc.parentElement!==wfull) wfull.insertBefore(bc,wfull.firstChild); }
-            else { if(bc.parentElement!==mainEl) mainEl.insertBefore(bc,mainEl.firstChild); }
+        const links=document.getElementById('linkBar');
+        const bookmarks=document.getElementById('proBookmarks');
+        const bookmarkSlot=document.getElementById('proBookmarkSlot');
+        if(links&&brand){
+            if(pro&&bookmarkSlot) bookmarkSlot.appendChild(links);
+            else if(!pro) brand.appendChild(links);
+        }
+        if(bookmarks&&!bookmarks._responsiveReady){
+            bookmarks._responsiveReady=true;
+            const narrow=()=>window.innerWidth<1024;
+            let wasNarrow=narrow();
+            bookmarks.open=!wasNarrow;
+            window.addEventListener('resize',()=>{
+                const next=narrow();
+                if(next!==wasNarrow){ bookmarks.open=!next; wasNarrow=next; }
+            });
+            document.addEventListener('click',event=>{
+                if(narrow()&&bookmarks.open&&!bookmarks.contains(event.target)) bookmarks.open=false;
+            });
+            bookmarks.addEventListener('keydown',event=>{
+                if(event.key==='Escape'&&bookmarks.open){
+                    event.preventDefault(); event.stopPropagation();
+                    bookmarks.open=false; bookmarks.querySelector('summary').focus();
+                }
+            });
+        }
+        // Keep the full folder trail in the content area, never in a cramped toolbar.
+        if(bc && bc.parentElement!==mainEl) mainEl.insertBefore(bc,mainEl.firstChild);
+        const tools=document.querySelector('.hdr-right');
+        const toolsSlot=document.getElementById('proToolsSlot');
+        if(tools){
+            if(pro && toolsSlot) toolsSlot.appendChild(tools);
+            else if(!pro && tools.parentElement!==wfull) wfull.appendChild(tools);
+            const labels={notifBtn:'알림',sdyAccBtn:'계정',clockBtn:'집중 시계',vaultBtn:'보관함',adminToggleBtn:'관리자'};
+            tools.querySelectorAll('button').forEach(button=>{
+                if(labels[button.id]) button.dataset.proLabel=labels[button.id];
+                if(!button.getAttribute('aria-label')) button.setAttribute('aria-label',button.title||'설정');
+            });
         }
         try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
     }
@@ -127,8 +162,8 @@
         let atRoot=true;
         try{ atRoot=!curFolder&&!searchQuery; }catch(e){}
         nav.innerHTML=
-            `<button type="button" class="pro-nav-item${atRoot?' on':''}" onclick="openFolder(null)"><i class="ri-file-list-3-line"></i><span>파일</span></button>`+
-            `<button type="button" class="pro-nav-item" onclick="openTrash()"><i class="ri-delete-bin-7-line"></i><span>휴지통</span></button>`;
+            `<button type="button" class="pro-nav-item${atRoot?' on':''}" title="전체 노트" ${atRoot?'aria-current="page"':''} onclick="openFolder(null)"><i class="ri-file-list-3-line"></i><span>파일</span></button>`+
+            `<button type="button" class="pro-nav-item" title="휴지통" onclick="openTrash()"><i class="ri-delete-bin-7-line"></i><span>휴지통</span></button>`;
         let html='';
         try{
             (childFolders(null)||[]).forEach(f=>{
@@ -138,7 +173,7 @@
                 try{ active=!!curFolder&&folderPath(curFolder).some(x=>x.id===f.id); }catch(e){}
                 html+=`<button type="button" class="pro-fold-item${active?' on':''}" onclick="openFolder('${f.id}')">`+
                     `<i class="${(locked&&!open)?'ri-folder-lock-fill':(f.icon||'ri-folder-3-fill')}" style="color:${f.color||'var(--accent)'}"></i>`+
-                    `<span class="pf-name">${esc(f.name)}</span>`+
+                    `<span class="pf-name" title="${esc(f.name)}">${esc(f.name)}</span>`+
                     `<span class="pf-count">${folderCount(f.id)||0}</span></button>`;
             });
         }catch(e){}

@@ -294,16 +294,13 @@
         _pvPaintBytes-=e.html.length; _pvPaint.delete(k);
     }
     function pvPaintClear(){ _pvPaint.clear(); _pvPaintBytes=0; }
-    function pvPaintStore(id,rev,html,bw,bh,frameEl){
+    function pvPaintStore(id,rev,html,bw,bh){
         if(id==null||id===''||!html||html.length>_PV_PAINT_ONE) return;
         const k=String(id);
         pvPaintDrop(k);
-        // 배율(transform·left·top)도 함께 기억한다. 이것 없으면 다시 만든 카드가
-        // '축소 전 크기'로 한 프레임 보였다가 rAF 의 rescalePreviews 에서 제자리로
-        // 뛰므로 그것 역시 깜빡임이 된다.
-        const fst=(frameEl&&frameEl.style)||null;
-        _pvPaint.set(k,{rev:rev|0,html,bw,bh,
-            tf:(fst&&fst.transform)||'', left:(fst&&fst.left)||'', top:(fst&&fst.top)||''});
+        // Cache document content and paper size only; placement belongs to the
+        // current container and is recalculated before the next paint.
+        _pvPaint.set(k,{rev:rev|0,html,bw,bh});
         _pvPaintBytes+=html.length;
         // 한도(개수·총량)를 넘기면 가장 오래된 기억부터 비운다 (Map 은 삽입 순서)
         for(const key of _pvPaint.keys()){
@@ -321,7 +318,8 @@
         if(!pv||!f) return false;
         f.innerHTML=e.html;
         f.style.width=e.bw+'px'; f.style.height=e.bh+'px';
-        if(e.tf){ f.style.transform=e.tf; f.style.left=e.left; f.style.top=e.top; }
+        // Cached content is reusable, but coordinates belong to the old card size.
+        // Keep the initial scale(0) until the newly mounted card is measured.
         pv.dataset.bw=e.bw; pv.dataset.bh=e.bh;
         if((e.rev|0)===(rev|0)){ f.dataset.done='1'; return true; }
         f.dataset.stale='1';       // 본문이 바뀌었다 → _render 가 곧 새로 그린다
@@ -340,6 +338,7 @@
         }
         _lastGridSig=sig;
         try{ cardObserver.disconnect(); }catch(e){}
+        _disconnectPreviewSizes();
         g.innerHTML='';
         renderBreadcrumb();
 
@@ -352,6 +351,25 @@
            예전의 평범한 격자를 쓴다. */
         const isHomeStack=!curFolder && !searchQuery && !selectMode;
         const filtered=getFiltered();
+        const results=document.getElementById('proResults');
+        if(results){
+            results.hidden=!(sdyTheme()==='pro'&&searchQuery);
+            results.replaceChildren();
+            if(!results.hidden){
+                const summary=document.createElement('span');
+                summary.textContent='“'+searchQuery+'” 검색 결과 · '+filtered.length+'개';
+                const clear=document.createElement('button');
+                clear.type='button'; clear.className='pro-results-clear';
+                clear.textContent='검색 지우기';
+                clear.onclick=()=>{
+                    const input=document.getElementById('searchInput');
+                    if(input) input.value='';
+                    searchNotes('');
+                    if(input) input.focus();
+                };
+                results.append(summary,clear);
+            }
+        }
         const recentIds=isHomeStack?_getRecentIds():[];
         const recentSet=new Set(recentIds.map(id=>String(id)));
         // 최상위 문서 중 이번 접속에 연 적이 없는 문서는 스택에 남긴다.
@@ -380,6 +398,7 @@
             const fc=document.createElement('div');
             fc.className='folder-card';
             fc.dataset.folderId=f.id;
+            fc.title=f.name;
             const fcol=f.color||'#4f6ef7';
             const fico=f.icon||'ri-folder-3-fill';
             const flock=isFolderLocked(f.id);
@@ -436,6 +455,7 @@
             const card=document.createElement('div');
             card.className='note-card'+(locked?' locked':'');
             card.dataset.nbId=nb.id;
+            card.title=nb.title||'새 노트';
             if(selectedNBs.has(nb.id)) card.classList.add('selected');
             const nPages=(d.pages||[]).length;
             card.innerHTML=`
@@ -443,7 +463,7 @@
                 <div class="emoji-badge ${d.emoji?'has-emoji':''}" onclick="event.stopPropagation();toggleEmojiPicker(event.currentTarget)">${d.emoji||'<span style="font-size:16px;opacity:.35;">◌</span>'}</div>
                 <div class="emoji-picker">${buildEmojiPicker(nb.id)}</div>
                 <div class="note-preview" data-bw="${size.w}" data-bh="${size.h}">
-                    <div class="note-preview-frame" style="width:${size.w}px;height:${size.h}px;"></div>
+                    <div class="note-preview-frame" style="width:${size.w}px;height:${size.h}px;transform:scale(0);"></div>
                     ${nPages>1&&!locked?`<div class="page-count-badge">${nPages}p</div>`:''}
                     ${isAdminEdited(nb.id)?'<div class="admin-verified" title="관리자가 검수·수정한 노트"><i class="ri-verified-badge-fill"></i></div>':''}
                 </div>
@@ -525,7 +545,7 @@
                     rescaleOne(pv);
                     // 다음 재렌더(뒤로가기·폴더 이동·설정 반영)에서 빈 프레임이
                     // 생기지 않도록 방금 그린 결과(배율 포함)를 기억해 둔다.
-                    pvPaintStore(nb.id,cfgRevOf(nb.id),f.innerHTML,rs.w,rs.h,f);
+                    pvPaintStore(nb.id,cfgRevOf(nb.id),f.innerHTML,rs.w,rs.h);
                 }catch(e){
                     card._previewTry=(card._previewTry||0)+1;
                     f.innerHTML='<div style="padding:24px;color:var(--text3);font-size:12px">미리보기를 다시 불러오는 중…</div>';
@@ -572,13 +592,15 @@
             try{ childFolders(null).forEach(f=>{ grid.appendChild(_makeFolderCard(f)); nFoldCards++; }); }catch(e){}
             recentNotes.concat(stackNotes).forEach(nb=>grid.appendChild(_makeCard(nb)));
             if(!selectMode){
-                const add2=document.createElement('div');
+                const add2=document.createElement('button');
+                add2.type='button';
+                add2.setAttribute('aria-label','새 노트 만들기');
                 add2.className='add-card';
-                add2.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
+                add2.innerHTML='<i class="ri-add-line" aria-hidden="true"></i><span>새 노트 만들기</span>';
                 add2.onclick=openCreateModal;
                 grid.appendChild(add2);
             }
-            if(!grid.children.length){
+            if(!nFoldCards&&!recentNotes.length&&!stackNotes.length){
                 const empty=document.createElement('div');
                 empty.className='pro-home-empty';
                 empty.innerHTML='<i class="ri-file-list-3-line"></i><span>노트를 만들면 이곳에 쌓여요</span>';
@@ -699,10 +721,18 @@
             _schedulePreviewRender(area);
         }else{
             filtered.forEach(nb=>{ g.appendChild(_makeCard(nb)); });
-            if(!selectMode){
-                const add=document.createElement('div');
+            if(proOn&&searchQuery&&!filtered.length){
+                const empty=document.createElement('div');
+                empty.className='pro-home-empty';
+                empty.innerHTML='<i class="ri-search-line" aria-hidden="true"></i><strong>검색 결과가 없습니다</strong><span>다른 검색어를 입력하거나 검색을 지워 전체 노트를 확인하세요.</span>';
+                g.appendChild(empty);
+            }
+            if(!selectMode&&!(proOn&&searchQuery)){
+                const add=document.createElement(proOn?'button':'div');
+                if(proOn){ add.type='button'; add.setAttribute('aria-label','새 노트 만들기'); }
                 add.className='add-card';
                 add.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
+                if(proOn) add.innerHTML='<i class="ri-add-line" aria-hidden="true"></i><span>새 노트 만들기</span>';
                 add.onclick=openCreateModal;
                 g.appendChild(add);
             }
@@ -736,31 +766,77 @@
         ents.forEach(en=>{ if(en.isIntersecting&&en.target._render){ en.target._render(); cardObserver.unobserve(en.target); } });
     },{rootMargin:'300px 0px'});
 
-    function rescaleOne(pv){
+    // Work in layout CSS pixels, not transformed screen rectangles. A card may
+    // be rotated by the casual stack, or its ancestors may have CSS/browser zoom.
+    function previewPlacement(cw,ch,bw,bh,pro){
+        if(![cw,ch,bw,bh].every(n=>Number.isFinite(n)&&n>0)) return null;
+        const inset=pro?Math.min(16,Math.max(6,Math.min(cw,ch)*.055),Math.min(cw,ch)/4):0;
+        const scale=Math.min((cw-2*inset)/bw,(ch-2*inset)/bh);
+        // Do not round positions: at fractional card widths it creates asymmetric
+        // margins, most visibly at 90/110/125% zoom and on high-DPI screens.
+        return {scale,left:(cw-bw*scale)/2,top:(ch-bh*scale)/2,inset};
+    }
+    function rescaleOne(pv,contentBox){
         if(!pv) return;
         const f=pv.querySelector('.note-preview-frame'); if(!f) return;
-        const bw=parseFloat(pv.dataset.bw)||800, bh=parseFloat(pv.dataset.bh)||1100;
-        const cw=pv.clientWidth, ch=pv.clientHeight;
-        if(!cw||!ch) return;
-        const sc=Math.min(cw/bw, ch/bh);
-        f.style.transform=`scale(${sc})`;
-        f.style.left=Math.round((cw-bw*sc)/2)+'px';
-        f.style.top=Math.round((ch-bh*sc)/2)+'px';
+        const positive=(value,fallback)=>{
+            const n=parseFloat(value); return Number.isFinite(n)&&n>0?n:fallback;
+        };
+        const bw=positive(pv.dataset.bw,800), bh=positive(pv.dataset.bh,1100);
+        const style=getComputedStyle(pv);
+        const px=name=>parseFloat(style[name])||0;
+        const padX=px('paddingLeft')+px('paddingRight'), padY=px('paddingTop')+px('paddingBottom');
+        // clientWidth rounds to integers; computed/observed dimensions preserve
+        // subpixels. Absolute frame coordinates use the preview's padding box.
+        let cw=pv.clientWidth, ch=pv.clientHeight;
+        if(!cw||!ch) return; // hidden editor/home: wait for a real layout
+        if(contentBox){ cw=contentBox.width+padX; ch=contentBox.height+padY; }
+        else{
+            const borderBox=style.boxSizing==='border-box';
+            cw=positive(style.width,cw)-(borderBox?px('borderLeftWidth')+px('borderRightWidth'):-padX);
+            ch=positive(style.height,ch)-(borderBox?px('borderTopWidth')+px('borderBottomWidth'):-padY);
+        }
+        const place=previewPlacement(cw,ch,bw,bh,typeof sdyTheme==='function'&&sdyTheme()==='pro');
+        if(!place) return;
+        f.style.transform=`scale(${place.scale})`;
+        f.style.left=place.left+'px';
+        f.style.top=place.top+'px';
     }
 
+    // Observe actual cards rather than only window.resize: grids, card presets,
+    // theme changes and hidden→visible navigation can resize them independently.
+    const _previewSizeTargets=new Set();
+    const _previewSizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(entries=>{
+        entries.forEach(entry=>{
+            if(entry.target.isConnected) rescaleOne(entry.target,entry.contentRect);
+        });
+    }):null;
+    function _disconnectPreviewSizes(){
+        if(_previewSizeObserver) _previewSizeObserver.disconnect();
+        _previewSizeTargets.clear();
+    }
     function rescalePreviews(){
+        for(const pv of _previewSizeTargets){
+            if(!pv.isConnected){
+                if(_previewSizeObserver) _previewSizeObserver.unobserve(pv);
+                _previewSizeTargets.delete(pv);
+            }
+        }
         document.querySelectorAll('.note-preview').forEach(pv=>{
-            const f=pv.querySelector('.note-preview-frame'); if(!f) return;
-            const bw=parseFloat(pv.dataset.bw)||800, bh=parseFloat(pv.dataset.bh)||1100;
-            const cw=pv.clientWidth, ch=pv.clientHeight;
-            if(!cw||!ch) return;
-            const s=Math.min(cw/bw, ch/bh);   // 가로세로 동일 배율 → 비율 보존
-            f.style.transform=`scale(${s})`;
-            f.style.left=Math.round((cw-bw*s)/2)+'px';
-            f.style.top=Math.round((ch-bh*s)/2)+'px';
+            rescaleOne(pv);
+            if(_previewSizeObserver&&!_previewSizeTargets.has(pv)){
+                _previewSizeTargets.add(pv); _previewSizeObserver.observe(pv);
+            }
         });
     }
-    window.addEventListener('resize',()=>{ rescalePreviews(); _layoutHomeStacks(); layoutPages(); });
+    let _previewResizeFrame=0;
+    function schedulePreviewResize(){
+        if(_previewResizeFrame) return;
+        _previewResizeFrame=requestAnimationFrame(()=>{ _previewResizeFrame=0; rescalePreviews(); });
+    }
+    window.addEventListener('resize',()=>{ schedulePreviewResize(); _layoutHomeStacks(); layoutPages(); });
+    window.addEventListener('orientationchange',schedulePreviewResize);
+    if(window.visualViewport) window.visualViewport.addEventListener('resize',schedulePreviewResize);
 
 
     // ===== 꾹 눌러 집어서 폴더로 끌어놓기 (마우스/터치 공용) =====

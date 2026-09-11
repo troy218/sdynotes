@@ -905,12 +905,14 @@
         const bar=document.getElementById('linkBar');
         if(!bar) return;
         const links=getLinks();
+        const count=document.getElementById('proBookmarkCount');
+        if(count) count.textContent=String(links.length);
         bar.innerHTML=links.map((l,i)=>
-            `<a class="link-chip" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.url)}">`+
+            `<a class="link-chip" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.name)} · ${esc(l.url)}" aria-label="${esc(l.name)} (새 탭)">`+
             `<img class="lc-ico" src="${faviconOf(l.url)}" alt="" onerror="this.style.display='none'">`+
             `<span>${esc(l.name)}</span></a>`
         ).join('')+
-        `<button class="link-add" onclick="addLink()" title="링크 추가"><i class="ri-add-line"></i></button>`;
+        `<button type="button" class="link-add" onclick="addLink()" title="북마크 추가" aria-label="북마크 추가"><i class="ri-add-line" aria-hidden="true"></i><span class="link-add-label">북마크 추가</span></button>`;
 
         // 삭제는 우클릭 메뉴로 (X 버튼 없음)
         bar.querySelectorAll('.link-chip').forEach((n,i)=>{
@@ -979,7 +981,8 @@
         for(let k=0;k<chips.length;k++){
             if(k===linkDrag.from) continue;
             const r=chips[k].getBoundingClientRect();
-            if(r.left+r.width/2 < x) pos++;
+            const vertical=typeof sdyTheme==='function'&&sdyTheme()==='pro';
+            if(vertical?r.top+r.height/2<y:r.left+r.width/2<x) pos++;
         }
         linkDrag.cur=pos;
         const rest=chips.filter((c,k)=>k!==linkDrag.from);

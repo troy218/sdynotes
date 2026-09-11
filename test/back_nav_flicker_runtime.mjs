@@ -364,10 +364,11 @@ try {
   const stack = src('02c-home-stack.js');
   check('홈 카드는 그려 둔 미리보기를 동기적으로 얹는다',
     /pvPaintApply\(card,nb\.id,cfgRevOf\(nb\.id\)\)/.test(stack)
-    && /pvPaintStore\(nb\.id,cfgRevOf\(nb\.id\),f\.innerHTML,rs\.w,rs\.h,f\)/.test(stack));
-  check('미리보기 배율(transform)도 함께 기억한다 — 제자리 뛰는 프레임이 없게',
-    /tf:\(fst&&fst\.transform\)\|\|''/.test(stack)
-    && /if\(e\.tf\)\{ f\.style\.transform=e\.tf;/.test(stack));
+    && /pvPaintStore\(nb\.id,cfgRevOf\(nb\.id\),f\.innerHTML,rs\.w,rs\.h\)/.test(stack));
+  check('미리보기 좌표는 캐시에서 복원하지 않고 첫 페인트 전에 다시 맞춘다',
+    stack.includes('height:${size.h}px;transform:scale(0);')
+    && !stack.includes('f.style.transform=e.tf')
+    && /rescalePreviews\(\);/.test(stack));
   check('잠긴 노트는 미리보기 기억을 쓰지 않는다', /if\(locked\) pvPaintDrop\(nb\.id\);/.test(stack));
   check('nb_* 를 쓸 때마다 개정 번호가 오른다(미리보기 기억 무효화)',
     /function setCfg\(id,c\)\{ _cfgRevBump\(id\);/.test(src('02a-home-shell.js')));
