@@ -5543,10 +5543,25 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const ticker=document.getElementById('paperTicker');
         if(ticker) ticker.hidden=!!hidden;
     }
+    // '오늘의' 대신 화면의 현재 날짜를 그대로 말한다. 예: 2026. 9. 11.
+    function paperTickerDateText(){
+        const now=new Date();
+        return `${now.getFullYear()}. ${now.getMonth()+1}. ${now.getDate()}.`;
+    }
     function paperAppendSet(run,items,hidden){
         const set=document.createElement('span');
         set.className='paper-ticker-set';
         if(hidden) set.setAttribute('aria-hidden','true');
+        // 고정 제목 칸 대신 띠가 리드 멘트를 직접 실어 나른다 — 1번 항목 전에 먼저 흘러 나온다.
+        const lead=document.createElement('span');
+        lead.className='paper-ticker-lead';
+        const leadIcon=document.createElement('i');
+        leadIcon.className='ri-book-open-line';
+        leadIcon.setAttribute('aria-hidden','true');
+        const leadText=document.createElement('b');
+        leadText.textContent=`${paperTickerDateText()} 따끈따끈한 최신 논문`;
+        lead.append(leadIcon,leadText);
+        set.appendChild(lead);
         items.forEach((paper,index)=>{
             const url=paperSafeArxivUrl(paper&&paper.url);
             const title=String(paper&&paper.title||'').replace(/\s+/g,' ').trim();
@@ -5585,8 +5600,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         paperAppendSet(run,usable,false);
         // 같은 줄을 한 번 더 붙여 한 바퀴가 끝나는 점에서도 끊기지 않게 한다.
         paperAppendSet(run,usable,true);
-        const roughPixels=usable.reduce((total,paper)=>total+String(paper.title||'').length*7+108,0);
-        const seconds=Math.max(44,Math.min(112,Math.round(roughPixels/42)));
+        // 증시 현황판처럼 빠르게: 이전 ~42px/s 에서 ~140px/s 로 올린다. (리드 멘트 폭 몫 포함)
+        const roughPixels=usable.reduce((total,paper)=>total+String(paper.title||'').length*7+108,0)+340;
+        const seconds=Math.max(12,Math.min(60,Math.round(roughPixels/140)));
         run.style.setProperty('--paper-ticker-duration',seconds+'s');
         ticker.dataset.count=String(usable.length);
         paperSetHidden(false);
