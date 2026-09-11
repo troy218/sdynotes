@@ -182,18 +182,22 @@
     // 사이드바 '음악' — 프로에서는 떠 있는 칩이 없으므로 플레이어를 직접 열고 목록을 띄운다
     function proOpenMusic(){
         try{
+            try{ if(window._mpSetCollapsed) window._mpSetCollapsed(false); }catch(e){}
             const pl=document.getElementById('musicPlayer');
             if(pl){
                 const hidden=pl.style.display==='none'||getComputedStyle(pl).display==='none';
                 if(hidden){
                     pl.style.display='flex';
                     try{ window.__mpChipOpened=true; }catch(e){}
+                } else {
+                    // 이미 열려 있으면 목록만 토글 (닫기 동작은 mpX 에서 처리)
                 }
             }
             const ml=document.getElementById('mpList');
             if(ml) ml.click();
         }catch(e){}
     }
+    try{ window.proOpenMusic=proOpenMusic; }catch(e){}
 
     // ── 앱 전체 설정 동기화 ────────────────────────────────
     // 테마·강조색·기본 글꼴/크기·제목·카드 크기와 함께 브라우저에서

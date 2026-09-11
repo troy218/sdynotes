@@ -18,6 +18,15 @@ function logMusicPlay(id){
 const A=new Audio(); A.preload='metadata';
 const $=id=>document.getElementById(id);
 const pl=$('musicPlayer');
+function _isPro(){ try{ return typeof sdyTheme==='function'&&sdyTheme()==='pro'; }catch(e){ return false; } }
+function _setMpChip(show){
+  var c=document.getElementById('mpReopen'); if(!c) return;
+  if(_isPro()){ c.style.display='none'; return; }
+  c.style.display=show?'flex':'none';
+}
+try{ window._mpSetCollapsed=function(v){ P.collapsed=!!v; _setMpChip(P.collapsed); if(!P.collapsed) try{ pl.style.display='flex'; }catch(e){} }; }catch(e){}
+try{ window._isProMp=function(){ return _isPro(); }; }catch(e){}
+try{ new MutationObserver(function(){ _setMpChip(P.collapsed); }).observe(document.documentElement,{attributes:true,attributeFilter:['class']}); }catch(e){}
 try{ P.repeat=+(localStorage.getItem('mp_repeat')||0); P.vol=+(localStorage.getItem('mp_vol')??100)/100; }
 catch(e){ P.vol=1; }
 if(isNaN(P.vol))P.vol=1; A.volume=P.vol;
@@ -560,7 +569,7 @@ A.addEventListener('play',()=>{ $('mpPP').innerHTML='<i class="ri-pause-fill"></
   if(P.mode==='float' && !P.collapsed
      && !$('mpBig').classList.contains('open')){
     pl.style.display='flex';
-    document.getElementById('mpReopen').style.display='none';
+    _setMpChip(false);
   } });
 A.addEventListener('pause',()=>{ saveMusicState(true); $('mpPP').innerHTML='<i class="ri-play-fill"></i>';
   const bPP=$('mpBPP'); if(bPP) bPP.innerHTML='<i class="ri-play-fill"></i>';
@@ -834,7 +843,7 @@ $('musicFile').onchange=async e=>{
 //   src 를 페이지 URL 로 해석해(truthy) 다시 열고 재생(pp)을 눌러도
 //   노래가 나오지 않았다. src 를 남기면 재생 시 바로 이어서 튼다.
 $('mpX').onclick=()=>{ A.pause();
-  pl.style.display='none'; $('mpReopen').style.display='flex'; P.collapsed=true; };
+  pl.style.display='none'; _setMpChip(true); P.collapsed=true; };
 // ===== 목록 + 검색 + 페이지 =====
 const PER=10;
 // ══════════════════════════════════════════════════════════
@@ -1263,13 +1272,13 @@ function setMode(m){ if(P.mode===m)return; P.mode=m;
     pl.style.right=(innerWidth<=640?'8px':'10px');
     pl.style.top=((P.pos&&P.pos.y)||64)+'px';
     const playing=!!(A.src&&!A.paused);
-    // 접힌 상태는 화면을 오가도 유지
-    if(playing && !P.collapsed){ pl.style.display='flex'; document.getElementById('mpReopen').style.display='none'; }
-    else { pl.style.display='none'; document.getElementById('mpReopen').style.display='flex'; }
+    // 접힌 상태는 화면을 오가도 유지 — PRO 에서는 칩 대신 사이드바 음악 항목을 쓴다
+    if(playing && !P.collapsed){ pl.style.display='flex'; _setMpChip(false); }
+    else { pl.style.display='none'; _setMpChip(true); }
   }
   else{ pl.style.top=''; pl.style.right=''; pl.style.background='';
-    if(P.collapsed){ pl.style.display='none'; document.getElementById('mpReopen').style.display='flex'; }
-    else { pl.style.display='flex'; document.getElementById('mpReopen').style.display='none'; } } }
+    if(P.collapsed){ pl.style.display='none'; _setMpChip(true); }
+    else { pl.style.display='flex'; _setMpChip(false); } } }
 const ev0=$('editorView');
 if(ev0) new MutationObserver(()=>{
   setMode(ev0.classList.contains('open')?'float':'bar');
@@ -1304,7 +1313,7 @@ try{ const p=JSON.parse(localStorage.getItem('mp_pos')||'null'); if(p)P.pos=p; }
 const chip=document.getElementById('mpReopen');
 chip.title='음악 켜기';
 chip.onclick=()=>{
-  pl.style.display='flex'; chip.style.display='none'; P.collapsed=false;
+  pl.style.display='flex'; _setMpChip(false); P.collapsed=false;
   const t=cur();
   if(t&&!A.src){
     A.src=t.stream_url||('/api/music/file/'+t.id);
@@ -1313,9 +1322,9 @@ chip.onclick=()=>{
   renderTitle();
 };
 pl.style.display='none';
-// 로딩 중 사용자가 칩을 눌러 바를 열었으면 그 상태를 지킨다
-if(window.__mpChipOpened){ chip.style.display='none'; pl.style.display='flex'; }
-else chip.style.display='flex';
+// 로딩 중 사용자가 칩을 눌러 바를 열었으면 그 상태를 지킨다 — PRO 에서는 칩을 숨긴다
+if(window.__mpChipOpened){ _setMpChip(false); pl.style.display='flex'; }
+else _setMpChip(true);
 updateRep();
 // 6.12: 처음 진입 시 음악 컨트롤바는 '오른쪽 아래 접힌 칩'으로만 표시
 // (곡이 있어도 펼치지 않는다 — 칩을 눌러야 바가 열린다)
@@ -1488,9 +1497,8 @@ function _barShouldShow(){
   return true;
 }
 function refreshBarVis(){
-  const chip2=document.getElementById('mpReopen');
-  if(_barShouldShow()){ pl.style.display='flex'; if(chip2) chip2.style.display='none'; }
-  else { pl.style.display='none'; if(chip2) chip2.style.display='flex'; }
+  if(_barShouldShow()){ pl.style.display='flex'; _setMpChip(false); }
+  else { pl.style.display='none'; _setMpChip(true); }
 }
 function _applyBigSize(){
   // 12.10.1 · 하단 추천/목록이 잘리지 않도록 세로를 늘린다.

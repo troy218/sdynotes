@@ -6611,7 +6611,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    말풍선 아래쪽까지 올라오는데, 그때 버튼이 말풍선에 깔려 안 눌리면 곤란하다. */
 .ai-askbar{position:absolute;left:140px;bottom:14px;z-index:9;
     display:flex;flex-direction:column;align-items:center;gap:6px;
-    max-width:min(520px,calc(100% - 160px));
+    max-width:min(640px,calc(100% - 160px));
     transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
 .ai-askbar.draw-on{bottom:calc(64px + 32px);}      /* 그리기 툴바가 뜨면 해돌이와 같이 위로 */
 /* 범위 버튼 줄 — '이 페이지' 와 '전체 페이지' 를 질문칸 위 가운데에 나란히 둔다.
@@ -6634,7 +6634,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    여러 줄이 되면 .multi 가 붙어 모서리가 각져 보이고, 상자는 아래에 고정된
    채로 위를 향해 자란다(검색창이 bottom 고정이라 자연스레 위로 자람). */
 .ai-askbar-field{display:flex;align-items:center;gap:8px;
-    width:min(var(--ai-q-w,230px),480px,100%);
+    width:min(var(--ai-q-w,230px),620px,100%);
     border:1px solid var(--g-brd);background:var(--g-fill-strong);
     backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%);
     box-shadow:var(--g-hi),var(--g-shadow);
@@ -6669,7 +6669,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 /* ── 해돌이 답변 말풍선 — 닫기 전까지 계속 떠 있다 ── */
 /* --ai-lift : 질문칸이 여러 줄로 자라 검색창 기둥(문구+버튼)이 위로 올라오면,
    그 자리와 겹치지 않게 JS(aiQGrow)가 말풍선을 그만큼 더 올려 둔다(기본 0) */
-.ai-say{position:absolute;left:30px;bottom:calc(122px + var(--ai-lift,0px));width:min(440px,calc(100vw - 60px));
+.ai-say{position:absolute;left:30px;bottom:calc(122px + var(--ai-lift,0px));width:min(560px,calc(100vw - 60px));
     z-index:8;display:flex;flex-direction:column;
     background:var(--g-fill-strong);
     backdrop-filter:blur(var(--g-blur-lg)) saturate(160%);
@@ -6756,7 +6756,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 @keyframes aiDot{0%,80%,100%{transform:translateY(0);opacity:.35;}40%{transform:translateY(-4px);opacity:1;}}
 
 /* ── 대화기록 — 해돌이를 누르면 열리는 목록 ── */
-.ai-hist{position:absolute;left:30px;bottom:122px;width:min(400px,calc(100vw - 60px));
+.ai-hist{position:absolute;left:30px;bottom:122px;width:min(520px,calc(100vw - 60px));
     z-index:8;display:flex;flex-direction:column;max-height:min(46vh,420px);
     background:var(--g-fill-strong);
     backdrop-filter:blur(var(--g-blur-lg)) saturate(160%);
@@ -6780,18 +6780,39 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 .ai-hist-ttl i{color:var(--accent);font-size:15px;}
 .ai-hist-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding:6px;}
 .ai-hist-empty{padding:18px 14px;font-size:12.5px;color:var(--text3);text-align:center;line-height:1.6;}
-/* 기록 한 줄 — 종류·질문·답 일부·시각. 누르면 말풍선으로 다시 보여 준다 */
-.ai-hist-item{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;
-    border:1px solid transparent;background:transparent;border-radius:12px;padding:8px 10px;
+/* 기록 한 줄 — 채팅 말풍선 형식(내 질문 + 해돌이 답) — 누르면 본 말풍선으로 다시 보여 준다 */
+.ai-hist-item{display:flex;flex-direction:column;gap:6px;width:100%;text-align:left;
+    border:1px solid transparent;background:transparent;border-radius:12px;padding:9px 9px 8px;
     cursor:pointer;color:var(--text2);font:inherit;
     transition:background .15s ease,border-color .15s ease;}
 .ai-hist-item:hover{background:var(--g-in);border-color:var(--g-line);}
 .ai-hist-row{display:flex;align-items:center;gap:6px;}
 .ai-hist-t{margin-left:auto;font-size:10px;color:var(--text3);}
+/* 이전 단일 줄 요약 — 호환 유지 */
 .ai-hist-q{font-size:12.5px;font-weight:700;color:var(--text1);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .ai-hist-a{font-size:11.5px;color:var(--text3);line-height:1.45;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+/* 채팅 말풍선형 기록 — 질문은 오른쪽, 답변은 왼쪽 */
+.ai-hist-bubble{border-radius:12px;padding:7px 10px;font-size:12.2px;line-height:1.55;
+    word-break:break-word;overflow-wrap:anywhere;max-width:100%;}
+.ai-hist-bubble b{font-weight:800;margin-right:5px;}
+.ai-hist-user{background:color-mix(in srgb,var(--accent) 10%,var(--g-in));
+    border:1px solid color-mix(in srgb,var(--accent) 18%,transparent);
+    color:var(--text1);border-radius:12px 12px 4px 12px;align-self:flex-end;
+    max-width:92%;}
+.ai-hist-user b{color:var(--accent);}
+.ai-hist-bot{background:var(--card);
+    border:1px solid var(--g-line);color:var(--text1);
+    border-radius:12px 12px 12px 4px;align-self:flex-start;
+    max-width:92%;box-shadow:0 1px 4px rgba(23,28,41,.06);}
+.ai-hist-bot b{color:var(--accent);}
+.ai-hist-bot .ai-hist-a-html{font-size:12.2px;line-height:1.6;color:var(--text1);}
+.ai-hist-bot .ai-hist-a-html p{margin:0 0 4px;}
+.ai-hist-bot .ai-hist-a-html p:last-child{margin-bottom:0;}
+.ai-hist-bot .ai-hist-a-html strong{font-weight:800;color:var(--text1);}
+.ai-hist-list{display:flex;flex-direction:column;gap:4px;}
+.ai-hist .ai-kind{font-size:9.5px;padding:1px 6px;}
 
 /* 좁은 화면 — 검색창은 해돌이 옆 한 줄을 남은 폭에, 말풍선·기록은 좌우 가득 */
 @media (max-width:640px){
@@ -7481,6 +7502,35 @@ html.theme-pro .folder-card:hover .folder-thumb>i{transform:none!important;}
   html.theme-pro .pro-folders-wrap{display:none;}
   html.theme-pro .pro-side-bottom{padding:8px 8px 10px;}
 }
+/* ── 14.52-T · 접었다/펼치기 — PRO 데스크톱 248↔60 레일 토글 (.pro-collapsed) ──
+  狭 뷰포트(≤1023)는 무조건 레일이므로 토글 버튼을 숨긴다. */
+html.theme-pro #proSide{transition:width .22s cubic-bezier(.22,.9,.32,1.06);}
+html.theme-pro #mainView{transition:left .22s cubic-bezier(.22,.9,.32,1.06);}
+.pro-side-toggle{position:absolute;top:12px;right:-11px;z-index:11;
+  width:22px;height:22px;border-radius:999px;border:1px solid var(--border);
+  background:#FFFFFF;color:var(--text3);display:flex;align-items:center;justify-content:center;
+  cursor:pointer;box-shadow:0 1px 6px rgba(23,28,41,.10);
+  transition:transform .18s,background .15s,color .15s,border-color .15s;}
+.pro-side-toggle:hover{background:var(--bg2);color:var(--text1);border-color:var(--border);}
+.pro-side-toggle i{font-size:12px;line-height:1;transition:transform .22s;}
+html.theme-classic .pro-side-toggle{display:none!important;}
+@media (max-width:1023px){.pro-side-toggle{display:none!important;}}
+html.theme-pro.pro-collapsed #proSide{width:60px;}
+html.theme-pro.pro-collapsed #mainView{left:60px!important;}
+html.theme-pro.pro-collapsed .pro-brand{padding:12px 0 10px;display:flex;justify-content:center;}
+html.theme-pro.pro-collapsed .pro-brand .app-brand{gap:0;}
+html.theme-pro.pro-collapsed .pro-brand h1{display:none;}
+html.theme-pro.pro-collapsed .pro-brand .link-bar{display:none;}
+html.theme-pro.pro-collapsed .pro-nav{padding:6px 8px 4px;}
+html.theme-pro.pro-collapsed .pro-nav-item{justify-content:center;padding:11px 0;gap:0;}
+html.theme-pro.pro-collapsed .pro-nav-item span{display:none;}
+html.theme-pro.pro-collapsed .pro-folders-wrap{display:none;}
+html.theme-pro.pro-collapsed .pro-side-bottom{padding:8px 8px 10px;}
+html.theme-pro.pro-collapsed .pro-side-toggle i{transform:rotate(180deg);}
+html.theme-pro.pro-collapsed #proSide .pro-bookmarks summary span,
+html.theme-pro.pro-collapsed #proSide .pro-bookmark-count,
+html.theme-pro.pro-collapsed #proSide .pro-bookmark-chevron{display:none!important;}
+html.theme-pro.pro-collapsed #proSide .pro-bookmarks summary{justify-content:center;padding:9px 0;gap:0;}
 /* 프로 홈 모바일 (17.0 모바일 블록과 같은 폭 기준) */
 @media (max-width:640px){
   html.theme-pro .pro-grid,
@@ -7522,6 +7572,17 @@ html.theme-pro .mp-list{left:calc(50% + 124px);}
 @media (max-width:1023px){
   html.theme-pro .mp.mp-bar{left:calc(50% + 30px);}
   html.theme-pro .mp-list{left:calc(50% + 30px);}
+}
+/* 접었을 때는 60px 레일과 같은 오프셋 — 뷰포트가 넓어도 */
+html.theme-pro.pro-collapsed .mp.mp-bar{left:calc(50% + 30px);}
+html.theme-pro.pro-collapsed .mp-list{left:calc(50% + 30px);}
+html.theme-pro.pro-collapsed #ypApp{left:72px!important;width:min(370px,calc(100vw - 84px))!important;right:auto!important;}
+@media (max-width:640px){
+  html.theme-pro.pro-collapsed #ypApp{left:72px!important;}
+}
+html.theme-pro.pro-collapsed .select-bar{left:calc(50% + 30px);}
+@media (max-width:640px){
+  html.theme-pro.pro-collapsed .select-bar{left:72px!important;}
 }
 
 /* ── 14.50-Q · 엽스코드 — 밝은 윈도우 프레임 + 채팅 존은 다크 유지 ── */
