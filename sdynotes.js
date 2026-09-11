@@ -376,8 +376,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     let notebooks=[],curNB=null,curMemo=null;
     let S=JSON.parse(localStorage.getItem('sdy3')||'null')||{theme:'pro',defPaper:'blank',defFS:16,defFont:'pretendard',accent:'#4f6ef7',appTitle:'',cardSize:'l'};
     // 14.47 · 테마 이전 — 예전 S.dark(true/false)는 S.theme('pro'/'classic')으로 합쳐졌다.
-    //   저장된 값이 없으면 새 기본인 'pro'(프리미엄 전문가용 다크)로 시작한다.
-    //   (다크 모드 토글은 설정에서 테마 선택으로 대체됨)
+    //   저장된 값이 없으면 새 기본인 'pro'로 시작한다. (다크 모드 토글은 설정에서
+    //   테마 선택으로 대체됨) 14.48 · 'pro' = 밝은 '워크' 전문 디자인(더 이상 다크 아님)
     if(!S.theme||(S.theme!=='pro'&&S.theme!=='classic')){
         S.theme='pro';
         try{ delete S.dark; }catch(e){}
@@ -620,18 +620,18 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){ return String(hex); }
     }
     function applyTheme(){
-        // 14.47 · 테마 적용 — 'pro'(기본·프리미엄 다크) / 'classic'(기존 라이트)
+        // 14.48 · 테마 적용 — 'pro'(기본·밝은 '워크' 전문 디자인) / 'classic'(기존 라이트)
         const th=sdyTheme();
         S.theme=th;
         const root=document.documentElement;
         try{ root.dataset.theme=th; }catch(e){}
         root.classList.toggle('theme-pro',th==='pro');
         root.classList.toggle('theme-classic',th!=='pro');
-        // 14.47 · .dark 는 하위 호환 별칭으로 프로 테마에서 함께 켠다.
-        //   CSS 곳곳의 .dark 규칙(플래시카드·에디터 크롬 등 70여 곳)을
-        //   프로 테마에서 그대로 재사용하기 위함이다. 색상 변수(--bg 등)는
-        //   특이도가 더 높은 html.theme-pro 정의가 .dark 정의를 덮어쓴다.
-        root.classList.toggle('dark',th==='pro');
+        // 14.48 · 프로 테마는 '워크' 밝은 전문 디자인으로 바뀌어 .dark 별칭을
+        //   더 이상 쓰지 않는다. 프로 = 기본(라이트) 규칙 + html.theme-pro 오버라이드.
+        //   (기존 다크 프로 시절 .dark 의존 규칙 70여 곳 — 플리커·에디터 크롬 등 —
+        //    이제 클래식(라이트) 스타일로 돌아와도 양쪽 모두 정상 동작.)
+        root.classList.remove('dark');
         try{ document.body.classList.toggle('theme-pro',th==='pro'); }catch(e){}
         try{ document.body.classList.toggle('theme-classic',th!=='pro'); }catch(e){}
         // 강조색
@@ -670,12 +670,15 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const el=document.getElementById('wallLayer');
         if(!el) return;
         const url=S.wall||'';
-        document.body.classList.toggle('has-wall',!!url);
+        // 14.48 · 배경화면은 클래식 테마 전용. 프로 테마에서는 보이지 않게 한다
+        //   (S.wall 자체는 그대로 유지 — 다시 클래식으로 가면 원래대로 복원된다.)
+        const proOn=(typeof sdyTheme==='function'&&sdyTheme()==='pro');
+        document.body.classList.toggle('has-wall',!!url&&!proOn);
         const isVideo=url?wallIsVideo():false;
-        el.style.backgroundImage=(!url||isVideo)?'':`url("${url}")`;
+        el.style.backgroundImage=(!url||isVideo||proOn)?'':`url("${url}")`;
         const v=document.getElementById('wallVideo');
         if(v){
-            if(isVideo){
+            if(isVideo&&!proOn){
                 if(v.getAttribute('src')!==url) v.src=url;
                 v.style.display='block';
                 try{ v.play().catch(()=>{}); }catch(e){}
@@ -690,6 +693,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     async function pickWallpaper(file){
         if(!file) return;
+        // 14.48 · 프로 테마에서는 배경화면 행(#setRowWall)이 숨겨져 있어
+        //   여기까지 오는 경우(예: 클래식에서 올린 뒤 프로로 전환)는 안내만.
+        if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){
+            toast('프로 테마에서는 배경화면을 사용할 수 없어요 — 클래식 테마에서 설정해 주세요',2800);
+            return;
+        }
         const isVideo=(file.type||'').indexOf('video/')===0||/\.(mp4|webm|mov)$/i.test(file.name||'');
         const isImg=/^image\//.test(file.type||'')||/\.(jpe?g|png|webp|gif|heic|heif|bmp)$/i.test(file.name||'');
         if(!isVideo&&!isImg){

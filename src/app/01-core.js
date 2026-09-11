@@ -140,8 +140,8 @@
     let notebooks=[],curNB=null,curMemo=null;
     let S=JSON.parse(localStorage.getItem('sdy3')||'null')||{theme:'pro',defPaper:'blank',defFS:16,defFont:'pretendard',accent:'#4f6ef7',appTitle:'',cardSize:'l'};
     // 14.47 · 테마 이전 — 예전 S.dark(true/false)는 S.theme('pro'/'classic')으로 합쳐졌다.
-    //   저장된 값이 없으면 새 기본인 'pro'(프리미엄 전문가용 다크)로 시작한다.
-    //   (다크 모드 토글은 설정에서 테마 선택으로 대체됨)
+    //   저장된 값이 없으면 새 기본인 'pro'로 시작한다. (다크 모드 토글은 설정에서
+    //   테마 선택으로 대체됨) 14.48 · 'pro' = 밝은 '워크' 전문 디자인(더 이상 다크 아님)
     if(!S.theme||(S.theme!=='pro'&&S.theme!=='classic')){
         S.theme='pro';
         try{ delete S.dark; }catch(e){}
@@ -384,18 +384,18 @@
         }catch(e){ return String(hex); }
     }
     function applyTheme(){
-        // 14.47 · 테마 적용 — 'pro'(기본·프리미엄 다크) / 'classic'(기존 라이트)
+        // 14.48 · 테마 적용 — 'pro'(기본·밝은 '워크' 전문 디자인) / 'classic'(기존 라이트)
         const th=sdyTheme();
         S.theme=th;
         const root=document.documentElement;
         try{ root.dataset.theme=th; }catch(e){}
         root.classList.toggle('theme-pro',th==='pro');
         root.classList.toggle('theme-classic',th!=='pro');
-        // 14.47 · .dark 는 하위 호환 별칭으로 프로 테마에서 함께 켠다.
-        //   CSS 곳곳의 .dark 규칙(플래시카드·에디터 크롬 등 70여 곳)을
-        //   프로 테마에서 그대로 재사용하기 위함이다. 색상 변수(--bg 등)는
-        //   특이도가 더 높은 html.theme-pro 정의가 .dark 정의를 덮어쓴다.
-        root.classList.toggle('dark',th==='pro');
+        // 14.48 · 프로 테마는 '워크' 밝은 전문 디자인으로 바뀌어 .dark 별칭을
+        //   더 이상 쓰지 않는다. 프로 = 기본(라이트) 규칙 + html.theme-pro 오버라이드.
+        //   (기존 다크 프로 시절 .dark 의존 규칙 70여 곳 — 플리커·에디터 크롬 등 —
+        //    이제 클래식(라이트) 스타일로 돌아와도 양쪽 모두 정상 동작.)
+        root.classList.remove('dark');
         try{ document.body.classList.toggle('theme-pro',th==='pro'); }catch(e){}
         try{ document.body.classList.toggle('theme-classic',th!=='pro'); }catch(e){}
         // 강조색

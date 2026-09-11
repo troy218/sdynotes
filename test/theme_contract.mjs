@@ -1,5 +1,8 @@
-/* 14.47 · PRO 테마 계약 — 기본값 pro · 전환 · 설정 UI · 구 S.dark 이전 검증
-   실행: npm run test:theme (서버를 띄우고 실제 페이지를 jsdom 으로 열어 확인) */
+/* 14.48 · PRO 테마 계약 — '워크' 밝은 전문 디자인 · 배경화면은 클래식 전용 · 종이 흰색
+   실행: npm run test:theme (서버를 띄우고 실제 페이지를 jsdom 으로 열어 확인)
+   - 프로 = html.theme-pro + 기본(라이트) 규칙 (더 이상 .dark 별칭 없음)
+   - 배경화면: 프로에서 body.has-wall 없음·행 숨김, 클래식에서 복원(라운드로트)
+   - 종이: 프로에서 --card=#ffffff, html.theme-pro .paper 백그라운드 흰색 */
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
@@ -91,7 +94,7 @@ async function loadPage(presetLS) {
   return { dom, window, document, errs };
 }
 
-let dom1, dom2;
+let dom1, dom2, dom3;
 try {
   const until = Date.now() + 15000;
   while (Date.now() < until) {
@@ -100,25 +103,32 @@ try {
     await wait(100);
   }
 
-  // ── 1) 첫 방문(저장값 없음) → 프로 기본 ──
+  // ── 1) 첫 방문(저장값 없음) → 프로 기본, .dark 없음, 밝은 워크 토큰 ──
   ({ dom: dom1 } = await loadPage(null));
   const w1 = dom1.window, d1 = dom1.window.document;
   check('첫 진입 data-theme=pro', d1.documentElement.dataset.theme === 'pro');
   check('첫 진입 .theme-pro 있음', d1.documentElement.classList.contains('theme-pro'));
-  check('호환 .dark 별칭 함께 켜짐', d1.documentElement.classList.contains('dark'));
+  check('14.48 · 프로에는 .dark 없음', !d1.documentElement.classList.contains('dark'));
   check('sdyTheme()=pro', w1.sdyTheme() === 'pro');
   check('pickTheme/paintThemePicks 전역 노출', typeof w1.pickTheme === 'function' && typeof w1.paintThemePicks === 'function');
   check('구 darkTgl 요소 제거됨', !d1.getElementById('darkTgl'));
   const bg1 = w1.getComputedStyle(d1.documentElement).getPropertyValue('--bg').trim().toLowerCase();
   console.log('    --bg = ' + JSON.stringify(bg1));
-  check('프로 --bg 토큰이 다크값', bg1 === '#0a0d14');
+  check('프로 --bg 토큰이 밝은 워크값', bg1 === '#f4f5f8');
+  const card1 = w1.getComputedStyle(d1.documentElement).getPropertyValue('--card').trim().toLowerCase();
+  check('프로 --card 토큰이 흰색(종이)', card1 === '#ffffff');
+  const cssText = fs.readFileSync(path.join(TMP, 'sdynotes.css'), 'utf-8');
+  check('CSS: 프로 종이 흰색 규칙 존재', /html\.theme-pro \.paper\{[^}]*background:#FFFFFF/.test(cssText));
 
-  // ── 2) 설정창 테마 UI ──
+  // ── 2) 설정창 테마 UI + 배경화면 행은 프로에서 숨김 ──
   w1.openSettings();
   await wait(200);
   check('테마 선택 UI 렌더', !!d1.getElementById('themePicks'));
   check('프로 카드에 .on', !!d1.querySelector('.theme-pick[data-theme=pro].on'));
   check('클래식 카드 .on 없음', !d1.querySelector('.theme-pick[data-theme=classic].on'));
+  const wallRow1 = d1.getElementById('setRowWall');
+  check('배경화면 행 존재(id=setRowWall)', !!wallRow1);
+  check('14.48 · 프로에서 배경화면 행 숨김', wallRow1 && w1.getComputedStyle(wallRow1).display === 'none');
 
   // ── 3) 클래식으로 전환 ──
   w1.pickTheme('classic');
@@ -133,11 +143,13 @@ try {
   const bgC = w1.getComputedStyle(d1.documentElement).getPropertyValue('--bg').trim().toLowerCase();
   console.log('    classic --bg = ' + JSON.stringify(bgC));
   check('클래식 --bg 토큰이 라이트값', bgC === '#ffffff');
+  check('클래식에서 배경화면 행 보임', wallRow1 && w1.getComputedStyle(wallRow1).display === 'flex');
 
   // ── 4) 다시 프로로 ──
   w1.pickTheme('pro');
   await wait(200);
   check('복귀 후 pro', d1.documentElement.dataset.theme === 'pro' && w1.sdyTheme() === 'pro');
+  check('복귀 후 .dark도 없음', !d1.documentElement.classList.contains('dark'));
   w1.closeSettings();
 
   // ── 5) 구버전 저장값(S.dark, theme 없음) 이전 ──
@@ -145,12 +157,32 @@ try {
   ({ dom: dom2 } = await loadPage(legacy));
   const w2 = dom2.window, d2 = dom2.window.document;
   check('구 dark 저장값도 pro로 시작', d2.documentElement.dataset.theme === 'pro' && w2.sdyTheme() === 'pro');
+  check('구 저장값 로드에도 .dark 없음', !d2.documentElement.classList.contains('dark'));
+
+  // ── 6) 14.48 · 배경화면 라운드로트 — 클래식에서 설정값이 프로에서는 안 보임 ──
+  const wallPreset = JSON.stringify({
+    theme: 'pro', wall: `${base}/files/wallpaper/roundtrip.jpg`, wallVideo: false,
+    defPaper: 'blank', defFS: 16, defFont: 'pretendard', accent: '#4f6ef7',
+  });
+  ({ dom: dom3 } = await loadPage(wallPreset));
+  const w3 = dom3.window, d3 = dom3.window.document;
+  const b3 = d3.body, wallEl = d3.getElementById('wallLayer');
+  check('배경 설정값 있음에도 프로에서는 has-wall 없음', !!b3 && !b3.classList.contains('has-wall'));
+  check('배경 설정값 있음에도 프로에서는 배경 url 없음', !!wallEl && !wallEl.style.backgroundImage);
+  w3.pickTheme('classic');
+  await wait(200);
+  check('클래식에서 has-wall 복원', b3.classList.contains('has-wall'));
+  check('클래식에서 배경 url 복원', !!wallEl && wallEl.style.backgroundImage.includes('roundtrip.jpg'));
+  w3.pickTheme('pro');
+  await wait(200);
+  check('다시 프로로 가면 배경 사라짐', !b3.classList.contains('has-wall') && !wallEl.style.backgroundImage);
 
   console.log(`\n✅ theme_smoke — ${pass.length}개 항목 통과`);
 } finally {
   try { await closeDoms(); } catch {}
   try { dom1?.window?.close(); } catch {}
   try { dom2?.window?.close(); } catch {}
+  try { dom3?.window?.close(); } catch {}
   try { child.kill('SIGKILL'); } catch {}
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
 }

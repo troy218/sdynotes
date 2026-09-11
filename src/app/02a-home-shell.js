@@ -11,12 +11,15 @@
         const el=document.getElementById('wallLayer');
         if(!el) return;
         const url=S.wall||'';
-        document.body.classList.toggle('has-wall',!!url);
+        // 14.48 · 배경화면은 클래식 테마 전용. 프로 테마에서는 보이지 않게 한다
+        //   (S.wall 자체는 그대로 유지 — 다시 클래식으로 가면 원래대로 복원된다.)
+        const proOn=(typeof sdyTheme==='function'&&sdyTheme()==='pro');
+        document.body.classList.toggle('has-wall',!!url&&!proOn);
         const isVideo=url?wallIsVideo():false;
-        el.style.backgroundImage=(!url||isVideo)?'':`url("${url}")`;
+        el.style.backgroundImage=(!url||isVideo||proOn)?'':`url("${url}")`;
         const v=document.getElementById('wallVideo');
         if(v){
-            if(isVideo){
+            if(isVideo&&!proOn){
                 if(v.getAttribute('src')!==url) v.src=url;
                 v.style.display='block';
                 try{ v.play().catch(()=>{}); }catch(e){}
@@ -31,6 +34,12 @@
     }
     async function pickWallpaper(file){
         if(!file) return;
+        // 14.48 · 프로 테마에서는 배경화면 행(#setRowWall)이 숨겨져 있어
+        //   여기까지 오는 경우(예: 클래식에서 올린 뒤 프로로 전환)는 안내만.
+        if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){
+            toast('프로 테마에서는 배경화면을 사용할 수 없어요 — 클래식 테마에서 설정해 주세요',2800);
+            return;
+        }
         const isVideo=(file.type||'').indexOf('video/')===0||/\.(mp4|webm|mov)$/i.test(file.name||'');
         const isImg=/^image\//.test(file.type||'')||/\.(jpe?g|png|webp|gif|heic|heif|bmp)$/i.test(file.name||'');
         if(!isVideo&&!isImg){
