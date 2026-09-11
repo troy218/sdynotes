@@ -85,14 +85,14 @@
             input[type=number],textarea{font-size:16px !important;}
         }
         :root{
-            --bg:#ffffff;--bg2:#f7f7f8;--card:#ffffff;--text1:#111;--text2:#555;--text3:#aaa;
-            --border:#e5e5e5;--accent:#4f6ef7;--accent2:#3b5de7;--shadow:0 2px 12px rgba(0,0,0,0.06);
-            --line:#e8e8e8;--dot:#cccccc;
+            --bg:#ffffff;--bg2:#f7f7f8;--card:#ffffff;--text1:#0F172A;--text2:#334155;--text3:#64748B;
+            --border:#e2e8f0;--accent:#14366E;--accent2:#0F2A5A;--shadow:0 2px 12px rgba(0,0,0,0.06);
+            --line:#e2e8f0;--dot:#cbd5e1;
         }
         .dark{
-            --bg:#111113;--bg2:#1a1a1e;--card:#1e1e22;--text1:#eee;--text2:#999;--text3:#555;
-            --border:#2a2a2e;--accent:#6b7ff7;--accent2:#5a6ee7;--shadow:0 2px 12px rgba(0,0,0,0.3);
-            --line:#2a2a2e;--dot:#444444;
+            --bg:#0F172A;--bg2:#1E293B;--card:#1E293B;--text1:#E2E8F0;--text2:#94A3B8;--text3:#64748B;
+            --border:#334155;--accent:#2A5BD0;--accent2:#14366E;--shadow:0 2px 12px rgba(0,0,0,0.4);
+            --line:#334155;--dot:#475569;
         }
         body{background:var(--bg);color:var(--text1);}
 
@@ -6958,7 +6958,7 @@ body.sdy-turbo .page-wrap{will-change:auto!important;}
 .tp-swatch.pro{background:#F1F3F7;border-color:#DFE3EB;}
 .tp-swatch.pro i:nth-child(1){height:58%;background:#DFE3EB;}
 .tp-swatch.pro i:nth-child(2){height:100%;background:#FFFFFF;border:1px solid #E3E7EF;}
-.tp-swatch.pro i:nth-child(3){height:74%;background:linear-gradient(180deg,#3B76F6,#1D4ED8);}
+.tp-swatch.pro i:nth-child(3){height:74%;background:linear-gradient(180deg,#1B4AA0,#14366E);}
 .tp-swatch.classic{background:#FFFFFF;border-color:#E2E5EE;}
 .tp-swatch.classic i:nth-child(1){height:58%;background:#DDE1EC;}
 .tp-swatch.classic i:nth-child(2){height:100%;background:linear-gradient(180deg,#4F6EF7,#8B5CF6);}
@@ -6973,13 +6973,13 @@ body.sdy-turbo .page-wrap{will-change:auto!important;}
 /* ── 14.48-B · PRO 색상·표면 토큰 ── */
 html.theme-pro{
   --bg:#F4F5F8;--bg2:#ECEEF3;--card:#FFFFFF;
-  --text1:#171C26;--text2:#4C5568;--text3:#8F98AB;
-  --border:#DFE3EB;
-  --accent:#2563EB;--accent2:#1D4ED8;
+  --text1:#0F172A;--text2:#334155;--text3:#64748B;
+  --border:#CBD5E1;
+  --accent:#14366E;--accent2:#0F2A5A;
   --shadow:0 1px 2px rgba(23,28,41,.06);
   --shadow-lg:0 16px 40px -12px rgba(23,28,41,.20);
-  --line:#E3E7EF;--dot:#C7CEDB;
-  --grad:linear-gradient(135deg,#2563EB,#1D4ED8);
+  --line:#CBD5E1;--dot:#94A3B8;
+  --grad:linear-gradient(135deg,#14366E,#0F2A5A);
   --g-blur:14px;--g-blur-lg:20px;
   --g-fill:rgba(255,255,255,.80);
   --g-fill-strong:rgba(255,255,255,.94);
@@ -8067,13 +8067,10 @@ html.theme-pro .editor-toolbar button:disabled{opacity:.4;cursor:not-allowed;box
     position:relative;gap:2px;background:#f6f7fa!important;border:1px solid #e6e9ef!important;
     padding:3px!important;border-radius:6px!important;
   }
-  html.theme-pro .editor-toolbar .tb-mid > .tb-group{padding-top:17px!important;}
-  html.theme-pro .editor-toolbar .tb-mid > .tb-group::before{
-    content:attr(data-tool-group);position:absolute;top:3px;left:8px;
-    font-size:9px;font-weight:600;line-height:11px;color:var(--text3);pointer-events:none;
-  }
+  html.theme-pro .editor-toolbar .tb-mid > .tb-group{padding-top:3px!important;}
+  html.theme-pro .editor-toolbar .tb-mid > .tb-group::before{display:none!important;content:none!important;}
   html.theme-pro .editor-toolbar .tool-btn,
-  html.theme-pro .editor-toolbar .tool-btn.sm{width:34px!important;height:34px!important;font-size:18px!important;}
+  html.theme-pro .editor-toolbar .tool-btn.sm{width:32px!important;height:32px!important;font-size:17px!important;}
   html.theme-pro .editor-toolbar .font-btn{height:34px;max-width:140px;}
   html.theme-pro .editor-toolbar #fontLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   html.theme-pro .editor-toolbar #fsInput{height:34px;width:42px;border-radius:6px;}
@@ -8083,8 +8080,8 @@ html.theme-pro .editor-toolbar button:disabled{opacity:.4;cursor:not-allowed;box
   html.theme-pro .editor-toolbar .tool-sep{height:20px;margin:0 4px;}
   html.theme-pro .editor-toolbar .pg-nav{height:36px;background:#fff;border-radius:6px;}
   html.theme-pro .editor-toolbar .pg-nav button{width:28px;height:28px;font-size:18px;}
-  html.theme-pro .editor-toolbar .tb-labeled{width:auto!important;padding:0 10px;display:inline-flex;align-items:center;gap:6px;}
-  html.theme-pro .editor-toolbar .tb-labeled::after{content:attr(data-tool-label);font-size:12px;font-weight:600;white-space:nowrap;}
+  html.theme-pro .editor-toolbar .tb-labeled{width:32px!important;height:32px!important;padding:0!important;display:inline-flex!important;align-items:center;justify-content:center;gap:0!important;}
+  html.theme-pro .editor-toolbar .tb-labeled::after{display:none!important;content:none!important;}
 }
 @media(min-width:821px) and (max-width:1100px){
   html.theme-pro .editor-toolbar .tb-labeled::after{content:none;}
@@ -8881,3 +8878,45 @@ body.sdy-turbo #proHomeEq{display:none!important;}
 @media(max-width:640px),(max-height:560px) and (pointer:coarse){
   #proHomeEq{left:0!important;width:100%!important;top:88px!important;height:calc(var(--sdy-mobile-vh,100dvh) - 88px)!important;}
 }
+
+/* ================================================================
+   14.60 · 디자인 다듬기 — 진한 파랑 포인트 + 가독성 + 툴바 아이콘만
+   ────────────────────────────────────────────────────────────────
+   · 진한 파랑 포인트는 :root/html.theme-pro 토큰(--accent #14366E)으로
+     이미 위에서 교체. 본 블록은 그 결정을 보정한다.
+   · 편집 상단바 라벨 숨김(글자서식/넣기/그리기/편집기록), 되돌리기 아이콘만.
+   · 현재 쪽 테두리·라벨 강조 제거.
+   · 북마크 노란 채움 + PRO 집게 숨김 + 뒤로 버튼 숨김.
+   ================================================================ */
+
+/* 14.60-A · 현재 쪽 강조 제거 — 종이에 색 테두리를 두르지 않는다 */
+.paper.focused{
+  outline:none!important;
+  outline-offset:0!important;
+  box-shadow:var(--shadow)!important;
+}
+html.theme-pro .paper.focused{
+  outline:none!important;
+  outline-offset:0!important;
+  box-shadow:0 1px 3px rgba(23,28,41,.07),0 10px 28px -10px rgba(23,28,41,.14)!important;
+}
+.page-wrap.focused .page-label{color:var(--text3)!important;font-weight:400!important;}
+.page-wrap.focused .page-label>span{padding:0!important;border-radius:0!important;background:transparent!important;}
+
+/* 14.60-B · 편집창 뒤로 버튼 숨김 — 크롬 자체 뒤로(히스토리)로 이동 */
+.editor-toolbar .tb-left button[onclick="navBack()"]{display:none!important;}
+
+/* 14.60-C · 북마크 노란 채움 — 내부가 꽉 찬 별 모양 */
+.pro-bookmarks > summary > i.ri-bookmark-fill,
+.pro-bookmarks > summary > i.ri-bookmark-line{color:#EAB308!important;}
+html.theme-pro .pro-bookmarks > summary > i.ri-bookmark-fill{color:#EAB308!important;}
+.pro-bookmarks > summary > i.ri-bookmark-fill{filter:drop-shadow(0 1px 2px rgba(234,179,8,.35));}
+
+/* 14.60-D · PRO 집게 애니메이션 제거 — 프로에서는 성능·시각적으로 숨김 */
+html.theme-pro #clawFx{display:none!important;}
+
+/* 14.60-E · 가독성 — 본문 렌더링 다듬기 (성능 영향 없음) */
+body{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+#noteGrid .note-card-name{font-weight:700;letter-spacing:-.01em;}
+html.theme-pro #noteGrid .note-card-name{color:#0F172A;}
+.pro-home-count, .home-section-title, .pro-folders-title{ letter-spacing:-.01em; }
