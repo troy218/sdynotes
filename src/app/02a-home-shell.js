@@ -73,17 +73,28 @@
         const rm=document.getElementById('wallRmBtn');
         if(rm) rm.style.display=S.wall?'':'none';
     }
-    function tglDark(){S.dark=!S.dark;saveS();applyTheme();document.getElementById('darkTgl').classList.toggle('on',S.dark);renderGrid();
-        try{ pushSettings(); }catch(e){}}
+    // 14.47 · 테마 선택 — 설정창의 '테마' 행에서 호출 (다크 토글 tglDark 대체)
+    function pickTheme(th){
+        th=(th==='classic')?'classic':'pro';
+        if(sdyTheme()===th){ try{ paintThemePicks(); }catch(e){} return; }
+        S.theme=th;
+        try{ delete S.dark; }catch(e){}
+        saveS(); applyTheme(); renderGrid();
+        try{ pushSettings(); }catch(e){}
+    }
+    // 구버전 호환 — 예전 다크 토글 호출이 남아 있으면 테마 전환으로 동작
+    function tglDark(){ try{ pickTheme(sdyTheme()==='pro'?'classic':'pro'); }catch(e){} }
 
     // ── 앱 전체 설정 동기화 ────────────────────────────────
     // 테마·강조색·기본 글꼴/크기·제목·카드 크기와 함께 브라우저에서
     // 기억하던 작은 UI 상태도 한 묶음으로 동기화한다.
-    const APPSET_KEYS=['defPaper','defFS','defFont','accent','appTitle','cardSize','wall','wallVeil','wallVideo'];
+    const APPSET_KEYS=['theme','defPaper','defFS','defFont','accent','appTitle','cardSize','wall','wallVeil','wallVideo'];
     function _readJsonLS(k,dflt){ try{ const x=JSON.parse(localStorage.getItem(k)||'null'); return x==null?dflt:x; }catch(e){ return dflt; } }
     function _uiSetPayload(){
+        const _th=(typeof sdyTheme==='function')?sdyTheme():(S.theme||'pro');
         return {
-            dark:!!S.dark,
+            theme:_th,
+            dark:_th==='pro',
             guides:localStorage.getItem('sdy_guides')==='1',
             sepia:localStorage.getItem('sdy_sepia')==='1',
             side:localStorage.getItem('sdy_side')!=='0',
@@ -127,7 +138,16 @@
         });
         const ui=(d.ui&&typeof d.ui==='object')?d.ui:null;
         if(ui){
-            if(ui.dark!==undefined && !!S.dark!==!!ui.dark){ S.dark=!!ui.dark; ch=true; }
+            // 14.47 · 테마 동기화 — ui.theme 우선, 구버전 ui.dark(true→pro/false→classic)도 받는다
+            if(ui.theme!==undefined){
+                const _th=(ui.theme==='classic')?'classic':'pro';
+                if(sdyTheme()!==_th){ S.theme=_th; ch=true; }
+                try{ delete S.dark; }catch(e){}
+            }else if(ui.dark!==undefined){
+                const _th=ui.dark?'pro':'classic';
+                if(sdyTheme()!==_th){ S.theme=_th; ch=true; }
+                try{ delete S.dark; }catch(e){}
+            }
             const put=(k,v)=>{ if(v!==undefined&&v!==null) localStorage.setItem(k,String(v)); };
             put('sdy_guides',ui.guides?'1':'0');
             put('sdy_sepia',ui.sepia?'1':'0');

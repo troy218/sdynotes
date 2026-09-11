@@ -374,7 +374,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     const ADD_ZONE_H=120;   // 새 페이지 추가 영역 높이
 
     let notebooks=[],curNB=null,curMemo=null;
-    let S=JSON.parse(localStorage.getItem('sdy3')||'null')||{dark:false,defPaper:'blank',defFS:16,defFont:'pretendard',accent:'#4f6ef7',appTitle:'',cardSize:'l'};
+    let S=JSON.parse(localStorage.getItem('sdy3')||'null')||{theme:'pro',defPaper:'blank',defFS:16,defFont:'pretendard',accent:'#4f6ef7',appTitle:'',cardSize:'l'};
+    // 14.47 · 테마 이전 — 예전 S.dark(true/false)는 S.theme('pro'/'classic')으로 합쳐졌다.
+    //   저장된 값이 없으면 새 기본인 'pro'(프리미엄 전문가용 다크)로 시작한다.
+    //   (다크 모드 토글은 설정에서 테마 선택으로 대체됨)
+    if(!S.theme||(S.theme!=='pro'&&S.theme!=='classic')){
+        S.theme='pro';
+        try{ delete S.dark; }catch(e){}
+    }
+    // 현재 테마 ('pro' | 'classic') — 비교는 이 함수로 통일한다
+    function sdyTheme(){ return S.theme==='classic'?'classic':'pro'; }
     function saveS(){localStorage.setItem('sdy3',JSON.stringify(S));}
 
     // ===== 문서 모델 =====
@@ -611,11 +620,26 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){ return String(hex); }
     }
     function applyTheme(){
-        document.documentElement.classList.toggle('dark',S.dark);
+        // 14.47 · 테마 적용 — 'pro'(기본·프리미엄 다크) / 'classic'(기존 라이트)
+        const th=sdyTheme();
+        S.theme=th;
+        const root=document.documentElement;
+        try{ root.dataset.theme=th; }catch(e){}
+        root.classList.toggle('theme-pro',th==='pro');
+        root.classList.toggle('theme-classic',th!=='pro');
+        // 14.47 · .dark 는 하위 호환 별칭으로 프로 테마에서 함께 켠다.
+        //   CSS 곳곳의 .dark 규칙(플래시카드·에디터 크롬 등 70여 곳)을
+        //   프로 테마에서 그대로 재사용하기 위함이다. 색상 변수(--bg 등)는
+        //   특이도가 더 높은 html.theme-pro 정의가 .dark 정의를 덮어쓴다.
+        root.classList.toggle('dark',th==='pro');
+        try{ document.body.classList.toggle('theme-pro',th==='pro'); }catch(e){}
+        try{ document.body.classList.toggle('theme-classic',th!=='pro'); }catch(e){}
         // 강조색
         const acc=S.accent||'#4f6ef7';
         document.documentElement.style.setProperty('--accent',acc);
         document.documentElement.style.setProperty('--accent2',shade(acc,-0.18));
+        // 설정창의 테마 선택 UI도 함께 갱신 (열려 있을 때)
+        try{ if(typeof paintThemePicks==='function') paintThemePicks(); }catch(e){}
         // 앱 제목
         const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'동엽신의 끄적끄적';
         const h1=document.querySelector('.app-brand h1');
@@ -708,17 +732,28 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         const rm=document.getElementById('wallRmBtn');
         if(rm) rm.style.display=S.wall?'':'none';
     }
-    function tglDark(){S.dark=!S.dark;saveS();applyTheme();document.getElementById('darkTgl').classList.toggle('on',S.dark);renderGrid();
-        try{ pushSettings(); }catch(e){}}
+    // 14.47 · 테마 선택 — 설정창의 '테마' 행에서 호출 (다크 토글 tglDark 대체)
+    function pickTheme(th){
+        th=(th==='classic')?'classic':'pro';
+        if(sdyTheme()===th){ try{ paintThemePicks(); }catch(e){} return; }
+        S.theme=th;
+        try{ delete S.dark; }catch(e){}
+        saveS(); applyTheme(); renderGrid();
+        try{ pushSettings(); }catch(e){}
+    }
+    // 구버전 호환 — 예전 다크 토글 호출이 남아 있으면 테마 전환으로 동작
+    function tglDark(){ try{ pickTheme(sdyTheme()==='pro'?'classic':'pro'); }catch(e){} }
 
     // ── 앱 전체 설정 동기화 ────────────────────────────────
     // 테마·강조색·기본 글꼴/크기·제목·카드 크기와 함께 브라우저에서
     // 기억하던 작은 UI 상태도 한 묶음으로 동기화한다.
-    const APPSET_KEYS=['defPaper','defFS','defFont','accent','appTitle','cardSize','wall','wallVeil','wallVideo'];
+    const APPSET_KEYS=['theme','defPaper','defFS','defFont','accent','appTitle','cardSize','wall','wallVeil','wallVideo'];
     function _readJsonLS(k,dflt){ try{ const x=JSON.parse(localStorage.getItem(k)||'null'); return x==null?dflt:x; }catch(e){ return dflt; } }
     function _uiSetPayload(){
+        const _th=(typeof sdyTheme==='function')?sdyTheme():(S.theme||'pro');
         return {
-            dark:!!S.dark,
+            theme:_th,
+            dark:_th==='pro',
             guides:localStorage.getItem('sdy_guides')==='1',
             sepia:localStorage.getItem('sdy_sepia')==='1',
             side:localStorage.getItem('sdy_side')!=='0',
@@ -762,7 +797,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         });
         const ui=(d.ui&&typeof d.ui==='object')?d.ui:null;
         if(ui){
-            if(ui.dark!==undefined && !!S.dark!==!!ui.dark){ S.dark=!!ui.dark; ch=true; }
+            // 14.47 · 테마 동기화 — ui.theme 우선, 구버전 ui.dark(true→pro/false→classic)도 받는다
+            if(ui.theme!==undefined){
+                const _th=(ui.theme==='classic')?'classic':'pro';
+                if(sdyTheme()!==_th){ S.theme=_th; ch=true; }
+                try{ delete S.dark; }catch(e){}
+            }else if(ui.dark!==undefined){
+                const _th=ui.dark?'pro':'classic';
+                if(sdyTheme()!==_th){ S.theme=_th; ch=true; }
+                try{ delete S.dark; }catch(e){}
+            }
             const put=(k,v)=>{ if(v!==undefined&&v!==null) localStorage.setItem(k,String(v)); };
             put('sdy_guides',ui.guides?'1':'0');
             put('sdy_sepia',ui.sepia?'1':'0');
@@ -5473,9 +5517,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     })();
 
     const ACCENT_COLORS=['#4f6ef7','#8b5cf6','#e0619b','#ef4444','#f59e0b','#10b981','#14b8a6','#0ea5e9','#111827'];
+    // 14.47 · 설정창 테마 선택 UI 갱신 (프로/클래식 중 현재값에 .on)
+    function paintThemePicks(){
+        const wrap=document.getElementById('themePicks'); if(!wrap) return;
+        const th=(typeof sdyTheme==='function')?sdyTheme():(S.theme||'pro');
+        wrap.querySelectorAll('.theme-pick').forEach(b=>
+            b.classList.toggle('on',b.dataset.theme===th));
+    }
     function openSettings(){
         document.getElementById('setModal').style.display='flex';
-        document.getElementById('darkTgl').classList.toggle('on',S.dark);
+        paintThemePicks();
         document.getElementById('defPaper').value=S.defPaper;
         // 강조색 스와치
         const ap=document.getElementById('accentPicks');
@@ -5508,7 +5559,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // 설정을 전부 기본값으로 되돌린다 (노트 데이터는 건드리지 않음)
     function resetSettings(){
         if(!confirm('설정을 기본값으로 되돌릴까요?\n(노트·폴더·휴지통 데이터는 그대로 유지됩니다)')) return;
-        S={dark:false, defPaper:'blank', defFS:16, defFont:'pretendard',
+        S={theme:'pro', defPaper:'blank', defFS:16, defFont:'pretendard',
            accent:'#4f6ef7', appTitle:'', cardSize:'m', wall:'', wallVeil:34, wallVideo:false};
         saveS();
         try{ pushSettings(); }catch(e){}
@@ -26489,19 +26540,20 @@ window.addEventListener('online',()=>{
 document.addEventListener('sdy-playlists-updated',()=>{
   try{ if($('musicListPop').style.display==='flex'||P.plMode) renderListPop(); }catch(e){}
 });
-// 테마(다크모드·강조색)가 바뀌면 음악 플레이어·LP 디스크도 즉시 따라간다
+// 테마(프로/클래식·강조색)가 바뀌면 음악 플레이어·LP 디스크도 즉시 따라간다
 try{
-  let _lastAccent=readAccent(), _lastDark=document.documentElement.classList.contains('dark');
+  const _themeKey=()=>document.documentElement.dataset.theme||(document.documentElement.classList.contains('theme-pro')?'pro':'classic');
+  let _lastAccent=readAccent(), _lastTheme=_themeKey();
   const _syncTheme=()=>{
     const acc=readAccent();
-    const dark=document.documentElement.classList.contains('dark');
-    if(acc===_lastAccent && dark===_lastDark) return;
-    _lastAccent=acc; _lastDark=dark;
+    const th=_themeKey();
+    if(acc===_lastAccent && th===_lastTheme) return;
+    _lastAccent=acc; _lastTheme=th;
     makeDefCover();               // LP 디스크(기본 커버) 색 갱신
     renderTitle();                // 컨트롤바 커버·상태 재반영
   };
   new MutationObserver(_syncTheme).observe(document.documentElement,
-    {attributes:true, attributeFilter:['class','style']});
+    {attributes:true, attributeFilter:['class','style','data-theme']});
 }catch(e){}
 
 // ═══════════════════════════════════════════════════════════
