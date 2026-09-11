@@ -396,6 +396,11 @@
     <div id="proShell" class="pro-shell">
     <aside id="proSide" class="pro-side" aria-label="메뉴">
         <div class="pro-brand" id="proBrandSlot"></div>
+        <details id="proBookmarks" class="pro-bookmarks">
+            <summary title="북마크" aria-label="북마크 목록"><i class="ri-bookmark-line" aria-hidden="true"></i><span>북마크</span><span id="proBookmarkCount" class="pro-bookmark-count">0</span><i class="ri-arrow-down-s-line pro-bookmark-chevron" aria-hidden="true"></i></summary>
+            <div id="proBookmarkSlot" class="pro-bookmark-panel" aria-label="북마크 링크"></div>
+        </details>
+        <div id="proToolsSlot" class="pro-tools"></div>
         <nav class="pro-nav" id="proNav" aria-label="주 메뉴"></nav>
         <div class="pro-folders-wrap">
             <div class="pro-folders-title">폴더</div>
@@ -449,7 +454,7 @@
                             title="관리자 모드"><i class="ri-shield-keyhole-line"></i></button>
                     <div class="search-wrap" style="position:relative;">
                         <i class="ri-search-line" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;"></i>
-                        <input id="searchInput" type="text" placeholder="노트 검색..." oninput="searchNotes(this.value)" style="width:220px;height:38px;padding:0 12px 0 36px;border:1px solid var(--border);border-radius:4px;background:var(--bg2);color:var(--text1);font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s;"
+                        <input id="searchInput" aria-label="노트 검색" type="search" placeholder="노트 검색..." oninput="searchNotes(this.value)" style="width:220px;height:38px;padding:0 12px 0 36px;border:1px solid var(--border);border-radius:4px;background:var(--bg2);color:var(--text1);font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s;"
                                onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(79,110,247,.14)'"
                                onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
                     </div>
@@ -459,6 +464,7 @@
         </header>
         <main class="w-full px-6 pt-8 pb-10">
             <div id="breadcrumb" class="breadcrumb" style="display:none;"></div>
+            <div id="proResults" class="pro-results" role="status" aria-live="polite" hidden></div>
             <div id="noteGrid" class="note-grid" style="margin-top:12px;"></div>
         </main>
     </div>
@@ -473,19 +479,19 @@
              가운데: 만들기(글·펜·사진·스티커·메모) │ 찾기(주요어·검색) │ 되돌리기
              오른쪽: 쪽 이동 · 확대 · 서랍(넣기/페이지/보기/노트) · 내보내기
              가운데 묶음은 grid 1fr auto 1fr 로 항상 화면 정중앙에 온다. -->
-        <div class="editor-toolbar">
+        <div class="editor-toolbar" role="group" aria-label="노트 편집 도구">
 
             <div class="tb-left">
                 <button onclick="navBack()" class="tool-btn" title="뒤로 (Esc)"><i class="ri-arrow-left-line"></i></button>
                 <div class="tb-title-wrap">
-                    <input id="edTitle" type="text" style="color:var(--text1)" placeholder="노트 제목">
+                    <input id="edTitle" aria-label="노트 제목" type="text" style="color:var(--text1)" placeholder="노트 제목">
                     <span id="saveState" class="text-xs tb-hide-sm" style="color:var(--text3);"></span>
                 </div>
             </div>
 
             <div class="tb-mid">
                 <!-- ═══ Word-like Formatting Group ═══ -->
-                <div class="tb-group fmt-group">
+                <div class="tb-group fmt-group" role="group" aria-label="글자 서식" data-tool-group="글자 서식">
                     <div class="font-wrap">
                         <button id="fontBtn" class="font-btn" onmousedown="saveSel();event.preventDefault()" onclick="toggleFontMenu()" title="글꼴">
                             <span id="fontLabel">프리텐다드</span><i class="ri-arrow-down-s-fill"></i>
@@ -496,7 +502,7 @@
                     <span class="tool-sep tb-hide-sm"></span>
 
                     <button onclick="chFS(-2)" onmousedown="event.preventDefault()" class="tool-btn sm tb-hide-sm tb-hide-md" title="글씨 작게"><i class="ri-subtract-line"></i></button>
-                    <input id="fsInput" type="text" inputmode="numeric" pattern="[0-9]*" value="16" onpointerdown="saveSel()" onfocus="this.select()" oninput="this.value=this.value.replace(/[^0-9]/g,'')" onchange="if(/^\d+$/.test(this.value))setFS(+this.value);else this.value=curFontSize" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}" title="글자 크기 (선택 영역에 여러 크기가 섞이면 -)">
+                    <input id="fsInput" aria-label="글자 크기" type="text" inputmode="numeric" pattern="[0-9]*" value="16" onpointerdown="saveSel()" onfocus="this.select()" oninput="this.value=this.value.replace(/[^0-9]/g,'')" onchange="if(/^\d+$/.test(this.value))setFS(+this.value);else this.value=curFontSize" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}" title="글자 크기 (선택 영역에 여러 크기가 섞이면 -)">
                     <button onclick="chFS(2)" onmousedown="event.preventDefault()" class="tool-btn sm tb-hide-sm tb-hide-md" title="글씨 크게"><i class="ri-add-line"></i></button>
 
                     <span class="tool-sep tb-hide-sm"></span>
@@ -507,10 +513,10 @@
                     <button onclick="execFmt('strike')" onmousedown="saveSel();event.preventDefault()" class="tool-btn sm tb-strike tb-hide-sm" title="취소선"><i class="ri-strikethrough"></i></button>
 
                     <div class="split-btn" id="textColorWrap">
-                        <button class="main" onmousedown="saveSel();event.preventDefault()" onclick="applyTextColor(currentTextColor)">
+                        <button class="main" title="글자 색 적용" aria-label="글자 색 적용" onmousedown="saveSel();event.preventDefault()" onclick="applyTextColor(currentTextColor)">
                             <span class="glyph" id="tcGlyph">A</span><span class="bar" id="tcBar"></span>
                         </button>
-                        <button class="caret" onmousedown="saveSel();event.preventDefault()" onclick="togglePop('textColorPop')"><i class="ri-arrow-down-s-fill"></i></button>
+                        <button class="caret" onmousedown="saveSel();event.preventDefault()" onclick="togglePop('textColorPop')" title="글자 색 선택" aria-label="글자 색 선택"><i class="ri-arrow-down-s-fill"></i></button>
                         <div class="color-popover" id="textColorPop"></div>
                     </div>
 
@@ -533,7 +539,7 @@
                 <span class="tool-sep"></span>
 
                 <!-- ═══ Insert Group ═══ -->
-                <div class="tb-group">
+                <div class="tb-group" role="group" aria-label="넣기" data-tool-group="넣기">
                     <button onclick="toggleTextTool()" id="textToolBtn" class="tool-btn" title="텍스트 상자"><i class="ri-text"></i></button>
                     <button onclick="triggerImgUpload()" class="tool-btn" title="사진 추가"><i class="ri-image-add-line"></i></button>
                     <button onclick="openStickers()" id="stkBtn" class="tool-btn" title="스티커 넣기"><i class="ri-sticky-note-line"></i></button>
@@ -544,7 +550,7 @@
                 <span class="tool-sep"></span>
 
                 <!-- ═══ Draw Group · 14.18.3 펜/형광펜은 '넣기'와 따로 분리 ═══ -->
-                <div class="tb-group draw-group">
+                <div class="tb-group draw-group" role="group" aria-label="그리기" data-tool-group="그리기">
                     <button onclick="togglePen()" id="penBtn" class="tool-btn" title="펜 쓰기 / 종료"><i class="ri-pen-nib-line"></i></button>
                     <button onclick="toggleHighlighter()" id="highlighterBtn" class="tool-btn" title="형광펜 쓰기 / 종료"><i class="ri-mark-pen-line"></i></button>
                     <button onclick="togglePaint()" id="paintBtn" class="tool-btn" title="페인트 · 닫힌 그림 안쪽 채우기 / 종료"><i class="ri-paint-fill"></i></button>
@@ -553,29 +559,29 @@
                 <span class="tool-sep"></span>
 
                 <!-- ═══ Core Tools Group ═══ -->
-                <div class="tb-group">
+                <div class="tb-group" role="group" aria-label="찾기" data-tool-group="찾기">
                     <button onclick="openPanel('words')" id="wfBtn" class="tool-btn js-wf" title="주요어 분석"><i class="ri-contrast-2-line"></i></button>
                     <button onclick="toggleFind()" id="findBtn" class="tool-btn" title="검색"><i class="ri-search-line"></i></button>
                 </div>
             </div>
 
             <div class="tb-right">
-                <div class="tb-group">
+                <div class="tb-group" role="group" aria-label="편집 기록" data-tool-group="편집 기록">
                     <button onclick="undo()" class="tool-btn sm" title="되돌리기"><i class="ri-arrow-go-back-line"></i></button>
                     <button onclick="redo()" class="tool-btn sm" title="다시 실행"><i class="ri-arrow-go-forward-line"></i></button>
                 </div>
 
                 <span class="tool-sep"></span>
 
-                <div class="pg-nav">
-                    <button onclick="goToPage((+document.getElementById('pgNow').value||1)-1)"><i class="ri-arrow-up-s-line"></i></button>
-                    <input id="pgNow" type="number" min="1" value="1">
+                <div class="pg-nav" role="group" aria-label="페이지 이동">
+                    <button title="이전 페이지" aria-label="이전 페이지" onclick="goToPage((+document.getElementById('pgNow').value||1)-1)"><i class="ri-arrow-up-s-line"></i></button>
+                    <input id="pgNow" aria-label="현재 페이지" type="number" min="1" value="1">
                     <span class="tot" id="pgTot">/ 1</span>
-                    <button onclick="goToPage((+document.getElementById('pgNow').value||1)+1)"><i class="ri-arrow-down-s-line"></i></button>
+                    <button title="다음 페이지" aria-label="다음 페이지" onclick="goToPage((+document.getElementById('pgNow').value||1)+1)"><i class="ri-arrow-down-s-line"></i></button>
                 </div>
 
-                <button onclick="openMore('note')" class="tool-btn" title="노트 설정"><i class="ri-settings-3-line"></i></button>
-                <button onclick="openExportModal()" class="tool-btn accent" title="내보내기"><i class="ri-share-box-line"></i></button>
+                <button onclick="openMore('note')" class="tool-btn tb-labeled" data-tool-label="더보기" title="도구 더보기 · 노트 설정"><i class="ri-settings-3-line"></i></button>
+                <button onclick="openExportModal()" class="tool-btn accent tb-labeled" data-tool-label="내보내기" title="내보내기"><i class="ri-share-box-line"></i></button>
             </div>
 
 
