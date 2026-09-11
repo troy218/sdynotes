@@ -148,4 +148,12 @@ check('14.62 · JS: 누른 자리에 확정(commit check)',
 check('14.62 · JS: 넣기 버튼이 배치 모드로 연결',
   /function insertCheckbox\(\)\{[\s\S]{0,1400}beginCheckPlacement\(\);/.test(js));
 
-console.log('\n14.61 + 14.62 계약 — 전부 통과');
+// ⑨ 14.63 · 브랜드(로고·SDYnotes) 왼쪽 정렬 — 레일/접힘은 중앙 유지
+check('14.63 · CSS: 브랜드 왼쪽 정렬(왼쪽 여백 20px)',
+  /html\.theme-pro \.pro-brand\{align-items:flex-start;text-align:left;padding:20px 12px 14px 20px;\}/.test(css));
+check('14.63 · CSS: 접힘 상태는 중앙 정렬 유지',
+  /html\.theme-pro\.pro-collapsed \.pro-brand\{align-items:center;text-align:center;padding:12px 0 10px;\}/.test(css));
+check('14.63 · CSS: 좁은 레일(≤1023)도 중앙 정렬 유지',
+  /@media \(max-width:1023px\)\{\s*html\.theme-pro \.pro-brand\{align-items:center;text-align:center;padding:12px 0 10px;\}/.test(css.replace(/\n/g, '')));
+
+console.log('\n14.61 + 14.62 + 14.63 계약 — 전부 통과');
