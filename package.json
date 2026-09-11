@@ -62,7 +62,7 @@
     "test:export": "node test/export_align_contract.mjs && node test/export_align_runtime.mjs",
     "test:live": "node test/live_presence_contract.mjs",
     "test:editor": "node test/editor_format_runtime.mjs && node test/editor_draw_contract.mjs",
-    "test:pages": "node test/editor_pages_sync_contract.mjs && node test/editor_pages_sync_runtime.mjs",
+    "test:pages": "node test/editor_pages_sync_contract.mjs && node test/editor_pages_sync_runtime.mjs && node test/page_delete_sync_runtime.mjs",
     "test:virtual": "node test/page_virtualization_contract.mjs && node test/empty_note_render_contract.mjs && node test/large_doc_runtime.mjs",
     "test:heavy": "node test/heavy_doc_scroll_runtime.mjs",
     "test:preview": "node test/home_preview_position_runtime.mjs && node test/page_preview_contract.mjs && node test/page_preview_runtime.mjs && python3 test/worker_preview_jpeg_contract.py",

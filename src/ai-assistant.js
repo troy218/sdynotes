@@ -440,14 +440,14 @@
       var applied=Number(res.applied||0),failed=Number(res.failed||0)+Number(parsed.dropped||0);
       var ask=String(parsed.ask||'').trim();
       var say=String(parsed.say||'').trim()
-        ||(applied?'요청대로 문서를 고쳤어요 해돌~':(ask?'':'바꿀 내용을 찾지 못했어요'));
+        ||(applied?'요청대로 문서를 고쳤어요 해돌이~':(ask?'':'바꿀 내용을 찾지 못했어요'));
       var counts=[];
       if(applied) counts.push('적용 '+applied+'개');
       if(failed) counts.push('건너뜀 '+failed+'개');
       var output=say+(counts.length?'\n\n'+counts.join(' · '):'');
       if(res.notes&&res.notes.length) output+=(output?'\n':'')+res.notes.join('\n');
       // @ask — 되묻기. 답을 적어 보내면 이전 대화 문맥과 함께 이어서 한다.
-      if(ask) output+=(output?'\n\n':'')+ask+'\n(알려주면 바로 이어서 할게요 해돌~)';
+      if(ask) output+=(output?'\n\n':'')+ask+'\n(알려주면 바로 이어서 할게요 해돌이~)';
       if(applied){
         try{ if(window.toast) window.toast('해돌이가 문서를 고쳤어요 · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e){}
       }
@@ -562,15 +562,15 @@
       var applied=Number(res.applied||0),failed=Number(res.failed||0)+Number(parsed.dropped||0);
       var ask=String(parsed.ask||'').trim();
       var say=String(parsed.say||'').trim()
-        ||(applied?'요청대로 실행했어요 해돌~':(ask?'':'실행할 내용을 찾지 못했어요'));
+        ||(applied?'요청대로 실행했어요 해돌이~':(ask?'':'실행할 내용을 찾지 못했어요'));
       var counts=[];
       if(applied) counts.push('실행 '+applied+'개');
       if(failed) counts.push('건너뜀 '+failed+'개');
       var output=say+(counts.length?'\n\n'+counts.join(' · '):'');
       if(res.notes&&res.notes.length) output+=(output?'\n':'')+res.notes.join('\n');
-      if(ask) output+=(output?'\n\n':'')+ask+'\n(알려주면 바로 이어서 할게요 해돌~)';
+      if(ask) output+=(output?'\n\n':'')+ask+'\n(알려주면 바로 이어서 할게요 해돌이~)';
       if(applied){
-        try{ if(window.toast) window.toast('해돌이가 실행했어요 해돌~',2000); }catch(e){}
+        try{ if(window.toast) window.toast('해돌이가 실행했어요 해돌이~',2000); }catch(e){}
       }
       return output;
     };
@@ -636,16 +636,16 @@
       var applied=Number(res.applied||0),failed=Number(res.failed||0);
       var output='';
       if(applied&&parsed.strokes){
-        output='요청한 그림을 펜으로 '+parsed.strokes+'획 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+        output='요청한 그림을 펜으로 '+parsed.strokes+'획 그렸어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요';
       }else if(applied){
-        output='요청한 그림을 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+        output='요청한 그림을 그렸어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요';
       }else{
         output=String(parsed.error||'그림을 그리지 못했어요 · 다시 시도해 주세요');
       }
       if(failed) output+='\n\n건너뜀 '+failed+'개';
       if(res.notes&&res.notes.length) output+=(output?'\n':'')+res.notes.join('\n');
       if(applied){
-        try{ if(window.toast) window.toast('해돌이가 그림을 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e){}
+        try{ if(window.toast) window.toast('해돌이가 그림을 그렸어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e){}
       }
       return output;
     };
@@ -1644,7 +1644,7 @@
       ok(); return;
     }
     function presentOp(op){
-      if(!inNote()){ bad('노트를 연 다음에 발표해 주세요 해돌~'); return; }
+      if(!inNote()){ bad('노트를 연 다음에 발표해 주세요 해돌이~'); return; }
       if(op.on){
         var sp2=needFn('startPresent');
         if(!sp2){ bad('발표를 시작하지 못했어요'); return; }
@@ -1664,7 +1664,7 @@
       ok(); return;
     }
     function exportOp(op){
-      if(!inNote()){ bad('노트를 연 다음에 내보내 주세요 해돌~'); return; }
+      if(!inNote()){ bad('노트를 연 다음에 내보내 주세요 해돌이~'); return; }
       if(op.pdf){
         var ex=needFn('exportPDF');
         if(!ex){ bad('PDF로 저장하지 못했어요'); return; }
@@ -1678,7 +1678,7 @@
     /* 14.29.3 · 노트의 자동 번역(우클릭 '이 페이지 번역'과 같은 함수)을 실행한다.
        오래 걸리는 일이라 기다리지 않는다 — 진행바와 [중단] 버튼이 알아서 안내한다. */
     function translateOp(op){
-      if(!inNote()){ bad('노트를 연 다음에 번역해 주세요 해돌~'); return; }
+      if(!inNote()){ bad('노트를 연 다음에 번역해 주세요 해돌이~'); return; }
       var T=null;
       try{ T=window.__sdyTranslate||null; }catch(e){ T=null; }
       if(!T||typeof T.page!=='function'||typeof T.doc!=='function'){ bad('번역 기능을 찾지 못했어요'); return; }
@@ -1691,7 +1691,7 @@
       ok(); return;
     }
     function findOp(op){
-      if(!inNote()){ bad('노트를 연 다음에 찾아 주세요 해돌~'); return; }
+      if(!inNote()){ bad('노트를 연 다음에 찾아 주세요 해돌이~'); return; }
       var of=needFn('openFind'), rf=needFn('runFind');
       if(!of){ bad('찾기를 열지 못했어요'); return; }
       try{
@@ -1906,23 +1906,23 @@
     if(task==='outline'&&!txt){
       kindChip(''); meta('');
       busy(false);
-      out(scope==='page'?'이 페이지에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌~'
-        :'열린 노트에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌~',true);
+      out(scope==='page'?'이 페이지에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌이~'
+        :'열린 노트에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌이~',true);
       return;
     }
     if(task==='chat'&&!q) return;                     // 빈 질문 Enter — 조용히 무시
     if(task==='edit'&&(!q||!txt)){
-      otterLine(!txt?'문서 상태를 읽지 못했어요 · 노트를 다시 열어 주세요':'어떻게 고칠지 적어 줘 해돌~');
+      otterLine(!txt?'문서 상태를 읽지 못했어요 · 노트를 다시 열어 주세요':'어떻게 고칠지 적어 줘 해돌이~');
       return;
     }
     if(task==='app'&&(!q||!txt)){
-      otterLine(!txt?'앱 상태를 읽지 못했어요 · 페이지를 새로고침해 주세요':'무엇을 실행할지 적어 줘 해돌~');
+      otterLine(!txt?'앱 상태를 읽지 못했어요 · 페이지를 새로고침해 주세요':'무엇을 실행할지 적어 줘 해돌이~');
       return;
     }
     if(task==='draw'){
       if(!q) return;
       if(!canEdit()){
-        otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌~');
+        otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌이~');
         return;
       }
     }
@@ -1934,7 +1934,7 @@
         lastKind=(scope==='page'?'outlinePage':'outlineDoc'); lastQ='';
         kindChip(lastKind);
         out(lastText); busy(false);
-        meta('미리 준비해 둔 답이에요 해돌~');
+        meta('미리 준비해 둔 답이에요 해돌이~');
         histPush(lastKind,'',lastText);
         return;
       }
@@ -2000,7 +2000,7 @@
           if(kind==='edit'&&!hopped){
             if(canEdit()){ ctl=null; moved=true; run('edit',q,scope,true); return; }
             kind='';
-            text='편집 요청 같은데 · 노트를 연 다음에 다시 말해 줘 해돌~';
+            text='편집 요청 같은데 · 노트를 연 다음에 다시 말해 줘 해돌이~';
           }
           // 서버 [[search]] — 인터넷 검색을 실행한 뒤 결과를 붙여 한 번만 다시 묻는다.
           if(kind==='search'&&!hopped){
@@ -2011,7 +2011,7 @@
           if(kind==='draw'&&!hopped){
             if(canEdit()){ ctl=null; moved=true; runDraw(q,true); return; }
             kind='';
-            text='그림은 노트를 연 다음에 그려 줄게요 해돌~';
+            text='그림은 노트를 연 다음에 그려 줄게요 해돌이~';
           }
           // 서버 [[app]] — 앱 실행으로 한 번만 넘긴다(노트 밖에서도 된다).
           if(kind==='app'&&!hopped){
@@ -2090,7 +2090,7 @@
      글과 사진을 함께 놓는다 — sdyAiRun 이 갈라 준다. */
   function runPhoto(q){
     if(ctl) return;
-    if(!canEdit()){ otterLine('노트를 연 다음에 사진을 넣어 달라고 해 줘 해돌~'); return; }
+    if(!canEdit()){ otterLine('노트를 연 다음에 사진을 넣어 달라고 해 줘 해돌이~'); return; }
     var page=(typeof curPageIdx!=='undefined'?(curPageIdx|0)+1:1);
     var what=photoCmdOf(q)!=null?photoCmdOf(q):q;
     ctl=new AbortController();
@@ -2102,7 +2102,7 @@
       ctl=null; busy(false);
       lastText=say; lastKind='edit'; kindChip('edit');
       out(say); meta('');
-      if(applied){ try{ if(window.toast) window.toast('해돌이가 사진을 넣었어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e3){} }
+      if(applied){ try{ if(window.toast) window.toast('해돌이가 사진을 넣었어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e3){} }
       histPush('edit',q,say);
     };
     fetch('/api/ai/imgadd',{method:'POST',signal:ctl.signal,
@@ -2115,7 +2115,7 @@
     .then(function(got){
       var j=got&&got.j;
       if(!got||!got.ok||!j||!j.ok||!j.url){
-        finish(String((j&&j.error)||'사진을 찾지 못했어요 · 무엇의 사진인지 조금 더 구체적으로 알려 줘 해돌~'),false);
+        finish(String((j&&j.error)||'사진을 찾지 못했어요 · 무엇의 사진인지 조금 더 구체적으로 알려 줘 해돌이~'),false);
         return;
       }
       var ops=[{cmd:'addimg',page:page,x:'auto',y:'auto',w:'auto',h:'auto',
@@ -2126,7 +2126,7 @@
         var say;
         if(res.applied){
           var nm=String(j.title||'').trim();
-          say='‘'+(nm?nm.slice(0,40):String(what).slice(0,40))+'’ 사진을 넣었어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+          say='‘'+(nm?nm.slice(0,40):String(what).slice(0,40))+'’ 사진을 넣었어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요';
         }else say='사진을 넣지 못했어요 · 다시 시도해 주세요';
         if(res.notes&&res.notes.length) say+='\n'+res.notes.join('\n');
         finish(say,!!res.applied);
@@ -2155,7 +2155,7 @@
     if(ctl) return;
     q=String(q||'').trim();
     if(!q) return;
-    if(!canEdit()){ otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌~'); return; }
+    if(!canEdit()){ otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌이~'); return; }
     var revision=(function(){ try{ var c=aiCapture(); return c?c.revision:''; }catch(e){ return ''; } })();
     ctl=new AbortController();
     busy(true); lastText=''; lastKind='draw'; lastQ=q;
@@ -2170,7 +2170,7 @@
       ctl=null; busy(false);
       lastText=say; lastKind='draw'; kindChip('draw');
       out(say); meta('');
-      if(applied){ try{ if(window.toast) window.toast('해돌이가 그림을 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e3){} }
+      if(applied){ try{ if(window.toast) window.toast('해돌이가 그림을 그렸어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e3){} }
       histPush('draw',q,say);
     };
     fetch('/api/ai/refdraw',{method:'POST',signal:ctl.signal,
@@ -2196,7 +2196,7 @@
         if(res.stale){ finish((res.notes&&res.notes[0])||'기다리는 동안 문서가 바뀌어서 그리지 않았어요 · 다시 요청해 주세요',false); return; }
         var say;
         if(res.applied){
-          say='‘'+(name?name.slice(0,30):q.slice(0,30))+'’ 그림을 컬러 펜으로 '+parsed.strokes+'획 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+          say='‘'+(name?name.slice(0,30):q.slice(0,30))+'’ 그림을 컬러 펜으로 '+parsed.strokes+'획 그렸어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요';
         }else say=String((res.notes&&res.notes[0])||'그림을 그리지 못했어요 · 다시 시도해 주세요');
         if(res.applied&&res.notes&&res.notes.length) say+='\n'+res.notes.join('\n');
         finish(say,!!res.applied);
@@ -2219,9 +2219,9 @@
      제목·증상·재현 방법·기대 동작·메모로 정리해 돌려주고, 02f 의 sdyBuglogAdd
      가 설정 → 버그 일지에 기록한다. 기록되면 말풍선에 정리본과 안내를 띄운다. */
   function runBug(q){
-    if(ctl){ meta('다 말하고 나서 말해 주세요 해돌~'); return; }
+    if(ctl){ meta('다 말하고 나서 말해 주세요 해돌이~'); return; }
     q=String(q||'').trim();
-    if(!q){ otterLine('어떤 버그인지 알려 줘 해돌~ · 예) /버그 표를 만들면 글자가 겹쳐요'); return; }
+    if(!q){ otterLine('어떤 버그인지 알려 줘 해돌이~ · 예) /버그 표를 만들면 글자가 겹쳐요'); return; }
     closedByUser=false;
     ctl=new AbortController();
     busy(true); lastText=''; lastKind='bug'; lastQ=q;
@@ -2257,8 +2257,8 @@
         }
         lastText=text+(stored
           ?(stored.synced
-            ?'\n\n— 버그 일지를 서버에 저장했어요 · 설정 → 버그 일지에서 볼 수 있어요 해돌~'
-            :'\n\n— 이 기기에 기록했어요 · 서버 저장 대기 중이에요. 연결 복구 후 다시 동기화해요 · 업데이트 안내가 보이면 새로고침해 주세요 해돌~')
+            ?'\n\n— 버그 일지를 서버에 저장했어요 · 설정 → 버그 일지에서 볼 수 있어요 해돌이~'
+            :'\n\n— 이 기기에 기록했어요 · 서버 저장 대기 중이에요. 연결 복구 후 다시 동기화해요 · 업데이트 안내가 보이면 새로고침해 주세요 해돌이~')
           :'\n\n— 버그 일지를 저장하지 못했어요 · 정리본을 복사해 두고 브라우저 저장 공간을 확인해 주세요');
         lastKind='bug';
         kindChip('bug');
@@ -2268,7 +2268,7 @@
       }else{
         lastText=''; kindChip('');
         out(String(d.error||'AI에 닿지 못했어요'),true);
-        meta(d.hint?String(d.hint):(d.retry_after?('약 '+d.retry_after+'초 뒤에 다시 시도해 주세요'):'버그 일지를 적지 못했어요 · 잠시 뒤 다시 말해 줘 해돌~'));
+        meta(d.hint?String(d.hint):(d.retry_after?('약 '+d.retry_after+'초 뒤에 다시 시도해 주세요'):'버그 일지를 적지 못했어요 · 잠시 뒤 다시 말해 줘 해돌이~'));
       }
     }).catch(function(e){
       if(e&&e.name==='AbortError'&&closedByUser){ return; }   // 말풍선을 닫으며 멈춘 것
@@ -2287,16 +2287,16 @@
      자동 라우팅한다. 겹치는 말은 looksLikeApp 안의 문서-동사 규칙이 가른다. */
   window.sdyAiRun=function(){
     var qEl=$('aiQ'), q=qEl?String(qEl.value||'').trim():'';
-    if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
-    if(!q){ otterLine('뭐라도 적어 줘 해돌~'); return; }
+    if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌이~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
+    if(!q){ otterLine('뭐라도 적어 줘 해돌이~'); return; }
     var editCommand=editCmdOf(q);
     var bugCommand=bugCmdOf(q);
     var appCommand=appCmdOf(q);
     var drawCommand=drawCmdOf(q);
     if(qEl){ qEl.value=''; aiQGrow(); }                 // 본 요청은 말풍선(과 기록)에 남으니 칸은 비운다
     if(editCommand!=null){
-      if(!editCommand){ otterLine('! 뒤에 어떻게 고칠지 적어 줘 해돌~ · 예) !제목을 맨 위로 옮겨 줘'); return; }
-      if(!inNote()){ otterLine('노트를 연 다음에 고쳐 달라고 해 줘 해돌~'); return; }
+      if(!editCommand){ otterLine('! 뒤에 어떻게 고칠지 적어 줘 해돌이~ · 예) !제목을 맨 위로 옮겨 줘'); return; }
+      if(!inNote()){ otterLine('노트를 연 다음에 고쳐 달라고 해 줘 해돌이~'); return; }
       if(!(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function')){
         otterLine('문서 편집 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
       }
@@ -2304,12 +2304,12 @@
     }
     // 14.39.0 · 명시적 버그 신고(/버그·버그 신고:·신고:) — 정리해 일지에 기록
     if(bugCommand!=null){
-      if(!bugCommand){ otterLine('/버그 뒤에 어떤 버그인지 적어 줘 해돌~ · 예) /버그 표를 만들면 글이 겹쳐요'); return; }
+      if(!bugCommand){ otterLine('/버그 뒤에 어떤 버그인지 적어 줘 해돌이~ · 예) /버그 표를 만들면 글이 겹쳐요'); return; }
       runBug(bugCommand); return;
     }
     if(drawCommand!=null){
-      if(!drawCommand){ otterLine('/그림 뒤에 무엇을 그릴지 적어 줘 해돌~ · 예) /그림 웃는 얼굴'); return; }
-      if(!inNote()){ otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌~'); return; }
+      if(!drawCommand){ otterLine('/그림 뒤에 무엇을 그릴지 적어 줘 해돌이~ · 예) /그림 웃는 얼굴'); return; }
+      if(!inNote()){ otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌이~'); return; }
       if(!(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function')){
         otterLine('그림 그리기 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
       }
@@ -2318,15 +2318,15 @@
     // 14.31.0 · /사진·/이미지 접두사 — 무조건 사진을 찾아 넣는다(펜 그림과 혼동 방지).
     if(photoCmdOf(q)!=null){
       var photoCommand=photoCmdOf(q);
-      if(!photoCommand){ otterLine('/사진 뒤에 무엇의 사진인지 적어 줘 해돌~ · 예) /사진 고양이'); return; }
-      if(!inNote()){ otterLine('노트를 연 다음에 사진을 넣어 달라고 해 줘 해돌~'); return; }
+      if(!photoCommand){ otterLine('/사진 뒤에 무엇의 사진인지 적어 줘 해돌이~ · 예) /사진 고양이'); return; }
+      if(!inNote()){ otterLine('노트를 연 다음에 사진을 넣어 달라고 해 줘 해돌이~'); return; }
       if(!(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function')){
         otterLine('사진 넣기 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
       }
       runPhoto(photoCommand); return;
     }
     if(appCommand!=null){
-      if(!appCommand){ otterLine('/앱 뒤에 무엇을 실행할지 적어 줘 해돌~ · 예) /앱 노래 틀어줘'); return; }
+      if(!appCommand){ otterLine('/앱 뒤에 무엇을 실행할지 적어 줘 해돌이~ · 예) /앱 노래 틀어줘'); return; }
       run('app',appCommand); return;
     }
     // 14.39.0 · 말로 하는 버그 신고 — '버그가 있어요', '○○가 안 돼요' 류는
@@ -2350,12 +2350,12 @@
   //   빠지지 않고 '설명해 줘' 질문이 된다.
   window.sdyAiExplain=function(q){
     q=String(q||'').trim();
-    if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
-    if(!q){ otterLine('설명해 줄 글자를 아직 고르지 못했어요 해돌~'); return; }
+    if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌이~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
+    if(!q){ otterLine('설명해 줄 글자를 아직 고르지 못했어요 해돌이~'); return; }
     run('chat',q);
   };
   window.sdyAiOutline=function(scope){
-    if(ctl){ meta('다 말하고 나서 눌러 주세요 해돌~'); return; }     // 말하는 중 — 말풍선 안 한 줄로만
+    if(ctl){ meta('다 말하고 나서 눌러 주세요 해돌이~'); return; }     // 말하는 중 — 말풍선 안 한 줄로만
     run('outline','',scope);
   };
   window.sdyAiStop=function(){ if(ctl){ try{ ctl.abort(); }catch(e){} } };

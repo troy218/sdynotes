@@ -670,7 +670,11 @@
                             if(op.dev!==SYNC_DEV) histMarkRemote(op.data.id);
                             queueOps(); }
                     }else if(await upsertEl(op.data,op.page||0)){
-                        changed=true; chPages.add(op.page||0);
+                        changed=true;
+                        // op.page 는 보낸 시점의 쪽 번호라 페이지 삭제 뒤엔 어긋날 수
+                        // 있다. 실제로 요소가 놓인 쪽을 다시 그린다.
+                        const _loc=findElLoc(op.data.id);
+                        chPages.add(_loc?_loc.i:(op.page||0));
                         // 20.3 · 남이 만들거나 고친 요소는 내 되돌리기가 건드리지 않는다
                         if(op.dev!==SYNC_DEV) histMarkRemote(op.data.id);
                         doc.__lastHash.set(op.data.id,JSON.stringify(op.data));
@@ -837,12 +841,13 @@
         if(doc.pages[pi]&&doc.pages[pi].__lazy!=null) await loadBatch(pi);
         const loc=findElLoc(data.id);
         if(loc){
-            if(loc.i!==pi){
-                doc.pages[loc.i].els.splice(loc.k,1);
-                (doc.pages[pi].els=doc.pages[pi].els||[]).push(data);
-            }else{
-                doc.pages[loc.i].els[loc.k]=data;
-            }
+            // op.page 는 '보낸 시점의 쪽 번호'다. 페이지 삭제/재배열 뒤에는 그
+            // 뒤쪽 요소들의 번호가 전부 한 칸씩 밀리므로, 이 값을 믿고 옮기면
+            // 서로 다른 쪽의 내용이 한 종이에 겹쳐진다(사용자 보고: 페이지 삭제
+            // 뒤 재진입 시 요소가 같은 페이지에 뭉침). 요소는 id 가 그대로인 채
+            // 다른 쪽으로 이동하는 일이 없으므로(쪽 이동은 복사+새 id), 지금
+            // 메모리에 있는 그 자리에서 덮어쓰는 것이 항상 옳다.
+            doc.pages[loc.i].els[loc.k]=data;
         }else{
             (doc.pages[pi].els=doc.pages[pi].els||[]).push(data);
         }

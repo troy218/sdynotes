@@ -75,7 +75,7 @@ ok('react: 반응 저장', r1.ok && reacted && (reacted.reactions['🔥'] || [])
 
 // 18.3 · 해돌이 임티 반응 (hd: 접두사 — 서버 수정 없이 새 아이디도 허용)
 const rHd = await post('/api/chat/react', { uid: 'B', id: 1, emoji: 'hd:hello' });
-const jR2 = await post('/api/chat/join', { uid: 'C', name: '해돌' });
+const jR2 = await post('/api/chat/join', { uid: 'C', name: '해돌이' });
 const reacted2 = jR2.msgs.find((x) => x.id === 1);
 ok('react: 해돌이 임티(hd:) 반응', rHd.ok && reacted2 && (reacted2.reactions['hd:hello'] || []).length === 1);
 

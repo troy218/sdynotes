@@ -613,7 +613,7 @@
             <div class="ctx-item" onclick="ctxAction('info')"><i class="ri-information-line"></i> 노트 정보</div>
             <div class="ctx-sep"></div>
             <div class="ctx-item" onclick="ctxAction('lock')"><i class="ri-lock-2-line"></i> ${(cfg.lock&&cfg.lock.enc)?(adminMode?'잠금 해제':'비밀번호 해제'):'비밀번호 잠금'}</div>
-            <div class="ctx-item" onclick="ctxAction('export')"><i class="ri-share-box-line"></i> 백업(JSON) 내보내기</div>
+            <div class="ctx-item" onclick="ctxAction('export')"><i class="ri-share-box-line"></i> 내보내기</div>
             <div class="ctx-sep"></div>
             <div class="ctx-item danger" onclick="ctxAction('delete')"><i class="ri-delete-bin-6-line"></i> 휴지통으로 이동</div>`;
         m.classList.add('show');
@@ -676,7 +676,13 @@
             }
             else { openNB(nb).then(()=>setTimeout(lockCurrentNote,350)); }
         }
-        else if(act==='export'){ exportNoteJSON(nb); }
+        else if(act==='export'){
+            // 14.65.1 · 편집기 안의 '내보내기'와 동일하게 동작한다: 노트를 연 뒤
+            //   PDF/JPG/현재 쪽 복사 등이 담긴 내보내기 창을 띄운다(JSON 백업 대체).
+            if(isLocked(nb.id)&&!isUnlocked(nb.id)){ toast('잠긴 노트는 먼저 열어주세요'); return; }
+            await openNB(nb);
+            try{ openExportModal(); }catch(e){}
+        }
         else if(act==='delete'){
             if(isLocked(nb.id)&&!isUnlocked(nb.id)&&!adminMode){
                 toast('🔒 잠긴 노트는 삭제할 수 없습니다. 먼저 잠금을 해제하세요',2600); return;
@@ -721,18 +727,6 @@
             notebooks=sortNBs(notebooks); renderGrid(); toast('노트 복제됨');
         }catch(e){ console.error(e); toast('복제 실패'); }
         finally{ syncEnd(); }
-    }
-
-    async function exportNoteJSON(nb){
-        if(isLocked(nb.id)&&!isUnlocked(nb.id)){ toast('잠긴 노트는 먼저 열어주세요'); return; }
-        const d=await loadDocAsync(nb.id);
-        const blob=new Blob([JSON.stringify({title:nb.title,doc:d,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});
-        const a=document.createElement('a');
-        a.href=URL.createObjectURL(blob);
-        a.download=(nb.title||'노트').replace(/[^가-힣a-zA-Z0-9_ -]/g,'')+'.json';
-        a.click();
-        setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-        toast('백업 파일 저장됨');
     }
 
     // 현재 페이지 복제

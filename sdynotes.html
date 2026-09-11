@@ -467,8 +467,8 @@
                         <i class="ri-search-line" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;"></i>
                         <input id="searchInput" aria-label="노트 검색 · 해돌이에게 묻기" type="search"
                                placeholder="노트 검색 · 해돌이에게 묻기…"
-                               oninput="searchNotes(this.value);sdyHomeAiInput()" onkeydown="return sdyHomeAiKey(event)" style="width:220px;height:38px;padding:0 12px 0 36px;border:1px solid var(--border);border-radius:4px;background:var(--bg2);color:var(--text1);font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s;"
-                               onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(79,110,247,.14)';sdyHomeAiInput()"
+                               oninput="searchNotes(this.value)" onkeydown="return sdyHomeAiKey(event)" style="width:220px;height:38px;padding:0 12px 0 36px;border:1px solid var(--border);border-radius:4px;background:var(--bg2);color:var(--text1);font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s;"
+                               onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(79,110,247,.14)'"
                                onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
                     </div>
                     <button onclick="openSettings()" class="tool-btn"><i class="ri-settings-3-line"></i></button>
@@ -477,16 +477,8 @@
         </header>
         <main class="w-full px-6 pt-8 pb-10">
             <div id="breadcrumb" class="breadcrumb" style="display:none;"></div>
-            <!-- 14.65 · 홈 검색창의 해돌이 — 노트 검색과 같은 칸에서 묻는다.
-                 검색 결과가 있으면 노트가 먼저, 없거나 물음표 말투면 해돌이가 답한다. -->
-            <div id="homeAiBar" class="home-ai-bar" hidden>
-                <button id="homeAiAsk" class="home-ai-ask" type="button" onclick="sdyHomeAiAsk()">
-                    <i class="ri-sparkling-2-line home-ai-spark" aria-hidden="true"></i>
-                    <span class="home-ai-txt">해돌이에게 물어보기</span>
-                    <kbd class="home-ai-kbd">Enter</kbd>
-                </button>
-                <span class="home-ai-sub" id="homeAiSub"></span>
-            </div>
+            <!-- 홈 검색창의 해돌이 — 검색과 같은 칸에서 묻는다. Enter 를 누르면
+                 항상 해돌이가 답하고, 답은 검색 결과 위 #homeAiCard 에 앉는다. -->
             <div id="homeAiCard" class="home-ai-card" hidden role="dialog" aria-label="해돌이의 답">
                 <div class="home-ai-head">
                     <b class="home-ai-name"><i class="ri-sparkling-2-line" aria-hidden="true"></i> 해돌이</b>

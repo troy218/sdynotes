@@ -1,6 +1,7 @@
-/* 14.65 · 홈 검색창 해돌이 실제 런타임 검증
+/* 14.65 · 홈 검색창 해돌이 실제 런타임 검증 (일반테마 다듬기 반영)
    AI 공급사는 부르지 않는다(가짜 응답). 진짜 앱을 홈에서 열고
-     · 검색창에 물으면 해돌이 줄이 뜨고 Enter 가 해돌이에게 가는지
+     · 전용 물어보기 버튼/줄(#homeAiBar)은 사라졌는지
+     · 검색창 Enter 는 항상 해돌이에게 가는지(노트를 여는 대신)
      · 답이 홈 카드(#homeAiCard)에 앉는지(노트 말풍선 아님)
      · 서버가 함께 준 @settings | 테마 를 실행해 설정 창이 그 줄로 이동하는지
      · 설정 안내가 앱 상태(스냅샷)에 실려 나가는지
@@ -142,29 +143,23 @@ try {
   check('홈에 노트 카드가 보인다(검색 결과 있는 상태)', !!card,
     'grid=' + String(document.getElementById('noteGrid') && document.getElementById('noteGrid').textContent || '').slice(0, 80));
 
-  // ① 홈에 해돌이 UI 가 살아 있다
-  check('검색창·해돌이 줄·답 카드가 홈에 있다',
-    !!document.getElementById('searchInput') && !!document.getElementById('homeAiBar')
-    && !!document.getElementById('homeAiCard')
+  // ① 홈에 해돌이 UI 가 살아 있다 — 물어보기 버튼/줄은 사라졌다
+  check('검색창·답 카드가 홈에 있다',
+    !!document.getElementById('searchInput') && !!document.getElementById('homeAiCard')
     && typeof window.sdyHomeAiAsk === 'function' && typeof window.sdyHomeAiKey === 'function');
+  check('물어보기 전용 버튼·줄은 없다',
+    !document.getElementById('homeAiBar') && !document.getElementById('homeAiAsk'));
   check('답 카드는 처음엔 숨어 있다', document.getElementById('homeAiCard').hidden === true);
 
-  // ② 검색 결과만 있을 때는 해돌이 줄이 뜨지 않는다 (노트 검색이 먼저)
+  // ② 검색 결과가 걸려도 Enter 는 노트가 아니라 해돌이에게 간다
   const input = document.getElementById('searchInput');
   input.value = '홈 해돌이';
   window.searchNotes(input.value);
-  window.sdyHomeAiInput();
-  check('노트가 걸리면 Enter 는 해돌이가 아니라 노트로 간다',
-    document.getElementById('homeAiBar').hidden === true);
-
-  // ③ 설정 질문 → 해돌이 줄이 뜨고, Enter 가 해돌이에게 간다
-  input.value = '설정 어디서 바꿔?';
-  window.searchNotes(input.value);
-  window.sdyHomeAiInput();
-  check('설정 질문에는 해돌이 줄이 뜬다', document.getElementById('homeAiBar').hidden === false);
   const ev = { key: 'Enter', preventDefault() { this.prevented = true; }, shiftKey: false };
   const handled = window.sdyHomeAiKey(ev);
   check('검색창 Enter 가 해돌이에게 간다', handled === false && ev.prevented === true);
+  check('노트가 걸려도 노트를 열지 않는다(에디터 닫힘)',
+    !document.getElementById('editorView').classList.contains('open'));
   check('질문은 앱 도움말(help) task 로 나간다', asked.length === 1 && asked[0].task === 'help',
     JSON.stringify(asked[0] && asked[0].task));
   check('서버로 가는 앱 상태에 설정 안내가 실린다',
@@ -177,14 +172,11 @@ try {
     && /테마/.test(document.getElementById('homeAiOut').textContent)
     && document.getElementById('aiSay').hidden === true,
     document.getElementById('homeAiOut').textContent.slice(0, 60));
-  check('설정 질문이면 답 카드에 [설정 열기] 가 붙는다',
-    [...document.querySelectorAll('#homeAiActs .home-ai-act')].some(b => /설정 열기/.test(b.textContent)));
 
-  // ④ 실행 요청 → 서버가 준 @settings | 테마 를 실제로 실행해 그 줄로 이동
+  // ③ 실행 요청 → 서버가 준 @settings | 테마 를 실제로 실행해 그 줄로 이동
   window.sdyHomeAiClose();
   input.value = '설정 열어줘';
   window.searchNotes(input.value);
-  window.sdyHomeAiInput();
   const ev2 = { key: 'Enter', preventDefault() { this.prevented = true; }, shiftKey: false };
   window.sdyHomeAiKey(ev2);
   check('실행 말투도 물어본다', ev2.prevented === true && asked.length === 2);
@@ -198,8 +190,10 @@ try {
     /설정/.test(document.getElementById('homeAiOut').textContent)
     || /실행/.test(document.getElementById('homeAiOut').textContent),
     document.getElementById('homeAiOut').textContent.slice(0, 80));
+  check('설정 실행 뒤 답 카드에 [설정 열기] 가 붙는다',
+    [...document.querySelectorAll('#homeAiActs .home-ai-act')].some(b => /설정 열기/.test(b.textContent)));
 
-  // ⑤ 설정 안내·이동 창구가 앱 전체에서 쓰인다
+  // ④ 설정 안내·이동 창구가 앱 전체에서 쓰인다
   const guide = window.sdySettingsGuideText ? window.sdySettingsGuideText() : '';
   check('설정 안내에 8개 항목이 모두 있다',
     ['테마', '강조색', '배경화면', '기본 종이', '휴지통', '버그 일지', '사용법·단축키', '기본값 복원']
@@ -210,7 +204,7 @@ try {
     window.sdySettingsJump('배경화면') === '배경화면'
     && document.getElementById('setRowWall').closest('.set-row').classList.contains('set-row-hit'));
 
-  // ⑥ 노트 안 해돌이의 설정 실행도 같은 창구를 쓴다
+  // ⑤ 노트 안 해돌이의 설정 실행도 같은 창구를 쓴다
   const parsed = window.sdyAiAppParse('@settings | 휴지통\n@done 열었어요');
   check('@settings | 항목 이 항목까지 파싱된다',
     parsed.ops.length === 1 && parsed.ops[0].cmd === 'settings' && parsed.ops[0].item === '휴지통');

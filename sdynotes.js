@@ -789,12 +789,12 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             bookmarks._responsiveReady=true;
             const narrow=()=>window.innerWidth<1024;
             let wasNarrow=narrow();
-            // 14.61 · 처음 상태 — PC(≥1024)는 펼침, 좁은 화면은 접음 (theme 계약)
-            bookmarks.open=!narrow();
+            // 일반테마 · 처음 상태 — 북마크는 접힌 채 시작한다 (사용자 요청)
+            bookmarks.open=false;
             window.addEventListener('resize',()=>{
                 const next=narrow();
-                // 14.61 · 경계를 넘으면 처음 상태 규칙과 같게 — 좁으면 접고, PC 폭이면 펼친다
-                if(next!==wasNarrow){ wasNarrow=next; bookmarks.open=!next; }
+                // 경계(1024px)를 넘어도 북마크는 접힌 채 유지한다
+                if(next!==wasNarrow){ wasNarrow=next; bookmarks.open=false; }
             });
             document.addEventListener('click',event=>{
                 if(narrow()&&bookmarks.open&&!bookmarks.contains(event.target)) bookmarks.open=false;
@@ -2508,8 +2508,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             // 14.65 · 카드를 다시 그릴 필요가 없어도 사이드바 폴더 목록은 맞춰 둔다
             //   (색·아이콘은 홈 카드와 사이드바 두 곳에 그려진다)
             try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
-            // 14.65 · 검색창 해돌이 줄(결과 있음/없음 안내)도 지금 상태로 맞춘다
-            try{ if(typeof window.sdyHomeAiInput==='function') window.sdyHomeAiInput(); }catch(e){}
             try{ requestAnimationFrame(()=>{ rescalePreviews(); _layoutHomeStacks(); }); }catch(e){}
             return;
         }
@@ -2536,8 +2534,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 const summary=document.createElement('span');
                 summary.textContent='“'+searchQuery+'” 검색 결과 · '+filtered.length+'개';
                 const clear=document.createElement('button');
-                clear.type='button'; clear.className='pro-results-clear';
-                clear.textContent='검색 지우기';
+                clear.type='button'; clear.className='pro-results-x';
+                clear.setAttribute('aria-label','검색 나가기');
+                clear.title='검색 나가기';
+                clear.innerHTML='<i class="ri-close-line" aria-hidden="true"></i>';
                 clear.onclick=()=>{
                     const input=document.getElementById('searchInput');
                     if(input) input.value='';
@@ -5184,20 +5184,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
    소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
    (concat 번들 · 단독 <script> 로드 금지) */
 /* APP-PART:02g-home-ai.js:BEGIN */
-    // ============ 14.65 · 홈 검색창 해돌이 ============
-    //  사용자 요청: "홈 화면 검색 기능에 기본적인 AI 기능 탑재 — 노트해돌이처럼,
-    //  설정 관련 내용을 더 자세히."
-    //   · 노트 안 해돌이(ai-assistant.js)는 노트가 열려 있을 때만 말풍선을 띄운다.
-    //     홈에는 노트가 없으므로 같은 AI 를 부르되 답은 홈에 앉는 카드(#homeAiCard)로
-    //     보여 준다 — 검색창을 새로 만들지 않고 '검색'과 '묻기'를 한 칸에 겹쳤다.
-    //   · 설정·사용법 질문은 서버 task 'help'(앱 도움말)가 맡는다. 앱 상태(스냅샷)
-    //     와 설정 안내(window.sdySettingsGuideText)를 근거로만 답하므로 없는 기능을
-    //     지어내지 않는다. "설정 열어줘"처럼 실행이 필요하면 서버가 @ 명령을 함께
-    //     주고, 여기서 노트 해돌이와 **같은 실행기**(sdyAiAppParse/Apply)로 돌린다.
-    //   · 검색 결과가 있으면 노트가 먼저다. 물음표 말투이거나 결과가 하나도 없을 때만
-    //     Enter 가 해돌이에게 간다(그 외 Enter 는 첫 번째 노트를 연다).
-    const HOME_AI_ASKQ=/[?？]\s*$|(어떻게|어떡|뭐야|뭐지|뭔가요|무엇|무슨|왜|언제|어디|얼마|있나요|있어요|되나요|돼요|인가요|일까요|알려\s*줘|가르쳐|설명해|방법|사용법|단축키|설정|기능|도와줘|추천)/;
-    const HOME_AI_CMD=/열어|켜줘|켜\s*줘|틀어|재생|꺼줘|꺼\s*줘|보여줘|보여\s*줘|만들어|추가해|삭제해|바꿔|바꾸|정리해|내보내|번역해|시작해|멈춰|해줘|해\s*줘/;
+    // ============ 홈 검색창 해돌이 (14.65 → 일반테마 다듬기) ============
+    //  사용자 요청: 홈 화면 검색 기능에 기본적인 AI 를 탑재하되,
+    //   · 검색창 Enter 는 **항상** 해돌이에게 묻는다 — 물어보기 전용 떠 있는
+    //     버튼/줄(#homeAiBar)은 없앴다. 검색과 묻기는 같은 칸에서 겹친다.
+    //   · 답은 검색 결과 **위**(#homeAiCard)에 산문으로 앉는다(노트 말풍선 아님).
+    //   · 설정·사용법 질문은 서버 task 'help'(앱 도움말)가 맡는다. 앱 상태
+    //     (스냅샷)와 설정 안내(window.sdySettingsGuideText)를 근거로만 답하므로
+    //     없는 기능을 지어내지 않는다. "설정 열어줘"처럼 실행이 필요하면 서버가
+    //     @ 명령을 함께 주고, 여기서 노트 해돌이와 **같은 실행기**
+    //     (sdyAiAppParse/Apply)로 돌린다.
     let _homeAiCtl=null, _homeAiLast='', _homeAiBusy=false;
     let _homeAiTurns=[], _homeAiTask='help';
 
@@ -5208,41 +5204,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     function homeAiToken(){
         try{ return (window.__sdyAuthState&&window.__sdyAuthState.token)||''; }catch(e){ return ''; }
-    }
-    // 홈에 보이는 노트/폴더 카드 수 — 검색 결과가 있는지 판단용
-    function homeAiHits(){
-        try{ return document.querySelectorAll('#noteGrid .note-card,#noteGrid .folder-card').length; }catch(e){ return 0; }
-    }
-    function homeAiLooksLikeQuestion(q){
-        const t=String(q||'');
-        if(t.length<2) return false;
-        if(HOME_AI_ASKQ.test(t)) return true;
-        if(HOME_AI_CMD.test(t)) return true;
-        if(/^\s*[/!]/.test(t)) return true;                 // /앱 · !편집 같은 접두사
-        if(typeof window.sdyAiLooksLikeApp==='function'){
-            try{ if(window.sdyAiLooksLikeApp(t)) return true; }catch(e){}
-        }
-        return false;
-    }
-    // 해돌이에게 물어볼 상황인가 — 물음표 말투거나, 검색 결과가 없거나, 접두사가 있을 때
-    function homeAiWanted(q){
-        const t=String(q||'').trim();
-        if(t.length<2) return false;
-        if(homeAiLooksLikeQuestion(t)) return true;
-        if(/^\s*\/앱|^\s*앱:/.test(t)) return true;
-        return homeAiHits()===0;
-    }
-    function homeAiPaintBar(){
-        const bar=homeAiEl('homeAiBar'), sub=homeAiEl('homeAiSub');
-        if(!bar) return;
-        const q=homeAiQuery();
-        const want=homeAiWanted(q);
-        bar.hidden=!want;
-        if(!want||!sub) return;
-        const hits=homeAiHits();
-        sub.textContent=hits
-            ? ('노트 '+hits+'개 찾음 · Enter 는 해돌이에게 물어봐요')
-            : '검색 결과 없음 · Enter 로 해돌이에게 물어보기';
     }
     function homeAiKind(kind){
         const el=homeAiEl('homeAiKind');
@@ -5307,30 +5268,19 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             if(typeof toast==='function') toast('답을 복사했어요',1200);
         }catch(e){}
     }
-    // 검색창 입력 → 필터(기존 searchNotes) + 해돌이 줄 갱신
-    function sdyHomeAiInput(){ try{ homeAiPaintBar(); }catch(e){} }
-    // 검색창 Enter — 해돌이에게 갈지, 첫 노트를 열지
+    // 검색창 입력 → 필터(기존 searchNotes)와 함께 불린다.
+    // 전용 물어보기 줄/버튼이 사라지며 갱신할 게 없어져 빈 훅으로 남긴다
+    // (renderGrid 등이 여전히 부를 수 있게 호환용으로 노출).
+    function sdyHomeAiInput(){ }
+    // 검색창 Enter — 항상 해돌이에게 묻는다(전용 버튼·줄 없이).
     function sdyHomeAiKey(ev){
         if(!ev) return true;
         try{ if(ev.isComposing||ev.keyCode===229) return true; }catch(e){}
         if(ev.key!=='Enter'||ev.shiftKey||ev.altKey||ev.ctrlKey||ev.metaKey) return true;
-        const q=homeAiQuery();
-        if(!q) return true;
-        const bar=homeAiEl('homeAiBar');
-        if(bar&&!bar.hidden){
-            ev.preventDefault();
-            sdyHomeAiAsk();
-            return false;
-        }
-        // 물음표 말투가 아니고 결과가 있으면 → 첫 번째 카드를 연다(검색창의 자연스러운 기대)
-        let first=null;
-        try{ first=document.querySelector('#noteGrid .note-card,#noteGrid .folder-card'); }catch(e){}
-        if(first){
-            ev.preventDefault();
-            try{ first.click(); }catch(e){}
-            return false;
-        }
-        return true;
+        if(!homeAiQuery()) return true;
+        ev.preventDefault();
+        sdyHomeAiAsk();
+        return false;
     }
     /* 해돌이에게 묻는다 — /앱 접두사나 '시켜 달라'는 말투면 앱 실행(app),
        나머지는 도움말(help). 두 task 모두 앱 상태(+설정 안내)를 근거로 받는다. */
@@ -5391,7 +5341,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                     const counts=[];
                     if(res.applied) counts.push('실행 '+res.applied+'개');
                     if(res.failed) counts.push('건너뜀 '+res.failed+'개');
-                    const out=[say||'요청대로 했어요 해돌~'];
+                    const out=[say||'요청대로 했어요 해돌이~'];
                     if(counts.length) out.push(counts.join(' · '));
                     if(res.notes&&res.notes.length) out.push('· '+res.notes.join('\n· '));
                     _homeAiLast=out.join('\n\n');
@@ -5439,13 +5389,6 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         window.sdyHomeAiInput=sdyHomeAiInput;
         window.sdyHomeAiKey=sdyHomeAiKey;
     }catch(e){}
-    // 검색창에 포커스가 오거나 홈 그리드가 다시 그려질 때 줄 상태를 맞춘다
-    //   (검색어는 화면을 오가도 남아 있을 수 있다 — renderGrid 가 sdyHomeAiInput 을 부른다)
-    (function(){
-        var el=homeAiEl('searchInput');
-        if(el&&el.addEventListener) el.addEventListener('focus',function(){ try{ homeAiPaintBar(); }catch(e){} });
-    })();
-    try{ homeAiPaintBar(); }catch(e){}
 /* APP-PART:02g-home-ai.js:END */
 
 /* === src/app/03a-admin.js ===
@@ -22858,7 +22801,11 @@ function _tightLineBackspace(c,w){
                             if(op.dev!==SYNC_DEV) histMarkRemote(op.data.id);
                             queueOps(); }
                     }else if(await upsertEl(op.data,op.page||0)){
-                        changed=true; chPages.add(op.page||0);
+                        changed=true;
+                        // op.page 는 보낸 시점의 쪽 번호라 페이지 삭제 뒤엔 어긋날 수
+                        // 있다. 실제로 요소가 놓인 쪽을 다시 그린다.
+                        const _loc=findElLoc(op.data.id);
+                        chPages.add(_loc?_loc.i:(op.page||0));
                         // 20.3 · 남이 만들거나 고친 요소는 내 되돌리기가 건드리지 않는다
                         if(op.dev!==SYNC_DEV) histMarkRemote(op.data.id);
                         doc.__lastHash.set(op.data.id,JSON.stringify(op.data));
@@ -23025,12 +22972,13 @@ function _tightLineBackspace(c,w){
         if(doc.pages[pi]&&doc.pages[pi].__lazy!=null) await loadBatch(pi);
         const loc=findElLoc(data.id);
         if(loc){
-            if(loc.i!==pi){
-                doc.pages[loc.i].els.splice(loc.k,1);
-                (doc.pages[pi].els=doc.pages[pi].els||[]).push(data);
-            }else{
-                doc.pages[loc.i].els[loc.k]=data;
-            }
+            // op.page 는 '보낸 시점의 쪽 번호'다. 페이지 삭제/재배열 뒤에는 그
+            // 뒤쪽 요소들의 번호가 전부 한 칸씩 밀리므로, 이 값을 믿고 옮기면
+            // 서로 다른 쪽의 내용이 한 종이에 겹쳐진다(사용자 보고: 페이지 삭제
+            // 뒤 재진입 시 요소가 같은 페이지에 뭉침). 요소는 id 가 그대로인 채
+            // 다른 쪽으로 이동하는 일이 없으므로(쪽 이동은 복사+새 id), 지금
+            // 메모리에 있는 그 자리에서 덮어쓰는 것이 항상 옳다.
+            doc.pages[loc.i].els[loc.k]=data;
         }else{
             (doc.pages[pi].els=doc.pages[pi].els||[]).push(data);
         }
@@ -24615,7 +24563,7 @@ function _tightLineBackspace(c,w){
             <div class="ctx-item" onclick="ctxAction('info')"><i class="ri-information-line"></i> 노트 정보</div>
             <div class="ctx-sep"></div>
             <div class="ctx-item" onclick="ctxAction('lock')"><i class="ri-lock-2-line"></i> ${(cfg.lock&&cfg.lock.enc)?(adminMode?'잠금 해제':'비밀번호 해제'):'비밀번호 잠금'}</div>
-            <div class="ctx-item" onclick="ctxAction('export')"><i class="ri-share-box-line"></i> 백업(JSON) 내보내기</div>
+            <div class="ctx-item" onclick="ctxAction('export')"><i class="ri-share-box-line"></i> 내보내기</div>
             <div class="ctx-sep"></div>
             <div class="ctx-item danger" onclick="ctxAction('delete')"><i class="ri-delete-bin-6-line"></i> 휴지통으로 이동</div>`;
         m.classList.add('show');
@@ -24678,7 +24626,13 @@ function _tightLineBackspace(c,w){
             }
             else { openNB(nb).then(()=>setTimeout(lockCurrentNote,350)); }
         }
-        else if(act==='export'){ exportNoteJSON(nb); }
+        else if(act==='export'){
+            // 14.65.1 · 편집기 안의 '내보내기'와 동일하게 동작한다: 노트를 연 뒤
+            //   PDF/JPG/현재 쪽 복사 등이 담긴 내보내기 창을 띄운다(JSON 백업 대체).
+            if(isLocked(nb.id)&&!isUnlocked(nb.id)){ toast('잠긴 노트는 먼저 열어주세요'); return; }
+            await openNB(nb);
+            try{ openExportModal(); }catch(e){}
+        }
         else if(act==='delete'){
             if(isLocked(nb.id)&&!isUnlocked(nb.id)&&!adminMode){
                 toast('🔒 잠긴 노트는 삭제할 수 없습니다. 먼저 잠금을 해제하세요',2600); return;
@@ -24723,18 +24677,6 @@ function _tightLineBackspace(c,w){
             notebooks=sortNBs(notebooks); renderGrid(); toast('노트 복제됨');
         }catch(e){ console.error(e); toast('복제 실패'); }
         finally{ syncEnd(); }
-    }
-
-    async function exportNoteJSON(nb){
-        if(isLocked(nb.id)&&!isUnlocked(nb.id)){ toast('잠긴 노트는 먼저 열어주세요'); return; }
-        const d=await loadDocAsync(nb.id);
-        const blob=new Blob([JSON.stringify({title:nb.title,doc:d,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});
-        const a=document.createElement('a');
-        a.href=URL.createObjectURL(blob);
-        a.download=(nb.title||'노트').replace(/[^가-힣a-zA-Z0-9_ -]/g,'')+'.json';
-        a.click();
-        setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-        toast('백업 파일 저장됨');
     }
 
     // 현재 페이지 복제
@@ -25281,9 +25223,14 @@ function _tightLineBackspace(c,w){
         _clawPlaceParts(_clawEl('clawHead'),_clawEl('clawWire'),note,
                         headX,headY,noteW,!!note,cardAngle);
     }
+    // 14.65.1 · 일반(클래식) 테마에서는 집게(크레인) 장식 애니메이션을 쓰지 않는다.
+    //   노트 삭제·생성·이동, 폴더 생성·이동 전부에 해당하며, 실제 동작은
+    //   done 콜백이 그대로 수행하므로 기능 변화는 없다. (프로는 14.49부터 이미 없음)
+    function _clawSkip(){ return (typeof sdyTheme==='function'&&sdyTheme()!=='pro'); }
     // ① 노트 추가: 크레인이 실제 노트를 잡고 내려와 카드가 놓인 자리에 두고 간다
     function playClawDrop(card, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(_clawSkip()){ if(done)done(); return; }  // 14.65.1 · 일반 테마: 집게 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote');
         if(!_clawEl('clawFx')||!head||!note){ if(done)done(); return; }
@@ -25380,6 +25327,7 @@ function _tightLineBackspace(c,w){
     // ② 노트 삭제: 크레인이 빈 손으로 내려와 실제 노트를 집어 위로 끌어올려 던진다
     function playClawThrow(card, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(_clawSkip()){ if(done)done(); return; }  // 14.65.1 · 일반 테마: 집게 없음
         if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){ if(done)done(); return; } // 14.49 · 프로 테마: 집게(클로) 애니메이션 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote');
@@ -25457,6 +25405,7 @@ function _tightLineBackspace(c,w){
     // ②-b 노트 1개를 폴더로: 삭제와 같은 단일 집게가 내려와 잡아 폴더로 넣는다
     function playClawToFolder(card, folderEl, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(_clawSkip()){ if(done)done(); return; }  // 14.65.1 · 일반 테마: 집게 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote'), wire=_clawEl('clawWire');
         if(!_clawEl('clawFx')||!head||!note||!wire){ if(done)done(); return; }
@@ -25534,6 +25483,7 @@ function _tightLineBackspace(c,w){
     // ③ 여러 노트 삭제: 빈 집게 여러 대가 내려와 한꺼번에 잡아 던진다
     function playClawThrowMulti(cards, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(_clawSkip()){ if(done)done(); return; }  // 14.65.1 · 일반 테마: 집게 없음
         if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){ if(done)done(); return; } // 14.49 · 프로 테마: 집게(클로) 애니메이션 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const fx=_clawEl('clawFx');
@@ -25626,6 +25576,7 @@ function _tightLineBackspace(c,w){
     // ④ 여러 노트를 폴더로 끌어넣을 때: 빈 집게 여러 대가 내려와 잡고 해당 폴더 카드로 넣는 모션
     function playClawToFolderMulti(cards, folderEl, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(_clawSkip()){ if(done)done(); return; }  // 14.65.1 · 일반 테마: 집게 없음
         const valid=(cards||[]).filter(c=>c);
         if(valid.length===1){ playClawToFolder(valid[0], folderEl, done); return; }
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
@@ -30594,7 +30545,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 //    · 겹마다 담당 대역(저음 40Hz ~ 고음 14kHz)만 보고, 그 대역 에너지로
 //      천천히 부풀었다 잦아든다. 스펙트럼 빈을 그대로 따라가지 않으므로
 //      막대처럼 튀지 않는다.
-//    · 공격 0.55초 / 낙하 2.4초 지수 완화 — 물결이 '숨쉰다'.
+//    · 공격 0.16초 / 낙하 0.85초 지수 완화 — 대역별로 빠르게 숨쉰다(촐랑거림 없이).
 //    · 위상은 0.013~0.031 rad/s 로 아주 느리게 흐른다(촐랑거림 방지).
 //    · 몸통은 윗선에서 화면 바닥까지 사라지는 세로 그라데이션 + 가는 윗선.
 //    · 터보(저사양)·모션감소·에디터 열림에서는 rAF 자체가 돌지 않는다.
@@ -30611,12 +30562,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   //      sp   : 위상 흐름 rad/s (음수 = 반대 방향)
   //      base : 파동의 중심 높이(화면 높이 비율)
   const WAVES=[
-    { band:[  40,  170], k:1.05, sp: 0.031, base:0.64, amp:0.085, alpha:0.30, hue:  0, width:1.6 },
-    { band:[ 120,  400], k:1.45, sp:-0.027, base:0.58, amp:0.076, alpha:0.27, hue: 16, width:1.5 },
-    { band:[ 320,  900], k:1.95, sp: 0.023, base:0.52, amp:0.066, alpha:0.24, hue:-14, width:1.4 },
-    { band:[ 800, 2200], k:2.60, sp:-0.020, base:0.46, amp:0.056, alpha:0.21, hue: 30, width:1.3 },
-    { band:[2000, 5500], k:3.40, sp: 0.016, base:0.41, amp:0.047, alpha:0.18, hue:-24, width:1.2 },
-    { band:[5000,14000], k:4.30, sp:-0.013, base:0.36, amp:0.039, alpha:0.15, hue: 42, width:1.1 },
+    { band:[  40,  170], k:1.05, sp: 0.031, base:0.92, amp:0.085, alpha:0.30, hue:  0, width:1.6 },
+    { band:[ 120,  400], k:1.45, sp:-0.027, base:0.88, amp:0.076, alpha:0.27, hue: 16, width:1.5 },
+    { band:[ 320,  900], k:1.95, sp: 0.023, base:0.84, amp:0.066, alpha:0.24, hue:-14, width:1.4 },
+    { band:[ 800, 2200], k:2.60, sp:-0.020, base:0.80, amp:0.056, alpha:0.21, hue: 30, width:1.3 },
+    { band:[2000, 5500], k:3.40, sp: 0.016, base:0.76, amp:0.047, alpha:0.18, hue:-24, width:1.2 },
+    { band:[5000,14000], k:4.30, sp:-0.013, base:0.72, amp:0.039, alpha:0.15, hue: 42, width:1.1 },
   ];
   const NW=WAVES.length;
   // 대역 틸트 — 고음은 같은 세기라도 스펙트럼에서 작게 잡히므로 살짝 들어 올린다
@@ -30749,28 +30700,29 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ctx.clearRect(0,0,w,h);
     if(w<20||h<20) return;
 
-    // ④ 겹별 에너지 — 공격은 짧게, 낙하는 길게(2.4초). 이게 '촐랑거림'을 없앤다.
+    // ④ 겹별 에너지 — 공격은 짧게, 낙하도 빠르게(0.85초). 대역별로 즉각 숨쉰다.
     for(let i=0;i<NW;i++){
       const W=WAVES[i];
       let raw=0.24;                       // 데이터가 없어도 아주 낮은 숨결은 남는다
       if(hasData&&bins){
         raw=bandRaw(W.band[0], W.band[1], bins, nyq)*W.tilt;
         if(raw>bandMax[i]) bandMax[i]=bandMax[i]*0.90+raw*0.10;
-        else bandMax[i]=Math.max(0.20, bandMax[i]*0.998+raw*0.002);
+        else bandMax[i]=Math.max(0.20, bandMax[i]*0.994+raw*0.006);
         raw=Math.min(1, raw/Math.max(0.22, bandMax[i]));
       }else{
         bandMax[i]=Math.max(0.22, bandMax[i]*0.996+raw*0.004);
       }
       const target=Math.pow(Math.max(0, raw), 0.82);
-      const tau=target>env[i]?0.55:2.40;
+      const tau=target>env[i]?0.16:0.85;
       env[i]+=(target-env[i])*(1-Math.exp(-dt/tau));
       if(!(env[i]>=0)) env[i]=0;          // (NaN 방어)
     }
 
-    // ⑤ 색 — 겹마다 강조색에서 조금씩 돌린 색(같은 계열이라 어지럽지 않다)
+    // ⑤ 색 — 겹마다 강조색에서 조금씩 돌린 색(같은 계열이라 어지럽지 않다).
+    //    채도는 올리고 밝기는 낮춰 깊고 짙게.
     const hsl=hexToHsl(accentHex());
-    const sat=Math.max(26, Math.min(86, hsl[1]*0.92));
-    const lig=Math.max(38, Math.min(66, hsl[2]+10));
+    const sat=Math.max(40, Math.min(94, hsl[1]*1.08));
+    const lig=Math.max(22, Math.min(58, hsl[2]-6));
     const seg=Math.max(64, Math.min(SEG_MAX, Math.round(w/8)));
     const xs=new Float32Array(seg+1), ys=new Float32Array(seg+1);
 
@@ -31630,14 +31582,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       var applied=Number(res.applied||0),failed=Number(res.failed||0)+Number(parsed.dropped||0);
       var ask=String(parsed.ask||'').trim();
       var say=String(parsed.say||'').trim()
-        ||(applied?'요청대로 문서를 고쳤어요 해돌~':(ask?'':'바꿀 내용을 찾지 못했어요'));
+        ||(applied?'요청대로 문서를 고쳤어요 해돌이~':(ask?'':'바꿀 내용을 찾지 못했어요'));
       var counts=[];
       if(applied) counts.push('적용 '+applied+'개');
       if(failed) counts.push('건너뜀 '+failed+'개');
       var output=say+(counts.length?'\n\n'+counts.join(' · '):'');
       if(res.notes&&res.notes.length) output+=(output?'\n':'')+res.notes.join('\n');
       // @ask — 되묻기. 답을 적어 보내면 이전 대화 문맥과 함께 이어서 한다.
-      if(ask) output+=(output?'\n\n':'')+ask+'\n(알려주면 바로 이어서 할게요 해돌~)';
+      if(ask) output+=(output?'\n\n':'')+ask+'\n(알려주면 바로 이어서 할게요 해돌이~)';
       if(applied){
         try{ if(window.toast) window.toast('해돌이가 문서를 고쳤어요 · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e){}
       }
@@ -31752,15 +31704,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       var applied=Number(res.applied||0),failed=Number(res.failed||0)+Number(parsed.dropped||0);
       var ask=String(parsed.ask||'').trim();
       var say=String(parsed.say||'').trim()
-        ||(applied?'요청대로 실행했어요 해돌~':(ask?'':'실행할 내용을 찾지 못했어요'));
+        ||(applied?'요청대로 실행했어요 해돌이~':(ask?'':'실행할 내용을 찾지 못했어요'));
       var counts=[];
       if(applied) counts.push('실행 '+applied+'개');
       if(failed) counts.push('건너뜀 '+failed+'개');
       var output=say+(counts.length?'\n\n'+counts.join(' · '):'');
       if(res.notes&&res.notes.length) output+=(output?'\n':'')+res.notes.join('\n');
-      if(ask) output+=(output?'\n\n':'')+ask+'\n(알려주면 바로 이어서 할게요 해돌~)';
+      if(ask) output+=(output?'\n\n':'')+ask+'\n(알려주면 바로 이어서 할게요 해돌이~)';
       if(applied){
-        try{ if(window.toast) window.toast('해돌이가 실행했어요 해돌~',2000); }catch(e){}
+        try{ if(window.toast) window.toast('해돌이가 실행했어요 해돌이~',2000); }catch(e){}
       }
       return output;
     };
@@ -31826,16 +31778,16 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       var applied=Number(res.applied||0),failed=Number(res.failed||0);
       var output='';
       if(applied&&parsed.strokes){
-        output='요청한 그림을 펜으로 '+parsed.strokes+'획 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+        output='요청한 그림을 펜으로 '+parsed.strokes+'획 그렸어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요';
       }else if(applied){
-        output='요청한 그림을 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+        output='요청한 그림을 그렸어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요';
       }else{
         output=String(parsed.error||'그림을 그리지 못했어요 · 다시 시도해 주세요');
       }
       if(failed) output+='\n\n건너뜀 '+failed+'개';
       if(res.notes&&res.notes.length) output+=(output?'\n':'')+res.notes.join('\n');
       if(applied){
-        try{ if(window.toast) window.toast('해돌이가 그림을 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e){}
+        try{ if(window.toast) window.toast('해돌이가 그림을 그렸어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e){}
       }
       return output;
     };
@@ -32834,7 +32786,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       ok(); return;
     }
     function presentOp(op){
-      if(!inNote()){ bad('노트를 연 다음에 발표해 주세요 해돌~'); return; }
+      if(!inNote()){ bad('노트를 연 다음에 발표해 주세요 해돌이~'); return; }
       if(op.on){
         var sp2=needFn('startPresent');
         if(!sp2){ bad('발표를 시작하지 못했어요'); return; }
@@ -32854,7 +32806,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       ok(); return;
     }
     function exportOp(op){
-      if(!inNote()){ bad('노트를 연 다음에 내보내 주세요 해돌~'); return; }
+      if(!inNote()){ bad('노트를 연 다음에 내보내 주세요 해돌이~'); return; }
       if(op.pdf){
         var ex=needFn('exportPDF');
         if(!ex){ bad('PDF로 저장하지 못했어요'); return; }
@@ -32868,7 +32820,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     /* 14.29.3 · 노트의 자동 번역(우클릭 '이 페이지 번역'과 같은 함수)을 실행한다.
        오래 걸리는 일이라 기다리지 않는다 — 진행바와 [중단] 버튼이 알아서 안내한다. */
     function translateOp(op){
-      if(!inNote()){ bad('노트를 연 다음에 번역해 주세요 해돌~'); return; }
+      if(!inNote()){ bad('노트를 연 다음에 번역해 주세요 해돌이~'); return; }
       var T=null;
       try{ T=window.__sdyTranslate||null; }catch(e){ T=null; }
       if(!T||typeof T.page!=='function'||typeof T.doc!=='function'){ bad('번역 기능을 찾지 못했어요'); return; }
@@ -32881,7 +32833,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       ok(); return;
     }
     function findOp(op){
-      if(!inNote()){ bad('노트를 연 다음에 찾아 주세요 해돌~'); return; }
+      if(!inNote()){ bad('노트를 연 다음에 찾아 주세요 해돌이~'); return; }
       var of=needFn('openFind'), rf=needFn('runFind');
       if(!of){ bad('찾기를 열지 못했어요'); return; }
       try{
@@ -33096,23 +33048,23 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(task==='outline'&&!txt){
       kindChip(''); meta('');
       busy(false);
-      out(scope==='page'?'이 페이지에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌~'
-        :'열린 노트에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌~',true);
+      out(scope==='page'?'이 페이지에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌이~'
+        :'열린 노트에 글이 없어요. 글을 적고 나면 정리해 줄게요 해돌이~',true);
       return;
     }
     if(task==='chat'&&!q) return;                     // 빈 질문 Enter — 조용히 무시
     if(task==='edit'&&(!q||!txt)){
-      otterLine(!txt?'문서 상태를 읽지 못했어요 · 노트를 다시 열어 주세요':'어떻게 고칠지 적어 줘 해돌~');
+      otterLine(!txt?'문서 상태를 읽지 못했어요 · 노트를 다시 열어 주세요':'어떻게 고칠지 적어 줘 해돌이~');
       return;
     }
     if(task==='app'&&(!q||!txt)){
-      otterLine(!txt?'앱 상태를 읽지 못했어요 · 페이지를 새로고침해 주세요':'무엇을 실행할지 적어 줘 해돌~');
+      otterLine(!txt?'앱 상태를 읽지 못했어요 · 페이지를 새로고침해 주세요':'무엇을 실행할지 적어 줘 해돌이~');
       return;
     }
     if(task==='draw'){
       if(!q) return;
       if(!canEdit()){
-        otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌~');
+        otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌이~');
         return;
       }
     }
@@ -33124,7 +33076,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         lastKind=(scope==='page'?'outlinePage':'outlineDoc'); lastQ='';
         kindChip(lastKind);
         out(lastText); busy(false);
-        meta('미리 준비해 둔 답이에요 해돌~');
+        meta('미리 준비해 둔 답이에요 해돌이~');
         histPush(lastKind,'',lastText);
         return;
       }
@@ -33190,7 +33142,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
           if(kind==='edit'&&!hopped){
             if(canEdit()){ ctl=null; moved=true; run('edit',q,scope,true); return; }
             kind='';
-            text='편집 요청 같은데 · 노트를 연 다음에 다시 말해 줘 해돌~';
+            text='편집 요청 같은데 · 노트를 연 다음에 다시 말해 줘 해돌이~';
           }
           // 서버 [[search]] — 인터넷 검색을 실행한 뒤 결과를 붙여 한 번만 다시 묻는다.
           if(kind==='search'&&!hopped){
@@ -33201,7 +33153,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
           if(kind==='draw'&&!hopped){
             if(canEdit()){ ctl=null; moved=true; runDraw(q,true); return; }
             kind='';
-            text='그림은 노트를 연 다음에 그려 줄게요 해돌~';
+            text='그림은 노트를 연 다음에 그려 줄게요 해돌이~';
           }
           // 서버 [[app]] — 앱 실행으로 한 번만 넘긴다(노트 밖에서도 된다).
           if(kind==='app'&&!hopped){
@@ -33280,7 +33232,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      글과 사진을 함께 놓는다 — sdyAiRun 이 갈라 준다. */
   function runPhoto(q){
     if(ctl) return;
-    if(!canEdit()){ otterLine('노트를 연 다음에 사진을 넣어 달라고 해 줘 해돌~'); return; }
+    if(!canEdit()){ otterLine('노트를 연 다음에 사진을 넣어 달라고 해 줘 해돌이~'); return; }
     var page=(typeof curPageIdx!=='undefined'?(curPageIdx|0)+1:1);
     var what=photoCmdOf(q)!=null?photoCmdOf(q):q;
     ctl=new AbortController();
@@ -33292,7 +33244,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       ctl=null; busy(false);
       lastText=say; lastKind='edit'; kindChip('edit');
       out(say); meta('');
-      if(applied){ try{ if(window.toast) window.toast('해돌이가 사진을 넣었어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e3){} }
+      if(applied){ try{ if(window.toast) window.toast('해돌이가 사진을 넣었어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e3){} }
       histPush('edit',q,say);
     };
     fetch('/api/ai/imgadd',{method:'POST',signal:ctl.signal,
@@ -33305,7 +33257,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     .then(function(got){
       var j=got&&got.j;
       if(!got||!got.ok||!j||!j.ok||!j.url){
-        finish(String((j&&j.error)||'사진을 찾지 못했어요 · 무엇의 사진인지 조금 더 구체적으로 알려 줘 해돌~'),false);
+        finish(String((j&&j.error)||'사진을 찾지 못했어요 · 무엇의 사진인지 조금 더 구체적으로 알려 줘 해돌이~'),false);
         return;
       }
       var ops=[{cmd:'addimg',page:page,x:'auto',y:'auto',w:'auto',h:'auto',
@@ -33316,7 +33268,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         var say;
         if(res.applied){
           var nm=String(j.title||'').trim();
-          say='‘'+(nm?nm.slice(0,40):String(what).slice(0,40))+'’ 사진을 넣었어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+          say='‘'+(nm?nm.slice(0,40):String(what).slice(0,40))+'’ 사진을 넣었어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요';
         }else say='사진을 넣지 못했어요 · 다시 시도해 주세요';
         if(res.notes&&res.notes.length) say+='\n'+res.notes.join('\n');
         finish(say,!!res.applied);
@@ -33345,7 +33297,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(ctl) return;
     q=String(q||'').trim();
     if(!q) return;
-    if(!canEdit()){ otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌~'); return; }
+    if(!canEdit()){ otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌이~'); return; }
     var revision=(function(){ try{ var c=aiCapture(); return c?c.revision:''; }catch(e){ return ''; } })();
     ctl=new AbortController();
     busy(true); lastText=''; lastKind='draw'; lastQ=q;
@@ -33360,7 +33312,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       ctl=null; busy(false);
       lastText=say; lastKind='draw'; kindChip('draw');
       out(say); meta('');
-      if(applied){ try{ if(window.toast) window.toast('해돌이가 그림을 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e3){} }
+      if(applied){ try{ if(window.toast) window.toast('해돌이가 그림을 그렸어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요',2600); }catch(e3){} }
       histPush('draw',q,say);
     };
     fetch('/api/ai/refdraw',{method:'POST',signal:ctl.signal,
@@ -33386,7 +33338,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         if(res.stale){ finish((res.notes&&res.notes[0])||'기다리는 동안 문서가 바뀌어서 그리지 않았어요 · 다시 요청해 주세요',false); return; }
         var say;
         if(res.applied){
-          say='‘'+(name?name.slice(0,30):q.slice(0,30))+'’ 그림을 컬러 펜으로 '+parsed.strokes+'획 그렸어요 해돌~ · Ctrl+Z로 되돌릴 수 있어요';
+          say='‘'+(name?name.slice(0,30):q.slice(0,30))+'’ 그림을 컬러 펜으로 '+parsed.strokes+'획 그렸어요 해돌이~ · Ctrl+Z로 되돌릴 수 있어요';
         }else say=String((res.notes&&res.notes[0])||'그림을 그리지 못했어요 · 다시 시도해 주세요');
         if(res.applied&&res.notes&&res.notes.length) say+='\n'+res.notes.join('\n');
         finish(say,!!res.applied);
@@ -33409,9 +33361,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      제목·증상·재현 방법·기대 동작·메모로 정리해 돌려주고, 02f 의 sdyBuglogAdd
      가 설정 → 버그 일지에 기록한다. 기록되면 말풍선에 정리본과 안내를 띄운다. */
   function runBug(q){
-    if(ctl){ meta('다 말하고 나서 말해 주세요 해돌~'); return; }
+    if(ctl){ meta('다 말하고 나서 말해 주세요 해돌이~'); return; }
     q=String(q||'').trim();
-    if(!q){ otterLine('어떤 버그인지 알려 줘 해돌~ · 예) /버그 표를 만들면 글자가 겹쳐요'); return; }
+    if(!q){ otterLine('어떤 버그인지 알려 줘 해돌이~ · 예) /버그 표를 만들면 글자가 겹쳐요'); return; }
     closedByUser=false;
     ctl=new AbortController();
     busy(true); lastText=''; lastKind='bug'; lastQ=q;
@@ -33447,8 +33399,8 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         }
         lastText=text+(stored
           ?(stored.synced
-            ?'\n\n— 버그 일지를 서버에 저장했어요 · 설정 → 버그 일지에서 볼 수 있어요 해돌~'
-            :'\n\n— 이 기기에 기록했어요 · 서버 저장 대기 중이에요. 연결 복구 후 다시 동기화해요 · 업데이트 안내가 보이면 새로고침해 주세요 해돌~')
+            ?'\n\n— 버그 일지를 서버에 저장했어요 · 설정 → 버그 일지에서 볼 수 있어요 해돌이~'
+            :'\n\n— 이 기기에 기록했어요 · 서버 저장 대기 중이에요. 연결 복구 후 다시 동기화해요 · 업데이트 안내가 보이면 새로고침해 주세요 해돌이~')
           :'\n\n— 버그 일지를 저장하지 못했어요 · 정리본을 복사해 두고 브라우저 저장 공간을 확인해 주세요');
         lastKind='bug';
         kindChip('bug');
@@ -33458,7 +33410,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }else{
         lastText=''; kindChip('');
         out(String(d.error||'AI에 닿지 못했어요'),true);
-        meta(d.hint?String(d.hint):(d.retry_after?('약 '+d.retry_after+'초 뒤에 다시 시도해 주세요'):'버그 일지를 적지 못했어요 · 잠시 뒤 다시 말해 줘 해돌~'));
+        meta(d.hint?String(d.hint):(d.retry_after?('약 '+d.retry_after+'초 뒤에 다시 시도해 주세요'):'버그 일지를 적지 못했어요 · 잠시 뒤 다시 말해 줘 해돌이~'));
       }
     }).catch(function(e){
       if(e&&e.name==='AbortError'&&closedByUser){ return; }   // 말풍선을 닫으며 멈춘 것
@@ -33477,16 +33429,16 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
      자동 라우팅한다. 겹치는 말은 looksLikeApp 안의 문서-동사 규칙이 가른다. */
   window.sdyAiRun=function(){
     var qEl=$('aiQ'), q=qEl?String(qEl.value||'').trim():'';
-    if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
-    if(!q){ otterLine('뭐라도 적어 줘 해돌~'); return; }
+    if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌이~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
+    if(!q){ otterLine('뭐라도 적어 줘 해돌이~'); return; }
     var editCommand=editCmdOf(q);
     var bugCommand=bugCmdOf(q);
     var appCommand=appCmdOf(q);
     var drawCommand=drawCmdOf(q);
     if(qEl){ qEl.value=''; aiQGrow(); }                 // 본 요청은 말풍선(과 기록)에 남으니 칸은 비운다
     if(editCommand!=null){
-      if(!editCommand){ otterLine('! 뒤에 어떻게 고칠지 적어 줘 해돌~ · 예) !제목을 맨 위로 옮겨 줘'); return; }
-      if(!inNote()){ otterLine('노트를 연 다음에 고쳐 달라고 해 줘 해돌~'); return; }
+      if(!editCommand){ otterLine('! 뒤에 어떻게 고칠지 적어 줘 해돌이~ · 예) !제목을 맨 위로 옮겨 줘'); return; }
+      if(!inNote()){ otterLine('노트를 연 다음에 고쳐 달라고 해 줘 해돌이~'); return; }
       if(!(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function')){
         otterLine('문서 편집 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
       }
@@ -33494,12 +33446,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     }
     // 14.39.0 · 명시적 버그 신고(/버그·버그 신고:·신고:) — 정리해 일지에 기록
     if(bugCommand!=null){
-      if(!bugCommand){ otterLine('/버그 뒤에 어떤 버그인지 적어 줘 해돌~ · 예) /버그 표를 만들면 글이 겹쳐요'); return; }
+      if(!bugCommand){ otterLine('/버그 뒤에 어떤 버그인지 적어 줘 해돌이~ · 예) /버그 표를 만들면 글이 겹쳐요'); return; }
       runBug(bugCommand); return;
     }
     if(drawCommand!=null){
-      if(!drawCommand){ otterLine('/그림 뒤에 무엇을 그릴지 적어 줘 해돌~ · 예) /그림 웃는 얼굴'); return; }
-      if(!inNote()){ otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌~'); return; }
+      if(!drawCommand){ otterLine('/그림 뒤에 무엇을 그릴지 적어 줘 해돌이~ · 예) /그림 웃는 얼굴'); return; }
+      if(!inNote()){ otterLine('노트를 연 다음에 그려 달라고 해 줘 해돌이~'); return; }
       if(!(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function')){
         otterLine('그림 그리기 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
       }
@@ -33508,15 +33460,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     // 14.31.0 · /사진·/이미지 접두사 — 무조건 사진을 찾아 넣는다(펜 그림과 혼동 방지).
     if(photoCmdOf(q)!=null){
       var photoCommand=photoCmdOf(q);
-      if(!photoCommand){ otterLine('/사진 뒤에 무엇의 사진인지 적어 줘 해돌~ · 예) /사진 고양이'); return; }
-      if(!inNote()){ otterLine('노트를 연 다음에 사진을 넣어 달라고 해 줘 해돌~'); return; }
+      if(!photoCommand){ otterLine('/사진 뒤에 무엇의 사진인지 적어 줘 해돌이~ · 예) /사진 고양이'); return; }
+      if(!inNote()){ otterLine('노트를 연 다음에 사진을 넣어 달라고 해 줘 해돌이~'); return; }
       if(!(window.__sdyAiBridge&&typeof window.__sdyAiBridge.apply==='function')){
         otterLine('사진 넣기 준비가 안 됐어요 · 페이지를 새로고침해 주세요'); return;
       }
       runPhoto(photoCommand); return;
     }
     if(appCommand!=null){
-      if(!appCommand){ otterLine('/앱 뒤에 무엇을 실행할지 적어 줘 해돌~ · 예) /앱 노래 틀어줘'); return; }
+      if(!appCommand){ otterLine('/앱 뒤에 무엇을 실행할지 적어 줘 해돌이~ · 예) /앱 노래 틀어줘'); return; }
       run('app',appCommand); return;
     }
     // 14.39.0 · 말로 하는 버그 신고 — '버그가 있어요', '○○가 안 돼요' 류는
@@ -33540,12 +33492,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   //   빠지지 않고 '설명해 줘' 질문이 된다.
   window.sdyAiExplain=function(q){
     q=String(q||'').trim();
-    if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
-    if(!q){ otterLine('설명해 줄 글자를 아직 고르지 못했어요 해돌~'); return; }
+    if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌이~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
+    if(!q){ otterLine('설명해 줄 글자를 아직 고르지 못했어요 해돌이~'); return; }
     run('chat',q);
   };
   window.sdyAiOutline=function(scope){
-    if(ctl){ meta('다 말하고 나서 눌러 주세요 해돌~'); return; }     // 말하는 중 — 말풍선 안 한 줄로만
+    if(ctl){ meta('다 말하고 나서 눌러 주세요 해돌이~'); return; }     // 말하는 중 — 말풍선 안 한 줄로만
     run('outline','',scope);
   };
   window.sdyAiStop=function(){ if(ctl){ try{ ctl.abort(); }catch(e){} } };
@@ -35694,14 +35646,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       if(!t){
         if(mp._singKey!=='idle:none'){
           mp._singKey='idle:none';
-          speak(mp,'지금은 쉴래 해돌~',1800);
+          speak(mp,'지금은 쉴래 해돌이~',1800);
         }
         return;
       }
       if(t.lyrics===undefined&&(t.has_lyrics||t.has_sync)){
         if(mp._singKey!=='loading:'+t.id){
           mp._singKey='loading:'+t.id;
-          speak(mp,'싱크 가사 불러오는 중이해돌~',1800);
+          speak(mp,'싱크 가사 불러오는 중이해돌이~',1800);
         }
         if(!t._lyrLoading && window.sdyMusic&&window.sdyMusic.ensureLyrics){
           window.sdyMusic.ensureLyrics(t).then(function(){ if(mpSinging()) singCurrentLyric(); }).catch(function(){});
@@ -35730,7 +35682,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       var noKey='nosync:'+(t.id||'');
       if(mp._singKey!==noKey){
         mp._singKey=noKey;
-        speak(mp,'이 곡은 아직 싱크 가사가 없해돌~',1800);
+        speak(mp,'이 곡은 아직 싱크 가사가 없해돌이~',1800);
       }
     }
     // 켜기/끄기 — 켜면 즉시 지금 가사부터 부르고, 끌 때까지 계속 부른다.
@@ -35744,7 +35696,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       mp._singKey='';
       if(mpSingOn){
         singCurrentLyric();
-        if(!mp.classList.contains('show')) speak(mp,'따라 부를게 해돌~ 🎤',1400);
+        if(!mp.classList.contains('show')) speak(mp,'따라 부를게 해돌이~ 🎤',1400);
       }else{
         if(mp._t) clearTimeout(mp._t);
         mp.classList.remove('show');
@@ -35753,18 +35705,18 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 
     // ── 노트(문서) 해돌이 ──
     var NOTE_IDLE=[
-      '오늘은 뭘 끄적일까 해돌~?',
-      '집중하면 뭐든 돼! 해돌~',
-      '아이디어 떠오르면 날 눌러봐 해돌!',
-      '끄적끄적~ 글 쓰는 거 재밌지? 해돌~',
-      '휴식도 중요해! 물 한 잔 어때 해돌~?',
-      '천천히 써도 괜찮아 해돌~'
+      '오늘은 뭘 끄적일까 해돌이~?',
+      '집중하면 뭐든 돼! 해돌이~',
+      '아이디어 떠오르면 날 눌러봐 해돌이!',
+      '끄적끄적~ 글 쓰는 거 재밌지? 해돌이~',
+      '휴식도 중요해! 물 한 잔 어때 해돌이~?',
+      '천천히 써도 괜찮아 해돌이~'
     ];
     var NOTE_TAP=[
-      '굿 아이디어! 해돌~!',
-      '오! 멋진 생각이다 해돌~!',
-      '번쩍! 아이디어가 떠올랐해돌!',
-      '역시 너야! 해돌~'
+      '굿 아이디어! 해돌이~!',
+      '오! 멋진 생각이다 해돌이~!',
+      '번쩍! 아이디어가 떠올랐해돌이!',
+      '역시 너야! 해돌이~'
     ];
     var editor=$('editorView');
     // 14.23.x · AI 말풍선(#aiSay)·대화기록(#aiHist)이 떠 있으면 노래/아이디어
@@ -35806,16 +35758,16 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     // ── 노래 해돌이 ──
     var MP_IDLE=[
       '둠칫둠칫~!',
-      '제 이름은 해돌이야. 만나서 반갑해돌!',
-      '이 노래 너무 좋다 해돌~',
-      '볼륨 한 번 올려볼까 해돌~?',
-      '어깨가 절로 들썩이네 해돌~',
-      '나도 같이 흔들고 싶어 해돌~'
+      '제 이름은 해돌이야. 만나서 반갑해돌이!',
+      '이 노래 너무 좋다 해돌이~',
+      '볼륨 한 번 올려볼까 해돌이~?',
+      '어깨가 절로 들썩이네 해돌이~',
+      '나도 같이 흔들고 싶어 해돌이~'
     ];
     function mpSongPhrase(){
       try{
         var t=window.sdyMusic&&window.sdyMusic.cur ? window.sdyMusic.cur() : null;
-        if(t&&t.title) return '지금 "'+t.title+'" 같이 들을래 해돌~?';
+        if(t&&t.title) return '지금 "'+t.title+'" 같이 들을래 해돌이~?';
       }catch(e){}
       return null;
     }
@@ -35957,11 +35909,11 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 
     // ── 엽스코드 입장 게이트 (편지 해돌이) ──
     var YP_IDLE=[
-      '편지 왔어요! 열어볼래? 해돌~',
-      '로그인해도 되고, 가볍게 들어와도 돼 해돌~',
-      '만나서 반가워요! 해돌~',
-      '이 카드에 편지가 숨어 있어요 해돌~',
-      '두근두근… 소포 배달 해돌~!'
+      '편지 왔어요! 열어볼래? 해돌이~',
+      '로그인해도 되고, 가볍게 들어와도 돼 해돌이~',
+      '만나서 반가워요! 해돌이~',
+      '이 카드에 편지가 숨어 있어요 해돌이~',
+      '두근두근… 소포 배달 해돌이~!'
     ];
     if(gateOtter){
       setInterval(function(){
@@ -35973,12 +35925,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 
     // ── 집중 화면 (독서 해돌이 — 스톱워치·타이머·시계) ──
     var FC_IDLE=[
-      '몇 분 집중할래? 해돌~',
-      '시작 버튼만 누르면 돼 해돌!',
-      '물 한 모금 마시고 오자 해돌~',
-      '25분 뽀모도로가 국룰이야 해돌~',
-      '천천히 가도 괜찮아 해돌~',
-      '책장 넘기는 소리가 좋다 해돌~'
+      '몇 분 집중할래? 해돌이~',
+      '시작 버튼만 누르면 돼 해돌이!',
+      '물 한 모금 마시고 오자 해돌이~',
+      '25분 뽀모도로가 국룰이야 해돌이~',
+      '천천히 가도 괜찮아 해돌이~',
+      '책장 넘기는 소리가 좋다 해돌이~'
     ];
     if(fcOtter){
       setInterval(function(){
@@ -35990,12 +35942,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 
     // ── 비행기 해돌이 — 비행 중에만 말한다 (출발할 때도 한마디) ──
     var FLY_IDLE=[
-      '두둥~! 여행 가는 길이야 해돌~',
-      '가끔은 날아다니는 것도 필요하잖아 해돌~',
-      '구름 위는 역시 좋다 해돌~',
-      '잠깐! 나 지금 급해 해돌~!',
-      '비행기 모드 ON! 해돌~',
-      '창밖 구경 한번 할래? 해돌~'
+      '두둥~! 여행 가는 길이야 해돌이~',
+      '가끔은 날아다니는 것도 필요하잖아 해돌이~',
+      '구름 위는 역시 좋다 해돌이~',
+      '잠깐! 나 지금 급해 해돌이~!',
+      '비행기 모드 ON! 해돌이~',
+      '창밖 구경 한번 할래? 해돌이~'
     ];
     if(plane){
       plane._say=function(){ say(plane,pick(FLY_IDLE),2800); };
@@ -36902,7 +36854,7 @@ function _startQueue(q,mode){
     document.getElementById('cdTestReport').style.display='none';
     _fcardTitle((_isTest?'시험 · ':'')+((_deckCur&&_deckCur.title)||'암기 카드'));
     showCard();
-    otterSay(_isTest?'긴장되지? 지켜볼게 해돌~':'시~작! 같이 해보자 해돌~','love',1600);
+    otterSay(_isTest?'긴장되지? 지켜볼게 해돌이~':'시~작! 같이 해보자 해돌이~','love',1600);
 }
 
 /* ── 해달 '해돌이' 컨트롤 ─────────────────────────
@@ -36953,18 +36905,18 @@ function otterBurst(n,emojis){
         setTimeout(()=>s.remove(),1300);
     }
 }
-function otterThink(){ otterSay('음… 생각 좀 해볼게 해돌~','think',1500); }
+function otterThink(){ otterSay('음… 생각 좀 해볼게 해돌이~','think',1500); }
 function otterCheer(streak){
-    if(streak>=5)      otterSay('와! 연속 '+streak+'개! 천재 해돌~!','love',2400);
-    else if(streak>=3) otterSay('흐름 좋아! 계속 가자 해돌~!','happy',1800);
-    else               otterSay('좋아! 기억 속에 쏙~ 해돌!','happy',1500);
+    if(streak>=5)      otterSay('와! 연속 '+streak+'개! 천재 해돌이~!','love',2400);
+    else if(streak>=3) otterSay('흐름 좋아! 계속 가자 해돌이~!','happy',1800);
+    else               otterSay('좋아! 기억 속에 쏙~ 해돌이!','happy',1500);
 }
-function otterSad(){ otterSay('괜찮아~ 한 번 더 보면 돼 해돌~!','sad',2000); }
-function otterHint(){ otterSay('힌트 살짝! 👀 해돌~','think',1600); }
+function otterSad(){ otterSay('괜찮아~ 한 번 더 보면 돼 해돌이~!','sad',2000); }
+function otterHint(){ otterSay('힌트 살짝! 👀 해돌이~','think',1600); }
 function otterFinish(pct){
-    if(pct>=90) otterSay('대박! 완벽 마스터 해돌~! 🏆','love',3200);
+    if(pct>=90) otterSay('대박! 완벽 마스터 해돌이~! 🏆','love',3200);
     else if(pct>=60) otterSay('수고했어! 해돌이 칭찬해~','happy',2600);
-    else otterSay('다음에 또 같이 공부하자 해돌~!','happy',2200);
+    else otterSay('다음에 또 같이 공부하자 해돌이~!','happy',2200);
 }
 document.addEventListener('DOMContentLoaded',()=>{
     // hint 버튼 이벤트 훅
@@ -37164,7 +37116,7 @@ function flipCard(){
     document.getElementById('cdFlip').classList.toggle('flipped',_flipped);
     // 답을 본 뒤에만 '알아요 / 아직이에요' 를 묻는다
     if(_flipped&&!_answered) document.getElementById('cdFlipGrade').style.display='grid';
-    if(_flipped&&!_answered) otterSay('답 기억나? 해돌~','wow',1200);
+    if(_flipped&&!_answered) otterSay('답 기억나? 해돌이~','wow',1200);
     else if(!_flipped) otterSet('think');
 }
 function flipGrade(g){
