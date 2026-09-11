@@ -34,7 +34,9 @@
             t.lockCleared=Date.now();   // 9.4 · '사용자가 직접 해제했다'는 표시 (동기화가 되살리지 않게)
             saveFolders(all);
             unlockedFolders.add(fid);
-            renderGrid(); toast('폴더 잠금 해제됨 🔓');
+            renderGrid();
+            try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+            toast('폴더 잠금 해제됨 🔓');
             return;
         }
         // 9.1 · 남의 잠긴 노트를 내 폴더에 가둬 버리는 것을 막는다.
@@ -56,6 +58,7 @@
         saveFolders(all);
         unlockedFolders.add(fid);          // 방금 잠근 사람은 계속 볼 수 있게
         renderGrid();
+        try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
         toast('폴더가 잠겼습니다 🔒',2000);
     }
 
@@ -96,7 +99,11 @@
 
     function _gridSig(){
         try{
-            const folders=(!searchQuery?childFolders(curFolder):[]).map(f=>f.id+':'+(f.name||'')+':'+(folderCount(f.id)||0)).join('|');
+            // 14.65 · 폴더 카드에 그려지는 것 전부를 시그니처에 넣는다 — 색·아이콘·
+            //   잠금이 빠져 있어서 '폴더색 바꾸기' 가 새로고침 전까지 안 보였다.
+            const folders=(!searchQuery?childFolders(curFolder):[]).map(f=>
+                [f.id, f.name||'', folderCount(f.id)||0, f.color||'', f.icon||'',
+                 isFolderLocked(f.id)?1:0, isFolderOpen(f.id)?1:0].join(':')).join('|');
             const notes=getFiltered().map(nb=>{
                 const c=getCfg(nb.id);
                 return [nb.id, nb.title||'', c.pinned?1:0, c.folder||'', c.trashed_at||'', c.emoji||''].join(':');
@@ -333,6 +340,9 @@
         if(!force && sig===_lastGridSig && g.querySelector('.home-stack-area,.note-card,.folder-card,.add-card')){
             // 17.4 · 홈에 재진입(변경 없이 돌아온 경우)도 아래쪽부터 보여 준다
             if(_homeEnterScroll) _homeEnterScroll=false;
+            // 14.65 · 카드를 다시 그릴 필요가 없어도 사이드바 폴더 목록은 맞춰 둔다
+            //   (색·아이콘은 홈 카드와 사이드바 두 곳에 그려진다)
+            try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
             try{ requestAnimationFrame(()=>{ rescalePreviews(); _layoutHomeStacks(); }); }catch(e){}
             return;
         }

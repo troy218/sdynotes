@@ -20,8 +20,9 @@ from PIL import Image
 from .admin import _require_admin, requests_post_internal
 from .cloud import SYNC_TABLE, _sb_enabled, _sb_get, _sb_put
 from .common import (ACOUSTID_FILE, BASE_DIR, MUSIC_BAK, MUSIC_DIR, MUSIC_META,
-                     SYNC_DIR, YT_COOKIES_BAK, YT_COOKIES_FILE,
+                     MUSIC_NORM_DIR, SYNC_DIR, YT_COOKIES_BAK, YT_COOKIES_FILE,
                      _cleanup_old_temp_files, _music_lock, is_server_idle)
+from . import loudness                                             # 14.65 · 음량 정규화
 from .core import app
 
 
@@ -107,6 +108,9 @@ _SIDE_KEYS = ("id", "title", "artist", "album", "year", "genre", "ext", "bytes",
               "lyrics", "lyrics_plain", "lyrics_src", "lyrics_tries", "created_at",
               "recog_title", "recog_artist", "recog_album", "recog_mbid",
               "recog_score", "recog_state", "recog_tried",
+              # 14.65 · 음량 정규화 결과 (송출용 사본을 만들 때 쓴 값)
+              "gain_db", "norm_state", "norm_lufs", "norm_peak_db", "norm_at",
+              "norm_ext", "norm_sig", "norm_tries", "norm_error",
               "uploader", "uploader_uid")
 _last_saved = {}
 
@@ -967,6 +971,127 @@ def _music_delete_files(mid):
                     pass
     except Exception:
         pass
+    _music_norm_remove(mid)          # 14.65 · 송출용 사본도 같이 지운다
+
+
+def _music_norm_remove(mid):
+    """곡 id 의 음량 정규화 사본(music_norm/<id>.*)을 전부 지운다."""
+    try:
+        for fn in os.listdir(MUSIC_NORM_DIR):
+            if fn.startswith(mid + "."):
+                try:
+                    os.remove(os.path.join(MUSIC_NORM_DIR, fn))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 14.65 · 음량 정규화 — "곡마다 소리가 크고 작다" 를 백엔드에서 맞춘다.
+#  사용자가 고르는 옵션이 아니다: 곡이 들어올 때(업로드·유튜브)와 백필에서
+#  한 번 재서 gain_db 를 남기고, 송출용 사본(music_norm/<id>.<ext>)을 만들어
+#  둔다. 실제 송출은 Node(music.js)가 이 사본을 Range 로 흘려보내거나
+#  클라우드 모드에서 e_volume:<gain>dB 변환으로 넘겨 준다.
+# ═══════════════════════════════════════════════════════════════════
+
+def _music_norm_sig(path):
+    """음원 파일이 바뀌었는지 판단할 지문(크기-mtime)."""
+    try:
+        st = os.stat(path)
+        return "%d-%d" % (st.st_size, int(st.st_mtime))
+    except Exception:
+        return ""
+
+
+def _music_loudness(mid, force=False):
+    """곡 하나의 음량을 재고 송출용 사본을 만든다.
+
+    반환: {"ok": bool, "gain_db": float, "norm_state": str, ...}
+    이미 정리된 곡(같은 음원)은 다시 하지 않는다 — force 로 강제.
+    """
+    mid = re.sub(r"[^0-9a-zA-Z_\-]", "", str(mid or ""))
+    if not mid:
+        return {"ok": False, "error": "곡 id 없음"}
+    path = _music_audio_path(mid)
+    if not path:
+        return {"ok": False, "error": "음원 파일 없음"}
+    with _music_lock:
+        rec = dict((_music_load().get(mid) or {}))
+    if not rec:
+        return {"ok": False, "error": "없는 곡"}
+    sig = _music_norm_sig(path)
+    ext = path.rsplit(".", 1)[-1].lower()
+    if (not force and rec.get("norm_sig") == sig
+            and rec.get("norm_state") in ("done", "silent")):
+        return {"ok": True, "cached": True, "gain_db": rec.get("gain_db") or 0.0,
+                "norm_state": rec.get("norm_state"), "ext": ext}
+
+    patch = loudness.process(mid, path, ext=ext, force=force)
+    patch["norm_sig"] = sig
+    tries = int(rec.get("norm_tries") or 0)
+    if patch.get("norm_state") in ("done", "silent"):
+        tries = 0
+    patch["norm_tries"] = tries + 1
+    with _music_lock:
+        m = _music_load()
+        r = m.get(mid)
+        if r:
+            r.update(patch)
+            _music_save(m)
+    out = {"ok": patch.get("norm_state") in ("done", "silent"), "ext": ext, **patch}
+    if not out["ok"]:
+        print("[music] 음량 정리 실패 %s: %s" % (mid, patch.get("norm_error") or patch.get("norm_state")))
+    return out
+
+
+_NORM_JOB = {"active": False, "done": 0, "left": 0}
+
+
+def _music_loudness_pending(m, limit=None):
+    """아직 음량을 안 잰 곡 id 목록 (재시도 상한 있음)."""
+    out = []
+    for mid, r in (m or {}).items():
+        if not isinstance(r, dict):
+            continue
+        st = r.get("norm_state")
+        if st in ("done", "silent"):
+            continue
+        if st == "error" and int(r.get("norm_tries") or 0) >= 3:
+            continue
+        out.append(mid)
+    out.sort()
+    return out[:limit] if limit else out
+
+
+def _music_loudness_all(limit=None, force=False):
+    """아직 안 된 곡들을 차례로 정리한다 (백그라운드/관리 요청)."""
+    if _NORM_JOB["active"]:
+        return {"ok": False, "error": "이미 음량 정리를 하고 있어요"}
+    _NORM_JOB.update({"active": True, "done": 0, "left": 0})
+    try:
+        with _music_lock:
+            m = _music_load()
+        todo = ([mid for mid in m.keys()] if force
+                else _music_loudness_pending(m, limit))
+        if limit:
+            todo = todo[:limit]
+        _NORM_JOB["left"] = len(todo)
+        ok = 0
+        for mid in todo:
+            try:
+                res = _music_loudness(mid, force=force)
+                if res.get("ok"):
+                    ok += 1
+            except Exception as e:                                 # noqa: BLE001
+                print("[music] 음량 정리 오류:", e)
+            _NORM_JOB["done"] += 1
+            _NORM_JOB["left"] = max(0, _NORM_JOB["left"] - 1)
+            time.sleep(0.2)
+        return {"ok": True, "count": len(todo), "done": ok,
+                "ffmpeg": loudness.available()}
+    finally:
+        _NORM_JOB["active"] = False
 
 
 def _music_merge_duplicate_record(keep, drop, keep_mid, drop_mid):
@@ -1961,8 +2086,14 @@ def _music_backfill():
                 nocov = [mid for mid, r in m.items()
                          if mid not in retag and mid not in retry and mid not in nolyr
                          and not r.get("cover") and not r.get("cover_url")]
+                # 14.65 · 아직 음량을 안 잰 곡 (재시도 상한 3회)
+                noloud = [mid for mid, r in m.items()
+                          if r.get("norm_state") not in ("done", "silent")
+                          and not (r.get("norm_state") == "error"
+                                   and int(r.get("norm_tries") or 0) >= 3)
+                          and mid not in retag and mid not in retry]
             nolyr = nolyr + nosync
-            todo = retag + retry + nolyr + nocov
+            todo = retag + retry + nolyr + nocov + noloud
             if not todo:
                 _BACKFILL["active"] = False
                 time.sleep(15 if is_server_idle() else 45)
@@ -1973,7 +2104,8 @@ def _music_backfill():
             batch_size = 12 if idle else 3
             sleep_gap = 0.9 if idle else 2.5
 
-            print(f"[music] 로컬 백필 (idle={idle}): 재태깅 {len(retag)} · 재시도 {len(retry)} · 가사 {len(nolyr)} · 표지 {len(nocov)}")
+            print(f"[music] 로컬 백필 (idle={idle}): 재태깅 {len(retag)} · 재시도 {len(retry)} · "
+                  f"가사 {len(nolyr)} · 표지 {len(nocov)} · 음량 {len(noloud)}")
             if _fp_bin() and _aco_key():
                 try:
                     with _music_lock:
@@ -1987,15 +2119,19 @@ def _music_backfill():
                 except Exception:
                     pass
             # 기존 주어진 정보는 냅두고 빈칸만 딱 골라서 채운다 (fill_only=True)
-            work_items = ([("tag", x) for x in retag + retry]
-                          + [("lyr", x) for x in nolyr]
-                          + [("cover", x) for x in nocov])[:batch_size]
+            # 음량 정리는 곡 한 곡을 통째로 디코딩해야 해서 따로, 조금씩만 한다.
+            loud_items = [("loud", x) for x in noloud[: (2 if idle else 1)]]
+            work_items = (([("tag", x) for x in retag + retry]
+                           + [("lyr", x) for x in nolyr]
+                           + [("cover", x) for x in nocov])[:batch_size] + loud_items)
             for kind, mid in work_items:
                 try:
                     if kind == "tag":
                         _music_autotag(mid, force=False, algo=TAG_ALGO, fill_only=True)
                     elif kind == "cover":
                         _music_cover_search(mid)
+                    elif kind == "loud":
+                        _music_loudness(mid)          # 14.65 · 음량 정리 + 송출용 사본
                     else:
                         _music_lyrics(mid)
                 except Exception:
@@ -2075,6 +2211,12 @@ def _music_upload_pipeline(mid):
         recog_ok = bool((res or {}).get("ok"))
     except Exception as e:
         print("[music] 업로드 소리 인식 오류:", e)
+
+    # 14.65 · 음량 정리 (중복 정리 뒤 — 지워질 곡이면 여기까지 오지 않는다)
+    try:
+        _music_loudness(mid)
+    except Exception as e:
+        print("[music] 업로드 음량 정리 오류:", e)
 
     try:
         _music_autotag(mid, force=recog_ok, algo=TAG_ALGO)
@@ -2638,6 +2780,8 @@ def _yt_add(url):
             return {"ok": False, "error": "음원 저장을 확인하지 못했습니다 (다시 시도해 주세요)"}
         # 가사는 백그라운드에서 찾아 둔다 (백필이 자동으로 돌지만 바로 한 번)
         threading.Thread(target=_music_lyrics, args=(mid,), daemon=True).start()
+        # 14.65 · 음량도 백그라운드로 재고 송출용 사본을 만들어 둔다
+        threading.Thread(target=_music_loudness, args=(mid,), daemon=True).start()
         print(f"[youtube] 추가 {title} / {artist} ({size/1024/1024:.1f}MB · {ext})")
         return {"ok": True, "track": rec}
     finally:
@@ -2788,6 +2932,44 @@ def music_lyrics_one(mid):
                     "lyrics_tries": r.get("lyrics_tries") or 0})
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@app.route("/api/music/normalize", methods=["GET", "POST"])
+def music_normalize():
+    """14.65 · 음량 정리 상태(GET) / 실행(POST).
+
+    사용자가 고르는 옵션이 아니다 — 곡이 들어올 때 자동으로 돌고, 이 주소는
+    관리 화면·계약 검사가 상태를 확인하고 밀린 곡을 한 번에 정리할 때만 쓴다.
+      GET  → {ok, ffmpeg, total, done, pending, target_lufs, job}
+      POST → {"id": 곡} 이면 그 곡만 즉시(동기), 없으면 아직 안 된 곡들을
+             백그라운드로 시작하고 바로 돌아온다.
+    """
+    if request.method == "GET":
+        with _music_lock:
+            m = _music_load()
+        st = loudness.status(m)
+        st["job"] = dict(_NORM_JOB)
+        st["pending_ids"] = _music_loudness_pending(m, 200)
+        resp = jsonify({"ok": True, **st})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    body = request.get_json(silent=True) or {}
+    mid = re.sub(r"[^0-9a-zA-Z_\-]", "", str(body.get("id") or ""))
+    force = bool(body.get("force"))
+    if mid:
+        return jsonify({"ok": True, "id": mid, **_music_loudness(mid, force=force)})
+    if not loudness.available():
+        return jsonify({"ok": False,
+                        "error": "서버에 ffmpeg 가 없습니다 (requirements.txt 의 "
+                                 "imageio-ffmpeg 를 설치하면 켜집니다)"})
+    try:
+        limit = int(body.get("limit") or 0)
+    except Exception:                                              # noqa: BLE001
+        limit = 0
+    threading.Thread(target=_music_loudness_all,
+                     args=(limit or None, force), daemon=True).start()
+    return jsonify({"ok": True, "queued": True, "limit": limit or None, "force": force})
 
 
 @app.route("/api/music/list", methods=["GET"])

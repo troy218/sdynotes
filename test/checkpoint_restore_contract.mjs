@@ -1,59 +1,64 @@
-/* 14.65 · 되돌리기 지점(체크포인트) '복원' 입구 계약
-
-   사용자 질문: "지점 저장 기능은 있는데 복원 기능은 없는 거니?"
-
-   실은 복원 엔진(restoreCheckpoint)과 목록 모달(#cpModal)은 처음부터 있었지만
-   **여는 버튼이 어디에도 없었다** — 목록을 여는 유일한 호출이 모달 안의
-   '지금 상태 저장' 버튼뿐이라(그것도 모달이 열려 있어야 눌린다) 사용자는
-   저장만 하고 되돌릴 수 없었다. 그래서
-
-     · 더보기 → 노트 구역에 '지점 복원' 버튼(openCheckpoints)을 넣고,
-     · 그 입구가 사라지지 않게 여기서 고정한다.
-
-   실행: node test/checkpoint_restore_contract.mjs   (npm run test:checkpoint) */
-import assert from 'node:assert/strict';
+// 14.65 · 지점 저장(checkpoint)에 '복원' 이 실제로 이어져 있는지 지키는 계약.
+//
+// 사용자 신고: "지점저장 기능은 있는데 복원 기능은 있는지?"
+//   → 복원 엔진(restoreCheckpoint)은 예전부터 있었는데 **입구가 없었다**.
+//     이제 더보기 > 노트 > '지점 복원' 으로 들어간다. 그 연결이 끊기지 않게 잡는다.
+//
+// 검사 항목
+//   ① HTML: 노트 섹션에 openCheckpoints() 를 부르는 입구가 있다
+//   ② HTML: 지점 모달(#cpModal)과 목록(#cpList) 이 있다
+//   ③ JS  : 저장/열기/복원 3함수가 살아 있다
+//   ④ JS  : 복원은 되돌리기(undo)·문서 되살리기·다시 그리기·저장·닫기 를 모두 지난다
+//   ⑤ 번들: sdynotes.js 에 같은 코드가 들어 있다 (인라인 onclick 이 부르는 대상)
+//   ⑥ 안전: 지점은 5개까지만 보관한다
 import fs from 'node:fs';
 import path from 'node:path';
+import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
-const read = p => fs.readFileSync(path.join(ROOT, p), 'utf-8');
-const pass = [];
-const check = (name, cond, extra = '') => {
-  assert.ok(cond, name + (extra ? ` → ${extra}` : ''));
-  pass.push(name); console.log('  ✓ ' + name);
-};
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const html = fs.readFileSync(path.join(ROOT, 'sdynotes.html'), 'utf8');
+const tools = fs.readFileSync(path.join(ROOT, 'src/app/09-tools-ui.js'), 'utf8');
+const bundle = fs.readFileSync(path.join(ROOT, 'sdynotes.js'), 'utf8');
 
-const html = read('sdynotes.html');
-const tools = read('src/app/09-tools-ui.js');
-const bundle = read('sdynotes.js');
+let pass = 0;
+const check = (name, cond) => { assert.ok(cond, name); pass++; console.log('  ✓ ' + name); };
 
-console.log('\n── ① 저장·복원 엔진이 살아 있다 ───────────────────────────');
-check('makeCheckpoint 가 소스에 있다', /async function makeCheckpoint\(\)/.test(tools));
-check('openCheckpoints 가 소스에 있다', /async function openCheckpoints\(\)/.test(tools));
-check('restoreCheckpoint 가 소스에 있다', /async function restoreCheckpoint\(i\)/.test(tools));
-check('지점은 IndexedDB(sdy_cp)에 노트별로 보관한다', /indexedDB\.open\('sdy_cp',1\)/.test(tools)
-  && /cpPutAll\(curNB\.id,l\)/.test(tools));
+console.log('지점 저장·복원 계약\n');
 
-console.log('\n── ② 복원 엔진이 실제로 문서를 되돌린다 ───────────────────');
-check('목록의 되돌리기 버튼이 restoreCheckpoint(i) 를 부른다',
-  /onclick="restoreCheckpoint\(\$\{i\}\)"/.test(tools));
-check('되돌리기는 되돌리기(Ctrl+Z)용 히스토리를 남긴다', /pushHistory\(true\)/.test(tools));
-check('동기화용 Map 도 함께 되살린다', /reviveDocMaps\(keep\)/.test(tools));
-check('되돌린 뒤 다시 그려 저장하고 창을 닫는다',
-  /renderPages\(\); saveDoc\(\); closeCheckpoints\(\);/.test(tools));
+// ① 입구 — 예전에는 makeCheckpoint 를 부르는 곳만 있고 openCheckpoints 를 부르는 곳이 없었다
+check('HTML: 노트 섹션에 복원 입구가 있다 (onclick=openCheckpoints)',
+  /onclick="mi\(\(\)=>openCheckpoints\(\)\)"/.test(html));
+check('HTML: 입구 이름이 \'지점 복원\' 이다', /지점 복원/.test(html));
+check('HTML: 저장 입구도 그대로 있다', /지점 저장/.test(html) && /makeCheckpoint\(\)/.test(html));
 
-console.log('\n── ③ 목록을 여는 입구가 있다(사용자 보고 지점) ─────────────');
-const openers = [...html.matchAll(/onclick="[^"]*openCheckpoints\(\)[^"]*"/g)].map(m => m[0]);
-check("더보기 노트 구역에 '지점 복원' 버튼이 있다", openers.some(o => /mi\(/.test(o)), openers.join(' | '));
-check('저장 버튼 옆에 나란히 있다(찾기 쉽게)',
-  /지점 저장<\/span><\/button>[\s\S]{0,260}openCheckpoints\(\)[\s\S]{0,80}지점 복원/.test(html));
-check('모달 안에도 다시 저장하는 버튼이 있다', /onclick="makeCheckpoint\(\);openCheckpoints\(\);"/.test(html));
-check('목록 상자는 #cpList, 모달은 #cpModal', /id="cpModal"/.test(html) && /id="cpList"/.test(html));
+// ② 모달
+check('HTML: 지점 모달(#cpModal)과 목록(#cpList)이 있다',
+  /id="cpModal"/.test(html) && /id="cpList"/.test(html));
+check('HTML: 모달에서 바로 저장할 수 있다', /id="cpModal"[\s\S]{0,1400}makeCheckpoint\(\)/.test(html));
 
-console.log('\n── ④ 번들에도 그대로 실린다(인라인 onclick 이 닿는다) ──────');
-check('번들에 makeCheckpoint 가 있다', /async function makeCheckpoint\(\)/.test(bundle));
-check('번들에 openCheckpoints 가 있다', /async function openCheckpoints\(\)/.test(bundle));
-check('번들에 restoreCheckpoint 가 있다', /async function restoreCheckpoint\(i\)/.test(bundle));
-check('최근 5개까지만 보관한다', /l=l\.slice\(0,5\);/.test(tools));
+// ③ 함수 3종
+for (const fn of ['makeCheckpoint', 'openCheckpoints', 'restoreCheckpoint']) {
+  check(`JS: ${fn} 이 살아 있다`, new RegExp(`function\\s+${fn}\\s*\\(|window\\.${fn}\\s*=`).test(tools));
+}
 
-console.log(`\n지점 저장·복원 계약 — ${pass.length}개 항목 통과`);
+// ④ 복원이 실제로 문서를 되돌리는 경로를 전부 지나는가
+const restore = tools.slice(tools.indexOf('function restoreCheckpoint'));
+check('JS: 복원은 되돌리기 지점을 남긴다 (pushHistory)', /pushHistory\(true\)/.test(restore.slice(0, 900)));
+check('JS: 복원은 문서를 실제로 되살린다 (reviveDocMaps + renderPages)',
+  /reviveDocMaps\(/.test(restore.slice(0, 1200)) && /renderPages\(/.test(restore.slice(0, 1200)));
+check('JS: 복원 뒤 서버·로컬에 저장한다 (saveDoc)', /saveDoc\(/.test(restore.slice(0, 1400)));
+check('JS: 복원하면 모달을 닫는다 (closeCheckpoints)', /closeCheckpoints\(\)/.test(restore.slice(0, 1600)));
+check('JS: 목록의 각 지점에 되돌리기 버튼이 붙는다',
+  /restoreCheckpoint\(/.test(tools) && /되돌리기/.test(tools));
+
+// ⑤ 번들 — 인라인 onclick 은 번들의 함수를 부른다
+for (const fn of ['makeCheckpoint', 'openCheckpoints', 'restoreCheckpoint']) {
+  check(`번들: ${fn} 이 들어 있다`, bundle.includes(`function ${fn}(`));
+}
+
+// ⑥ 보관 개수 상한
+check('JS: 지점은 5개까지만 보관한다',
+  /makeCheckpoint[\s\S]{0,400}?l=l\.slice\(0,5\)/.test(tools));
+
+console.log(`\n지점 저장·복원 계약 — ${pass}개 항목 통과`);

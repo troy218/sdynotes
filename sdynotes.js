@@ -2106,15 +2106,22 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         openNav(closeFolderStyle);
     }
     function closeFolderStyle(){ document.getElementById('folderStyleModal').style.display='none'; styleFid=null; navDrop(closeFolderStyle); }
+    // 14.65 · 폴더 색·아이콘을 바꾸면 **그 자리에서** 두 화면(홈 카드 · 프로 사이드바)을
+    //   다시 그린다. 예전엔 홈 그리드의 '같으면 건너뛰기' 시그니처가 색·아이콘을 안 봐서
+    //   새로고침 전까지 옛 색이 남았고, 사이드바는 아예 다시 그리지 않았다.
+    function refreshFolderLook(){
+        try{ renderGrid(); }catch(e){}
+        try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+    }
     function pickFolderColor(c){
         const f=getFolders().find(x=>x.id===styleFid); if(!f) return;
         f.color=c; saveFolders(getFolders().map(x=>x.id===styleFid?f:x));
-        openFolderStyleRefresh(); renderGrid();
+        openFolderStyleRefresh(); refreshFolderLook();
     }
     function pickFolderIcon(ic){
         const f=getFolders().find(x=>x.id===styleFid); if(!f) return;
         f.icon=ic; saveFolders(getFolders().map(x=>x.id===styleFid?f:x));
-        openFolderStyleRefresh(); renderGrid();
+        openFolderStyleRefresh(); refreshFolderLook();
     }
     function openFolderStyleRefresh(){
         const f=getFolders().find(x=>x.id===styleFid); if(!f) return;
@@ -2152,7 +2159,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(isTrashFolder(fid)){ toast('휴지통 폴더는 이름을 바꿀 수 없습니다',2000); return; }
         const f=getFolders(); const t=f.find(x=>x.id===fid);
         const n=prompt('폴더 이름',t?t.name:'');
-        if(n&&n.trim()){ t.name=n.trim(); saveFolders(f); renderGrid(); toast('이름 변경됨'); }
+        if(n&&n.trim()){ t.name=n.trim(); saveFolders(f); refreshFolderLook(); toast('이름 변경됨'); }
     }
 /* APP-PART:02b-search.js:END */
 
@@ -2192,7 +2199,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             t.lockCleared=Date.now();   // 9.4 · '사용자가 직접 해제했다'는 표시 (동기화가 되살리지 않게)
             saveFolders(all);
             unlockedFolders.add(fid);
-            renderGrid(); toast('폴더 잠금 해제됨 🔓');
+            renderGrid();
+            try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+            toast('폴더 잠금 해제됨 🔓');
             return;
         }
         // 9.1 · 남의 잠긴 노트를 내 폴더에 가둬 버리는 것을 막는다.
@@ -2214,6 +2223,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         saveFolders(all);
         unlockedFolders.add(fid);          // 방금 잠근 사람은 계속 볼 수 있게
         renderGrid();
+        try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
         toast('폴더가 잠겼습니다 🔒',2000);
     }
 
@@ -2254,7 +2264,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     function _gridSig(){
         try{
-            const folders=(!searchQuery?childFolders(curFolder):[]).map(f=>f.id+':'+(f.name||'')+':'+(folderCount(f.id)||0)).join('|');
+            // 14.65 · 폴더 카드에 그려지는 것 전부를 시그니처에 넣는다 — 색·아이콘·
+            //   잠금이 빠져 있어서 '폴더색 바꾸기' 가 새로고침 전까지 안 보였다.
+            const folders=(!searchQuery?childFolders(curFolder):[]).map(f=>
+                [f.id, f.name||'', folderCount(f.id)||0, f.color||'', f.icon||'',
+                 isFolderLocked(f.id)?1:0, isFolderOpen(f.id)?1:0].join(':')).join('|');
             const notes=getFiltered().map(nb=>{
                 const c=getCfg(nb.id);
                 return [nb.id, nb.title||'', c.pinned?1:0, c.folder||'', c.trashed_at||'', c.emoji||''].join(':');
@@ -2491,6 +2505,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!force && sig===_lastGridSig && g.querySelector('.home-stack-area,.note-card,.folder-card,.add-card')){
             // 17.4 · 홈에 재진입(변경 없이 돌아온 경우)도 아래쪽부터 보여 준다
             if(_homeEnterScroll) _homeEnterScroll=false;
+            // 14.65 · 카드를 다시 그릴 필요가 없어도 사이드바 폴더 목록은 맞춰 둔다
+            //   (색·아이콘은 홈 카드와 사이드바 두 곳에 그려진다)
+            try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
             try{ requestAnimationFrame(()=>{ rescalePreviews(); _layoutHomeStacks(); }); }catch(e){}
             return;
         }
@@ -25521,6 +25538,10 @@ function logMusicPlay(id){
       body:JSON.stringify({id}),keepalive:true}).catch(()=>{});}catch(e){}
 }
 const A=new Audio(); A.preload='metadata';
+// 14.65 · 곡별 음량 정규화 상태 — 곡 정보를 처음 그릴 때(모듈 초기화 중)에도
+//   읽히므로 EQ 선언보다 먼저 만들어 둔다 (let 은 TDZ 라 순서를 지켜야 한다).
+let _normDb=0, _normGainNode=null, _lvlAnalyser=null, _lvlBuf=null;
+const _normAcc=new Map();                 // 곡 id → 누적 측정값
 const $=id=>document.getElementById(id);
 const pl=$('musicPlayer');
 function _isPro(){ try{ return typeof sdyTheme==='function'&&sdyTheme()==='pro'; }catch(e){ return false; } }
@@ -25937,6 +25958,7 @@ function setCover(t){ const im=$('mpCover');
   im.onerror=()=>{ im.onerror=null; im.src=DEF_COVER; };
   im.src=coverURL(t); }
 function renderTitle(){ const t=cur();
+  normOnTrack(t);          // 14.65 · 서버가 정한 곡 음량 보정값 적용
   // 10.1 · 가수를 알면 '가수 · 제목' 으로 보여준다 (스포티파이 풍)
   $('mpTitle').textContent=t?((t.artist&&String(t.artist).trim())?t.artist+' · '+t.title:t.title):'재생 중인 곡 없음';
   $('mpTitle').title=t?((t.artist?t.artist+' — ':'')+t.title):'';
@@ -26183,7 +26205,7 @@ $('mpRate').onclick=e=>{
   applyRate(); saveMusicState(true);
 };
 // 볼륨: 슬라이스 + 플레이어 위 마우스 스크롤
-function setVol(v){ P.vol=Math.max(0,Math.min(1,v)); A.volume=P.vol;
+function setVol(v){ P.vol=Math.max(0,Math.min(1,v)); A.volume=P.vol; normApply();
   $('mpVolSlider').value=Math.round(P.vol*100);
   const bv=$('mpBVol'); if(bv) bv.value=Math.round(P.vol*100);
   const bi=$('mpBVolIco'); if(bi) bi.className=P.vol===0?'ri-volume-mute-line':
@@ -27445,6 +27467,105 @@ const EQ_PRESETS=[
   ['재즈',        [ 3, 2, 1, 2,-2,-2, 0, 1, 2, 3]],
   ['일렉트로닉',  [ 6, 5, 2, 0,-2, 1, 1, 2, 5, 6]],
 ];
+// ── 14.65 · 곡별 음량 정규화 ──────────────────────────────────────────
+//  곡마다 소리가 크고 작은 문제는 **백엔드가** 맞춘다 — 여기서는 서버가 정해
+//  목록에 실어 보낸 값(norm_db)을 적용만 한다. 사용자가 고르는 옵션은 없다.
+//   · 그래프(이퀄라이저를 켰거나 정규화를 위해 만든 것)가 있으면 게인 노드로
+//     올리고 내린다 (조용한 곡도 목표까지 올라온다).
+//   · 그래프가 없으면 음량으로 '내리기'만 한다 (기기 음량은 1을 넘을 수 없다).
+//  값이 아직 없는 곡은 재생하면서 조용히 재서 서버에 보고한다 — 서버가 보정값을
+//  정해 돌려주면 그 순간부터 모든 기기가 같은 크기로 듣는다.
+const NORM_TARGET_DB=-14;                 // 서버와 같은 목표 (표시용)
+function normDbOf(t){
+  const v=t&&t.norm_db;
+  if(typeof v!=='number'||!isFinite(v)) return 0;
+  return Math.max(-12,Math.min(6,Math.round(v*10)/10));
+}
+function _dbLin(db){ return Math.pow(10,(+db||0)/20); }
+function normApply(){
+  if(_normGainNode&&_eqCtx){
+    const g=_dbLin(_normDb);
+    try{
+      _normGainNode.gain.cancelScheduledValues(_eqCtx.currentTime);
+      _normGainNode.gain.setTargetAtTime(g,_eqCtx.currentTime,0.05);
+    }catch(e){ _normGainNode.gain.value=g; }
+    A.volume=P.vol;                        // 그래프가 있으면 음량은 사용자 값 그대로
+    return;
+  }
+  // 그래프 없음 → 음량으로 감쇠만 (증폭은 불가능하다)
+  const lin=Math.min(1,_dbLin(_normDb));
+  A.volume=Math.max(0,Math.min(1,P.vol*lin));
+}
+// 지금 곡이 바뀌었을 때 (renderTitle 이 곡이 바뀔 때마다 불린다)
+function normOnTrack(t){
+  _normDb=normDbOf(t);
+  normApply();
+  if(t&&typeof t.norm_db!=='number'){ try{ _normKick(); }catch(e){} }
+  normMaybeBuild();
+}
+// 조용한 곡(+dB)은 기기 음량으로 올릴 수 없다 — 그래프가 필요하다.
+//   같은 서버에서 오는 음원(상대 경로)일 때만 조용히 한 번 만든다:
+//   외부 스트림은 CORS 가 없으면 무음이 될 수 있어 _eqStreamsPass 가 막아 준다.
+let _normTry=false;
+function normMaybeBuild(){
+  if(_normTry||_normGainNode||_normDb<=0) return;
+  const u=A.currentSrc||A.src||'';
+  const local=!u||u.startsWith('/')||(function(){ try{ return new URL(u,location.href).origin===location.origin; }catch(e){ return false; } })();
+  if(A.paused||!local) return;
+  _normTry=true;
+  try{ Promise.resolve(eqBuild()).catch(()=>{}); }catch(e){}
+}
+// 서버가 아직 모르는 곡 → 재생 중에 조용히 재서 보고한다 (사용자에게 안 보임)
+let _normTimer=0, _normBusy=false;
+function _normKick(){
+  if(_normTimer) return;
+  if(typeof window==='undefined'||!window.setInterval) return;
+  _normTimer=setInterval(_normTick,250);
+  _normTick();
+}
+function _normTick(){
+  try{
+    if(!_lvlAnalyser||!_lvlBuf||!A.src||A.paused||A.ended) return;
+    const id=A._trackId||P.currentId; if(!id) return;
+    const t=(P.list||[]).find(x=>x.id===id); if(!t) return;
+    if(typeof t.norm_db==='number'){ _normAcc.delete(id); return; }   // 이미 서버 값이 있다
+    const vol=A.volume||0;
+    if(vol<=0.02) return;                                            // 음소거·거의 0 이면 재지 않는다
+    _lvlAnalyser.getFloatTimeDomainData(_lvlBuf);
+    let sum=0,peak=0;
+    for(let i=0;i<_lvlBuf.length;i++){ const v=_lvlBuf[i]; sum+=v*v; const a=v<0?-v:v; if(a>peak) peak=a; }
+    const ms=sum/_lvlBuf.length;
+    const st=_normAcc.get(id)||{e:0,n:0,peak:0,sent:false};
+    // 요소 음량이 걸린 뒤의 신호라, 사용자 음량을 되돌려 '원본 레벨'로 만든다
+    const inv=1/(vol*vol);
+    st.e+=ms*inv; st.n++;
+    const pk=peak/vol; if(pk>st.peak) st.peak=pk;
+    _normAcc.set(id,st);
+    const rate=(_eqCtx&&_eqCtx.sampleRate)||44100;
+    const sec=st.n*(_lvlBuf.length/rate);
+    if(!st.sent&&st.n>=40&&sec>=8){ st.sent=true; _normReport(id,t,st,sec); }
+  }catch(e){}
+}
+function _normReport(id,t,st,sec){
+  if(_normBusy) return; _normBusy=true;
+  const rms=st.e>0?10*Math.log10(st.e/st.n):-120;
+  const peak=st.peak>0?20*Math.log10(st.peak):null;
+  const body={id:id,rms_db:Math.round(rms*10)/10,peak_db:peak===null?null:Math.round(peak*10)/10,
+              sec:Math.round(sec),by:'player-rms'};
+  Promise.resolve()
+    .then(()=>fetch('/api/music/norm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))
+    .then(r=>r.json())
+    .then(d=>{
+      if(d&&d.ok&&typeof d.norm_db==='number'){
+        t.norm_db=d.norm_db; t.norm_ready=true;      // 서버가 정한 값 — 곧바로 적용
+        const nowId=A._trackId||P.currentId;
+        if(t.id===nowId){ _normDb=normDbOf(t); normApply(); }
+      }
+    })
+    .catch(()=>{})
+    .then(()=>{ _normBusy=false; });
+}
+if(typeof window!=='undefined'){ window.sdyMusicNormDb=()=>_normDb; }
 const EQ={on:false,preset:0,gains:EQ_FREQS.map(()=>0)};
 try{
   const saved=JSON.parse(localStorage.getItem('mp_eq1')||'null');
@@ -27487,7 +27608,14 @@ async function eqBuild(){
   try{ A.crossOrigin='anonymous'; }catch(e){}
   _eqCtx=new AC();
   const src=_eqCtx.createMediaElementSource(A);
-  let node=src;
+  // 14.65 · 곡별 음량 게인 — EQ 앞단에 둔다 (EQ 를 꺼도 값은 그대로 적용된다)
+  _normGainNode=_eqCtx.createGain();
+  _normGainNode.gain.value=_dbLin(_normDb);
+  _lvlAnalyser=_eqCtx.createAnalyser(); _lvlAnalyser.fftSize=2048;
+  _lvlBuf=new Float32Array(_lvlAnalyser.fftSize);
+  src.connect(_normGainNode);
+  src.connect(_lvlAnalyser);          // 측정은 원본 레벨에서 (게인·EQ 영향 없이)
+  let node=_normGainNode;
   _eqChain=EQ_FREQS.map((f,i)=>{
     const q=_eqCtx.createBiquadFilter();
     q.type=i===0?'lowshelf':i===EQ_FREQS.length-1?'highshelf':'peaking';
@@ -27505,6 +27633,8 @@ async function eqBuild(){
   node.connect(_eqAnalyser); _eqAnalyser.connect(_eqCtx.destination);
   _eqBuilt=true;
   eqApplyGains(true);
+  normApply();                        // 14.65 · 곡 음량 게인 적용 + 측정 시작
+  _normKick();
   _eqReloadKeep();
   return true;
 }

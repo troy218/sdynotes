@@ -91,7 +91,9 @@
     "bundle:check": "node scripts/bundle-frontend.mjs --check",
     "test:tight": "node test/editor_tight_commit_view_runtime.mjs && node test/editor_tight_engine_runtime.mjs",
     "test:theme": "node test/theme_contract.mjs",
-    "test:proshell": "node test/pro_shell_layout_contract.mjs"
+    "test:proshell": "node test/pro_shell_layout_contract.mjs",
+    "test:loudness": "node test/music_loudness_math.mjs && node test/music_loudness_contract.mjs && python3 test/worker_loudness_e2e.py",
+    "test:foldercolor": "node test/folder_color_contract.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",

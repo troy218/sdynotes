@@ -18,6 +18,8 @@ export const DIRS = {
   cards:      path.join(BASE_DIR, 'cards'),
   wallpaper:  path.join(BASE_DIR, 'wallpaper'),
   music:      path.join(BASE_DIR, 'music'),
+  // 14.65 · 음량을 맞춘 송출용 사본 — 원본 music/ 은 손대지 않는다.
+  musicNorm:  path.join(BASE_DIR, 'music_norm'),
   sync:       path.join(BASE_DIR, 'sync'),
   vault:      path.join(BASE_DIR, 'vault'),
   db:         path.join(BASE_DIR, 'db'),

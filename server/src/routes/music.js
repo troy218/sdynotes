@@ -10,6 +10,7 @@ import { sbGet, sbRows, sbPut, sbDelete, errorText } from '../lib/supabase.js';
 import { requireAdmin } from '../lib/admin.js';
 import { cloudinaryUrl, destroy } from '../lib/cloudinary.js';
 import { publishLive } from '../lib/sse.js';
+import { normRecord, normDbOf, NORM_TARGET_DB } from '../lib/loudness.js';
 
 const musicLoad = async () => {
   let m = await readJson(FILES.musicMeta, null);
@@ -35,6 +36,9 @@ const musicPublic = (r) => {
   const plain = r.lyrics_plain || '';
   o.has_sync = sync.includes('[');
   o.has_lyrics = Boolean(sync.trim() || plain.trim());
+  // 14.65 · 송출용 음량 보정값(dB) — 서버가 정한 값. 프런트는 이 값을 그대로 적용만 한다.
+  o.norm_db = normDbOf(r);
+  o.norm_ready = Boolean(r.norm && Number.isFinite(Number(r.norm.gain_db)));
   return o;
 };
 
@@ -252,10 +256,103 @@ function recoBuild(records) {
 }
 
 let _recoCache = null;   // { at, n, data }
+// ── 14.65 · 음량 정규화 (송출용 사본 · 클라우드 변환) ────────────────
+// 값은 Python worker(loudness.py)가 EBU R128 로 재서 곡 기록에 남긴다.
+// 사용자가 고르는 옵션이 아니라 **송출할 때 서버가 항상** 적용한다.
+const NORM_MIN_DB = 0.1;        // 이보다 작은 차이는 손대지 않는다
+const NORM_LO = -12, NORM_HI = 9;
+const normGain = (rec) => {
+  const g = Number((rec || {}).gain_db);
+  if (!Number.isFinite(g) || Math.abs(g) < NORM_MIN_DB) return 0;
+  return Math.max(NORM_LO, Math.min(NORM_HI, Math.round(g * 10) / 10));
+};
+
+// 송출용 사본이 있으면 그 경로를 돌려준다 (없으면 null → 원본을 그대로 보낸다)
+async function normFileFor(mid, ext) {
+  const cands = [];
+  if (ext) cands.push(path.join(DIRS.musicNorm, `${mid}.${ext}`));
+  // 코덱 폴백(.m4a) 등 확장자가 달라졌을 수 있다 → 접두사로 한 번 더 찾는다
+  try {
+    for (const fn of await fsp.readdir(DIRS.musicNorm)) {
+      if (fn.startsWith(`${mid}.`) && !cands.some((c) => c.endsWith(fn))) {
+        cands.push(path.join(DIRS.musicNorm, fn));
+      }
+    }
+  } catch { /* 폴더가 아직 없을 수 있다 */ }
+  for (const p of cands) {
+    const st = await fsp.stat(p).then((x) => x).catch(() => null);
+    if (st && st.isFile() && st.size > 1024) return { path: p, size: st.size, ext: p.split('.').pop().toLowerCase() };
+  }
+  return null;
+}
+
+// Range 요청을 처리하는 공용 송출기 (원본·정규화 사본 모두 같은 규칙)
+function streamAudio(req, reply, filePath, mime, size) {
+  const range = req.headers.range;
+  if (range) {
+    const m = /bytes=(\d*)-(\d*)/.exec(range);
+    if (m) {
+      let start = m[1] ? parseInt(m[1], 10) : 0;
+      let end = m[2] ? Math.min(parseInt(m[2], 10), size - 1) : size - 1;
+      if (start >= size) {
+        return reply.code(416).header('Content-Range', `bytes */${size}`).send();
+      }
+      reply.code(206);
+      reply.header('Content-Range', `bytes ${start}-${end}/${size}`);
+      reply.header('Accept-Ranges', 'bytes');
+      reply.header('Content-Length', String(end - start + 1));
+      reply.type(mime);
+      return reply.send(fs.createReadStream(filePath, { start, end }));
+    }
+  }
+  reply.header('Accept-Ranges', 'bytes');
+  reply.header('Content-Length', String(size));
+  reply.type(mime);
+  return reply.send(fs.createReadStream(filePath));
+}
+
 // 테스트에서 추천 계산을 직접 검증할 수 있게 내보낸다 (라우트 계약과 동일 로직)
 export { recoBuild, recoExtractTags };
 
 export function registerMusic(app, { worker }) {
+  // ── 14.65 · 곡 음량 보고/상태 ────────────────────────────────────────
+  //  플레이어가 재생하면서 잰 기준 음량(RMS·피크)을 보고하면, 보정값은
+  //  **서버가 정해서** 곡 기록에 남긴다. 사용자가 고르는 옵션은 없다.
+  app.post('/api/music/norm', async (req, reply) => {
+    const body = req.body || {};
+    const mid = SAN_ID(body.id, 80);
+    if (!mid) return reply.code(400).send({ ok: false, error: 'id 없음' });
+    const rec = normRecord(body.rms_db, body.peak_db, body.sec, body.by);
+    if (!rec) return reply.code(400).send({ ok: false, error: '측정값이 이상합니다' });
+    if (sbEnabled()) {
+      const t = await remoteTrack(mid);
+      if (!t) return reply.code(404).send({ ok: false, error: '없는 곡입니다' });
+      t.norm = rec;
+      await sbPut('sdy_music_tracks', mid, t);
+      return reply.send({ ok: true, id: mid, norm_db: rec.gain_db, lufs: rec.lufs });
+    }
+    const m = await withLock('music', async () => {
+      const mm = await musicLoad();
+      if (mm[mid]) { mm[mid].norm = rec; await musicSave(mm); }
+      return mm;
+    });
+    if (!m[mid]) return reply.code(404).send({ ok: false, error: '없는 곡입니다' });
+    return reply.send({ ok: true, id: mid, norm_db: rec.gain_db, lufs: rec.lufs });
+  });
+
+  // 지금까지 모인 정규화 상태 (진단·설정 화면용)
+  app.get('/api/music/norm', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    let rows;
+    if (sbEnabled()) rows = (await sbRows('sdy_music_tracks')).map((r) => r.data).filter(Boolean);
+    else rows = Object.values(await withLock('music', async () => musicLoad()));
+    const done = rows.filter((r) => r && r.norm && Number.isFinite(Number(r.norm.gain_db))).length;
+    return reply.send({
+      ok: true, total: rows.length, done, pending: Math.max(0, rows.length - done),
+      target_db: NORM_TARGET_DB,
+    });
+  });
+
   // ── 태그 기반 추천 — 곡 묶음(groups) + 곡별 유사곡(sims). 태그는 비공개. ──
   app.get('/api/music/reco', async (req, reply) => {
     reply.header('Cache-Control', 'no-store');
@@ -305,10 +402,20 @@ export function registerMusic(app, { worker }) {
     if (sbEnabled()) {
       const rec = await remoteTrack(mid);
       if (!rec) return reply.code(404).send({ error: '없는 곡입니다' });
+      // 14.65 · worker 가 만들어 둔 송출용 사본이 있으면 그걸 먼저 보낸다
+      const local = await normFileFor(mid, (rec.ext || '').toLowerCase());
+      if (local) {
+        return streamAudio(req, reply, local.path,
+          MUSIC_MIME[local.ext] || 'application/octet-stream', local.size);
+      }
       let url = rec.stream_url || '';
+      const gain = normGain(rec);
       if (!url && rec.cloud_public_id) {
         try {
-          url = cloudinaryUrl(rec.cloud_public_id, { resource_type: 'video', secure: true, format: rec.ext, version: rec.version });
+          const opts = { resource_type: 'video', secure: true, format: rec.ext, version: rec.version };
+          // 클라우드도 같은 보정값으로 송출한다 (e_volume:<gain>dB)
+          if (gain) opts.effect = `volume:${gain}dB`;
+          url = cloudinaryUrl(rec.cloud_public_id, opts);
         } catch { /* */ }
       }
       if (!url) return reply.code(404).send({ error: '음원 주소가 없습니다' });
@@ -322,32 +429,16 @@ export function registerMusic(app, { worker }) {
         && MUSIC_EXTS.has((fn.split('.').pop() || '').toLowerCase()));
     } catch { /* */ }
     if (!hits.length) return reply.code(404).send({ error: '없는 곡입니다' });
-    const filePath = path.join(DIRS.music, hits[0]);
-    const stat = await fsp.stat(filePath);
-    const size = stat.size;
     const ext = hits[0].split('.').pop().toLowerCase();
-    const mime = MUSIC_MIME[ext] || 'application/octet-stream';
-    const range = req.headers.range;
-    if (range) {
-      const m = /bytes=(\d*)-(\d*)/.exec(range);
-      if (m) {
-        let start = m[1] ? parseInt(m[1], 10) : 0;
-        let end = m[2] ? Math.min(parseInt(m[2], 10), size - 1) : size - 1;
-        if (start >= size) {
-          return reply.code(416).header('Content-Range', `bytes */${size}`).send();
-        }
-        reply.code(206);
-        reply.header('Content-Range', `bytes ${start}-${end}/${size}`);
-        reply.header('Accept-Ranges', 'bytes');
-        reply.header('Content-Length', String(end - start + 1));
-        reply.type(mime);
-        return reply.send(fs.createReadStream(filePath, { start, end }));
-      }
-    }
-    reply.header('Accept-Ranges', 'bytes');
-    reply.header('Content-Length', String(size));
-    reply.type(mime);
-    return reply.send(fs.createReadStream(filePath));
+    // 14.65 · 백엔드가 송출할 때 음량을 맞춘 소리를 내보낸다.
+    //   정규화 사본(music_norm/<id>.<ext>)이 있으면 그걸, 없으면 원본을 보낸다.
+    //   사본이 아직 없어도 재생은 막지 않는다 — worker 백그라운드가 곧 만든다.
+    const norm = await normFileFor(mid, ext);
+    const sendPath = norm ? norm.path : path.join(DIRS.music, hits[0]);
+    const sendExt = norm ? norm.ext : ext;
+    const size = norm ? norm.size : (await fsp.stat(sendPath)).size;
+    const mime = MUSIC_MIME[sendExt] || 'application/octet-stream';
+    return streamAudio(req, reply, sendPath, mime, size);
   });
 
   app.post('/api/music/play', async (req, reply) => {
@@ -433,6 +524,8 @@ export function registerMusic(app, { worker }) {
     ['POST', '/api/music/recognize/key'],
     ['GET', '/api/music/recognize/status'],
     ['POST', '/api/music/rescan'],
+    ['GET', '/api/music/normalize'],     // 14.65 · 음량 정리 상태
+    ['POST', '/api/music/normalize'],    // 14.65 · 밀린 곡 정리(백그라운드)
     ['POST', '/api/music/reset'],
     ['POST', '/api/music/synced-lyrics'],
     ['POST', '/api/music/meta'],
