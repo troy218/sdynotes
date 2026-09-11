@@ -318,9 +318,14 @@
         _clawPlaceParts(_clawEl('clawHead'),_clawEl('clawWire'),note,
                         headX,headY,noteW,!!note,cardAngle);
     }
+    // 14.65.1 · 일반(클래식) 테마에서는 집게(크레인) 장식 애니메이션을 쓰지 않는다.
+    //   노트 삭제·생성·이동, 폴더 생성·이동 전부에 해당하며, 실제 동작은
+    //   done 콜백이 그대로 수행하므로 기능 변화는 없다. (프로는 14.49부터 이미 없음)
+    function _clawSkip(){ return (typeof sdyTheme==='function'&&sdyTheme()!=='pro'); }
     // ① 노트 추가: 크레인이 실제 노트를 잡고 내려와 카드가 놓인 자리에 두고 간다
     function playClawDrop(card, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(_clawSkip()){ if(done)done(); return; }  // 14.65.1 · 일반 테마: 집게 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote');
         if(!_clawEl('clawFx')||!head||!note){ if(done)done(); return; }
@@ -417,6 +422,7 @@
     // ② 노트 삭제: 크레인이 빈 손으로 내려와 실제 노트를 집어 위로 끌어올려 던진다
     function playClawThrow(card, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(_clawSkip()){ if(done)done(); return; }  // 14.65.1 · 일반 테마: 집게 없음
         if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){ if(done)done(); return; } // 14.49 · 프로 테마: 집게(클로) 애니메이션 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote');
@@ -494,6 +500,7 @@
     // ②-b 노트 1개를 폴더로: 삭제와 같은 단일 집게가 내려와 잡아 폴더로 넣는다
     function playClawToFolder(card, folderEl, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(_clawSkip()){ if(done)done(); return; }  // 14.65.1 · 일반 테마: 집게 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote'), wire=_clawEl('clawWire');
         if(!_clawEl('clawFx')||!head||!note||!wire){ if(done)done(); return; }
@@ -571,6 +578,7 @@
     // ③ 여러 노트 삭제: 빈 집게 여러 대가 내려와 한꺼번에 잡아 던진다
     function playClawThrowMulti(cards, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(_clawSkip()){ if(done)done(); return; }  // 14.65.1 · 일반 테마: 집게 없음
         if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){ if(done)done(); return; } // 14.49 · 프로 테마: 집게(클로) 애니메이션 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const fx=_clawEl('clawFx');
@@ -663,6 +671,7 @@
     // ④ 여러 노트를 폴더로 끌어넣을 때: 빈 집게 여러 대가 내려와 잡고 해당 폴더 카드로 넣는 모션
     function playClawToFolderMulti(cards, folderEl, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(_clawSkip()){ if(done)done(); return; }  // 14.65.1 · 일반 테마: 집게 없음
         const valid=(cards||[]).filter(c=>c);
         if(valid.length===1){ playClawToFolder(valid[0], folderEl, done); return; }
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }

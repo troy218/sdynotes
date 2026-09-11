@@ -4718,7 +4718,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
 //    · 겹마다 담당 대역(저음 40Hz ~ 고음 14kHz)만 보고, 그 대역 에너지로
 //      천천히 부풀었다 잦아든다. 스펙트럼 빈을 그대로 따라가지 않으므로
 //      막대처럼 튀지 않는다.
-//    · 공격 0.55초 / 낙하 2.4초 지수 완화 — 물결이 '숨쉰다'.
+//    · 공격 0.16초 / 낙하 0.85초 지수 완화 — 대역별로 빠르게 숨쉰다(촐랑거림 없이).
 //    · 위상은 0.013~0.031 rad/s 로 아주 느리게 흐른다(촐랑거림 방지).
 //    · 몸통은 윗선에서 화면 바닥까지 사라지는 세로 그라데이션 + 가는 윗선.
 //    · 터보(저사양)·모션감소·에디터 열림에서는 rAF 자체가 돌지 않는다.
@@ -4735,12 +4735,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   //      sp   : 위상 흐름 rad/s (음수 = 반대 방향)
   //      base : 파동의 중심 높이(화면 높이 비율)
   const WAVES=[
-    { band:[  40,  170], k:1.05, sp: 0.031, base:0.64, amp:0.085, alpha:0.30, hue:  0, width:1.6 },
-    { band:[ 120,  400], k:1.45, sp:-0.027, base:0.58, amp:0.076, alpha:0.27, hue: 16, width:1.5 },
-    { band:[ 320,  900], k:1.95, sp: 0.023, base:0.52, amp:0.066, alpha:0.24, hue:-14, width:1.4 },
-    { band:[ 800, 2200], k:2.60, sp:-0.020, base:0.46, amp:0.056, alpha:0.21, hue: 30, width:1.3 },
-    { band:[2000, 5500], k:3.40, sp: 0.016, base:0.41, amp:0.047, alpha:0.18, hue:-24, width:1.2 },
-    { band:[5000,14000], k:4.30, sp:-0.013, base:0.36, amp:0.039, alpha:0.15, hue: 42, width:1.1 },
+    { band:[  40,  170], k:1.05, sp: 0.031, base:0.92, amp:0.085, alpha:0.30, hue:  0, width:1.6 },
+    { band:[ 120,  400], k:1.45, sp:-0.027, base:0.88, amp:0.076, alpha:0.27, hue: 16, width:1.5 },
+    { band:[ 320,  900], k:1.95, sp: 0.023, base:0.84, amp:0.066, alpha:0.24, hue:-14, width:1.4 },
+    { band:[ 800, 2200], k:2.60, sp:-0.020, base:0.80, amp:0.056, alpha:0.21, hue: 30, width:1.3 },
+    { band:[2000, 5500], k:3.40, sp: 0.016, base:0.76, amp:0.047, alpha:0.18, hue:-24, width:1.2 },
+    { band:[5000,14000], k:4.30, sp:-0.013, base:0.72, amp:0.039, alpha:0.15, hue: 42, width:1.1 },
   ];
   const NW=WAVES.length;
   // 대역 틸트 — 고음은 같은 세기라도 스펙트럼에서 작게 잡히므로 살짝 들어 올린다
@@ -4873,28 +4873,29 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     ctx.clearRect(0,0,w,h);
     if(w<20||h<20) return;
 
-    // ④ 겹별 에너지 — 공격은 짧게, 낙하는 길게(2.4초). 이게 '촐랑거림'을 없앤다.
+    // ④ 겹별 에너지 — 공격은 짧게, 낙하도 빠르게(0.85초). 대역별로 즉각 숨쉰다.
     for(let i=0;i<NW;i++){
       const W=WAVES[i];
       let raw=0.24;                       // 데이터가 없어도 아주 낮은 숨결은 남는다
       if(hasData&&bins){
         raw=bandRaw(W.band[0], W.band[1], bins, nyq)*W.tilt;
         if(raw>bandMax[i]) bandMax[i]=bandMax[i]*0.90+raw*0.10;
-        else bandMax[i]=Math.max(0.20, bandMax[i]*0.998+raw*0.002);
+        else bandMax[i]=Math.max(0.20, bandMax[i]*0.994+raw*0.006);
         raw=Math.min(1, raw/Math.max(0.22, bandMax[i]));
       }else{
         bandMax[i]=Math.max(0.22, bandMax[i]*0.996+raw*0.004);
       }
       const target=Math.pow(Math.max(0, raw), 0.82);
-      const tau=target>env[i]?0.55:2.40;
+      const tau=target>env[i]?0.16:0.85;
       env[i]+=(target-env[i])*(1-Math.exp(-dt/tau));
       if(!(env[i]>=0)) env[i]=0;          // (NaN 방어)
     }
 
-    // ⑤ 색 — 겹마다 강조색에서 조금씩 돌린 색(같은 계열이라 어지럽지 않다)
+    // ⑤ 색 — 겹마다 강조색에서 조금씩 돌린 색(같은 계열이라 어지럽지 않다).
+    //    채도는 올리고 밝기는 낮춰 깊고 짙게.
     const hsl=hexToHsl(accentHex());
-    const sat=Math.max(26, Math.min(86, hsl[1]*0.92));
-    const lig=Math.max(38, Math.min(66, hsl[2]+10));
+    const sat=Math.max(40, Math.min(94, hsl[1]*1.08));
+    const lig=Math.max(22, Math.min(58, hsl[2]-6));
     const seg=Math.max(64, Math.min(SEG_MAX, Math.round(w/8)));
     const xs=new Float32Array(seg+1), ys=new Float32Array(seg+1);
 

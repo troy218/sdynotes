@@ -343,8 +343,6 @@
             // 14.65 · 카드를 다시 그릴 필요가 없어도 사이드바 폴더 목록은 맞춰 둔다
             //   (색·아이콘은 홈 카드와 사이드바 두 곳에 그려진다)
             try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
-            // 14.65 · 검색창 해돌이 줄(결과 있음/없음 안내)도 지금 상태로 맞춘다
-            try{ if(typeof window.sdyHomeAiInput==='function') window.sdyHomeAiInput(); }catch(e){}
             try{ requestAnimationFrame(()=>{ rescalePreviews(); _layoutHomeStacks(); }); }catch(e){}
             return;
         }
@@ -371,8 +369,10 @@
                 const summary=document.createElement('span');
                 summary.textContent='“'+searchQuery+'” 검색 결과 · '+filtered.length+'개';
                 const clear=document.createElement('button');
-                clear.type='button'; clear.className='pro-results-clear';
-                clear.textContent='검색 지우기';
+                clear.type='button'; clear.className='pro-results-x';
+                clear.setAttribute('aria-label','검색 나가기');
+                clear.title='검색 나가기';
+                clear.innerHTML='<i class="ri-close-line" aria-hidden="true"></i>';
                 clear.onclick=()=>{
                     const input=document.getElementById('searchInput');
                     if(input) input.value='';

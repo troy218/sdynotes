@@ -143,7 +143,7 @@ try {
     w1.getComputedStyle(d1.querySelector('#proToolsSlot .hdr-right button[onclick="openCards()"]')).display === 'none');
   const bookmarks=d1.getElementById('proBookmarks');
   check('북마크는 로고와 분리된 영역에 있음', !!d1.querySelector('#proBookmarkSlot #linkBar') && !d1.querySelector('.app-brand #linkBar'));
-  check('PC 북마크는 처음에 펼쳐짐', bookmarks.open);
+  check('PC 북마크는 처음에 접혀 있음', !bookmarks.open);
   const oldLinks=w1.getLinks();
   const longName='아주 긴 북마크 이름과 공백없는주소'.repeat(10);
   w1.saveLinks(Array.from({length:25},(_,i)=>({name:i?`북마크 ${i}`:longName,url:`https://example.com/${i}`})));
@@ -160,7 +160,7 @@ try {
   bookmarks.open=true;d1.body.click();
   check('바깥 클릭으로 북마크 닫힘', !bookmarks.open);
   w1.innerWidth=1280;w1.dispatchEvent(new w1.Event('resize'));
-  check('PC 폭으로 복귀하면 북마크 펼침', bookmarks.open);
+  check('PC 폭으로 복귀해도 북마크 접힘', !bookmarks.open);
   w1.pickTheme('classic');
   check('캐주얼에서 원래 북마크 위치 복원', !!d1.querySelector('.app-brand #linkBar'));
   w1.pickTheme('pro');
@@ -190,8 +190,10 @@ try {
   check('검색 결과 수 표시', !d1.querySelector('#proResults').hidden && d1.querySelector('#proResults').textContent.includes('0개'));
   check('빈 검색 안내 표시', d1.querySelector('#noteGrid .pro-home-empty').textContent.includes('검색 결과가 없습니다'));
   check('검색 중 생성 타일 숨김', !d1.querySelector('#noteGrid .add-card'));
-  d1.querySelector('.pro-results-clear').click();
-  check('검색 지우기로 홈 복귀', d1.querySelector('#proResults').hidden && !!d1.querySelector('#noteGrid .pro-home'));
+  const exitSearch=d1.querySelector('.pro-results-x');
+  check('검색 나가기 X 버튼 존재', !!exitSearch && exitSearch.getAttribute('aria-label') === '검색 나가기');
+  exitSearch.click();
+  check('X 버튼으로 검색 나가기', d1.querySelector('#proResults').hidden && !!d1.querySelector('#noteGrid .pro-home'));
 
   check('sdyTheme()=pro', w1.sdyTheme() === 'pro');
   check('pickTheme/paintThemePicks 전역 노출', typeof w1.pickTheme === 'function' && typeof w1.paintThemePicks === 'function');

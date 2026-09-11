@@ -303,9 +303,9 @@
         }
         .app-brand .logo-dot{
             width:32px;height:32px;border-radius:4px;flex-shrink:0;
-            background:linear-gradient(135deg,var(--accent),#8e5cf7);
+            background:#171C26;
             display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;
-            box-shadow:0 3px 10px rgba(79,110,247,.35);
+            box-shadow:0 3px 10px rgba(23,28,38,.28);
         }
         /* 17.4 · 로고는 평소 깃털펜 아이콘만 — 마우스를 올리면 오른쪽으로
            펼쳐지며 '동엽신의 끄적끄적'이 나타난다. (호버 없는 기기·폰은 종전대로) */
@@ -325,7 +325,7 @@
             .app-brand .logo-dot:hover,
             .app-brand .logo-dot:focus-visible{
                 transform:rotate(-8deg) scale(1.07);border-radius:10px;
-                box-shadow:0 5px 16px rgba(79,110,247,.5);
+                box-shadow:0 5px 16px rgba(23,28,38,.3);
             }
         }
         /* 14.14 · 폰 헤더/본문 여백은 문서 끝 v1414-phone 블록 한 곳에서
@@ -716,9 +716,9 @@
         }
         .page-count-badge{
             position:absolute;left:8px;bottom:8px;z-index:12;
-            background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:600;
+            background:var(--accent);color:#fff;font-size:10px;font-weight:700;
             padding:2px 7px;border-radius:999px;letter-spacing:.02em;
-            backdrop-filter:blur(4px);pointer-events:none;
+            box-shadow:0 1px 4px rgba(0,0,0,.18);pointer-events:none;
         }
         .note-card-name{
             padding:11px 14px;border-top:1px solid var(--border);font-size:13px;font-weight:600;
@@ -7019,9 +7019,9 @@ html.theme-pro .app-brand h1{
   text-shadow:none;
 }
 html.theme-pro .app-brand .logo-dot{
-  background:var(--accent);
-  border:1px solid color-mix(in srgb,var(--accent) 30%,#fff);
-  box-shadow:0 1px 3px color-mix(in srgb,var(--accent) 45%,transparent);
+  background:#171C26;
+  border:1px solid rgba(23,28,38,.14);
+  box-shadow:0 1px 3px rgba(23,28,38,.16);
 }
 html.theme-pro .header #searchInput{
   background:#F1F3F7!important;
@@ -7970,11 +7970,12 @@ html.theme-pro .pro-results{
   border-radius:4px;background:var(--card);font-size:13px;color:var(--text2);
 }
 html.theme-pro .pro-results > span{min-width:0;overflow-wrap:anywhere;}
-html.theme-pro .pro-results-clear{
-  min-height:30px;padding:5px 10px;border:1px solid transparent;border-radius:6px;
-  background:transparent;color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;
+html.theme-pro .pro-results-x{
+  min-height:30px;width:30px;padding:0;border:1px solid transparent;border-radius:6px;
+  background:transparent;color:var(--text3);font-size:16px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
 }
-html.theme-pro .pro-results-clear:hover{background:var(--bg2);color:var(--text2);border-color:var(--border);}
+html.theme-pro .pro-results-x:hover{background:var(--bg2);color:var(--text2);border-color:var(--border);}
 html.theme-pro #noteGrid .note-card-name{min-height:64px;padding:10px 14px;align-items:center;}
 html.theme-pro #noteGrid .note-card-name > span:first-child{
   min-width:0;white-space:normal!important;overflow-wrap:anywhere;line-height:1.5;
@@ -7990,7 +7991,7 @@ html.theme-pro .pro-nav-item,
 html.theme-pro .pro-fold-item{min-height:40px;}
 html.theme-pro #proSide button:focus-visible,
 html.theme-pro #noteGrid .add-card:focus-visible,
-html.theme-pro .pro-results-clear:focus-visible{
+html.theme-pro .pro-results-x:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px;
 }
 @media(min-width:1024px){
@@ -8428,20 +8429,10 @@ html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
 /* ══════════════════════════════════════════════════════════════════════
    14.65 · 홈 검색창의 해돌이 — 노트 검색과 같은 칸에서 묻고 답한다
    ──────────────────────────────────────────────────────────────────────
-   검색 결과가 있으면 노트가 먼저 보이고, 물음표 말투이거나 결과가 없으면
-   검색창 Enter 가 해돌이에게 간다. 답은 #homeAiCard 에 산문으로 앉는다.
+   검색창 Enter 는 항상 해돌이에게 묻는다. 답은 검색 결과 위
+   #homeAiCard 에 산문으로 앉는다 (전용 물어보기 버튼·줄은 없음).
    ══════════════════════════════════════════════════════════════════════ */
-.home-ai-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px;}
-.home-ai-ask{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border:1px solid var(--border);
-  border-radius:999px;background:var(--bg2);color:var(--text1);font-size:12.5px;font-weight:600;cursor:pointer;
-  transition:border-color .15s,box-shadow .15s,transform .15s;}
-.home-ai-ask:hover{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,110,247,.12);}
-.home-ai-ask:active{transform:translateY(1px);}
-.home-ai-spark{font-size:14px;line-height:1;color:var(--accent);}
 .home-ai-name i{color:var(--accent);font-size:13px;}
-.home-ai-kbd{font:600 10.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 5px;border:1px solid var(--border);
-  border-radius:4px;background:var(--bg1);color:var(--text3);}
-.home-ai-sub{font-size:11.5px;color:var(--text3);}
 .home-ai-card{margin:0 0 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg1);
   box-shadow:0 10px 28px rgba(15,23,42,.10);overflow:hidden;}
 .home-ai-head{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border);
@@ -9082,10 +9073,7 @@ html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
      #mainView 는 inset:0 + width:100% 인데 레일 규칙이 left:60px 만 이겨서
      폭이 그대로 100% → 오른쪽 60px(카드·배지·버튼 끝)이 화면 밖으로 나갔다. */
   html.theme-pro #mainView{left:60px!important;width:calc(100% - 60px)!important;}
-  /* 14.65 · 홈 검색 해돌이 — 좁은 화면은 답 카드가 화면을 다 먹지 않게 */
-  .home-ai-bar{gap:8px;}
-  .home-ai-ask{padding:7px 11px;font-size:12px;}
-  .home-ai-sub{display:none;}
+  /* 홈 검색 해돌이 — 좁은 화면은 답 카드가 화면을 다 먹지 않게 */
   .home-ai-card{margin-bottom:12px;border-radius:9px;}
   .home-ai-out{padding:11px 12px;font-size:13px;line-height:1.7;max-height:46vh;}
   .home-ai-acts{padding:0 12px 10px;}

@@ -13,8 +13,9 @@
       버튼은 flex:1 1 0 으로 한 줄에 균등 분배, 검색 입력은 아래 줄 통짜.
    3) 앱 타이틀 'SDYnotes' — <title>·스플래시·브랜드 h1·JS 폴백이 전부 SDYnotes.
    4) 홈 배경 버츄얼라이저 — 14.64 부터 '그래프'가 아니라 서로 다른 주파수의
-      사인 파동 6겹. 겹마다 담당 대역이 있고, 시간 완화(공격 0.55s/낙하 2.4s)로
-      부드럽게 숨쉬며, 단색 도형 재질(fillRect·createPattern)을 쓰지 않는다.
+      사인 파동 6겹. 겹마다 담당 대역이 있고, 시간 완화(공격 0.16s/낙하 0.85s)로
+      대역별로 빠르게 숨쉬며, 단색 도형 재질(fillRect·createPattern)을 쓰지 않는다.
+      파동은 화면 중앙이 아니라 아래쪽(base≥0.7)에 모인다.
    실행: npm run test:proshell */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -113,8 +114,12 @@ check('VIZ: 파동 겹 정의 6개(밴드·파장·속도·색)',
   (iife.match(/\{ band:\[/g) || []).length === 6);
 check('VIZ: 겹마다 담당 대역(저음→고음) 에너지만 쓴다',
   /bandRaw\(W\.band\[0\], W\.band\[1\], bins, nyq\)/.test(iife));
-check('VIZ: 시간 완화 — 공격 0.55s / 낙하 2.40s (촐랑거림 방지)',
-  /target>env\[i\]\?0\.55:2\.40/.test(iife) && /1-Math\.exp\(-dt\/tau\)/.test(iife));
+check('VIZ: 시간 완화 — 공격 0.16s / 낙하 0.85s (대역별 빠른 반응)',
+  /target>env\[i\]\?0\.16:0\.85/.test(iife) && /1-Math\.exp\(-dt\/tau\)/.test(iife));
+check('VIZ: 파동은 화면 아래쪽에 모인다(base≥0.7, 중앙 아님)',
+  /base:0\.92/.test(iife) && /base:0\.72/.test(iife) && !/base:0\.[0-6]/.test(iife));
+check('VIZ: 색은 더 짙고 진하게(채도↑·밝기↓)',
+  /hsl\[1\]\*1\.08/.test(iife) && /hsl\[2\]-6/.test(iife));
 check('VIZ: 사인 파동 + 느린 변조 + 옅은 배음(여러 주파수 겹침)',
   /Math\.sin\(u\*turns\+ph\)/.test(iife) && /overtone/.test(iife));
 check('VIZ: 위상이 아주 느리게 흐른다(0.031 rad/s 이하)',
