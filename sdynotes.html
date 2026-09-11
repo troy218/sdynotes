@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko" data-theme="pro" class="theme-pro">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.66.0">
+<link rel="stylesheet" href="sdynotes.css?v=14.67.0">
     <script>
     /* 14.47 · 테마 선적용 — 첫 페인트 전에 저장된 테마를 입혀 화면 깜빡임을 막는다.
        저장값이 없으면 새 기본인 'pro'(14.48 · 밝은 전문 디자인)로 시작한다. */
@@ -28,7 +28,7 @@
          · 이 파일·sdynotes.js·sdynotes.css·src 모듈을 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.66.0">
+    <meta name="application-version" content="14.67.0">
     <title>SDYnotes</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -493,6 +493,13 @@
                 <div id="homeAiMeta" class="home-ai-meta" hidden></div>
             </div>
             <div id="proResults" class="pro-results" role="status" aria-live="polite" hidden></div>
+            <!-- 등록한 arXiv 키워드가 있을 때만 JS가 보이는 오늘의 추천 논문 띠 -->
+            <section id="paperTicker" class="paper-ticker" aria-label="오늘의 추천 논문" hidden>
+                <div class="paper-ticker-label"><i class="ri-book-open-line" aria-hidden="true"></i><b>오늘의 추천 논문</b></div>
+                <div class="paper-ticker-viewport">
+                    <div id="paperTickerRun" class="paper-ticker-run" aria-live="polite"></div>
+                </div>
+            </section>
             <div id="noteGrid" class="note-grid" style="margin-top:12px;"></div>
         </main>
     </div>
@@ -1005,6 +1012,16 @@
                 </select>
             </div>
             
+            <div class="set-row paper-keyword-row" id="setRowPaperKeywords">
+                <span class="set-label text-sm">논문 추천 키워드<span class="dim">등록한 키워드로 arXiv 최신 10편을 홈에서 추천해요</span></span>
+                <div class="paper-keyword-control">
+                    <form id="paperKeywordForm" class="paper-keyword-form" autocomplete="off">
+                        <input id="paperKeywordInput" type="text" maxlength="64" placeholder="예: hbf" aria-label="arXiv 논문 검색 키워드">
+                        <button type="submit" class="paper-keyword-add">등록</button>
+                    </form>
+                    <div id="paperKeywordChips" class="paper-keyword-chips" aria-live="polite"></div>
+                </div>
+            </div>
             <div class="set-row">
                 <span class="set-label text-sm">휴지통<span class="dim">삭제한 노트 · 30일 후 자동 삭제</span></span>
                 <div style="display:flex;align-items:center;gap:8px;">
@@ -2674,17 +2691,17 @@
 <!-- 14.23.0 · 노트 해돌이(AI 도우미) UI 는 편집기 안 #noteOtter 옆으로 옮겼다 — 아이콘 버튼·뜨는 창은 없다. -->
 
 
-<script src="sdynotes.js?v=14.66.0" defer></script>
-<script src="src/music-player.js?v=14.66.0" defer></script>
-<script src="src/focus-clock.js?v=14.66.0" defer></script>
-<script src="src/live-updates.js?v=14.66.0" defer></script>
-<script src="src/idle-worker.js?v=14.66.0" defer></script>
-<script src="src/mobile-viewport.js?v=14.66.0" defer></script>
-<script src="src/auth.js?v=14.66.0" defer></script>
-<script src="src/ai-assistant.js?v=14.66.0" defer></script>
-<script src="src/chat.js?v=14.66.0" defer></script>
-<script src="src/translate.js?v=14.66.0" defer></script>
-<script src="src/cards.js?v=14.66.0" defer></script>
-<script src="src/server-status.js?v=14.66.0" defer></script>
+<script src="sdynotes.js?v=14.67.0" defer></script>
+<script src="src/music-player.js?v=14.67.0" defer></script>
+<script src="src/focus-clock.js?v=14.67.0" defer></script>
+<script src="src/live-updates.js?v=14.67.0" defer></script>
+<script src="src/idle-worker.js?v=14.67.0" defer></script>
+<script src="src/mobile-viewport.js?v=14.67.0" defer></script>
+<script src="src/auth.js?v=14.67.0" defer></script>
+<script src="src/ai-assistant.js?v=14.67.0" defer></script>
+<script src="src/chat.js?v=14.67.0" defer></script>
+<script src="src/translate.js?v=14.67.0" defer></script>
+<script src="src/cards.js?v=14.67.0" defer></script>
+<script src="src/server-status.js?v=14.67.0" defer></script>
 </body>
 </html>

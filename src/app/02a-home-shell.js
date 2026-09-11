@@ -249,7 +249,7 @@
     // ── 앱 전체 설정 동기화 ────────────────────────────────
     // 테마·강조색·기본 글꼴/크기·제목·카드 크기와 함께 브라우저에서
     // 기억하던 작은 UI 상태도 한 묶음으로 동기화한다.
-    const APPSET_KEYS=['theme','defPaper','defFS','defFont','accent','appTitle','cardSize','wall','wallVeil','wallVideo'];
+    const APPSET_KEYS=['theme','defPaper','defFS','defFont','accent','appTitle','cardSize','wall','wallVeil','wallVideo','paperKeywords'];
     function _readJsonLS(k,dflt){ try{ const x=JSON.parse(localStorage.getItem(k)||'null'); return x==null?dflt:x; }catch(e){ return dflt; } }
     function _uiSetPayload(){
         const _th=(typeof sdyTheme==='function')?sdyTheme():(S.theme||'pro');
@@ -351,6 +351,9 @@
         }
         if(!ch && !ui) return false;
         saveS(); applyTheme();
+        // 다른 기기에서 논문 키워드가 바뀌면 설정 칩과 홈 추천도 바로 같은 값으로 갱신한다.
+        try{ if(typeof window.sdyPaperKeywordsRender==='function') window.sdyPaperKeywordsRender(); }catch(e){}
+        try{ if(typeof window.sdyPaperTickerRefresh==='function') window.sdyPaperTickerRefresh(true); }catch(e){}
         return true;
     }
 

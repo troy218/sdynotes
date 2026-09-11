@@ -5041,6 +5041,82 @@ body.has-wall #sdyAmbient{opacity:0;}
 
 /* === style block 12 === */
 
+/* ── 오늘의 추천 논문 ─────────────────────────────────────────
+   로고와 같은 깊은 파랑을 띠에 고정해, 테마·강조색을 바꿔도 추천 정보가
+   눈에 잘 들어오게 한다. 움직이는 것은 제목 줄 하나뿐이라 홈을 가리지 않는다. */
+.paper-ticker{
+    width:100%;max-width:920px;height:34px;margin:0 auto 8px;
+    display:flex;align-items:stretch;overflow:hidden;
+    color:#f8fbff;background:#14366e;border:1px solid #0d2857;border-radius:8px;
+    box-shadow:0 5px 16px rgba(20,54,110,.18);
+    font-family:'Pretendard Variable',Pretendard,-apple-system,'Segoe UI',sans-serif;
+}
+.paper-ticker[hidden]{display:none!important;}
+.paper-ticker-label{
+    position:relative;z-index:2;flex:0 0 auto;display:flex;align-items:center;gap:6px;
+    padding:0 12px;color:#fff;background:#102e61;border-right:1px solid rgba(255,255,255,.22);
+    font-size:11.5px;letter-spacing:-.015em;white-space:nowrap;
+}
+.paper-ticker-label i{font-size:14px;color:#aee7ff;}
+.paper-ticker-label b{font-weight:800;}
+.paper-ticker-viewport{
+    position:relative;min-width:0;flex:1;overflow:hidden;display:flex;align-items:center;
+    mask-image:linear-gradient(to right,transparent 0,#000 3%,#000 97%,transparent 100%);
+    -webkit-mask-image:linear-gradient(to right,transparent 0,#000 3%,#000 97%,transparent 100%);
+}
+.paper-ticker-run{
+    display:flex;align-items:center;width:max-content;min-width:100%;
+    will-change:transform;
+    animation:paperTickerScroll var(--paper-ticker-duration,72s) linear infinite;
+}
+.paper-ticker-set{display:flex;align-items:center;flex:none;padding-right:40px;}
+.paper-ticker-paper{
+    display:inline-flex;align-items:center;gap:7px;max-width:620px;padding:0 20px;
+    color:#f8fbff;text-decoration:none;white-space:nowrap;line-height:34px;
+    font-size:12.5px;font-weight:650;letter-spacing:-.012em;
+    border-right:1px solid rgba(225,241,255,.30);
+    transition:background .16s ease,color .16s ease;
+}
+.paper-ticker-paper:hover,.paper-ticker-paper:focus-visible{
+    color:#fff;background:rgba(255,255,255,.15);outline:none;
+}
+.paper-ticker-paper:focus-visible{box-shadow:inset 0 0 0 2px #bdeaff;}
+.paper-ticker-rank{
+    flex:none;color:#aee7ff;font-size:10px;font-weight:850;font-variant-numeric:tabular-nums;
+    letter-spacing:.06em;
+}
+.paper-ticker-title{overflow:hidden;text-overflow:ellipsis;}
+.paper-ticker-paper>i{flex:none;font-size:12px;opacity:.8;}
+.paper-ticker:hover .paper-ticker-run,
+.paper-ticker:focus-within .paper-ticker-run{animation-play-state:paused;}
+@keyframes paperTickerScroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){.paper-ticker-run{animation:none;}}
+
+/* 설정의 추천 키워드: 입력 → 등록 → 지울 수 있는 칩. */
+.paper-keyword-row{align-items:flex-start;}
+.paper-keyword-control{flex:0 1 238px;min-width:0;margin-left:auto;}
+.paper-keyword-form{display:flex;align-items:center;gap:6px;}
+.set-row .paper-keyword-form input[type=text]{flex:1;min-width:0;max-width:none;width:100%;}
+.paper-keyword-add{
+    flex:none;padding:7px 10px;border:1px solid color-mix(in srgb,var(--accent) 62%,var(--border));
+    border-radius:5px;background:var(--accent);color:#fff;font-size:12px;font-weight:750;cursor:pointer;
+}
+.paper-keyword-add:hover{filter:brightness(1.06);}
+.paper-keyword-add:focus-visible,.paper-keyword-remove:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.paper-keyword-chips{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px;min-height:20px;}
+.paper-keyword-chip{
+    display:inline-flex;align-items:center;max-width:100%;overflow:hidden;
+    border:1px solid color-mix(in srgb,var(--accent) 28%,var(--border));border-radius:999px;
+    background:color-mix(in srgb,var(--accent) 8%,var(--bg2));color:var(--text2);font-size:11.5px;font-weight:700;
+}
+.paper-keyword-chip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 2px 4px 9px;}
+.paper-keyword-remove{
+    width:23px;height:23px;flex:none;display:inline-flex;align-items:center;justify-content:center;
+    border:0;border-radius:50%;background:transparent;color:var(--text3);font-size:13px;cursor:pointer;
+}
+.paper-keyword-remove:hover{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);}
+.paper-keyword-empty{font-size:10.5px;line-height:1.45;color:var(--text3);}
+
 .home-stack-area{
     width:100%;flex:1 1 100%;
     display:flex;flex-direction:column;align-items:center;
@@ -8712,6 +8788,13 @@ html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
   .set-row>.set-label{flex:1 1 130px;}
   .set-row>div[style*="display:flex"]{max-width:100%;flex-wrap:wrap;}
   .set-row select{min-width:132px;}
+  .paper-ticker{height:36px;margin-bottom:7px;border-radius:7px;}
+  .paper-ticker-label{padding:0 9px;font-size:10.5px;}
+  .paper-ticker-label i{font-size:13px;}
+  .paper-ticker-label b{max-width:82px;overflow:hidden;text-overflow:ellipsis;}
+  .paper-ticker-paper{max-width:min(72vw,430px);padding:0 14px;font-size:12px;line-height:36px;}
+  .paper-keyword-control{flex:1 0 100%;margin-left:0;}
+  .paper-keyword-form{max-width:320px;}
   .accent-swatch{width:34px;height:34px;}
   #sizePresetGrid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important;}
   #exportModal .modal-box>div[style*="grid"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;}

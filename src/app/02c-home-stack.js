@@ -336,6 +336,9 @@
     function renderGrid(force){
         const g=document.getElementById('noteGrid');
         if(!g) return;
+        // 홈 진입·폴더/검색 전환마다 추천 띠도 같이 보이거나 숨긴다.
+        // 네트워크 요청은 추천 모듈의 짧은 메모리 캐시가 묶어 준다.
+        try{ if(typeof window.sdyPaperTickerRefresh==='function') window.sdyPaperTickerRefresh(); }catch(e){}
         const sig=_gridSig();
         if(!force && sig===_lastGridSig && g.querySelector('.home-stack-area,.note-card,.folder-card,.add-card')){
             // 17.4 · 홈에 재진입(변경 없이 돌아온 경우)도 아래쪽부터 보여 준다

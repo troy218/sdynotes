@@ -403,6 +403,7 @@
         document.getElementById('setModal').style.display='flex';
         paintThemePicks();
         document.getElementById('defPaper').value=S.defPaper;
+        try{ if(typeof window.sdyPaperKeywordsRender==='function') window.sdyPaperKeywordsRender(); }catch(e){}
         // 강조색 스와치
         const ap=document.getElementById('accentPicks');
         ap.innerHTML=ACCENT_COLORS.map(c=>
@@ -439,6 +440,9 @@
             {name:'기본 종이', keys:['종이','기본종이','줄','격자','도트','paper'], sel:'#defPaper',
              now:(PAPER_NAME[S.defPaper]||'빈 종이'),
              how:'설정 → 기본 종이에서 새 노트의 종이(빈 종이·줄 노트·격자·도트)를 고릅니다.'},
+            {name:'논문 추천 키워드', keys:['논문','추천 논문','arxiv','키워드','hbf'], sel:'#setRowPaperKeywords',
+             now:(Array.isArray(S.paperKeywords)&&S.paperKeywords.length?S.paperKeywords.join(', '):'등록한 키워드 없음'),
+             how:'설정 → 논문 추천 키워드에 예: hbf 를 입력하고 [등록]합니다. 홈의 오늘의 추천 논문 띠에서 키워드와 맞는 arXiv 최신 10편을 누르면 논문으로 이동합니다.'},
             {name:'휴지통', keys:['휴지통','삭제','복구'], sel:'#trashCount',
              now:(function(){ try{ return (notebooks||[]).filter(n=>n&&n.trash).length+'개'; }catch(e){ return '확인 중'; } })(),
              how:'설정 → 휴지통 → [보기]. 삭제한 노트는 30일 동안 보관되고 그 뒤 자동으로 지워집니다.'},
@@ -518,7 +522,8 @@
     function resetSettings(){
         if(!confirm('설정을 기본값으로 되돌릴까요?\n(노트·폴더·휴지통 데이터는 그대로 유지됩니다)')) return;
         S={theme:'pro', defPaper:'blank', defFS:16, defFont:'pretendard',
-           accent:'#4f6ef7', appTitle:'', cardSize:'m', wall:'', wallVeil:34, wallVideo:false};
+           accent:'#4f6ef7', appTitle:'', cardSize:'m', wall:'', wallVeil:34, wallVideo:false,
+           paperKeywords:[]};
         saveS();
         try{ pushSettings(); }catch(e){}
         applyTheme();
