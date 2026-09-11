@@ -8848,3 +8848,36 @@ html.theme-pro .logo-dot .logo-pro,
 html.theme-pro .sp-logo .logo-pro{display:block;}
 html.theme-pro .pro-brand .logo-dot .logo-pro{width:16px;height:16px;}
 .sp-logo{display:flex;align-items:center;justify-content:center;}
+
+/* 14.59 · 프로 홈 은은한 이퀄라이저 배경 — 음악이 울릴 때만 살며시 일렁인다
+   html.theme-pro 에서만 보이고, #mainView 뒤(z:-1)에 얇게 깔린다.
+   터치는 통과(pointer-events:none)하고 노트/그리드를 절대 가리지 않는다.
+   성능: will-change opacity, rAF 한 루프, dpr 1.6 상한, turbo·모션감소는 표시 안 함. */
+#proHomeEq{
+  position:fixed;inset:0;left:248px;z-index:-1;pointer-events:none;
+  width:calc(100% - 248px);height:100%;
+  opacity:0;transition:opacity .85s cubic-bezier(.22,.9,.32,1);
+  filter:blur(.45px) saturate(1.02);
+  will-change:opacity;
+}
+html.theme-pro #proHomeEq{opacity:0;}
+/* 재생 중엔 0.09~0.13 선 — 라이트 캔버스(#F4F5F8)에서 노트·그리드보다 항상 옅게 */
+html.theme-pro #proHomeEq.playing{opacity:.11;}
+html.theme-pro #proHomeEq.idle{opacity:0;}
+/* 클래식·다크에선 표시 안 함 */
+html.theme-classic #proHomeEq,
+html:not(.theme-pro) #proHomeEq{display:none!important;}
+/* 에디터가 열리면 숨김 — 기존 ambient/wall 숨김과 동일 선상 */
+body:has(#editorView.open) #proHomeEq{opacity:0!important;}
+/* 저사양·모션감소 — 장식이므로 아예 숨김 */
+body.sdy-turbo #proHomeEq{display:none!important;}
+@media(prefers-reduced-motion:reduce){
+  #proHomeEq{display:none!important;}
+}
+@media(max-width:1023px){
+  #proHomeEq{left:60px;width:calc(100% - 60px);}
+  html.theme-pro.pro-collapsed #proHomeEq{left:60px;width:calc(100% - 60px);}
+}
+@media(max-width:640px),(max-height:560px) and (pointer:coarse){
+  #proHomeEq{left:0!important;width:100%!important;top:88px!important;height:calc(var(--sdy-mobile-vh,100dvh) - 88px)!important;}
+}
