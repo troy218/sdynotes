@@ -484,11 +484,17 @@
                 clearTimeout(longPressTimer);
                 longPressTimer=setTimeout(()=>{
                     lpFired=true;
-                    if(selectMode&&selectedNBs.has(nb.id)){
+                    // 14.55 · 길게 누르면 선택 모드 없이 바로 끌어서 폴더로 이동
+                    //   - 이미 선택된 묶음이 있으면 그 묶음을 함께 끌고
+                    //   - 아니면 이 노트 한 장만 바로 드래그 (선택 바 없이)
+                    if(selectMode&&selectedNBs.size&&selectedNBs.has(nb.id)){
                         beginLiftDrag(ev,card,nb);
+                    }else if(!selectMode){
+                        beginLiftDrag(ev,card,nb);
+                        if(navigator.vibrate) navigator.vibrate(26);
                     }else{
-                        enterSelectMode(nb.id);
-                        if(navigator.vibrate) navigator.vibrate(18);
+                        // 선택 모드지만 이 카드가 미선택이면 단일 드래그로 처리
+                        beginLiftDrag(ev,card,nb);
                     }
                 },480);
             };
@@ -858,9 +864,9 @@
         // 고스트는 fixed — style.left/top 에는 화면 px 가 아니라 CSS px 를 넣는다
         lift.ghost.style.left=window.sdyUiCss(x)+'px';
         lift.ghost.style.top=window.sdyUiCss(y)+'px';
-        document.querySelectorAll('.folder-card').forEach(f=>f.classList.remove('drop'));
+        document.querySelectorAll('.folder-card,.pro-fold-item').forEach(f=>f.classList.remove('drop'));
         const el=document.elementFromPoint(x,y);
-        const fc=el&&el.closest?el.closest('.folder-card'):null;
+        const fc=el&&el.closest? (el.closest('.folder-card')||el.closest('.pro-fold-item')):null;
         if(fc) fc.classList.add('drop');
         lift.over=fc;
     }
@@ -871,7 +877,7 @@
         try{ window.getSelection().removeAllRanges(); }catch(e){}   // 드래그 중 생긴 텍스트 선택 제거
         // 혹시 남아 있을 고스트까지 모두 제거
         document.querySelectorAll('#liftGhost').forEach(g=>g.remove());
-        document.querySelectorAll('.folder-card').forEach(f=>f.classList.remove('drop'));
+        document.querySelectorAll('.folder-card,.pro-fold-item').forEach(f=>f.classList.remove('drop'));
         document.body.style.userSelect='';
         document.querySelectorAll('.note-card').forEach(c=>c.draggable=true);
         lift=null;

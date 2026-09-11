@@ -171,13 +171,43 @@
                 const open=isFolderOpen(f.id);
                 let active=false;
                 try{ active=!!curFolder&&folderPath(curFolder).some(x=>x.id===f.id); }catch(e){}
-                html+=`<button type="button" class="pro-fold-item${active?' on':''}" onclick="openFolder('${f.id}')">`+
+                html+=`<button type="button" class="pro-fold-item${active?' on':''}" data-folder-id="${f.id}" onclick="openFolder('${f.id}')">`+
                     `<i class="${(locked&&!open)?'ri-folder-lock-fill':(f.icon||'ri-folder-3-fill')}" style="color:${f.color||'var(--accent)'}"></i>`+
                     `<span class="pf-name" title="${esc(f.name)}">${esc(f.name)}</span>`+
                     `<span class="pf-count">${folderCount(f.id)||0}</span></button>`;
             });
         }catch(e){}
         folds.innerHTML=html||'<div class="pro-fold-empty">폴더가 없습니다</div>';
+        // 14.55 · 왼쪽 사이드바 폴더로 HTML5 드래그(데스크톱)도 받는다 — 길게 눌러 Lift뿐 아니라 마우스 드래그로도 이동
+        try{
+            folds.querySelectorAll('.pro-fold-item').forEach(el=>{
+                el.addEventListener('dragover',ev=>{ ev.preventDefault(); el.classList.add('drop'); });
+                el.addEventListener('dragleave',()=>el.classList.remove('drop'));
+                el.addEventListener('drop',ev=>{
+                    ev.preventDefault(); el.classList.remove('drop');
+                    const fid=el.dataset.folderId;
+                    if(!fid) return;
+                    if(typeof isFolderOpen==='function'&&!isFolderOpen(fid)){ try{ toast('🔒 잠긴 폴더에는 넣을 수 없습니다',2000); }catch(e){} return; }
+                    const ids=(ev.dataTransfer.getData('text/plain')||'').split(',').filter(Boolean);
+                    if(!ids.length) return;
+                    try{
+                        if(typeof animateMoveLocal==='function'){
+                            animateMoveLocal(ids,fid,()=>{
+                                ids.forEach(id=>{ try{ setNoteFolder(id,fid); }catch(e){} });
+                                try{ cancelSelect(); }catch(e){}
+                                try{ renderGrid(); }catch(e){}
+                                try{ paintProSide(); }catch(e){}
+                                let fname='폴더'; try{ const ff=(typeof getFolders==='function'?getFolders().find(x=>x.id===fid):null); if(ff) fname=ff.name; }catch(e){}
+                                try{ toast(`${ids.length}개 노트를 '${fname}' 로 이동`); }catch(e){}
+                            });
+                        }else{
+                            ids.forEach(id=>{ try{ setNoteFolder(id,fid); }catch(e){} });
+                            try{ renderGrid(); }catch(e){}
+                        }
+                    }catch(e){}
+                });
+            });
+        }catch(e){}
     }
     // 사이드바 '음악' — 프로에서는 떠 있는 칩이 없으므로 플레이어를 직접 열고 목록을 띄운다
     function proOpenMusic(){

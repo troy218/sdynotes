@@ -856,13 +856,43 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 const open=isFolderOpen(f.id);
                 let active=false;
                 try{ active=!!curFolder&&folderPath(curFolder).some(x=>x.id===f.id); }catch(e){}
-                html+=`<button type="button" class="pro-fold-item${active?' on':''}" onclick="openFolder('${f.id}')">`+
+                html+=`<button type="button" class="pro-fold-item${active?' on':''}" data-folder-id="${f.id}" onclick="openFolder('${f.id}')">`+
                     `<i class="${(locked&&!open)?'ri-folder-lock-fill':(f.icon||'ri-folder-3-fill')}" style="color:${f.color||'var(--accent)'}"></i>`+
                     `<span class="pf-name" title="${esc(f.name)}">${esc(f.name)}</span>`+
                     `<span class="pf-count">${folderCount(f.id)||0}</span></button>`;
             });
         }catch(e){}
         folds.innerHTML=html||'<div class="pro-fold-empty">폴더가 없습니다</div>';
+        // 14.55 · 왼쪽 사이드바 폴더로 HTML5 드래그(데스크톱)도 받는다 — 길게 눌러 Lift뿐 아니라 마우스 드래그로도 이동
+        try{
+            folds.querySelectorAll('.pro-fold-item').forEach(el=>{
+                el.addEventListener('dragover',ev=>{ ev.preventDefault(); el.classList.add('drop'); });
+                el.addEventListener('dragleave',()=>el.classList.remove('drop'));
+                el.addEventListener('drop',ev=>{
+                    ev.preventDefault(); el.classList.remove('drop');
+                    const fid=el.dataset.folderId;
+                    if(!fid) return;
+                    if(typeof isFolderOpen==='function'&&!isFolderOpen(fid)){ try{ toast('🔒 잠긴 폴더에는 넣을 수 없습니다',2000); }catch(e){} return; }
+                    const ids=(ev.dataTransfer.getData('text/plain')||'').split(',').filter(Boolean);
+                    if(!ids.length) return;
+                    try{
+                        if(typeof animateMoveLocal==='function'){
+                            animateMoveLocal(ids,fid,()=>{
+                                ids.forEach(id=>{ try{ setNoteFolder(id,fid); }catch(e){} });
+                                try{ cancelSelect(); }catch(e){}
+                                try{ renderGrid(); }catch(e){}
+                                try{ paintProSide(); }catch(e){}
+                                let fname='폴더'; try{ const ff=(typeof getFolders==='function'?getFolders().find(x=>x.id===fid):null); if(ff) fname=ff.name; }catch(e){}
+                                try{ toast(`${ids.length}개 노트를 '${fname}' 로 이동`); }catch(e){}
+                            });
+                        }else{
+                            ids.forEach(id=>{ try{ setNoteFolder(id,fid); }catch(e){} });
+                            try{ renderGrid(); }catch(e){}
+                        }
+                    }catch(e){}
+                });
+            });
+        }catch(e){}
     }
     // 사이드바 '음악' — 프로에서는 떠 있는 칩이 없으므로 플레이어를 직접 열고 목록을 띄운다
     function proOpenMusic(){
@@ -2615,11 +2645,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 clearTimeout(longPressTimer);
                 longPressTimer=setTimeout(()=>{
                     lpFired=true;
-                    if(selectMode&&selectedNBs.has(nb.id)){
+                    // 14.55 · 길게 누르면 선택 모드 없이 바로 끌어서 폴더로 이동
+                    //   - 이미 선택된 묶음이 있으면 그 묶음을 함께 끌고
+                    //   - 아니면 이 노트 한 장만 바로 드래그 (선택 바 없이)
+                    if(selectMode&&selectedNBs.size&&selectedNBs.has(nb.id)){
                         beginLiftDrag(ev,card,nb);
+                    }else if(!selectMode){
+                        beginLiftDrag(ev,card,nb);
+                        if(navigator.vibrate) navigator.vibrate(26);
                     }else{
-                        enterSelectMode(nb.id);
-                        if(navigator.vibrate) navigator.vibrate(18);
+                        // 선택 모드지만 이 카드가 미선택이면 단일 드래그로 처리
+                        beginLiftDrag(ev,card,nb);
                     }
                 },480);
             };
@@ -2989,9 +3025,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 고스트는 fixed — style.left/top 에는 화면 px 가 아니라 CSS px 를 넣는다
         lift.ghost.style.left=window.sdyUiCss(x)+'px';
         lift.ghost.style.top=window.sdyUiCss(y)+'px';
-        document.querySelectorAll('.folder-card').forEach(f=>f.classList.remove('drop'));
+        document.querySelectorAll('.folder-card,.pro-fold-item').forEach(f=>f.classList.remove('drop'));
         const el=document.elementFromPoint(x,y);
-        const fc=el&&el.closest?el.closest('.folder-card'):null;
+        const fc=el&&el.closest? (el.closest('.folder-card')||el.closest('.pro-fold-item')):null;
         if(fc) fc.classList.add('drop');
         lift.over=fc;
     }
@@ -3002,7 +3038,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{ window.getSelection().removeAllRanges(); }catch(e){}   // 드래그 중 생긴 텍스트 선택 제거
         // 혹시 남아 있을 고스트까지 모두 제거
         document.querySelectorAll('#liftGhost').forEach(g=>g.remove());
-        document.querySelectorAll('.folder-card').forEach(f=>f.classList.remove('drop'));
+        document.querySelectorAll('.folder-card,.pro-fold-item').forEach(f=>f.classList.remove('drop'));
         document.body.style.userSelect='';
         document.querySelectorAll('.note-card').forEach(c=>c.draggable=true);
         lift=null;
