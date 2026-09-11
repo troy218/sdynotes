@@ -38,6 +38,8 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "import_uploads")
 JOBS_DIR = os.path.join(BASE_DIR, "import_jobs")
 
 MUSIC_DIR = os.path.join(BASE_DIR, "music")
+# 14.65 · 음량을 맞춘 송출용 사본(music_norm/<id>.<ext>) — 원본은 손대지 않는다.
+MUSIC_NORM_DIR = os.path.join(BASE_DIR, "music_norm")
 MUSIC_META = os.path.join(MUSIC_DIR, "_index.json")
 MUSIC_BAK = MUSIC_META + ".bak"
 ACOUSTID_FILE = os.path.join(MUSIC_DIR, "_acoustid.json")
@@ -46,7 +48,7 @@ YT_COOKIES_BAK = os.path.join(BASE_DIR, "_yt_cookies.txt.bak")
 
 SYNC_DIR = os.path.join(BASE_DIR, "sync")
 
-for _d in (IMG_DIR, DOCS_DIR, UPLOAD_DIR, JOBS_DIR, MUSIC_DIR, SYNC_DIR):
+for _d in (IMG_DIR, DOCS_DIR, UPLOAD_DIR, JOBS_DIR, MUSIC_DIR, MUSIC_NORM_DIR, SYNC_DIR):
     try:
         os.makedirs(_d, exist_ok=True)
     except Exception:
@@ -56,7 +58,7 @@ for _d in (IMG_DIR, DOCS_DIR, UPLOAD_DIR, JOBS_DIR, MUSIC_DIR, SYNC_DIR):
 # server/src/lib/config.js 의 APP_VERSION 과 항상 같은 값이어야 한다.
 # 작업마다 같이 올려라 — 함께 바꿔야 하는 5곳 전체 목록은
 # server/src/lib/config.js 상단 주석에 있다.
-APP_VERSION = "14.62.1"
+APP_VERSION = "14.65.0"
 SETTINGS_SCHEMA = 3
 
 _STORAGE_MODE = (os.environ.get("SDY_STORAGE") or "oracle").strip().lower()

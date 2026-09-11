@@ -154,6 +154,21 @@
                 if(!button.getAttribute('aria-label')) button.setAttribute('aria-label',button.title||'설정');
             });
         }
+        // 14.64 · 서버 상태(계기판)와 오프라인 배지는 도구 줄에 섞이면 사이드바 폭에서
+        //   잘리므로 맨 위 전용 줄(#proStateRow)로 옮긴다. 캐주얼로 돌아가면 헤더 도구
+        //   줄 첫 자리로 되돌려 기존 화면 그대로.
+        const stateRow=document.getElementById('proStateRow');
+        const gauge=document.getElementById('srvGauge');
+        const offline=document.getElementById('offlineBadge');
+        if(tools&&stateRow){
+            if(pro){
+                if(gauge&&gauge.parentElement!==stateRow) stateRow.insertBefore(gauge,stateRow.firstChild);
+                if(offline&&offline.parentElement!==stateRow) stateRow.appendChild(offline);
+            }else{
+                if(gauge&&gauge.parentElement!==tools) tools.insertBefore(gauge,tools.firstChild);
+                if(offline&&offline.parentElement!==tools) tools.insertBefore(offline,tools.firstChild);
+            }
+        }
         try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
     }
     // 사이드바 내비게이션 + 폴더 목록 렌더 (renderGrid·applyTheme 에서 갱신)

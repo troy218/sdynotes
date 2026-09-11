@@ -6,6 +6,7 @@
 02d-settings-sync.js
 02e-folders.js
 02f-buglog.js
+02g-home-ai.js
 03a-admin.js
 03b-vault.js
 04a-import.js

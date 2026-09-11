@@ -418,31 +418,11 @@
         curFont=FONTS.some(f=>f.id===S.defFont)?S.defFont:'pretendard';   // 옛 defFont 'noto' 는 폴백으로 프리텐다드
         // 배경 사진
         applyWallpaper();
-        try{ if(typeof applyProCollapsed==='function') applyProCollapsed(); }catch(e){}
+        // 14.64 · 사이드바 접기 제거 — 사이드바는 항상 펼침(좁은 화면은 60px 아이콘 레일).
+        //   예전 버전에서 접어 뒀던 브라우저에는 html.pro-collapsed 클래스와 저장값이
+        //   남아 있으므로, 테마를 입힐 때마다 한 번 지워 흔적을 없앤다.
+        try{ root.classList.remove('pro-collapsed'); localStorage.removeItem('proSideCollapsed'); }catch(e){}
     }
-    // ── 14.52-T · PRO 사이드바 접기/펼치기 — 좁은 화면(레일)은 무조건 접힘이므로 저장값과 무관
-    function applyProCollapsed(){
-        var collapsed=false;
-        try{ collapsed=localStorage.getItem('proSideCollapsed')==='1'; }catch(e){}
-        var pro=(typeof sdyTheme==='function'&&sdyTheme()==='pro');
-        // 좁은 화면에서는 레일이 기본이라 collapsed 와 무관하게 토글이 숨겨지나(html 로 control),
-        // 상태 클래스는 1024+에서만 의미가 있다. 그래도 pro 아닐 때는 꺼 둔다.
-        document.documentElement.classList.toggle('pro-collapsed', !!(pro&&collapsed));
-        var btn=document.getElementById('proSideToggle');
-        if(btn){
-            var isCollapsed=document.documentElement.classList.contains('pro-collapsed');
-            btn.setAttribute('aria-label', isCollapsed?'사이드바 펼치기':'사이드바 접기');
-            btn.title=isCollapsed?'사이드바 펼치기':'사이드바 접기';
-            try{ btn.querySelector('i').className=isCollapsed?'ri-arrow-right-double-line':'ri-arrow-left-double-line'; }catch(e){}
-        }
-    }
-    function toggleProSide(){
-        var cur=false;
-        try{ cur=localStorage.getItem('proSideCollapsed')==='1'; }catch(e){}
-        try{ localStorage.setItem('proSideCollapsed', cur?'0':'1'); }catch(e){}
-        applyProCollapsed();
-    }
-    try{ window.applyProCollapsed=applyProCollapsed; window.toggleProSide=toggleProSide; }catch(e){}
 
 
 /* APP-PART:01-core.js:END */

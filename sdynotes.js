@@ -654,31 +654,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         curFont=FONTS.some(f=>f.id===S.defFont)?S.defFont:'pretendard';   // 옛 defFont 'noto' 는 폴백으로 프리텐다드
         // 배경 사진
         applyWallpaper();
-        try{ if(typeof applyProCollapsed==='function') applyProCollapsed(); }catch(e){}
+        // 14.64 · 사이드바 접기 제거 — 사이드바는 항상 펼침(좁은 화면은 60px 아이콘 레일).
+        //   예전 버전에서 접어 뒀던 브라우저에는 html.pro-collapsed 클래스와 저장값이
+        //   남아 있으므로, 테마를 입힐 때마다 한 번 지워 흔적을 없앤다.
+        try{ root.classList.remove('pro-collapsed'); localStorage.removeItem('proSideCollapsed'); }catch(e){}
     }
-    // ── 14.52-T · PRO 사이드바 접기/펼치기 — 좁은 화면(레일)은 무조건 접힘이므로 저장값과 무관
-    function applyProCollapsed(){
-        var collapsed=false;
-        try{ collapsed=localStorage.getItem('proSideCollapsed')==='1'; }catch(e){}
-        var pro=(typeof sdyTheme==='function'&&sdyTheme()==='pro');
-        // 좁은 화면에서는 레일이 기본이라 collapsed 와 무관하게 토글이 숨겨지나(html 로 control),
-        // 상태 클래스는 1024+에서만 의미가 있다. 그래도 pro 아닐 때는 꺼 둔다.
-        document.documentElement.classList.toggle('pro-collapsed', !!(pro&&collapsed));
-        var btn=document.getElementById('proSideToggle');
-        if(btn){
-            var isCollapsed=document.documentElement.classList.contains('pro-collapsed');
-            btn.setAttribute('aria-label', isCollapsed?'사이드바 펼치기':'사이드바 접기');
-            btn.title=isCollapsed?'사이드바 펼치기':'사이드바 접기';
-            try{ btn.querySelector('i').className=isCollapsed?'ri-arrow-right-double-line':'ri-arrow-left-double-line'; }catch(e){}
-        }
-    }
-    function toggleProSide(){
-        var cur=false;
-        try{ cur=localStorage.getItem('proSideCollapsed')==='1'; }catch(e){}
-        try{ localStorage.setItem('proSideCollapsed', cur?'0':'1'); }catch(e){}
-        applyProCollapsed();
-    }
-    try{ window.applyProCollapsed=applyProCollapsed; window.toggleProSide=toggleProSide; }catch(e){}
 
 
 /* APP-PART:01-core.js:END */
@@ -838,6 +818,21 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 if(labels[button.id]) button.dataset.proLabel=labels[button.id];
                 if(!button.getAttribute('aria-label')) button.setAttribute('aria-label',button.title||'설정');
             });
+        }
+        // 14.64 · 서버 상태(계기판)와 오프라인 배지는 도구 줄에 섞이면 사이드바 폭에서
+        //   잘리므로 맨 위 전용 줄(#proStateRow)로 옮긴다. 캐주얼로 돌아가면 헤더 도구
+        //   줄 첫 자리로 되돌려 기존 화면 그대로.
+        const stateRow=document.getElementById('proStateRow');
+        const gauge=document.getElementById('srvGauge');
+        const offline=document.getElementById('offlineBadge');
+        if(tools&&stateRow){
+            if(pro){
+                if(gauge&&gauge.parentElement!==stateRow) stateRow.insertBefore(gauge,stateRow.firstChild);
+                if(offline&&offline.parentElement!==stateRow) stateRow.appendChild(offline);
+            }else{
+                if(gauge&&gauge.parentElement!==tools) tools.insertBefore(gauge,tools.firstChild);
+                if(offline&&offline.parentElement!==tools) tools.insertBefore(offline,tools.firstChild);
+            }
         }
         try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
     }
@@ -2111,15 +2106,22 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         openNav(closeFolderStyle);
     }
     function closeFolderStyle(){ document.getElementById('folderStyleModal').style.display='none'; styleFid=null; navDrop(closeFolderStyle); }
+    // 14.65 · 폴더 색·아이콘을 바꾸면 **그 자리에서** 두 화면(홈 카드 · 프로 사이드바)을
+    //   다시 그린다. 예전엔 홈 그리드의 '같으면 건너뛰기' 시그니처가 색·아이콘을 안 봐서
+    //   새로고침 전까지 옛 색이 남았고, 사이드바는 아예 다시 그리지 않았다.
+    function refreshFolderLook(){
+        try{ renderGrid(); }catch(e){}
+        try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+    }
     function pickFolderColor(c){
         const f=getFolders().find(x=>x.id===styleFid); if(!f) return;
         f.color=c; saveFolders(getFolders().map(x=>x.id===styleFid?f:x));
-        openFolderStyleRefresh(); renderGrid();
+        openFolderStyleRefresh(); refreshFolderLook();
     }
     function pickFolderIcon(ic){
         const f=getFolders().find(x=>x.id===styleFid); if(!f) return;
         f.icon=ic; saveFolders(getFolders().map(x=>x.id===styleFid?f:x));
-        openFolderStyleRefresh(); renderGrid();
+        openFolderStyleRefresh(); refreshFolderLook();
     }
     function openFolderStyleRefresh(){
         const f=getFolders().find(x=>x.id===styleFid); if(!f) return;
@@ -2157,7 +2159,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(isTrashFolder(fid)){ toast('휴지통 폴더는 이름을 바꿀 수 없습니다',2000); return; }
         const f=getFolders(); const t=f.find(x=>x.id===fid);
         const n=prompt('폴더 이름',t?t.name:'');
-        if(n&&n.trim()){ t.name=n.trim(); saveFolders(f); renderGrid(); toast('이름 변경됨'); }
+        if(n&&n.trim()){ t.name=n.trim(); saveFolders(f); refreshFolderLook(); toast('이름 변경됨'); }
     }
 /* APP-PART:02b-search.js:END */
 
@@ -2197,7 +2199,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             t.lockCleared=Date.now();   // 9.4 · '사용자가 직접 해제했다'는 표시 (동기화가 되살리지 않게)
             saveFolders(all);
             unlockedFolders.add(fid);
-            renderGrid(); toast('폴더 잠금 해제됨 🔓');
+            renderGrid();
+            try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+            toast('폴더 잠금 해제됨 🔓');
             return;
         }
         // 9.1 · 남의 잠긴 노트를 내 폴더에 가둬 버리는 것을 막는다.
@@ -2219,6 +2223,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         saveFolders(all);
         unlockedFolders.add(fid);          // 방금 잠근 사람은 계속 볼 수 있게
         renderGrid();
+        try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
         toast('폴더가 잠겼습니다 🔒',2000);
     }
 
@@ -2259,7 +2264,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
 
     function _gridSig(){
         try{
-            const folders=(!searchQuery?childFolders(curFolder):[]).map(f=>f.id+':'+(f.name||'')+':'+(folderCount(f.id)||0)).join('|');
+            // 14.65 · 폴더 카드에 그려지는 것 전부를 시그니처에 넣는다 — 색·아이콘·
+            //   잠금이 빠져 있어서 '폴더색 바꾸기' 가 새로고침 전까지 안 보였다.
+            const folders=(!searchQuery?childFolders(curFolder):[]).map(f=>
+                [f.id, f.name||'', folderCount(f.id)||0, f.color||'', f.icon||'',
+                 isFolderLocked(f.id)?1:0, isFolderOpen(f.id)?1:0].join(':')).join('|');
             const notes=getFiltered().map(nb=>{
                 const c=getCfg(nb.id);
                 return [nb.id, nb.title||'', c.pinned?1:0, c.folder||'', c.trashed_at||'', c.emoji||''].join(':');
@@ -2496,6 +2505,11 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         if(!force && sig===_lastGridSig && g.querySelector('.home-stack-area,.note-card,.folder-card,.add-card')){
             // 17.4 · 홈에 재진입(변경 없이 돌아온 경우)도 아래쪽부터 보여 준다
             if(_homeEnterScroll) _homeEnterScroll=false;
+            // 14.65 · 카드를 다시 그릴 필요가 없어도 사이드바 폴더 목록은 맞춰 둔다
+            //   (색·아이콘은 홈 카드와 사이드바 두 곳에 그려진다)
+            try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+            // 14.65 · 검색창 해돌이 줄(결과 있음/없음 안내)도 지금 상태로 맞춘다
+            try{ if(typeof window.sdyHomeAiInput==='function') window.sdyHomeAiInput(); }catch(e){}
             try{ requestAnimationFrame(()=>{ rescalePreviews(); _layoutHomeStacks(); }); }catch(e){}
             return;
         }
@@ -5165,6 +5179,275 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     try{ window.sdyBuglogCount=function(){ return getBugEntries().length; }; }catch(e){}
 /* APP-PART:02f-buglog.js:END */
 
+/* === src/app/02g-home-ai.js
+   홈 검색창의 해돌이 — 노트 검색과 **같은 칸**에서 묻고 답한다 (14.65)
+   소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
+   (concat 번들 · 단독 <script> 로드 금지) */
+/* APP-PART:02g-home-ai.js:BEGIN */
+    // ============ 14.65 · 홈 검색창 해돌이 ============
+    //  사용자 요청: "홈 화면 검색 기능에 기본적인 AI 기능 탑재 — 노트해돌이처럼,
+    //  설정 관련 내용을 더 자세히."
+    //   · 노트 안 해돌이(ai-assistant.js)는 노트가 열려 있을 때만 말풍선을 띄운다.
+    //     홈에는 노트가 없으므로 같은 AI 를 부르되 답은 홈에 앉는 카드(#homeAiCard)로
+    //     보여 준다 — 검색창을 새로 만들지 않고 '검색'과 '묻기'를 한 칸에 겹쳤다.
+    //   · 설정·사용법 질문은 서버 task 'help'(앱 도움말)가 맡는다. 앱 상태(스냅샷)
+    //     와 설정 안내(window.sdySettingsGuideText)를 근거로만 답하므로 없는 기능을
+    //     지어내지 않는다. "설정 열어줘"처럼 실행이 필요하면 서버가 @ 명령을 함께
+    //     주고, 여기서 노트 해돌이와 **같은 실행기**(sdyAiAppParse/Apply)로 돌린다.
+    //   · 검색 결과가 있으면 노트가 먼저다. 물음표 말투이거나 결과가 하나도 없을 때만
+    //     Enter 가 해돌이에게 간다(그 외 Enter 는 첫 번째 노트를 연다).
+    const HOME_AI_ASKQ=/[?？]\s*$|(어떻게|어떡|뭐야|뭐지|뭔가요|무엇|무슨|왜|언제|어디|얼마|있나요|있어요|되나요|돼요|인가요|일까요|알려\s*줘|가르쳐|설명해|방법|사용법|단축키|설정|기능|도와줘|추천)/;
+    const HOME_AI_CMD=/열어|켜줘|켜\s*줘|틀어|재생|꺼줘|꺼\s*줘|보여줘|보여\s*줘|만들어|추가해|삭제해|바꿔|바꾸|정리해|내보내|번역해|시작해|멈춰|해줘|해\s*줘/;
+    let _homeAiCtl=null, _homeAiLast='', _homeAiBusy=false;
+    let _homeAiTurns=[], _homeAiTask='help';
+
+    function homeAiEl(id){ try{ return document.getElementById(id); }catch(e){ return null; } }
+    function homeAiQuery(){
+        const el=homeAiEl('searchInput');
+        return String(el&&el.value!=null?el.value:'').trim();
+    }
+    function homeAiToken(){
+        try{ return (window.__sdyAuthState&&window.__sdyAuthState.token)||''; }catch(e){ return ''; }
+    }
+    // 홈에 보이는 노트/폴더 카드 수 — 검색 결과가 있는지 판단용
+    function homeAiHits(){
+        try{ return document.querySelectorAll('#noteGrid .note-card,#noteGrid .folder-card').length; }catch(e){ return 0; }
+    }
+    function homeAiLooksLikeQuestion(q){
+        const t=String(q||'');
+        if(t.length<2) return false;
+        if(HOME_AI_ASKQ.test(t)) return true;
+        if(HOME_AI_CMD.test(t)) return true;
+        if(/^\s*[/!]/.test(t)) return true;                 // /앱 · !편집 같은 접두사
+        if(typeof window.sdyAiLooksLikeApp==='function'){
+            try{ if(window.sdyAiLooksLikeApp(t)) return true; }catch(e){}
+        }
+        return false;
+    }
+    // 해돌이에게 물어볼 상황인가 — 물음표 말투거나, 검색 결과가 없거나, 접두사가 있을 때
+    function homeAiWanted(q){
+        const t=String(q||'').trim();
+        if(t.length<2) return false;
+        if(homeAiLooksLikeQuestion(t)) return true;
+        if(/^\s*\/앱|^\s*앱:/.test(t)) return true;
+        return homeAiHits()===0;
+    }
+    function homeAiPaintBar(){
+        const bar=homeAiEl('homeAiBar'), sub=homeAiEl('homeAiSub');
+        if(!bar) return;
+        const q=homeAiQuery();
+        const want=homeAiWanted(q);
+        bar.hidden=!want;
+        if(!want||!sub) return;
+        const hits=homeAiHits();
+        sub.textContent=hits
+            ? ('노트 '+hits+'개 찾음 · Enter 는 해돌이에게 물어봐요')
+            : '검색 결과 없음 · Enter 로 해돌이에게 물어보기';
+    }
+    function homeAiKind(kind){
+        const el=homeAiEl('homeAiKind');
+        if(!el) return;
+        el.hidden=!kind;
+        el.textContent=kind||'';
+    }
+    function homeAiMeta(t){
+        const el=homeAiEl('homeAiMeta');
+        if(!el) return;
+        el.hidden=!t;
+        el.textContent=t||'';
+    }
+    function homeAiBusy(on){
+        _homeAiBusy=!!on;
+        const st=homeAiEl('homeAiStop'), cp=homeAiEl('homeAiCopy');
+        if(st) st.hidden=!on;
+        if(cp) cp.hidden=on||!_homeAiLast;
+    }
+    function homeAiSayHtml(t){
+        try{ if(typeof mdToHtml==='function') return mdToHtml(String(t||'')); }catch(e){}
+        const d=document.createElement('div');
+        d.textContent=String(t==null?'':t);
+        return '<span style="white-space:pre-wrap">'+d.innerHTML+'</span>';
+    }
+    function homeAiOut(t,busy){
+        const o=homeAiEl('homeAiOut');
+        if(!o) return;
+        if(busy){ o.classList.add('busy'); o.innerHTML='<span class="home-ai-dots"><i></i><i></i><i></i></span>'; return; }
+        o.classList.remove('busy');
+        o.innerHTML=busy?'':homeAiSayHtml(t);
+    }
+    function homeAiShowActs(list){
+        const box=homeAiEl('homeAiActs');
+        if(!box) return;
+        box.innerHTML='';
+        (list||[]).forEach(function(a){
+            const b=document.createElement('button');
+            b.type='button'; b.className='home-ai-act';
+            b.innerHTML=a.icon?('<i class="'+a.icon+'" aria-hidden="true"></i>'):'';
+            b.appendChild(document.createTextNode(a.label));
+            b.onclick=a.onClick;
+            box.appendChild(b);
+        });
+        box.hidden=!(list&&list.length);
+    }
+    function homeAiOpenCard(){ const c=homeAiEl('homeAiCard'); if(c) c.hidden=false; }
+    function sdyHomeAiClose(){
+        try{ if(_homeAiCtl) _homeAiCtl.abort(); }catch(e){}
+        _homeAiCtl=null; homeAiBusy(false);
+        const c=homeAiEl('homeAiCard'); if(c) c.hidden=true;
+    }
+    function sdyHomeAiStop(){
+        try{ if(_homeAiCtl) _homeAiCtl.abort(); }catch(e){}
+        _homeAiCtl=null; homeAiBusy(false);
+        homeAiMeta('멈췄어요');
+    }
+    function sdyHomeAiCopy(){
+        if(!_homeAiLast) return;
+        try{
+            navigator.clipboard.writeText(_homeAiLast);
+            if(typeof toast==='function') toast('답을 복사했어요',1200);
+        }catch(e){}
+    }
+    // 검색창 입력 → 필터(기존 searchNotes) + 해돌이 줄 갱신
+    function sdyHomeAiInput(){ try{ homeAiPaintBar(); }catch(e){} }
+    // 검색창 Enter — 해돌이에게 갈지, 첫 노트를 열지
+    function sdyHomeAiKey(ev){
+        if(!ev) return true;
+        try{ if(ev.isComposing||ev.keyCode===229) return true; }catch(e){}
+        if(ev.key!=='Enter'||ev.shiftKey||ev.altKey||ev.ctrlKey||ev.metaKey) return true;
+        const q=homeAiQuery();
+        if(!q) return true;
+        const bar=homeAiEl('homeAiBar');
+        if(bar&&!bar.hidden){
+            ev.preventDefault();
+            sdyHomeAiAsk();
+            return false;
+        }
+        // 물음표 말투가 아니고 결과가 있으면 → 첫 번째 카드를 연다(검색창의 자연스러운 기대)
+        let first=null;
+        try{ first=document.querySelector('#noteGrid .note-card,#noteGrid .folder-card'); }catch(e){}
+        if(first){
+            ev.preventDefault();
+            try{ first.click(); }catch(e){}
+            return false;
+        }
+        return true;
+    }
+    /* 해돌이에게 묻는다 — /앱 접두사나 '시켜 달라'는 말투면 앱 실행(app),
+       나머지는 도움말(help). 두 task 모두 앱 상태(+설정 안내)를 근거로 받는다. */
+    function sdyHomeAiAsk(){
+        const q0=homeAiQuery();
+        if(!q0){ const el=homeAiEl('searchInput'); if(el) try{ el.focus(); }catch(e){} return; }
+        if(_homeAiBusy){ homeAiMeta('아직 답하는 중이에요 · 멈추기를 누르면 멈춰요'); return; }
+        let text=q0, forced=false;
+        const m=/^\s*(\/앱|앱:)\s*/.exec(text);
+        if(m){ forced=true; text=text.slice(m[0].length).trim(); }
+        if(!text) text=q0;
+        let task='help';
+        if(forced) task='app';
+        else{
+            try{ if(typeof window.sdyAiLooksLikeApp==='function'&&window.sdyAiLooksLikeApp(text)) task='app'; }catch(e){}
+        }
+        _homeAiTask=task;
+        let snap='';
+        try{ if(typeof window.sdyAiAppSnapshot==='function') snap=String(window.sdyAiAppSnapshot()||''); }catch(e){}
+        let guide='';
+        try{ if(typeof window.sdySettingsGuideText==='function') guide=String(window.sdySettingsGuideText()||''); }catch(e){}
+        const ctx=[snap,guide].filter(Boolean).join('\n\n');
+
+        homeAiOpenCard();
+        homeAiKind(task==='app'?'앱 실행':'앱 도움말');
+        _homeAiLast='';
+        homeAiOut('',true);
+        homeAiMeta('');
+        homeAiShowActs([]);
+        homeAiBusy(true);
+        _homeAiCtl=new AbortController();
+        const myCtl=_homeAiCtl;
+
+        fetch('/api/ai/ask',{
+            method:'POST',
+            headers:{'Content-Type':'application/json','x-sdy-auth':homeAiToken()},
+            body:JSON.stringify({task:task,text:ctx,question:text,
+                                 context:_homeAiTurns.slice(-4).join('\n\n'),stream:false}),
+            signal:myCtl.signal
+        }).then(function(r){ return r.json().catch(function(){ return {}; }); })
+        .then(function(d){
+            if(myCtl!==_homeAiCtl) return;                  // 그 사이 닫거나 다시 물었으면 무시
+            _homeAiCtl=null; homeAiBusy(false);
+            if(!d||!d.ok){
+                homeAiSayHtml('');
+                homeAiOut(String((d&&d.error)||'답을 받지 못했어요 · 잠시 뒤에 다시 물어봐 주세요'),false);
+                return;
+            }
+            const raw=String(d.text||'');
+            // 서버가 실행 명령(@…)을 함께 줬으면 노트 해돌이와 같은 실행기로 돌린다
+            const hasOps=/^\s*@/m.test(raw);
+            if(hasOps&&typeof window.sdyAiAppParse==='function'&&typeof window.sdyAiAppApply==='function'){
+                const parsed=window.sdyAiAppParse(raw);
+                const say=String(parsed.say||'').trim();
+                homeAiOut(say||'실행할게요…',false);
+                Promise.resolve(window.sdyAiAppApply(parsed.ops)).then(function(res){
+                    res=res||{applied:0,failed:0,notes:[]};
+                    const counts=[];
+                    if(res.applied) counts.push('실행 '+res.applied+'개');
+                    if(res.failed) counts.push('건너뜀 '+res.failed+'개');
+                    const out=[say||'요청대로 했어요 해돌~'];
+                    if(counts.length) out.push(counts.join(' · '));
+                    if(res.notes&&res.notes.length) out.push('· '+res.notes.join('\n· '));
+                    _homeAiLast=out.join('\n\n');
+                    homeAiOut(_homeAiLast,false);
+                    homeAiBusy(false);
+                    homeAiMeta('명령 '+(parsed.ops.length||0)+'개 처리');
+                    if(/설정/.test(text)) homeAiShowActs(homeAiActsFor(text));
+                }).catch(function(){
+                    homeAiMeta('실행 중 문제가 생겼어요');
+                });
+            }else{
+                _homeAiLast=raw;
+                homeAiOut(raw,false);
+                homeAiMeta(d.cached?'미리 준비해 둔 답':'');
+            }
+            if(_homeAiTask==='help'&&/설정/.test(text)) homeAiShowActs(homeAiActsFor(text));
+            _homeAiTurns.push('Q: '+text+'\nA: '+String(_homeAiLast||raw).slice(0,600));
+            _homeAiTurns=_homeAiTurns.slice(-6);
+        })
+        .catch(function(err){
+            if(myCtl!==_homeAiCtl) return;
+            _homeAiCtl=null; homeAiBusy(false);
+            if(err&&err.name==='AbortError'){ homeAiMeta('멈췄어요'); return; }
+            homeAiOut('답을 받지 못했어요 · 인터넷이나 AI 키를 확인해 주세요',false);
+        });
+    }
+    // 설정 관련 질문이면 답 카드 아래에 '설정 열기'를 붙인다 — 답을 읽고 바로 눌러 확인
+    function homeAiActsFor(q){
+        const acts=[];
+        acts.push({label:'설정 열기',icon:'ri-settings-3-line',onClick:function(){
+            try{
+                if(/테마|강조|배경|종이|휴지통|버그|단축키|복원/.test(String(q||''))&&typeof window.sdySettingsJump==='function'){
+                    if(window.sdySettingsJump(q)!==false) return;
+                }
+                if(typeof openSettings==='function') openSettings();
+            }catch(e){}
+        }});
+        return acts;
+    }
+    try{
+        window.sdyHomeAiAsk=sdyHomeAiAsk;
+        window.sdyHomeAiClose=sdyHomeAiClose;
+        window.sdyHomeAiStop=sdyHomeAiStop;
+        window.sdyHomeAiCopy=sdyHomeAiCopy;
+        window.sdyHomeAiInput=sdyHomeAiInput;
+        window.sdyHomeAiKey=sdyHomeAiKey;
+    }catch(e){}
+    // 검색창에 포커스가 오거나 홈 그리드가 다시 그려질 때 줄 상태를 맞춘다
+    //   (검색어는 화면을 오가도 남아 있을 수 있다 — renderGrid 가 sdyHomeAiInput 을 부른다)
+    (function(){
+        var el=homeAiEl('searchInput');
+        if(el&&el.addEventListener) el.addEventListener('focus',function(){ try{ homeAiPaintBar(); }catch(e){} });
+    })();
+    try{ homeAiPaintBar(); }catch(e){}
+/* APP-PART:02g-home-ai.js:END */
+
 /* === src/app/03a-admin.js ===
    관리자 모드
    소스 오브 트루스 — 수정 후: node scripts/bundle-frontend.mjs
@@ -5844,6 +6127,89 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         openNav(closeSettings);
     }
     function closeSettings(){ document.getElementById('setModal').style.display='none'; navDrop(closeSettings); }
+
+    /* ===== 14.65 · 해돌이 '설정 안내' =====
+       홈 검색창의 해돌이(help task)와 노트 안 해돌이(app task)가 **같은 글**을 근거로
+       "설정에 무엇이 있는지 · 지금 무엇으로 되어 있는지 · 어디를 누르면 바뀌는지"를
+       자세히 답한다. 설정 항목이 늘면 여기에 한 줄만 더하면 해돌이가 바로 안다.
+       (모델은 여기 적힌 것만 사실로 말하도록 프롬프트에 못 박혀 있다) */
+    const PAPER_NAME={blank:'빈 종이',lined:'줄 노트',grid:'격자',dotted:'도트'};
+    function settingsGuideRows(){
+        var themeNow='기본';
+        try{ if(typeof sdyTheme==='function'&&sdyTheme()==='classic') themeNow='캐주얼'; }catch(e){}
+        return [
+            {name:'테마', keys:['테마','theme','기본','캐주얼','클래식','다크','라이트'], sel:'.theme-row',
+             now:themeNow,
+             how:'설정 → 테마에서 [기본(깔끔한 라이트)] 또는 [캐주얼(익숙한 편안한 화면)] 을 누르면 즉시 바뀝니다.'},
+            {name:'강조색', keys:['강조색','포인트','accent'], sel:'.accent-row',
+             now:String(S.accent||'#4f6ef7'),
+             how:'설정 → 강조색에서 색 동그라미를 누르면 버튼·링크 등 앱 전체 포인트 색이 바뀝니다.'},
+            {name:'배경화면', keys:['배경','배경화면','월페이퍼','wallpaper'], sel:'#setRowWall',
+             now:(S.wall?(wallIsVideo()?'동영상 배경 사용 중':'사진 배경 사용 중'):'없음(기본 배경)'),
+             how:'설정 → 배경화면 → [사진·동영상 선택] (캐주얼 테마에서만 보입니다). [지우기]를 누르면 기본 배경으로 돌아갑니다.'},
+            {name:'기본 종이', keys:['종이','기본종이','줄','격자','도트','paper'], sel:'#defPaper',
+             now:(PAPER_NAME[S.defPaper]||'빈 종이'),
+             how:'설정 → 기본 종이에서 새 노트의 종이(빈 종이·줄 노트·격자·도트)를 고릅니다.'},
+            {name:'휴지통', keys:['휴지통','삭제','복구'], sel:'#trashCount',
+             now:(function(){ try{ return (notebooks||[]).filter(n=>n&&n.trash).length+'개'; }catch(e){ return '확인 중'; } })(),
+             how:'설정 → 휴지통 → [보기]. 삭제한 노트는 30일 동안 보관되고 그 뒤 자동으로 지워집니다.'},
+            {name:'버그 일지', keys:['버그','일지','신고'], sel:'#bugCount',
+             now:(function(){ try{ return (typeof window.sdyBuglogCount==='function'?window.sdyBuglogCount():0)+'건'; }catch(e){ return '확인 중'; } })(),
+             how:'설정 → 버그 일지 → [보기]. 노트에서 해돌이에게 "버그 신고: …"라고 말하면 정리되어 이곳에 쌓입니다.'},
+            {name:'사용법·단축키', keys:['사용법','단축키','키','도움말'], sel:'#setRowKeys',
+             now:'', how:'설정 → 사용법 · 단축키 → [열기] 에서 전체 단축키와 기능 안내를 봅니다.'},
+            {name:'기본값 복원', keys:['초기화','기본값','리셋','복원'], sel:'#setRowReset',
+             now:'', how:'설정 맨 아래 [기본값으로 복원] 을 누르면 테마·강조색·배경·종이·앱 제목이 처음 상태로 돌아갑니다.'}
+        ];
+    }
+    // 설정 창 밖에 있는 것들 — 해돌이가 '어디서 하지?'를 답할 수 있게 함께 적어 둔다.
+    const SETTINGS_ELSEWHERE=[
+        ['음악·이퀄라이저','플레이어의 EQ 버튼(또는 홈 왼쪽 아래 음악 탭)에서 켜기·프리셋 10종(원음·베이스 부스트·보컬 강조·팝·록·힙합·R&B·클래식·재즈·일렉트로닉)·볼륨을 다룹니다. 말로도 됩니다 — "이퀄라이저 보컬 강조로 켜줘", "볼륨 70으로 해줘".'],
+        ['곡 음량 자동 맞춤','곡마다 다른 음량은 서버가 송출할 때 자동으로 -14 LUFS 에 맞춥니다. 설정에 없는 항목이고 사용자가 고르는 옵션도 아닙니다.'],
+        ['집중 화면(시계·스톱워치·타이머)','상단 시계 버튼 또는 "10분 타이머 맞춰줘" — 집중 화면 안에 셋이 함께 있습니다.'],
+        ['지점 저장 / 지점 복원','노트 편집기의 더보기(⋯) 메뉴 → 지점 저장 으로 지금 상태를 남기고, 지점 복원 으로 그때로 되돌립니다.'],
+        ['폴더 색·아이콘','폴더 카드를 우클릭(또는 ⋮) → 색 · 아이콘 변경. 고른 색은 홈 카드와 사이드바에 바로 반영됩니다.'],
+        ['찾기·번역·내보내기','노트 편집기 도구에서 찾기(Ctrl+F), 자동 번역(쪽/문서), PDF 내보내기를 합니다.'],
+        ['엽스코드(채팅)','상단 엽스코드 버튼 또는 "엽스코드 열어줘". 노트를 함께 보며 대화하는 공간입니다.'],
+        ['알림','상단 종 버튼 — 읽지 않은 알림 개수가 배지로 붙고, 누르면 목록이 열립니다.']
+    ];
+    function settingsGuideText(){
+        var lines=['[이 앱의 설정 — 이름 · 지금 값 · 바꾸는 법]'];
+        settingsGuideRows().forEach(function(r){
+            lines.push('- '+r.name+(r.now?(' · 지금: '+r.now):'')+' · '+r.how);
+        });
+        lines.push('');
+        lines.push('[설정 창 밖의 주요 기능 — 어디서 하나]');
+        SETTINGS_ELSEWHERE.forEach(function(it){ lines.push('- '+it[0]+' · '+it[1]); });
+        return lines.join('\n');
+    }
+    /* 설정 창을 열고 이름이 맞는 줄로 이동한다 — 해돌이가 "@settings | 테마"
+       처럼 항목까지 지정해 실행할 때 쓴다. 찾으면 항목 이름을, 못 찾으면 false 를
+       돌려주어 호출한 쪽이 그냥 설정만 열 수 있게 한다. */
+    function settingsJump(what){
+        var q=String(what==null?'':what).trim().toLowerCase();
+        if(!q) return false;
+        var rows=settingsGuideRows();
+        var hit=rows.find(function(r){ return r.name.toLowerCase()===q; })
+             || rows.find(function(r){ return r.keys.some(function(k){ return q.indexOf(k)>=0; }); })
+             || rows.find(function(r){ return r.name.toLowerCase().indexOf(q)>=0; });
+        if(!hit) return false;
+        try{ openSettings(); }catch(e){ return false; }
+        try{
+            var el=hit.sel?document.querySelector(hit.sel):null;
+            var row=el&&el.closest?el.closest('.set-row'):null;
+            if(row&&row.scrollIntoView) row.scrollIntoView({block:'center',behavior:'smooth'});
+            if(row&&row.classList){
+                row.classList.remove('set-row-hit');
+                void row.offsetWidth;                    // 애니메이션 재시작
+                row.classList.add('set-row-hit');
+                setTimeout(function(){ try{ row.classList.remove('set-row-hit'); }catch(e){} },2200);
+            }
+        }catch(e){}
+        return hit.name;
+    }
+    try{ window.sdySettingsGuideText=settingsGuideText; }catch(e){}
+    try{ window.sdySettingsJump=settingsJump; }catch(e){}
 
     // ===== 설정 옵션 동작 =====
     function pickAccent(c){
@@ -15975,7 +16341,17 @@ function _tightLineBackspace(c,w){
     let _navNoHist=false;             // pushState 를 못 쓰는 환경(샌드박스 iframe·file://)
     let _navCollapsing=false;         // 보초를 걷는 history.back() 의 popstate 는 무시한다
     let _navCollapseT=null;           // …그 popstate 가 끝내 안 오는 환경 대비 안전망
+    // 14.65 · 뒤로가기(popstate)가 부른 닫기 동작은 장부에서 이미 뺀 층이다.
+    //   그 안에서 다시 navDrop 이 불려도 '보초 걷기(history.back())'를 하면 안 된다.
+    //   그 back() 이 뒤로가기를 한 번 더 먹어, 폴더 안에서 문서를 닫고 한 번 더
+    //   누르면 홈으로 가는 대신 사이트를 빠져나가 버렸다(사용자 보고).
+    let _navInClose=false;
     function _navClose(it){ if(it&&it.close){ try{ it.close(); }catch(err){} } }
+    // popstate 가 부른 닫기 동안에는 navDrop 이 보초를 건드리지 않게 잠근다.
+    function _navCloseFromPop(it){
+        _navInClose=true;
+        try{ _navClose(it); }finally{ _navInClose=false; }
+    }
     // 보초를 얹거나(첫 층) 이미 얹힌 보초의 층 수만 고친다(다음 층부터).
     // replaceState 라서 층이 늘어도 히스토리 항목은 하나다.
     function _navStamp(){
@@ -15987,6 +16363,10 @@ function _tightLineBackspace(c,w){
     }
     function openNav(close){ _nav.push({close}); _navStamp(); }
     function navDrop(close){
+        // popstate 가 부른 닫기(= 이미 장부에서 빠진 층)면 여기서 보초를 걷지 않는다.
+        // 걷는 back() 이 뒤로가기를 한 번 더 소비해 층 하나를 건너뛰거나 앱을
+        // 빠져나가던 원인이라, 마무리는 popstate 처리부가 맡는다.
+        if(_navInClose) return;
         const i=_nav.findIndex(x=>x.close===close);
         if(i>=0) _nav.splice(i,1);
         if(_nav.length){ _navStamp(); return; }
@@ -16001,8 +16381,36 @@ function _tightLineBackspace(c,w){
             _navCollapseT=setTimeout(()=>{ _navCollapseT=null; _navCollapsing=false; },1500);
         }
     }
+    // 14.65 · 열린 층이 없을 때 뒤로가기 한 번이 할 일 — 폴더 밖으로(결국 홈까지)
+    //   한 단계 올라가거나, 길을 잃고 열려 있는 에디터를 닫는다. 했으면 true.
+    //   (홈에서는 할 일이 없다 → 그때만 뒤로가기가 앱을 나간다.)
+    function _navHomeStep(){
+        try{
+            if(typeof curFolder!=='undefined' && curFolder){
+                openFolder(folderParent(curFolder), true);
+                // 아직 상위 폴더 안이면 보초를 다시 얹어 다음 뒤로가기도 잡는다.
+                // (홈까지 올라왔으면 보초를 남기지 않는다 — 그때는 평소처럼 나간다)
+                if(curFolder) _navStamp();
+                return true;
+            }
+        }catch(e){}
+        try{
+            if(document.getElementById('editorView').classList.contains('open')){
+                _navCloseFromPop(closeEditor);
+                return true;
+            }
+        }catch(e){}
+        return false;
+    }
+    // 14.65 · 아직 홈이 아닌가 — 폴더 안이거나 에디터가 열려 있으면 뒤로가기를
+    //   한 번 더 받아 줄 보초를 남긴다(그래야 다음 뒤로가기가 사이트를 나가는
+    //   대신 홈으로 올라간다).
+    function _navAwayFromHome(){
+        try{ if(typeof curFolder!=='undefined' && curFolder) return true; }catch(e){}
+        try{ return document.getElementById('editorView').classList.contains('open'); }catch(e){ return false; }
+    }
     function navBack(){
-        if(!_nav.length) return;
+        if(!_nav.length){ _navHomeStep(); return; }
         // 히스토리를 못 쓰는 환경에서 history.back() 을 부르면 앱 밖으로 나가
         // 페이지가 다시 실린다(= 그 자체가 화면 깜빡임). 그럴 땐 곧바로 닫는다.
         if(_navNoHist||!_navGuard){ _navClose(_nav.pop()); _navStamp(); return; }
@@ -16024,17 +16432,24 @@ function _tightLineBackspace(c,w){
             // 없으므로, 열려 있는 것 중 보초가 기억하는 층 수를 넘는 것만 정리한다.
             _navGuard=true;
             const n=(typeof st.n==='number')?st.n:_nav.length;
-            while(_nav.length>n) _navClose(_nav.pop());
+            while(_nav.length>n) _navCloseFromPop(_nav.pop());
             return;
         }
         // 보초 아래(앱이 처음 실린 항목)로 내려왔다.
         _navGuard=false;
-        if(!_nav.length) return;      // 열린 것이 없다 → 다음 뒤로가기가 앱을 나간다
+        // 14.65 · 열린 층이 없어도 곧바로 사이트를 나가지 않는다.
+        //   아직 폴더 안이면 한 단계 위로(결국 홈까지) 올리고, 에디터가 열려
+        //   있으면 닫는다. 그래야 어느 길로 들어왔든 뒤로가기가 '홈까지'
+        //   올라가고, 정말 홈에서 한 번 더 눌렀을 때만 앱을 나간다.
+        if(!_nav.length){
+            if(_navHomeStep()) return;
+            return;      // 홈이다 → 다음 뒤로가기가 앱을 나간다
+        }
         // 뒤로가기 한 번 = 가장 위 열린 것 하나 닫기.
-        _navClose(_nav.pop());
-        // 아직 층이 남았다면 보초를 다시 얹는다 — 다음 뒤로가기도 앱을
-        // 빠져나가는 대신 그다음 층을 닫아야 한다.
-        if(_nav.length) _navStamp();
+        _navCloseFromPop(_nav.pop());
+        // 아직 층이 남았거나 폴더 안·에디터라면 보초를 다시 얹는다 — 다음
+        // 뒤로가기도 앱을 빠져나가는 대신 그다음 층(결국 홈)을 향해야 한다.
+        if(_nav.length || _navAwayFromHome()) _navStamp();
     });
 
     // 열려 있는 것 중 가장 위를 닫는다 (Esc / 뒤로가기 공용). 닫았으면 true.
@@ -25477,6 +25892,10 @@ function logMusicPlay(id){
       body:JSON.stringify({id}),keepalive:true}).catch(()=>{});}catch(e){}
 }
 const A=new Audio(); A.preload='metadata';
+// 14.65 · 곡별 음량 정규화 상태 — 곡 정보를 처음 그릴 때(모듈 초기화 중)에도
+//   읽히므로 EQ 선언보다 먼저 만들어 둔다 (let 은 TDZ 라 순서를 지켜야 한다).
+let _normDb=0, _normGainNode=null, _lvlAnalyser=null, _lvlBuf=null;
+const _normAcc=new Map();                 // 곡 id → 누적 측정값
 const $=id=>document.getElementById(id);
 const pl=$('musicPlayer');
 function _isPro(){ try{ return typeof sdyTheme==='function'&&sdyTheme()==='pro'; }catch(e){ return false; } }
@@ -25893,6 +26312,7 @@ function setCover(t){ const im=$('mpCover');
   im.onerror=()=>{ im.onerror=null; im.src=DEF_COVER; };
   im.src=coverURL(t); }
 function renderTitle(){ const t=cur();
+  normOnTrack(t);          // 14.65 · 서버가 정한 곡 음량 보정값 적용
   // 10.1 · 가수를 알면 '가수 · 제목' 으로 보여준다 (스포티파이 풍)
   $('mpTitle').textContent=t?((t.artist&&String(t.artist).trim())?t.artist+' · '+t.title:t.title):'재생 중인 곡 없음';
   $('mpTitle').title=t?((t.artist?t.artist+' — ':'')+t.title):'';
@@ -26139,7 +26559,7 @@ $('mpRate').onclick=e=>{
   applyRate(); saveMusicState(true);
 };
 // 볼륨: 슬라이스 + 플레이어 위 마우스 스크롤
-function setVol(v){ P.vol=Math.max(0,Math.min(1,v)); A.volume=P.vol;
+function setVol(v){ P.vol=Math.max(0,Math.min(1,v)); A.volume=P.vol; normApply();
   $('mpVolSlider').value=Math.round(P.vol*100);
   const bv=$('mpBVol'); if(bv) bv.value=Math.round(P.vol*100);
   const bi=$('mpBVolIco'); if(bi) bi.className=P.vol===0?'ri-volume-mute-line':
@@ -27401,6 +27821,105 @@ const EQ_PRESETS=[
   ['재즈',        [ 3, 2, 1, 2,-2,-2, 0, 1, 2, 3]],
   ['일렉트로닉',  [ 6, 5, 2, 0,-2, 1, 1, 2, 5, 6]],
 ];
+// ── 14.65 · 곡별 음량 정규화 ──────────────────────────────────────────
+//  곡마다 소리가 크고 작은 문제는 **백엔드가** 맞춘다 — 여기서는 서버가 정해
+//  목록에 실어 보낸 값(norm_db)을 적용만 한다. 사용자가 고르는 옵션은 없다.
+//   · 그래프(이퀄라이저를 켰거나 정규화를 위해 만든 것)가 있으면 게인 노드로
+//     올리고 내린다 (조용한 곡도 목표까지 올라온다).
+//   · 그래프가 없으면 음량으로 '내리기'만 한다 (기기 음량은 1을 넘을 수 없다).
+//  값이 아직 없는 곡은 재생하면서 조용히 재서 서버에 보고한다 — 서버가 보정값을
+//  정해 돌려주면 그 순간부터 모든 기기가 같은 크기로 듣는다.
+const NORM_TARGET_DB=-14;                 // 서버와 같은 목표 (표시용)
+function normDbOf(t){
+  const v=t&&t.norm_db;
+  if(typeof v!=='number'||!isFinite(v)) return 0;
+  return Math.max(-12,Math.min(6,Math.round(v*10)/10));
+}
+function _dbLin(db){ return Math.pow(10,(+db||0)/20); }
+function normApply(){
+  if(_normGainNode&&_eqCtx){
+    const g=_dbLin(_normDb);
+    try{
+      _normGainNode.gain.cancelScheduledValues(_eqCtx.currentTime);
+      _normGainNode.gain.setTargetAtTime(g,_eqCtx.currentTime,0.05);
+    }catch(e){ _normGainNode.gain.value=g; }
+    A.volume=P.vol;                        // 그래프가 있으면 음량은 사용자 값 그대로
+    return;
+  }
+  // 그래프 없음 → 음량으로 감쇠만 (증폭은 불가능하다)
+  const lin=Math.min(1,_dbLin(_normDb));
+  A.volume=Math.max(0,Math.min(1,P.vol*lin));
+}
+// 지금 곡이 바뀌었을 때 (renderTitle 이 곡이 바뀔 때마다 불린다)
+function normOnTrack(t){
+  _normDb=normDbOf(t);
+  normApply();
+  if(t&&typeof t.norm_db!=='number'){ try{ _normKick(); }catch(e){} }
+  normMaybeBuild();
+}
+// 조용한 곡(+dB)은 기기 음량으로 올릴 수 없다 — 그래프가 필요하다.
+//   같은 서버에서 오는 음원(상대 경로)일 때만 조용히 한 번 만든다:
+//   외부 스트림은 CORS 가 없으면 무음이 될 수 있어 _eqStreamsPass 가 막아 준다.
+let _normTry=false;
+function normMaybeBuild(){
+  if(_normTry||_normGainNode||_normDb<=0) return;
+  const u=A.currentSrc||A.src||'';
+  const local=!u||u.startsWith('/')||(function(){ try{ return new URL(u,location.href).origin===location.origin; }catch(e){ return false; } })();
+  if(A.paused||!local) return;
+  _normTry=true;
+  try{ Promise.resolve(eqBuild()).catch(()=>{}); }catch(e){}
+}
+// 서버가 아직 모르는 곡 → 재생 중에 조용히 재서 보고한다 (사용자에게 안 보임)
+let _normTimer=0, _normBusy=false;
+function _normKick(){
+  if(_normTimer) return;
+  if(typeof window==='undefined'||!window.setInterval) return;
+  _normTimer=setInterval(_normTick,250);
+  _normTick();
+}
+function _normTick(){
+  try{
+    if(!_lvlAnalyser||!_lvlBuf||!A.src||A.paused||A.ended) return;
+    const id=A._trackId||P.currentId; if(!id) return;
+    const t=(P.list||[]).find(x=>x.id===id); if(!t) return;
+    if(typeof t.norm_db==='number'){ _normAcc.delete(id); return; }   // 이미 서버 값이 있다
+    const vol=A.volume||0;
+    if(vol<=0.02) return;                                            // 음소거·거의 0 이면 재지 않는다
+    _lvlAnalyser.getFloatTimeDomainData(_lvlBuf);
+    let sum=0,peak=0;
+    for(let i=0;i<_lvlBuf.length;i++){ const v=_lvlBuf[i]; sum+=v*v; const a=v<0?-v:v; if(a>peak) peak=a; }
+    const ms=sum/_lvlBuf.length;
+    const st=_normAcc.get(id)||{e:0,n:0,peak:0,sent:false};
+    // 요소 음량이 걸린 뒤의 신호라, 사용자 음량을 되돌려 '원본 레벨'로 만든다
+    const inv=1/(vol*vol);
+    st.e+=ms*inv; st.n++;
+    const pk=peak/vol; if(pk>st.peak) st.peak=pk;
+    _normAcc.set(id,st);
+    const rate=(_eqCtx&&_eqCtx.sampleRate)||44100;
+    const sec=st.n*(_lvlBuf.length/rate);
+    if(!st.sent&&st.n>=40&&sec>=8){ st.sent=true; _normReport(id,t,st,sec); }
+  }catch(e){}
+}
+function _normReport(id,t,st,sec){
+  if(_normBusy) return; _normBusy=true;
+  const rms=st.e>0?10*Math.log10(st.e/st.n):-120;
+  const peak=st.peak>0?20*Math.log10(st.peak):null;
+  const body={id:id,rms_db:Math.round(rms*10)/10,peak_db:peak===null?null:Math.round(peak*10)/10,
+              sec:Math.round(sec),by:'player-rms'};
+  Promise.resolve()
+    .then(()=>fetch('/api/music/norm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))
+    .then(r=>r.json())
+    .then(d=>{
+      if(d&&d.ok&&typeof d.norm_db==='number'){
+        t.norm_db=d.norm_db; t.norm_ready=true;      // 서버가 정한 값 — 곧바로 적용
+        const nowId=A._trackId||P.currentId;
+        if(t.id===nowId){ _normDb=normDbOf(t); normApply(); }
+      }
+    })
+    .catch(()=>{})
+    .then(()=>{ _normBusy=false; });
+}
+if(typeof window!=='undefined'){ window.sdyMusicNormDb=()=>_normDb; }
 const EQ={on:false,preset:0,gains:EQ_FREQS.map(()=>0)};
 try{
   const saved=JSON.parse(localStorage.getItem('mp_eq1')||'null');
@@ -27443,7 +27962,14 @@ async function eqBuild(){
   try{ A.crossOrigin='anonymous'; }catch(e){}
   _eqCtx=new AC();
   const src=_eqCtx.createMediaElementSource(A);
-  let node=src;
+  // 14.65 · 곡별 음량 게인 — EQ 앞단에 둔다 (EQ 를 꺼도 값은 그대로 적용된다)
+  _normGainNode=_eqCtx.createGain();
+  _normGainNode.gain.value=_dbLin(_normDb);
+  _lvlAnalyser=_eqCtx.createAnalyser(); _lvlAnalyser.fftSize=2048;
+  _lvlBuf=new Float32Array(_lvlAnalyser.fftSize);
+  src.connect(_normGainNode);
+  src.connect(_lvlAnalyser);          // 측정은 원본 레벨에서 (게인·EQ 영향 없이)
+  let node=_normGainNode;
   _eqChain=EQ_FREQS.map((f,i)=>{
     const q=_eqCtx.createBiquadFilter();
     q.type=i===0?'lowshelf':i===EQ_FREQS.length-1?'highshelf':'peaking';
@@ -27461,6 +27987,8 @@ async function eqBuild(){
   node.connect(_eqAnalyser); _eqAnalyser.connect(_eqCtx.destination);
   _eqBuilt=true;
   eqApplyGains(true);
+  normApply();                        // 14.65 · 곡 음량 게인 적용 + 측정 시작
+  _normKick();
   _eqReloadKeep();
   return true;
 }
@@ -30054,27 +30582,57 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                    eq: sdyEqObj,
                    _state:()=>P};
 
-// ── 14.59 · 프로 홈 은은한 이퀄라이저 — 프로 모드 홈 배경 전용, 재생 중에만 은은하게 일렁인다 ──
-//  · #proHomeEq 캔버스는 #mainView 뒤(z:-1)에 깔리고(클래식에선 display:none), 재생 시에만 opacity 로 떠오른다.
-//  · 기존 Web Audio 그래프를 재사용한다: _eqAnalyser가 있으면 그 getByteFrequencyData 를 쓰고,
-//    없으면 eqBuild() 로 한 번만 연결을 시도한다. 두 번째 MediaElementSource 를 만들지 않아 무음 버그가 없다.
-//  · 14.61 · 뼈대를 바꿨다: 28개 막대(이산 그래프) 대신 **연속 곡선** —
-//    화면 가장 바닥에서부터 피어오르는 부드러운 물결 + 시간이 흐르며 이동하는
-//    그라데이션(세로 페이드 + 좌→우로 흐르는 색 띠 + 미끄러지는 윗선).
-//    주파수 96칼럼(로그 축)을 이웃 3칸 공간 스무딩 ×2 + attack/fall 시간 스무딩으로
-//    이어 중점 2차 베지어로 그린다. 터보·모션감소·에디터에선 rAF 자체를 돌지 않는다.
+// ── 14.59 · 프로 홈 배경 버츄얼라이저 — 재생 중에만 은은하게 일렁인다 ──
+//  · #proHomeEq 는 그 자체가 <canvas> 다(#mainView 뒤 z:-1). 그 위에 바로 그린다.
+//  · 기존 Web Audio 그래프를 재사용한다: _eqAnalyser 가 있으면 그
+//    getByteFrequencyData 를 쓰고, 없으면 eqBuild() 로 한 번만 연결을 시도한다.
+//    두 번째 MediaElementSource 를 만들지 않아 무음 버그가 없다.
+//  · 14.61 → 14.64 로 그림을 갈아엎었다. 예전엔 스펙트럼을 그대로 그린
+//    '그래프(연속 곡선)'였지만, 사용자 요청("그래프 형식이 아니라 다른 주파수의
+//    파동 여러개가 겹친 형태, 예쁘고 덜 촐랑거리고 부드럽게")에 맞춰
+//    **서로 다른 주파수의 사인 파동 6겹이 겹쳐 흐르는** 형태로 바꿨다.
+//    · 겹마다 담당 대역(저음 40Hz ~ 고음 14kHz)만 보고, 그 대역 에너지로
+//      천천히 부풀었다 잦아든다. 스펙트럼 빈을 그대로 따라가지 않으므로
+//      막대처럼 튀지 않는다.
+//    · 공격 0.55초 / 낙하 2.4초 지수 완화 — 물결이 '숨쉰다'.
+//    · 위상은 0.013~0.031 rad/s 로 아주 느리게 흐른다(촐랑거림 방지).
+//    · 몸통은 윗선에서 화면 바닥까지 사라지는 세로 그라데이션 + 가는 윗선.
+//    · 터보(저사양)·모션감소·에디터 열림에서는 rAF 자체가 돌지 않는다.
 (function(){
   const cvs=document.getElementById('proHomeEq');
   if(!cvs) return;
   let ctx=null; try{ ctx=cvs.getContext('2d',{alpha:true}); }catch(e){}
   if(!ctx) return;
-  const COL_N=96;
-  let env=new Float32Array(COL_N), raws=new Float32Array(COL_N), sm=new Float32Array(COL_N), bandMax=new Float32Array(COL_N);
-  for(let i=0;i<COL_N;i++) bandMax[i]=0.35;
+
+  // ① 파동 겹 정의 — 겹마다 다른 주파수 대역·파장·흐르는 속도·색을 가진다.
+  //    amp/alpha 는 '차분할 때 얼마나 잔잔한가'를 정한다(에너지 0.30~1 배).
+  //      band : [저Hz, 고Hz] — 이 대역의 에너지만 이 겹의 높이를 만든다
+  //      k    : 화면 폭에 몇 번 접히는가(작을수록 길고 완만한 파동)
+  //      sp   : 위상 흐름 rad/s (음수 = 반대 방향)
+  //      base : 파동의 중심 높이(화면 높이 비율)
+  const WAVES=[
+    { band:[  40,  170], k:1.05, sp: 0.031, base:0.64, amp:0.085, alpha:0.30, hue:  0, width:1.6 },
+    { band:[ 120,  400], k:1.45, sp:-0.027, base:0.58, amp:0.076, alpha:0.27, hue: 16, width:1.5 },
+    { band:[ 320,  900], k:1.95, sp: 0.023, base:0.52, amp:0.066, alpha:0.24, hue:-14, width:1.4 },
+    { band:[ 800, 2200], k:2.60, sp:-0.020, base:0.46, amp:0.056, alpha:0.21, hue: 30, width:1.3 },
+    { band:[2000, 5500], k:3.40, sp: 0.016, base:0.41, amp:0.047, alpha:0.18, hue:-24, width:1.2 },
+    { band:[5000,14000], k:4.30, sp:-0.013, base:0.36, amp:0.039, alpha:0.15, hue: 42, width:1.1 },
+  ];
+  const NW=WAVES.length;
+  // 대역 틸트 — 고음은 같은 세기라도 스펙트럼에서 작게 잡히므로 살짝 들어 올린다
+  WAVES.forEach(w=>{
+    const mid=Math.sqrt(w.band[0]*w.band[1]);
+    w.tilt=Math.min(1.22, 0.78+0.40*Math.sqrt(mid/9000));
+  });
+  const env=new Float32Array(NW);      // 겹별 완화된 에너지(0~1)
+  const bandMax=new Float32Array(NW);
+  for(let i=0;i<NW;i++){ env[i]=0.26; bandMax[i]=0.35; }
+
   let raf=0, last=0, dpr=1, w=0, h=0, started=false;
   let buf=null, fbuf=null;
-  const FALL=2.1;
-  function isPro(){ try{ const h=document.documentElement; return h.classList.contains('theme-pro') || h.dataset.theme==='pro'; }catch(e){ return false; } }
+  const SEG_MAX=240;
+
+  function isPro(){ try{ const el=document.documentElement; return el.classList.contains('theme-pro')||el.dataset.theme==='pro'; }catch(e){ return false; } }
   function shouldRun(){
     if(!isPro()) return false;
     if(document.body.classList.contains('sdy-turbo')) return false;
@@ -30099,7 +30657,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     if(!isFinite(n)) return [37,99,235];
     return [(n>>16)&255,(n>>8)&255,n&255];
   }
-  // 14.61 · 그라데이션 서브 컬러용 — 강조색을 HSL 로 돌려 보색 방향으로 살짝 틀어 준다
+  // 겹마다 색을 살짝 돌리기 위한 HSL 변환(강조색 기준)
   function hexToHsl(hex){
     try{
       const c=hexToRgb(hex).map(v=>v/255);
@@ -30119,227 +30677,161 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   function resize(){
     const r=cvs.getBoundingClientRect();
-    // CSS 가 width:calc(100% - 280px) 등으로 잡아 주므로, 실측이 0이면 부모 폭에서 유추
     let rw=r.width, rh=r.height;
     if(rw<10||rh<10){
-      const vw=innerWidth, vh=innerHeight;
+      // CSS 가 아직 못 잡았을 때(첫 프레임·display:none) — 뷰포트에서 유추
+      const vw=window.innerWidth||1280, vh=window.innerHeight||800;
       const side=document.getElementById('proSide');
       const sw=side?side.getBoundingClientRect().width:0;
-      rw=Math.max(200, vw - (isPro()?sw:0));
-      rh=Math.max(140, vh - 88);
+      rw=Math.max(200, vw-(isPro()?sw:0));
+      rh=Math.max(140, vh-88);
     }
     dpr=Math.min(1.6, window.devicePixelRatio||1);
     w=rw; h=rh;
     cvs.width=Math.max(1, Math.round(rw*dpr));
     cvs.height=Math.max(1, Math.round(rh*dpr));
-    // 2d context 는 devicePixelRatio 로 스케일 — 그리기 좌표는 CSS px 로 쓴다
     try{ ctx.setTransform(dpr,0,0,dpr,0,0); }catch(e){ try{ ctx.scale(dpr,dpr); }catch(e2){} }
   }
   let resizeT=null;
   function scheduleResize(){ clearTimeout(resizeT); resizeT=setTimeout(resize,120); }
   try{ new ResizeObserver(scheduleResize).observe(cvs); }catch(e){}
+  try{ new ResizeObserver(scheduleResize).observe(cvs); }catch(e){}
   try{ new ResizeObserver(scheduleResize).observe(document.getElementById('proSide')||document.body); }catch(e){}
   window.addEventListener('resize', scheduleResize, {passive:true});
-  // 초기 한 번
   try{ resize(); }catch(e){}
 
-  function ensureAnalyser(){
-    if(_eqAnalyser) return true;
-    // EQ 가 꺼져 있어도, 프로 홈 이퀄라이저는 조용히 그래프를 한 번 물려 본다.
-    // eqBuild() 는 내부에서 CORS 를 검사하고 실패하면 false 를 돌려 준다.
-    if(_eqBusy) return false;
-    // 비동기이지만, 호출부에선 다음 프레임에 데이터가 생긴다.
-    // 여기선 동기적으로 _eqAnalyser 존재 여부만 보고, 없으면 다음 틱에 다시 시도한다.
-    return false;
-  }
   async function tryBuild(){
     if(_eqAnalyser) return true;
     if(_eqBusy) return false;
-    try{
-      const ok=await eqBuild();
-      if(ok) return true;
-    }catch(e){}
+    try{ const ok=await eqBuild(); if(ok) return true; }catch(e){}
     return false;
   }
   function setPlaying(on){
     cvs.classList.toggle('playing', !!on);
     cvs.classList.toggle('idle', !on);
-    // CSS 가 opacity 를 .11 로 올린다 — JS 는 클래스만 바꾼다
+  }
+  // 대역 평균 — FFT 빈은 선형이라 주파수를 로그로 눌러 담는다(사람 귀 기준)
+  function bandRaw(lo, hi, bins, nyq){
+    if(!bins) return 0;
+    const f1=Math.max(lo, 20), f2=Math.min(hi, nyq*0.98);
+    if(f2<=f1) return 0;
+    const b1=Math.round(f1/nyq*(bins-1)), b2=Math.round(f2/nyq*(bins-1));
+    let ss=0, c=0;
+    for(let j=Math.max(0,b1); j<=Math.min(bins-1,b2); j++){ ss+=fbuf[j]; c++; }
+    return c?ss/c:0;
   }
   function draw(now){
     if(!shouldRun()){
-      // 멈췄거나 에디터가 열렸으면 서서히 사라지고 루프 정지
       setPlaying(false);
       raf=0; last=0;
-      // 캔버스를 투명하게 한 번 지워 잔상을 없앤다
       try{ ctx.clearRect(0,0,w,h); }catch(e){}
       return;
     }
     raf=requestAnimationFrame(draw);
+    const t=((now||0))/1000;
     const dt=Math.min(.05, Math.max(.001, ((now||0)-(last||now-16))/1000));
     last=now||0;
 
-    // 데이터 소스 확보 — 없으면 이번 프레임은 낮은 높이로만 그리고 다음 프레임에 재시도
-    let hasData=false;
-    let binCount=0;
+    // ③ 스펙트럼 확보 (없으면 조용히 한 번 물려 본다)
+    let hasData=false, bins=0, nyq=16500;
     if(_eqAnalyser){
-      binCount=_eqAnalyser.frequencyBinCount||1024;
-      if(!buf||buf.length!==binCount){ buf=new Uint8Array(binCount); fbuf=new Float32Array(binCount); }
+      bins=_eqAnalyser.frequencyBinCount||1024;
+      if(!buf||buf.length!==bins){ buf=new Uint8Array(bins); fbuf=new Float32Array(bins); }
       try{ _eqAnalyser.getByteFrequencyData(buf); hasData=true; }catch(e){ hasData=false; }
-      if(hasData){ for(let i=0;i<binCount;i++) fbuf[i]=buf[i]/255; }
-    } else {
-      // 한 번도 안 물려 있으면 조용히 물려 본다 (다음 프레임부터 데이터가 온다)
-      if(!started) { started=true; tryBuild().then(()=>{}); }
-      else if(Math.random()<0.04) tryBuild().then(()=>{});
+      if(hasData){ for(let i=0;i<bins;i++) fbuf[i]=buf[i]/255; }
+      const sr=(_eqCtx&&_eqCtx.sampleRate)||44100;
+      nyq=Math.max(1000, sr/2);
+    }else{
+      if(!started){ started=true; tryBuild(); }
+      else if(Math.random()<0.04) tryBuild();
     }
 
-    // 배경은 항상 지운다 — 잔상을 남기지 않는다
     ctx.clearRect(0,0,w,h);
     if(w<20||h<20) return;
 
-    // 색 — 프로 강조색 + 살짝 돌린 서브 컬러(그라데이션 이동이 보이게)
-    const acc=accentHex();
-    const rgb=hexToRgb(acc);
-    const accRgb=`${rgb[0]},${rgb[1]},${rgb[2]}`;
-    const hsl=hexToHsl(acc);
-    const hue2=(hsl[0]+42+360)%360;
-    const hslA=(a,dl)=>`hsla(${hue2.toFixed(0)},${Math.round(hsl[1])}%,${Math.min(74,Math.round(hsl[2]+(dl||12)))}%,${a})`;
-
-    // 레이아웃 — 시작점은 화면 '가장 바닥'(baseY=h) 끝. 좌우 여백 없이 끝까지 이어진다.
-    const baseY=h+2;
-    const maxH=h*0.46;
-
-    // 주파수 매핑 — 42Hz ~ 16kHz 를 로그로 나눈다 (사람 귀처럼 저음이 넓게)
-    const lo=42, hi=16800;
-    const sr=(_eqCtx&&_eqCtx.sampleRate)||44100, nyq=Math.max(1000,sr/2);
-    // 이번 프레임의 목표 높이들 (attack/fall 적용 전 raw)
-    for(let i=0;i<COL_N;i++){
-      const f=lo*Math.pow(hi/lo, i/(COL_N-1));
-      // 데이터가 없어도 완전히 평평하진 않게 — 아주 낮은 숨결
-      let v=0.10 + 0.05*Math.sin(i*0.055 + now*0.00050) + 0.025*Math.sin(i*0.021 - now*0.0011);
-      if(hasData && binCount){
-        const c=Math.round(f/nyq*(binCount-1));
-        const half=Math.max(1, Math.round(c*0.05+2));
-        let ss=0,cnt=0;
-        for(let j=Math.max(0,c-half); j<=Math.min(binCount-1,c+half); j++){ ss+=fbuf[j]; cnt++; }
-        let raw=cnt?ss/cnt:0;
-        // 틸트 — 고음이 작게 잡히므로 살짝 들어 올린다
-        const tilt=Math.min(1.14, 0.74+0.42*Math.sqrt(f/12000));
-        raw*=tilt;
-        // AGC — 밴드별 최대치를 추적해 조용한 곡도 물결이 살아 있게
-        if(raw>bandMax[i]) bandMax[i]=bandMax[i]*0.94+raw*0.06;
-        else bandMax[i]=Math.max(0.18, bandMax[i]*0.998+raw*0.002);
-        const norm=Math.max(0.22, bandMax[i]);
-        v=Math.min(1, raw/norm*0.85);
-        // 감마 — 작은 신호도 보이게
-        v=Math.pow(Math.max(0, v), 0.75);
-      } else {
-        bandMax[i]=Math.max(0.22, bandMax[i]*0.995+v*0.005);
+    // ④ 겹별 에너지 — 공격은 짧게, 낙하는 길게(2.4초). 이게 '촐랑거림'을 없앤다.
+    for(let i=0;i<NW;i++){
+      const W=WAVES[i];
+      let raw=0.24;                       // 데이터가 없어도 아주 낮은 숨결은 남는다
+      if(hasData&&bins){
+        raw=bandRaw(W.band[0], W.band[1], bins, nyq)*W.tilt;
+        if(raw>bandMax[i]) bandMax[i]=bandMax[i]*0.90+raw*0.10;
+        else bandMax[i]=Math.max(0.20, bandMax[i]*0.998+raw*0.002);
+        raw=Math.min(1, raw/Math.max(0.22, bandMax[i]));
+      }else{
+        bandMax[i]=Math.max(0.22, bandMax[i]*0.996+raw*0.004);
       }
-      raws[i]=v;
-    }
-    // 공간 스무딩 — 이웃 3칸 가중 평균 ×2회: 칼럼 사이 계단(이산)을 지운다
-    sm.set(raws);
-    for(let k=0;k<2;k++){
-      let left=sm[COL_N-1];
-      for(let i=0;i<COL_N;i++){
-        const cur=sm[i], nxt=sm[(i+1)%COL_N];
-        sm[i]=(left+cur*2+nxt)/4;
-        left=cur;
-      }
-    }
-    // attack/fall — 올라갈 땐 즉시, 내려갈 땐 부드럽게 (시간축 스무딩)
-    for(let i=0;i<COL_N;i++){
-      const v=sm[i];
-      if(v>env[i]) env[i]=v;
-      else env[i]=Math.max(v, env[i]-FALL*dt);
+      const target=Math.pow(Math.max(0, raw), 0.82);
+      const tau=target>env[i]?0.55:2.40;
+      env[i]+=(target-env[i])*(1-Math.exp(-dt/tau));
+      if(!(env[i]>=0)) env[i]=0;          // (NaN 방어)
     }
 
-    // 곡선 점 — 좌우는 화면 밖까지 살짝 이어 끊김이 없게
-    const xs=new Float32Array(COL_N), ys=new Float32Array(COL_N);
-    for(let i=0;i<COL_N;i++){
-      xs[i]=-10 + (w+20)*(i/(COL_N-1));
-      ys[i]=baseY - env[i]*maxH
-            - Math.sin(i*0.055 + now*0.0009)*3.2*env[i]
-            - Math.cos(i*0.021 - now*0.0007)*1.6;
-    }
-    // 중점 2차 베지어로 이은 부드러운 곡선 — 아래는 화면 밖까지 닫는다
-    const strokePath=()=>{
-      ctx.beginPath();
-      ctx.moveTo(xs[0], ys[0]);
-      for(let i=1;i<COL_N-1;i++){
-        const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
-        ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
-      }
-      ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
-    };
+    // ⑤ 색 — 겹마다 강조색에서 조금씩 돌린 색(같은 계열이라 어지럽지 않다)
+    const hsl=hexToHsl(accentHex());
+    const sat=Math.max(26, Math.min(86, hsl[1]*0.92));
+    const lig=Math.max(38, Math.min(66, hsl[2]+10));
+    const seg=Math.max(64, Math.min(SEG_MAX, Math.round(w/8)));
+    const xs=new Float32Array(seg+1), ys=new Float32Array(seg+1);
 
     ctx.save();
-    ctx.globalAlpha=1;
-
-    // ① 몸통 채움 — 세로 그라데이션(위가 진하고 화면 바닥에서 사라진다)
-    const vg=ctx.createLinearGradient(0, baseY-maxH, 0, baseY);
-    vg.addColorStop(0, `rgba(${accRgb},0.5)`);
-    vg.addColorStop(0.55, `rgba(${accRgb},0.18)`);
-    vg.addColorStop(1, `rgba(${accRgb},0)`);
-    ctx.fillStyle=vg;
-    ctx.beginPath();
-    ctx.moveTo(xs[0], baseY);
-    ctx.lineTo(xs[0], ys[0]);
-    for(let i=1;i<COL_N-1;i++){
-      const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
-      ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
-    }
-    ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
-    ctx.lineTo(xs[COL_N-1], baseY);
-    ctx.closePath();
-    ctx.fill();
-
-    // ② 흐르는 색 띠 — 같은 물결 모양 위를 서브 컬러 띠가 왼→오로 흘러 간다.
-    //    띠는 화면 밖에서 완전히 사라진 뒤 처음부터 다시 나오므로 이음새가 없다.
-    const bandW=Math.max(120, w*0.42);
-    const cyc=w+bandW;
-    const bx=((now*0.05)%cyc)-bandW;
-    const bg=ctx.createLinearGradient(bx, 0, bx+bandW, 0);
-    bg.addColorStop(0, hslA(0));
-    bg.addColorStop(0.5, hslA(0.38));
-    bg.addColorStop(1, hslA(0));
-    ctx.fillStyle=bg;
-    ctx.beginPath();
-    ctx.moveTo(xs[0], baseY);
-    ctx.lineTo(xs[0], ys[0]);
-    for(let i=1;i<COL_N-1;i++){
-      const mx=(xs[i]+xs[i+1])/2, my=(ys[i]+ys[i+1])/2;
-      ctx.quadraticCurveTo(xs[i], ys[i], mx, my);
-    }
-    ctx.lineTo(xs[COL_N-1], ys[COL_N-1]);
-    ctx.lineTo(xs[COL_N-1], baseY);
-    ctx.closePath();
-    ctx.fill();
-
-    // ③ 물결 윗선 — 강조색↔서브 컬러가 계속 미끄러지는 그라데이션 선.
-    //    주기가 정확히 화면 폭이라 순환해도 이음새가 보이지 않는다.
-    const sx0=-(((now*0.06)%w)+w)%w;
-    const sg=ctx.createLinearGradient(sx0, 0, sx0+w, 0);
-    sg.addColorStop(0, `rgba(${accRgb},0.42)`);
-    sg.addColorStop(0.5, hslA(0.46,16));
-    sg.addColorStop(1, `rgba(${accRgb},0.42)`);
-    ctx.strokeStyle=sg;
-    ctx.lineWidth=1.6;
     ctx.lineJoin='round'; ctx.lineCap='round';
-    strokePath();
-    ctx.stroke();
+    for(let i=0;i<NW;i++){
+      const W=WAVES[i];
+      const e=env[i];
+      // 음악이 조용하면 잔잔한 결만 남고, 세지면 천천히 부풀어 오른다
+      const amp=W.amp*h*(0.30+0.70*e)*(0.86+0.14*Math.sin(t*0.07+i*1.7));
+      const yc=h*W.base;
+      const ph=t*W.sp+i*0.9;
+      const turns=Math.PI*2*W.k;
+      for(let s=0;s<=seg;s++){
+        const u=s/seg;
+        const x=-24+(w+48)*u;
+        // 기본 파동 + 느린 변조 + 아주 옅은 배음 — 자연스러운 물결 모양
+        const body=Math.sin(u*turns+ph)*(0.80+0.20*Math.sin(u*turns*0.5-ph*0.6+i));
+        const overtone=Math.sin(u*turns*0.37+ph*1.7+0.6)*0.26;
+        xs[s]=x;
+        ys[s]=yc-body*amp-overtone*amp*(0.5+0.5*e);
+      }
+      const hh=((hsl[0]+W.hue)%360+360)%360;
+      const top=Math.min(h+6, h*1.0);
+      // 몸통 — 윗선에서 화면 바닥까지 사라지는 세로 그라데이션
+      const g=ctx.createLinearGradient(0, yc-amp*1.8, 0, top);
+      g.addColorStop(0,   `hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${lig.toFixed(0)}%,${(W.alpha*(0.55+0.45*e)).toFixed(3)})`);
+      g.addColorStop(0.55,`hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${(lig+4).toFixed(0)}%,${(W.alpha*0.30*(0.55+0.45*e)).toFixed(3)})`);
+      g.addColorStop(1,   `hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${(lig+8).toFixed(0)}%,0)`);
+      ctx.fillStyle=g;
+      ctx.beginPath();
+      ctx.moveTo(xs[0], h+4);
+      ctx.lineTo(xs[0], ys[0]);
+      for(let s=1;s<seg;s++){
+        const mx=(xs[s]+xs[s+1])/2, my=(ys[s]+ys[s+1])/2;
+        ctx.quadraticCurveTo(xs[s], ys[s], mx, my);
+      }
+      ctx.lineTo(xs[seg], ys[seg]);
+      ctx.lineTo(xs[seg], h+4);
+      ctx.closePath();
+      ctx.fill();
+      // 윗선 — 파동의 결을 또렷하게(아주 가늘게)
+      ctx.strokeStyle=`hsla(${hh.toFixed(0)},${sat.toFixed(0)}%,${lig.toFixed(0)}%,${(Math.min(0.72, W.alpha*1.9)*(0.5+0.5*e)).toFixed(3)})`;
+      ctx.lineWidth=W.width;
+      ctx.beginPath();
+      ctx.moveTo(xs[0], ys[0]);
+      for(let s=1;s<seg;s++){
+        const mx=(xs[s]+xs[s+1])/2, my=(ys[s]+ys[s+1])/2;
+        ctx.quadraticCurveTo(xs[s], ys[s], mx, my);
+      }
+      ctx.lineTo(xs[seg], ys[seg]);
+      ctx.stroke();
+    }
     ctx.restore();
   }
-
   function start(){
     if(raf) return;
     if(!shouldRun()) return;
     setPlaying(true);
-    // 이미 rAF 가 돌고 있으면 중복 시작 방지
-    last=performance.now();
-    // 다음 프레임에 빌드가 끝나 있으면 그때부터 데이터가 들어온다
-    if(!_eqAnalyser) tryBuild().then(()=>{});
+    last=window.performance?performance.now():Date.now();
+    if(!_eqAnalyser) tryBuild();
     raf=requestAnimationFrame(draw);
     started=true;
   }
@@ -30349,12 +30841,11 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     last=0;
     try{ ctx.clearRect(0,0,w,h); }catch(e){}
   }
-  // 재생 상태에 따라 시작/정지
-  A.addEventListener('play', ()=>{ if(isPro()){ scheduleResize(); start(); }});
+  // ⑥ 재생/일시정지·화면 전환에 따라 시작과 정지
+  A.addEventListener('play', ()=>{ if(isPro()){ scheduleResize(); start(); } });
   A.addEventListener('pause', stop);
   A.addEventListener('ended', stop);
   A.addEventListener('emptied', stop);
-  // 테마·사이드바·에디터 전환 — CSS 가 숨겨도 JS 루프는 멈춘다
   try{
     new MutationObserver(()=>{
       if(shouldRun()){ scheduleResize(); start(); }
@@ -30371,11 +30862,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       .observe(document.body,{attributes:true,attributeFilter:['class']});
   }catch(e){}
   try{ window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', ()=>{ if(shouldRun()) start(); else stop(); }); }catch(e){}
-  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) { if(raf){ cancelAnimationFrame(raf); raf=0; } } else if(shouldRun()) start(); });
-  // 초기 상태 — 이미 재생 중이면 바로 시작
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ if(raf){ cancelAnimationFrame(raf); raf=0; } } else if(shouldRun()) start(); });
   if(shouldRun()) start();
-  // 외부 디버그 손잡이
-  try{ window.sdyProEq={canvas:cvs, start, stop, resize, ctx, isPro, shouldRun}; }catch(e){}
+  // 외부 디버그 손잡이 (테스트가 파형을 직접 확인할 수 있게 파동 정의도 함께 노출)
+  try{ window.sdyProEq={canvas:cvs, waves:WAVES, start, stop, resize, isPro, shouldRun}; }catch(e){}
 })();
 
 })();
@@ -31219,6 +31709,15 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       else if(window.sdyMusic&&window.sdyMusic.eq&&typeof window.sdyMusic.eq.state==='function') eqSt=window.sdyMusic.eq.state();
       if(eqSt){
         lines.push('이퀄라이저: '+(eqSt.on?'켜짐':'꺼짐')+' · 프리셋: '+(eqSt.presetName||'원음'));
+      }
+    }catch(e){}
+    // 14.65 · 설정 안내 — 노트 안 해돌이(app task)와 홈 검색 해돌이(help task)가
+    //   '설정이 뭐가 있는지 · 지금 뭐로 되어 있는지 · 어디를 누르면 바뀌는지'를
+    //   같은 근거로 자세히 답하게, 설정 창 쪽에서 만든 글을 그대로 싣는다.
+    try{
+      if(typeof window.sdySettingsGuideText==='function'){
+        var guide=String(window.sdySettingsGuideText()||'');
+        if(guide) lines.push(guide);
       }
     }catch(e){}
     try{
@@ -32078,7 +32577,12 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       }
       if(cmd==='stickers'||cmd==='sticker'){ ops.push({cmd:'stickers'}); return; }
       if(cmd==='cards'||cmd==='card'){ ops.push({cmd:'cards'}); return; }
-      if(cmd==='settings'||cmd==='setting'){ ops.push({cmd:'settings'}); return; }
+      if(cmd==='settings'||cmd==='setting'){
+        // 14.65 · '@settings | 테마' — 설정 창을 열고 그 줄로 이동한다(항목 없으면 그냥 연다)
+        var sf=cutN(rest,1);
+        var sitem=sf.cuts.length?decode(sf.rest).slice(0,40):'';
+        ops.push({cmd:'settings',item:sitem}); return;
+      }
       // 14.39.x · @chat — 엽스코드(채팅) 열기/닫기
       if(cmd==='chat'||cmd==='yp'||cmd==='yeps'||cmd==='엽스'||cmd==='엽스코드'||cmd==='채팅'){
         var cf=cutN(rest,1);
@@ -32155,7 +32659,14 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
         if(op.cmd==='translate') return translateOp(op);
         if(op.cmd==='stickers'){ var st=needFn('openStickers'); if(!st){ bad('스티커 창을 열지 못했어요'); return; } try{ st(); }catch(e){ bad('스티커 창을 열지 못했어요'); return; } ok(); return; }
         if(op.cmd==='cards'){ var cd=needFn('openCards'); if(!cd){ bad('단어카드 창을 열지 못했어요'); return; } try{ cd(); }catch(e){ bad('단어카드 창을 열지 못했어요'); return; } ok(); return; }
-        if(op.cmd==='settings'){ var sg=needFn('openSettings'); if(!sg){ bad('설정 창을 열지 못했어요'); return; } try{ sg(); }catch(e){ bad('설정 창을 열지 못했어요'); return; } ok(); return; }
+        if(op.cmd==='settings'){
+          // 항목이 적혀 있으면 그 줄로 이동(설정 창 열기 + 반짝임). 못 찾으면 그냥 연다.
+          if(op.item&&typeof window.sdySettingsJump==='function'){
+            try{ if(window.sdySettingsJump(op.item)!==false){ ok(); return; } }catch(e){}
+          }
+          var sg=needFn('openSettings'); if(!sg){ bad('설정 창을 열지 못했어요'); return; }
+          try{ sg(); }catch(e){ bad('설정 창을 열지 못했어요'); return; } ok(); return;
+        }
         if(op.cmd==='chat') return chatOp(op);
         bad('알 수 없는 동작이에요');
       }).catch(function(){ bad('실행 중 문제가 생겼어요'); });

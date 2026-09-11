@@ -616,15 +616,22 @@
         openNav(closeFolderStyle);
     }
     function closeFolderStyle(){ document.getElementById('folderStyleModal').style.display='none'; styleFid=null; navDrop(closeFolderStyle); }
+    // 14.65 · 폴더 색·아이콘을 바꾸면 **그 자리에서** 두 화면(홈 카드 · 프로 사이드바)을
+    //   다시 그린다. 예전엔 홈 그리드의 '같으면 건너뛰기' 시그니처가 색·아이콘을 안 봐서
+    //   새로고침 전까지 옛 색이 남았고, 사이드바는 아예 다시 그리지 않았다.
+    function refreshFolderLook(){
+        try{ renderGrid(); }catch(e){}
+        try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+    }
     function pickFolderColor(c){
         const f=getFolders().find(x=>x.id===styleFid); if(!f) return;
         f.color=c; saveFolders(getFolders().map(x=>x.id===styleFid?f:x));
-        openFolderStyleRefresh(); renderGrid();
+        openFolderStyleRefresh(); refreshFolderLook();
     }
     function pickFolderIcon(ic){
         const f=getFolders().find(x=>x.id===styleFid); if(!f) return;
         f.icon=ic; saveFolders(getFolders().map(x=>x.id===styleFid?f:x));
-        openFolderStyleRefresh(); renderGrid();
+        openFolderStyleRefresh(); refreshFolderLook();
     }
     function openFolderStyleRefresh(){
         const f=getFolders().find(x=>x.id===styleFid); if(!f) return;
@@ -662,6 +669,6 @@
         if(isTrashFolder(fid)){ toast('휴지통 폴더는 이름을 바꿀 수 없습니다',2000); return; }
         const f=getFolders(); const t=f.find(x=>x.id===fid);
         const n=prompt('폴더 이름',t?t.name:'');
-        if(n&&n.trim()){ t.name=n.trim(); saveFolders(f); renderGrid(); toast('이름 변경됨'); }
+        if(n&&n.trim()){ t.name=n.trim(); saveFolders(f); refreshFolderLook(); toast('이름 변경됨'); }
     }
 /* APP-PART:02b-search.js:END */

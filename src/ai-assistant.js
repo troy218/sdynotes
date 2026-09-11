@@ -521,6 +521,15 @@
         lines.push('이퀄라이저: '+(eqSt.on?'켜짐':'꺼짐')+' · 프리셋: '+(eqSt.presetName||'원음'));
       }
     }catch(e){}
+    // 14.65 · 설정 안내 — 노트 안 해돌이(app task)와 홈 검색 해돌이(help task)가
+    //   '설정이 뭐가 있는지 · 지금 뭐로 되어 있는지 · 어디를 누르면 바뀌는지'를
+    //   같은 근거로 자세히 답하게, 설정 창 쪽에서 만든 글을 그대로 싣는다.
+    try{
+      if(typeof window.sdySettingsGuideText==='function'){
+        var guide=String(window.sdySettingsGuideText()||'');
+        if(guide) lines.push(guide);
+      }
+    }catch(e){}
     try{
       var st=(window.sdyTimerState&&window.sdyTimerState())||null;
       if(st) lines.push('집중 화면: '+(st.open?'열림':'닫힘')+' · 모드 '+st.mode
@@ -1378,7 +1387,12 @@
       }
       if(cmd==='stickers'||cmd==='sticker'){ ops.push({cmd:'stickers'}); return; }
       if(cmd==='cards'||cmd==='card'){ ops.push({cmd:'cards'}); return; }
-      if(cmd==='settings'||cmd==='setting'){ ops.push({cmd:'settings'}); return; }
+      if(cmd==='settings'||cmd==='setting'){
+        // 14.65 · '@settings | 테마' — 설정 창을 열고 그 줄로 이동한다(항목 없으면 그냥 연다)
+        var sf=cutN(rest,1);
+        var sitem=sf.cuts.length?decode(sf.rest).slice(0,40):'';
+        ops.push({cmd:'settings',item:sitem}); return;
+      }
       // 14.39.x · @chat — 엽스코드(채팅) 열기/닫기
       if(cmd==='chat'||cmd==='yp'||cmd==='yeps'||cmd==='엽스'||cmd==='엽스코드'||cmd==='채팅'){
         var cf=cutN(rest,1);
@@ -1455,7 +1469,14 @@
         if(op.cmd==='translate') return translateOp(op);
         if(op.cmd==='stickers'){ var st=needFn('openStickers'); if(!st){ bad('스티커 창을 열지 못했어요'); return; } try{ st(); }catch(e){ bad('스티커 창을 열지 못했어요'); return; } ok(); return; }
         if(op.cmd==='cards'){ var cd=needFn('openCards'); if(!cd){ bad('단어카드 창을 열지 못했어요'); return; } try{ cd(); }catch(e){ bad('단어카드 창을 열지 못했어요'); return; } ok(); return; }
-        if(op.cmd==='settings'){ var sg=needFn('openSettings'); if(!sg){ bad('설정 창을 열지 못했어요'); return; } try{ sg(); }catch(e){ bad('설정 창을 열지 못했어요'); return; } ok(); return; }
+        if(op.cmd==='settings'){
+          // 항목이 적혀 있으면 그 줄로 이동(설정 창 열기 + 반짝임). 못 찾으면 그냥 연다.
+          if(op.item&&typeof window.sdySettingsJump==='function'){
+            try{ if(window.sdySettingsJump(op.item)!==false){ ok(); return; } }catch(e){}
+          }
+          var sg=needFn('openSettings'); if(!sg){ bad('설정 창을 열지 못했어요'); return; }
+          try{ sg(); }catch(e){ bad('설정 창을 열지 못했어요'); return; } ok(); return;
+        }
         if(op.cmd==='chat') return chatOp(op);
         bad('알 수 없는 동작이에요');
       }).catch(function(){ bad('실행 중 문제가 생겼어요'); });

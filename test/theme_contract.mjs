@@ -129,6 +129,18 @@ try {
   check('14.49 · 프로 홈에 스택·펼침 영역 없음', !d1.querySelector('#noteGrid .home-stack-area'));
   check('14.49 · 새 노트 버튼 존재', !!d1.querySelector('#noteGrid .pro-add-note'));
   check('프로 도구에 기능 이름 있음', d1.querySelector('#clockBtn').dataset.proLabel === '집중 시계');
+  // 14.64 · 사이드바 접기 제거 + 서버 상태는 맨 위 전용 줄
+  check('14.64 · 접기 토글 버튼 없음', !d1.getElementById('proSideToggle') && typeof w1.toggleProSide === 'undefined');
+  check('14.64 · 좁은 화면에서도 pro-collapsed 클래스 없음', !d1.documentElement.classList.contains('pro-collapsed'));
+  const stateRow1=d1.getElementById('proStateRow');
+  check('14.64 · 서버 계기판은 사이드바 맨 위 상태 줄에', !!stateRow1 && !!stateRow1.querySelector('#srvGauge'));
+  check('14.64 · 상태 줄에 상태 문구가 있다', /서버/.test(d1.getElementById('srvStateText').textContent));
+  check('14.64 · 도구 줄에는 계기판이 없다(잘림 방지)',
+    !d1.querySelector('#proToolsSlot .hdr-right #srvGauge') && !!d1.querySelector('#proToolsSlot .hdr-right #notifBtn'));
+  // 5개(알림·계정·집중 시계·보관함·관리자) + 카드/설정은 display:none 으로 숨김
+  check('14.64 · 도구 줄에 남은 버튼 5개 + 숨긴 카드/설정',
+    d1.querySelectorAll('#proToolsSlot .hdr-right > button').length === 7 &&
+    w1.getComputedStyle(d1.querySelector('#proToolsSlot .hdr-right button[onclick="openCards()"]')).display === 'none');
   const bookmarks=d1.getElementById('proBookmarks');
   check('북마크는 로고와 분리된 영역에 있음', !!d1.querySelector('#proBookmarkSlot #linkBar') && !d1.querySelector('.app-brand #linkBar'));
   check('PC 북마크는 처음에 펼쳐짐', bookmarks.open);
@@ -155,7 +167,10 @@ try {
   check('테마 재전환 시 북마크 ID 중복 없음', d1.querySelectorAll('#linkBar').length === 1 && !!d1.querySelector('#proBookmarkSlot #linkBar'));
   w1.saveLinks(oldLinks);w1.renderLinks();
 
-  check('검색 입력에 접근성 이름 있음', d1.querySelector('#searchInput').getAttribute('aria-label') === '노트 검색');
+  // 14.65 · 검색창이 '노트 검색 + 해돌이에게 묻기' 두 일을 하게 되어 이름도 함께 늘렸다
+  check('검색 입력에 접근성 이름 있음',
+    /^노트 검색/.test(d1.querySelector('#searchInput').getAttribute('aria-label') || '')
+    && /해돌이/.test(d1.querySelector('#searchInput').getAttribute('aria-label') || ''));
   const toolbar=d1.querySelector('.editor-toolbar');
   check('편집 툴바 그룹에 이름 있음', toolbar.getAttribute('aria-label') === '노트 편집 도구');
   check('서식·넣기·그리기·찾기 묶음 구분', [...toolbar.querySelectorAll('.tb-mid [data-tool-group]')].map(el=>el.dataset.toolGroup).join(',') === '글자 서식,넣기,그리기,찾기');
@@ -218,6 +233,8 @@ try {
   await wait(200);
   check('전환 후 data-theme=classic', d1.documentElement.dataset.theme === 'classic');
   check('전환 후 .theme-classic', d1.documentElement.classList.contains('theme-classic'));
+  check('14.64 · 클래식에서는 계기판·오프라인 배지가 헤더 도구 줄로 복귀',
+    !!d1.querySelector('#mainView .header .hdr-right > #srvGauge') && !d1.querySelector('#proStateRow #srvGauge'));
   check('14.49 · 클래식에서 사이드바 숨김', side1 && w1.getComputedStyle(side1).display === 'none');
   check('14.49 · 클래식에서 브랜드 헤더로 복원', !!d1.querySelector('#mainView .header .app-brand'));
   check('14.49 · 클래식 홈 = 기존 스택 레이아웃', !!d1.querySelector('#noteGrid .home-stack-area'));

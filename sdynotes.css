@@ -5374,6 +5374,8 @@ body.card-l .recent-row .note-card{width:244px;flex-basis:244px !important;}
 .ypg-btn b{font-size:14px;}
 .ypg-btn em{font-style:normal;font-size:11px;color:#8b93a5;}
 .ypg-btn.main{background:linear-gradient(135deg,#5865f2,#7c5cf0);border-color:transparent;}
+/* 14.65 · "로그인하고 입장" 글씨를 흰색으로 — 색 버튼 위에서 회색 라벨이 흐려 보이던 문제 */
+.ypg-btn.main b{color:#fff;}
 .ypg-btn.main:hover{background:linear-gradient(135deg,#6673f4,#8a6df2);}
 .ypg-btn.main>i{color:#fff;}
 .ypg-btn.main em{color:rgba(255,255,255,.75);}
@@ -7334,10 +7336,10 @@ html.theme-pro #proSide{
 }
 /* 14.61 · #mainView 밀기 — static 요소엔 left 가 무효라 예전엔 사이드바(248px)
    밑으로 홈 내용이 깔려 '첫 노트가 사이드바에 가려지는' 버그가 있었다.
-   margin-left 로 실제 흐름에서 밀어 낸다 (데스크톱 280px, 레일·접음 60px). */
+   margin-left 로 실제 흐름에서 밀어 낸다 (데스크톱 280px, 좁은 화면 레일 60px).
+   14.64 · 접기 기능을 없애 폭은 항상 280px(레일 구간만 60px)이다. */
 @media (min-width:1024px){
   html.theme-pro #mainView{margin-left:280px!important;}
-  html.theme-pro.pro-collapsed #mainView{margin-left:60px!important;}
 }
 /* 641~1023(레일) — #mainView 가 fixed 로 되는 ≤640/짧은-coarse 폰에선 margin 0
    (inset:0 + left:60px 가 이미 밀어 준다). 그 사이 태블릿·좁은 창만 margin. */
@@ -7520,41 +7522,13 @@ html.theme-pro .folder-card:hover .folder-thumb>i{transform:none!important;}
   html.theme-pro .pro-folders-wrap{display:none;}
   html.theme-pro .pro-side-bottom{padding:8px 8px 10px;}
 }
-/* ── 14.52-T · 접었다/펼치기 — PRO 데스크톱 248↔60 레일 토글 (.pro-collapsed) ──
-  狭 뷰포트(≤1023)는 무조건 레일이므로 토글 버튼을 숨긴다. */
-html.theme-pro #proSide{transition:width .22s cubic-bezier(.22,.9,.32,1.06);}
-html.theme-pro #mainView{transition:left .22s cubic-bezier(.22,.9,.32,1.06),margin-left .22s cubic-bezier(.22,.9,.32,1.06);}
-/* ── 14.62 · 접었다/펼치기 토글 — 브랜드 행(로고) 중앙에 맞춘 세로 필 ──
-   로고 중심(패딩 20px + 로고 30px/2 = 35px)에 필 중심을 맞춘다(top:23px,
-   높이 24px). 접힌 상태에서는 브랜드 패딩이 12px 로 줄어 든다(중심 27px). */
-.pro-side-toggle{position:absolute;top:23px;right:-12px;z-index:11;
-  width:24px;height:24px;border-radius:999px;border:1px solid var(--border);
-  background:#FFFFFF;color:var(--text3);display:flex;align-items:center;justify-content:center;
-  cursor:pointer;box-shadow:0 1px 2px rgba(23,28,41,.05),0 3px 10px -3px rgba(23,28,41,.16);
-  transition:background .16s,color .16s,border-color .16s,box-shadow .16s,transform .16s;}
-.pro-side-toggle:hover{background:var(--bg2);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 34%,var(--border));
-  box-shadow:0 1px 2px rgba(23,28,41,.06),0 6px 16px -6px rgba(23,28,41,.22);transform:scale(1.06);}
-.pro-side-toggle:active{transform:scale(.94);}
-.pro-side-toggle i{font-size:13px;line-height:1;transition:transform .22s;}
-html.theme-classic .pro-side-toggle{display:none!important;}
-@media (max-width:1023px){.pro-side-toggle{display:none!important;}}
-html.theme-pro.pro-collapsed .pro-side-toggle{top:15px;}
-html.theme-pro.pro-collapsed #proSide{width:60px;}
-html.theme-pro.pro-collapsed #mainView{left:60px!important;}
-html.theme-pro.pro-collapsed .pro-brand{padding:12px 0 10px;display:flex;justify-content:center;}
-html.theme-pro.pro-collapsed .pro-brand .app-brand{gap:0;}
-html.theme-pro.pro-collapsed .pro-brand h1{display:none;}
-html.theme-pro.pro-collapsed .pro-brand .link-bar{display:none;}
-html.theme-pro.pro-collapsed .pro-nav{padding:6px 8px 4px;}
-html.theme-pro.pro-collapsed .pro-nav-item{justify-content:center;padding:11px 0;gap:0;}
-html.theme-pro.pro-collapsed .pro-nav-item span{display:none;}
-html.theme-pro.pro-collapsed .pro-folders-wrap{display:none;}
-html.theme-pro.pro-collapsed .pro-side-bottom{padding:8px 8px 10px;}
-html.theme-pro.pro-collapsed .pro-side-toggle i{transform:rotate(180deg);}
-html.theme-pro.pro-collapsed #proSide .pro-bookmarks summary span,
-html.theme-pro.pro-collapsed #proSide .pro-bookmark-count,
-html.theme-pro.pro-collapsed #proSide .pro-bookmark-chevron{display:none!important;}
-html.theme-pro.pro-collapsed #proSide .pro-bookmarks summary{justify-content:center;padding:9px 0;gap:0;}
+/* ── 14.64 · 사이드바 폭은 하나 — 접기/펼치기 토글은 없앴다.
+   데스크톱은 280px 고정, 좁은 화면(≤1023)은 60px 아이콘 레일(위 14.49-O 규칙).
+   사용자 요청: "사이드바 접는 기능을 아예 빼버려 — 그냥 안 접히게."
+   (#proSideToggle 버튼·window.toggleProSide·applyProCollapsed·localStorage
+    proSideCollapsed 까지 함께 제거. 남아 있던 html.pro-collapsed 클래스는
+    applyTheme 이 한 번 지운다 — CSS 에 이 클래스를 쓰는 규칙은 더 없다.) */
+
 /* 프로 홈 모바일 (17.0 모바일 블록과 같은 폭 기준) */
 @media (max-width:640px){
   html.theme-pro .pro-grid,
@@ -7597,17 +7571,7 @@ html.theme-pro .mp-list{left:calc(50% + 140px);}
   html.theme-pro .mp.mp-bar{left:calc(50% + 30px);}
   html.theme-pro .mp-list{left:calc(50% + 30px);}
 }
-/* 접었을 때는 60px 레일과 같은 오프셋 — 뷰포트가 넓어도 */
-html.theme-pro.pro-collapsed .mp.mp-bar{left:calc(50% + 30px);}
-html.theme-pro.pro-collapsed .mp-list{left:calc(50% + 30px);}
-html.theme-pro.pro-collapsed #ypApp{left:72px!important;width:min(370px,calc(100vw - 84px))!important;right:auto!important;}
-@media (max-width:640px){
-  html.theme-pro.pro-collapsed #ypApp{left:72px!important;}
-}
-html.theme-pro.pro-collapsed .select-bar{left:calc(50% + 30px);}
-@media (max-width:640px){
-  html.theme-pro.pro-collapsed .select-bar{left:72px!important;}
-}
+/* 14.64 · 접기 기능 제거 — 폭이 하나뿐이라 위 140px(280/2) · 30px(60/2) 오프셋만 쓴다. */
 
 /* ── 14.50-Q · 엽스코드 — 밝은 윈도우 프레임 + 채팅 존은 다크 유지 ── */
 /* 전문가 앱이 다크 채팅/영상 컨텍스트를 밝은 크롬 안에 담는 방식(Zoom·Meet 같은) */
@@ -7715,9 +7679,10 @@ html.theme-pro .ypg-btn:hover{
 html.theme-pro .ypg-btn>i{color:var(--text3);}
 html.theme-pro .ypg-btn em{color:var(--text3);}
 html.theme-pro .ypg-btn.main{
-  background:var(--accent);border-color:var(--accent);
+  background:var(--accent);border-color:var(--accent);color:#fff;
   box-shadow:0 1px 2px color-mix(in srgb,var(--accent) 35%,transparent);
 }
+html.theme-pro .ypg-btn.main b{color:#fff;}
 html.theme-pro .ypg-btn.main:hover{background:var(--accent2);border-color:var(--accent2);}
 html.theme-pro .ypg-btn.main>i{color:#fff;}
 html.theme-pro .ypg-btn.main em{color:rgba(255,255,255,.78);}
@@ -7956,15 +7921,18 @@ html.theme-pro .pro-brand .app-brand h1{
 html.theme-pro .pro-brand .link-bar{width:100%;margin:12px 0 0;max-width:none;justify-content:center;}
 html.theme-pro .pro-brand .link-chip{min-width:0;max-width:100%;}
 html.theme-pro .pro-brand .link-chip span{white-space:normal;overflow-wrap:anywhere;}
-html.theme-pro .pro-tools{padding:8px 12px;}
-html.theme-pro .pro-tools .hdr-right{display:flex;flex-wrap:nowrap;gap:6px;margin:0!important;width:100%;align-items:center;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
-html.theme-pro .pro-tools .hdr-right::-webkit-scrollbar{display:none;}
-html.theme-pro .pro-tools .tool-btn{width:34px;height:34px;flex:none;min-width:34px;}
+/* 14.64 · 도구 줄 = '남은 버튼 한 줄 + 검색 한 줄'.
+   · 버튼은 flex:1 1 0 으로 사이드바 폭을 똑같이 나눠 가진다 → 280px 안에 무조건 들어온다.
+   · 넘칠 때 가로 스크롤로 잘리던 14.54 nowrap(!important)은 14.64 블록에서 풀었다.
+   · 검색은 flex-basis 100% 로 제 줄을 차지한다(좁은 레일에서는 44px 아이콘 칸). */
+html.theme-pro .pro-tools{padding:8px 10px 10px;}
+html.theme-pro .pro-tools .hdr-right{display:flex;flex-wrap:wrap;gap:6px;margin:0!important;width:100%;align-items:center;overflow:visible;}
+html.theme-pro .pro-tools .tool-btn{flex:1 1 0;min-width:0;width:auto;height:34px;padding:0;}
 /* Existing controls are moved, not cloned: IDs, badges and handlers stay intact. */
 html.theme-pro .pro-tools button[onclick="openCards()"],
 html.theme-pro .pro-tools button[onclick="openSettings()"]{display:none!important;}
-html.theme-pro .pro-tools .search-wrap{order:0;flex:1 1 140px;min-width:110px;max-width:190px;width:auto;margin-left:auto;}
-html.theme-pro .pro-tools #searchInput{display:block!important;width:100%!important;min-width:0;height:32px!important;border-radius:4px!important;}
+html.theme-pro .pro-tools .search-wrap{order:9;flex:1 1 100%;min-width:0;max-width:none;width:auto;margin-left:0;}
+html.theme-pro .pro-tools #searchInput{display:block!important;width:100%!important;min-width:0;height:34px!important;border-radius:4px!important;}
 html.theme-pro #mainView{overflow:visible;}
 html.theme-pro #mainView > main{padding:10px clamp(8px,1.5vw,16px) 16px!important;overflow:visible;}
 html.theme-pro #noteGrid{padding:0 4px;align-items:stretch;overflow:visible;}
@@ -8026,24 +7994,28 @@ html.theme-pro .pro-results-clear:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px;
 }
 @media(min-width:1024px){
-  html.theme-pro .pro-tools{padding-bottom:10px;border-bottom:1px solid var(--border);margin:0 10px 8px;padding-left:2px;padding-right:2px;}
+  /* 14.64 · 도구 블록 — 버튼 한 줄 + 검색 한 줄, 아래에 헤어라인으로 구획. */
+  html.theme-pro .pro-tools{padding-bottom:10px;border-bottom:1px solid var(--border);margin:0 10px 8px;}
   html.theme-pro .pro-tools .tool-btn[data-pro-label]{
     display:flex;align-items:center;justify-content:center;gap:0;
-    width:34px;height:34px;padding:0;background:#FFFFFF;border:1px solid var(--border);border-radius:4px;flex:none;min-width:34px;
+    flex:1 1 0;min-width:0;width:auto;height:34px;padding:0;
+    background:#FFFFFF;border:1px solid var(--border);border-radius:6px;
   }
   html.theme-pro .pro-tools .tool-btn[data-pro-label]::after{
     content:none!important;display:none!important;
   }
   html.theme-pro .pro-tools .tool-btn:hover{background:#eef0f5;border-color:#dfe3eb;}
-  /* 14.61 · 사이드바 폭(280px)에서도 관리자 아이콘이 오버픽(Alias: 가로 스크롤
-     숨김)에 잘리지 않게 — 도구 행은 줄바꿈 허용, 검색은 아래 줄 통짜로. */
-  html.theme-pro .pro-tools .hdr-right{flex-wrap:wrap;overflow-x:visible;overflow-y:visible;row-gap:8px;}
-  html.theme-pro .pro-tools .search-wrap{margin-bottom:0;flex:1 1 100%;min-width:0;max-width:none;width:auto;margin-left:0;}
-  html.theme-pro .pro-tools #srvGauge{order:0;margin-left:2px;flex:none;min-width:34px;}
-  html.theme-pro .pro-tools #offlineBadge{order:0;max-width:140px;flex:none;}
+  /* 14.61 · 사이드바 폭(280px)에서 관리자 아이콘이 잘리던 문제 — 14.64 에서
+     버튼을 폭 균등 분배(flex:1 1 0)로 바꿔 한 줄에 전부 들어가게 했다. */
+  html.theme-pro .pro-tools .hdr-right{row-gap:6px;}
+  html.theme-pro .pro-tools .search-wrap{margin-bottom:0;}
+  /* 오프라인 배지는 상태 줄로 옮겨졌지만(JS), 혹시 도구 줄에 남아도 한 줄을 다 쓴다. */
+  html.theme-pro .pro-tools #offlineBadge{order:8;flex:1 1 100%;max-width:none;justify-content:center;}
 }
 @media(max-width:1023px){
-  html.theme-pro .pro-tools .tool-btn{width:44px;height:44px;}
+  /* 아이콘 레일(60px) — 버튼이 한 줄에 하나씩 세로로 쌓인다. */
+  html.theme-pro .pro-tools{padding:6px 8px 8px;}
+  html.theme-pro .pro-tools .tool-btn{height:44px;}
   html.theme-pro .pro-tools .tool-btn[data-pro-label]::after{content:none;}
 }
 
@@ -8170,16 +8142,16 @@ html.theme-pro #proBookmarkSlot .link-ins-after::after{top:auto;bottom:-3px;}
 /* ── 14.54 · 전역 사각화 + 헤더 한 줄 고정 — 사각사각 + nowrap ──
    · PRO 10/8/6 → 4/4/3으로 낮춰 앱 전반 각지게
    · 헤더 우측 아이콘 행(.hdr-right)은 절대 두 줄로 접히지 않고, 넘치면 가로 스크롤
-   · pill(999px)·원형 50% 중 실질 원형 지표 제외, 나머지는 4px로 통일 */
+   · pill(999px)·원형 50% 중 실질 원형 지표 제외, 나머지는 4px로 통일
+   14.64 · 사이드바(#proToolsSlot) 안 도구 줄은 여기서 뺐다 — 280px 폭에서는
+   가로 스크롤이 곧 '버튼이 잘림'이라, 버튼을 폭 균등 분배해 한 줄에 넣는다. */
 .header .w-full{flex-wrap:nowrap!important;}
 .header .hdr-right,
-html.theme-classic .hdr-right,
-html.theme-pro .pro-tools .hdr-right{
+html.theme-classic .hdr-right{
   flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;
   scrollbar-width:none!important;-webkit-overflow-scrolling:touch;
 }
-.header .hdr-right::-webkit-scrollbar,
-html.theme-pro .pro-tools .hdr-right::-webkit-scrollbar{display:none!important;}
+.header .hdr-right::-webkit-scrollbar{display:none!important;}
 /* 대형 표면 · 카드 · 창 — 4px 사각 */
 .note-card,.folder-card,.add-card,.modal-box,.mp,.mp.mp-bar,.mp-list,.mpb,#ypApp,.fcard-win,
 .sa-card,.ypg-card,.more-panel,.srv-pop,.notif-pop,.ai-say,.ai-hist,.ai-askbar-field,.ai-hist-bubble,
@@ -8349,12 +8321,153 @@ html.theme-pro .editor.open{
 }
 @media(max-width:1023px){
   #proHomeEq{left:60px;width:calc(100% - 60px);}
-  html.theme-pro.pro-collapsed #proHomeEq{left:60px;width:calc(100% - 60px);}
 }
 @media(max-width:640px),(max-height:560px) and (pointer:coarse){
   #proHomeEq{left:0!important;width:100%!important;top:88px!important;height:calc(var(--sdy-mobile-vh,100dvh) - 88px)!important;}
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════
+   14.64 · 사이드바 정리 + 접기 제거 + 원형 음반
+
+   ① 접기/펼치기 제거 — 사이드바는 항상 280px(좁은 화면은 60px 아이콘 레일).
+      #proSideToggle 버튼·.pro-side-toggle CSS·window.toggleProSide·
+      applyProCollapsed·localStorage proSideCollapsed 를 전부 없앴다.
+   ② 서버 상태(+오프라인 배지)는 도구 줄에서 빠져 사이드바 맨 위 전용 줄로 올라간다.
+      (_proShellSwap 이 프로에서 #srvGauge·#offlineBadge 를 #proStateRow 로 옮기고,
+       캐주얼 테마로 돌아가면 헤더 도구 줄 첫 자리로 되돌린다 — 클래식 화면은 그대로)
+   ③ 나머지 버튼(알림·계정·집중 시계·보관함·관리자)은 한 줄에 폭을 똑같이 나눠 갖고,
+      검색은 제 줄을 통째로 쓴다 → 280px 사이드바 밖으로 밀려나 잘리는 일이 없다.
+   ④ 플로팅 음악 음반(.mp.mp-float)은 14.54 사각화(!important)에 눌려 4px 사각이
+      되어 있었다 — 요청대로 원형(50%)을 되돌린다.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ② 상태 줄 — 계기판 + 상태 문구 (+ 오프라인/동기화 배지) */
+html.theme-pro .pro-state{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  margin:0 10px 8px;padding:7px 9px;
+  border:1px solid var(--border);border-radius:8px;background:#FFFFFF;
+  flex-shrink:0;
+}
+html.theme-pro .pro-state #srvGauge{flex:none;margin:0;}
+html.theme-pro .pro-state .srv-gauge{width:34px;height:24px;}
+html.theme-pro .pro-state .srv-gauge svg{width:32px;height:22px;}
+html.theme-pro .pro-state-text{
+  flex:1 1 60px;min-width:0;font-size:11.5px;font-weight:700;letter-spacing:-.01em;
+  color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+html.theme-pro .pro-state.good .pro-state-text{color:#0E9F6E;}
+html.theme-pro .pro-state.warn .pro-state-text{color:#C27803;}
+html.theme-pro .pro-state.bad  .pro-state-text{color:#E02424;}
+html.theme-pro .pro-state #offlineBadge{
+  flex:1 1 100%;justify-content:center;padding:4px 8px;font-size:11px;
+}
+
+/* ③ 도구 줄 — 한 줄에 쏙. (기본 규칙은 위 14.64 도구 블록, 여기선 마무리 보정)
+   .tool-btn 의 전역 width/height 32px!important 를 이겨야 눌러 쓰기 좋은 크기가 된다. */
+html.theme-pro .pro-tools .tool-btn{font-size:16px;height:36px!important;border-radius:6px;}
+html.theme-pro .pro-tools .tool-btn.on{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,var(--border));}
+
+/* ④ 플로팅 음반은 원형 — 4px 사각화보다 강하게 */
+.mp.mp-float{border-radius:50%!important;}
+
+/* ⑤ 14.65 · 알림 배지 — 전역 '4px 라운드' 규칙(.notif-badge 포함)에 눌려
+   네모가 되고 버튼 모서리에 파묻혀 잘린 것처럼 보였다. 알약 모양을 되찾고
+   버튼 밖으로 또렷하게 내민다(부모 .hdr-right·#proSide 는 overflow:visible). */
+.notif-badge{
+  border-radius:999px!important;right:-6px!important;top:-7px!important;
+  min-width:18px;height:18px;line-height:14px;font-size:10px;font-weight:800;
+  box-shadow:0 0 0 1px rgba(23,28,41,.10);
+}
+html.theme-pro .pro-tools .notif-badge{border-color:var(--card);}
+.mp.mp-float .mp-cover{border-radius:50%!important;}
+.mp.mp-float .mp-btns #mpPP{border-radius:50%!important;}
+.mp.mp-float.nocur #mpX{border-radius:50%!important;}
+
+/* 아이콘 레일(≤1023) — 상태 줄은 계기판만 남기고 가운데 정렬(60px),
+   도구 버튼은 한 줄에 하나씩(칸 폭 100%) 쌓는다. (flex:1 1 0 만 두면 60px
+   폭에서 다섯 개가 5px 씩 찌그러진다 — 폭을 못 줄이도록 0 0 auto 로 못 박는다) */
+@media (max-width:1023px){
+  html.theme-pro .pro-tools .hdr-right{flex-direction:column;align-items:stretch;gap:4px;}
+  html.theme-pro .pro-tools .tool-btn{
+    flex:0 0 auto!important;width:100%!important;max-width:none!important;height:40px!important;
+  }
+  html.theme-pro .pro-tools .search-wrap{
+    flex:0 0 auto!important;width:100%!important;min-width:0!important;max-width:none!important;
+    margin:0!important;
+  }
+  html.theme-pro .pro-tools #searchInput{padding-left:12px!important;padding-right:8px!important;}
+  html.theme-pro .pro-state{
+    flex-wrap:nowrap;justify-content:center;gap:0;
+    margin:0 6px 8px;padding:5px 0;
+  }
+  html.theme-pro .pro-state-text{display:none;}
+  html.theme-pro .pro-state #offlineBadge{
+    flex:0 0 auto;max-width:44px;overflow:hidden;padding:4px;font-size:0;
+  }
+  html.theme-pro .pro-state #offlineBadge i{font-size:15px;}
+  html.theme-pro .pro-state #offlineBadge span{display:none;}
+}
+
+/* 14.61 · add-card 가 진짜 <button> 이 된 뒤 UA 기본 모양을 클래스 규칙으로 되돌린다 */
+button.add-card{appearance:none;-webkit-appearance:none;font:inherit;color:inherit;padding:0;}
+button.add-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* ═══ 14.63 · 브랜드 왼쪽 정렬 — 로고·SDYnotes 를 사이드바 왼쪽에 맞춘다 ═══
+   너무 붙이지 않게 왼쪽 20px 여백 — 폴더·내비 항목 아이콘(왼쪽 22px)과 비슷한 간격.
+   좁은 화면 레일(≤1023)은 아이콘 레일이므로 그대로 중앙 정렬. */
+html.theme-pro .pro-brand{align-items:flex-start;text-align:left;padding:20px 12px 14px 20px;}
+html.theme-pro .pro-brand .app-brand{justify-content:flex-start;}
+html.theme-pro .pro-brand .app-brand h1{text-align:left;}
+html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
+@media (max-width:1023px){
+  html.theme-pro .pro-brand{align-items:center;text-align:center;padding:12px 0 10px;}
+  html.theme-pro .pro-brand .app-brand{justify-content:center;}
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   14.65 · 홈 검색창의 해돌이 — 노트 검색과 같은 칸에서 묻고 답한다
+   ──────────────────────────────────────────────────────────────────────
+   검색 결과가 있으면 노트가 먼저 보이고, 물음표 말투이거나 결과가 없으면
+   검색창 Enter 가 해돌이에게 간다. 답은 #homeAiCard 에 산문으로 앉는다.
+   ══════════════════════════════════════════════════════════════════════ */
+.home-ai-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px;}
+.home-ai-ask{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border:1px solid var(--border);
+  border-radius:999px;background:var(--bg2);color:var(--text1);font-size:12.5px;font-weight:600;cursor:pointer;
+  transition:border-color .15s,box-shadow .15s,transform .15s;}
+.home-ai-ask:hover{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,110,247,.12);}
+.home-ai-ask:active{transform:translateY(1px);}
+.home-ai-spark{font-size:14px;line-height:1;color:var(--accent);}
+.home-ai-name i{color:var(--accent);font-size:13px;}
+.home-ai-kbd{font:600 10.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 5px;border:1px solid var(--border);
+  border-radius:4px;background:var(--bg1);color:var(--text3);}
+.home-ai-sub{font-size:11.5px;color:var(--text3);}
+.home-ai-card{margin:0 0 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg1);
+  box-shadow:0 10px 28px rgba(15,23,42,.10);overflow:hidden;}
+.home-ai-head{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border);
+  background:var(--bg2);}
+.home-ai-name{font-size:12.5px;font-weight:700;color:var(--text1);}
+.home-ai-kind{font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;
+  background:rgba(79,110,247,.12);color:var(--accent);}
+.home-ai-gap{flex:1;}
+.home-ai-mini{width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border:none;
+  border-radius:6px;background:transparent;color:var(--text3);cursor:pointer;font-size:15px;}
+.home-ai-mini:hover{background:var(--bg1);color:var(--text1);}
+.home-ai-out{padding:12px 14px;font-size:13.5px;line-height:1.75;color:var(--text1);max-height:52vh;overflow:auto;}
+.home-ai-out.busy{color:var(--text2);white-space:pre-wrap;}
+.home-ai-dots i{display:inline-block;width:5px;height:5px;margin-right:4px;border-radius:50%;
+  background:var(--text3);animation:homeAiDot 1s infinite ease-in-out;}
+.home-ai-dots i:nth-child(2){animation-delay:.15s;}
+.home-ai-dots i:nth-child(3){animation-delay:.3s;}
+@keyframes homeAiDot{0%,80%,100%{opacity:.25;transform:translateY(0);}40%{opacity:1;transform:translateY(-3px);}}
+.home-ai-acts{display:flex;flex-wrap:wrap;gap:8px;padding:0 14px 12px;}
+.home-ai-act{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid var(--border);
+  border-radius:7px;background:var(--bg2);color:var(--text1);font-size:12px;font-weight:600;cursor:pointer;}
+.home-ai-act:hover{border-color:var(--accent);color:var(--accent);}
+.home-ai-meta{padding:8px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);}
+/* 해돌이가 설정 창에서 짚어 준 줄 — 잠깐 반짝여 시선을 끈다 */
+.set-row-hit{animation:setRowHit 2.2s ease;}
+@keyframes setRowHit{0%{background:rgba(79,110,247,.18);}70%{background:rgba(79,110,247,.10);}100%{background:transparent;}}
 
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
@@ -8964,20 +9077,16 @@ html.theme-pro .editor.open{
   }
 }
 
-/* 14.61 · add-card 가 진짜 <button> 이 된 뒤 UA 기본 모양을 클래스 규칙으로 되돌린다 */
-button.add-card{appearance:none;-webkit-appearance:none;font:inherit;color:inherit;padding:0;}
-button.add-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-
-/* ═══ 14.63 · 브랜드 왼쪽 정렬 — 로고·SDYnotes 를 사이드바 왼쪽에 맞춘다 ═══
-   너무 붙이지 않게 왼쪽 20px 여백 — 폴더·내비 항목 아이콘(왼쪽 22px)과 비슷한 간격.
-   좁은 화면 레일(≤1023)과 접힘 상태는 아이콘 레일이므로 그대로 중앙 정렬. */
-html.theme-pro .pro-brand{align-items:flex-start;text-align:left;padding:20px 12px 14px 20px;}
-html.theme-pro .pro-brand .app-brand{justify-content:flex-start;}
-html.theme-pro .pro-brand .app-brand h1{text-align:left;}
-html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
-@media (max-width:1023px){
-  html.theme-pro .pro-brand{align-items:center;text-align:center;padding:12px 0 10px;}
-  html.theme-pro .pro-brand .app-brand{justify-content:center;}
+@media (max-width:640px){
+  /* 14.65 · 프로 테마 폰 — 60px 아이콘 레일만큼 오른쪽이 잘리던 것.
+     #mainView 는 inset:0 + width:100% 인데 레일 규칙이 left:60px 만 이겨서
+     폭이 그대로 100% → 오른쪽 60px(카드·배지·버튼 끝)이 화면 밖으로 나갔다. */
+  html.theme-pro #mainView{left:60px!important;width:calc(100% - 60px)!important;}
+  /* 14.65 · 홈 검색 해돌이 — 좁은 화면은 답 카드가 화면을 다 먹지 않게 */
+  .home-ai-bar{gap:8px;}
+  .home-ai-ask{padding:7px 11px;font-size:12px;}
+  .home-ai-sub{display:none;}
+  .home-ai-card{margin-bottom:12px;border-radius:9px;}
+  .home-ai-out{padding:11px 12px;font-size:13px;line-height:1.7;max-height:46vh;}
+  .home-ai-acts{padding:0 12px 10px;}
 }
-html.theme-pro.pro-collapsed .pro-brand{align-items:center;text-align:center;padding:12px 0 10px;}
-html.theme-pro.pro-collapsed .pro-brand .app-brand{justify-content:center;}
