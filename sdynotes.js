@@ -32967,7 +32967,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     name:'', me:null, msgs:[], members:new Map(), ttl:86400, joined:false,
     es:null, ping:null, inVoice:false, joiningVoice:false, muted:false, localStream:null,
     conn:new Map(), speaking:new Map(), actx:null, open:false,
-    seen:new Set(), bgm:null, stick:true, draftStickers:[],
+    seen:new Set(), bgm:null, stick:true, draftStickers:[], _lastSendKey:null, _lastSendAt:0,
     // 서버 릴레이 음성 상태
     relayWs:null, relayNodes:null, relayRx:{}, relayOn:false, _relayStop:false, _relayRT:null,
     _relayUrl:null, _relayHb:null, _relayDest:null, _relayEl:null
@@ -33091,7 +33091,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     for(var i=0;i<YP.msgs.length;i++){ if(YP.msgs[i].id===m.id) return; }
     // 서버가 준 진짜 메시지가 오면 같은 내용의 임시 메시지를 먼저 찾아 치환한다.
     // (SSE echo 와 POST 응답 중 먼저 도착하는 쪽이 처리하고, 나중 쪽은 id 중복으로 무시)
-    if(!m.temp && m.uid && m.text){
+    // 14.57.0 · 임티만 전송(text='') 시 m.text가 falsy여서 임시 치환이 건너뛰어
+    // SSE가 POST보다 먼저 오면 temp+real 두 개가 남던 버그 수정 — stickers까지 검사
+    if(!m.temp && m.uid && (String(m.text||'').trim() || ypMsgStickers(m).length)){
       var j=ypFindTemp(m);
       if(j>=0){ YP.msgs.splice(j,1,m); if(YP.msgs.length>200) YP.msgs.shift(); ypRender(true); return; }
     }
@@ -33804,6 +33806,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   function ypSendText(){
     var ta=$('ypTxt'); var t=ta.value.trim(); var stickers=ypStkIds(YP.draftStickers);
     if(!t&&!stickers.length) return;
+    // 14.57.0 · 연속 더블 클릭/터치로 같은 임티가 두 번 POST되는 것 방지 — 900ms 내 동일 내용 무시
+    var now=Date.now(); var key=t+'|'+stickers.join(',')+'|'+YF.view;
+    if(YP._lastSendKey===key && now-(YP._lastSendAt||0)<900) return;
+    YP._lastSendKey=key; YP._lastSendAt=now;
     // 16.3 · 1:1 대화(DM) 화면에서는 친구에게로 간다. DM 서버는 텍스트 기반이라
     // 미리보기 임티를 전송 직전에만 예전 코드로 바꾼다(입력창에는 보이지 않음).
     if(YF.view==='dm'){
@@ -34061,7 +34067,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     friends:[], reqIn:[], reqOut:[],
     threads:{}, msgs:{}, more:{}, peerRead:{},
     es:null, _esT:null, _esBack:1500,
-    stickDm:true, _readSent:{}, _loadingOlder:false,
+    stickDm:true, _readSent:{}, _loadingOlder:false, _lastDmKey:null, _lastDmAt:0,
   };
   function yfToken(){ try{ return window.sdyAuthToken&&window.sdyAuthToken(); }catch(e){} return ''; }
   function yfUser(){ try{ return window.sdyUser&&window.sdyUser(); }catch(e){} return null; }
@@ -34423,6 +34429,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   function yfSendText(t){
     var peer=YF.peer, me=yfUser(); if(!peer||!me) return;
+    // 14.57.0 · DM도 동일 내용 연속 더블 전송 방지 (ypSendText 가드와 이중 보장)
+    var now2=Date.now(); var k2=peer.uid+'|'+t;
+    if(YF._lastDmKey===k2 && now2-(YF._lastDmAt||0)<900) return;
+    YF._lastDmKey=k2; YF._lastDmAt=now2;
     var ta=$('ypTxt'); ta.value=''; ypAutoGrow(ta); ta.focus();
     var local={id:ypTempId(),kind:'txt',from:me.uid,text:t,ts:Date.now()/1000,temp:true};
     (YF.msgs[peer.uid]||(YF.msgs[peer.uid]=[])).push(local);
