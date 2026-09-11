@@ -132,7 +132,7 @@
                 {a:'bold',   i:'ri-bold',           t:'굵게',      k:'Ctrl+B'},
                 {a:'hl',     i:'ri-mark-pen-line',  t:'형광펜'},
                 {a:'clear',  i:'ri-format-clear',   t:'서식제거'},
-                {a:'sel-find',  i:'ri-search-line', t:`'${esc(short)}' 찾기`},
+                {a:'sel-find',  i:'ri-robot-line', t:`'${esc(short)}' 해돌이 설명`},
                 '-',
                 {sub:'서식', i:'ri-font-color', items:[
                     {a:'italic', i:'ri-italic',        t:'기울임',  k:'Ctrl+I'},
@@ -554,11 +554,20 @@
             }
         }
         else if(a==='sel-find'){
-            const q=String(window.getSelection()||'').trim();
-            if(!q) return;
-            openFind();
-            const inp=document.getElementById('findInput');
-            inp.value=q; runFind(q);
+            // 14.45 · '찾기' 버튼 → 해돌이가 고른 글을 설명.
+            //   예전엔 '문서 찾기' 바를 열었는데, 메뉴를 누르는 순간 브라우저가
+            //   선택을 지워 그대로 아무 일도 안 생기는 경우가 많았다. 지금은
+            //   저장해 둔 선택(savedRange)을 되살려 그대로 해돌이 설명 요청으로
+            //   보낸다 — 답은 해돌이 말풍선(#aiSay)에 뜬다.
+            let q=String(window.getSelection()||'').trim();
+            if(!q && restoreSel()){ q=String(window.getSelection()||'').trim(); }
+            if(!q){ toast('텍스트를 드래그해 선택하세요',1300); return; }
+            if(q.length>1200) q=q.slice(0,1200)+'…';
+            if(typeof window.sdyAiExplain==='function'){
+                window.sdyAiExplain('고른 글자를 쉽게 설명해 줘:\n"'+q+'"');
+            } else {
+                toast('해돌이 준비가 안 됐어요 · 페이지를 새로고침해 주세요',1800);
+            }
         }
         else if(a==='sel-count'){ countSelection(); }
         else if(a==='sel-clip'){ clipAdd(); if(sidePanel!=='clip') openPanel('clip'); }
@@ -795,7 +804,7 @@
             ['상자 안을 드래그','미리 클릭하지 않아도 글자가 바로 선택돼요'],
             ['더블클릭','편집 모드 · 낱말 선택'],
             ['왼쪽 위 <i class="ri-drag-move-2-fill"></i> 손잡이','상자 옮기기'],
-            ['글자를 고르고 우클릭','번역 · 서식 · 글자색 · 링크 · 찾기 · 새 상자로 빼내기'],
+            ['글자를 고르고 우클릭','번역 · 서식 · 글자색 · 링크 · 해돌이 설명 · 새 상자로 빼내기'],
             ['글자를 고르고 Ctrl + C','고른 글자만 깔끔하게 복사 (가져온 PDF 도 정상)'],
         ]],
         ['표',[
