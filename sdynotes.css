@@ -7489,6 +7489,124 @@ html.theme-pro .folder-card:hover .folder-thumb>i{transform:none!important;}
   html.theme-pro .pro-home-count{order:3;width:100%;}
 }
 
+/* ── 14.50-P · 음악 플레이어 — 유리(글래스) 없이 단정한 화이트 플랫 ── */
+html.theme-pro .mp.mp-bar{
+  background:#FFFFFF;
+  border:1px solid var(--border);
+  border-radius:14px;
+  box-shadow:0 1px 2px rgba(23,28,41,.06),0 10px 30px -12px rgba(23,28,41,.18);
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+html.theme-pro .mp-xtra{
+  background:#FFFFFF;border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 2px rgba(23,28,41,.06),0 10px 24px -12px rgba(23,28,41,.16);
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+html.theme-pro #mpReopen{
+  background:#FFFFFF;color:var(--accent);
+  border:1px solid var(--border);
+  box-shadow:0 1px 2px rgba(23,28,41,.08),0 8px 20px -8px rgba(23,28,41,.22);
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+html.theme-pro #mpBig{
+  background:rgba(255,255,255,.97)!important;
+  border:1px solid var(--border)!important;
+  box-shadow:0 1px 2px rgba(23,28,41,.06),0 24px 70px -18px rgba(23,28,41,.32)!important;
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+/* 사이드바를 끼고도 콘텐츠 영역 안으로 — 바·목록은 콘텐츠 중앙 정렬 */
+html.theme-pro .mp.mp-bar{left:calc(50% + 124px);}
+html.theme-pro .mp-list{left:calc(50% + 124px);}
+@media (max-width:1023px){
+  html.theme-pro .mp.mp-bar{left:calc(50% + 30px);}
+  html.theme-pro .mp-list{left:calc(50% + 30px);}
+}
+
+/* ── 14.50-Q · 엽스코드 — 밝은 윈도우 프레임 + 채팅 존은 다크 유지 ── */
+/* 전문가 앱이 다크 채팅/영상 컨텍스트를 밝은 크롬 안에 담는 방식(Zoom·Meet 같은) */
+html.theme-pro #ypApp{
+  background:#FFFFFF;
+  border:1px solid var(--border);border-radius:14px;
+  box-shadow:0 1px 2px rgba(23,28,41,.07),0 24px 60px -16px rgba(23,28,41,.3);
+}
+html.theme-pro .yp-head{background:#FFFFFF;border-bottom:1px solid var(--border);}
+html.theme-pro .yp-head .yp-ttl{color:#171C26;}
+html.theme-pro .yp-head button{color:var(--text3);}
+html.theme-pro .yp-head button:hover{background:#F1F3F7;color:var(--text1);}
+/* 배경음악 바 — 채팅 본체 위(밝은 존)에 앉으니 밝은 스트립 */
+html.theme-pro .yp-bgm{
+  background:rgba(244,245,248,.92);
+  border-bottom:1px solid var(--border);
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+html.theme-pro .yp-bgm-meta b{color:var(--text1);}
+html.theme-pro .yp-bgm-meta span{color:var(--text3);}
+html.theme-pro .yp-bgm input[type=text]{
+  background:#FFFFFF;border-color:var(--border);color:var(--text1);
+}
+html.theme-pro .yp-bgm input[type=text]:focus{border-color:var(--accent);}
+html.theme-pro .yp-bgm input[type=text]::placeholder{color:#9AA3B5;}
+html.theme-pro .yp-bgm input[type=range]{accent-color:var(--accent);}
+html.theme-pro .ypv-icon,html.theme-pro .ypv-mute,
+html.theme-pro .ypv-gear,html.theme-pro .ypv-join.off{
+  background:#FFFFFF;border-color:var(--border);color:var(--text2);
+}
+html.theme-pro .ypv-icon:hover,html.theme-pro .ypv-mute:hover,
+html.theme-pro .ypv-gear:hover{color:var(--text1);border-color:#C9CFDB;}
+/* 채팅 본체(다크 존) — 내 말풍선은 앱 강조색 플랫으로 */
+html.theme-pro .yp-line.me .yp-bub{
+  background:var(--accent);border-color:transparent;
+  box-shadow:0 3px 14px color-mix(in srgb,var(--accent) 30%,transparent);
+}
+/* 하단 입력 — 밝은 존 */
+html.theme-pro .yp-foot{background:#FFFFFF;border-top:1px solid var(--border);}
+html.theme-pro .yp-tools button{color:var(--text3);}
+html.theme-pro .yp-tools button:hover{background:#F1F3F7;color:var(--accent);}
+html.theme-pro .yp-input textarea{
+  background:#F6F7FA;border-color:var(--border);color:var(--text1);
+}
+html.theme-pro .yp-input textarea:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent);
+}
+html.theme-pro .yp-input textarea::placeholder{color:#9AA3B5;}
+html.theme-pro .yp-send{
+  background:var(--accent);
+  box-shadow:0 1px 2px color-mix(in srgb,var(--accent) 35%,transparent);
+}
+html.theme-pro .yp-send:hover{background:var(--accent2);}
+/* 닫았을 때 떠 있는 엽스코드  — 유리 원반 → 단정한 화이트 원 */
+html.theme-pro #ypReopen{
+  background:#FFFFFF;color:var(--accent);
+  border:1px solid var(--border);
+  box-shadow:0 1px 2px rgba(23,28,41,.08),0 8px 20px -8px rgba(23,28,41,.22);
+}
+html.theme-pro #ypReopen svg{color:#FF7A45;}
+/* 입장 게이트 — 프로 모달 톤 */
+html.theme-pro #ypGate{background:rgba(23,28,41,.44);backdrop-filter:blur(3px);}
+html.theme-pro .ypg-card{
+  background:#FFFFFF;border:1px solid var(--border);border-radius:14px;
+  box-shadow:0 1px 2px rgba(23,28,41,.06),0 24px 64px -16px rgba(23,28,41,.3);
+}
+html.theme-pro .ypg-ttl{color:#171C26;}
+html.theme-pro .ypg-sub{color:var(--text3);}
+html.theme-pro .ypg-btn{
+  background:#F6F7FA;border-color:var(--border);color:var(--text1);
+}
+html.theme-pro .ypg-btn:hover{
+  background:color-mix(in srgb,var(--accent) 6%,#FFFFFF);
+  border-color:color-mix(in srgb,var(--accent) 40%,var(--border));
+}
+html.theme-pro .ypg-btn>i{color:var(--text3);}
+html.theme-pro .ypg-btn em{color:var(--text3);}
+html.theme-pro .ypg-btn.main{
+  background:var(--accent);border-color:var(--accent);
+  box-shadow:0 1px 2px color-mix(in srgb,var(--accent) 35%,transparent);
+}
+html.theme-pro .ypg-btn.main:hover{background:var(--accent2);border-color:var(--accent2);}
+html.theme-pro .ypg-btn.main>i{color:#fff;}
+html.theme-pro .ypg-btn.main em{color:rgba(255,255,255,.78);}
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 

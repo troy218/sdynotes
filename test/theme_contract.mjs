@@ -129,6 +129,10 @@ try {
   check('프로 --card 토큰이 흰색(종이)', card1 === '#ffffff');
   const cssText = fs.readFileSync(path.join(TMP, 'sdynotes.css'), 'utf-8');
   check('CSS: 프로 종이 흰색 규칙 존재', /html\.theme-pro \.paper\{[^}]*background:#FFFFFF/.test(cssText));
+  // 14.50 · 음악·엽스코드 프로 통합
+  check('14.50 · CSS: 음악바 플랫 화이트', /html\.theme-pro \.mp\.mp-bar\{[^}]*background:#FFFFFF/.test(cssText));
+  check('14.50 · CSS: 엽스코드 밝은 프레임', /html\.theme-pro #ypApp\{[^}]*background:#FFFFFF/.test(cssText));
+  check('14.50 · 음악바·엽스코드·게이트 DOM 존재', !!d1.getElementById('musicPlayer') && !!d1.getElementById('ypApp') && !!d1.getElementById('ypGate'));
 
   // ── 2) 설정창 테마 UI + 배경화면 행은 프로에서 숨김 ──
   w1.openSettings();
