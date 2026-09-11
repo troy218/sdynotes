@@ -8302,6 +8302,22 @@ body{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
 html.theme-pro #noteGrid .note-card-name{color:#0F172A;}
 .pro-home-count, .home-section-title, .pro-folders-title{ letter-spacing:-.01em; }
 
+/* 14.60-F · PRO 노트 열림 — 슬라이드 없이 깔끔하게 (프로 요청) */
+html.theme-pro .editor{
+  transform:none!important;
+  transition:none!important;
+  opacity:0!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+html.theme-pro .editor.open{
+  transform:none!important;
+  opacity:1!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+  transition:none!important;
+}
+
 @media(prefers-reduced-motion:reduce){
   #proHomeEq{display:none!important;}
 }
