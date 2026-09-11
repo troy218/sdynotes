@@ -857,7 +857,7 @@
         .tb-right{display:flex;align-items:center;gap:6px;justify-self:end;}
 
         .editor-toolbar #edTitle{
-            flex:1 1 auto;min-width:60px;font-size:14.5px;font-weight:700;letter-spacing:-.01em;
+            flex:1 1 auto;min-width:60px;font-size:14px;font-weight:500;letter-spacing:-.01em;
             border:1px solid transparent;border-radius:8px;padding:7px 10px;background:transparent;
             text-overflow:ellipsis;transition:background .15s,border-color .15s;
         }
@@ -4858,7 +4858,7 @@ body.has-wall #sdyAmbient{opacity:0;}
 .tb-title-wrap { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
 #edTitle { 
     font-size: 14px !important; 
-    font-weight: 700 !important; 
+    font-weight: 500 !important; 
     padding: 4px 8px !important; 
     border-radius: 6px;
     background: transparent;
@@ -7313,8 +7313,8 @@ html.theme-pro #proSide{
 }
 html.theme-pro #mainView{left:248px!important;}
 /* 브랜드 — 프로에선 헤더가 아닌 사이드바 상단 */
-html.theme-pro .pro-brand{padding:16px 12px 8px;}
-html.theme-pro .pro-brand .app-brand{margin-left:0!important;gap:9px;}
+html.theme-pro .pro-brand{padding:20px 12px 14px;display:flex;flex-direction:column;align-items:center;text-align:center;}
+html.theme-pro .pro-brand .app-brand{margin-left:0!important;gap:9px;justify-content:center;}
 html.theme-pro .pro-brand .logo-dot{width:30px;height:30px;font-size:16px;}
 html.theme-pro .pro-brand h1{
   font-size:14.5px;letter-spacing:-.015em;max-width:150px;
@@ -7555,9 +7555,24 @@ html.theme-pro .ypv-gear,html.theme-pro .ypv-join.off{
 }
 html.theme-pro .ypv-icon:hover,html.theme-pro .ypv-mute:hover,
 html.theme-pro .ypv-gear:hover{color:var(--text1);border-color:#C9CFDB;}
-/* 채팅 본체(다크 존) — 내 말풍선은 앱 강조색 플랫으로 */
+/* 채팅 본체 — 프레임과 같은 밝은 톤으로 통일 (다크 존 제거) */
+html.theme-pro #ypApp .yp-body{background:#F1F3F7;}
+html.theme-pro #ypApp .yp-body::-webkit-scrollbar-thumb{background:#D2D7E1;}
+html.theme-pro #ypApp .yp-bub{
+  background:#FFFFFF;border:1px solid #DFE3EB;color:#1E2532;
+  box-shadow:0 1px 2px rgba(23,28,41,.05);
+}
+html.theme-pro #ypApp .yp-ava{background:#E5E8EF;color:var(--text3);border-color:var(--border);}
+html.theme-pro #ypApp .yp-who{color:var(--text2);}
+html.theme-pro #ypApp .yp-time{color:var(--text3);}
+html.theme-pro #ypApp .yp-sys{background:#E8EBF1;color:var(--text2);border:1px solid var(--border);}
+html.theme-pro #ypApp .yp-empty{color:var(--text3);}
+html.theme-pro #ypApp .yp-empty b{color:var(--text2);}
+html.theme-pro #ypApp .yp-file{background:#FFFFFF;border-color:var(--border);color:var(--text2);}
+html.theme-pro #ypApp .yp-img{border:1px solid var(--border);box-shadow:0 1px 2px rgba(23,28,41,.05);}
+html.theme-pro #ypApp .yp-stack{scrollbar-color:#D2D7E1 transparent;}
 html.theme-pro .yp-line.me .yp-bub{
-  background:var(--accent);border-color:transparent;
+  background:var(--accent);border-color:transparent;color:#fff;
   box-shadow:0 3px 14px color-mix(in srgb,var(--accent) 30%,transparent);
 }
 /* 하단 입력 — 밝은 존 */
@@ -7827,13 +7842,13 @@ html.theme-pro .pro-tools,
 html.theme-pro .pro-nav,
 html.theme-pro .pro-side-bottom{flex-shrink:0;}
 html.theme-pro .pro-folders-wrap{flex:1 0 auto;overflow:visible;}
-html.theme-pro .pro-brand .app-brand{display:grid;grid-template-columns:30px minmax(0,1fr);width:100%;}
+html.theme-pro .pro-brand .app-brand{display:flex;align-items:center;justify-content:center;gap:9px;width:auto;max-width:100%;}
 html.theme-pro .pro-brand .logo-dot{flex-shrink:0;}
 html.theme-pro .pro-brand .app-brand h1{
   max-width:none!important;white-space:normal!important;overflow:visible!important;
-  line-height:1.5;overflow-wrap:anywhere;opacity:1;transform:none;
+  line-height:1.5;overflow-wrap:anywhere;opacity:1;transform:none;text-align:center;
 }
-html.theme-pro .pro-brand .link-bar{grid-column:1/-1;width:100%;margin:12px 0 0;max-width:none;}
+html.theme-pro .pro-brand .link-bar{width:100%;margin:12px 0 0;max-width:none;justify-content:center;}
 html.theme-pro .pro-brand .link-chip{min-width:0;max-width:100%;}
 html.theme-pro .pro-brand .link-chip span{white-space:normal;overflow-wrap:anywhere;}
 html.theme-pro .pro-tools{padding:8px 12px;}
@@ -7882,9 +7897,10 @@ html.theme-pro .pro-results{
 }
 html.theme-pro .pro-results > span{min-width:0;overflow-wrap:anywhere;}
 html.theme-pro .pro-results-clear{
-  min-height:36px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;
-  background:var(--bg2);color:var(--accent);font:inherit;font-weight:600;cursor:pointer;
+  min-height:30px;padding:5px 10px;border:1px solid transparent;border-radius:6px;
+  background:transparent;color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;
 }
+html.theme-pro .pro-results-clear:hover{background:var(--bg2);color:var(--text2);border-color:var(--border);}
 html.theme-pro #noteGrid .note-card-name{min-height:64px;padding:10px 14px;align-items:center;}
 html.theme-pro #noteGrid .note-card-name > span:first-child{
   min-width:0;white-space:normal!important;overflow-wrap:anywhere;line-height:1.5;
@@ -7951,7 +7967,7 @@ html.theme-pro .editor-toolbar button:disabled{opacity:.4;cursor:not-allowed;box
   html.theme-pro .editor-toolbar .tb-title-wrap{flex-wrap:wrap;gap:0 12px;}
   html.theme-pro .editor-toolbar #edTitle{
     width:100%;max-width:440px;min-width:80px;height:36px;
-    font-size:15px!important;padding:6px 8px!important;
+    font-size:14px!important;font-weight:500!important;padding:6px 8px!important;
   }
   html.theme-pro .editor-toolbar #saveState{font-size:11px!important;}
   html.theme-pro .editor-toolbar .tb-mid{
