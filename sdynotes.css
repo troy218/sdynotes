@@ -85,14 +85,14 @@
             input[type=number],textarea{font-size:16px !important;}
         }
         :root{
-            --bg:#ffffff;--bg2:#f7f7f8;--card:#ffffff;--text1:#111;--text2:#555;--text3:#aaa;
-            --border:#e5e5e5;--accent:#4f6ef7;--accent2:#3b5de7;--shadow:0 2px 12px rgba(0,0,0,0.06);
-            --line:#e8e8e8;--dot:#cccccc;
+            --bg:#ffffff;--bg2:#f7f7f8;--card:#ffffff;--text1:#0F172A;--text2:#334155;--text3:#64748B;
+            --border:#e2e8f0;--accent:#14366E;--accent2:#0F2A5A;--shadow:0 2px 12px rgba(0,0,0,0.06);
+            --line:#e2e8f0;--dot:#cbd5e1;
         }
         .dark{
-            --bg:#111113;--bg2:#1a1a1e;--card:#1e1e22;--text1:#eee;--text2:#999;--text3:#555;
-            --border:#2a2a2e;--accent:#6b7ff7;--accent2:#5a6ee7;--shadow:0 2px 12px rgba(0,0,0,0.3);
-            --line:#2a2a2e;--dot:#444444;
+            --bg:#0F172A;--bg2:#1E293B;--card:#1E293B;--text1:#E2E8F0;--text2:#94A3B8;--text3:#64748B;
+            --border:#334155;--accent:#2A5BD0;--accent2:#14366E;--shadow:0 2px 12px rgba(0,0,0,0.4);
+            --line:#334155;--dot:#475569;
         }
         body{background:var(--bg);color:var(--text1);}
 
@@ -676,7 +676,7 @@
 
         .note-grid{
             display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;
-            gap:20px;padding:0 20px;width:100%;
+            gap:8px;padding:0 4px;width:100%;
         }
         @media(max-width:640px){
             .note-grid{gap:10px;padding:0 10px;justify-content:flex-start;}
@@ -804,7 +804,7 @@
         .ficon-btn:hover{border-color:var(--accent);color:var(--accent);}
         .ficon-btn.on{border-color:var(--accent);color:#fff;background:var(--accent);}
         .breadcrumb{
-            display:flex;align-items:center;gap:8px;padding:0 26px 6px;font-size:13px;color:var(--text2);
+            display:flex;align-items:center;gap:6px;padding:0 4px 4px;font-size:13px;color:var(--text2);
         }
         .breadcrumb button{
             background:none;border:none;color:var(--accent);cursor:pointer;font-size:13px;
@@ -857,7 +857,7 @@
         .tb-right{display:flex;align-items:center;gap:6px;justify-self:end;}
 
         .editor-toolbar #edTitle{
-            flex:1 1 auto;min-width:60px;font-size:14.5px;font-weight:700;letter-spacing:-.01em;
+            flex:1 1 auto;min-width:60px;font-size:14px;font-weight:500;letter-spacing:-.01em;
             border:1px solid transparent;border-radius:8px;padding:7px 10px;background:transparent;
             text-overflow:ellipsis;transition:background .15s,border-color .15s;
         }
@@ -1057,7 +1057,7 @@
         /* ===== 페이지 스택 ===== */
         .editor-main{flex:1;display:flex;min-height:0;position:relative;}
         .editor-body{
-            flex:1;overflow:auto;scroll-behavior:smooth;padding:20px;min-width:0;
+            flex:1;overflow:auto;scroll-behavior:smooth;padding:4px;min-width:0;
             overflow-anchor:none;
         }
         /* ===== 세로 도구막대 ===== */
@@ -4858,7 +4858,7 @@ body.has-wall #sdyAmbient{opacity:0;}
 .tb-title-wrap { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
 #edTitle { 
     font-size: 14px !important; 
-    font-weight: 700 !important; 
+    font-weight: 500 !important; 
     padding: 4px 8px !important; 
     border-radius: 6px;
     background: transparent;
@@ -6611,7 +6611,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    말풍선 아래쪽까지 올라오는데, 그때 버튼이 말풍선에 깔려 안 눌리면 곤란하다. */
 .ai-askbar{position:absolute;left:140px;bottom:14px;z-index:9;
     display:flex;flex-direction:column;align-items:center;gap:6px;
-    max-width:min(520px,calc(100% - 160px));
+    max-width:min(640px,calc(100% - 160px));
     transition:bottom .3s cubic-bezier(.22,.9,.3,1.12);}
 .ai-askbar.draw-on{bottom:calc(64px + 32px);}      /* 그리기 툴바가 뜨면 해돌이와 같이 위로 */
 /* 범위 버튼 줄 — '이 페이지' 와 '전체 페이지' 를 질문칸 위 가운데에 나란히 둔다.
@@ -6634,7 +6634,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
    여러 줄이 되면 .multi 가 붙어 모서리가 각져 보이고, 상자는 아래에 고정된
    채로 위를 향해 자란다(검색창이 bottom 고정이라 자연스레 위로 자람). */
 .ai-askbar-field{display:flex;align-items:center;gap:8px;
-    width:min(var(--ai-q-w,230px),480px,100%);
+    width:min(var(--ai-q-w,230px),620px,100%);
     border:1px solid var(--g-brd);background:var(--g-fill-strong);
     backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%);
     box-shadow:var(--g-hi),var(--g-shadow);
@@ -6669,7 +6669,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 /* ── 해돌이 답변 말풍선 — 닫기 전까지 계속 떠 있다 ── */
 /* --ai-lift : 질문칸이 여러 줄로 자라 검색창 기둥(문구+버튼)이 위로 올라오면,
    그 자리와 겹치지 않게 JS(aiQGrow)가 말풍선을 그만큼 더 올려 둔다(기본 0) */
-.ai-say{position:absolute;left:30px;bottom:calc(122px + var(--ai-lift,0px));width:min(440px,calc(100vw - 60px));
+.ai-say{position:absolute;left:30px;bottom:calc(122px + var(--ai-lift,0px));width:min(560px,calc(100vw - 60px));
     z-index:8;display:flex;flex-direction:column;
     background:var(--g-fill-strong);
     backdrop-filter:blur(var(--g-blur-lg)) saturate(160%);
@@ -6756,7 +6756,7 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 @keyframes aiDot{0%,80%,100%{transform:translateY(0);opacity:.35;}40%{transform:translateY(-4px);opacity:1;}}
 
 /* ── 대화기록 — 해돌이를 누르면 열리는 목록 ── */
-.ai-hist{position:absolute;left:30px;bottom:122px;width:min(400px,calc(100vw - 60px));
+.ai-hist{position:absolute;left:30px;bottom:122px;width:min(520px,calc(100vw - 60px));
     z-index:8;display:flex;flex-direction:column;max-height:min(46vh,420px);
     background:var(--g-fill-strong);
     backdrop-filter:blur(var(--g-blur-lg)) saturate(160%);
@@ -6780,18 +6780,39 @@ svg.om-wrong .om-outer{animation:om-sad-wobble 1s ease-in-out;}
 .ai-hist-ttl i{color:var(--accent);font-size:15px;}
 .ai-hist-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding:6px;}
 .ai-hist-empty{padding:18px 14px;font-size:12.5px;color:var(--text3);text-align:center;line-height:1.6;}
-/* 기록 한 줄 — 종류·질문·답 일부·시각. 누르면 말풍선으로 다시 보여 준다 */
-.ai-hist-item{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;
-    border:1px solid transparent;background:transparent;border-radius:12px;padding:8px 10px;
+/* 기록 한 줄 — 채팅 말풍선 형식(내 질문 + 해돌이 답) — 누르면 본 말풍선으로 다시 보여 준다 */
+.ai-hist-item{display:flex;flex-direction:column;gap:6px;width:100%;text-align:left;
+    border:1px solid transparent;background:transparent;border-radius:12px;padding:9px 9px 8px;
     cursor:pointer;color:var(--text2);font:inherit;
     transition:background .15s ease,border-color .15s ease;}
 .ai-hist-item:hover{background:var(--g-in);border-color:var(--g-line);}
 .ai-hist-row{display:flex;align-items:center;gap:6px;}
 .ai-hist-t{margin-left:auto;font-size:10px;color:var(--text3);}
+/* 이전 단일 줄 요약 — 호환 유지 */
 .ai-hist-q{font-size:12.5px;font-weight:700;color:var(--text1);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .ai-hist-a{font-size:11.5px;color:var(--text3);line-height:1.45;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+/* 채팅 말풍선형 기록 — 질문은 오른쪽, 답변은 왼쪽 */
+.ai-hist-bubble{border-radius:12px;padding:7px 10px;font-size:12.2px;line-height:1.55;
+    word-break:break-word;overflow-wrap:anywhere;max-width:100%;}
+.ai-hist-bubble b{font-weight:800;margin-right:5px;}
+.ai-hist-user{background:color-mix(in srgb,var(--accent) 10%,var(--g-in));
+    border:1px solid color-mix(in srgb,var(--accent) 18%,transparent);
+    color:var(--text1);border-radius:12px 12px 4px 12px;align-self:flex-end;
+    max-width:92%;}
+.ai-hist-user b{color:var(--accent);}
+.ai-hist-bot{background:var(--card);
+    border:1px solid var(--g-line);color:var(--text1);
+    border-radius:12px 12px 12px 4px;align-self:flex-start;
+    max-width:92%;box-shadow:0 1px 4px rgba(23,28,41,.06);}
+.ai-hist-bot b{color:var(--accent);}
+.ai-hist-bot .ai-hist-a-html{font-size:12.2px;line-height:1.6;color:var(--text1);}
+.ai-hist-bot .ai-hist-a-html p{margin:0 0 4px;}
+.ai-hist-bot .ai-hist-a-html p:last-child{margin-bottom:0;}
+.ai-hist-bot .ai-hist-a-html strong{font-weight:800;color:var(--text1);}
+.ai-hist-list{display:flex;flex-direction:column;gap:4px;}
+.ai-hist .ai-kind{font-size:9.5px;padding:1px 6px;}
 
 /* 좁은 화면 — 검색창은 해돌이 옆 한 줄을 남은 폭에, 말풍선·기록은 좌우 가득 */
 @media (max-width:640px){
@@ -6937,7 +6958,7 @@ body.sdy-turbo .page-wrap{will-change:auto!important;}
 .tp-swatch.pro{background:#F1F3F7;border-color:#DFE3EB;}
 .tp-swatch.pro i:nth-child(1){height:58%;background:#DFE3EB;}
 .tp-swatch.pro i:nth-child(2){height:100%;background:#FFFFFF;border:1px solid #E3E7EF;}
-.tp-swatch.pro i:nth-child(3){height:74%;background:linear-gradient(180deg,#3B76F6,#1D4ED8);}
+.tp-swatch.pro i:nth-child(3){height:74%;background:linear-gradient(180deg,#1B4AA0,#14366E);}
 .tp-swatch.classic{background:#FFFFFF;border-color:#E2E5EE;}
 .tp-swatch.classic i:nth-child(1){height:58%;background:#DDE1EC;}
 .tp-swatch.classic i:nth-child(2){height:100%;background:linear-gradient(180deg,#4F6EF7,#8B5CF6);}
@@ -6952,13 +6973,13 @@ body.sdy-turbo .page-wrap{will-change:auto!important;}
 /* ── 14.48-B · PRO 색상·표면 토큰 ── */
 html.theme-pro{
   --bg:#F4F5F8;--bg2:#ECEEF3;--card:#FFFFFF;
-  --text1:#171C26;--text2:#4C5568;--text3:#8F98AB;
-  --border:#DFE3EB;
-  --accent:#2563EB;--accent2:#1D4ED8;
+  --text1:#0F172A;--text2:#334155;--text3:#64748B;
+  --border:#CBD5E1;
+  --accent:#14366E;--accent2:#0F2A5A;
   --shadow:0 1px 2px rgba(23,28,41,.06);
   --shadow-lg:0 16px 40px -12px rgba(23,28,41,.20);
-  --line:#E3E7EF;--dot:#C7CEDB;
-  --grad:linear-gradient(135deg,#2563EB,#1D4ED8);
+  --line:#CBD5E1;--dot:#94A3B8;
+  --grad:linear-gradient(135deg,#14366E,#0F2A5A);
   --g-blur:14px;--g-blur-lg:20px;
   --g-fill:rgba(255,255,255,.80);
   --g-fill-strong:rgba(255,255,255,.94);
@@ -7074,6 +7095,7 @@ html.theme-pro .folder-thumb>i{filter:none;opacity:.85;}
 html.theme-pro .add-card{
   border:1px dashed #C9CFDB;background:transparent;color:var(--text3);
 }
+html.theme-pro .add-card{display:none!important;}
 html.theme-pro .add-card:hover{
   border-color:color-mix(in srgb,var(--accent) 60%,var(--border));
   color:var(--accent);
@@ -7312,8 +7334,8 @@ html.theme-pro #proSide{
 }
 html.theme-pro #mainView{left:248px!important;}
 /* 브랜드 — 프로에선 헤더가 아닌 사이드바 상단 */
-html.theme-pro .pro-brand{padding:16px 12px 8px;}
-html.theme-pro .pro-brand .app-brand{margin-left:0!important;gap:9px;}
+html.theme-pro .pro-brand{padding:20px 12px 14px;display:flex;flex-direction:column;align-items:center;text-align:center;}
+html.theme-pro .pro-brand .app-brand{margin-left:0!important;gap:9px;justify-content:center;}
 html.theme-pro .pro-brand .logo-dot{width:30px;height:30px;font-size:16px;}
 html.theme-pro .pro-brand h1{
   font-size:14.5px;letter-spacing:-.015em;max-width:150px;
@@ -7373,6 +7395,12 @@ html.theme-pro .pro-fold-item.on{
   background:color-mix(in srgb,var(--accent) 9%,transparent);
   color:var(--accent);font-weight:600;
 }
+html.theme-pro .pro-fold-item.drop{
+  background:rgba(79,110,247,.12)!important;
+  color:var(--accent)!important;
+  box-shadow:inset 0 0 0 1px var(--accent);
+  transform:scale(1.02);
+}
 html.theme-pro .pf-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 html.theme-pro .pf-count{
   font-size:10.5px;font-weight:600;color:var(--text3);
@@ -7392,8 +7420,8 @@ html.theme-pro .breadcrumb button{border-radius:7px;}
 html.theme-pro #searchInput{width:240px!important;height:36px!important;border-radius:9px!important;}
 
 /* ── 14.49-M · PRO 홈 — 스택·펼침 없는 평평한 전문 그리드 ── */
-html.theme-pro #noteGrid{display:block;padding:0 20px;}
-html.theme-pro .pro-home-bar{display:flex;align-items:center;gap:10px;margin:4px 2px 14px;}
+html.theme-pro #noteGrid{display:block;padding:0 4px;}
+html.theme-pro .pro-home-bar{display:flex;align-items:center;gap:8px;margin:2px 2px 8px;}
 html.theme-pro .pro-home-bar .home-section-title{margin:0;}
 html.theme-pro .pro-home-count{font-size:12.5px;color:var(--text3);font-weight:600;white-space:nowrap;}
 html.theme-pro .pro-add-note{
@@ -7406,7 +7434,7 @@ html.theme-pro .pro-add-note{
 }
 html.theme-pro .pro-add-note:hover{background:var(--accent2);border-color:var(--accent2);}
 html.theme-pro .pro-add-note:active{transform:scale(.98);}
-html.theme-pro .pro-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:14px;}
+html.theme-pro .pro-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:8px;}
 html.theme-pro .pro-home-empty{
   grid-column:1/-1;display:flex;flex-direction:column;align-items:center;gap:10px;
   color:var(--text3);font-size:14px;padding:60px 0;text-align:center;
@@ -7480,6 +7508,35 @@ html.theme-pro .folder-card:hover .folder-thumb>i{transform:none!important;}
   html.theme-pro .pro-folders-wrap{display:none;}
   html.theme-pro .pro-side-bottom{padding:8px 8px 10px;}
 }
+/* ── 14.52-T · 접었다/펼치기 — PRO 데스크톱 248↔60 레일 토글 (.pro-collapsed) ──
+  狭 뷰포트(≤1023)는 무조건 레일이므로 토글 버튼을 숨긴다. */
+html.theme-pro #proSide{transition:width .22s cubic-bezier(.22,.9,.32,1.06);}
+html.theme-pro #mainView{transition:left .22s cubic-bezier(.22,.9,.32,1.06);}
+.pro-side-toggle{position:absolute;top:12px;right:-11px;z-index:11;
+  width:22px;height:22px;border-radius:999px;border:1px solid var(--border);
+  background:#FFFFFF;color:var(--text3);display:flex;align-items:center;justify-content:center;
+  cursor:pointer;box-shadow:0 1px 6px rgba(23,28,41,.10);
+  transition:transform .18s,background .15s,color .15s,border-color .15s;}
+.pro-side-toggle:hover{background:var(--bg2);color:var(--text1);border-color:var(--border);}
+.pro-side-toggle i{font-size:12px;line-height:1;transition:transform .22s;}
+html.theme-classic .pro-side-toggle{display:none!important;}
+@media (max-width:1023px){.pro-side-toggle{display:none!important;}}
+html.theme-pro.pro-collapsed #proSide{width:60px;}
+html.theme-pro.pro-collapsed #mainView{left:60px!important;}
+html.theme-pro.pro-collapsed .pro-brand{padding:12px 0 10px;display:flex;justify-content:center;}
+html.theme-pro.pro-collapsed .pro-brand .app-brand{gap:0;}
+html.theme-pro.pro-collapsed .pro-brand h1{display:none;}
+html.theme-pro.pro-collapsed .pro-brand .link-bar{display:none;}
+html.theme-pro.pro-collapsed .pro-nav{padding:6px 8px 4px;}
+html.theme-pro.pro-collapsed .pro-nav-item{justify-content:center;padding:11px 0;gap:0;}
+html.theme-pro.pro-collapsed .pro-nav-item span{display:none;}
+html.theme-pro.pro-collapsed .pro-folders-wrap{display:none;}
+html.theme-pro.pro-collapsed .pro-side-bottom{padding:8px 8px 10px;}
+html.theme-pro.pro-collapsed .pro-side-toggle i{transform:rotate(180deg);}
+html.theme-pro.pro-collapsed #proSide .pro-bookmarks summary span,
+html.theme-pro.pro-collapsed #proSide .pro-bookmark-count,
+html.theme-pro.pro-collapsed #proSide .pro-bookmark-chevron{display:none!important;}
+html.theme-pro.pro-collapsed #proSide .pro-bookmarks summary{justify-content:center;padding:9px 0;gap:0;}
 /* 프로 홈 모바일 (17.0 모바일 블록과 같은 폭 기준) */
 @media (max-width:640px){
   html.theme-pro .pro-grid,
@@ -7508,6 +7565,7 @@ html.theme-pro #mpReopen{
   box-shadow:0 1px 2px rgba(23,28,41,.08),0 8px 20px -8px rgba(23,28,41,.22);
   backdrop-filter:none;-webkit-backdrop-filter:none;
 }
+html.theme-pro #mpReopen{display:none!important;}
 html.theme-pro #mpBig{
   background:rgba(255,255,255,.97)!important;
   border:1px solid var(--border)!important;
@@ -7520,6 +7578,17 @@ html.theme-pro .mp-list{left:calc(50% + 124px);}
 @media (max-width:1023px){
   html.theme-pro .mp.mp-bar{left:calc(50% + 30px);}
   html.theme-pro .mp-list{left:calc(50% + 30px);}
+}
+/* 접었을 때는 60px 레일과 같은 오프셋 — 뷰포트가 넓어도 */
+html.theme-pro.pro-collapsed .mp.mp-bar{left:calc(50% + 30px);}
+html.theme-pro.pro-collapsed .mp-list{left:calc(50% + 30px);}
+html.theme-pro.pro-collapsed #ypApp{left:72px!important;width:min(370px,calc(100vw - 84px))!important;right:auto!important;}
+@media (max-width:640px){
+  html.theme-pro.pro-collapsed #ypApp{left:72px!important;}
+}
+html.theme-pro.pro-collapsed .select-bar{left:calc(50% + 30px);}
+@media (max-width:640px){
+  html.theme-pro.pro-collapsed .select-bar{left:72px!important;}
 }
 
 /* ── 14.50-Q · 엽스코드 — 밝은 윈도우 프레임 + 채팅 존은 다크 유지 ── */
@@ -7553,9 +7622,24 @@ html.theme-pro .ypv-gear,html.theme-pro .ypv-join.off{
 }
 html.theme-pro .ypv-icon:hover,html.theme-pro .ypv-mute:hover,
 html.theme-pro .ypv-gear:hover{color:var(--text1);border-color:#C9CFDB;}
-/* 채팅 본체(다크 존) — 내 말풍선은 앱 강조색 플랫으로 */
+/* 채팅 본체 — 프레임과 같은 밝은 톤으로 통일 (다크 존 제거) */
+html.theme-pro #ypApp .yp-body{background:#F1F3F7;}
+html.theme-pro #ypApp .yp-body::-webkit-scrollbar-thumb{background:#D2D7E1;}
+html.theme-pro #ypApp .yp-bub{
+  background:#FFFFFF;border:1px solid #DFE3EB;color:#1E2532;
+  box-shadow:0 1px 2px rgba(23,28,41,.05);
+}
+html.theme-pro #ypApp .yp-ava{background:#E5E8EF;color:var(--text3);border-color:var(--border);}
+html.theme-pro #ypApp .yp-who{color:var(--text2);}
+html.theme-pro #ypApp .yp-time{color:var(--text3);}
+html.theme-pro #ypApp .yp-sys{background:#E8EBF1;color:var(--text2);border:1px solid var(--border);}
+html.theme-pro #ypApp .yp-empty{color:var(--text3);}
+html.theme-pro #ypApp .yp-empty b{color:var(--text2);}
+html.theme-pro #ypApp .yp-file{background:#FFFFFF;border-color:var(--border);color:var(--text2);}
+html.theme-pro #ypApp .yp-img{border:1px solid var(--border);box-shadow:0 1px 2px rgba(23,28,41,.05);}
+html.theme-pro #ypApp .yp-stack{scrollbar-color:#D2D7E1 transparent;}
 html.theme-pro .yp-line.me .yp-bub{
-  background:var(--accent);border-color:transparent;
+  background:var(--accent);border-color:transparent;color:#fff;
   box-shadow:0 3px 14px color-mix(in srgb,var(--accent) 30%,transparent);
 }
 /* 하단 입력 — 밝은 존 */
@@ -7582,6 +7666,19 @@ html.theme-pro #ypReopen{
   box-shadow:0 1px 2px rgba(23,28,41,.08),0 8px 20px -8px rgba(23,28,41,.22);
 }
 html.theme-pro #ypReopen svg{color:#FF7A45;}
+/* 14.52-S · PRO 사이드바 엽스코드 — 떠 있던 칩을 품고, 기존 자리에서는 숨긴다 */
+html.theme-pro #ypReopen{display:none!important;}
+html.theme-pro #proYpBtn{position:relative;}
+html.theme-pro #proYpBtn .pro-yp-badges{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:flex-end;gap:3px;pointer-events:none;}
+html.theme-pro #proYpBtn .pro-yp-bdg{min-width:18px;height:18px;border-radius:999px;display:none;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;line-height:1;padding:0 5px;border:2px solid #FBFCFE;box-shadow:0 0 0 1px rgba(23,28,41,.06);gap:2px;white-space:nowrap;}
+html.theme-pro #proYpBtn .pro-yp-bdg.voice{background:#22c55e;color:#052e16;box-shadow:0 0 0 2px #FBFCFE,0 0 10px rgba(34,197,94,.8);}
+html.theme-pro #proYpBtn .pro-yp-bdg.dm{background:linear-gradient(135deg,#f43f5e,#ef4444);color:#fff;box-shadow:0 0 0 2px #FBFCFE;}
+html.theme-pro #proYpBtn.shake{animation:ypShake .4s ease;}
+/* 레일(60px)에서는 라벨이 없으니 배지를 버튼 우상단으로 */
+@media (max-width:1023px){
+  html.theme-pro #proYpBtn .pro-yp-badges{right:2px;top:2px;transform:none;gap:2px;}
+  html.theme-pro #proYpBtn .pro-yp-bdg{font-size:9.5px;min-width:16px;height:16px;padding:0 4px;border-width:1.5px;}
+}
 /* 입장 게이트 — 프로 모달 톤 */
 html.theme-pro #ypGate{background:rgba(23,28,41,.44);backdrop-filter:blur(3px);}
 html.theme-pro .ypg-card{
@@ -7606,6 +7703,13 @@ html.theme-pro .ypg-btn.main{
 html.theme-pro .ypg-btn.main:hover{background:var(--accent2);border-color:var(--accent2);}
 html.theme-pro .ypg-btn.main>i{color:#fff;}
 html.theme-pro .ypg-btn.main em{color:rgba(255,255,255,.78);}
+/* 14.52-S · PRO 엽스코드 패널은 사이드바 오른쪽에 도킹 — 음악 바와 같은 오프셋 */
+@media (min-width:641px){
+  html.theme-pro #ypApp{left:260px!important;right:auto!important;bottom:14px!important;top:auto!important;}
+}
+@media (min-width:641px) and (max-width:1023px){
+  html.theme-pro #ypApp{left:72px!important;width:min(370px,calc(100vw - 84px))!important;}
+}
 
 /* ── 14.51-R · 플로팅 요소 위치 — 프로 셸(사이드바/레일) 기준 재배치 ── */
 /* 데스크톱: 선택막대를 콘텐츠 영역 중앙으로 (화면 중앙이 아닌) */
@@ -7825,34 +7929,37 @@ html.theme-pro .pro-tools,
 html.theme-pro .pro-nav,
 html.theme-pro .pro-side-bottom{flex-shrink:0;}
 html.theme-pro .pro-folders-wrap{flex:1 0 auto;overflow:visible;}
-html.theme-pro .pro-brand .app-brand{display:grid;grid-template-columns:30px minmax(0,1fr);width:100%;}
+html.theme-pro .pro-brand .app-brand{display:flex;align-items:center;justify-content:center;gap:9px;width:auto;max-width:100%;}
 html.theme-pro .pro-brand .logo-dot{flex-shrink:0;}
 html.theme-pro .pro-brand .app-brand h1{
   max-width:none!important;white-space:normal!important;overflow:visible!important;
-  line-height:1.5;overflow-wrap:anywhere;opacity:1;transform:none;
+  line-height:1.5;overflow-wrap:anywhere;opacity:1;transform:none;text-align:center;
 }
-html.theme-pro .pro-brand .link-bar{grid-column:1/-1;width:100%;margin:12px 0 0;max-width:none;}
+html.theme-pro .pro-brand .link-bar{width:100%;margin:12px 0 0;max-width:none;justify-content:center;}
 html.theme-pro .pro-brand .link-chip{min-width:0;max-width:100%;}
 html.theme-pro .pro-brand .link-chip span{white-space:normal;overflow-wrap:anywhere;}
 html.theme-pro .pro-tools{padding:8px 12px;}
-html.theme-pro .pro-tools .hdr-right{display:flex;flex-wrap:wrap;gap:6px;margin:0!important;width:100%;}
-html.theme-pro .pro-tools .tool-btn{width:38px;height:38px;flex:none;}
+html.theme-pro .pro-tools .hdr-right{display:flex;flex-wrap:nowrap;gap:6px;margin:0!important;width:100%;align-items:center;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+html.theme-pro .pro-tools .hdr-right::-webkit-scrollbar{display:none;}
+html.theme-pro .pro-tools .tool-btn{width:34px;height:34px;flex:none;min-width:34px;}
 /* Existing controls are moved, not cloned: IDs, badges and handlers stay intact. */
 html.theme-pro .pro-tools button[onclick="openCards()"],
 html.theme-pro .pro-tools button[onclick="openSettings()"]{display:none!important;}
-html.theme-pro .pro-tools .search-wrap{order:-1;width:100%;}
-html.theme-pro .pro-tools #searchInput{display:block!important;width:100%!important;min-width:0;}
-html.theme-pro #mainView > main{padding:28px clamp(16px,3vw,48px) 40px!important;}
-html.theme-pro #noteGrid{padding:0;align-items:stretch;}
-html.theme-pro #breadcrumb{padding:0 0 12px;flex-wrap:wrap;gap:6px;line-height:1.6;}
+html.theme-pro .pro-tools .search-wrap{order:0;flex:1 1 140px;min-width:110px;max-width:190px;width:auto;margin-left:auto;}
+html.theme-pro .pro-tools #searchInput{display:block!important;width:100%!important;min-width:0;height:32px!important;border-radius:4px!important;}
+html.theme-pro #mainView{overflow:visible;}
+html.theme-pro #mainView > main{padding:10px clamp(8px,1.5vw,16px) 16px!important;overflow:visible;}
+html.theme-pro #noteGrid{padding:0 4px;align-items:stretch;overflow:visible;}
+html.theme-pro #breadcrumb{padding:0 0 4px 2px;flex-wrap:wrap;gap:4px;line-height:1.5;overflow:visible;max-width:100%;}
 html.theme-pro #breadcrumb > *{min-width:0;max-width:100%;overflow-wrap:anywhere;white-space:normal;}
 html.theme-pro #breadcrumb button{flex-shrink:0;text-align:left;}
 html.theme-pro #breadcrumb i{flex-shrink:0;}
-html.theme-pro #noteGrid .add-card{
-  aspect-ratio:auto;min-height:0!important;align-self:stretch;
-  height:100%!important;
+@media(max-width:1023px){
+  html.theme-pro #mainView > main{padding-left:4px!important;padding-right:4px!important;}
+  html.theme-pro #noteGrid{padding-left:4px;padding-right:4px;}
 }
-html.theme-pro #noteGrid .add-card:only-child{aspect-ratio:4/5;height:auto!important;}
+html.theme-pro #noteGrid .add-card{display:none!important;}
+html.theme-pro #noteGrid .add-card:only-child{display:none!important;}
 html.theme-pro #noteGrid .note-preview{background:#eef0f5;}
 @media(max-width:1023px){
   html.theme-pro .pro-brand .app-brand{display:flex;justify-content:center;}
@@ -7865,7 +7972,7 @@ html.theme-pro #noteGrid .note-preview{background:#eef0f5;}
   html.theme-pro .pro-side-bottom{margin-top:auto;}
 }
 @media(max-width:640px){
-  html.theme-pro #mainView > main{padding:16px 12px 32px!important;}
+  html.theme-pro #mainView > main{padding:8px 4px 16px!important;}
 }
 
 /* PRO discovery and reading: labels, stable title rows, clear search states. */
@@ -7873,14 +7980,15 @@ html.theme-pro #noteGrid .note-preview{background:#eef0f5;}
 html.theme-classic .pro-results{display:none;}
 html.theme-pro .pro-results{
   display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
-  gap:12px;padding:12px 16px;margin-bottom:20px;border:1px solid var(--border);
-  border-radius:8px;background:var(--card);font-size:14px;color:var(--text2);
+  gap:8px;padding:8px 10px;margin-bottom:8px;border:1px solid var(--border);
+  border-radius:4px;background:var(--card);font-size:13px;color:var(--text2);
 }
 html.theme-pro .pro-results > span{min-width:0;overflow-wrap:anywhere;}
 html.theme-pro .pro-results-clear{
-  min-height:36px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;
-  background:var(--bg2);color:var(--accent);font:inherit;font-weight:600;cursor:pointer;
+  min-height:30px;padding:5px 10px;border:1px solid transparent;border-radius:6px;
+  background:transparent;color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;
 }
+html.theme-pro .pro-results-clear:hover{background:var(--bg2);color:var(--text2);border-color:var(--border);}
 html.theme-pro #noteGrid .note-card-name{min-height:64px;padding:10px 14px;align-items:center;}
 html.theme-pro #noteGrid .note-card-name > span:first-child{
   min-width:0;white-space:normal!important;overflow-wrap:anywhere;line-height:1.5;
@@ -7888,9 +7996,9 @@ html.theme-pro #noteGrid .note-card-name > span:first-child{
 }
 html.theme-pro #noteGrid .add-card{gap:12px;font:inherit;font-size:13px;font-weight:600;}
 html.theme-pro #noteGrid .add-card > i{font-size:32px;}
-html.theme-pro .pro-home-empty{gap:12px;padding:40px 20px;line-height:1.7;}
-html.theme-pro .pro-home-empty strong{color:var(--text2);font-size:16px;}
-html.theme-pro .pro-home-bar{margin-bottom:20px;}
+html.theme-pro .pro-home-empty{gap:8px;padding:16px 8px;line-height:1.6;}
+html.theme-pro .pro-home-empty strong{color:var(--text2);font-size:15px;}
+html.theme-pro .pro-home-bar{margin-bottom:8px;}
 html.theme-pro .pro-side-bottom{margin-top:auto;}
 html.theme-pro .pro-nav-item,
 html.theme-pro .pro-fold-item{min-height:40px;}
@@ -7900,18 +8008,18 @@ html.theme-pro .pro-results-clear:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px;
 }
 @media(min-width:1024px){
-  html.theme-pro .pro-tools{padding-bottom:16px;border-bottom:1px solid var(--border);margin:0 10px 4px;padding-left:2px;padding-right:2px;}
+  html.theme-pro .pro-tools{padding-bottom:10px;border-bottom:1px solid var(--border);margin:0 10px 8px;padding-left:2px;padding-right:2px;}
   html.theme-pro .pro-tools .tool-btn[data-pro-label]{
-    display:flex;align-items:center;justify-content:flex-start;gap:8px;
-    width:calc(50% - 3px);height:40px;padding:0 8px;background:transparent;
+    display:flex;align-items:center;justify-content:center;gap:0;
+    width:34px;height:34px;padding:0;background:#FFFFFF;border:1px solid var(--border);border-radius:4px;flex:none;min-width:34px;
   }
   html.theme-pro .pro-tools .tool-btn[data-pro-label]::after{
-    content:attr(data-pro-label);font-size:12px;font-weight:600;white-space:nowrap;color:var(--text2);
+    content:none!important;display:none!important;
   }
-  html.theme-pro .pro-tools .tool-btn:hover{background:#eef0f5;}
-  html.theme-pro .pro-tools .search-wrap{margin-bottom:6px;}
-  html.theme-pro .pro-tools #srvGauge{order:2;margin-left:8px;}
-  html.theme-pro .pro-tools #offlineBadge{order:3;max-width:100%;}
+  html.theme-pro .pro-tools .tool-btn:hover{background:#eef0f5;border-color:#dfe3eb;}
+  html.theme-pro .pro-tools .search-wrap{margin-bottom:0;flex:1 1 140px;min-width:110px;max-width:180px;}
+  html.theme-pro .pro-tools #srvGauge{order:0;margin-left:2px;flex:none;min-width:34px;}
+  html.theme-pro .pro-tools #offlineBadge{order:0;max-width:140px;flex:none;}
 }
 @media(max-width:1023px){
   html.theme-pro .pro-tools .tool-btn{width:44px;height:44px;}
@@ -7939,33 +8047,30 @@ html.theme-pro .editor-toolbar button:disabled{opacity:.4;cursor:not-allowed;box
   html.theme-pro .editor-toolbar{
     display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;
     grid-template-areas:"title actions" "tools tools";
-    height:auto!important;min-height:110px!important;padding:10px 20px 12px!important;
-    gap:8px 20px;overflow:visible!important;
+    height:auto!important;min-height:0!important;padding:6px 16px 7px!important;
+    gap:4px 12px;overflow:visible!important;
   }
   html.theme-pro .editor-toolbar .tb-left{grid-area:title;}
   html.theme-pro .editor-toolbar .tb-right{grid-area:actions;gap:8px;}
   html.theme-pro .editor-toolbar .tb-title-wrap{flex-wrap:wrap;gap:0 12px;}
   html.theme-pro .editor-toolbar #edTitle{
-    width:100%;max-width:440px;min-width:80px;height:36px;
-    font-size:15px!important;padding:6px 8px!important;
+    width:100%;max-width:440px;min-width:80px;height:32px;
+    font-size:14px!important;font-weight:500!important;padding:5px 8px!important;
   }
   html.theme-pro .editor-toolbar #saveState{font-size:11px!important;}
   html.theme-pro .editor-toolbar .tb-mid{
     grid-area:tools;justify-self:stretch;justify-content:flex-start;flex-wrap:wrap;
-    gap:8px!important;border-top:1px solid var(--border);padding-top:8px;
+    gap:6px!important;border-top:1px solid var(--border);padding-top:5px;
   }
   html.theme-pro .editor-toolbar .tb-mid > .tool-sep{display:none;}
   html.theme-pro .editor-toolbar .tb-group{
     position:relative;gap:2px;background:#f6f7fa!important;border:1px solid #e6e9ef!important;
-    padding:4px!important;border-radius:6px!important;
+    padding:3px!important;border-radius:6px!important;
   }
-  html.theme-pro .editor-toolbar .tb-mid > .tb-group{padding-top:21px!important;}
-  html.theme-pro .editor-toolbar .tb-mid > .tb-group::before{
-    content:attr(data-tool-group);position:absolute;top:4px;left:9px;
-    font-size:10px;font-weight:600;line-height:13px;color:var(--text3);pointer-events:none;
-  }
+  html.theme-pro .editor-toolbar .tb-mid > .tb-group{padding-top:3px!important;}
+  html.theme-pro .editor-toolbar .tb-mid > .tb-group::before{display:none!important;content:none!important;}
   html.theme-pro .editor-toolbar .tool-btn,
-  html.theme-pro .editor-toolbar .tool-btn.sm{width:34px!important;height:34px!important;font-size:18px!important;}
+  html.theme-pro .editor-toolbar .tool-btn.sm{width:32px!important;height:32px!important;font-size:17px!important;}
   html.theme-pro .editor-toolbar .font-btn{height:34px;max-width:140px;}
   html.theme-pro .editor-toolbar #fontLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   html.theme-pro .editor-toolbar #fsInput{height:34px;width:42px;border-radius:6px;}
@@ -7975,8 +8080,8 @@ html.theme-pro .editor-toolbar button:disabled{opacity:.4;cursor:not-allowed;box
   html.theme-pro .editor-toolbar .tool-sep{height:20px;margin:0 4px;}
   html.theme-pro .editor-toolbar .pg-nav{height:36px;background:#fff;border-radius:6px;}
   html.theme-pro .editor-toolbar .pg-nav button{width:28px;height:28px;font-size:18px;}
-  html.theme-pro .editor-toolbar .tb-labeled{width:auto!important;padding:0 10px;display:inline-flex;align-items:center;gap:6px;}
-  html.theme-pro .editor-toolbar .tb-labeled::after{content:attr(data-tool-label);font-size:12px;font-weight:600;white-space:nowrap;}
+  html.theme-pro .editor-toolbar .tb-labeled{width:32px!important;height:32px!important;padding:0!important;display:inline-flex!important;align-items:center;justify-content:center;gap:0!important;}
+  html.theme-pro .editor-toolbar .tb-labeled::after{display:none!important;content:none!important;}
 }
 @media(min-width:821px) and (max-width:1100px){
   html.theme-pro .editor-toolbar .tb-labeled::after{content:none;}
@@ -8037,6 +8142,193 @@ html.theme-pro #proBookmarkSlot .link-ins-after::after{top:auto;bottom:-3px;}
     box-shadow:0 12px 36px rgba(23,28,41,.16);z-index:95;
   }
 }
+
+/* ── 14.54 · 전역 사각화 + 헤더 한 줄 고정 — 사각사각 + nowrap ──
+   · PRO 10/8/6 → 4/4/3으로 낮춰 앱 전반 각지게
+   · 헤더 우측 아이콘 행(.hdr-right)은 절대 두 줄로 접히지 않고, 넘치면 가로 스크롤
+   · pill(999px)·원형 50% 중 실질 원형 지표 제외, 나머지는 4px로 통일 */
+.header .w-full{flex-wrap:nowrap!important;}
+.header .hdr-right,
+html.theme-classic .hdr-right,
+html.theme-pro .pro-tools .hdr-right{
+  flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;
+  scrollbar-width:none!important;-webkit-overflow-scrolling:touch;
+}
+.header .hdr-right::-webkit-scrollbar,
+html.theme-pro .pro-tools .hdr-right::-webkit-scrollbar{display:none!important;}
+/* 대형 표면 · 카드 · 창 — 4px 사각 */
+.note-card,.folder-card,.add-card,.modal-box,.mp,.mp.mp-bar,.mp-list,.mpb,#ypApp,.fcard-win,
+.sa-card,.ypg-card,.more-panel,.srv-pop,.notif-pop,.ai-say,.ai-hist,.ai-askbar-field,.ai-hist-bubble,
+.select-bar,.ctx-menu,.mpctx,.cd-deck,.cd-face,.cd-qq,.cd-opt,.cd-stat,.cd-tile,.rep-top,.ana-kpi,.ana-sec,
+.fc-mode,.fc-btn,.mpb-now,.yp-bub,.yp-file,.yp-img,.theme-pick,.link-chip,.vault-desk,.side-panel,
+.header .tool-btn,.tool-btn,.pro-nav-item,.pro-fold-item,#searchInput,.mp-search,.cd-paste,.cd-name,
+.cd-prompt,.cd-explain,.cd-memory,.fcard-head,.vault-desk,.vault-bar,.sp-thumb,.pg-nav,.tb-group,
+.editor-toolbar .tool-btn,.breadcrumb button,.cards-actions .cd-btn,.cd-grade button,.cd-testpick,
+.tblsize-box,.tblsize-step,.tblsize-actions button,.tg-label,.fc-laps,.fc-custom input,#welcomeToast,
+#splash .sp-logo,.home-add-note,.notif-item,.mp-tagm .box,.cd-hero,.cd-reveal,.otter-bubble,
+.mpb-cover,.mpb-reco-art,.mpb-album-art,.pl-mini,#plPickPop,#musicListPop .mp-li,.yp-emoji,.yp-settings,
+.sa-logo,.sa-tabs,.sa-sendbtn,.sa-btn,.sa-pwbox,.sa-me,.vault-grid .v-file,.vault-grid .v-file:hover,
+.import-btn,.size-preset-card,.sp-item,.sp-sec,.fcard-head,.cd-inner,.cd-tip-item,.fcard-win .ex-item{
+  border-radius:4px!important;
+}
+.ai-outline,.ai-kind,.cd-tag,.pro-bookmark-count,.mp-badge,.link-bar,.link-add,
+.offline-badge,.page-count-badge,.notif-badge,.srv-track,.srv-fillbar,.tbl-bar,.find-bar,.wf-bar{
+  border-radius:4px!important;
+}
+html.theme-pro .modal-box,html.theme-pro .mpb,html.theme-pro #ypApp,html.theme-pro .sa-card,
+html.theme-pro .ypg-card,html.theme-pro .mp-addpop,html.theme-pro .mp-tagm .box,
+html.theme-pro .more-panel,html.theme-pro .srv-pop,html.theme-pro .notif-pop,
+html.theme-pro .cd-hero,html.theme-pro .cd-face,html.theme-pro .cd-qq,html.theme-pro .cd-reveal,
+html.theme-pro .cd-opt,html.theme-pro .cd-stat,html.theme-pro .cd-tile,
+html.theme-pro .fcard-win.fcard-max .cd-face,html.theme-pro .fcard-win.fcard-max .cd-tile,
+html.theme-pro .otter-bubble,html.theme-pro .mpb-now,html.theme-pro .mpb-playlist-card .mpb-album-art,
+html.theme-pro .mp-eqpop,html.theme-pro #welcomeToast,html.theme-pro .rep-top{
+  border-radius:4px!important;
+}
+html.theme-pro .ai-say{border-radius:4px!important;}
+html.theme-pro .ai-hist{border-radius:4px 4px 0 0!important;}
+html.theme-pro .note-card,html.theme-pro .folder-card,html.theme-pro .add-card,
+html.theme-pro #noteGrid .note-card,html.theme-pro #noteGrid .folder-card,html.theme-pro #noteGrid .add-card,
+html.theme-pro .mp-list,html.theme-pro .mp.mp-bar,html.theme-pro .mp-xtra,html.theme-pro .select-bar,
+html.theme-pro .ctx-menu,html.theme-pro .mpctx,html.theme-pro .toast,html.theme-pro .tbl-bar,
+html.theme-pro .find-bar,html.theme-pro .wf-bar,html.theme-pro .font-menu,html.theme-pro .cd-deck,
+html.theme-pro .cd-name,html.theme-pro .cd-prompt,html.theme-pro .cd-explain,html.theme-pro .ana-kpi,
+html.theme-pro .ana-sec,html.theme-pro .fc-x,html.theme-pro .fc-btn,html.theme-pro .fc-mode,
+html.theme-pro .mpb-cover,html.theme-pro .mpb-reco-art,html.theme-pro .mpb-album-art,
+html.theme-pro .mpb-ctl button,html.theme-pro .pl-mini,html.theme-pro #plPickPop,
+html.theme-pro #musicListPop .mp-li,html.theme-pro .yp-bub,html.theme-pro .yp-img,
+html.theme-pro .yp-emoji,html.theme-pro .yp-settings,html.theme-pro .theme-pick,
+html.theme-pro #splash .sp-logo,html.theme-pro .card-menu,html.theme-pro .mp-otter,
+html.theme-pro .ai-hist-item,html.theme-pro .ai-askbar-field,html.theme-pro .notif-item{
+  border-radius:4px!important;
+}
+html.theme-pro .more-grid button,html.theme-pro .cd-btn,html.theme-pro .cd-grade button,
+html.theme-pro .cd-testpick,html.theme-pro .cd-paste,html.theme-pro .cd-listbar,html.theme-pro .cd-br,
+html.theme-pro .sa-step input,html.theme-pro .sa-sent,html.theme-pro .sa-pwbox input,
+html.theme-pro .ypfr-add input,html.theme-pro .ypfr-add button,html.theme-pro .ypfr-btn,
+html.theme-pro .tp-swatch,html.theme-pro .pg-nav,html.theme-pro .tool-btn,html.theme-pro .tb-group,
+html.theme-pro .pro-nav-item,html.theme-pro .pro-fold-item,html.theme-pro .pro-add-note,
+html.theme-pro #searchInput,html.theme-pro .breadcrumb button,html.theme-pro .pro-brand .link-chip,
+html.theme-pro .home-section-title i,html.theme-pro .font-btn,html.theme-pro .mpb-li,
+html.theme-pro .fcard-win,html.theme-pro .fcard-win.moved,html.theme-pro .modal-bg .modal-box.cards-box,
+html.theme-pro #mpBig,html.theme-pro .ctx-menu.show,html.theme-pro #uploadProg .modal-box{
+  border-radius:4px!important;
+}
+/* 레일(60px)에서는 검색칸이 44px 아이콘 유지 — 전역 110px 최소가 덮지 않게 복원 */
+@media(max-width:1023px){
+  html.theme-pro .pro-tools .search-wrap{
+    flex:0 0 44px!important;min-width:44px!important;max-width:44px!important;width:44px!important;margin-left:0!important;
+  }
+  html.theme-pro .pro-tools .hdr-right{justify-content:center!important;gap:4px!important;}
+}
+
+/* 14.58 · Pro feather logo — 전문 SVG (아웃라인+척추+닙+플러리시+잉크점).
+   클래식에서는 기존 remix 아이콘만 보이고, 프로에서는 SVG만 보인다.
+   viewBox 0 0 32, 벡터-논스케일링 스트로크로 모든 해상도에서 날카롭게,
+   currentColor 로 dot 배경(파랑) 위 흰 선을 유지한다. */
+.logo-dot{display:flex;align-items:center;justify-content:center;}
+.logo-dot .logo-pro,
+.sp-logo .logo-pro{display:none;flex:none;}
+.logo-dot .logo-pro{width:18px;height:18px;color:#fff;}
+.sp-logo .logo-pro{width:36px;height:36px;color:#fff;}
+html.theme-pro .logo-dot .logo-classic,
+html.theme-pro .sp-logo .logo-classic{display:none!important;}
+html.theme-pro .logo-dot .logo-pro,
+html.theme-pro .sp-logo .logo-pro{display:block;}
+html.theme-pro .pro-brand .logo-dot .logo-pro{width:16px;height:16px;}
+.sp-logo{display:flex;align-items:center;justify-content:center;}
+
+/* 14.59 · 프로 홈 은은한 이퀄라이저 배경 — 음악이 울릴 때만 살며시 일렁인다
+   html.theme-pro 에서만 보이고, #mainView 뒤(z:-1)에 얇게 깔린다.
+   터치는 통과(pointer-events:none)하고 노트/그리드를 절대 가리지 않는다.
+   성능: will-change opacity, rAF 한 루프, dpr 1.6 상한, turbo·모션감소는 표시 안 함. */
+#proHomeEq{
+  position:fixed;inset:0;left:248px;z-index:-1;pointer-events:none;
+  width:calc(100% - 248px);height:100%;
+  opacity:0;transition:opacity .85s cubic-bezier(.22,.9,.32,1);
+  filter:blur(.45px) saturate(1.02);
+  will-change:opacity;
+}
+html.theme-pro #proHomeEq{opacity:0;}
+/* 재생 중엔 0.09~0.13 선 — 라이트 캔버스(#F4F5F8)에서 노트·그리드보다 항상 옅게 */
+html.theme-pro #proHomeEq.playing{opacity:.11;}
+html.theme-pro #proHomeEq.idle{opacity:0;}
+/* 클래식·다크에선 표시 안 함 */
+html.theme-classic #proHomeEq,
+html:not(.theme-pro) #proHomeEq{display:none!important;}
+/* 에디터가 열리면 숨김 — 기존 ambient/wall 숨김과 동일 선상 */
+body:has(#editorView.open) #proHomeEq{opacity:0!important;}
+/* 저사양·모션감소 — 장식이므로 아예 숨김 */
+body.sdy-turbo #proHomeEq{display:none!important;}
+/* ================================================================
+   14.60 · 디자인 다듬기 — 진한 파랑 포인트 + 가독성 + 툴바 아이콘만
+   ────────────────────────────────────────────────────────────────
+   · 진한 파랑 포인트는 :root/html.theme-pro 토큰(--accent #14366E)으로
+     이미 위에서 교체. 본 블록은 그 결정을 보정한다.
+   · 편집 상단바 라벨 숨김(글자서식/넣기/그리기/편집기록), 되돌리기 아이콘만.
+   · 현재 쪽 테두리·라벨 강조 제거.
+   · 북마크 노란 채움 + PRO 집게 숨김 + 뒤로 버튼 숨김.
+   ================================================================ */
+
+/* 14.60-A · 현재 쪽 강조 제거 — 종이에 색 테두리를 두르지 않는다 */
+.paper.focused{
+  outline:none!important;
+  outline-offset:0!important;
+  box-shadow:var(--shadow)!important;
+}
+html.theme-pro .paper.focused{
+  outline:none!important;
+  outline-offset:0!important;
+  box-shadow:0 1px 3px rgba(23,28,41,.07),0 10px 28px -10px rgba(23,28,41,.14)!important;
+}
+.page-wrap.focused .page-label{color:var(--text3)!important;font-weight:400!important;}
+.page-wrap.focused .page-label>span{padding:0!important;border-radius:0!important;background:transparent!important;}
+
+/* 14.60-B · 편집창 뒤로 버튼 숨김 — 크롬 자체 뒤로(히스토리)로 이동 */
+.editor-toolbar .tb-left button[onclick="navBack()"]{display:none!important;}
+
+/* 14.60-C · 북마크 노란 채움 — 내부가 꽉 찬 별 모양 */
+.pro-bookmarks > summary > i.ri-bookmark-fill,
+.pro-bookmarks > summary > i.ri-bookmark-line{color:#EAB308!important;}
+html.theme-pro .pro-bookmarks > summary > i.ri-bookmark-fill{color:#EAB308!important;}
+.pro-bookmarks > summary > i.ri-bookmark-fill{filter:drop-shadow(0 1px 2px rgba(234,179,8,.35));}
+
+/* 14.60-D · PRO 집게 애니메이션 제거 — 프로에서는 성능·시각적으로 숨김 */
+html.theme-pro #clawFx{display:none!important;}
+
+/* 14.60-E · 가독성 — 본문 렌더링 다듬기 (성능 영향 없음) */
+body{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+#noteGrid .note-card-name{font-weight:700;letter-spacing:-.01em;}
+html.theme-pro #noteGrid .note-card-name{color:#0F172A;}
+.pro-home-count, .home-section-title, .pro-folders-title{ letter-spacing:-.01em; }
+
+/* 14.60-F · PRO 노트 열림 — 슬라이드 없이 깔끔하게 (프로 요청) */
+html.theme-pro .editor{
+  transform:none!important;
+  transition:none!important;
+  opacity:0!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+html.theme-pro .editor.open{
+  transform:none!important;
+  opacity:1!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+  transition:none!important;
+}
+
+@media(prefers-reduced-motion:reduce){
+  #proHomeEq{display:none!important;}
+}
+@media(max-width:1023px){
+  #proHomeEq{left:60px;width:calc(100% - 60px);}
+  html.theme-pro.pro-collapsed #proHomeEq{left:60px;width:calc(100% - 60px);}
+}
+@media(max-width:640px),(max-height:560px) and (pointer:coarse){
+  #proHomeEq{left:0!important;width:100%!important;top:88px!important;height:calc(var(--sdy-mobile-vh,100dvh) - 88px)!important;}
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃

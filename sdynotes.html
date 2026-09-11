@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko" data-theme="pro" class="theme-pro">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.52.0">
+<link rel="stylesheet" href="sdynotes.css?v=14.60.0">
     <script>
     /* 14.47 · 테마 선적용 — 첫 페인트 전에 저장된 테마를 입혀 화면 깜빡임을 막는다.
        저장값이 없으면 새 기본인 'pro'(14.48 · 밝은 전문 디자인)로 시작한다. */
@@ -28,7 +28,7 @@
          · 이 파일·sdynotes.js·sdynotes.css·src 모듈을 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.52.0">
+    <meta name="application-version" content="14.60.0">
     <title>동엽신의 끄적끄적</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -50,8 +50,10 @@
          배경화면이 있으면(body.has-wall) #wallLayer(z-index:-1)가 이 위를 덮는다. -->
     <div id="sdyAmbient" aria-hidden="true"><i class="ga a"></i><i class="ga b"></i><i class="ga c"></i></div>
     <div id="wallLayer"><video id="wallVideo" muted loop playsinline autoplay></video></div>
+    <!-- 14.59 · 프로 홈 은은한 이퀄라이저 배경 — 음악이 울릴 때만 살며시 일렁인다 -->
+    <canvas id="proHomeEq" aria-hidden="true"></canvas>
     <div id="splash">
-        <div class="sp-logo"><i class="ri-quill-pen-fill"></i></div>
+        <div class="sp-logo"><i class="ri-quill-pen-fill logo-classic" aria-hidden="true"></i><svg class="logo-pro" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true" shape-rendering="geometricPrecision"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M25.2 4.8 C26.9 4.5 28.1 5.7 27.7 7.5 C27.3 9.1 25.9 10.8 24.4 12.3 C23.3 13.2 22.1 14.0 21.2 14.4 C22.1 14.7 23.0 15.2 23.4 15.9 C22.7 17.4 21.1 18.9 19.4 20.0 C18.3 20.7 17.0 21.2 16.0 21.4 C16.7 21.7 17.4 22.1 17.8 22.6 C16.4 23.2 14.5 23.2 12.9 22.3 C13.8 20.4 15.1 17.8 16.7 14.8 C18.3 11.7 20.5 7.7 22.6 5.2 C23.4 4.4 24.5 4.3 25.2 4.8 Z" stroke-width="1.32" vector-effect="non-scaling-stroke"/><path d="M25.2 4.8 C21.8 8.6 16.6 15.1 9.2 24.8" stroke-width="1.08" vector-effect="non-scaling-stroke"/><path d="M9.2 24.8 L11.7 22.4 L12.5 22.8 L10.1 25.5 Z" fill="currentColor" stroke="currentColor" stroke-width="0.88" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><path d="M9.5 25.9 C11.8 24.5 13.7 23.2 16.0 23.3 C17.1 23.3 17.1 24.2 17.9 24.7 C18.7 25.2 20.2 25.4 24.9 25.0" stroke-width="1.02" vector-effect="non-scaling-stroke"/><circle cx="7.8" cy="26.5" r="0.88" fill="currentColor" stroke="none"/></g></svg></div>
         <div class="sp-title">동엽신의 끄적끄적</div>
         <div class="sp-bar"><i id="splashFill"></i></div>
         <div class="sp-msg" id="splashMsg">준비 중…</div>
@@ -396,8 +398,9 @@
     <div id="proShell" class="pro-shell">
     <aside id="proSide" class="pro-side" aria-label="메뉴">
         <div class="pro-brand" id="proBrandSlot"></div>
+        <button id="proSideToggle" class="pro-side-toggle" type="button" onclick="toggleProSide()" title="사이드바 접기/펼치기" aria-label="사이드바 접기"><i class="ri-arrow-left-double-line" aria-hidden="true"></i></button>
         <details id="proBookmarks" class="pro-bookmarks">
-            <summary title="북마크" aria-label="북마크 목록"><i class="ri-bookmark-line" aria-hidden="true"></i><span>북마크</span><span id="proBookmarkCount" class="pro-bookmark-count">0</span><i class="ri-arrow-down-s-line pro-bookmark-chevron" aria-hidden="true"></i></summary>
+            <summary title="북마크" aria-label="북마크 목록"><i class="ri-bookmark-fill" aria-hidden="true"></i><span>북마크</span><span id="proBookmarkCount" class="pro-bookmark-count">0</span><i class="ri-arrow-down-s-line pro-bookmark-chevron" aria-hidden="true"></i></summary>
             <div id="proBookmarkSlot" class="pro-bookmark-panel" aria-label="북마크 링크"></div>
         </details>
         <div id="proToolsSlot" class="pro-tools"></div>
@@ -407,7 +410,8 @@
             <div class="pro-folders" id="proFolders"></div>
         </div>
         <div class="pro-side-bottom">
-            <button type="button" class="pro-nav-item" onclick="proOpenMusic()" title="음악"><i class="ri-music-2-line"></i><span>음악</span></button>
+            <button type="button" class="pro-nav-item" id="proYpBtn" onclick="__ypToggle()" title="엽스코드 · 채팅"><i class="ri-chat-3-line"></i><span>엽스코드</span><span class="pro-yp-badges" aria-hidden="true"><em id="proYpBadgeVoice" class="pro-yp-bdg voice" style="display:none"></em><em id="proYpBadgeDm" class="pro-yp-bdg dm" style="display:none"></em></span></button>
+            <button type="button" class="pro-nav-item" id="proMpBtn" onclick="proOpenMusic()" title="음악"><i class="ri-music-2-line"></i><span>음악</span></button>
             <button type="button" class="pro-nav-item" onclick="openCards()" title="암기 카드"><i class="ri-flashlight-line"></i><span>카드</span></button>
             <button type="button" class="pro-nav-item" onclick="openSettings()" title="설정"><i class="ri-settings-3-line"></i><span>설정</span></button>
         </div>
@@ -417,7 +421,7 @@
         <header class="header py-4 px-6">
             <div class="w-full flex justify-between items-center">
                 <div class="flex items-center app-brand" style="margin-left:14px;min-width:0;gap:10px;">
-                    <div class="logo-dot" tabindex="0" aria-label="동엽신의 끄적끄적 제목 보기"><i class="ri-quill-pen-fill"></i></div>
+                    <div class="logo-dot" tabindex="0" aria-label="동엽신의 끄적끄적 제목 보기"><i class="ri-quill-pen-fill logo-classic" aria-hidden="true"></i><svg class="logo-pro" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true" shape-rendering="geometricPrecision"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M25.2 4.8 C26.9 4.5 28.1 5.7 27.7 7.5 C27.3 9.1 25.9 10.8 24.4 12.3 C23.3 13.2 22.1 14.0 21.2 14.4 C22.1 14.7 23.0 15.2 23.4 15.9 C22.7 17.4 21.1 18.9 19.4 20.0 C18.3 20.7 17.0 21.2 16.0 21.4 C16.7 21.7 17.4 22.1 17.8 22.6 C16.4 23.2 14.5 23.2 12.9 22.3 C13.8 20.4 15.1 17.8 16.7 14.8 C18.3 11.7 20.5 7.7 22.6 5.2 C23.4 4.4 24.5 4.3 25.2 4.8 Z" stroke-width="1.32" vector-effect="non-scaling-stroke"/><path d="M25.2 4.8 C21.8 8.6 16.6 15.1 9.2 24.8" stroke-width="1.08" vector-effect="non-scaling-stroke"/><path d="M9.2 24.8 L11.7 22.4 L12.5 22.8 L10.1 25.5 Z" fill="currentColor" stroke="currentColor" stroke-width="0.88" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><path d="M9.5 25.9 C11.8 24.5 13.7 23.2 16.0 23.3 C17.1 23.3 17.1 24.2 17.9 24.7 C18.7 25.2 20.2 25.4 24.9 25.0" stroke-width="1.02" vector-effect="non-scaling-stroke"/><circle cx="7.8" cy="26.5" r="0.88" fill="currentColor" stroke="none"/></g></svg></div>
                     <h1 style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">동엽신의 끄적끄적</h1>
                     <div id="linkBar" class="link-bar"></div>
                 </div>
@@ -944,7 +948,7 @@
                     <button type="button" class="theme-pick" data-theme="pro" onclick="pickTheme('pro')">
                         <span class="tp-swatch pro"><i></i><i></i><i></i></span>
                         <span class="tp-name">기본</span>
-                        <span class="tp-desc">깔끔한 라이트 · 전문가용</span>
+                        <span class="tp-desc">깔끔한 라이트</span>
                     </button>
                     <button type="button" class="theme-pick" data-theme="classic" onclick="pickTheme('classic')">
                         <span class="tp-swatch classic"><i></i><i></i><i></i></span>
@@ -2644,17 +2648,17 @@
 <!-- 14.23.0 · 노트 해돌이(AI 도우미) UI 는 편집기 안 #noteOtter 옆으로 옮겼다 — 아이콘 버튼·뜨는 창은 없다. -->
 
 
-<script src="sdynotes.js?v=14.52.0" defer></script>
-<script src="src/music-player.js?v=14.52.0" defer></script>
-<script src="src/focus-clock.js?v=14.52.0" defer></script>
-<script src="src/live-updates.js?v=14.52.0" defer></script>
-<script src="src/idle-worker.js?v=14.52.0" defer></script>
-<script src="src/mobile-viewport.js?v=14.52.0" defer></script>
-<script src="src/auth.js?v=14.52.0" defer></script>
-<script src="src/ai-assistant.js?v=14.52.0" defer></script>
-<script src="src/chat.js?v=14.52.0" defer></script>
-<script src="src/translate.js?v=14.52.0" defer></script>
-<script src="src/cards.js?v=14.52.0" defer></script>
-<script src="src/server-status.js?v=14.52.0" defer></script>
+<script src="sdynotes.js?v=14.60.0" defer></script>
+<script src="src/music-player.js?v=14.60.0" defer></script>
+<script src="src/focus-clock.js?v=14.60.0" defer></script>
+<script src="src/live-updates.js?v=14.60.0" defer></script>
+<script src="src/idle-worker.js?v=14.60.0" defer></script>
+<script src="src/mobile-viewport.js?v=14.60.0" defer></script>
+<script src="src/auth.js?v=14.60.0" defer></script>
+<script src="src/ai-assistant.js?v=14.60.0" defer></script>
+<script src="src/chat.js?v=14.60.0" defer></script>
+<script src="src/translate.js?v=14.60.0" defer></script>
+<script src="src/cards.js?v=14.60.0" defer></script>
+<script src="src/server-status.js?v=14.60.0" defer></script>
 </body>
 </html>

@@ -175,12 +175,17 @@
       var t=document.createElement('span'); t.className='ai-hist-t';
       t.textContent=fmtTime(h.at);
       row.appendChild(t);
-      var q=document.createElement('span'); q.className='ai-hist-q';
-      var qtxt=String(h.q||'').trim();
-      q.textContent=qtxt||(h.kind==='outlineDoc'?'전체 페이지 정리해 줘':'이 페이지 정리해 줘');
-      var a=document.createElement('span'); a.className='ai-hist-a';
-      a.textContent=String(h.a||'').replace(/\s+/g,' ').trim();
-      b.appendChild(row); b.appendChild(q); b.appendChild(a);
+      var qtxt=String(h.q||'').trim()||(h.kind==='outlineDoc'?'전체 페이지 정리해 줘':h.kind==='outlinePage'?'이 페이지 정리해 줘':'');
+      var qBubble=document.createElement('div'); qBubble.className='ai-hist-bubble ai-hist-user';
+      var qb=document.createElement('b'); qb.textContent='나';
+      var qs=document.createElement('span'); qs.textContent=qtxt||'(질문 없음)';
+      qBubble.appendChild(qb); qBubble.appendChild(qs);
+      var aBubble=document.createElement('div'); aBubble.className='ai-hist-bubble ai-hist-bot';
+      var ab=document.createElement('b'); ab.textContent='해돌이';
+      var aspan=document.createElement('span'); aspan.className='ai-hist-a-html';
+      try{ aspan.innerHTML=sayHtml(String(h.a||'')); }catch(e){ aspan.textContent=String(h.a||''); }
+      aBubble.appendChild(ab); aBubble.appendChild(aspan);
+      b.appendChild(row); b.appendChild(qBubble); b.appendChild(aBubble);
       b.onclick=function(){ histShow(h); };
       box.appendChild(b);
     });

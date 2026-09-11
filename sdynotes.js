@@ -654,7 +654,31 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         curFont=FONTS.some(f=>f.id===S.defFont)?S.defFont:'pretendard';   // 옛 defFont 'noto' 는 폴백으로 프리텐다드
         // 배경 사진
         applyWallpaper();
+        try{ if(typeof applyProCollapsed==='function') applyProCollapsed(); }catch(e){}
     }
+    // ── 14.52-T · PRO 사이드바 접기/펼치기 — 좁은 화면(레일)은 무조건 접힘이므로 저장값과 무관
+    function applyProCollapsed(){
+        var collapsed=false;
+        try{ collapsed=localStorage.getItem('proSideCollapsed')==='1'; }catch(e){}
+        var pro=(typeof sdyTheme==='function'&&sdyTheme()==='pro');
+        // 좁은 화면에서는 레일이 기본이라 collapsed 와 무관하게 토글이 숨겨지나(html 로 control),
+        // 상태 클래스는 1024+에서만 의미가 있다. 그래도 pro 아닐 때는 꺼 둔다.
+        document.documentElement.classList.toggle('pro-collapsed', !!(pro&&collapsed));
+        var btn=document.getElementById('proSideToggle');
+        if(btn){
+            var isCollapsed=document.documentElement.classList.contains('pro-collapsed');
+            btn.setAttribute('aria-label', isCollapsed?'사이드바 펼치기':'사이드바 접기');
+            btn.title=isCollapsed?'사이드바 펼치기':'사이드바 접기';
+            try{ btn.querySelector('i').className=isCollapsed?'ri-arrow-right-double-line':'ri-arrow-left-double-line'; }catch(e){}
+        }
+    }
+    function toggleProSide(){
+        var cur=false;
+        try{ cur=localStorage.getItem('proSideCollapsed')==='1'; }catch(e){}
+        try{ localStorage.setItem('proSideCollapsed', cur?'0':'1'); }catch(e){}
+        applyProCollapsed();
+    }
+    try{ window.applyProCollapsed=applyProCollapsed; window.toggleProSide=toggleProSide; }catch(e){}
 
 
 /* APP-PART:01-core.js:END */
@@ -785,10 +809,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             bookmarks._responsiveReady=true;
             const narrow=()=>window.innerWidth<1024;
             let wasNarrow=narrow();
-            bookmarks.open=!wasNarrow;
+            bookmarks.open=false;
             window.addEventListener('resize',()=>{
                 const next=narrow();
-                if(next!==wasNarrow){ bookmarks.open=!next; wasNarrow=next; }
+                if(next!==wasNarrow){ wasNarrow=next; }
             });
             document.addEventListener('click',event=>{
                 if(narrow()&&bookmarks.open&&!bookmarks.contains(event.target)) bookmarks.open=false;
@@ -832,27 +856,63 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 const open=isFolderOpen(f.id);
                 let active=false;
                 try{ active=!!curFolder&&folderPath(curFolder).some(x=>x.id===f.id); }catch(e){}
-                html+=`<button type="button" class="pro-fold-item${active?' on':''}" onclick="openFolder('${f.id}')">`+
+                html+=`<button type="button" class="pro-fold-item${active?' on':''}" data-folder-id="${f.id}" onclick="openFolder('${f.id}')">`+
                     `<i class="${(locked&&!open)?'ri-folder-lock-fill':(f.icon||'ri-folder-3-fill')}" style="color:${f.color||'var(--accent)'}"></i>`+
                     `<span class="pf-name" title="${esc(f.name)}">${esc(f.name)}</span>`+
                     `<span class="pf-count">${folderCount(f.id)||0}</span></button>`;
             });
         }catch(e){}
         folds.innerHTML=html||'<div class="pro-fold-empty">폴더가 없습니다</div>';
+        // 14.55 · 왼쪽 사이드바 폴더로 HTML5 드래그(데스크톱)도 받는다 — 길게 눌러 Lift뿐 아니라 마우스 드래그로도 이동
+        try{
+            folds.querySelectorAll('.pro-fold-item').forEach(el=>{
+                el.addEventListener('dragover',ev=>{ ev.preventDefault(); el.classList.add('drop'); });
+                el.addEventListener('dragleave',()=>el.classList.remove('drop'));
+                el.addEventListener('drop',ev=>{
+                    ev.preventDefault(); el.classList.remove('drop');
+                    const fid=el.dataset.folderId;
+                    if(!fid) return;
+                    if(typeof isFolderOpen==='function'&&!isFolderOpen(fid)){ try{ toast('🔒 잠긴 폴더에는 넣을 수 없습니다',2000); }catch(e){} return; }
+                    const ids=(ev.dataTransfer.getData('text/plain')||'').split(',').filter(Boolean);
+                    if(!ids.length) return;
+                    try{
+                        if(typeof animateMoveLocal==='function'){
+                            animateMoveLocal(ids,fid,()=>{
+                                ids.forEach(id=>{ try{ setNoteFolder(id,fid); }catch(e){} });
+                                try{ cancelSelect(); }catch(e){}
+                                try{ renderGrid(); }catch(e){}
+                                try{ paintProSide(); }catch(e){}
+                                let fname='폴더'; try{ const ff=(typeof getFolders==='function'?getFolders().find(x=>x.id===fid):null); if(ff) fname=ff.name; }catch(e){}
+                                try{ toast(`${ids.length}개 노트를 '${fname}' 로 이동`); }catch(e){}
+                            });
+                        }else{
+                            ids.forEach(id=>{ try{ setNoteFolder(id,fid); }catch(e){} });
+                            try{ renderGrid(); }catch(e){}
+                        }
+                    }catch(e){}
+                });
+            });
+        }catch(e){}
     }
-    // 사이드바 '음악' — 음악바가 접혀 있으면 펼친 뒤 목록을 연다
+    // 사이드바 '음악' — 프로에서는 떠 있는 칩이 없으므로 플레이어를 직접 열고 목록을 띄운다
     function proOpenMusic(){
         try{
-            const reopen=document.getElementById('mpReopen');
-            if(reopen){
-                let visible=true;
-                try{ visible=getComputedStyle(reopen).display!=='none'; }catch(e){ visible=reopen.style.display!=='none'; }
-                if(!visible) reopen.click();
+            try{ if(window._mpSetCollapsed) window._mpSetCollapsed(false); }catch(e){}
+            const pl=document.getElementById('musicPlayer');
+            if(pl){
+                const hidden=pl.style.display==='none'||getComputedStyle(pl).display==='none';
+                if(hidden){
+                    pl.style.display='flex';
+                    try{ window.__mpChipOpened=true; }catch(e){}
+                } else {
+                    // 이미 열려 있으면 목록만 토글 (닫기 동작은 mpX 에서 처리)
+                }
             }
             const ml=document.getElementById('mpList');
             if(ml) ml.click();
         }catch(e){}
     }
+    try{ window.proOpenMusic=proOpenMusic; }catch(e){}
 
     // ── 앱 전체 설정 동기화 ────────────────────────────────
     // 테마·강조색·기본 글꼴/크기·제목·카드 크기와 함께 브라우저에서
@@ -2585,11 +2645,17 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 clearTimeout(longPressTimer);
                 longPressTimer=setTimeout(()=>{
                     lpFired=true;
-                    if(selectMode&&selectedNBs.has(nb.id)){
+                    // 14.55 · 길게 누르면 선택 모드 없이 바로 끌어서 폴더로 이동
+                    //   - 이미 선택된 묶음이 있으면 그 묶음을 함께 끌고
+                    //   - 아니면 이 노트 한 장만 바로 드래그 (선택 바 없이)
+                    if(selectMode&&selectedNBs.size&&selectedNBs.has(nb.id)){
                         beginLiftDrag(ev,card,nb);
+                    }else if(!selectMode){
+                        beginLiftDrag(ev,card,nb);
+                        if(navigator.vibrate) navigator.vibrate(26);
                     }else{
-                        enterSelectMode(nb.id);
-                        if(navigator.vibrate) navigator.vibrate(18);
+                        // 선택 모드지만 이 카드가 미선택이면 단일 드래그로 처리
+                        beginLiftDrag(ev,card,nb);
                     }
                 },480);
             };
@@ -2692,15 +2758,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             let nFoldCards=0;
             try{ childFolders(null).forEach(f=>{ grid.appendChild(_makeFolderCard(f)); nFoldCards++; }); }catch(e){}
             recentNotes.concat(stackNotes).forEach(nb=>grid.appendChild(_makeCard(nb)));
-            if(!selectMode){
-                const add2=document.createElement('button');
-                add2.type='button';
-                add2.setAttribute('aria-label','새 노트 만들기');
-                add2.className='add-card';
-                add2.innerHTML='<i class="ri-add-line" aria-hidden="true"></i><span>새 노트 만들기</span>';
-                add2.onclick=openCreateModal;
-                grid.appendChild(add2);
-            }
+            // pro: note-shaped add-card 숨김 — 상단 파란 버튼(pro-add-note)만 사용
+            void 0;
             if(!nFoldCards&&!recentNotes.length&&!stackNotes.length){
                 const empty=document.createElement('div');
                 empty.className='pro-home-empty';
@@ -2828,12 +2887,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 empty.innerHTML='<i class="ri-search-line" aria-hidden="true"></i><strong>검색 결과가 없습니다</strong><span>다른 검색어를 입력하거나 검색을 지워 전체 노트를 확인하세요.</span>';
                 g.appendChild(empty);
             }
-            if(!selectMode&&!(proOn&&searchQuery)){
-                const add=document.createElement(proOn?'button':'div');
-                if(proOn){ add.type='button'; add.setAttribute('aria-label','새 노트 만들기'); }
+            if(!selectMode&&!proOn){
+                const add=document.createElement('div');
                 add.className='add-card';
                 add.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
-                if(proOn) add.innerHTML='<i class="ri-add-line" aria-hidden="true"></i><span>새 노트 만들기</span>';
                 add.onclick=openCreateModal;
                 g.appendChild(add);
             }
@@ -2871,7 +2928,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     // be rotated by the casual stack, or its ancestors may have CSS/browser zoom.
     function previewPlacement(cw,ch,bw,bh,pro){
         if(![cw,ch,bw,bh].every(n=>Number.isFinite(n)&&n>0)) return null;
-        const inset=pro?Math.min(16,Math.max(6,Math.min(cw,ch)*.055),Math.min(cw,ch)/4):0;
+        const inset=pro?2:0;
         const scale=Math.min((cw-2*inset)/bw,(ch-2*inset)/bh);
         // Do not round positions: at fractional card widths it creates asymmetric
         // margins, most visibly at 90/110/125% zoom and on high-DPI screens.
@@ -2968,9 +3025,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 고스트는 fixed — style.left/top 에는 화면 px 가 아니라 CSS px 를 넣는다
         lift.ghost.style.left=window.sdyUiCss(x)+'px';
         lift.ghost.style.top=window.sdyUiCss(y)+'px';
-        document.querySelectorAll('.folder-card').forEach(f=>f.classList.remove('drop'));
+        document.querySelectorAll('.folder-card,.pro-fold-item').forEach(f=>f.classList.remove('drop'));
         const el=document.elementFromPoint(x,y);
-        const fc=el&&el.closest?el.closest('.folder-card'):null;
+        const fc=el&&el.closest? (el.closest('.folder-card')||el.closest('.pro-fold-item')):null;
         if(fc) fc.classList.add('drop');
         lift.over=fc;
     }
@@ -2981,7 +3038,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         try{ window.getSelection().removeAllRanges(); }catch(e){}   // 드래그 중 생긴 텍스트 선택 제거
         // 혹시 남아 있을 고스트까지 모두 제거
         document.querySelectorAll('#liftGhost').forEach(g=>g.remove());
-        document.querySelectorAll('.folder-card').forEach(f=>f.classList.remove('drop'));
+        document.querySelectorAll('.folder-card,.pro-fold-item').forEach(f=>f.classList.remove('drop'));
         document.body.style.userSelect='';
         document.querySelectorAll('.note-card').forEach(c=>c.draggable=true);
         lift=null;
@@ -25386,6 +25443,15 @@ function logMusicPlay(id){
 const A=new Audio(); A.preload='metadata';
 const $=id=>document.getElementById(id);
 const pl=$('musicPlayer');
+function _isPro(){ try{ return typeof sdyTheme==='function'&&sdyTheme()==='pro'; }catch(e){ return false; } }
+function _setMpChip(show){
+  var c=document.getElementById('mpReopen'); if(!c) return;
+  if(_isPro()){ c.style.display='none'; return; }
+  c.style.display=show?'flex':'none';
+}
+try{ window._mpSetCollapsed=function(v){ P.collapsed=!!v; _setMpChip(P.collapsed); if(!P.collapsed) try{ pl.style.display='flex'; }catch(e){} }; }catch(e){}
+try{ window._isProMp=function(){ return _isPro(); }; }catch(e){}
+try{ new MutationObserver(function(){ _setMpChip(P.collapsed); }).observe(document.documentElement,{attributes:true,attributeFilter:['class']}); }catch(e){}
 try{ P.repeat=+(localStorage.getItem('mp_repeat')||0); P.vol=+(localStorage.getItem('mp_vol')??100)/100; }
 catch(e){ P.vol=1; }
 if(isNaN(P.vol))P.vol=1; A.volume=P.vol;
@@ -25928,7 +25994,7 @@ A.addEventListener('play',()=>{ $('mpPP').innerHTML='<i class="ri-pause-fill"></
   if(P.mode==='float' && !P.collapsed
      && !$('mpBig').classList.contains('open')){
     pl.style.display='flex';
-    document.getElementById('mpReopen').style.display='none';
+    _setMpChip(false);
   } });
 A.addEventListener('pause',()=>{ saveMusicState(true); $('mpPP').innerHTML='<i class="ri-play-fill"></i>';
   const bPP=$('mpBPP'); if(bPP) bPP.innerHTML='<i class="ri-play-fill"></i>';
@@ -26202,7 +26268,7 @@ $('musicFile').onchange=async e=>{
 //   src 를 페이지 URL 로 해석해(truthy) 다시 열고 재생(pp)을 눌러도
 //   노래가 나오지 않았다. src 를 남기면 재생 시 바로 이어서 튼다.
 $('mpX').onclick=()=>{ A.pause();
-  pl.style.display='none'; $('mpReopen').style.display='flex'; P.collapsed=true; };
+  pl.style.display='none'; _setMpChip(true); P.collapsed=true; };
 // ===== 목록 + 검색 + 페이지 =====
 const PER=10;
 // ══════════════════════════════════════════════════════════
@@ -26631,13 +26697,13 @@ function setMode(m){ if(P.mode===m)return; P.mode=m;
     pl.style.right=(innerWidth<=640?'8px':'10px');
     pl.style.top=((P.pos&&P.pos.y)||64)+'px';
     const playing=!!(A.src&&!A.paused);
-    // 접힌 상태는 화면을 오가도 유지
-    if(playing && !P.collapsed){ pl.style.display='flex'; document.getElementById('mpReopen').style.display='none'; }
-    else { pl.style.display='none'; document.getElementById('mpReopen').style.display='flex'; }
+    // 접힌 상태는 화면을 오가도 유지 — PRO 에서는 칩 대신 사이드바 음악 항목을 쓴다
+    if(playing && !P.collapsed){ pl.style.display='flex'; _setMpChip(false); }
+    else { pl.style.display='none'; _setMpChip(true); }
   }
   else{ pl.style.top=''; pl.style.right=''; pl.style.background='';
-    if(P.collapsed){ pl.style.display='none'; document.getElementById('mpReopen').style.display='flex'; }
-    else { pl.style.display='flex'; document.getElementById('mpReopen').style.display='none'; } } }
+    if(P.collapsed){ pl.style.display='none'; _setMpChip(true); }
+    else { pl.style.display='flex'; _setMpChip(false); } } }
 const ev0=$('editorView');
 if(ev0) new MutationObserver(()=>{
   setMode(ev0.classList.contains('open')?'float':'bar');
@@ -26672,7 +26738,7 @@ try{ const p=JSON.parse(localStorage.getItem('mp_pos')||'null'); if(p)P.pos=p; }
 const chip=document.getElementById('mpReopen');
 chip.title='음악 켜기';
 chip.onclick=()=>{
-  pl.style.display='flex'; chip.style.display='none'; P.collapsed=false;
+  pl.style.display='flex'; _setMpChip(false); P.collapsed=false;
   const t=cur();
   if(t&&!A.src){
     A.src=t.stream_url||('/api/music/file/'+t.id);
@@ -26681,9 +26747,9 @@ chip.onclick=()=>{
   renderTitle();
 };
 pl.style.display='none';
-// 로딩 중 사용자가 칩을 눌러 바를 열었으면 그 상태를 지킨다
-if(window.__mpChipOpened){ chip.style.display='none'; pl.style.display='flex'; }
-else chip.style.display='flex';
+// 로딩 중 사용자가 칩을 눌러 바를 열었으면 그 상태를 지킨다 — PRO 에서는 칩을 숨긴다
+if(window.__mpChipOpened){ _setMpChip(false); pl.style.display='flex'; }
+else _setMpChip(true);
 updateRep();
 // 6.12: 처음 진입 시 음악 컨트롤바는 '오른쪽 아래 접힌 칩'으로만 표시
 // (곡이 있어도 펼치지 않는다 — 칩을 눌러야 바가 열린다)
@@ -26856,9 +26922,8 @@ function _barShouldShow(){
   return true;
 }
 function refreshBarVis(){
-  const chip2=document.getElementById('mpReopen');
-  if(_barShouldShow()){ pl.style.display='flex'; if(chip2) chip2.style.display='none'; }
-  else { pl.style.display='none'; if(chip2) chip2.style.display='flex'; }
+  if(_barShouldShow()){ pl.style.display='flex'; _setMpChip(false); }
+  else { pl.style.display='none'; _setMpChip(true); }
 }
 function _applyBigSize(){
   // 12.10.1 · 하단 추천/목록이 잘리지 않도록 세로를 늘린다.
@@ -29952,6 +30017,313 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
                    vol:v=>setVol(v), closeBig:()=>closeBig(),
                    eq: sdyEqObj,
                    _state:()=>P};
+
+// ── 14.59 · 프로 홈 은은한 이퀄라이저 — 프로 모드 홈 배경 전용, 재생 중에만 은은하게 일렁인다 ──
+//  · #proHomeEq 캔버스는 #mainView 뒤(z:-1)에 깔리고(클래식에선 display:none), 재생 시에만 opacity .11 로 떠오른다.
+//  · 기존 Web Audio 그래프를 재사용한다: _eqAnalyser가 있으면 그 getByteFrequencyData 를 쓰고,
+//    없으면 eqBuild() 로 한 번만 연결을 시도한다. 두 번째 MediaElementSource 를 만들지 않아 무음 버그가 없다.
+//  · 28개 바 + 아래쪽 물결(gradient fill) — AGC/감마/attack-fall 은 eqViz 와 같은 물리, 터보·모션감소·에디터에선 rAF 자체를 돌지 않는다.
+(function(){
+  const cvs=document.getElementById('proHomeEq');
+  if(!cvs) return;
+  let ctx=null; try{ ctx=cvs.getContext('2d',{alpha:true}); }catch(e){}
+  if(!ctx) return;
+  const BAR_N=28;
+  let env=new Float32Array(BAR_N), peak=new Float32Array(BAR_N), hold=new Float32Array(BAR_N), bandMax=new Float32Array(BAR_N);
+  for(let i=0;i<BAR_N;i++) bandMax[i]=0.35;
+  let raf=0, last=0, dpr=1, w=0, h=0, started=false;
+  let buf=null, fbuf=null;
+  const FALL=2.45, PEAK_FALL=.85, HOLD=.18;
+  function isPro(){ try{ const h=document.documentElement; return h.classList.contains('theme-pro') || h.dataset.theme==='pro'; }catch(e){ return false; } }
+  function shouldRun(){
+    if(!isPro()) return false;
+    if(document.body.classList.contains('sdy-turbo')) return false;
+    try{ if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false; }catch(e){}
+    const ed=document.getElementById('editorView');
+    if(ed&&ed.classList.contains('open')) return false;
+    if(!A||!A.src) return false;
+    if(A.paused||A.ended) return false;
+    if(!cvs.isConnected) return false;
+    return true;
+  }
+  function accentHex(){
+    try{
+      const v=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      return /^#/.test(v)?v:'#2563EB';
+    }catch(e){ return '#2563EB'; }
+  }
+  function hexToRgb(hex){
+    hex=String(hex||'').replace('#','').trim();
+    if(hex.length===3) hex=hex.split('').map(c=>c+c).join('');
+    const n=parseInt(hex,16);
+    if(!isFinite(n)) return [37,99,235];
+    return [(n>>16)&255,(n>>8)&255,n&255];
+  }
+  function resize(){
+    const r=cvs.getBoundingClientRect();
+    // CSS 가 width:calc(100% - 248px) 등으로 잡아 주므로, 실측이 0이면 부모 폭에서 유추
+    let rw=r.width, rh=r.height;
+    if(rw<10||rh<10){
+      const vw=innerWidth, vh=innerHeight;
+      const side=document.getElementById('proSide');
+      const sw=side?side.getBoundingClientRect().width:0;
+      rw=Math.max(200, vw - (isPro()?sw:0));
+      rh=Math.max(140, vh - 88);
+    }
+    dpr=Math.min(1.6, window.devicePixelRatio||1);
+    w=rw; h=rh;
+    cvs.width=Math.max(1, Math.round(rw*dpr));
+    cvs.height=Math.max(1, Math.round(rh*dpr));
+    // 2d context 는 devicePixelRatio 로 스케일 — 그리기 좌표는 CSS px 로 쓴다
+    try{ ctx.setTransform(dpr,0,0,dpr,0,0); }catch(e){ try{ ctx.scale(dpr,dpr); }catch(e2){} }
+  }
+  let resizeT=null;
+  function scheduleResize(){ clearTimeout(resizeT); resizeT=setTimeout(resize,120); }
+  try{ new ResizeObserver(scheduleResize).observe(cvs); }catch(e){}
+  try{ new ResizeObserver(scheduleResize).observe(document.getElementById('proSide')||document.body); }catch(e){}
+  window.addEventListener('resize', scheduleResize, {passive:true});
+  // 초기 한 번
+  try{ resize(); }catch(e){}
+
+  function ensureAnalyser(){
+    if(_eqAnalyser) return true;
+    // EQ 가 꺼져 있어도, 프로 홈 이퀄라이저는 조용히 그래프를 한 번 물려 본다.
+    // eqBuild() 는 내부에서 CORS 를 검사하고 실패하면 false 를 돌려 준다.
+    if(_eqBusy) return false;
+    // 비동기이지만, 호출부에선 다음 프레임에 데이터가 생긴다.
+    // 여기선 동기적으로 _eqAnalyser 존재 여부만 보고, 없으면 다음 틱에 다시 시도한다.
+    return false;
+  }
+  async function tryBuild(){
+    if(_eqAnalyser) return true;
+    if(_eqBusy) return false;
+    try{
+      const ok=await eqBuild();
+      if(ok) return true;
+    }catch(e){}
+    return false;
+  }
+  function setPlaying(on){
+    cvs.classList.toggle('playing', !!on);
+    cvs.classList.toggle('idle', !on);
+    // CSS 가 opacity 를 .11 로 올린다 — JS 는 클래스만 바꾼다
+  }
+  function draw(now){
+    if(!shouldRun()){
+      // 멈췄거나 에디터가 열렸으면 서서히 사라지고 루프 정지
+      setPlaying(false);
+      raf=0; last=0;
+      // 캔버스를 투명하게 한 번 지워 잔상을 없앤다
+      try{ ctx.clearRect(0,0,w,h); }catch(e){}
+      return;
+    }
+    raf=requestAnimationFrame(draw);
+    const dt=Math.min(.05, Math.max(.001, ((now||0)-(last||now-16))/1000));
+    last=now||0;
+
+    // 데이터 소스 확보 — 없으면 이번 프레임은 낮은 높이로만 그리고 다음 프레임에 재시도
+    let hasData=false;
+    let binCount=0;
+    if(_eqAnalyser){
+      binCount=_eqAnalyser.frequencyBinCount||1024;
+      if(!buf||buf.length!==binCount){ buf=new Uint8Array(binCount); fbuf=new Float32Array(binCount); }
+      try{ _eqAnalyser.getByteFrequencyData(buf); hasData=true; }catch(e){ hasData=false; }
+      if(hasData){ for(let i=0;i<binCount;i++) fbuf[i]=buf[i]/255; }
+    } else {
+      // 한 번도 안 물려 있으면 조용히 물려 본다 (다음 프레임부터 데이터가 온다)
+      if(!started) { started=true; tryBuild().then(()=>{}); }
+      else if(Math.random()<0.04) tryBuild().then(()=>{});
+    }
+
+    // 배경은 항상 지운다 — 잔상을 남기지 않는다
+    ctx.clearRect(0,0,w,h);
+    if(w<20||h<20) return;
+
+    // 색 — 프로 강조색을 은은한 알파로 쓴다
+    const acc=accentHex();
+    const rgb=hexToRgb(acc);
+    const accRgb=`${rgb[0]},${rgb[1]},${rgb[2]}`;
+
+    // 바 레이아웃 — 좌우 18px 여백, 높이의 42% 를 최대 막대 높이로
+    const padX=18, gap=Math.max(3, Math.min(7, w*0.006));
+    const availW=w - padX*2 - gap*(BAR_N-1);
+    const bw=Math.max(4, availW/BAR_N);
+    const baseY=h*0.78;
+    const maxH=h*0.42;
+
+    // 주파수 매핑 — 42Hz ~ 16kHz 를 로그로 나눈다 (사람 귀처럼 저음이 넓게)
+    const lo=42, hi=16800;
+    const sr=(_eqCtx&&_eqCtx.sampleRate)||44100, nyq=Math.max(1000,sr/2);
+    let envMax=0;
+    // 이번 프레임의 목표 높이들을 먼저 계산 (attack/fall 적용 전 raw)
+    const raws=new Float32Array(BAR_N);
+    for(let i=0;i<BAR_N;i++){
+      const f=lo*Math.pow(hi/lo, i/(BAR_N-1));
+      let v=0.06 + 0.04*Math.sin(i*0.9 + now*0.00055);
+      if(hasData && binCount){
+        const c=Math.round(f/nyq*(binCount-1));
+        const half=Math.max(1, Math.round(c*0.11+2));
+        let ss=0,cnt=0;
+        for(let j=Math.max(0,c-half); j<=Math.min(binCount-1,c+half); j++){ ss+=fbuf[j]; cnt++; }
+        let raw=cnt?ss/cnt:0;
+        // 틸트 — 고음이 작게 잡히므로 살짝 들어 올린다 (스펙트럼 바와 같은 보정)
+        const tilt=Math.min(1.14, 0.74+0.42*Math.sqrt(f/12000));
+        raw*=tilt;
+        // AGC — 밴드별 최대치를 추적해 조용한 곡도 화면을 채우게
+        if(raw>bandMax[i]) bandMax[i]=bandMax[i]*0.94+raw*0.06;
+        else bandMax[i]=Math.max(0.18, bandMax[i]*0.998+raw*0.002);
+        const norm=Math.max(0.22, bandMax[i]);
+        v=Math.min(1, raw/norm*0.88);
+        // 감마 — 작은 신호도 보이게
+        v=Math.pow(Math.max(0, v), 0.78);
+        // 음소거·무음 구간은 바닥에 가깝게
+        if(!hasData) v*=0.25;
+      } else {
+        // 데이터가 아직 없으면 — 아주 낮은 높이로만 (가짜 루프 아님, 그냥 자리 표시)
+        v*=0.18;
+        bandMax[i]=Math.max(0.22, bandMax[i]*0.995+v*0.005);
+      }
+      raws[i]=v;
+    }
+    // attack/fall — 올라갈 땐 즉시, 내려갈 땐 부드럽게
+    for(let i=0;i<BAR_N;i++){
+      const v=raws[i];
+      if(v>env[i]) env[i]=v;
+      else env[i]=Math.max(v, env[i]-FALL*dt);
+      if(env[i]>envMax) envMax=env[i];
+      if(env[i]>=peak[i]){ peak[i]=env[i]; hold[i]=HOLD; }
+      else {
+        hold[i]=Math.max(0, hold[i]-dt);
+        if(hold[i]<=0) peak[i]=Math.max(env[i], peak[i]-PEAK_FALL*dt);
+      }
+    }
+
+    // ── 아래 물결 (filled wave) — 가장 은은한 레이어 ──
+    ctx.save();
+    ctx.globalAlpha=1;
+    const waveGrad=ctx.createLinearGradient(0, baseY-maxH*0.55, 0, h);
+    waveGrad.addColorStop(0, `rgba(${accRgb},0.095)`);
+    waveGrad.addColorStop(0.55, `rgba(${accRgb},0.045)`);
+    waveGrad.addColorStop(1, `rgba(${accRgb},0)`);
+    ctx.fillStyle=waveGrad;
+    ctx.beginPath();
+    // 왼쪽 밖에서 시작해 오른쪽 밖까지 — 양 끝은 baseY 근처로 닫는다
+    const tWave=now*0.00042;
+    ctx.moveTo(-12, baseY);
+    for(let i=0;i<BAR_N;i++){
+      const x=padX + i*(bw+gap) + bw/2;
+      // 물결은 바 높이의 62% 정도만 쓴다 — 바보다 낮고 부드럽게
+      const e=env[i];
+      const y=baseY - e*maxH*0.62 - Math.sin(i*0.55 + tWave*1.2)*2.2*e - Math.cos(i*0.32 - tWave*0.9)*1.1;
+      if(i===0) ctx.lineTo(x, y);
+      else {
+        const px=padX + (i-1)*(bw+gap) + bw/2;
+        const py=baseY - env[i-1]*maxH*0.62 - Math.sin((i-1)*0.55 + tWave*1.2)*2.2*env[i-1] - Math.cos((i-1)*0.32 - tWave*0.9)*1.1;
+        const mx=(x+px)/2;
+        ctx.quadraticCurveTo(px, py, mx, (y+py)/2);
+        if(i===BAR_N-1) ctx.lineTo(x, y);
+      }
+    }
+    ctx.lineTo(w+12, baseY);
+    ctx.lineTo(w+12, h+12);
+    ctx.lineTo(-12, h+12);
+    ctx.closePath();
+    ctx.fill();
+    // 물결 윗선 — 아주 얇은 하이라이트
+    ctx.strokeStyle=`rgba(${accRgb},0.14)`;
+    ctx.lineWidth=1.1;
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath();
+    for(let i=0;i<BAR_N;i++){
+      const x=padX + i*(bw+gap) + bw/2;
+      const y=baseY - env[i]*maxH*0.62 - Math.sin(i*0.55 + tWave*1.2)*2.2*env[i] - Math.cos(i*0.32 - tWave*0.9)*1.1;
+      if(i===0) ctx.moveTo(x, y);
+      else {
+        const px=padX + (i-1)*(bw+gap) + bw/2;
+        const py=baseY - env[i-1]*maxH*0.62 - Math.sin((i-1)*0.55 + tWave*1.2)*2.2*env[i-1] - Math.cos((i-1)*0.32 - tWave*0.9)*1.1;
+        const mx=(x+px)/2;
+        ctx.quadraticCurveTo(px, py, mx, (y+py)/2);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // ── 둥근 바 28개 — 은은한 본체 + 피크 캡 ──
+    for(let i=0;i<BAR_N;i++){
+      const x=padX + i*(bw+gap);
+      const e=env[i];
+      const bh=Math.max(3, e*maxH);
+      const y=baseY - bh;
+      // 본체 — accent 를 아주 옅게 (프로 라이트 #F4F5F8 위에서 부담 없게)
+      const aBody=0.075 + e*0.22;
+      ctx.fillStyle=`rgba(${accRgb},${aBody.toFixed(3)})`;
+      // 둥근 막대 — roundRect 가 있으면 쓰고, 없으면 rect
+      const rRad=Math.min(4, bw*0.42);
+      if(ctx.roundRect){
+        ctx.beginPath(); ctx.roundRect(x, y, bw, bh, rRad); ctx.fill();
+      } else {
+        ctx.fillRect(x, y, bw, bh);
+      }
+      // 피크 캡 — 잠깐 머무는 점 (스펙트럼 바의 상징, 은은하게)
+      const pk=peak[i];
+      if(pk>0.025){
+        const ph=Math.max(2.5, pk*maxH);
+        const py=baseY - ph - 1.5;
+        const aPeak=0.16 + pk*0.22;
+        ctx.fillStyle=`rgba(${accRgb},${Math.min(0.38,aPeak).toFixed(3)})`;
+        if(ctx.roundRect){
+          ctx.beginPath(); ctx.roundRect(x, py, bw, 2.8, 1.4); ctx.fill();
+        } else ctx.fillRect(x, py, bw, 2.8);
+      }
+    }
+  }
+
+  function start(){
+    if(raf) return;
+    if(!shouldRun()) return;
+    setPlaying(true);
+    // 이미 rAF 가 돌고 있으면 중복 시작 방지
+    last=performance.now();
+    // 다음 프레임에 빌드가 끝나 있으면 그때부터 데이터가 들어온다
+    if(!_eqAnalyser) tryBuild().then(()=>{});
+    raf=requestAnimationFrame(draw);
+    started=true;
+  }
+  function stop(){
+    setPlaying(false);
+    if(raf){ cancelAnimationFrame(raf); raf=0; }
+    last=0;
+    try{ ctx.clearRect(0,0,w,h); }catch(e){}
+  }
+  // 재생 상태에 따라 시작/정지
+  A.addEventListener('play', ()=>{ if(isPro()){ scheduleResize(); start(); }});
+  A.addEventListener('pause', stop);
+  A.addEventListener('ended', stop);
+  A.addEventListener('emptied', stop);
+  // 테마·사이드바·에디터 전환 — CSS 가 숨겨도 JS 루프는 멈춘다
+  try{
+    new MutationObserver(()=>{
+      if(shouldRun()){ scheduleResize(); start(); }
+      else stop();
+    }).observe(document.documentElement,{attributes:true,attributeFilter:['class','data-theme']});
+  }catch(e){}
+  try{
+    const ed=document.getElementById('editorView');
+    if(ed) new MutationObserver(()=>{ if(shouldRun()) start(); else stop(); })
+      .observe(ed,{attributes:true,attributeFilter:['class']});
+  }catch(e){}
+  try{
+    new MutationObserver(()=>{ scheduleResize(); if(shouldRun()) start(); else stop(); })
+      .observe(document.body,{attributes:true,attributeFilter:['class']});
+  }catch(e){}
+  try{ window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', ()=>{ if(shouldRun()) start(); else stop(); }); }catch(e){}
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) { if(raf){ cancelAnimationFrame(raf); raf=0; } } else if(shouldRun()) start(); });
+  // 초기 상태 — 이미 재생 중이면 바로 시작
+  if(shouldRun()) start();
+  // 외부 디버그 손잡이
+  try{ window.sdyProEq={canvas:cvs, start, stop, resize, ctx, isPro, shouldRun}; }catch(e){}
+})();
+
 })();
 
 /* ═══════════ 11.2 · 집중 화면 (시계 · 스톱워치 · 타이머) ═══════════ */
@@ -30449,12 +30821,17 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       var t=document.createElement('span'); t.className='ai-hist-t';
       t.textContent=fmtTime(h.at);
       row.appendChild(t);
-      var q=document.createElement('span'); q.className='ai-hist-q';
-      var qtxt=String(h.q||'').trim();
-      q.textContent=qtxt||(h.kind==='outlineDoc'?'전체 페이지 정리해 줘':'이 페이지 정리해 줘');
-      var a=document.createElement('span'); a.className='ai-hist-a';
-      a.textContent=String(h.a||'').replace(/\s+/g,' ').trim();
-      b.appendChild(row); b.appendChild(q); b.appendChild(a);
+      var qtxt=String(h.q||'').trim()||(h.kind==='outlineDoc'?'전체 페이지 정리해 줘':h.kind==='outlinePage'?'이 페이지 정리해 줘':'');
+      var qBubble=document.createElement('div'); qBubble.className='ai-hist-bubble ai-hist-user';
+      var qb=document.createElement('b'); qb.textContent='나';
+      var qs=document.createElement('span'); qs.textContent=qtxt||'(질문 없음)';
+      qBubble.appendChild(qb); qBubble.appendChild(qs);
+      var aBubble=document.createElement('div'); aBubble.className='ai-hist-bubble ai-hist-bot';
+      var ab=document.createElement('b'); ab.textContent='해돌이';
+      var aspan=document.createElement('span'); aspan.className='ai-hist-a-html';
+      try{ aspan.innerHTML=sayHtml(String(h.a||'')); }catch(e){ aspan.textContent=String(h.a||''); }
+      aBubble.appendChild(ab); aBubble.appendChild(aspan);
+      b.appendChild(row); b.appendChild(qBubble); b.appendChild(aBubble);
       b.onclick=function(){ histShow(h); };
       box.appendChild(b);
     });
@@ -32897,7 +33274,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     name:'', me:null, msgs:[], members:new Map(), ttl:86400, joined:false,
     es:null, ping:null, inVoice:false, joiningVoice:false, muted:false, localStream:null,
     conn:new Map(), speaking:new Map(), actx:null, open:false,
-    seen:new Set(), bgm:null, stick:true, draftStickers:[],
+    seen:new Set(), bgm:null, stick:true, draftStickers:[], _lastSendKey:null, _lastSendAt:0,
     // 서버 릴레이 음성 상태
     relayWs:null, relayNodes:null, relayRx:{}, relayOn:false, _relayStop:false, _relayRT:null,
     _relayUrl:null, _relayHb:null, _relayDest:null, _relayEl:null
@@ -33021,7 +33398,9 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     for(var i=0;i<YP.msgs.length;i++){ if(YP.msgs[i].id===m.id) return; }
     // 서버가 준 진짜 메시지가 오면 같은 내용의 임시 메시지를 먼저 찾아 치환한다.
     // (SSE echo 와 POST 응답 중 먼저 도착하는 쪽이 처리하고, 나중 쪽은 id 중복으로 무시)
-    if(!m.temp && m.uid && m.text){
+    // 14.57.0 · 임티만 전송(text='') 시 m.text가 falsy여서 임시 치환이 건너뛰어
+    // SSE가 POST보다 먼저 오면 temp+real 두 개가 남던 버그 수정 — stickers까지 검사
+    if(!m.temp && m.uid && (String(m.text||'').trim() || ypMsgStickers(m).length)){
       var j=ypFindTemp(m);
       if(j>=0){ YP.msgs.splice(j,1,m); if(YP.msgs.length>200) YP.msgs.shift(); ypRender(true); return; }
     }
@@ -33183,6 +33562,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var v=$('ypChipVoice');
     var vc=0; YP.members.forEach(function(m){ if(m.voice&&m.uid!==YP.uid) vc++; });
     if(v){ v.innerHTML='<i class="ri-mic-fill"></i>'+vc; v.style.display=vc>0?'flex':'none'; }
+    var pv=$('proYpBadgeVoice'); if(pv){ pv.innerHTML='<i class="ri-mic-fill"></i> '+vc; pv.style.display=vc>0?'inline-flex':'none'; }
   }
   function ypMembersFrom(arr){
     var prev=new Map();
@@ -33685,7 +34065,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     fetch('/api/chat/knock',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({uid:YP.uid})}).catch(function(){});
   }
-  function ypChipShake(){ var c=$('ypReopen'); if(!c) return; c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); }
+  function ypChipShake(){ var c=$('ypReopen'); if(c){ c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); } var p=$('proYpBtn'); if(p){ p.classList.remove('shake'); void p.offsetWidth; p.classList.add('shake'); } }
 
   // ── 메시지/파일 ──
   // 즉시 전송: 내 메시지는 서버 왕복을 기다리지 않고 먼저 화면에 띄우고,
@@ -33733,6 +34113,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   function ypSendText(){
     var ta=$('ypTxt'); var t=ta.value.trim(); var stickers=ypStkIds(YP.draftStickers);
     if(!t&&!stickers.length) return;
+    // 14.57.0 · 연속 더블 클릭/터치로 같은 임티가 두 번 POST되는 것 방지 — 900ms 내 동일 내용 무시
+    var now=Date.now(); var key=t+'|'+stickers.join(',')+'|'+YF.view;
+    if(YP._lastSendKey===key && now-(YP._lastSendAt||0)<900) return;
+    YP._lastSendKey=key; YP._lastSendAt=now;
     // 16.3 · 1:1 대화(DM) 화면에서는 친구에게로 간다. DM 서버는 텍스트 기반이라
     // 미리보기 임티를 전송 직전에만 예전 코드로 바꾼다(입력창에는 보이지 않음).
     if(YF.view==='dm'){
@@ -33908,6 +34292,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     app.classList.remove('closing');
     app.classList.add('open'); YP.open=true;
     if(chip) chip.style.display='none';
+    var pb=$('proYpBtn'); if(pb) pb.classList.add('on');
     var b=$('ypBody'); b.scrollTop=b.scrollHeight;
     try{ $('ypTxt').focus(); }catch(e){}
   }
@@ -33916,6 +34301,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     var app=$('ypApp'), chip=$('ypReopen');
     if(_ypClosing||!app.classList.contains('open')) return;
     _ypClosing=true;
+    var pb=$('proYpBtn'); if(pb) pb.classList.remove('on');
     app.classList.add('closing');
     var row=$('ypReactRow'), em=$('ypEmoji'), st=$('ypSettings');
     if(row)row.classList.remove('open'); if(em)em.classList.remove('open'); if(st)st.classList.remove('open');
@@ -33988,7 +34374,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
     friends:[], reqIn:[], reqOut:[],
     threads:{}, msgs:{}, more:{}, peerRead:{},
     es:null, _esT:null, _esBack:1500,
-    stickDm:true, _readSent:{}, _loadingOlder:false,
+    stickDm:true, _readSent:{}, _loadingOlder:false, _lastDmKey:null, _lastDmAt:0,
   };
   function yfToken(){ try{ return window.sdyAuthToken&&window.sdyAuthToken(); }catch(e){} return ''; }
   function yfUser(){ try{ return window.sdyUser&&window.sdyUser(); }catch(e){} return null; }
@@ -34151,6 +34537,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       chip.style.display=total>0?'flex':'none';
       chip.textContent=total>99?'99+':String(total);
     }
+    var pd=$('proYpBadgeDm'); if(pd){ pd.textContent=total>99?'99+':String(total); pd.style.display=total>0?'inline-flex':'none'; }
     var fd=$('ypFrDot');
     if(fd){ fd.style.display=(total+reqs)>0?'inline-block':'none'; fd.textContent=String(Math.min(99,total+reqs)); }
   }
@@ -34349,6 +34736,10 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
   }
   function yfSendText(t){
     var peer=YF.peer, me=yfUser(); if(!peer||!me) return;
+    // 14.57.0 · DM도 동일 내용 연속 더블 전송 방지 (ypSendText 가드와 이중 보장)
+    var now2=Date.now(); var k2=peer.uid+'|'+t;
+    if(YF._lastDmKey===k2 && now2-(YF._lastDmAt||0)<900) return;
+    YF._lastDmKey=k2; YF._lastDmAt=now2;
     var ta=$('ypTxt'); ta.value=''; ypAutoGrow(ta); ta.focus();
     var local={id:ypTempId(),kind:'txt',from:me.uid,text:t,ts:Date.now()/1000,temp:true};
     (YF.msgs[peer.uid]||(YF.msgs[peer.uid]=[])).push(local);
@@ -34441,7 +34832,7 @@ window.sdyMusic={play:i=>playIdx(i), big:openBig, small:()=>pl, refresh:loadList
       return;
     }
   }
-  function yfChipShakeDm(){ var c=$('ypReopen'); if(!c||YP.open) return; c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); }
+  function yfChipShakeDm(){ if(YP.open) return; var c=$('ypReopen'); if(c){ c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); } var p=$('proYpBtn'); if(p){ p.classList.remove('shake'); void p.offsetWidth; p.classList.add('shake'); } }
   function yfStream(tk){
     if(YF.es){ try{YF.es.close();}catch(e){} YF.es=null; }
     var es;

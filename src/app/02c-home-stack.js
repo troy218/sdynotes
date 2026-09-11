@@ -484,11 +484,17 @@
                 clearTimeout(longPressTimer);
                 longPressTimer=setTimeout(()=>{
                     lpFired=true;
-                    if(selectMode&&selectedNBs.has(nb.id)){
+                    // 14.55 · 길게 누르면 선택 모드 없이 바로 끌어서 폴더로 이동
+                    //   - 이미 선택된 묶음이 있으면 그 묶음을 함께 끌고
+                    //   - 아니면 이 노트 한 장만 바로 드래그 (선택 바 없이)
+                    if(selectMode&&selectedNBs.size&&selectedNBs.has(nb.id)){
                         beginLiftDrag(ev,card,nb);
+                    }else if(!selectMode){
+                        beginLiftDrag(ev,card,nb);
+                        if(navigator.vibrate) navigator.vibrate(26);
                     }else{
-                        enterSelectMode(nb.id);
-                        if(navigator.vibrate) navigator.vibrate(18);
+                        // 선택 모드지만 이 카드가 미선택이면 단일 드래그로 처리
+                        beginLiftDrag(ev,card,nb);
                     }
                 },480);
             };
@@ -591,15 +597,8 @@
             let nFoldCards=0;
             try{ childFolders(null).forEach(f=>{ grid.appendChild(_makeFolderCard(f)); nFoldCards++; }); }catch(e){}
             recentNotes.concat(stackNotes).forEach(nb=>grid.appendChild(_makeCard(nb)));
-            if(!selectMode){
-                const add2=document.createElement('button');
-                add2.type='button';
-                add2.setAttribute('aria-label','새 노트 만들기');
-                add2.className='add-card';
-                add2.innerHTML='<i class="ri-add-line" aria-hidden="true"></i><span>새 노트 만들기</span>';
-                add2.onclick=openCreateModal;
-                grid.appendChild(add2);
-            }
+            // pro: note-shaped add-card 숨김 — 상단 파란 버튼(pro-add-note)만 사용
+            void 0;
             if(!nFoldCards&&!recentNotes.length&&!stackNotes.length){
                 const empty=document.createElement('div');
                 empty.className='pro-home-empty';
@@ -727,12 +726,10 @@
                 empty.innerHTML='<i class="ri-search-line" aria-hidden="true"></i><strong>검색 결과가 없습니다</strong><span>다른 검색어를 입력하거나 검색을 지워 전체 노트를 확인하세요.</span>';
                 g.appendChild(empty);
             }
-            if(!selectMode&&!(proOn&&searchQuery)){
-                const add=document.createElement(proOn?'button':'div');
-                if(proOn){ add.type='button'; add.setAttribute('aria-label','새 노트 만들기'); }
+            if(!selectMode&&!proOn){
+                const add=document.createElement('div');
                 add.className='add-card';
                 add.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
-                if(proOn) add.innerHTML='<i class="ri-add-line" aria-hidden="true"></i><span>새 노트 만들기</span>';
                 add.onclick=openCreateModal;
                 g.appendChild(add);
             }
@@ -770,7 +767,7 @@
     // be rotated by the casual stack, or its ancestors may have CSS/browser zoom.
     function previewPlacement(cw,ch,bw,bh,pro){
         if(![cw,ch,bw,bh].every(n=>Number.isFinite(n)&&n>0)) return null;
-        const inset=pro?Math.min(16,Math.max(6,Math.min(cw,ch)*.055),Math.min(cw,ch)/4):0;
+        const inset=pro?2:0;
         const scale=Math.min((cw-2*inset)/bw,(ch-2*inset)/bh);
         // Do not round positions: at fractional card widths it creates asymmetric
         // margins, most visibly at 90/110/125% zoom and on high-DPI screens.
@@ -867,9 +864,9 @@
         // 고스트는 fixed — style.left/top 에는 화면 px 가 아니라 CSS px 를 넣는다
         lift.ghost.style.left=window.sdyUiCss(x)+'px';
         lift.ghost.style.top=window.sdyUiCss(y)+'px';
-        document.querySelectorAll('.folder-card').forEach(f=>f.classList.remove('drop'));
+        document.querySelectorAll('.folder-card,.pro-fold-item').forEach(f=>f.classList.remove('drop'));
         const el=document.elementFromPoint(x,y);
-        const fc=el&&el.closest?el.closest('.folder-card'):null;
+        const fc=el&&el.closest? (el.closest('.folder-card')||el.closest('.pro-fold-item')):null;
         if(fc) fc.classList.add('drop');
         lift.over=fc;
     }
@@ -880,7 +877,7 @@
         try{ window.getSelection().removeAllRanges(); }catch(e){}   // 드래그 중 생긴 텍스트 선택 제거
         // 혹시 남아 있을 고스트까지 모두 제거
         document.querySelectorAll('#liftGhost').forEach(g=>g.remove());
-        document.querySelectorAll('.folder-card').forEach(f=>f.classList.remove('drop'));
+        document.querySelectorAll('.folder-card,.pro-fold-item').forEach(f=>f.classList.remove('drop'));
         document.body.style.userSelect='';
         document.querySelectorAll('.note-card').forEach(c=>c.draggable=true);
         lift=null;
