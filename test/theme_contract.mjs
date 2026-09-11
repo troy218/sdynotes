@@ -133,6 +133,9 @@ try {
   check('14.50 · CSS: 음악바 플랫 화이트', /html\.theme-pro \.mp\.mp-bar\{[^}]*background:#FFFFFF/.test(cssText));
   check('14.50 · CSS: 엽스코드 밝은 프레임', /html\.theme-pro #ypApp\{[^}]*background:#FFFFFF/.test(cssText));
   check('14.50 · 음악바·엽스코드·게이트 DOM 존재', !!d1.getElementById('musicPlayer') && !!d1.getElementById('ypApp') && !!d1.getElementById('ypGate'));
+  // 14.51 · 플로팅 위치 — 사이드바 기준 재배치 규칙 존재
+  check('14.51 · CSS: 선택막대 콘텐츠 중앙 정렬', /html\.theme-pro \.select-bar\{left:calc\(50% \+ 124px\)/.test(cssText));
+  check('14.51 · CSS: 모바일 시트가 레일 존 회피', /html\.theme-pro #ypApp\{left:72px!important;\}/.test(cssText));
 
   // ── 2) 설정창 테마 UI + 배경화면 행은 프로에서 숨김 ──
   w1.openSettings();

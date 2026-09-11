@@ -1466,6 +1466,13 @@ function clampMpb(){
     // 처음 열 때 공용 실측으로 화면 가운데 (배율·브라우저와 무관)
     const vp=sdyViewportBox();
     x=Math.round((((vp.w||window.innerWidth)||1024)-(w||0))/2);
+    // 14.51 · 프로 테마: 좌측 사이드바/레일을 뺀 콘텐츠 영역 중앙
+    try{
+      if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){
+        const side=document.getElementById('proSide');
+        if(side){ x+=Math.round((side.getBoundingClientRect().width||0)/2); }
+      }
+    }catch(e){}
   }
   if(!isFinite(y)){
     const vp=sdyViewportBox();

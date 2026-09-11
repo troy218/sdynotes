@@ -30,8 +30,9 @@ assert.match(css, /\.mpb-time\.show\{[^}]*display:flex[^}]*\}\s*/,
 assert.doesNotMatch(css, /\.mpb-time\{[^}]*display:flex[^}]*/,
   'mpb-time 기본값은 레이아웃에서 빠진 display:none 이어야 한다');
 
-assert.match(js, /if\(!isFinite\(x\)\)\{[\s\S]{0,240}vp\.w[\s\S]{0,240}if\(!isFinite\(y\)\)\{[\s\S]{0,200}vp\.h/,
-  '확장 플레이어 첫 위치는 공용 실측으로 가로·세로 모두 가운데여야 한다');
+// 14.51 · 프로 테마에서는 공통 중앙에 좌측 사이드바/레일 폭의 절반을 더한다
+assert.match(js, /if\(!isFinite\(x\)\)\{[\s\S]{0,240}vp\.w[\s\S]{0,640}proSide[\s\S]{0,120}if\(!isFinite\(y\)\)\{[\s\S]{0,200}vp\.h/,
+  '확장 플레이어 첫 위치는 공용 실측 중앙(프로: 콘텐츠 영역 중앙)이어야 한다');
 
 assert.match(js, /function mpbFakeFs\(on\)\{[\s\S]{0,700}try\{ clampMpb\(\); \}catch\(e\)\{\}/,
   '전체 화면 진입 전에 창 위치를 확정해 저장해야 돌아올 자리가 남는다');

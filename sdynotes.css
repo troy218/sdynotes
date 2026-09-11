@@ -7607,6 +7607,34 @@ html.theme-pro .ypg-btn.main:hover{background:var(--accent2);border-color:var(--
 html.theme-pro .ypg-btn.main>i{color:#fff;}
 html.theme-pro .ypg-btn.main em{color:rgba(255,255,255,.78);}
 
+/* ── 14.51-R · 플로팅 요소 위치 — 프로 셸(사이드바/레일) 기준 재배치 ── */
+/* 데스크톱: 선택막대를 콘텐츠 영역 중앙으로 (화면 중앙이 아닌) */
+@media (min-width:641px){
+  html.theme-pro .select-bar{left:calc(50% + 124px);}
+}
+/* 레일 폭대(641~1023, 60px 레일): 음악바·곡 목록이 레일 밑으로 빠지지 않게 */
+@media (min-width:641px) and (max-width:1023px){
+  html.theme-pro .mp.mp-bar{width:min(680px,calc(100vw - 84px));}
+  html.theme-pro .mp-list{width:min(440px,calc(100vw - 84px));}
+  html.theme-pro .select-bar{left:calc(50% + 30px);}
+}
+/* 모바일 시트(17.0 블록의 좌우 풀폭 시트) — 왼쪽 내비 존(레일 60px)을 피한다 */
+@media (max-width:640px), (max-height:560px) and (pointer:coarse){
+  html.theme-pro .mp.mp-bar{left:72px!important;}
+  html.theme-pro .mp-list{left:72px!important;width:calc(100vw - 72px)!important;max-width:none!important;}
+  html.theme-pro .mpb{left:72px!important;}
+  html.theme-pro #ypApp{left:72px!important;}
+  html.theme-pro .select-bar{left:72px!important;}
+  /* 같은 미디어라도 폭이 1024px 이상이면 248px 사이드바 쪽으로 */
+  @media (min-width:1024px){
+    html.theme-pro .mp.mp-bar{left:260px!important;}
+    html.theme-pro .mp-list{left:260px!important;width:calc(100vw - 260px)!important;}
+    html.theme-pro .mpb{left:260px!important;}
+    html.theme-pro #ypApp{left:260px!important;}
+    html.theme-pro .select-bar{left:260px!important;}
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 
