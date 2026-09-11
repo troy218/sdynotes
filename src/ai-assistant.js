@@ -2311,6 +2311,16 @@
     if(looksLikeEdit(q)){ run('edit',q); return; }      // ! 없어도 '고쳐 달라'는 말이면 편집으로
     run('chat',q);
   };
+  // 14.45 · '찾기' 버튼 — 고른 글을 해돌이 설명으로 (우클릭 메뉴 sel-find).
+  //   검색창 Enter(sdyAiRun)의 말투 라우팅(!편집·/앱·/버그·/사진…)을 거치지
+  //   않고 chat 으로만 보낸다 — 고른 글이 ! 나 / 로 시작해도 편집·앱 실행으로
+  //   빠지지 않고 '설명해 줘' 질문이 된다.
+  window.sdyAiExplain=function(q){
+    q=String(q||'').trim();
+    if(ctl){ meta('다 말하고 나서 물어봐 주세요 해돌~'); return; }   // 말하는 중 — 말풍선 안 한 줄로만
+    if(!q){ otterLine('설명해 줄 글자를 아직 고르지 못했어요 해돌~'); return; }
+    run('chat',q);
+  };
   window.sdyAiOutline=function(scope){
     if(ctl){ meta('다 말하고 나서 눌러 주세요 해돌~'); return; }     // 말하는 중 — 말풍선 안 한 줄로만
     run('outline','',scope);
