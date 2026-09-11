@@ -216,7 +216,7 @@ try {
   check('위로가기로 편집기를 닫는다', ev('!curNB'));
   const c2 = Date.now() + 8_000;
   while (Date.now() < c2 && !findCard()) await wait(60);
-  if (!findCard()) console.log('    · [debug] cards=' + document.querySelectorAll('.note-stack .note-card').length
+  if (!findCard()) console.log('    · [debug] cards=' + document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card').length
     + ' stack=' + !!document.querySelector('.note-stack')
     + ' editorOpen=' + document.getElementById('editorView').classList.contains('open')
     + ' notebooks=' + ev('(typeof notebooks==="object"&&notebooks||[]).length'));

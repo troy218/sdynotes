@@ -97,6 +97,7 @@ try {
   dom = await JSDOM.fromURL(base + '/', {
     resources: 'usable', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(window) {
+      window.localStorage.setItem('sdy3', JSON.stringify({ theme: 'classic' })); // 14.49 · 클래식 홈 레이아웃 전용 검증 — 기본(프로) 테마에선 스택이 없으므로
       installWindowGuard(window);   // close 전 타이머 추적
       window.innerWidth = 1280; window.innerHeight = 800;
       window.matchMedia = () => ({ matches: false, addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){} });

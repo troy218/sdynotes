@@ -100,8 +100,8 @@ try {
 
   const { window } = dom, { document } = window;
   const boot = Date.now();
-  while (Date.now() - boot < 8_000 && !document.querySelector('.note-stack .note-card')) await wait(60);
-  document.querySelector('.note-stack .note-card').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  while (Date.now() - boot < 8_000 && !document.querySelector('.note-stack .note-card,.pro-grid .note-card')) await wait(60);
+  document.querySelector('.note-stack .note-card,.pro-grid .note-card').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await wait(1100);
   check('표 런타임용 노트가 열린다', document.getElementById('editorView').classList.contains('open'));
   check('표 API가 전역 UI 함수로 준비된다', typeof window.insertTable === 'function' && typeof window.tblCellAlign === 'function');

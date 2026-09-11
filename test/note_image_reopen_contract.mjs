@@ -153,7 +153,7 @@ try {
     const untilCard = Date.now() + 8_000;
     let card = null;
     while (Date.now() < untilCard && !card) {
-      card = [...document.querySelectorAll('.note-stack .note-card')].find((c) => String(c.dataset.nbId || '') === want);
+      card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')].find((c) => String(c.dataset.nbId || '') === want);
       if (!card) await wait(60);
     }
     check('홈에 ' + want + ' 카드가 보인다', !!card);

@@ -417,6 +417,7 @@
     // ② 노트 삭제: 크레인이 빈 손으로 내려와 실제 노트를 집어 위로 끌어올려 던진다
     function playClawThrow(card, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){ if(done)done(); return; } // 14.49 · 프로 테마: 집게(클로) 애니메이션 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote');
         if(!_clawEl('clawFx')||!head||!note){ if(done)done(); return; }
@@ -570,6 +571,7 @@
     // ③ 여러 노트 삭제: 빈 집게 여러 대가 내려와 한꺼번에 잡아 던진다
     function playClawThrowMulti(cards, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){ if(done)done(); return; } // 14.49 · 프로 테마: 집게(클로) 애니메이션 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const fx=_clawEl('clawFx');
         if(!fx){ if(done)done(); return; }

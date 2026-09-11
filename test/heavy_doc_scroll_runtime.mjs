@@ -176,8 +176,8 @@ try {
   const wraps = () => document.querySelectorAll('#pagesStage .page-wrap').length;
 
   const boot = Date.now();
-  while (Date.now() - boot < 15_000 && !document.querySelector('.note-stack .note-card')) await wait(60);
-  const card = [...document.querySelectorAll('.note-stack .note-card')]
+  while (Date.now() - boot < 15_000 && !document.querySelector('.note-stack .note-card,.pro-grid .note-card')) await wait(60);
+  const card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')]
     .find(c => (c.textContent || '').includes('그림 많은 논문'));
   check('홈에 논문 카드가 보인다', !!card);
 

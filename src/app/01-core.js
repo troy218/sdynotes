@@ -404,6 +404,8 @@
         document.documentElement.style.setProperty('--accent2',shade(acc,-0.18));
         // 설정창의 테마 선택 UI도 함께 갱신 (열려 있을 때)
         try{ if(typeof paintThemePicks==='function') paintThemePicks(); }catch(e){}
+        // 14.49 · PRO 앱 셸 — 프로/클래식에 따라 브랜드·브레드크럼 자리를 갈아엎는다
+        try{ if(typeof _proShellSwap==='function') _proShellSwap(); }catch(e){}
         // 앱 제목
         const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'동엽신의 끄적끄적';
         const h1=document.querySelector('.app-brand h1');

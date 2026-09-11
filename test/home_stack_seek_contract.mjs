@@ -22,6 +22,7 @@ const dom = new JSDOM(fullHtml, {
   pretendToBeVisual: true,
   virtualConsole: vc,
   beforeParse(window) {
+      window.localStorage.setItem('sdy3', JSON.stringify({ theme: 'classic' })); // 14.49 · 클래식 홈 레이아웃 전용 검증 — 기본(프로) 테마에선 스택이 없으므로
     window.fetch = async () => new Response(JSON.stringify({ tracks: [] }), {
       status: 200, headers: { 'content-type': 'application/json' },
     });

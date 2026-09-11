@@ -102,7 +102,9 @@
                 return [nb.id, nb.title||'', c.pinned?1:0, c.folder||'', c.trashed_at||'', c.emoji||''].join(':');
             }).join('|');
             const recent=(!searchQuery&&!curFolder&&!selectMode)?_getRecentIds().join(','):'';
-            return (curFolder||'')+'/'+(searchQuery||'')+'/'+(selectMode?1:0)+'/'+folders+'/'+notes+'/'+recent;
+            // 14.49 · 테마도 시그니처에 — 프로/클래식 전환 시 홈 레이아웃이 달라
+            const pro=(typeof sdyTheme==='function'&&sdyTheme()==='pro')?1:0;
+            return (curFolder||'')+'/'+(searchQuery||'')+'/'+(selectMode?1:0)+'/'+folders+'/'+notes+'/'+recent+'/'+pro;
         }catch(e){ return String(Date.now()); }
     }
     let _lastGridSig='';
@@ -537,7 +539,57 @@
             return card;
         }
 
-        if(isHomeStack){
+        // 14.49 · PRO 홈 — 스택·펼침(집게) 애니메이션 없이 어도비 계열의 평평한
+        //   전문 그리드. 최근 노트를 먼저, 뒤로 나머지 노트를, 폴더 카드는
+        //   격자 안에 함께 놓는다. (크기·드래그·메뉴 동작은 기존 카드 공용)
+        const proOn=(typeof sdyTheme==='function'&&sdyTheme()==='pro');
+        if(isHomeStack&&proOn){
+            const area=document.createElement('div');
+            area.className='pro-home';
+            const bar=document.createElement('div');
+            bar.className='pro-home-bar';
+            const t=document.createElement('h2');
+            t.className='home-section-title';
+            t.innerHTML='<i class="ri-file-list-3-line"></i><span>내 노트</span>';
+            bar.appendChild(t);
+            let nFold=0;
+            try{ nFold=(childFolders(null)||[]).length; }catch(e){}
+            const cnt=document.createElement('span');
+            cnt.className='pro-home-count';
+            cnt.textContent=filtered.length+'개 노트 · '+nFold+'개 폴더';
+            bar.appendChild(cnt);
+            const add=document.createElement('button');
+            add.type='button';
+            add.className='pro-add-note';
+            add.setAttribute('aria-label','새 노트 만들기');
+            add.innerHTML='<i class="ri-add-line"></i><span>새 노트</span>';
+            add.onclick=openCreateModal;
+            bar.appendChild(add);
+            area.appendChild(bar);
+            const grid=document.createElement('div');
+            grid.className='pro-grid';
+            let nFoldCards=0;
+            try{ childFolders(null).forEach(f=>{ grid.appendChild(_makeFolderCard(f)); nFoldCards++; }); }catch(e){}
+            recentNotes.concat(stackNotes).forEach(nb=>grid.appendChild(_makeCard(nb)));
+            if(!selectMode){
+                const add2=document.createElement('div');
+                add2.className='add-card';
+                add2.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
+                add2.onclick=openCreateModal;
+                grid.appendChild(add2);
+            }
+            if(!grid.children.length){
+                const empty=document.createElement('div');
+                empty.className='pro-home-empty';
+                empty.innerHTML='<i class="ri-file-list-3-line"></i><span>노트를 만들면 이곳에 쌓여요</span>';
+                grid.appendChild(empty);
+            }
+            area.appendChild(grid);
+            g.appendChild(area);
+            _homeEnterScroll=false;
+            _schedulePreviewRender(area);
+            try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+        }else if(isHomeStack){
             const area=document.createElement('div');
             area.className='home-stack-area';
 

@@ -137,7 +137,7 @@ try {
   const untilCard = Date.now() + 8_000;
   let card = null;
   while (Date.now() < untilCard && !card) {
-    card = [...oDoc.querySelectorAll('.note-stack .note-card')].find(c => (c.textContent || '').includes('이미지크로스'));
+    card = [...oDoc.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')].find(c => (c.textContent || '').includes('이미지크로스'));
     if (!card) await wait(60);
   }
   check('② 새 기기에 노트 카드가 보인다', !!card);

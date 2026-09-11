@@ -171,9 +171,9 @@ try {
 
   const { window } = dom, { document } = window;
   const boot = Date.now();
-  while (Date.now() - boot < 8_000 && document.querySelectorAll('.note-stack .note-card').length < 1) await wait(60);
+  while (Date.now() - boot < 8_000 && document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card').length < 1) await wait(60);
 
-  const card = [...document.querySelectorAll('.note-stack .note-card')]
+  const card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')]
     .find(c => (c.textContent || '').includes('SVG 스티커'));
   check('노트 카드가 보인다', !!card);
   card.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));

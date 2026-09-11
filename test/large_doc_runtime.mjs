@@ -120,8 +120,8 @@ try {
   const paperOf = i => document.querySelector(`#pagesStage .paper[data-page-idx="${i}"]`);
 
   const boot = Date.now();
-  while (Date.now() - boot < 10_000 && !document.querySelector('.note-stack .note-card')) await wait(60);
-  const card = [...document.querySelectorAll('.note-stack .note-card')]
+  while (Date.now() - boot < 10_000 && !document.querySelector('.note-stack .note-card,.pro-grid .note-card')) await wait(60);
+  const card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')]
     .find(c => (c.textContent || '').includes('대용량 500쪽'));
   check('홈에 대용량 노트 카드가 보인다', !!card);
 

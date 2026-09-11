@@ -640,6 +640,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         document.documentElement.style.setProperty('--accent2',shade(acc,-0.18));
         // 설정창의 테마 선택 UI도 함께 갱신 (열려 있을 때)
         try{ if(typeof paintThemePicks==='function') paintThemePicks(); }catch(e){}
+        // 14.49 · PRO 앱 셸 — 프로/클래식에 따라 브랜드·브레드크럼 자리를 갈아엎는다
+        try{ if(typeof _proShellSwap==='function') _proShellSwap(); }catch(e){}
         // 앱 제목
         const t=(S.appTitle&&String(S.appTitle).trim())?S.appTitle.trim():'동엽신의 끄적끄적';
         const h1=document.querySelector('.app-brand h1');
@@ -752,6 +754,70 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
     }
     // 구버전 호환 — 예전 다크 토글 호출이 남아 있으면 테마 전환으로 동작
     function tglDark(){ try{ pickTheme(sdyTheme()==='pro'?'classic':'pro'); }catch(e){} }
+
+    // ===== 14.49 · PRO 앱 셸 (사이드바) =====
+    // 클래식에서는 #proSide가 CSS 로 숨겨지고 #proShell 은 display:contents 라
+    // 레이아웃이 기존과 동일하다. 프로에서는 브랜드(#mainView .app-brand)와
+    // 브레드크럼(#breadcrumb)을 물리적으로 사이드바·상단바로 옮기고,
+    // 클래식으로 돌아가면 원래 자리로 되돌린다.
+    function _proShellSwap(){
+        const pro=(typeof sdyTheme==='function'&&sdyTheme()==='pro');
+        const wfull=document.querySelector('#mainView .header .w-full');
+        const mainEl=document.querySelector('#mainView > main');
+        // .app-brand 는 문서에 하나 — 프로에선 #mainView 밖(사이드바)에 있으므로
+        // 전역으로 찾는다 (이동 후에도 복원 대상이 되어야 한다)
+        const brand=document.querySelector('.app-brand');
+        const bc=document.getElementById('breadcrumb');
+        const slot=document.getElementById('proBrandSlot');
+        if(!wfull||!mainEl) return;
+        if(brand){
+            if(pro){ if(slot&&brand.parentElement!==slot) slot.appendChild(brand); }
+            else { if(brand.parentElement!==wfull) wfull.insertBefore(brand,wfull.firstChild); }
+        }
+        if(bc){
+            if(pro){ if(bc.parentElement!==wfull) wfull.insertBefore(bc,wfull.firstChild); }
+            else { if(bc.parentElement!==mainEl) mainEl.insertBefore(bc,mainEl.firstChild); }
+        }
+        try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+    }
+    // 사이드바 내비게이션 + 폴더 목록 렌더 (renderGrid·applyTheme 에서 갱신)
+    function paintProSide(){
+        const nav=document.getElementById('proNav');
+        const folds=document.getElementById('proFolders');
+        if(!nav||!folds) return;
+        let atRoot=true;
+        try{ atRoot=!curFolder&&!searchQuery; }catch(e){}
+        nav.innerHTML=
+            `<button type="button" class="pro-nav-item${atRoot?' on':''}" onclick="openFolder(null)"><i class="ri-file-list-3-line"></i><span>파일</span></button>`+
+            `<button type="button" class="pro-nav-item" onclick="openTrash()"><i class="ri-delete-bin-7-line"></i><span>휴지통</span></button>`;
+        let html='';
+        try{
+            (childFolders(null)||[]).forEach(f=>{
+                const locked=isFolderLocked(f.id);
+                const open=isFolderOpen(f.id);
+                let active=false;
+                try{ active=!!curFolder&&folderPath(curFolder).some(x=>x.id===f.id); }catch(e){}
+                html+=`<button type="button" class="pro-fold-item${active?' on':''}" onclick="openFolder('${f.id}')">`+
+                    `<i class="${(locked&&!open)?'ri-folder-lock-fill':(f.icon||'ri-folder-3-fill')}" style="color:${f.color||'var(--accent)'}"></i>`+
+                    `<span class="pf-name">${esc(f.name)}</span>`+
+                    `<span class="pf-count">${folderCount(f.id)||0}</span></button>`;
+            });
+        }catch(e){}
+        folds.innerHTML=html||'<div class="pro-fold-empty">폴더가 없습니다</div>';
+    }
+    // 사이드바 '음악' — 음악바가 접혀 있으면 펼친 뒤 목록을 연다
+    function proOpenMusic(){
+        try{
+            const reopen=document.getElementById('mpReopen');
+            if(reopen){
+                let visible=true;
+                try{ visible=getComputedStyle(reopen).display!=='none'; }catch(e){ visible=reopen.style.display!=='none'; }
+                if(!visible) reopen.click();
+            }
+            const ml=document.getElementById('mpList');
+            if(ml) ml.click();
+        }catch(e){}
+    }
 
     // ── 앱 전체 설정 동기화 ────────────────────────────────
     // 테마·강조색·기본 글꼴/크기·제목·카드 크기와 함께 브라우저에서
@@ -2102,7 +2168,9 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 return [nb.id, nb.title||'', c.pinned?1:0, c.folder||'', c.trashed_at||'', c.emoji||''].join(':');
             }).join('|');
             const recent=(!searchQuery&&!curFolder&&!selectMode)?_getRecentIds().join(','):'';
-            return (curFolder||'')+'/'+(searchQuery||'')+'/'+(selectMode?1:0)+'/'+folders+'/'+notes+'/'+recent;
+            // 14.49 · 테마도 시그니처에 — 프로/클래식 전환 시 홈 레이아웃이 달라
+            const pro=(typeof sdyTheme==='function'&&sdyTheme()==='pro')?1:0;
+            return (curFolder||'')+'/'+(searchQuery||'')+'/'+(selectMode?1:0)+'/'+folders+'/'+notes+'/'+recent+'/'+pro;
         }catch(e){ return String(Date.now()); }
     }
     let _lastGridSig='';
@@ -2537,7 +2605,57 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             return card;
         }
 
-        if(isHomeStack){
+        // 14.49 · PRO 홈 — 스택·펼침(집게) 애니메이션 없이 어도비 계열의 평평한
+        //   전문 그리드. 최근 노트를 먼저, 뒤로 나머지 노트를, 폴더 카드는
+        //   격자 안에 함께 놓는다. (크기·드래그·메뉴 동작은 기존 카드 공용)
+        const proOn=(typeof sdyTheme==='function'&&sdyTheme()==='pro');
+        if(isHomeStack&&proOn){
+            const area=document.createElement('div');
+            area.className='pro-home';
+            const bar=document.createElement('div');
+            bar.className='pro-home-bar';
+            const t=document.createElement('h2');
+            t.className='home-section-title';
+            t.innerHTML='<i class="ri-file-list-3-line"></i><span>내 노트</span>';
+            bar.appendChild(t);
+            let nFold=0;
+            try{ nFold=(childFolders(null)||[]).length; }catch(e){}
+            const cnt=document.createElement('span');
+            cnt.className='pro-home-count';
+            cnt.textContent=filtered.length+'개 노트 · '+nFold+'개 폴더';
+            bar.appendChild(cnt);
+            const add=document.createElement('button');
+            add.type='button';
+            add.className='pro-add-note';
+            add.setAttribute('aria-label','새 노트 만들기');
+            add.innerHTML='<i class="ri-add-line"></i><span>새 노트</span>';
+            add.onclick=openCreateModal;
+            bar.appendChild(add);
+            area.appendChild(bar);
+            const grid=document.createElement('div');
+            grid.className='pro-grid';
+            let nFoldCards=0;
+            try{ childFolders(null).forEach(f=>{ grid.appendChild(_makeFolderCard(f)); nFoldCards++; }); }catch(e){}
+            recentNotes.concat(stackNotes).forEach(nb=>grid.appendChild(_makeCard(nb)));
+            if(!selectMode){
+                const add2=document.createElement('div');
+                add2.className='add-card';
+                add2.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
+                add2.onclick=openCreateModal;
+                grid.appendChild(add2);
+            }
+            if(!grid.children.length){
+                const empty=document.createElement('div');
+                empty.className='pro-home-empty';
+                empty.innerHTML='<i class="ri-file-list-3-line"></i><span>노트를 만들면 이곳에 쌓여요</span>';
+                grid.appendChild(empty);
+            }
+            area.appendChild(grid);
+            g.appendChild(area);
+            _homeEnterScroll=false;
+            _schedulePreviewRender(area);
+            try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+        }else if(isHomeStack){
             const area=document.createElement('div');
             area.className='home-stack-area';
 
@@ -24640,6 +24758,7 @@ function _tightLineBackspace(c,w){
     // ② 노트 삭제: 크레인이 빈 손으로 내려와 실제 노트를 집어 위로 끌어올려 던진다
     function playClawThrow(card, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){ if(done)done(); return; } // 14.49 · 프로 테마: 집게(클로) 애니메이션 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const head=_clawEl('clawHead'), note=_clawEl('clawNote');
         if(!_clawEl('clawFx')||!head||!note){ if(done)done(); return; }
@@ -24793,6 +24912,7 @@ function _tightLineBackspace(c,w){
     // ③ 여러 노트 삭제: 빈 집게 여러 대가 내려와 한꺼번에 잡아 던진다
     function playClawThrowMulti(cards, done){
         if(sdyTurbo()){ if(done)done(); return; }   // 22.x · 똥컴 모드는 장식 애니메이션 생략
+        if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){ if(done)done(); return; } // 14.49 · 프로 테마: 집게(클로) 애니메이션 없음
         if(!_clawReady||document.body.classList.contains('sdy-booting')){ if(done)done(); return; }
         const fx=_clawEl('clawFx');
         if(!fx){ if(done)done(); return; }

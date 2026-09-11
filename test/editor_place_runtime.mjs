@@ -108,8 +108,8 @@ try {
 
   const { window } = dom, { document } = window;
   const boot = Date.now();
-  while (Date.now() - boot < 8_000 && !document.querySelector('.note-stack .note-card')) await wait(60);
-  const card = [...document.querySelectorAll('.note-stack .note-card')]
+  while (Date.now() - boot < 8_000 && !document.querySelector('.note-stack .note-card,.pro-grid .note-card')) await wait(60);
+  const card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')]
     .find(c => (c.textContent || '').includes('배치 런타임'));
   check('배치 런타임 노트 카드가 보인다', !!card);
   card.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));

@@ -88,6 +88,7 @@ try {
     pretendToBeVisual: true,
     virtualConsole,
     beforeParse(window) {
+      window.localStorage.setItem('sdy3', JSON.stringify({ theme: 'classic' })); // 14.49 · 클래식 홈 레이아웃 전용 검증 — 기본(프로) 테마에선 스택이 없으므로
       installWindowGuard(window); // 14.13.5 · close 전 타이머 추적
             Object.defineProperty(window, 'innerWidth', { value: 390, writable: true, configurable: true });
       Object.defineProperty(window, 'innerHeight', { value: 844, writable: true, configurable: true });

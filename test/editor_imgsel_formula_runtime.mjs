@@ -188,8 +188,8 @@ try {
 
   // ── 열기 ────────────────────────────────────────────────────────────
   const boot = Date.now();
-  while (Date.now() - boot < 15_000 && !document.querySelector('.note-stack .note-card')) await wait(60);
-  const card = [...document.querySelectorAll('.note-stack .note-card')].find(c => (c.textContent || '').includes('그림선택수식'));
+  while (Date.now() - boot < 15_000 && !document.querySelector('.note-stack .note-card,.pro-grid .note-card')) await wait(60);
+  const card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')].find(c => (c.textContent || '').includes('그림선택수식'));
   check('홈에 노트 카드가 보인다', !!card);
   card.click();
   const openUntil = Date.now() + 25_000;

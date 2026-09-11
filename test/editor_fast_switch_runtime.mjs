@@ -115,9 +115,9 @@ try {
 
   const { window } = dom, { document } = window;
   const boot = Date.now();
-  while (Date.now() - boot < 8_000 && document.querySelectorAll('.note-stack .note-card').length < 2) await wait(60);
+  while (Date.now() - boot < 8_000 && document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card').length < 2) await wait(60);
 
-  const cards = [...document.querySelectorAll('.note-stack .note-card')];
+  const cards = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')];
   check('두 노트가 홈에 보인다', cards.length >= 2);
   const cardA = cards.find(c => (c.dataset.nbId || '').includes(String(idA))) ||
                 cards.find(c => (c.textContent || '').includes('빠른 전환 A'));

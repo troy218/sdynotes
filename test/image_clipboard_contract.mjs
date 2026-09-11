@@ -244,7 +244,7 @@ try {
   // ═══════ B · 일반 복사(Ctrl+C) 통합 + 앱 내부 붙여넣기 보존 ═══════
   console.log('\n── B. 일반 복사(Ctrl+C) 통합 ──');
   const card = await waitFor('note card "클립보드이미지"', () =>
-    [...document.querySelectorAll('.note-stack .note-card')].find((c) => (c.textContent || '').includes('클립보드이미지')) || null);
+    [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')].find((c) => (c.textContent || '').includes('클립보드이미지')) || null);
   card.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await waitFor('editorView open', () => document.getElementById('editorView').classList.contains('open') || null);
   const imgNode = await waitForSelector(dom, '#pagesStage .paper-img[data-id="i1"]');

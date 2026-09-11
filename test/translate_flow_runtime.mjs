@@ -196,7 +196,7 @@ try {
   const tbText = (id) => ($(`.tb[data-id="${id}"] .tb-content`)?.textContent || '');
 
   // ── 노트 열기 ──
-  const cardOf = () => $$('.note-stack .note-card').find(c => (c.textContent || '').includes(TITLE));
+  const cardOf = () => $$('.note-stack .note-card,.pro-grid .note-card').find(c => (c.textContent || '').includes(TITLE));
   await until('노트 카드 표시', cardOf);
   cardOf().dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await until('에디터 + 텍스트 상자 4개 렌더', () => $$('#pagesStage .tb').length >= 3);

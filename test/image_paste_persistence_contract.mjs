@@ -192,7 +192,7 @@ const appReady = (dom) => waitFor('app globals (serverImageElement)', () => (typ
 
 async function openNoteByTitle(dom, title) {
   const card = await waitFor(`note card "${title}"`, () =>
-    [...dom.window.document.querySelectorAll('.note-stack .note-card')]
+    [...dom.window.document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')]
       .find((c) => (c.textContent || '').includes(title)) || null);
   card.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   await waitFor(`editorView open for "${title}"`, () =>

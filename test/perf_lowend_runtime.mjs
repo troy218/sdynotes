@@ -175,8 +175,8 @@ try {
   const tbs = () => document.querySelectorAll('#pagesStage .paper .tb').length;
 
   const boot = Date.now();
-  while (Date.now() - boot < 15_000 && !document.querySelector('.note-stack .note-card')) await wait(60);
-  const card = [...document.querySelectorAll('.note-stack .note-card')].find(c => (c.textContent || '').includes('똥컴 논문'));
+  while (Date.now() - boot < 15_000 && !document.querySelector('.note-stack .note-card,.pro-grid .note-card')) await wait(60);
+  const card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')].find(c => (c.textContent || '').includes('똥컴 논문'));
   check('똥컴 판정이 즉시 body.sdy-turbo 를 붙인다', document.body.classList.contains('sdy-turbo'));
   card.click();
   const openUntil = Date.now() + 20_000;

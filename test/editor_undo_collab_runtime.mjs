@@ -150,7 +150,7 @@ try {
   const boot = Date.now() + 8000;
   let card;
   while (Date.now() < boot) {
-    card = [...document.querySelectorAll('.note-stack .note-card')]
+    card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')]
       .find((n) => (n.textContent || '').includes('되돌리기 협업'));
     if (card) break;
     await wait(60);

@@ -7085,11 +7085,12 @@ html.theme-pro .folder-lock,html.theme-pro .unlock-badge{
   box-shadow:0 1px 3px rgba(23,28,41,.10);
 }
 html.theme-pro .emoji-badge:hover{background:rgba(23,28,41,.06);}
+/* 14.49 · 호버 시 위로 떠오르는 모션은 프로에서 없음 — 테두리·그림자만 */
 @media(hover:hover){
   html.theme-pro .note-card:hover,html.theme-pro .folder-card:hover{
-    transform:translateY(-3px);
+    transform:none;
     border-color:color-mix(in srgb,var(--accent) 45%,var(--border));
-    box-shadow:0 12px 28px -8px rgba(23,28,41,.18),
+    box-shadow:0 10px 24px -10px rgba(23,28,41,.18),
                0 0 0 1px color-mix(in srgb,var(--accent) 12%,transparent);
   }
 }
@@ -7294,6 +7295,199 @@ html.theme-pro .find-hit{background:rgba(250,204,21,.45);}
   html.theme-pro .note-card::after{transition:none;}
 }
 
+
+/* ── 14.49-L · PRO 앱 셸 — 사이드바 + 상단바 (어도비 계열 전문 구조) ── */
+/* 클래식: 셸 래퍼 display:contents + 사이드바 숨김 → 레이아웃 기존과 동일 */
+html.theme-classic #proShell{display:contents;}
+html.theme-classic #proSide{display:none!important;}
+html.theme-pro #proShell{display:block;}
+/* 사이드바 — 캔버스(#F4F5F8)보다 살짝 밝은 화이트 + 헤어라인.
+   z:90 → 에디터(100)·더보기시트(1400)·모달(1900)·집중(2100)보다 아래 */
+html.theme-pro #proSide{
+  position:fixed;top:0;left:0;bottom:0;width:248px;z-index:90;
+  display:flex;flex-direction:column;min-height:0;
+  background:#FBFCFE;
+  border-right:1px solid var(--border);
+  font-family:'Pretendard Variable',Pretendard,-apple-system,'Segoe UI',sans-serif;
+}
+html.theme-pro #mainView{left:248px!important;}
+/* 브랜드 — 프로에선 헤더가 아닌 사이드바 상단 */
+html.theme-pro .pro-brand{padding:16px 12px 8px;}
+html.theme-pro .pro-brand .app-brand{margin-left:0!important;gap:9px;}
+html.theme-pro .pro-brand .logo-dot{width:30px;height:30px;font-size:16px;}
+html.theme-pro .pro-brand h1{
+  font-size:14.5px;letter-spacing:-.015em;max-width:150px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+html.theme-pro .pro-brand .logo-dot:hover,
+html.theme-pro .pro-brand .logo-dot:focus-visible{transform:none!important;}
+html.theme-pro .pro-brand .logo-dot:hover + h1,
+html.theme-pro .pro-brand .logo-dot:focus-visible + h1{transform:none!important;}
+/* 17.4 호버-펼침(데스크톱)은 사이드바에서 끌고 — 타이틀은 항상 보인다 */
+@media (hover:hover) and (min-width:901px){
+  html.theme-pro .pro-brand .app-brand h1{
+    max-width:150px!important;opacity:1!important;transform:none!important;
+    pointer-events:auto!important;
+  }
+}
+/* 웹 바로가기 — 사이드바에서 세로 미니 리스트 */
+html.theme-pro .pro-brand .link-bar{
+  display:flex;flex-wrap:wrap;gap:4px;border:none;box-shadow:none;
+  background:transparent;padding:0;margin-top:2px;
+}
+html.theme-pro .pro-brand .link-chip{
+  border-radius:7px;padding:4px 8px;font-size:11.5px;max-width:100%;
+  background:#F4F5F8;border:1px solid var(--border);box-shadow:none;
+}
+html.theme-pro .pro-brand .link-chip:hover{transform:none;}
+/* 내비게이션 */
+html.theme-pro .pro-nav{display:flex;flex-direction:column;gap:2px;padding:8px 10px 4px;}
+html.theme-pro .pro-nav-item{
+  display:flex;align-items:center;gap:10px;width:100%;
+  padding:9px 12px;border-radius:9px;border:none;background:transparent;
+  color:var(--text2);font-size:13.5px;font-weight:600;cursor:pointer;
+  text-align:left;font-family:inherit;line-height:1.2;
+}
+html.theme-pro .pro-nav-item i{font-size:17px;width:20px;text-align:center;color:var(--text3);flex:none;}
+html.theme-pro .pro-nav-item:hover{background:rgba(23,28,41,.05);color:var(--text1);}
+html.theme-pro .pro-nav-item.on{
+  background:color-mix(in srgb,var(--accent) 9%,transparent);
+  color:var(--accent);font-weight:700;
+}
+html.theme-pro .pro-nav-item.on i{color:var(--accent);}
+/* 폴더 목록 */
+html.theme-pro .pro-folders-wrap{flex:1 1 auto;min-height:0;overflow-y:auto;padding:0 10px 8px;}
+html.theme-pro .pro-folders-title{
+  font-size:10.5px;font-weight:700;letter-spacing:.09em;color:var(--text3);
+  padding:12px 8px 5px;text-transform:uppercase;
+}
+html.theme-pro .pro-fold-item{
+  display:flex;align-items:center;gap:9px;width:100%;padding:7px 10px;margin-bottom:1px;
+  border-radius:8px;border:none;background:transparent;color:var(--text2);
+  font-size:13px;font-weight:500;cursor:pointer;text-align:left;
+  font-family:inherit;line-height:1.3;
+}
+html.theme-pro .pro-fold-item i{font-size:15px;flex:none;}
+html.theme-pro .pro-fold-item:hover{background:rgba(23,28,41,.05);color:var(--text1);}
+html.theme-pro .pro-fold-item.on{
+  background:color-mix(in srgb,var(--accent) 9%,transparent);
+  color:var(--accent);font-weight:600;
+}
+html.theme-pro .pf-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+html.theme-pro .pf-count{
+  font-size:10.5px;font-weight:600;color:var(--text3);
+  background:#F1F3F7;border:1px solid var(--border);border-radius:99px;
+  padding:1px 7px;flex:none;
+}
+html.theme-pro .pro-fold-empty{font-size:12px;color:var(--text3);padding:6px 10px;}
+html.theme-pro .pro-side-bottom{
+  display:flex;flex-direction:column;gap:2px;
+  padding:8px 10px 12px;border-top:1px solid var(--border);
+}
+/* 상단바 — 헤더가 컨텍스트 바로. 브랜드는 나가고 브레드크럼·검색·액션만 */
+html.theme-pro .header .w-full{gap:10px;}
+html.theme-pro .hdr-right{margin-left:auto;}
+html.theme-pro .header .breadcrumb{margin-right:auto;min-width:0;}
+html.theme-pro .breadcrumb button{border-radius:7px;}
+html.theme-pro #searchInput{width:240px!important;height:36px!important;border-radius:9px!important;}
+
+/* ── 14.49-M · PRO 홈 — 스택·펼침 없는 평평한 전문 그리드 ── */
+html.theme-pro #noteGrid{display:block;padding:0 20px;}
+html.theme-pro .pro-home-bar{display:flex;align-items:center;gap:10px;margin:4px 2px 14px;}
+html.theme-pro .pro-home-bar .home-section-title{margin:0;}
+html.theme-pro .pro-home-count{font-size:12.5px;color:var(--text3);font-weight:600;white-space:nowrap;}
+html.theme-pro .pro-add-note{
+  margin-left:auto;display:inline-flex;align-items:center;gap:6px;
+  padding:9px 16px;border-radius:9px;border:1px solid var(--accent);
+  background:var(--accent);color:#fff;font-size:13.5px;font-weight:700;
+  cursor:pointer;font-family:inherit;line-height:1.2;
+  box-shadow:0 1px 2px color-mix(in srgb,var(--accent) 35%,transparent);
+  transition:background .15s,border-color .15s;
+}
+html.theme-pro .pro-add-note:hover{background:var(--accent2);border-color:var(--accent2);}
+html.theme-pro .pro-add-note:active{transform:scale(.98);}
+html.theme-pro .pro-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:14px;}
+html.theme-pro .pro-home-empty{
+  grid-column:1/-1;display:flex;flex-direction:column;align-items:center;gap:10px;
+  color:var(--text3);font-size:14px;padding:60px 0;text-align:center;
+}
+html.theme-pro .pro-home-empty i{font-size:34px;opacity:.5;}
+/* 폴더 화면·검색(프로) — #noteGrid 자체가 균일 그리드가 된다 */
+html.theme-pro #noteGrid:not(:has(> .pro-home)){
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:14px;
+}
+html.theme-pro #noteGrid .note-card,
+html.theme-pro #noteGrid .folder-card,
+html.theme-pro #noteGrid .add-card{
+  width:auto!important;flex:0 0 auto!important;max-width:none!important;min-width:0;
+  border-radius:12px;
+}
+html.theme-pro #noteGrid .note-preview,
+html.theme-pro #noteGrid .folder-thumb{height:auto!important;aspect-ratio:4/5;}
+html.theme-pro #noteGrid .add-card{height:auto!important;aspect-ratio:4/5;}
+
+/* ── 14.49-N · 프로에서 호버 이동 모션 제거 (색·테두리만, 위아래 없음) ── */
+html.theme-pro .note-card:hover,
+html.theme-pro .folder-card:hover,
+html.theme-pro .add-card:hover,
+html.theme-pro .recent-row .note-card:hover,
+html.theme-pro .home-add-note:hover,
+html.theme-pro .home-stack-upper.fanned .home-add-note,
+html.theme-pro .link-chip:hover,
+html.theme-pro .link-add:hover,
+html.theme-pro .tool-btn:hover,
+html.theme-pro .size-preset-card:hover,
+html.theme-pro .fc-mode:hover,
+html.theme-pro .fc-preset:hover,
+html.theme-pro .theme-pick:hover,
+html.theme-pro .ctx-item:hover,
+html.theme-pro .cd-reveal:hover,
+html.theme-pro .fcard-win .cd-opt:hover,
+html.theme-pro .fcard-win .cd-btn:hover,
+html.theme-pro .fcard-win .fc-mode:hover,
+html.theme-pro .fcard-win .cd-back:hover,
+html.theme-pro .fcard-win.fcard-max .cd-deck:hover,
+html.theme-pro .mp-otter:hover,
+html.theme-pro .note-otter:hover,
+html.theme-pro .ai-outline:hover,
+html.theme-pro .app-brand .logo-dot:hover,
+html.theme-pro .app-brand .logo-dot:focus-visible,
+html.theme-pro #mpReopen:hover,
+html.theme-pro #ypReopen:hover,
+html.theme-pro .ypv-icon:hover,
+html.theme-pro .ypv-gear:hover,
+html.theme-pro .yp-reacts button:hover,
+html.theme-pro .yp-tools button:hover,
+html.theme-pro .yp-send:hover,
+html.theme-pro .yp-emoji button:hover,
+html.theme-pro .yp-react-row button:hover,
+html.theme-pro .ypg-btn:hover{
+  transform:none!important;
+}
+html.theme-pro .folder-card:hover .folder-thumb>i{transform:none!important;}
+
+/* ── 14.49-O · 좁은 화면 — 60px 아이콘 레일 ── */
+@media (max-width:1023px){
+  html.theme-pro #proSide{width:60px;}
+  html.theme-pro #mainView{left:60px!important;}
+  html.theme-pro .pro-brand{padding:12px 0 10px;display:flex;justify-content:center;}
+  html.theme-pro .pro-brand .app-brand{gap:0;}
+  html.theme-pro .pro-brand h1{display:none;}
+  html.theme-pro .pro-brand .link-bar{display:none;}
+  html.theme-pro .pro-nav{padding:6px 8px 4px;}
+  html.theme-pro .pro-nav-item{justify-content:center;padding:11px 0;gap:0;}
+  html.theme-pro .pro-nav-item span{display:none;}
+  html.theme-pro .pro-folders-wrap{display:none;}
+  html.theme-pro .pro-side-bottom{padding:8px 8px 10px;}
+}
+/* 프로 홈 모바일 (17.0 모바일 블록과 같은 폭 기준) */
+@media (max-width:640px){
+  html.theme-pro .pro-grid,
+  html.theme-pro #noteGrid:not(:has(> .pro-home)){grid-template-columns:repeat(2,1fr);gap:10px;}
+  html.theme-pro .pro-home-bar{flex-wrap:wrap;margin-bottom:10px;}
+  html.theme-pro .pro-add-note{margin-left:0;}
+  html.theme-pro .pro-home-count{order:3;width:100%;}
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃

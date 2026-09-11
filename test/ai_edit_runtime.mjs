@@ -132,7 +132,7 @@ try {
   const bootDeadline = Date.now() + 8_000;
   let card;
   while (Date.now() < bootDeadline) {
-    card = [...document.querySelectorAll('.note-stack .note-card')]
+    card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')]
       .find(node => (node.textContent || '').includes('AI 편집 런타임'));
     if (card) break;
     await wait(60);

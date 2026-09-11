@@ -118,7 +118,7 @@ try {
     // 이번 실행의 카드를 연다 (예전 실행의 2쪽 노트를 열지 않도록).
     let card = null;
     while (Date.now() - boot2 < 8_000 && !card) {
-      card = [...document.querySelectorAll('.note-stack .note-card')].find(c =>
+      card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')].find(c =>
         String(c.dataset.nbId || '') === want);
       if (!card) await wait(60);
     }

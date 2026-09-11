@@ -143,8 +143,8 @@ try {
   const reset = () => { const m = M(); m.docSnap = 0; m.ping = 0; m.persist = 0; m.contentScan = 0; };
 
   const boot = Date.now();
-  while (Date.now() - boot < 15_000 && !document.querySelector('.note-stack .note-card')) await wait(60);
-  const card = [...document.querySelectorAll('.note-stack .note-card')].find(c => (c.textContent || '').includes('편집 렉 확인'));
+  while (Date.now() - boot < 15_000 && !document.querySelector('.note-stack .note-card,.pro-grid .note-card')) await wait(60);
+  const card = [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')].find(c => (c.textContent || '').includes('편집 렉 확인'));
   check('똥컴 판정(body.sdy-turbo)으로 시작한다', document.body.classList.contains('sdy-turbo'));
   card.click();
   const openUntil = Date.now() + 25_000;

@@ -208,11 +208,11 @@ try {
 
   const dom = await boot();
   const { window } = dom, { document } = window;
-  await waitForSelector(dom, '.note-stack .note-card');
+  await waitForSelector(dom, '.note-stack .note-card,.pro-grid .note-card');
 
   console.log('\n── 준비: 에디터 열기 ──');
   const card = await waitFor('note card "요소클립보드"', () =>
-    [...document.querySelectorAll('.note-stack .note-card')].find((c) => (c.textContent || '').includes('요소클립보드')) || null);
+    [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')].find((c) => (c.textContent || '').includes('요소클립보드')) || null);
   card.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await waitFor('editorView open', () => document.getElementById('editorView').classList.contains('open') || null);
   await waitForSelector(dom, '#pagesStage .tb[data-id="t1"]');

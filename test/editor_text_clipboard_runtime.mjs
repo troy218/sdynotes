@@ -148,7 +148,7 @@ try {
   });
 
   const { window } = dom, { document } = window;
-  const card = await waitUntil(window, () => [...document.querySelectorAll('.note-stack .note-card')].find(c => (c.textContent || '').includes('텍스트클립')), 'note card');
+  const card = await waitUntil(window, () => [...document.querySelectorAll('.note-stack .note-card,.pro-grid .note-card')].find(c => (c.textContent || '').includes('텍스트클립')), 'note card');
   card.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
   await waitUntil(window, () => document.getElementById('editorView')?.classList.contains('open') && document.querySelector('#pagesStage .tb[data-id="t1"]'), 'editor open');
 

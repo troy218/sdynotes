@@ -87,7 +87,7 @@ async function loadPage(presetLS) {
   const { window } = dom, { document } = window;
   const t0 = Date.now();
   while (Date.now() - t0 < 20000) {
-    if (document.querySelector('#noteGrid .home-stack-area') || document.getElementById('splash')?.classList.contains('hide')) break;
+    if (document.querySelector('#noteGrid .home-stack-area,.pro-home') || document.getElementById('splash')?.classList.contains('hide')) break;
     await wait(150);
   }
   await wait(800);
@@ -109,6 +109,16 @@ try {
   check('첫 진입 data-theme=pro', d1.documentElement.dataset.theme === 'pro');
   check('첫 진입 .theme-pro 있음', d1.documentElement.classList.contains('theme-pro'));
   check('14.48 · 프로에는 .dark 없음', !d1.documentElement.classList.contains('dark'));
+  // 14.49 · 프로 앱 셸 — 사이드바 + 평평한 홈 그리드
+  const side1 = d1.getElementById('proSide');
+  check('14.49 · 사이드바 존재', !!side1);
+  check('14.49 · 프로에서 사이드바 보임', side1 && w1.getComputedStyle(side1).display === 'flex');
+  check('14.49 · 브랜드가 사이드바로 이동', !!d1.querySelector('#proBrandSlot .app-brand'));
+  check('14.49 · 헤더에 브랜드 없음', !d1.querySelector('#mainView .header .app-brand'));
+  check('14.49 · 내비게이션 렌더(파일·휴지통)', d1.querySelectorAll('#proNav .pro-nav-item').length >= 2);
+  check('14.49 · 프로 홈 = 평평한 그리드', !!d1.querySelector('#noteGrid .pro-home .pro-grid'));
+  check('14.49 · 프로 홈에 스택·펼침 영역 없음', !d1.querySelector('#noteGrid .home-stack-area'));
+  check('14.49 · 새 노트 버튼 존재', !!d1.querySelector('#noteGrid .pro-add-note'));
   check('sdyTheme()=pro', w1.sdyTheme() === 'pro');
   check('pickTheme/paintThemePicks 전역 노출', typeof w1.pickTheme === 'function' && typeof w1.paintThemePicks === 'function');
   check('구 darkTgl 요소 제거됨', !d1.getElementById('darkTgl'));
@@ -135,6 +145,9 @@ try {
   await wait(200);
   check('전환 후 data-theme=classic', d1.documentElement.dataset.theme === 'classic');
   check('전환 후 .theme-classic', d1.documentElement.classList.contains('theme-classic'));
+  check('14.49 · 클래식에서 사이드바 숨김', side1 && w1.getComputedStyle(side1).display === 'none');
+  check('14.49 · 클래식에서 브랜드 헤더로 복원', !!d1.querySelector('#mainView .header .app-brand'));
+  check('14.49 · 클래식 홈 = 기존 스택 레이아웃', !!d1.querySelector('#noteGrid .home-stack-area'));
   check('전환 후 .theme-pro/.dark 꺼짐', !d1.documentElement.classList.contains('theme-pro') && !d1.documentElement.classList.contains('dark'));
   check('클래식 카드에 .on 이동', !!d1.querySelector('.theme-pick[data-theme=classic].on'));
   const saved = JSON.parse(w1.localStorage.getItem('sdy3'));

@@ -94,6 +94,70 @@
     // 구버전 호환 — 예전 다크 토글 호출이 남아 있으면 테마 전환으로 동작
     function tglDark(){ try{ pickTheme(sdyTheme()==='pro'?'classic':'pro'); }catch(e){} }
 
+    // ===== 14.49 · PRO 앱 셸 (사이드바) =====
+    // 클래식에서는 #proSide가 CSS 로 숨겨지고 #proShell 은 display:contents 라
+    // 레이아웃이 기존과 동일하다. 프로에서는 브랜드(#mainView .app-brand)와
+    // 브레드크럼(#breadcrumb)을 물리적으로 사이드바·상단바로 옮기고,
+    // 클래식으로 돌아가면 원래 자리로 되돌린다.
+    function _proShellSwap(){
+        const pro=(typeof sdyTheme==='function'&&sdyTheme()==='pro');
+        const wfull=document.querySelector('#mainView .header .w-full');
+        const mainEl=document.querySelector('#mainView > main');
+        // .app-brand 는 문서에 하나 — 프로에선 #mainView 밖(사이드바)에 있으므로
+        // 전역으로 찾는다 (이동 후에도 복원 대상이 되어야 한다)
+        const brand=document.querySelector('.app-brand');
+        const bc=document.getElementById('breadcrumb');
+        const slot=document.getElementById('proBrandSlot');
+        if(!wfull||!mainEl) return;
+        if(brand){
+            if(pro){ if(slot&&brand.parentElement!==slot) slot.appendChild(brand); }
+            else { if(brand.parentElement!==wfull) wfull.insertBefore(brand,wfull.firstChild); }
+        }
+        if(bc){
+            if(pro){ if(bc.parentElement!==wfull) wfull.insertBefore(bc,wfull.firstChild); }
+            else { if(bc.parentElement!==mainEl) mainEl.insertBefore(bc,mainEl.firstChild); }
+        }
+        try{ if(typeof paintProSide==='function') paintProSide(); }catch(e){}
+    }
+    // 사이드바 내비게이션 + 폴더 목록 렌더 (renderGrid·applyTheme 에서 갱신)
+    function paintProSide(){
+        const nav=document.getElementById('proNav');
+        const folds=document.getElementById('proFolders');
+        if(!nav||!folds) return;
+        let atRoot=true;
+        try{ atRoot=!curFolder&&!searchQuery; }catch(e){}
+        nav.innerHTML=
+            `<button type="button" class="pro-nav-item${atRoot?' on':''}" onclick="openFolder(null)"><i class="ri-file-list-3-line"></i><span>파일</span></button>`+
+            `<button type="button" class="pro-nav-item" onclick="openTrash()"><i class="ri-delete-bin-7-line"></i><span>휴지통</span></button>`;
+        let html='';
+        try{
+            (childFolders(null)||[]).forEach(f=>{
+                const locked=isFolderLocked(f.id);
+                const open=isFolderOpen(f.id);
+                let active=false;
+                try{ active=!!curFolder&&folderPath(curFolder).some(x=>x.id===f.id); }catch(e){}
+                html+=`<button type="button" class="pro-fold-item${active?' on':''}" onclick="openFolder('${f.id}')">`+
+                    `<i class="${(locked&&!open)?'ri-folder-lock-fill':(f.icon||'ri-folder-3-fill')}" style="color:${f.color||'var(--accent)'}"></i>`+
+                    `<span class="pf-name">${esc(f.name)}</span>`+
+                    `<span class="pf-count">${folderCount(f.id)||0}</span></button>`;
+            });
+        }catch(e){}
+        folds.innerHTML=html||'<div class="pro-fold-empty">폴더가 없습니다</div>';
+    }
+    // 사이드바 '음악' — 음악바가 접혀 있으면 펼친 뒤 목록을 연다
+    function proOpenMusic(){
+        try{
+            const reopen=document.getElementById('mpReopen');
+            if(reopen){
+                let visible=true;
+                try{ visible=getComputedStyle(reopen).display!=='none'; }catch(e){ visible=reopen.style.display!=='none'; }
+                if(!visible) reopen.click();
+            }
+            const ml=document.getElementById('mpList');
+            if(ml) ml.click();
+        }catch(e){}
+    }
+
     // ── 앱 전체 설정 동기화 ────────────────────────────────
     // 테마·강조색·기본 글꼴/크기·제목·카드 크기와 함께 브라우저에서
     // 기억하던 작은 UI 상태도 한 묶음으로 동기화한다.
