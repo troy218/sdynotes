@@ -391,6 +391,7 @@
     var v=$('ypChipVoice');
     var vc=0; YP.members.forEach(function(m){ if(m.voice&&m.uid!==YP.uid) vc++; });
     if(v){ v.innerHTML='<i class="ri-mic-fill"></i>'+vc; v.style.display=vc>0?'flex':'none'; }
+    var pv=$('proYpBadgeVoice'); if(pv){ pv.innerHTML='<i class="ri-mic-fill"></i> '+vc; pv.style.display=vc>0?'inline-flex':'none'; }
   }
   function ypMembersFrom(arr){
     var prev=new Map();
@@ -893,7 +894,7 @@
     fetch('/api/chat/knock',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({uid:YP.uid})}).catch(function(){});
   }
-  function ypChipShake(){ var c=$('ypReopen'); if(!c) return; c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); }
+  function ypChipShake(){ var c=$('ypReopen'); if(c){ c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); } var p=$('proYpBtn'); if(p){ p.classList.remove('shake'); void p.offsetWidth; p.classList.add('shake'); } }
 
   // ── 메시지/파일 ──
   // 즉시 전송: 내 메시지는 서버 왕복을 기다리지 않고 먼저 화면에 띄우고,
@@ -1116,6 +1117,7 @@
     app.classList.remove('closing');
     app.classList.add('open'); YP.open=true;
     if(chip) chip.style.display='none';
+    var pb=$('proYpBtn'); if(pb) pb.classList.add('on');
     var b=$('ypBody'); b.scrollTop=b.scrollHeight;
     try{ $('ypTxt').focus(); }catch(e){}
   }
@@ -1124,6 +1126,7 @@
     var app=$('ypApp'), chip=$('ypReopen');
     if(_ypClosing||!app.classList.contains('open')) return;
     _ypClosing=true;
+    var pb=$('proYpBtn'); if(pb) pb.classList.remove('on');
     app.classList.add('closing');
     var row=$('ypReactRow'), em=$('ypEmoji'), st=$('ypSettings');
     if(row)row.classList.remove('open'); if(em)em.classList.remove('open'); if(st)st.classList.remove('open');
@@ -1359,6 +1362,7 @@
       chip.style.display=total>0?'flex':'none';
       chip.textContent=total>99?'99+':String(total);
     }
+    var pd=$('proYpBadgeDm'); if(pd){ pd.textContent=total>99?'99+':String(total); pd.style.display=total>0?'inline-flex':'none'; }
     var fd=$('ypFrDot');
     if(fd){ fd.style.display=(total+reqs)>0?'inline-block':'none'; fd.textContent=String(Math.min(99,total+reqs)); }
   }
@@ -1649,7 +1653,7 @@
       return;
     }
   }
-  function yfChipShakeDm(){ var c=$('ypReopen'); if(!c||YP.open) return; c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); }
+  function yfChipShakeDm(){ if(YP.open) return; var c=$('ypReopen'); if(c){ c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); } var p=$('proYpBtn'); if(p){ p.classList.remove('shake'); void p.offsetWidth; p.classList.add('shake'); } }
   function yfStream(tk){
     if(YF.es){ try{YF.es.close();}catch(e){} YF.es=null; }
     var es;

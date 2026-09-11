@@ -7599,6 +7599,19 @@ html.theme-pro #ypReopen{
   box-shadow:0 1px 2px rgba(23,28,41,.08),0 8px 20px -8px rgba(23,28,41,.22);
 }
 html.theme-pro #ypReopen svg{color:#FF7A45;}
+/* 14.52-S · PRO 사이드바 엽스코드 — 떠 있던 칩을 품고, 기존 자리에서는 숨긴다 */
+html.theme-pro #ypReopen{display:none!important;}
+html.theme-pro #proYpBtn{position:relative;}
+html.theme-pro #proYpBtn .pro-yp-badges{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:flex-end;gap:3px;pointer-events:none;}
+html.theme-pro #proYpBtn .pro-yp-bdg{min-width:18px;height:18px;border-radius:999px;display:none;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;line-height:1;padding:0 5px;border:2px solid #FBFCFE;box-shadow:0 0 0 1px rgba(23,28,41,.06);gap:2px;white-space:nowrap;}
+html.theme-pro #proYpBtn .pro-yp-bdg.voice{background:#22c55e;color:#052e16;box-shadow:0 0 0 2px #FBFCFE,0 0 10px rgba(34,197,94,.8);}
+html.theme-pro #proYpBtn .pro-yp-bdg.dm{background:linear-gradient(135deg,#f43f5e,#ef4444);color:#fff;box-shadow:0 0 0 2px #FBFCFE;}
+html.theme-pro #proYpBtn.shake{animation:ypShake .4s ease;}
+/* 레일(60px)에서는 라벨이 없으니 배지를 버튼 우상단으로 */
+@media (max-width:1023px){
+  html.theme-pro #proYpBtn .pro-yp-badges{right:2px;top:2px;transform:none;gap:2px;}
+  html.theme-pro #proYpBtn .pro-yp-bdg{font-size:9.5px;min-width:16px;height:16px;padding:0 4px;border-width:1.5px;}
+}
 /* 입장 게이트 — 프로 모달 톤 */
 html.theme-pro #ypGate{background:rgba(23,28,41,.44);backdrop-filter:blur(3px);}
 html.theme-pro .ypg-card{
@@ -7623,6 +7636,13 @@ html.theme-pro .ypg-btn.main{
 html.theme-pro .ypg-btn.main:hover{background:var(--accent2);border-color:var(--accent2);}
 html.theme-pro .ypg-btn.main>i{color:#fff;}
 html.theme-pro .ypg-btn.main em{color:rgba(255,255,255,.78);}
+/* 14.52-S · PRO 엽스코드 패널은 사이드바 오른쪽에 도킹 — 음악 바와 같은 오프셋 */
+@media (min-width:641px){
+  html.theme-pro #ypApp{left:260px!important;right:auto!important;bottom:14px!important;top:auto!important;}
+}
+@media (min-width:641px) and (max-width:1023px){
+  html.theme-pro #ypApp{left:72px!important;width:min(370px,calc(100vw - 84px))!important;}
+}
 
 /* ── 14.51-R · 플로팅 요소 위치 — 프로 셸(사이드바/레일) 기준 재배치 ── */
 /* 데스크톱: 선택막대를 콘텐츠 영역 중앙으로 (화면 중앙이 아닌) */
