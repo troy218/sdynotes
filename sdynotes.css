@@ -7003,16 +7003,6 @@ html.theme-pro .app-brand .logo-dot{
   background:linear-gradient(135deg,#5B7CFF,#8B5CF6 60%,#A855F7);
   border:1px solid rgba(255,255,255,.20);
   box-shadow:0 4px 16px rgba(91,124,255,.50),inset 0 1px 0 rgba(255,255,255,.35);
-  position:relative;
-}
-html.theme-pro .app-brand .logo-dot::after{
-  content:'PRO';position:absolute;right:-10px;top:-8px;
-  font-family:'Pretendard Variable',Pretendard,sans-serif;
-  font-size:8px;font-weight:800;letter-spacing:.07em;line-height:1;
-  padding:3px 5px;border-radius:6px;color:#fff;background:var(--grad);
-  border:1px solid rgba(255,255,255,.25);
-  box-shadow:0 3px 10px rgba(91,124,255,.55);
-  pointer-events:none;
 }
 html.theme-pro .header #searchInput{
   background:rgba(148,163,190,.09)!important;
@@ -7296,7 +7286,6 @@ html.theme-pro .find-hit{background:rgba(250,204,21,.40);}
 html.theme-pro .tb-move{background:#8FA0FF;}
 @media (prefers-reduced-motion:reduce){
   html.theme-pro .note-card::after{transition:none;}
-  html.theme-pro .app-brand .logo-dot::after{box-shadow:none;}
 }
 
 
