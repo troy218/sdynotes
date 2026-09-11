@@ -97,8 +97,11 @@ check('프런트: 보내기 버튼이 없다 — Enter 만 누르면 바로 묻�
 check('프런트: 해돌이 판단 표식을 파싱해 딱지로 단다',
   /function parseChat\(/.test(js) && /\[\[note\]\]/.test(js)
   && /노트 질문/.test(js) && /자유 질문/.test(js));
-check('프런트: 말풍선은 사용자가 닫기 전까지 유지된다 (닫기는 sdyAiSayClose/노트 닫힘뿐)',
-  (js.match(/sayHide\(\)/g) || []).length === 3)  // 정의 1 + 호출 2;
+// 14.62 · 대화기록을 열 때는 말풍선을 닫는다(겹침 제거) — 사용자가 시킨 동작이라
+//   닫는 자리로 인정한다. 그 외에 스스로 사라지는 곳이 없어야 한다.
+check('프런트: 말풍선은 사용자가 닫기 전까지 유지된다 (닫기는 sdyAiSayClose/노트 닫힘/대화기록 열기뿐)',
+  (js.match(/sayHide\(\)/g) || []).length === 4   // 정의 1 + 호출 3
+  && /window\.sdyAiHistToggle=function\(\)\{[\s\S]{0,700}?sayHide\(\);/.test(js));
 check('프런트: 대화기록은 해돌이 클릭으로 열고 최대 40개다',
   /window\.sdyAiHistToggle/.test(js) && /HIST_MAX=40/.test(js)
   && /no\.addEventListener\('click',function\(\)\{ window\.sdyAiHistToggle\(\); \}\)/.test(js));
@@ -298,9 +301,13 @@ check('CSS: 질문칸 폭은 --ai-q-w 를 따라 유동적이다',
   && /\.ai-q-mirror\{/.test(css));
 
 check('CSS: 말풍선에 해돌이 쪽(아래)을 가리키는 꼬리가 있다', /\.ai-say::after\{[^}]*bottom:-9px/.test(css));
-check('CSS: 말풍선은 유리 토큰(var(--g-*))으로만 칠한다',
-  /\.ai-say\{[^}]*background:var\(--g-fill-strong\)/.test(css)
-  && !/\.ai-say\{[^}]*#[0-9a-fA-F]{3,6}/.test(css));
+// 14.62 · 프로 테마 말풍선은 유리 대신 플랫 흰 카드로 바뀌었다(사용자가 시킨 방향).
+//   유리 토큰 계약은 기본(라이트 유리) 규칙에만 적용한다 — 프로 테마 규칙은
+//   주석·html.theme-pro 블록을 걷어낸 뒤 검사한다.
+const cssBase = css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/html\.theme-pro[^{}]*\{[^{}]*\}/g, '');
+check('CSS: 말풍선은 유리 토큰(var(--g-*))으로만 칠한다(기본 테마)',
+  /\.ai-say\{[^}]*background:var\(--g-fill-strong\)/.test(cssBase)
+  && !/\.ai-say\{[^}]*#[0-9a-fA-F]{3,6}/.test(cssBase));
 check('CSS: 검색창은 한 줄 필(pill) 모양이다', /\.ai-askbar-field\{[^}]*border-radius:999px/.test(css));
 check('CSS: 종류 딱지(.ai-kind) 스타일이 있다', /\.ai-kind\{/.test(css));
 check('CSS: 좁은 화면에서는 말풍선이 좌우 가득', /@media \(max-width:640px\)\{[\s\S]*\.ai-say\{left:10px;right:10px;/.test(css));

@@ -35,15 +35,19 @@ assert.doesNotMatch(block,/window\.sdyClampFloatingRect[\s\S]*?Math\.max\(\s*Mat
 /* 창마다 '이동'과 '화면 밖 되돌림' 이 모두 공용 경계 함수를 지나야 한다.
    - innerWidth·innerHeight 로 미리 자르면 단위 혼동으로 오른쪽이 막힌다.
    - 포인터 델타를 UI CSS px 로 환산하지 않으면 90% 배율에서 창이 커서와 어긋난다. */
-for(const [name,head] of [
-    ['엽스코드',"function ypDrag("],
-    ['음악플레이어 큰 창',"function clampMpb("],
-    ['음악 바',"pl.addEventListener('pointerdown'"],
-    ['단어카드',"function _fcardPlace("],
+/* 14.65 · 창 크기는 '그 창의 이동 코드가 들어오는 만큼'만 잡는다.
+   clampMpb 는 14.64 에서 프로 사이드바 중앙 정렬·창→창 복귀 목표 크기 계산이
+   붙어 드래그 핸들러(pointermove)까지 3100자를 넘겼다. 예전처럼 3000자로
+   자르면 코드는 멀쩡한데 검사만 실패한다 — 이 창만 창을 넓게 잡는다. */
+for(const [name,head,span] of [
+    ['엽스코드',"function ypDrag(",3000],
+    ['음악플레이어 큰 창',"function clampMpb(",4600],
+    ['음악 바',"pl.addEventListener('pointerdown'",3000],
+    ['단어카드',"function _fcardPlace(",3000],
 ]){
   const i=js.indexOf(head);
   assert.ok(i>0,name+' 이동 코드를 찾지 못함');
-  const seg=js.slice(i,i+3000);
+  const seg=js.slice(i,i+span);
   assert.match(seg,/sdyClampFloatingRect\(/,name+' 창은 공용 경계 함수를 써야 한다');
   assert.match(seg,/sdyUiCss\(e\.client[XY]-/,name+' 는 포인터 델타를 UI CSS px 로 환산해야 한다');
   assert.doesNotMatch(seg,/Math\.min\(\s*(window\.)?inner(Width|Height)\s*-\s*[a-zA-Z]/,

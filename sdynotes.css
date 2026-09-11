@@ -8409,6 +8409,22 @@ html.theme-pro .pro-tools .notif-badge{border-color:var(--card);}
   html.theme-pro .pro-state #offlineBadge span{display:none;}
 }
 
+/* 14.61 · add-card 가 진짜 <button> 이 된 뒤 UA 기본 모양을 클래스 규칙으로 되돌린다 */
+button.add-card{appearance:none;-webkit-appearance:none;font:inherit;color:inherit;padding:0;}
+button.add-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* ═══ 14.63 · 브랜드 왼쪽 정렬 — 로고·SDYnotes 를 사이드바 왼쪽에 맞춘다 ═══
+   너무 붙이지 않게 왼쪽 20px 여백 — 폴더·내비 항목 아이콘(왼쪽 22px)과 비슷한 간격.
+   좁은 화면 레일(≤1023)은 아이콘 레일이므로 그대로 중앙 정렬. */
+html.theme-pro .pro-brand{align-items:flex-start;text-align:left;padding:20px 12px 14px 20px;}
+html.theme-pro .pro-brand .app-brand{justify-content:flex-start;}
+html.theme-pro .pro-brand .app-brand h1{text-align:left;}
+html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
+@media (max-width:1023px){
+  html.theme-pro .pro-brand{align-items:center;text-align:center;padding:12px 0 10px;}
+  html.theme-pro .pro-brand .app-brand{justify-content:center;}
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 
@@ -9016,20 +9032,3 @@ html.theme-pro .pro-tools .notif-badge{border-color:var(--card);}
     transform:translateY(-50%);width:clamp(104px,12vw,150px);
   }
 }
-
-/* 14.61 · add-card 가 진짜 <button> 이 된 뒤 UA 기본 모양을 클래스 규칙으로 되돌린다 */
-button.add-card{appearance:none;-webkit-appearance:none;font:inherit;color:inherit;padding:0;}
-button.add-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-
-/* ═══ 14.63 · 브랜드 왼쪽 정렬 — 로고·SDYnotes 를 사이드바 왼쪽에 맞춘다 ═══
-   너무 붙이지 않게 왼쪽 20px 여백 — 폴더·내비 항목 아이콘(왼쪽 22px)과 비슷한 간격.
-   좁은 화면 레일(≤1023)은 아이콘 레일이므로 그대로 중앙 정렬. */
-html.theme-pro .pro-brand{align-items:flex-start;text-align:left;padding:20px 12px 14px 20px;}
-html.theme-pro .pro-brand .app-brand{justify-content:flex-start;}
-html.theme-pro .pro-brand .app-brand h1{text-align:left;}
-html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
-@media (max-width:1023px){
-  html.theme-pro .pro-brand{align-items:center;text-align:center;padding:12px 0 10px;}
-  html.theme-pro .pro-brand .app-brand{justify-content:center;}
-}
-
