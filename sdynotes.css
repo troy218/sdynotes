@@ -7074,6 +7074,7 @@ html.theme-pro .folder-thumb>i{filter:none;opacity:.85;}
 html.theme-pro .add-card{
   border:1px dashed #C9CFDB;background:transparent;color:var(--text3);
 }
+html.theme-pro .add-card{display:none!important;}
 html.theme-pro .add-card:hover{
   border-color:color-mix(in srgb,var(--accent) 60%,var(--border));
   color:var(--accent);
@@ -7508,6 +7509,7 @@ html.theme-pro #mpReopen{
   box-shadow:0 1px 2px rgba(23,28,41,.08),0 8px 20px -8px rgba(23,28,41,.22);
   backdrop-filter:none;-webkit-backdrop-filter:none;
 }
+html.theme-pro #mpReopen{display:none!important;}
 html.theme-pro #mpBig{
   background:rgba(255,255,255,.97)!important;
   border:1px solid var(--border)!important;
@@ -7842,17 +7844,19 @@ html.theme-pro .pro-tools button[onclick="openCards()"],
 html.theme-pro .pro-tools button[onclick="openSettings()"]{display:none!important;}
 html.theme-pro .pro-tools .search-wrap{order:-1;width:100%;}
 html.theme-pro .pro-tools #searchInput{display:block!important;width:100%!important;min-width:0;}
-html.theme-pro #mainView > main{padding:28px clamp(16px,3vw,48px) 40px!important;}
-html.theme-pro #noteGrid{padding:0;align-items:stretch;}
-html.theme-pro #breadcrumb{padding:0 0 12px;flex-wrap:wrap;gap:6px;line-height:1.6;}
+html.theme-pro #mainView{overflow:visible;}
+html.theme-pro #mainView > main{padding:28px clamp(16px,3vw,48px) 40px!important;overflow:visible;}
+html.theme-pro #noteGrid{padding:0 8px 0 12px;align-items:stretch;overflow:visible;}
+html.theme-pro #breadcrumb{padding:0 0 12px 4px;flex-wrap:wrap;gap:6px;line-height:1.6;overflow:visible;max-width:100%;}
 html.theme-pro #breadcrumb > *{min-width:0;max-width:100%;overflow-wrap:anywhere;white-space:normal;}
 html.theme-pro #breadcrumb button{flex-shrink:0;text-align:left;}
 html.theme-pro #breadcrumb i{flex-shrink:0;}
-html.theme-pro #noteGrid .add-card{
-  aspect-ratio:auto;min-height:0!important;align-self:stretch;
-  height:100%!important;
+@media(max-width:1023px){
+  html.theme-pro #mainView > main{padding-left:12px!important;padding-right:12px!important;}
+  html.theme-pro #noteGrid{padding-left:8px;padding-right:8px;}
 }
-html.theme-pro #noteGrid .add-card:only-child{aspect-ratio:4/5;height:auto!important;}
+html.theme-pro #noteGrid .add-card{display:none!important;}
+html.theme-pro #noteGrid .add-card:only-child{display:none!important;}
 html.theme-pro #noteGrid .note-preview{background:#eef0f5;}
 @media(max-width:1023px){
   html.theme-pro .pro-brand .app-brand{display:flex;justify-content:center;}
@@ -7900,17 +7904,17 @@ html.theme-pro .pro-results-clear:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px;
 }
 @media(min-width:1024px){
-  html.theme-pro .pro-tools{padding-bottom:16px;border-bottom:1px solid var(--border);margin:0 10px 4px;padding-left:2px;padding-right:2px;}
+  html.theme-pro .pro-tools{padding-bottom:12px;border-bottom:1px solid var(--border);margin:0 10px 8px;padding-left:2px;padding-right:2px;}
   html.theme-pro .pro-tools .tool-btn[data-pro-label]{
-    display:flex;align-items:center;justify-content:flex-start;gap:8px;
-    width:calc(50% - 3px);height:40px;padding:0 8px;background:transparent;
+    display:flex;align-items:center;justify-content:center;gap:0;
+    width:40px;height:40px;padding:0;background:#FFFFFF;border:1px solid var(--border);border-radius:9px;flex:none;
   }
   html.theme-pro .pro-tools .tool-btn[data-pro-label]::after{
-    content:attr(data-pro-label);font-size:12px;font-weight:600;white-space:nowrap;color:var(--text2);
+    content:none!important;display:none!important;
   }
-  html.theme-pro .pro-tools .tool-btn:hover{background:#eef0f5;}
-  html.theme-pro .pro-tools .search-wrap{margin-bottom:6px;}
-  html.theme-pro .pro-tools #srvGauge{order:2;margin-left:8px;}
+  html.theme-pro .pro-tools .tool-btn:hover{background:#eef0f5;border-color:#dfe3eb;}
+  html.theme-pro .pro-tools .search-wrap{margin-bottom:8px;}
+  html.theme-pro .pro-tools #srvGauge{order:2;margin-left:4px;}
   html.theme-pro .pro-tools #offlineBadge{order:3;max-width:100%;}
 }
 @media(max-width:1023px){

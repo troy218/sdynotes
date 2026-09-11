@@ -591,15 +591,8 @@
             let nFoldCards=0;
             try{ childFolders(null).forEach(f=>{ grid.appendChild(_makeFolderCard(f)); nFoldCards++; }); }catch(e){}
             recentNotes.concat(stackNotes).forEach(nb=>grid.appendChild(_makeCard(nb)));
-            if(!selectMode){
-                const add2=document.createElement('button');
-                add2.type='button';
-                add2.setAttribute('aria-label','새 노트 만들기');
-                add2.className='add-card';
-                add2.innerHTML='<i class="ri-add-line" aria-hidden="true"></i><span>새 노트 만들기</span>';
-                add2.onclick=openCreateModal;
-                grid.appendChild(add2);
-            }
+            // pro: note-shaped add-card 숨김 — 상단 파란 버튼(pro-add-note)만 사용
+            void 0;
             if(!nFoldCards&&!recentNotes.length&&!stackNotes.length){
                 const empty=document.createElement('div');
                 empty.className='pro-home-empty';
@@ -727,12 +720,10 @@
                 empty.innerHTML='<i class="ri-search-line" aria-hidden="true"></i><strong>검색 결과가 없습니다</strong><span>다른 검색어를 입력하거나 검색을 지워 전체 노트를 확인하세요.</span>';
                 g.appendChild(empty);
             }
-            if(!selectMode&&!(proOn&&searchQuery)){
-                const add=document.createElement(proOn?'button':'div');
-                if(proOn){ add.type='button'; add.setAttribute('aria-label','새 노트 만들기'); }
+            if(!selectMode&&!proOn){
+                const add=document.createElement('div');
                 add.className='add-card';
                 add.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
-                if(proOn) add.innerHTML='<i class="ri-add-line" aria-hidden="true"></i><span>새 노트 만들기</span>';
                 add.onclick=openCreateModal;
                 g.appendChild(add);
             }

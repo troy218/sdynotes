@@ -124,10 +124,10 @@
             bookmarks._responsiveReady=true;
             const narrow=()=>window.innerWidth<1024;
             let wasNarrow=narrow();
-            bookmarks.open=!wasNarrow;
+            bookmarks.open=false;
             window.addEventListener('resize',()=>{
                 const next=narrow();
-                if(next!==wasNarrow){ bookmarks.open=!next; wasNarrow=next; }
+                if(next!==wasNarrow){ wasNarrow=next; }
             });
             document.addEventListener('click',event=>{
                 if(narrow()&&bookmarks.open&&!bookmarks.contains(event.target)) bookmarks.open=false;
@@ -179,14 +179,16 @@
         }catch(e){}
         folds.innerHTML=html||'<div class="pro-fold-empty">폴더가 없습니다</div>';
     }
-    // 사이드바 '음악' — 음악바가 접혀 있으면 펼친 뒤 목록을 연다
+    // 사이드바 '음악' — 프로에서는 떠 있는 칩이 없으므로 플레이어를 직접 열고 목록을 띄운다
     function proOpenMusic(){
         try{
-            const reopen=document.getElementById('mpReopen');
-            if(reopen){
-                let visible=true;
-                try{ visible=getComputedStyle(reopen).display!=='none'; }catch(e){ visible=reopen.style.display!=='none'; }
-                if(!visible) reopen.click();
+            const pl=document.getElementById('musicPlayer');
+            if(pl){
+                const hidden=pl.style.display==='none'||getComputedStyle(pl).display==='none';
+                if(hidden){
+                    pl.style.display='flex';
+                    try{ window.__mpChipOpened=true; }catch(e){}
+                }
             }
             const ml=document.getElementById('mpList');
             if(ml) ml.click();

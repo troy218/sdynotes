@@ -785,10 +785,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             bookmarks._responsiveReady=true;
             const narrow=()=>window.innerWidth<1024;
             let wasNarrow=narrow();
-            bookmarks.open=!wasNarrow;
+            bookmarks.open=false;
             window.addEventListener('resize',()=>{
                 const next=narrow();
-                if(next!==wasNarrow){ bookmarks.open=!next; wasNarrow=next; }
+                if(next!==wasNarrow){ wasNarrow=next; }
             });
             document.addEventListener('click',event=>{
                 if(narrow()&&bookmarks.open&&!bookmarks.contains(event.target)) bookmarks.open=false;
@@ -840,14 +840,16 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         }catch(e){}
         folds.innerHTML=html||'<div class="pro-fold-empty">폴더가 없습니다</div>';
     }
-    // 사이드바 '음악' — 음악바가 접혀 있으면 펼친 뒤 목록을 연다
+    // 사이드바 '음악' — 프로에서는 떠 있는 칩이 없으므로 플레이어를 직접 열고 목록을 띄운다
     function proOpenMusic(){
         try{
-            const reopen=document.getElementById('mpReopen');
-            if(reopen){
-                let visible=true;
-                try{ visible=getComputedStyle(reopen).display!=='none'; }catch(e){ visible=reopen.style.display!=='none'; }
-                if(!visible) reopen.click();
+            const pl=document.getElementById('musicPlayer');
+            if(pl){
+                const hidden=pl.style.display==='none'||getComputedStyle(pl).display==='none';
+                if(hidden){
+                    pl.style.display='flex';
+                    try{ window.__mpChipOpened=true; }catch(e){}
+                }
             }
             const ml=document.getElementById('mpList');
             if(ml) ml.click();
@@ -2692,15 +2694,8 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
             let nFoldCards=0;
             try{ childFolders(null).forEach(f=>{ grid.appendChild(_makeFolderCard(f)); nFoldCards++; }); }catch(e){}
             recentNotes.concat(stackNotes).forEach(nb=>grid.appendChild(_makeCard(nb)));
-            if(!selectMode){
-                const add2=document.createElement('button');
-                add2.type='button';
-                add2.setAttribute('aria-label','새 노트 만들기');
-                add2.className='add-card';
-                add2.innerHTML='<i class="ri-add-line" aria-hidden="true"></i><span>새 노트 만들기</span>';
-                add2.onclick=openCreateModal;
-                grid.appendChild(add2);
-            }
+            // pro: note-shaped add-card 숨김 — 상단 파란 버튼(pro-add-note)만 사용
+            void 0;
             if(!nFoldCards&&!recentNotes.length&&!stackNotes.length){
                 const empty=document.createElement('div');
                 empty.className='pro-home-empty';
@@ -2828,12 +2823,10 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
                 empty.innerHTML='<i class="ri-search-line" aria-hidden="true"></i><strong>검색 결과가 없습니다</strong><span>다른 검색어를 입력하거나 검색을 지워 전체 노트를 확인하세요.</span>';
                 g.appendChild(empty);
             }
-            if(!selectMode&&!(proOn&&searchQuery)){
-                const add=document.createElement(proOn?'button':'div');
-                if(proOn){ add.type='button'; add.setAttribute('aria-label','새 노트 만들기'); }
+            if(!selectMode&&!proOn){
+                const add=document.createElement('div');
                 add.className='add-card';
                 add.innerHTML='<i class="ri-add-line" style="font-size:38px;opacity:.8"></i>';
-                if(proOn) add.innerHTML='<i class="ri-add-line" aria-hidden="true"></i><span>새 노트 만들기</span>';
                 add.onclick=openCreateModal;
                 g.appendChild(add);
             }
