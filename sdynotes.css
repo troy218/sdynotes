@@ -7959,30 +7959,30 @@ html.theme-pro .editor-toolbar button:disabled{opacity:.4;cursor:not-allowed;box
   html.theme-pro .editor-toolbar{
     display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;
     grid-template-areas:"title actions" "tools tools";
-    height:auto!important;min-height:110px!important;padding:10px 20px 12px!important;
-    gap:8px 20px;overflow:visible!important;
+    height:auto!important;min-height:0!important;padding:6px 16px 7px!important;
+    gap:4px 12px;overflow:visible!important;
   }
   html.theme-pro .editor-toolbar .tb-left{grid-area:title;}
   html.theme-pro .editor-toolbar .tb-right{grid-area:actions;gap:8px;}
   html.theme-pro .editor-toolbar .tb-title-wrap{flex-wrap:wrap;gap:0 12px;}
   html.theme-pro .editor-toolbar #edTitle{
-    width:100%;max-width:440px;min-width:80px;height:36px;
-    font-size:14px!important;font-weight:500!important;padding:6px 8px!important;
+    width:100%;max-width:440px;min-width:80px;height:32px;
+    font-size:14px!important;font-weight:500!important;padding:5px 8px!important;
   }
   html.theme-pro .editor-toolbar #saveState{font-size:11px!important;}
   html.theme-pro .editor-toolbar .tb-mid{
     grid-area:tools;justify-self:stretch;justify-content:flex-start;flex-wrap:wrap;
-    gap:8px!important;border-top:1px solid var(--border);padding-top:8px;
+    gap:6px!important;border-top:1px solid var(--border);padding-top:5px;
   }
   html.theme-pro .editor-toolbar .tb-mid > .tool-sep{display:none;}
   html.theme-pro .editor-toolbar .tb-group{
     position:relative;gap:2px;background:#f6f7fa!important;border:1px solid #e6e9ef!important;
-    padding:4px!important;border-radius:6px!important;
+    padding:3px!important;border-radius:6px!important;
   }
-  html.theme-pro .editor-toolbar .tb-mid > .tb-group{padding-top:21px!important;}
+  html.theme-pro .editor-toolbar .tb-mid > .tb-group{padding-top:17px!important;}
   html.theme-pro .editor-toolbar .tb-mid > .tb-group::before{
-    content:attr(data-tool-group);position:absolute;top:4px;left:9px;
-    font-size:10px;font-weight:600;line-height:13px;color:var(--text3);pointer-events:none;
+    content:attr(data-tool-group);position:absolute;top:3px;left:8px;
+    font-size:9px;font-weight:600;line-height:11px;color:var(--text3);pointer-events:none;
   }
   html.theme-pro .editor-toolbar .tool-btn,
   html.theme-pro .editor-toolbar .tool-btn.sm{width:34px!important;height:34px!important;font-size:18px!important;}
