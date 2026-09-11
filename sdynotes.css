@@ -676,7 +676,7 @@
 
         .note-grid{
             display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;
-            gap:20px;padding:0 20px;width:100%;
+            gap:8px;padding:0 4px;width:100%;
         }
         @media(max-width:640px){
             .note-grid{gap:10px;padding:0 10px;justify-content:flex-start;}
@@ -804,7 +804,7 @@
         .ficon-btn:hover{border-color:var(--accent);color:var(--accent);}
         .ficon-btn.on{border-color:var(--accent);color:#fff;background:var(--accent);}
         .breadcrumb{
-            display:flex;align-items:center;gap:8px;padding:0 26px 6px;font-size:13px;color:var(--text2);
+            display:flex;align-items:center;gap:6px;padding:0 4px 4px;font-size:13px;color:var(--text2);
         }
         .breadcrumb button{
             background:none;border:none;color:var(--accent);cursor:pointer;font-size:13px;
@@ -1057,7 +1057,7 @@
         /* ===== 페이지 스택 ===== */
         .editor-main{flex:1;display:flex;min-height:0;position:relative;}
         .editor-body{
-            flex:1;overflow:auto;scroll-behavior:smooth;padding:20px;min-width:0;
+            flex:1;overflow:auto;scroll-behavior:smooth;padding:4px;min-width:0;
             overflow-anchor:none;
         }
         /* ===== 세로 도구막대 ===== */
@@ -7414,8 +7414,8 @@ html.theme-pro .breadcrumb button{border-radius:7px;}
 html.theme-pro #searchInput{width:240px!important;height:36px!important;border-radius:9px!important;}
 
 /* ── 14.49-M · PRO 홈 — 스택·펼침 없는 평평한 전문 그리드 ── */
-html.theme-pro #noteGrid{display:block;padding:0 20px;}
-html.theme-pro .pro-home-bar{display:flex;align-items:center;gap:10px;margin:4px 2px 14px;}
+html.theme-pro #noteGrid{display:block;padding:0 4px;}
+html.theme-pro .pro-home-bar{display:flex;align-items:center;gap:8px;margin:2px 2px 8px;}
 html.theme-pro .pro-home-bar .home-section-title{margin:0;}
 html.theme-pro .pro-home-count{font-size:12.5px;color:var(--text3);font-weight:600;white-space:nowrap;}
 html.theme-pro .pro-add-note{
@@ -7428,7 +7428,7 @@ html.theme-pro .pro-add-note{
 }
 html.theme-pro .pro-add-note:hover{background:var(--accent2);border-color:var(--accent2);}
 html.theme-pro .pro-add-note:active{transform:scale(.98);}
-html.theme-pro .pro-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:14px;}
+html.theme-pro .pro-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:8px;}
 html.theme-pro .pro-home-empty{
   grid-column:1/-1;display:flex;flex-direction:column;align-items:center;gap:10px;
   color:var(--text3);font-size:14px;padding:60px 0;text-align:center;
@@ -7942,15 +7942,15 @@ html.theme-pro .pro-tools button[onclick="openSettings()"]{display:none!importan
 html.theme-pro .pro-tools .search-wrap{order:0;flex:1 1 140px;min-width:110px;max-width:190px;width:auto;margin-left:auto;}
 html.theme-pro .pro-tools #searchInput{display:block!important;width:100%!important;min-width:0;height:32px!important;border-radius:4px!important;}
 html.theme-pro #mainView{overflow:visible;}
-html.theme-pro #mainView > main{padding:28px clamp(16px,3vw,48px) 40px!important;overflow:visible;}
-html.theme-pro #noteGrid{padding:0 8px 0 12px;align-items:stretch;overflow:visible;}
-html.theme-pro #breadcrumb{padding:0 0 12px 4px;flex-wrap:wrap;gap:6px;line-height:1.6;overflow:visible;max-width:100%;}
+html.theme-pro #mainView > main{padding:10px clamp(8px,1.5vw,16px) 16px!important;overflow:visible;}
+html.theme-pro #noteGrid{padding:0 4px;align-items:stretch;overflow:visible;}
+html.theme-pro #breadcrumb{padding:0 0 4px 2px;flex-wrap:wrap;gap:4px;line-height:1.5;overflow:visible;max-width:100%;}
 html.theme-pro #breadcrumb > *{min-width:0;max-width:100%;overflow-wrap:anywhere;white-space:normal;}
 html.theme-pro #breadcrumb button{flex-shrink:0;text-align:left;}
 html.theme-pro #breadcrumb i{flex-shrink:0;}
 @media(max-width:1023px){
-  html.theme-pro #mainView > main{padding-left:12px!important;padding-right:12px!important;}
-  html.theme-pro #noteGrid{padding-left:8px;padding-right:8px;}
+  html.theme-pro #mainView > main{padding-left:4px!important;padding-right:4px!important;}
+  html.theme-pro #noteGrid{padding-left:4px;padding-right:4px;}
 }
 html.theme-pro #noteGrid .add-card{display:none!important;}
 html.theme-pro #noteGrid .add-card:only-child{display:none!important;}
@@ -7966,7 +7966,7 @@ html.theme-pro #noteGrid .note-preview{background:#eef0f5;}
   html.theme-pro .pro-side-bottom{margin-top:auto;}
 }
 @media(max-width:640px){
-  html.theme-pro #mainView > main{padding:16px 12px 32px!important;}
+  html.theme-pro #mainView > main{padding:8px 4px 16px!important;}
 }
 
 /* PRO discovery and reading: labels, stable title rows, clear search states. */
@@ -7974,8 +7974,8 @@ html.theme-pro #noteGrid .note-preview{background:#eef0f5;}
 html.theme-classic .pro-results{display:none;}
 html.theme-pro .pro-results{
   display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
-  gap:12px;padding:12px 16px;margin-bottom:20px;border:1px solid var(--border);
-  border-radius:8px;background:var(--card);font-size:14px;color:var(--text2);
+  gap:8px;padding:8px 10px;margin-bottom:8px;border:1px solid var(--border);
+  border-radius:4px;background:var(--card);font-size:13px;color:var(--text2);
 }
 html.theme-pro .pro-results > span{min-width:0;overflow-wrap:anywhere;}
 html.theme-pro .pro-results-clear{
@@ -7990,9 +7990,9 @@ html.theme-pro #noteGrid .note-card-name > span:first-child{
 }
 html.theme-pro #noteGrid .add-card{gap:12px;font:inherit;font-size:13px;font-weight:600;}
 html.theme-pro #noteGrid .add-card > i{font-size:32px;}
-html.theme-pro .pro-home-empty{gap:12px;padding:40px 20px;line-height:1.7;}
-html.theme-pro .pro-home-empty strong{color:var(--text2);font-size:16px;}
-html.theme-pro .pro-home-bar{margin-bottom:20px;}
+html.theme-pro .pro-home-empty{gap:8px;padding:16px 8px;line-height:1.6;}
+html.theme-pro .pro-home-empty strong{color:var(--text2);font-size:15px;}
+html.theme-pro .pro-home-bar{margin-bottom:8px;}
 html.theme-pro .pro-side-bottom{margin-top:auto;}
 html.theme-pro .pro-nav-item,
 html.theme-pro .pro-fold-item{min-height:40px;}

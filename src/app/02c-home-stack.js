@@ -761,7 +761,7 @@
     // be rotated by the casual stack, or its ancestors may have CSS/browser zoom.
     function previewPlacement(cw,ch,bw,bh,pro){
         if(![cw,ch,bw,bh].every(n=>Number.isFinite(n)&&n>0)) return null;
-        const inset=pro?Math.min(16,Math.max(6,Math.min(cw,ch)*.055),Math.min(cw,ch)/4):0;
+        const inset=pro?2:0;
         const scale=Math.min((cw-2*inset)/bw,(ch-2*inset)/bh);
         // Do not round positions: at fractional card widths it creates asymmetric
         // margins, most visibly at 90/110/125% zoom and on high-DPI screens.
