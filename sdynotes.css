@@ -8237,8 +8237,8 @@ html.theme-pro .sp-logo .logo-pro{display:block;}
 html.theme-pro .pro-brand .logo-dot .logo-pro{width:16px;height:16px;transform:translateX(-.8px);}
 .sp-logo{display:flex;align-items:center;justify-content:center;}
 
-/* 14.59 · 프로 홈 은은한 이퀄라이저 배경 — 음악이 울릴 때만 살며시 일렁인다
-   html.theme-pro 에서만 보이고, #mainView 뒤(z:-1)에 얇게 깔린다.
+/* 14.66 · 기본(일반) 테마 홈의 파장별 버츄얼라이저 배경 — 음악이 울릴 때만 살며시 일렁인다
+   내부 테마 키가 html.theme-pro인 기본 테마에서만 보이고, #mainView 뒤(z:-1)에 얇게 깔린다.
    터치는 통과(pointer-events:none)하고 노트/그리드를 절대 가리지 않는다.
    성능: will-change opacity, rAF 한 루프, dpr 1.6 상한, turbo·모션감소는 표시 안 함. */
 #proHomeEq{
@@ -8252,7 +8252,7 @@ html.theme-pro #proHomeEq{opacity:0;}
 /* 재생 중엔 0.10~0.16 선 — 라이트 캔버스(#F4F5F8)에서 노트·그리드보다 항상 옅게 */
 html.theme-pro #proHomeEq.playing{opacity:.14;}
 html.theme-pro #proHomeEq.idle{opacity:0;}
-/* 클래식·다크에선 표시 안 함 */
+/* 캐주얼 테마에서는 표시 안 함 */
 html.theme-classic #proHomeEq,
 html:not(.theme-pro) #proHomeEq{display:none!important;}
 /* 에디터가 열리면 숨김 — 기존 ambient/wall 숨김과 동일 선상 */

@@ -47,6 +47,10 @@ check('서버: edit은 @ 명령 허용 목록이며 캐시/in-flight를 쓰지 �
   && /job\.noCache \? null : aiCacheGet/.test(srv));
 check('서버: chat 프롬프트가 해돌이 판단 표식([[note]]/[[free]])을 첫 줄에 요구한다',
   /\[\[note\]\]/.test(srv) && /\[\[free\]\]/.test(srv));
+check('해돌이 이름은 유지하고, 대화 말끝은 해돌~로 보정한다',
+  /const HAEDOL_VOICE_RULE/.test(srv) && /말끝은 반드시 “해돌~”/.test(srv)
+  && /function haedolVoice\(t\)/.test(js) && /window\.sdyHaedolVoice=haedolVoice/.test(js)
+  && /replace\(\/해돌이~/.test(js));
 check('서버: chat 은 노트가 비어 있어도 된다(needText:false) · 질문은 필요하다',
   /chat: \{[\s\S]*?needText: false,[\s\S]*?needQuestion: true,/.test(srv));
 check('서버: 미리 준비(warm)는 개요 정리(outline)만 받는다',
@@ -356,6 +360,9 @@ check('런타임: 켜짐이면 점에 AI 켜짐만 뜬다 (모델 이름은 안 
   $('aiDot').title === 'AI 켜짐', $('aiDot').title);
 check('런타임: 검색창은 떠 있고 처음엔 말풍선·기록이 닫혀 있다',
   Boolean($('aiAsk')) && $('aiSay').hidden === true && $('aiHist').hidden === true);
+check('런타임: 예전 해돌이~ 말끝은 해돌~로만 보정한다',
+  typeof w.sdyHaedolVoice === 'function'
+  && w.sdyHaedolVoice('다시 보자 해돌이~!') === '다시 보자 해돌~!');
 w.sdyAiWarmNow();
 await tick(30); await flush();
 check('런타임: 노트 밖(홈)에서는 개요를 미리 준비하지 않는다',
