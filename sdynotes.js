@@ -698,7 +698,7 @@ window.sdyClampFloatingRect=function(el,x,y,gap){
         // 14.48 · 프로 테마에서는 배경화면 행(#setRowWall)이 숨겨져 있어
         //   여기까지 오는 경우(예: 클래식에서 올린 뒤 프로로 전환)는 안내만.
         if(typeof sdyTheme==='function'&&sdyTheme()==='pro'){
-            toast('프로 테마에서는 배경화면을 사용할 수 없어요 — 클래식 테마에서 설정해 주세요',2800);
+            toast('기본 테마에서는 배경화면을 사용할 수 없어요 — 캐주얼 테마에서 설정해 주세요',2800); // 14.52 · 테마 이름: 기본/캐주얼
             return;
         }
         const isVideo=(file.type||'').indexOf('video/')===0||/\.(mp4|webm|mov)$/i.test(file.name||'');

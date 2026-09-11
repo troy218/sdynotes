@@ -7635,6 +7635,188 @@ html.theme-pro .ypg-btn.main em{color:rgba(255,255,255,.78);}
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   14.52 · 프로 세팅 2탄 — 사각화(어도비 계열) + 남은 도구 플랫 마무리
+   + 테마 이름: 기본(=구 프로) / 캐주얼(=구 클래식)
+═══════════════════════════════════════════════════════════════ */
+
+/* ── 14.52-P · 사각 모서리 — 어도비 계열 3단계 곡률 스케일 ──
+   대형 표면 10px · 중간 8px · 컨트롤 6px · 알약/원형(99·50%)은 유지 */
+
+/* 대형 — 창·모달·큰 패널 */
+html.theme-pro .modal-box,
+html.theme-pro .mpb,
+html.theme-pro #ypApp,
+html.theme-pro .sa-card, html.theme-pro .ypg-card,
+html.theme-pro .mp-addpop, html.theme-pro .mp-tagm .box,
+html.theme-pro .more-panel, html.theme-pro .srv-pop, html.theme-pro .notif-pop,
+html.theme-pro .cd-hero, html.theme-pro .cd-face, html.theme-pro .cd-qq,
+html.theme-pro .cd-reveal, html.theme-pro .cd-opt, html.theme-pro .cd-stat,
+html.theme-pro .cd-tile,
+html.theme-pro .fcard-win.fcard-max .cd-face, html.theme-pro .fcard-win.fcard-max .cd-tile,
+html.theme-pro .otter-bubble,
+html.theme-pro .mpb-now, html.theme-pro .mpb-playlist-card .mpb-album-art,
+html.theme-pro .mp-eqpop,
+html.theme-pro #welcomeToast,
+html.theme-pro .rep-top{
+  border-radius:10px;
+}
+html.theme-pro .ai-say{border-radius:10px 10px 10px 6px;}
+html.theme-pro .ai-hist{border-radius:10px 10px 0 0;}
+html.theme-pro .fcard-head, html.theme-pro .fcard-win.fcard-max .fcard-head{border-radius:10px 10px 0 0;}
+html.theme-pro .fcard-win.fcard-max .cd-stage::before{border-radius:10px 10px 0 0;}
+html.theme-pro #musicListPop.mp-list{border-radius:10px 10px 0 0;}
+html.theme-pro #mpBig.mpb-fs .mpb-drawer, html.theme-pro #mpBig:fullscreen .mpb-drawer{border-radius:10px 10px 0 0;}
+
+/* 중간 — 카드·목록·막대·메뉴 */
+html.theme-pro .note-card, html.theme-pro .folder-card, html.theme-pro .add-card,
+html.theme-pro #noteGrid .note-card, html.theme-pro #noteGrid .folder-card, html.theme-pro #noteGrid .add-card,
+html.theme-pro .mp-list, html.theme-pro .mp.mp-bar, html.theme-pro .mp-xtra,
+html.theme-pro .select-bar,
+html.theme-pro .ctx-menu, html.theme-pro .mpctx,
+html.theme-pro .toast,
+html.theme-pro .tbl-bar, html.theme-pro .find-bar, html.theme-pro .wf-bar,
+html.theme-pro .font-menu,
+html.theme-pro .cd-deck, html.theme-pro .fcard-win.fcard-max .cd-deck,
+html.theme-pro .cd-name, html.theme-pro .cd-prompt, html.theme-pro .cd-explain, html.theme-pro .cd-memory,
+html.theme-pro .ana-kpi, html.theme-pro .ana-sec,
+html.theme-pro .fc-x, html.theme-pro .fc-btn, html.theme-pro .fc-mode, html.theme-pro .fcard-win .fc-mode, html.theme-pro .fc-laps,
+html.theme-pro .cd-tip-item, html.theme-pro .fcard-win .ex-item, html.theme-pro .fcard-win .cd-back,
+html.theme-pro .mpb-cover, html.theme-pro .mpb-reco-art, html.theme-pro .mpb-album-art,
+html.theme-pro .mpb-reco-current, html.theme-pro .mpb-random-hero, html.theme-pro .mpb-ctl button,
+html.theme-pro .pl-mini, html.theme-pro #plPickPop,
+html.theme-pro #musicListPop .mp-library-tools, html.theme-pro #musicListPop .mp-search,
+html.theme-pro #musicListPop .mp-lbody, html.theme-pro #musicListPop .mp-discover,
+html.theme-pro #musicListPop .mp-li, html.theme-pro #musicListPop .mp-pl, html.theme-pro #musicListPop .mp-plsub,
+html.theme-pro .yp-bub, html.theme-pro .yp-img, html.theme-pro .yp-file, html.theme-pro .yp-draft-chip,
+html.theme-pro .yp-emoji, html.theme-pro .yp-settings, html.theme-pro .yp-bgm-res,
+html.theme-pro .sa-logo, html.theme-pro .sa-tabs, html.theme-pro .sa-sendbtn, html.theme-pro .sa-btn,
+html.theme-pro .sa-pwbox, html.theme-pro .sa-me, html.theme-pro .sa-pwneed,
+html.theme-pro .ypfr-item, html.theme-pro .ypfr-login,
+html.theme-pro .theme-pick,
+html.theme-pro #splash .sp-logo,
+html.theme-pro .card-menu,
+html.theme-pro .mp-otter, html.theme-pro .note-otter,
+html.theme-pro .om-say,
+html.theme-pro .ai-hist-item, html.theme-pro .ai-askbar-field, html.theme-pro .ai-askbar-field.multi,
+html.theme-pro #welcomeToast .wc-ico,
+html.theme-pro .notif-item, html.theme-pro .notif-ico,
+html.theme-pro .mp-addpop .file, html.theme-pro .mp-addpop .ytcard,
+html.theme-pro .mp-tagm .crow img, html.theme-pro .mp-rec-card img,
+html.theme-pro .rep-w,
+html.theme-pro .text-ghost, html.theme-pro .place-ghost,
+html.theme-pro .header .tool-btn,
+html.theme-pro #staleBar{
+  border-radius:8px;
+}
+
+/* 컨트롤 — 버튼·입력·탭 */
+html.theme-pro .more-grid button,
+html.theme-pro .cd-btn, html.theme-pro .fcard-win .cd-btn,
+html.theme-pro .cd-grade button, html.theme-pro .cd-grade2 button,
+html.theme-pro .cd-testpick, html.theme-pro .cd-paste,
+html.theme-pro .cd-listbar, html.theme-pro .cd-br,
+html.theme-pro .sa-step input, html.theme-pro .sa-sent, html.theme-pro .sa-pwbox input,
+html.theme-pro .ypfr-add input, html.theme-pro .ypfr-add button, html.theme-pro .ypfr-btn,
+html.theme-pro .tp-swatch,
+html.theme-pro .pg-nav,
+html.theme-pro .tool-btn, html.theme-pro .tb-mid .tool-btn, html.theme-pro .editor-toolbar .tool-btn,
+html.theme-pro .tb-group,
+html.theme-pro .pro-nav-item, html.theme-pro .pro-fold-item, html.theme-pro .pro-add-note,
+html.theme-pro #searchInput,
+html.theme-pro .breadcrumb button, html.theme-pro .pro-brand .link-chip,
+html.theme-pro .home-section-title i, html.theme-pro .font-btn,
+html.theme-pro .mpb-li, html.theme-pro .mpb-head button,
+html.theme-pro .mpb-tabs button, html.theme-pro #mpBig .mpb-tabs button.mp-sortbtn, html.theme-pro .mp-sortbtn,
+html.theme-pro .mp-emptybox button, html.theme-pro .mp-tagm .acts button,
+html.theme-pro .mp-addpop input, html.theme-pro .mp-addpop .go, html.theme-pro .mp-addpop .status, html.theme-pro .mp-addpop .cookies,
+html.theme-pro .latex-input, html.theme-pro .latex-preview,
+html.theme-pro .tblsize-step, html.theme-pro .tblsize-actions button,
+html.theme-pro .tg-label,
+html.theme-pro .fc-lap, html.theme-pro .fc-custom input,
+html.theme-pro .yp-emoji button,
+html.theme-pro #staleBar button{
+  border-radius:6px;
+}
+
+/* 기본이 !important 로 박아 둔 곡률 — 같은 강도로 이긴다 */
+html.theme-pro .fcard-win, html.theme-pro .fcard-win.moved,
+html.theme-pro .modal-bg .modal-box.cards-box{border-radius:10px!important;}
+html.theme-pro #mpBig{border-radius:10px!important;}
+html.theme-pro .ctx-menu.show{border-radius:10px!important;}
+html.theme-pro .ctx-menu.show .ctx-item{border-radius:6px!important;}
+html.theme-pro #uploadProg .modal-box, html.theme-pro #importProg .modal-box{border-radius:10px!important;}
+html.theme-pro #mpBig.mpb-fs .mpb-head button, html.theme-pro #mpBig:fullscreen .mpb-head button{border-radius:6px!important;}
+html.theme-pro .modal-box button{border-radius:6px!important;}
+html.theme-pro .tb-group{border-radius:6px!important;}
+html.theme-pro #searchInput{border-radius:6px!important;}
+
+/* 모바일 시트 — 윗모서리 10 / 아랫모서리 정 */
+@media (max-width:640px), (max-height:560px) and (pointer:coarse){
+  html.theme-pro .modal-box:not(.cards-box){border-radius:10px 10px 0 0!important;}
+  html.theme-pro .fcard-win, html.theme-pro .fcard-win.moved,
+  html.theme-pro .modal-bg .modal-box.cards-box{border-radius:10px 10px 0 0!important;}
+  html.theme-pro .font-menu.show, html.theme-pro .color-popover.show, html.theme-pro .fav-pop.show,
+  html.theme-pro .tint-pop.show, html.theme-pro .pin-pop.show{border-radius:10px 10px 0 0!important;}
+}
+
+/* ── 14.52-Q · 남은 도구 마무리 — 글래스(블러) 제거 + 플랫 화이트 ── */
+/* 암기 카드 창 — 15.2 '영롱한 글래스'를 프로에선 플랫 화이트로 */
+html.theme-pro .fcard-win{
+  background:#FFFFFF!important;background-image:none!important;
+  backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+  border:1px solid var(--border)!important;
+  box-shadow:0 12px 44px rgba(23,28,38,.16),0 2px 8px rgba(23,28,38,.06)!important;
+}
+html.theme-pro .fcard-head{background:var(--bg2);border-bottom:1px solid var(--border);}
+html.theme-pro .fcard-win .cd-opt, html.theme-pro .fcard-win .cd-stat, html.theme-pro .fcard-win .cd-btn,
+html.theme-pro .fcard-win .fc-mode, html.theme-pro .fcard-win .cd-prog, html.theme-pro .fcard-win .cd-chip,
+html.theme-pro .fcard-win .cd-streak, html.theme-pro .fcard-win .ex-item, html.theme-pro .fcard-win .cd-back,
+html.theme-pro .fcard-win .cd-deck, html.theme-pro .cd-deck{backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro .fcard-win .cd-opt, html.theme-pro .fcard-win .cd-stat,
+html.theme-pro .fcard-win .cd-tile, html.theme-pro .fcard-win.fcard-max .cd-tile{background:var(--bg2);}
+html.theme-pro .fcard-win.fcard-max .cd-face{background:#FFFFFF;}
+html.theme-pro .cd-face{background:#FFFFFF;}
+html.theme-pro .cd-qq, html.theme-pro .cd-reveal{background:var(--bg2);}
+html.theme-pro .cd-chip{background:#FFFFFF;}
+/* 해돌이(AI) — 말풍선·질문칸·기록: 글래스 → 플랫 */
+html.theme-pro .otter-bubble, html.theme-pro .otter-bubble-mini{
+  background:#FFFFFF;backdrop-filter:none;-webkit-backdrop-filter:none;
+  border:1px solid var(--border);
+}
+html.theme-pro .ai-say{
+  background:#FFFFFF;backdrop-filter:none;-webkit-backdrop-filter:none;
+  border:1px solid var(--border);box-shadow:0 14px 40px rgba(23,28,38,.14);
+}
+html.theme-pro .ai-hist{background:#FFFFFF;backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid var(--border);}
+html.theme-pro .ai-hist-item{background:var(--bg2);backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro .ai-askbar-field, html.theme-pro .ai-askbar-field.multi{
+  background:#FFFFFF;backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid var(--border);
+}
+html.theme-pro .ai-outline{background:var(--bg2);backdrop-filter:none;-webkit-backdrop-filter:none;border-color:var(--border);}
+/* 이퀄라이저 팝오버 · 집중 화면 · 기타 막대 */
+html.theme-pro .mp-eqpop{background:#FFFFFF;backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid var(--border);}
+html.theme-pro #focusClock{backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro .fc-x, html.theme-pro .fc-btn, html.theme-pro .fc-preset{
+  background:var(--card);backdrop-filter:none;-webkit-backdrop-filter:none;border-color:var(--border);
+}
+html.theme-pro .fc-laps{background:#FFFFFF;backdrop-filter:none;-webkit-backdrop-filter:none;border-color:var(--border);}
+html.theme-pro .more-sheet{backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro #sdyAuthWrap{backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro .modal-bg{backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro #edLoading{backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro #trProg{backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro #staleBar{background:var(--card);backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro .present-bar{background:var(--card);backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid var(--border);color:var(--text1);}
+html.theme-pro #welcomeToast{background:#FFFFFF;color:var(--text1);backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid var(--border);}
+html.theme-pro .page-count-badge{background:var(--bg2);backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro .live-legend .ll-row{background:var(--card);backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro .link-bar, html.theme-pro .link-chip, html.theme-pro .link-add{backdrop-filter:none;-webkit-backdrop-filter:none;}
+/* 음악 — 리스트 시트 글래스·전체화면 드로어 블러 제거 */
+html.theme-pro #musicListPop.mp-list{background:#FFFFFF;backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro #mpBig.mpb-fs .mpb-drawer-in, html.theme-pro #mpBig:fullscreen .mpb-drawer-in{backdrop-filter:none;-webkit-backdrop-filter:none;}
+html.theme-pro #mpBig.mpb-fs .mpb-head button, html.theme-pro #mpBig:fullscreen .mpb-head button{backdrop-filter:none;-webkit-backdrop-filter:none;}
+
 /* ═══════════════════════════════════════════════════════════════════
    17.0 · 모바일 전용 최종 레이아웃
 

@@ -136,6 +136,13 @@ try {
   // 14.51 · 플로팅 위치 — 사이드바 기준 재배치 규칙 존재
   check('14.51 · CSS: 선택막대 콘텐츠 중앙 정렬', /html\.theme-pro \.select-bar\{left:calc\(50% \+ 124px\)/.test(cssText));
   check('14.51 · CSS: 모바일 시트가 레일 존 회피', /html\.theme-pro #ypApp\{left:72px!important;\}/.test(cssText));
+  // 14.52 · 사각화 + 남은 도구 플랫 + 테마 이름 변경(기본/캐주얼)
+  check('14.52 · CSS: fcard 창 사각(10px!important)', /html\.theme-pro \.fcard-win, html\.theme-pro \.fcard-win\.moved,\s*html\.theme-pro \.modal-bg \.modal-box\.cards-box\{border-radius:10px!important;\}/.test(cssText));
+  check('14.52 · CSS: fcard 글래스 제거', /html\.theme-pro \.fcard-win\{\s*background:#FFFFFF!important;/.test(cssText));
+  check('14.52 · CSS: 컨트롤 6px 스케일(searchInput)', /html\.theme-pro #searchInput\{border-radius:6px!important;\}/.test(cssText));
+  check('14.52 · CSS: AI 말풍선 플랫', /html\.theme-pro \.otter-bubble, html\.theme-pro \.otter-bubble-mini\{/.test(cssText));
+  check('14.52 · UI: 테마 이름 기본/캐주얼', [...d1.querySelectorAll('.theme-pick .tp-name')].map(b=>b.textContent).join('|') === '기본|캐주얼');
+  check('14.52 · UI: 배경화면 행은 캐주얼 전용 표기', /캐주얼 테마 전용/.test(d1.getElementById('setRowWall').textContent));
 
   // ── 2) 설정창 테마 UI + 배경화면 행은 프로에서 숨김 ──
   w1.openSettings();
