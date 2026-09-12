@@ -1,6 +1,6 @@
 {
   "name": "sdynotes-fast",
-  "version": "14.67.0",
+  "version": "14.68.0",
   "type": "module",
   "description": "SDYnotes backend - Fastify main server + Python worker for heavy jobs (oracle self-hosted storage)",
   "main": "server/src/index.js",
@@ -28,7 +28,7 @@
     "test:smtp": "node test/smtp_contract.mjs",
     "test:musicfs": "node test/music_fs_smoke.mjs",
     "test:dedupe": "python3 test/worker_music_dedupe_contract.py",
-    "test:phone": "node test/phone_layout_contract.mjs && node test/mobile_runtime_smoke.mjs",
+    "test:phone": "node test/phone_layout_contract.mjs && node test/mobile_runtime_smoke.mjs && node test/mobile_touch_runtime.mjs",
     "test:table": "node test/editor_table_contract.mjs && node test/editor_table_runtime.mjs",
     "test:place": "node test/editor_place_runtime.mjs",
     "test:polish": "node test/ui_polish_orientation_contract.mjs && python3 test/import_orientation_runtime.py",

@@ -122,6 +122,47 @@ ok('터치 조작 손잡이는 브라우저 스크롤 제스처와 분리된다'
   has(css, /\.tb-edge\{[\s\S]{0,220}touch-action:none/) &&
   has(css, /\.tbl-edge,\.tbl-div,\.tbl-h,\.tbl-stretch\{[\s\S]{0,160}touch-action:none/));
 
+/* ── 4b. 14.68 · 폰 세로 조작 강화 (핀치 앵커 · 손바닥 거부 · 더블탭 선택 · 전체 노출 도구막대) ── */
+console.log('\n[4b] 14.68 폰 세로 조작 강화');
+ok('핀치 줌은 손가락 중점 앵커 — 제스처 중 스크롤 대신 translate+scale을 쓴다',
+  has(js, /translate\(\$\{tx\}px,\$\{ty\}px\) scale\(\$\{k\}\)/) &&
+  has(js, /stageOrigin/) && has(js, /abortPinch/));
+ok('두 손가락 터치 시작 시 네이티브 제스처를 차단하고, 뺏기면 중단한다',
+  has(js, /if\(e\.cancelable===false\)\{ abortPinch\(\); return; \}/));
+ok('펜으로 쓰는 동안 손바닥/손가락 터치는 자동 무시된다 (자동 손바닥 거부)',
+  has(js, /_sdyPalmNow/) && has(js, /_palmGateTouch/) && has(js, /_palmGatePointer/) &&
+  has(js, /e\.pointerType!=='pen'/));
+ok('drawStart 가 손바닥 거부·연필 모드 터치를 걸러낸다',
+  has(js, /if\(_sdyPalmIgnore\(e\)\) return;/));
+ok('손바닥 차단(연필 모드)에서는 draw-surface 가 손가락 팬을 허용한다',
+  has(css, /body\.palm-strict \.draw-surface\{touch-action:pan-x pan-y;\}/) &&
+  has(js, /togglePalmStrict/));
+ok('손바닥 차단 버튼은 터치 기기(폰·태블릿)에서만 주입된다 — 데스크톱 불변',
+  has(js, /function sdyPenDevice\(\)/) && has(js, /if\(!sdyPenDevice\(\)\)\{ return; \}/) &&
+  has(js, /sdyPenBarReady\(\); \}catch\(_e\)\{\}/));
+ok('터치의 빈 종이 드래그는 marquee 대신 화면 이동(스크롤)에 양보한다',
+  has(js, /if\(e\.button===0&&e\.pointerType!=='touch'\)\{[\s\S]{0,80}startMarquee\(e,pageIdx\);/));
+ok('빈 곳 더블탭 + 끌기 = 영역 선택 (모바일 전용 제스처)',
+  has(js, /startMarquee\(\{clientX:g\.x0,clientY:g\.y0\},g\.pi\)/) &&
+  has(js, /_sdyDblDragAt/) &&
+  has(js, /if\(window\._sdyDblDragAt&&now-window\._sdyDblDragAt<800\)\{ lastT=0; return; \}/));
+ok('지우개 판정은 coarse pointer(폰/태블릿)에서만 넓어진다',
+  has(js, /_eraserTouchBoost=\(window\.matchMedia&&matchMedia\('\(pointer:coarse\)'\)\.matches\)\?1\.7:1/) &&
+  has(js, /return \(drawSize\*ERASER_MULT\*_eraserTouchBoost\)\/2;/));
+ok('세로 폰 도구막대는 줄바꿈으로 모든 도구를 한 번에 보여 준다',
+  has(mobileSource, /orientation:portrait/) &&
+  has(mobileSource, /\.editor-toolbar\{[\s\S]{0,120}flex-wrap:wrap!important/) &&
+  has(mobileSource, /\.editor-toolbar \.tb-hide-sm\{display:inline-flex!important;\}/) &&
+  has(mobileSource, /\.editor-toolbar \.tb-mid\{[\s\S]{0,220}flex-wrap:wrap/));
+ok('세로 폰 그리기 도구막대도 전체 노출 줄바꿈이며 굵기 점 터치 영역이 넓다',
+  has(mobileSource, /\.draw-toolbar\{[\s\S]{0,420}flex-wrap:wrap/) &&
+  has(mobileSource, /\.draw-toolbar \.size-opt\{padding:11px;box-sizing:content-box;background-clip:content-box;\}/));
+ok('그리기 도구막대가 열리면 본문 하단 여백이 늘어난다',
+  has(mobileSource, /\.editor:has\(#drawToolbar\[style\*="flex"\]\) \.editor-body\{[\s\S]{0,120}padding-bottom/));
+ok('10c-mobile-touch 파트가 MANIFEST 에 들어 있어 번들에 포함된다',
+  fs.readFileSync(new URL('../src/app/MANIFEST.txt', import.meta.url), 'utf8').includes('10c-mobile-touch.js') &&
+  has(js, /APP-PART:10c-mobile-touch\.js:BEGIN/));
+
 /* ── 5. 창/모달/부가 기능 ──────────────────────────────────── */
 console.log('\n[5] 모달·보관함·암기카드·발표');
 ok('일반 모달은 safe-area를 지키는 하단 시트다',

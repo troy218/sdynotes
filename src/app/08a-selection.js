@@ -1374,7 +1374,12 @@
         // 빈 종이에서 드래그 → 영역 선택
         deselectAll();
         clearMulti();
-        if(e.button===0){
+        // 14.68 · 터치(폰/태블릿): 한 손가락 끌기는 '화면 이동(스크롤)'이 우선한다.
+        //   예전엔 pointerdown 이 곧장 marquee 를 시작해서 스크롤과 싸우고
+        //   (pointercancel 전까지 선택 상자가 깜빡) 조작이 엉켰다.
+        //   터치에서 영역 선택은 '빈 곳 더블탭 + 끌기' 제스처가 맡는다
+        //   (10c-mobile-touch.js). 마우스·펜(데스크톱)은 예전 그대로 드래그 선택.
+        if(e.button===0&&e.pointerType!=='touch'){
             e.preventDefault();
             startMarquee(e,pageIdx);
         }
