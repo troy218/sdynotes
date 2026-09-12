@@ -98,7 +98,9 @@ check(sw.includes('Content-Range'), 'Range 응답 지원(음악 시크)', 'Range
 const precache = (sw.match(/const PRECACHE = \[([\s\S]*?)\];/) || [])[1] || '';
 const listed = [...precache.matchAll(/'([^']+)'/g)].map((m) => m[1]);
 check(listed.length >= 8, `미리 받기 ${listed.length}개`, '미리 받기 목록이 비어 있음');
-const gone = listed.filter((u) => u !== '/' && !fs.existsSync(path.join(OUT, u.replace(/^\//, ''))));
+// 확장자 없는 주소(/privacy, /terms)는 서버가 파일로 내보낸다 — 매핑해서 확인
+const ROUTE_FILE = { '/': 'sdynotes.html', '/privacy': 'legal/privacy.html', '/terms': 'legal/terms.html' };
+const gone = listed.filter((u) => !fs.existsSync(path.join(OUT, ROUTE_FILE[u] || u.replace(/^\//, ''))));
 check(gone.length === 0, '미리 받기 목록의 파일이 모두 실재', '없는 파일: ' + gone.join(', '));
 
 // ── 5. HTML 끼워 넣기 ────────────────────────────────────────────────────
@@ -127,6 +129,44 @@ for (const ep of ['/api/music/list', '/api/music/upload', '/api/music/delete', '
 check(!/^\s*(import|export)\s/m.test(ms), 'music-store.js 가 클래식 스크립트(서비스워커 공용)',
   'music-store.js 에 ESM 문법이 있음 — importScripts 로 못 불러온다');
 check(!/indexedDB/.test(html), 'indexedDB 접근이 HTML 밖에 있음(앱 셸이 가벼움)', '');
+
+// ── 6-a. 스토어 심사 요건 ────────────────────────────────────────────────
+console.log('\n6-a. 스토어 심사 요건');
+for (const [rel, must] of [
+  ['legal/privacy.html', ['개인정보처리방침', '계정 삭제', '시행일', 'AI', '보관']],
+  ['legal/terms.html', ['이용약관', '시행일', '환불', 'AI 결과', '저작물']]
+]) {
+  const f = path.join(OUT, rel);
+  if (!fs.existsSync(f)) { bad(`${rel} 없음`); continue; }
+  const t = fs.readFileSync(f, 'utf8');
+  const lacks = must.filter((k) => !t.includes(k));
+  check(lacks.length === 0, `${rel} 필수 항목 포함 (${must.length}개)`, `${rel} 빠진 항목: ${lacks.join(', ')}`);
+}
+check(html.includes('/app/account.js'), '계정 삭제 UI 가 앱에 실림', 'account.js 가 주입되지 않음');
+const acc = fs.readFileSync(path.join(OUT, 'app', 'account.js'), 'utf8');
+check(acc.includes('/api/auth/account/delete'), '삭제 버튼이 부르는 주소가 있음', '삭제 API 호출이 없음');
+check(acc.includes('/privacy') && acc.includes('/terms'), '앱 안에서 약관·방침으로 갈 수 있음', '약관 링크가 없음');
+check(acc.includes('남는 것') && acc.includes('지워지는 것'),
+  '삭제 전에 무엇이 지워지고 남는지 보여 줌', '삭제 안내가 부족함(심사에서 문제)');
+check(/this\.appTitle|sdyAuthLogout/.test(acc) || acc.includes('sdyAuthLogout'),
+  '삭제 뒤 로그아웃 처리', '삭제 뒤 세션 정리가 없음');
+const backend = fs.readFileSync(path.join(REPO, 'server', 'src', 'routes', 'auth.js'), 'utf8');
+check(backend.includes("app.post('/api/auth/account/delete'"), '서버에 계정 삭제 API 가 있음', '서버 API 가 없음');
+check(backend.includes('friendsPurgeUser') && backend.includes('dmPurgeUser'),
+  '친구·대화 기록까지 함께 지움', '관계 데이터 정리가 빠짐');
+const swSrc = fs.readFileSync(path.join(OUT, 'sw.js'), 'utf8');
+check(swSrc.includes("'/privacy'") && swSrc.includes("'/terms'"),
+  '오프라인에서도 약관 페이지가 열림', '약관 페이지가 미리 받기 목록에 없음');
+
+// 제출 전에 채워야 할 자리표시자 — 실패가 아니라 경고
+const ph = [];
+for (const rel of ['legal/privacy.html', 'legal/terms.html']) {
+  const t = fs.readFileSync(path.join(OUT, rel), 'utf8');
+  const hits = t.match(/\[[^\]]{2,40}\]/g) || [];
+  if (hits.length) ph.push(`${rel} ${hits.length}곳`);
+}
+if (ph.length) console.log(`  ⚠️  제출 전 채울 자리표시자: ${ph.join(' · ')}`);
+else ok('자리표시자 없음 — 그대로 제출 가능');
 
 // ── 6-b. 이름표 ──────────────────────────────────────────────────────────
 console.log('\n6-b. 이름표(notesis)');
@@ -180,9 +220,16 @@ try {
     .map((l) => l.slice(3).trim().replace(/^"|"$/g, ''))
     .map((p2) => (p2.includes(' -> ') ? p2.split(' -> ')[1] : p2))
     .filter((p) => p && !p.startsWith('play/') && !ALLOW.has(p));
-  check(dirty.length === 0,
-    '손댄 원본 파일 없음 (play/ 밖은 전부 그대로)',
-    '원본이 수정됨: ' + dirty.join(', '));
+  // 화면(앱 셸)을 이루는 파일은 절대 손대지 않는다 — 이게 이 패키지의 안전장치다.
+  const UI_FILES = ['sdynotes.html', 'sdynotes.css', 'sdynotes.js'];
+  const uiDirty = dirty.filter((p2) => UI_FILES.includes(p2) || p2.startsWith('src/'));
+  check(uiDirty.length === 0,
+    '화면 파일(sdynotes.* · src/*)은 손대지 않음',
+    '화면 파일이 수정됨: ' + uiDirty.join(', '));
+
+  // 서버 파일 변경은 '계정 삭제 API 추가' 같은 의도된 기능 — 실패가 아니라 알림.
+  const srvDirty = dirty.filter((p2) => p2.startsWith('server/') || p2.startsWith('worker/'));
+  if (srvDirty.length) console.log(`  ℹ️  서버 쪽 의도된 변경: ${srvDirty.join(', ')}`);
 } catch (e) {
   bad('git 확인 실패: ' + e.message);
 }

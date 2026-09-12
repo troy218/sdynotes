@@ -68,8 +68,9 @@ copyDir('assets');
 log(`   sdynotes.html · css · js · src/*.js ${srcFiles.length}개 · assets/`);
 
 // ── ② 발매판 자체 파일 ────────────────────────────────────────────────────
-// app/ 은 원본이 아니라 이 패키지 안에 있다.
+// app/ · legal/ 은 원본이 아니라 이 패키지 안에 있다.
 fs.cpSync(path.join(PKG_DIR, 'app'), path.join(OUT, 'app'), { recursive: true });
+fs.cpSync(path.join(PKG_DIR, 'legal'), path.join(OUT, 'legal'), { recursive: true });
 
 // ── ③ 이름표 바꾸기 (복사본 트리 전체 · 원본은 그대로) ───────────────────
 log(`③ 이름표: ${brandLine()}`);
@@ -115,6 +116,7 @@ const headBlock = `<link rel="manifest" href="/manifest.webmanifest">
     <meta name="apple-mobile-web-app-title" content="${APP.shortName}">
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="stylesheet" href="/app/pwa.css">
+    <link rel="stylesheet" href="/app/account.css">
     <meta name="sdy-build" content="${BUILD}">`;
 html = html.replace(HEAD_ANCHOR, `$1\n    ${headBlock}`);
 if (html === before) die('앱 메타를 끼워 넣지 못했습니다');
@@ -125,10 +127,11 @@ const MUSIC_ANCHOR = /(\s*)(<script src="src\/music-player\.js[^"]*" defer><\/sc
 if (!MUSIC_ANCHOR.test(html)) die('sdynotes.html 에서 music-player.js 스크립트 태그를 찾지 못했습니다');
 html = html.replace(MUSIC_ANCHOR,
   `\n<script src="/app/pwa.js?v=${VERSION}" defer></script>` +
+  `\n<script src="/app/account.js?v=${VERSION}" defer></script>` +
   `\n<script src="/app/local-music.js?v=${VERSION}" defer></script>$1$2`);
 
 write(path.join(OUT, 'sdynotes.html'), html);
-log('   메타 8줄 주입 · pwa.js·local-music.js 를 플레이어 앞에 배치');
+log('   메타 주입 · pwa.js·account.js·local-music.js 를 플레이어 앞에 배치');
 
 // ── ⑥ 매니페스트 ──────────────────────────────────────────────────────────
 log('⑥ 매니페스트');
@@ -169,6 +172,7 @@ if (!sw.includes("__SDY_BUILD__")) die('sw.js 에 __SDY_BUILD__ 자리표시자�
 // 미리 받을 목록 = 앱 셸 그대로. 실제 파일이 없으면 설치가 계속 실패하므로
 // 목록에 넣기 전에 존재를 확인한다.
 const shell = new Set(['/', '/manifest.webmanifest', '/icons/favicon-32.png',
+  '/privacy', '/terms', '/legal/privacy.html', '/legal/terms.html',
   '/icons/icon-144.png', '/icons/icon-192.png', '/icons/icon-512.png',
   '/icons/maskable-512.png', '/icons/apple-touch-icon.png']);
 
@@ -178,10 +182,10 @@ for (const m of html.matchAll(/(?:src|href)="((?:\/)?(?:src|app)\/[^"?]+)(?:\?[^
 }
 for (const f of ['/sdynotes.js', '/sdynotes.css']) shell.add(f);
 
-const missing = [...shell].filter((u) => {
-  if (u === '/') return !fs.existsSync(path.join(OUT, 'sdynotes.html'));
-  return !fs.existsSync(path.join(OUT, u.replace(/^\//, '')));
-});
+// 확장자 없는 주소는 서버가 파일로 내보내는 경로다 — 실제 파일로 바꿔서 확인한다.
+const ROUTE_FILE = { '/': 'sdynotes.html', '/privacy': 'legal/privacy.html', '/terms': 'legal/terms.html' };
+const fileOf = (u) => path.join(OUT, (ROUTE_FILE[u] || u.replace(/^\//, '')));
+const missing = [...shell].filter((u) => !fs.existsSync(fileOf(u)));
 if (missing.length) die('미리 받기 목록에 없는 파일이 있습니다: ' + missing.join(', '));
 
 sw = sw.replace('__SDY_BUILD__', BUILD)
@@ -191,11 +195,7 @@ sw = sw.replace('__SDY_BUILD__', BUILD)
 write(path.join(OUT, 'sw.js'), rebrand(sw));
 
 let shellBytes = 0;
-for (const u of shell) {
-  if (u === '/') continue;
-  const p = path.join(OUT, u.replace(/^\//, ''));
-  if (fs.existsSync(p)) shellBytes += fs.statSync(p).size;
-}
+for (const u of shell) shellBytes += fs.statSync(fileOf(u)).size;
 log(`   /sw.js — 미리 받기 ${shell.size}개 · ${(shellBytes / 1048576).toFixed(2)}MB`);
 
 // ── ⑧ 빌드 기록 ──────────────────────────────────────────────────────────
@@ -207,6 +207,13 @@ write(path.join(OUT, 'version.json'), JSON.stringify({
   shellFiles: [...shell],
   audience: APP.audience,
   packageId: APP.packageId,
+  storeRequirements: {
+    privacyPolicyUrl: '/privacy',
+    termsUrl: '/terms',
+    accountDeletion: 'POST /api/auth/account/delete (앱: 계정 화면 → 계정 삭제)',
+    offlineAppShell: true,
+    aiDataNotice: '개인정보처리방침 1-다 · 이용약관 제5조'
+  },
   note: '원본 저장소에서 조립한 발매판. 원본 코드는 수정되지 않았다.'
 }, null, 2) + '\n');
 

@@ -15,8 +15,11 @@ import {
   otpIssue, otpVerifyAndLogin, otpRateStatus, otpRateHit, passwordLogin,
   emailValid, sanitizeEmail, sanitizeNick,
   requireUser, extractUserToken, userLogout, userChangeNick, userChangePassword, userByTokenSync,
+  userDeleteAccount,
 } from '../lib/userauth.js';
 import { notifyAddInternal } from '../lib/notifyAdd.js';
+import { friendsPurgeUser } from '../lib/friends.js';
+import { dmPurgeUser } from '../lib/dmstore.js';
 
 const DEV_CODE = ['1', 'true', 'yes'].includes(String(process.env.SDY_AUTH_DEV_CODE || '').toLowerCase());
 
@@ -146,6 +149,42 @@ export function registerAuth(app) {
   app.post('/api/auth/logout', async (req, reply) => {
     await userLogout(extractUserToken(req));
     return reply.send({ ok: true });
+  });
+
+  // ── 계정 삭제 ──────────────────────────────────────────────────────────
+  //  16.5 · 스토어 심사 요건 — 앱 안에서 계정을 지울 수 있어야 한다
+  //  (Apple 5.1.1(v) · Google Play 데이터 삭제 정책).
+  //
+  //  실수로 지우는 일이 없게, 본문에 **가입 이메일을 그대로 적어야** 지워진다.
+  //  노트·필기·PDF 는 계정이 아니라 기기에 딸린 것이라 서버에 없다 —
+  //  지우지 않고, 응답에도 그 사실을 담아 화면이 그대로 안내하게 한다.
+  app.post('/api/auth/account/delete', async (req, reply) => {
+    const u = bearerUser(req);
+    if (!u) return reply.code(401).send({ ok: false, error: '로그인이 필요해요' });
+    const typed = String((req.body || {}).confirm || '').trim().toLowerCase();
+    if (!typed) {
+      return reply.code(400).send({
+        ok: false, code: 'confirm_required',
+        error: '확인을 위해 가입 이메일을 그대로 적어 주세요',
+        email: u.email,
+      });
+    }
+    if (typed !== String(u.email || '').trim().toLowerCase()) {
+      return reply.code(400).send({ ok: false, code: 'confirm_mismatch', error: '이메일이 맞지 않아요' });
+    }
+    // 이 회원이 낀 관계·대화를 함께 정리한다 (없는 모듈이어도 계정 삭제는 계속된다)
+    let friends = 0, threads = 0;
+    try { friends = await friendsPurgeUser(u.uid); } catch { /* noop */ }
+    try { threads = await dmPurgeUser(u.uid); } catch { /* noop */ }
+    const r = await userDeleteAccount(u.uid);
+    if (!r.ok) return reply.code(404).send(r);
+    console.log(`[auth] 계정 삭제 — ${r.removed.email} (${r.removed.nick}) · 세션 ${r.removed.sessions} · 친구 ${friends} · 대화 ${threads}`);
+    return reply.send({
+      ok: true,
+      removed: { email: r.removed.email, nick: r.removed.nick, sessions: r.removed.sessions, friends, threads },
+      // 화면이 그대로 안내할 수 있게 남기는 것도 알려 준다
+      kept: { local_notes: true, local_files: true },
+    });
   });
 
   // ── 닉네임 중복 확인 (회원가입 화면에서 미리 검사) ──

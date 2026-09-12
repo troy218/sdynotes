@@ -298,6 +298,32 @@ export function requireUser(req) {
   return userByTokenSync(extractUserToken(req));
 }
 
+// ── 계정 삭제 (스토어 심사 요건: 앱 안에서 지울 수 있어야 한다) ──────────────
+//   지우는 것 — 회원 기록과 그 회원의 모든 세션(다른 기기까지 즉시 로그아웃).
+//   안 지우는 것 — 노트 본문·필기·PDF. 그건 계정이 아니라 **기기**에 딸린 것이라
+//   서버에 없고, 지우면 오히려 사용자 데이터를 함부로 없애는 셈이 된다.
+//   (앱 화면도 이 구분을 그대로 안내한다.)
+export async function userDeleteAccount(uid) {
+  await usersLoad();
+  const u = users[uid];
+  if (!u) return { ok: false, error: '회원 정보를 찾을 수 없어요' };
+  const email = u.email || '';
+  const nick = u.nick || '';
+
+  // 다른 기기의 세션도 전부 끊는다 (살아 있는 토큰이 남으면 계정이 지워져도 유효해 보인다)
+  const sess = await sessionsLoad();
+  let killed = 0;
+  for (const [tok, v] of sess) {
+    if (v && v.uid === uid) { sess.delete(tok); killed += 1; }
+  }
+  delete users[uid];
+
+  await usersSave();
+  await sessionsSave();     // 반드시 기다린다 — 안 기다리면 세션이 파일에 남는다
+
+  return { ok: true, removed: { uid, email, nick, sessions: killed } };
+}
+
 export function userLogout(token) {
   return withLock('userauth', async () => {
     await ensureSessions();

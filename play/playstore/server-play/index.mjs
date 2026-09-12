@@ -164,6 +164,10 @@ const server = http.createServer((req, res) => {
   // 오프라인에서도 앱이 열려야 하므로 서비스워커·매니페스트를 최우선으로 보낸다
   if (urlPath.indexOf('/api/') === 0) return proxy(req, res);
 
+  // 약관·개인정보 — 스토어 심사에서 요구하는 주소. 확장자 없이도 열리게 한다.
+  const LEGAL = { '/privacy': 'legal/privacy.html', '/terms': 'legal/terms.html' };
+  if (LEGAL[urlPath]) return serveStatic(req, res, '/' + LEGAL[urlPath]) || send(res, 404, '없음');
+
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'GET 만');
 
   try {

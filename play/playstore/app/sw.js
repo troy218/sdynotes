@@ -220,7 +220,9 @@ self.addEventListener('fetch', (event) => {
         if (res && res.ok) cache.put('/', res.clone()).catch(() => {});
         return res;
       } catch (e) {
-        const hit = (await cache.match('/')) || (await cache.match('/sdynotes.html'));
+        // 약관 페이지처럼 따로 담아 둔 화면은 그 주소 그대로, 나머지는 앱 셸로.
+        const hit = (await cache.match(req)) || (await cache.match('/')) ||
+          (await cache.match('/sdynotes.html'));
         if (hit) return hit;
         return new Response('<h1>오프라인</h1><p>앱을 한 번 열어 두면 다음부터는 열립니다.</p>',
           { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });

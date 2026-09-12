@@ -11,12 +11,20 @@ play/playstore/
 │   ├─ local-music.js      /api/music/* 를 가로채 서버 대신 기기로 답한다 (플레이어 무수정)
 │   ├─ sw.js               서비스워커 — 오프라인 + 음원을 기기에서 흘려보냄
 │   ├─ pwa.js              설치·오프라인·저장공간 안내
-│   └─ pwa.css             그 안내용 스타일 (기존 CSS 와 충돌 없음)
+│   ├─ pwa.css             그 안내용 스타일 (기존 CSS 와 충돌 없음)
+│   ├─ account.js          계정 창에 '내 데이터' 칸 + 계정 삭제 (원본 UI 에 덧붙임)
+│   └─ account.css         그 칸·삭제 확인 창 스타일
+├─ legal/
+│   ├─ privacy.html        개인정보처리방침 (/privacy)
+│   └─ terms.html          이용약관 (/terms)
 ├─ server-play/index.mjs  배포용 얇은 서버 (의존성 0개 · 정적 + API 넘기기)
 ├─ scripts/
 │   ├─ build.mjs           조립 (원본은 읽기만)
 │   ├─ icons.mjs           로고 SVG 패스로 아이콘 6종 굽기 (librsvg 불필요)
-│   ├─ verify.mjs          결과 검사 57항목
+│   ├─ verify.mjs          구조 검사 67항목 (+ 제출 전 자리표시자 경고)
+│   ├─ test-account-delete.mjs  삭제가 서버 파일에서 정말 사라지게 하는가 (17항목)
+│   ├─ test-account-ui.mjs      삭제가 화면에서 눌러서 되는가 (jsdom · 18항목)
+│   ├─ test-all.mjs        위 4단계를 한 번에
 │   └─ serve.mjs           미리 보기 서버
 ├─ docs/listing.md        스토어 등록 문구 (그대로 붙여 넣기용)
 └─ build/                 ⚙ 결과물 (git 에 안 올림)
@@ -25,10 +33,16 @@ play/playstore/
 ## 쓰는 법
 
 ```bash
-node scripts/build.mjs            # 조립 → build/
-node scripts/verify.mjs           # 검사 57항목
+node scripts/test-all.mjs         # 조립 + 검사 4단계 (권장)
+node scripts/build.mjs            # 조립만
+node scripts/verify.mjs           # 구조 검사 67항목
 PORT=5173 node scripts/serve.mjs  # 미리 보기
 ```
+
+검사는 네 단계다. ① 조립 ② 구조(앱 셸·아이콘·이름표·심사 요건·원본 불변)
+③ **계정 삭제가 서버 파일에서 정말 사라지게 하는가**(임시 폴더에서 실제로 돌림)
+④ **삭제가 화면에서 눌러서 끝까지 되는가**(jsdom). ③④는 실제로 버그를 잡았다 —
+세션 저장을 기다리지 않던 것, 1:1 대화 파일의 필드명을 잘못 본 것이 그때 드러났다.
 
 기존 백엔드(AI·논문 챗·동기화)까지 붙여 보려면:
 
@@ -68,7 +82,23 @@ PORT=5173 SDY_UPSTREAM=http://127.0.0.1:5000 node scripts/serve.mjs
 문자열**이라(저장 키는 `sdy3`, 파일 이름은 `sdynotes.js` — 건드리지 않음) 안전하다.
 개발자 기기에 남은 옛 제목 설정은 '없음'으로 취급해 새 이름이 나오게 했다.
 
+## 스토어 심사 요건 (갖춰진 것)
+
+| 요건 | 상태 | 어디에 |
+|---|---|---|
+| 개인정보처리방침 URL | ✅ `/privacy` | `legal/privacy.html` |
+| 이용약관 URL | ✅ `/terms` | `legal/terms.html` |
+| 앱 내 계정 삭제 | ✅ 계정 화면 → 계정 삭제 | `app/account.js` · `POST /api/auth/account/delete` |
+| 삭제 시 개인정보 파기 | ✅ 회원·세션·친구·대화 | `userauth.js` · `friends.js` · `dmstore.js` |
+| AI 데이터 전송 고지 | ✅ 방침 1-다 · 약관 제5조 | `legal/*` |
+| 오프라인 동작(4.2 대응) | ✅ 서비스워커 앱 셸 | `app/sw.js` |
+| 저작권 위험 기능 제외 | ✅ 음악 업로드·유튜브·DM 은 발매판에서 로컬/제외 | `app/local-music.js` |
+
+**제출 전 남은 일:** `legal/*.html` 의 `[운영자명]` · `[연락처 이메일]` · `[시행일]` 을
+실제 값으로 채우세요. `verify.mjs` 가 자리표시자가 남아 있으면 경고로 알려 줍니다.
+
 ## 원본을 건드리지 않는다는 보장
 
 `verify.mjs` 7번 항목이 `git status` 로 확인한다:
-**`play/` 밖의 파일은 하나도 수정되지 않았다.** 조립은 읽기만 한다.
+**화면 파일(`sdynotes.html`·`sdynotes.css`·`sdynotes.js`·`src/*`)은 하나도 수정되지 않았다.**
+(서버 쪽 변경 — 계정 삭제 API 추가 — 은 의도된 기능이라 알림으로만 표시한다.)
