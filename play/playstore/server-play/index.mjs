@@ -4,7 +4,7 @@
 
    왜 Fastify 를 안 쓰나
      이 서버가 하는 일은 딱 두 가지다. ① build/ 안의 파일을 내보낸다.
-     ② /api/* 를 기존 SDYnotes 백엔드로 넘긴다. 그 정도는 node 기본 모듈로
+     ② /api/* 를 기존 백엔드(SDYnotes)로 넘긴다. 그 정도는 node 기본 모듈로
      충분하고, 의존성이 없으면 기기·서버 어디서든 그대로 뜬다.
      (기존 백엔드는 그대로 돌아간다 — 이 서버는 그 앞에 서는 얇은 껍데기다.)
 
@@ -188,7 +188,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log('='.repeat(56));
-  console.log('  SDYnotes 발매판 서버');
+  console.log('  notesis 발매판 서버 (원본 SDYnotes 백엔드 앞단)');
   console.log(`  주소    : http://${HOST}:${PORT}`);
   console.log(`  내보냄  : ${ROOT}`);
   console.log(`  백엔드  : ${UPSTREAM || '(없음 — 앱은 열리지만 서버 기능 꺼짐)'}`);
