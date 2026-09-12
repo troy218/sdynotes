@@ -1484,6 +1484,11 @@
         .stroke-g.sel .stroke-halo{opacity:.32;}
         .draw-surface{position:absolute;inset:0;z-index:20;cursor:none;display:none;
             touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+        /* 14.68 · 손바닥 차단(연필 모드) — body.palm-strict 일 때만 손가락이
+           그리기 면을 '통과'해 화면 이동(팬/스크롤)이 된다. 펜은 그대로 그린다.
+           클래스는 터치 기기(폰·태블릿)의 그리기 도구막대 토글로만 붙으므로
+           데스크톱에는 아무 영향이 없다. */
+        body.palm-strict .draw-surface{touch-action:pan-x pan-y;}
 
         /* ===== 표 조절 (열/행 경계를 끌어서 크기 변경) ===== */
         .layer-tbl{position:absolute;inset:0;z-index:45;pointer-events:none;}
@@ -9162,4 +9167,96 @@ html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
   .home-ai-card{margin-bottom:12px;border-radius:9px;}
   .home-ai-out{padding:11px 12px;font-size:13px;line-height:1.7;max-height:46vh;}
   .home-ai-acts{padding:0 12px 10px;}
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   14.68 · 폰 세로 에디터 조작 강화 — 모바일 전용 (데스크톱 규칙 불변)
+
+   ① 도구막대: 가로 스크롤 없이 '모든 도구를 한 번에' 보여 준다.
+      1줄 = 뒤로/제목/되돌리기/페이지/더보기/내보내기,
+      그 아래 = 글자 서식·넣기·그리기·찾기 도구 전체를 줄바꿈 배치.
+      좁은 화면에서 숨기던(.tb-hide-sm) 도구도 세로 폰에서는 전부 표시.
+   ② 그리기 도구막대: 색·굵기·도형·지우개·손바닥 차단을 한 번에 모두.
+      (가로 스크롤로 도구를 찾지 않아도 된다)
+   ③ 그리기 도구막대가 열리면 본문 아래 여백을 그만큼 더 확보.
+   ④ 더보기 서랍은 세로 폰에서 바닥 시트 — 높아진 도구막대와 안 겹친다.
+   (폰 가로는 예전의 한 줄 가로 스크롤 도구막대를 그대로 유지한다.)
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width:640px) and (orientation:portrait){
+  /* ── ① 메인 도구막대: 한 줄 스크롤 → 전체 노출 줄바꿈 ── */
+  .editor-toolbar{
+    flex-wrap:wrap!important;align-content:flex-start;
+    overflow-x:hidden!important;overflow-y:visible!important;
+    touch-action:manipulation!important;
+    row-gap:3px;
+  }
+  .editor-toolbar .tb-left{order:1;flex:1 1 auto;min-width:0;}
+  .editor-toolbar .tb-right{order:2;flex:0 0 auto;flex-wrap:nowrap;}
+  .editor-toolbar .tb-mid{
+    order:3;flex:1 1 100%;min-width:100%;
+    flex-wrap:wrap;justify-content:center;row-gap:3px;
+    padding-top:4px;margin-top:2px;border-top:1px solid var(--border);
+  }
+  /* 묶음 안에서도 줄바꿈 — 글자 서식 묶음이 화면 폭을 넘기지 않게 */
+  .editor-toolbar .tb-mid .tb-group{flex-wrap:wrap;row-gap:2px;max-width:100%;}
+  /* 좁은 화면에서 숨기던 도구(취소선·좌우정렬·표·수식·글자크기±)를 전부 표시 */
+  .editor-toolbar .tb-hide-sm{display:inline-flex!important;}
+  .editor-toolbar #saveState{display:none!important;}   /* 1줄 공간 확보 — 저장 상태는 제목 옆에서 제외 */
+  /* 도구 버튼은 콤팩트하게 — 스크롤 없이 전부 보이도록 */
+  .editor-toolbar .tb-left .tool-btn,
+  .editor-toolbar .tb-right .tool-btn{
+    width:36px!important;min-width:36px;height:36px!important;min-height:36px;
+  }
+  .editor-toolbar .tb-mid .tool-btn,
+  .editor-toolbar .tb-mid .tool-btn.sm{
+    width:34px!important;min-width:34px;height:34px!important;min-height:34px;
+    font-size:17px!important;border-radius:9px;
+  }
+  .editor-toolbar .tb-mid .split-btn .main{min-width:30px;width:30px;height:34px;}
+  .editor-toolbar .tb-mid .split-btn .caret{width:14px;height:34px;}
+  .editor-toolbar .tb-mid .tool-sep{height:20px;margin:0 1px;}
+  .editor-toolbar #fsInput{width:38px!important;min-width:38px;height:32px;padding:0 2px;}
+  .editor-toolbar .font-btn{max-width:78px;height:32px;padding:0 6px;}
+  .editor-toolbar .font-btn span{display:none;}         /* 글꼴은 아이콘만 — 다른 도구에 자리 양보 */
+  .editor-toolbar #edTitle{flex:1 1 72px!important;width:auto;min-width:60px!important;}
+  .editor-toolbar .pg-nav{padding:2px 4px!important;min-height:36px;}
+  .editor-toolbar .pg-nav button{width:28px;height:28px;}
+  .editor-toolbar .pg-nav input{width:32px;height:30px;}
+  .editor-toolbar .pg-nav .tot{font-size:11px;}
+
+  /* ── ② 그리기 도구막대: 가로 스크롤 → 전체 노출 줄바꿈 ── */
+  .draw-toolbar{
+    left:max(6px,var(--ph-left))!important;right:max(6px,var(--ph-right))!important;
+    bottom:calc(var(--ph-safe) + 8px)!important;
+    width:auto!important;max-width:none!important;transform:none!important;
+    overflow-x:hidden!important;overflow-y:auto!important;
+    flex-wrap:wrap;justify-content:center;row-gap:8px;
+    padding:9px 10px!important;gap:8px;
+    max-height:44dvh;z-index:1350!important;
+    touch-action:manipulation!important;
+    border-radius:16px;overscroll-behavior:contain;
+  }
+  .draw-toolbar .color-pick{width:32px;height:32px;min-width:32px;}
+  .draw-toolbar .tool-btn{width:38px!important;height:38px!important;min-width:38px;}
+  /* 굵기 점: 보이는 크기는 그대로, 터치 영역은 넓게 */
+  .draw-toolbar .size-opt{padding:11px;box-sizing:content-box;background-clip:content-box;}
+  .draw-toolbar .size-opt.sel{outline-offset:0;}
+  .draw-toolbar .tool-sep{height:26px;margin:0;}
+  .draw-toolbar .palm-btn.active{background:var(--accent);color:#fff;box-shadow:0 2px 6px rgba(79,110,247,.35);}
+
+  /* ── ③ 그리기 도구막대가 열려 있는 동안 본문 하단 여백 ── */
+  .editor:has(#drawToolbar[style*="flex"]) .editor-body{
+    padding-bottom:calc(var(--ph-safe) + 190px)!important;
+  }
+
+  /* ── ④ 더보기 서랍은 세로 폰에서 바닥 시트 (높아진 도구막대와 겹침 방지) ── */
+  .more-panel{
+    top:auto!important;bottom:0!important;left:0!important;right:0!important;
+    width:100%!important;max-width:none!important;
+    max-height:min(72dvh,calc(var(--sdy-mobile-vh,100dvh) - 120px));
+    border-radius:16px 16px 0 0!important;
+    padding-bottom:max(8px,env(safe-area-inset-bottom));
+    animation:sheetUp .18s cubic-bezier(.4,0,.2,1);
+  }
+  @keyframes sheetUp{from{transform:translateY(12px);opacity:.55}to{transform:none;opacity:1}}
 }

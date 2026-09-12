@@ -9,7 +9,11 @@
     let drawing=false, curPts=null, curPathNode=null, drawPageIdx=0;
     const ERASER_MULT=6;   // 지우개 반경 = drawSize * ERASER_MULT
 
-    function eraserRadius(){ return (drawSize*ERASER_MULT)/2; }
+    // 14.68 · 폰/태블릿(coarse pointer)에서는 지우개 판정 반경을 약 1.7배 넉넉하게 —
+    //   손가락·펜으로 '끊기(지우기)'가 쉬워진다. 데스크톱(마우스)은 원래 값 그대로.
+    let _eraserTouchBoost=1;
+    try{ _eraserTouchBoost=(window.matchMedia&&matchMedia('(pointer:coarse)').matches)?1.7:1; }catch(e){}
+    function eraserRadius(){ return (drawSize*ERASER_MULT*_eraserTouchBoost)/2; }
 
     function syncDrawModeButtons(){
         const p=document.getElementById('penBtn');
@@ -29,6 +33,7 @@
         try{ activateVisiblePages(); }catch(_e){}   // 20.0 · 펜을 들면 보이는 쪽을 편집 상태로
         const er=document.getElementById('eraserBtn'); if(er) er.classList.remove('active');
         const bar=document.getElementById('drawToolbar'); if(bar) bar.style.display='flex';
+        try{ sdyPenBarReady(); }catch(_e){}   // 14.68 · 폰/태블릿: 손바닥 차단 버튼 주입(멱등)
         editorPapers().forEach(p=>p.classList.add('drawing'));
         syncDrawModeButtons();
         updateToolCursor();
@@ -400,6 +405,9 @@
     }
     function drawStart(e,pageIdx){
         if(!penActive) return;
+        // 14.68 · 손바닥 거부: 펜이 쓰는 동안의 손가락/손바닥 터치와,
+        //   '손바닥 차단(연필 모드)'의 손가락 터치는 그리기를 시작하지 않는다.
+        try{ if(_sdyPalmIgnore(e)) return; }catch(err){}
         if(e.type==='touchstart'&&_pagePointerIntent&&_pagePointerIntent.ink){ e.preventDefault(); return; }
         e.preventDefault();
         curPageIdx=pageIdx; updatePageInfo();
@@ -630,6 +638,15 @@
     // ===== 두 손가락 확대/축소 (핀치 줌) =====
     // 예전엔 이 기능이 아예 없고 뷰포트도 user-scalable=no 라 모바일에서
     // 확대가 전혀 안 됐다. 손가락 사이 중점을 화면에 고정한 채 배율만 바꾼다.
+    //
+    // 14.68 · 앵커 수정 — 예전 버전은 제스처 중에 scrollLeft/Top 을 보정해서
+    //   손가락 중점을 붙잡으려 했다. 하지만 CSS transform 으로 키운 영역은
+    //   WebKit(iOS/iPadOS)이 스크롤 가능 범위에 넣어 주지 않으므로 보정값이
+    //   (0,0) 쪽으로 clamp 되고, 그 결과 '왼쪽 위 기준' 확대처럼 보였다.
+    //   이제 제스처 중에는 스크롤을 전혀 건드리지 않고, stage 에
+    //   translate+scale 을 걸어 '붙잡은 문서 지점 = 손가락 중점'을 매 프레임
+    //   맞춘다(두 손가락 끌기 = 이동도 자연스럽게 된다). 손을 떼면 그때
+    //   진짜 레이아웃(layoutPages) + 스크롤로 정확히 커밋한다.
     (function(){
         const body=document.getElementById('editorBody');
         const stage=document.getElementById('pagesStage');
@@ -637,36 +654,55 @@
         let piv=null;
         const dist=t=>Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY);
         const mid =t=>({x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2});
+        // stage 원점(좌상단)의 'body 콘텐츠 좌표' — padding + margin:auto 가운데
+        // 정렬 오프셋까지 포함. 스크롤과 무관한 값이라 확대 전후 앵커 계산에 쓴다.
+        const stageOrigin=()=>{
+            const sr=stage.getBoundingClientRect(), br=body.getBoundingClientRect();
+            return {x:sr.left-br.left+body.scrollLeft, y:sr.top-br.top+body.scrollTop};
+        };
 
         body.addEventListener('touchstart',e=>{
             if(e.touches.length!==2) return;
-            const m=mid(e.touches), r=body.getBoundingClientRect();
+            // 이미 브라우저가 스크롤로 가져간 제스처(한 손가락 팬 뒤 두 번째 손가락)
+            // 에서는 손대지 않는다 — cancelable 이 아니면 preventDefault 도 무효다.
+            if(e.cancelable===false) return;
+            // 네이티브 2-finger 팬/줌을 차단해서 제스처를 JS 가 온전히 소유한다.
+            try{ e.preventDefault(); }catch(err){ return; }
+            const m=mid(e.touches), r=body.getBoundingClientRect(), o=stageOrigin();
             piv={
-                d0:dist(e.touches), z0:zoomPct,
-                // 확대 기준점을 '문서 좌표'로 붙잡아 둔다
-                cx:(body.scrollLeft+m.x-r.left)/pageScale,
-                cy:(body.scrollTop +m.y-r.top )/pageScale,
+                d0:dist(e.touches), z0:zoomPct, s0:pageScale,
+                // 붙잡은 문서 지점 (제스처 시작 시 stage 레이아웃 px)
+                lx:(body.scrollLeft+m.x-r.left)-o.x,
+                ly:(body.scrollTop +m.y-r.top )-o.y,
+                ox:o.x, oy:o.y,
+                // 현재 손가락 중점 (body 클라이언트 rect 기준)
                 mx:m.x-r.left, my:m.y-r.top
             };
             try{ if(typeof deselectAll==='function') deselectAll(true); }catch(err){}
-        },{passive:true});
+        },{passive:false});
 
-        // 손가락을 움직이는 동안에는 '값싼' CSS 확대만 한다.
+        // 손가락을 움직이는 동안에는 '값싼' CSS transform 만 한다.
         // layoutPages() 는 쪽마다 DOM 을 만지므로 프레임마다 부르면
         // 손가락을 따라오지 못하고 굼떠 보인다 → 뗄 때 딱 한 번만 부른다.
         let raf=0, want=0;
         const apply=()=>{
             raf=0;
+            if(!piv) return;
             const k=want/piv.z0;                       // 시작 배율 대비 비율
+            // 붙잡은 문서 지점(lx,ly)을 현재 손가락 중점(mx,my)에 맞춘다.
+            const tx=piv.mx+body.scrollLeft-piv.ox-k*piv.lx;
+            const ty=piv.my+body.scrollTop -piv.oy-k*piv.ly;
             stage.style.transformOrigin='0 0';
-            stage.style.transform=`scale(${k})`;
-            // 붙잡아 둔 지점이 손가락 중점에 계속 붙어 있도록 스크롤 보정
-            const sc=pageScale*k;
-            body.scrollLeft=piv.cx*sc-piv.mx;
-            body.scrollTop =piv.cy*sc-piv.my;
+            stage.style.transform=`translate(${tx}px,${ty}px) scale(${k})`;
         };
+        function abortPinch(){
+            if(raf){ cancelAnimationFrame(raf); raf=0; }
+            piv=null; want=0;
+            stage.style.transform='';
+        }
         body.addEventListener('touchmove',e=>{
             if(!piv||e.touches.length!==2) return;
+            if(e.cancelable===false){ abortPinch(); return; }  // 브라우저가 가져가면 중단
             e.preventDefault();                       // 브라우저 기본 동작 차단
             const d=dist(e.touches);
             if(!d||!piv.d0) return;
@@ -678,22 +714,24 @@
 
         const end=e=>{
             if(!piv) return;
-            if(!e.touches||e.touches.length<2){
-                if(raf){ cancelAnimationFrame(raf); raf=0; }
-                const fin=want||piv.z0, mx=piv.mx, my=piv.my, cx=piv.cx, cy=piv.cy;
-                piv=null; want=0;
-                // 임시 CSS 확대를 걷어내고 진짜 배율로 한 번에 다시 그린다
-                stage.style.transform='';
-                zoomPct=fin;
-                const was=body.style.scrollBehavior;
-                body.style.scrollBehavior='auto';
-                layoutPages();
-                body.scrollLeft=cx*pageScale-mx;
-                body.scrollTop =cy*pageScale-my;
-                body.style.scrollBehavior=was;
-                try{ sizeTextGhost(); }catch(err){}
-                try{ onEditorScroll(); }catch(err){}
-            }
+            if(e.touches&&e.touches.length>=2) return;
+            if(raf){ cancelAnimationFrame(raf); raf=0; }
+            const fin=want||piv.z0, mx=piv.mx, my=piv.my, lx=piv.lx, ly=piv.ly, s0=piv.s0;
+            piv=null; want=0;
+            // 임시 CSS transform 을 걷어내고 진짜 배율로 한 번에 다시 그린다
+            stage.style.transform='';
+            zoomPct=fin;
+            const was=body.style.scrollBehavior;
+            body.style.scrollBehavior='auto';
+            layoutPages();
+            // 같은 문서 지점의 새 레이아웃 px = lx × (새 배율 / 시작 배율).
+            // 새 stage 원점 기준으로 스크롤을 잡아 마지막 손가락 중점에 그대로 붙인다.
+            const o=stageOrigin(), rr=(s0>0)?(pageScale/s0):1;
+            body.scrollLeft=o.x+lx*rr-mx;
+            body.scrollTop =o.y+ly*rr-my;
+            body.style.scrollBehavior=was;
+            try{ sizeTextGhost(); }catch(err){}
+            try{ onEditorScroll(); }catch(err){}
         };
         body.addEventListener('touchend',end);
         body.addEventListener('touchcancel',end);
@@ -712,6 +750,8 @@
             if(e.touches.length||!e.changedTouches.length) return;
             if(penActive||drawing) return;
             const t=e.changedTouches[0], now=Date.now();
+            // 14.68 · '빈 곳 더블탭 + 끌기'가 영역 선택으로 쓰였다면 줌 토글은 쉰다
+            if(window._sdyDblDragAt&&now-window._sdyDblDragAt<800){ lastT=0; return; }
             if(now-lastT<300 && Math.hypot(t.clientX-lastX,t.clientY-lastY)<28){
                 if(e.target.closest('.tb,.paper-img,.stroke-g')) return;  // 요소 조작은 방해 않기
                 lastT=0;

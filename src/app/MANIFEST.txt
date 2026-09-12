@@ -25,6 +25,7 @@
 09-tools-ui.js
 10a-place-keys.js
 10b-pen.js
+10c-mobile-touch.js
 11a-text-style.js
 11b-inline-fmt.js
 11c-caret-paper.js

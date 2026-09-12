@@ -1,5 +1,64 @@
 # AI 노트 도우미 설정 (14.39.10 · 중요어 색칠 정리 · 버그를 말하면 일지로 정리 · 참고 일러스트 · 사진/그림 구분)
 
+**14.68.0 — 모바일(폰/태블릿) 조작 개선: 손가락 중점 핀치 줌 · 한 손가락=화면 이동 · 빈 곳 더블탭+끌기=영역 선택 · 도구 전부 노출 · 손바닥 거부. 데스크톱은 불변.**
+- **왜.** 사용자 요청 — "데스크탑 모드는 완전 좋은데 폰으로 볼 때에도 조작이 편하게 해줘.
+  ① 확대/축소가 왼쪽 위 기준이 아니라 **사용자가 잡은 지점** 기준으로 되게,
+  ② 그냥 손을 움직이면 화면이 움직여지고(팬), **빈 곳을 더블탭한 뒤 끌면 객체들이 선택**되게,
+  ③ 툴바 도구들이 모바일 화면에서 **한 번에 다** 보이게, ④ 그림 그리고 지우기도 편하게,
+  ⑤ 태블릿에서 Apple Pencil/펜으로 입력할 때 **손바닥이 인식되지 않게**.
+  단, 컴퓨터(데스크톱) 환경은 절대 건드리지 말고 모바일에서만."
+- **지금.**
+  - **① 핀치 줌 앵커 수정** — 예전 구현은 제스처 중에 `scrollLeft/Top` 보정으로
+    손가락 중점을 붙잡으려 했다. 그러나 CSS transform 으로 키운 영역은 WebKit
+    (iOS/iPadOS)이 스크롤 가능 범위에 포함하지 않으므로 보정값이 0 으로 클램프되어
+    '왼쪽 위 기준' 확대처럼 보였다. 이제 제스처 중에는 스크롤을 전혀 건드리지 않고
+    `#pagesStage` 에 `translate(tx,ty) scale(k)` 를 걸어 **붙잡은 문서 지점을 손가락
+    중점에 매 프레임 맞춘다**(두 손가락 끌기 = 이동도 자연스럽게 됨). 손을 떼면
+    `layoutPages()` + 새 stage 원점 기준 스크롤로 오차 없이 커밋한다. 두 번째 손가락
+    `touchstart` 에서 `preventDefault` 해 네이티브 제스처 가로채기를 막고, 이미 브라우저가
+    가져간 제스처(`cancelable===false`)에서는 손을 떼는 안전판도 넣었다
+    (`src/app/10b-pen.js` 핀치 IIFE 재작성).
+  - **② 한 손가락 = 화면 이동, 빈 곳 더블탭+끌기 = 영역 선택** — 터치
+    (`pointerType==='touch'`)에서는 빈 종이 `pointerdown` 이 더 이상 marquee 를
+    시작하지 않는다(스크롤과 선택이 싸우던 것 제거). 대신 새 파트
+    `src/app/10c-mobile-touch.js` 가 '빈 곳 더블탭(380ms·40px) 후 두 번째 탭에서
+    끌기' 제스처만으로 marquee 를 연다. 제스처 중에는 `touchmove preventDefault` 로
+    스크롤 인계를 막고, 무거운 문서는 `activatePage()` 로 쪽을 깨운 뒤 마지막
+    좌표로 한 번 더 훑어 선택을 확정한다. 드래그 없이 더블탭만 하면 예전처럼
+    100% ↔ 폭 맞춤 줌 토글이 유지된다(`window._sdyDblDragAt` 로 상호 억제).
+    마우스·펜(데스크톱)의 '빈 종이 드래그 = marquee' 는 그대로다
+    (`src/app/08a-selection.js`).
+  - **③ 도구 전부 노출(세로 폰)** — `@media (max-width:640px) and (orientation:portrait)`
+    전용 블록을 모바일 최종 블록 끝에 추가. 에디터 도구막대는 가로 스크롤 대신
+    **줄바꿈 전체 노출**: 1줄 = 뒤로/제목/되돌리기/페이지/더보기/내보내기,
+    아래 = 글자 서식·넣기·그리기·찾기 도구 전체(`.tb-hide-sm` 해지, 콤팩트 34px).
+    그리기 도구막대(색·굵기·도형·지우개)도 줄바꿈 전체 노출 + 굵기 점은
+    `padding+background-clip:content-box` 로 보이는 크기 그대로 터치 영역만 확대.
+    도구막대가 열리면 본문 하단 여백도 자동 확보(`:has(#drawToolbar[style*="flex"])`),
+    더보기 서랍은 세로 폰에서 바닥 시트. 폰 가로(landscape)는 예전의 한 줄
+    가로 스크롤을 그대로 유지(`sdynotes.css`).
+  - **④ 그리기·지우기 편안함** — coarse pointer(폰/태블릿)에서만 지우개 판정
+    반경 ×1.7(`_eraserTouchBoost`). 데스크톱은 원래 값 그대로.
+  - **⑤ 손바닥 거부** — (가) **자동**: 펜(`pointerType==='pen'`)이 화면에 닿아 있는
+    동안 + 떼고 320ms 는 에디터 본문의 터치 이벤트를 window 캡처 최전방에서
+    `preventDefault+stopPropagation` 으로 묻는다(그리기·선택·스크롤·탭 전부 무시 →
+    필기 중 손바닥이 지나가도 선이 그어지지 않음). (나) **손바닥 차단(연필 모드)
+    토글**: 그리기 도구막대에 버튼을 **터치 기기에서만** 주입(`sdyPenDevice()` —
+    coarse pointer 또는 iPadOS 데스크톱 모드. Windows 터치 노트북은 제외). 켜면
+    펜 모드에서 손가락은 `touch-action:pan-x pan-y` 로 **화면 이동만** 되고 펜만
+    그린다. 상태는 `localStorage.sdy_palm_strict` 에 저장(`src/app/10c-mobile-touch.js`
+    + `body.palm-strict .draw-surface` CSS).
+  - **데스크톱 불변 보장** — 새 동작은 전부 ① 터치 이벤트/`pointerType==='touch'`
+    ② `(pointer:coarse)`/터치 기기 판정 ③ 세로 폰 미디어쿼리 중 하나로 게이트된다.
+    마우스·키보드·휠(Ctrl+휠 줌 포함) 경로는 코드 변경 없음.
+- **검증.** `npm run test:phone` — `phone_layout_contract` 67(신규 13 포함) ·
+  `mobile_runtime_smoke` 18 · **신규** `mobile_touch_runtime` 31(390×844 터치 JSDOM:
+  핀치 ×2/÷2 커밋·transform 프리뷰·uncanable 중단, 손바닥 거부 온/오프·유예 회복,
+  연필 모드에서 손가락 차단+펜 통과, 더블탭 marquee 선택 1/2·단일탭 비선택,
+  터치 pointerdown 비-marquee·마우스 marquee 불변) · `test:draw` 36 ·
+  `test:selux` 53 · `test:rotmove` 23 · 전체 스위트 ·
+  `node scripts/bundle-frontend.mjs --check` · `node scripts/bump-version.mjs --check`.
+
 **14.65.0 — 사용자 보고 일곱 가지: 뒤로가기 홈 이동 · 엽스코드 흰 글씨 · 지점 복원 · 곡 음량 · 홈 검색 AI · 알림 배지 · 폴더 색.**
 - **왜.** ① "폴더 안에서 문서를 열고 뒤로가기를 하면 문서가 닫히는데, 한 번 더 누르면
   사이트가 나가져 버린다 — 그렇게 하지 말고 홈까지 이동할 수 있게 해줘",
