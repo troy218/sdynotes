@@ -39,25 +39,6 @@ function save() {
   return writeJsonAtomic(FILES.friends, st).catch((e) => console.error(`[friends] 저장 실패: ${e?.message || e}`));
 }
 export async function friendsBoot() { await load(); }
-// 계정 삭제 시 — 이 회원이 낀 친구 관계와 요청을 전부 걷어낸다.
-export async function friendsPurgeUser(uid) {
-  const me = String(uid || '');
-  if (!me) return 0;
-  await load();
-  let n = 0;
-  for (const key of Object.keys(st.pairs)) {
-    if (key.split('|').includes(me)) { delete st.pairs[key]; n += 1; }
-  }
-  for (const key of Object.keys(st.requests)) {
-    const r = st.requests[key];
-    if (key.split('|').includes(me) || (r && r.from === me) || (r && r.to === me)) {
-      delete st.requests[key]; n += 1;
-    }
-  }
-  if (n) await save();
-  return n;
-}
-
 
 // 만료된 요청 걸러 내기
 function gcRequests() {
