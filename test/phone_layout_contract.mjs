@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import { readAllJS } from './_frontend.mjs';
 import * as csstree from 'css-tree';
+import jsdom from 'jsdom';
 
 const html = fs.readFileSync(new URL('../sdynotes.html', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../sdynotes.css', import.meta.url), 'utf8');
@@ -149,11 +150,13 @@ ok('빈 곳 더블탭 + 끌기 = 영역 선택 (모바일 전용 제스처)',
 ok('지우개 판정은 coarse pointer(폰/태블릿)에서만 넓어진다',
   has(js, /_eraserTouchBoost=\(window\.matchMedia&&matchMedia\('\(pointer:coarse\)'\)\.matches\)\?1\.7:1/) &&
   has(js, /return \(drawSize\*ERASER_MULT\*_eraserTouchBoost\)\/2;/));
-ok('세로 폰 도구막대는 줄바꿈으로 모든 도구를 한 번에 보여 준다',
+ok('세로 폰 도구막대는 전체 노출(4줄)이 아니라 꼭 필요한 것만 두 줄이다',
   has(mobileSource, /orientation:portrait/) &&
   has(mobileSource, /\.editor-toolbar\{[\s\S]{0,120}flex-wrap:wrap!important/) &&
-  has(mobileSource, /\.editor-toolbar \.tb-hide-sm\{display:inline-flex!important;\}/) &&
-  has(mobileSource, /\.editor-toolbar \.tb-mid\{[\s\S]{0,220}flex-wrap:wrap/));
+  has(mobileSource, /\.editor-toolbar \.tb-hide-ph\{display:none!important;\}/) &&
+  has(mobileSource, /\.editor-toolbar \.tb-mid\{[\s\S]{0,260}flex:1 1 100%;min-width:100%/) &&
+  has(mobileSource, /\.editor-toolbar \.tb-mid \.tool-btn\{[\s\S]{0,140}width:34px!important/) &&
+  !/\.editor-toolbar \.tb-hide-sm\{display:inline-flex!important;\}/.test(css));
 ok('세로 폰 그리기 도구막대도 전체 노출 줄바꿈이며 굵기 점 터치 영역이 넓다',
   has(mobileSource, /\.draw-toolbar\{[\s\S]{0,420}flex-wrap:wrap/) &&
   has(mobileSource, /\.draw-toolbar \.size-opt\{padding:11px;box-sizing:content-box;background-clip:content-box;\}/));
@@ -162,6 +165,126 @@ ok('그리기 도구막대가 열리면 본문 하단 여백이 늘어난다',
 ok('10c-mobile-touch 파트가 MANIFEST 에 들어 있어 번들에 포함된다',
   fs.readFileSync(new URL('../src/app/MANIFEST.txt', import.meta.url), 'utf8').includes('10c-mobile-touch.js') &&
   has(js, /APP-PART:10c-mobile-touch\.js:BEGIN/));
+
+/* ── 4c. 14.69 · 세로 폰 도구막대에 '실제로' 무엇이 남는지 계산 ─────────
+   CSS 를 구문 분석해 390×844 세로 폰(coarse·hover:none)에 걸리는 @media 만
+   고른 뒤, 그 안의 display:none 을 HTML 도구막대에 들이대어 '보이는 도구'를
+   직접 센다. 눈대중이 아니라 실제로 남는 버튼 목록을 계약으로 못 박는다. ── */
+console.log('\n[4c] 14.69 세로 폰 도구막대 — 남는 도구와 서랍으로 옮긴 도구');
+{
+  const { JSDOM } = jsdom;
+  const doc = new JSDOM(html).window.document;
+  const PHONE = { width: 390, height: 840, orientation: 'portrait', pointer: 'coarse', hover: 'none', motion: 'no-preference' };
+
+  const evalCond = (txt) => {
+    const m = /^\(\s*([a-z-]+)\s*(?::\s*([^)]+?)\s*)?\)$/.exec(txt.trim());
+    if (!m) throw new Error('해석 못 하는 미디어 조건: ' + txt);
+    const feat = m[1], val = m[2] === undefined ? null : m[2].trim();
+    const px = (v) => { const n = /^(\d+(?:\.\d+)?)px$/.exec(v || ''); if (!n) throw new Error('px 아님: ' + v); return +n[1]; };
+    switch (feat) {
+      case 'min-width': return PHONE.width >= px(val);
+      case 'max-width': return PHONE.width <= px(val);
+      case 'min-height': return PHONE.height >= px(val);
+      case 'max-height': return PHONE.height <= px(val);
+      case 'orientation': return PHONE.orientation === val;
+      case 'pointer': return PHONE.pointer === val;
+      case 'hover': return PHONE.hover === val;
+      case 'prefers-reduced-motion': return PHONE.motion === val;
+      default: throw new Error('모르는 미디어 기능: ' + feat);
+    }
+  };
+  const evalQuery = (q) => q.split(/\s*,\s*/).some((part) => part.split(/\s+and\s+/).every(evalCond));
+
+  // display:none 을 만드는 선택자 — 항상 적용(미디어 없음) + 이 폰에 걸리는 미디어 안
+  const hidden = [];
+  const grabRules = (block) => {
+    for (const node of block.children) {
+      if (node.type !== 'Rule') continue;
+      const sel = csstree.generate(node.prelude);
+      for (const d of node.block.children) {
+        if (d.type === 'Declaration' && d.property === 'display' && csstree.generate(d.value) === 'none') hidden.push(sel);
+      }
+    }
+  };
+  const walk = (block, insideMatchingMedia) => {
+    for (const node of block.children) {
+      if (node.type === 'Atrule' && node.name === 'media') {
+        const match = insideMatchingMedia && evalQuery(csstree.generate(node.prelude));
+        if (match) grabRules(node.block);
+        walk(node.block, match);
+      } else if (node.type === 'Atrule' && node.block) {
+        walk(node.block, insideMatchingMedia);
+      } else if (node.type === 'Rule' && insideMatchingMedia) {
+        // 미디어 없는 최상위 규칙은 항상 적용된다
+      }
+    }
+  };
+  grabRules(ast);            // 최상위(미디어 밖) 규칙
+  walk(ast, true);           // 걸리는 미디어쿼리 안 규칙
+
+  const selHits = (el) => hidden.some((sel) => { try { return el.matches(sel); } catch { return false; } });
+  const isHidden = (el) => { for (let n = el; n && n.classList && !n.classList.contains('editor-toolbar'); n = n.parentElement) if (selHits(n)) return true; return false; };
+
+  const toolbar = doc.querySelector('.editor-toolbar');
+  const label = (el) => el.getAttribute('title') || el.getAttribute('aria-label') || el.id || el.className;
+  const shown = [...toolbar.querySelectorAll('button,input')]
+    .filter((el) => !el.closest('.font-menu') && !el.closest('.color-popover') && !isHidden(el))
+    .map(label);
+
+  ok('세로 폰 도구막대에 남는 도구는 딱 이 목록이다 (15개)',
+    shown.length === 15 && [
+      '노트 제목',
+      '텍스트 상자', '사진 추가', '펜 쓰기 / 종료', '형광펜 쓰기 / 종료',
+      '굵게', '기울임', '밑줄',
+      '글자 색 적용', '글자 색 선택', '형광펜 적용', '형광펜 색 선택',
+      '되돌리기', '다시 실행', '도구 더보기 · 노트 설정',
+    ].every((t) => shown.includes(t)),
+    '실제: ' + shown.join(' | '));
+  ok('글꼴·글자크기·취소선·정렬·스티커·표·수식·페인트·주요어·찾기·내보내기·쪽이동은 세로 폰 툴바에서 빠진다',
+    ['#fontBtn', '#fsInput', '#stkBtn', '#paintBtn', '#wfBtn', '#findBtn'].every((id) => isHidden(doc.querySelector(id))) &&
+    ['tb-bold', 'tb-italic'].every((c) => !isHidden(doc.querySelector('.' + c))) &&
+    [...toolbar.querySelectorAll('button')].filter((b) => /setAlign\(/.test(b.getAttribute('onclick') || '')).every(isHidden) &&
+    [...toolbar.querySelectorAll('button')].filter((b) => /chFS\(/.test(b.getAttribute('onclick') || '')).every(isHidden) &&
+    isHidden(toolbar.querySelector('.pg-nav')) &&
+    isHidden([...toolbar.querySelectorAll('button')].find((b) => /openExportModal\(/.test(b.getAttribute('onclick') || ''))));
+
+  const sheet = doc.getElementById('moreSheet').innerHTML;
+  ok('툴바에서 뺀 도구는 전부 더보기 서랍에서 부를 수 있다',
+    ['toggleFontMenu()', 'phFs(-2)', 'phFs(2)', "execFmt('strike')", "setAlign('left')", "setAlign('center')",
+     "setAlign('right')", 'openStickers()', 'togglePaint()', 'toggleFind()', 'openTableModal()',
+     'openLatexModal()', 'openExportModal()', "openPanel('pages')", "openPanel('words')"]
+      .every((call) => sheet.includes(call)),
+    ['toggleFontMenu()', 'phFs(-2)', "execFmt('strike')", "setAlign('center')", 'openStickers()',
+     'togglePaint()', 'toggleFind()', 'openTableModal()', 'openLatexModal()', 'openExportModal()',
+     "openPanel('pages')", "openPanel('words')"].filter((c) => !sheet.includes(c)).join(', '));
+  ok("서랍의 폰 전용 '도구' 칸은 세로 폰에서만 렌더된다",
+    /\.more-tabs button\[data-mt="tools"\]\{display:none;\}/.test(css) &&
+    /\.more-sec\[data-ms="tools"\]\{display:none;\}/.test(css) &&
+    has(mobileSource, /\.more-tabs button\[data-mt="tools"\]\{display:inline-flex;\}/) &&
+    has(mobileSource, /\.more-sec\[data-ms="tools"\]:not\(\[hidden\]\)\{display:block;\}/) &&
+    !!doc.querySelector('#moreSheet .more-tabs button[data-mt="tools"]') &&
+    !!doc.querySelector('#moreSheet .more-sec[data-ms="tools"]'));
+}
+
+/* ── 4d. 14.69 · 터치 선택은 '손을 떼야' 확정 (스크롤·핀치 방해 금지) ── */
+console.log('\n[4d] 14.69 터치 선택 타이밍');
+ok('터치의 요소 선택은 onPaperDown 앞에서 10c 게이트로 미뤄진다',
+  has(js, /if\(typeof _sdyTapHoldSelect==='function'&&_sdyTapHoldSelect\(e,pageIdx\)\) return;/) &&
+  has(js, /function _sdyTapHoldSelect\(e,pageIdx\)\{/));
+ok('게이트는 터치에서만 열린다 — 마우스·펜(데스크톱)은 즉시 선택 그대로',
+  has(js, /if\(!e\|\|e\.pointerType!=='touch'\) return false;/));
+ok('끌기 손잡이·편집 중인 상자·표 조작점은 미루지 않는다(끌기가 살아야 한다)',
+  has(js, /\.handle,\.tb-edge,\.tb-move,\.el-del,\.tbl-box,\.tbl-edge,\.tbl-div,\.tbl-h,\.tbl-stretch/) &&
+  has(js, /if\(host\.classList\.contains\('edit'\)\) return false;/));
+ok('스크롤(12px)·두 번째 손가락·pointercancel 이면 미뤄 둔 선택을 버린다',
+  has(js, /const _TAP_SLOP=12;/) && has(js, /_tapSel=null; _tapSelMulti=true;/) &&
+  has(js, /addEventListener\('pointercancel',e=>\{ if\(!e\|\|e\.pointerType==='touch'\) _tapSel=null; \}/));
+ok('손을 떼면 onPaperDown 을 다시 돌려 확정하고 남은 끌기를 정리한다',
+  has(js, /onPaperDown\(j\.e,j\.pi\);/) &&
+  has(js, /if\(typeof finishEditorPointer==='function'\) finishEditorPointer\(\);/));
+ok('touchend 가 없는 재생 포인터(읽기 쪽 첫 탭)는 pointerup 에서 확정한다',
+  has(js, /addEventListener\('pointerup',e=>\{\s*if\(!e\|\|e\.pointerType!=='touch'\|\|_touchActive\) return;/) &&
+  has(js, /if\(_tapSel&&!_tapSel\.touch\) _tapSelCommit\(\);/));
 
 /* ── 5. 창/모달/부가 기능 ──────────────────────────────────── */
 console.log('\n[5] 모달·보관함·암기카드·발표');

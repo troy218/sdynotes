@@ -13,6 +13,7 @@
         moreTab(want);
         // 열 때 토글류 버튼의 현재 상태를 반영
         try{ updatePageInfo(); updateLockUI(); }catch(e){}
+        try{ syncPhToolsTab(); }catch(e){}   // 14.69 · 폰 전용 '도구' 칸의 글자 크기 표시
         try{ document.querySelectorAll('#moreSheet .ptool').forEach(b=>
                 b.classList.toggle('active',b.dataset.p===(doc&&doc.paper))); }catch(e){}
     }
@@ -32,6 +33,18 @@
     }
     // 서랍 항목 실행 후 닫기 (mi = more item)
     function mi(fn){ try{ fn(); }finally{ closeMore(); } }
+
+    // 14.69 · 폰 세로: 도구막대는 '꼭 필요한 것만' 두 줄로 줄이고 글꼴·글자 크기·
+    //   취소선·정렬·스티커·페인트·찾기는 서랍의 '도구' 칸(폰에서만 렌더)으로 옮겼다.
+    //   여기는 그 칸의 글자 크기 표시를 툴바 입력칸(#fsInput)과 맞춰 주는 창구다.
+    function syncPhToolsTab(){
+        const v=document.getElementById('phFsVal'), f=document.getElementById('fsInput');
+        if(v&&f) v.textContent=f.value;
+    }
+    function phFs(d){
+        try{ chFS(d); }catch(e){}
+        syncPhToolsTab();
+    }
 
     function toggleSide(){
         sideOpen=!sideOpen;

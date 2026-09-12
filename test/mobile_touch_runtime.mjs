@@ -75,6 +75,7 @@ try {
     pages: [{ id: 'p1', els: [
       { type: 'stroke', id: 's_in',  pts: [[120, 120], [200, 200]], color: '#000000', size: 2, dx: 0, dy: 0 },
       { type: 'stroke', id: 's_out', pts: [[500, 700], [600, 800]], color: '#000000', size: 2, dx: 0, dy: 0 },
+      { type: 'text', id: 't_ph', x: 60, y: 300, w: 220, h: 90, html: '안녕 폰', fontSize: 16 },
     ] }],
   };
   await q({ table: 'memos', op: 'insert', values: [{ notebook_id: id, content: JSON.stringify(doc0), font_size: 16 }], filters: [] });
@@ -315,6 +316,83 @@ try {
     await wait(40);
     check('마우스 드래그 경로는 예전처럼 marquee 를 시작한다(데스크톱 불변)', !!document.querySelector('.marquee'));
     paper.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, button: 0 }));
+    await wait(60);
+  }
+
+  /* ── 6) 글상자 선택은 '손가락을 뗄 때' — 스크롤·핀치 방해 금지 ── */
+  {
+    const paper = refit();
+    const tb = paper.querySelector('.tb[data-id="t_ph"]');
+    check('문서의 글상자가 렌더된다', !!tb);
+    const c = tb.querySelector('.tb-content');
+    const selN = () => document.querySelectorAll('#pagesStage .tb.sel').length;
+    const PD = (x, y) => firePointer(c, 'pointerdown',
+      { pointerType: 'touch', clientX: x, clientY: y, button: 0, detail: 1 });
+
+    // 6-1) 누른 순간에는 아직 — 떼야 선택된다
+    PD(100, 340);
+    await wait(40);
+    check('터치로 글상자를 누른 순간에는 선택되지 않는다', selN() === 0 && !tb.classList.contains('sel'));
+    fireTouch(document, 'touchend', []);
+    await wait(80);
+    check('그대로 손을 떼면 그때 선택이 확정된다', selN() === 1 && tb.classList.contains('sel'));
+
+    // 선택 해제 (빈 곳 탭 → 손 떼기)
+    const empty = () => { firePointer(refit(), 'pointerdown', { pointerType: 'touch', clientX: 700, clientY: 620, button: 0, detail: 1 }); };
+    empty(); fireTouch(document, 'touchend', []);
+    await wait(700);   // 호환 mousedown 창(650ms) 지나가기
+    check('빈 곳을 탭하면 선택이 풀린다', selN() === 0);
+
+    // 6-2) 누른 채 스크롤 → 선택되지 않는다
+    PD(100, 340);
+    fireTouch(document, 'touchmove', [touch(100, 400)]);   // 60px = 스크롤
+    fireTouch(document, 'touchmove', [touch(100, 470)]);
+    fireTouch(document, 'touchend', []);
+    await wait(80);
+    check('누른 채 스크롤하면 글상자가 선택되지 않는다', selN() === 0);
+
+    // 6-3) 핀치(두 손가락) 중에도 선택되지 않고, 끝나도 살아나지 않는다
+    PD(100, 340);
+    fireTouch(document, 'touchstart', [touch(100, 340), touch(200, 420)]);
+    fireTouch(document, 'touchmove', [touch(80, 320), touch(260, 480)]);
+    await wait(30);
+    check('두 번째 손가락이 닿으면(핀치) 미뤄 둔 선택이 취소된다', selN() === 0);
+    fireTouch(document, 'touchend', [touch(260, 480)]);
+    await wait(30);
+    check('핀치 중 첫 손가락을 떼도 선택되지 않는다', selN() === 0);
+    fireTouch(document, 'touchend', []);
+    await wait(80);
+    check('핀치를 마쳐도 선택이 뒤늦게 살아나지 않는다', selN() === 0);
+
+    // 6-4) 브라우저가 제스처를 가져간 경우(pointercancel)도 선택되지 않는다
+    PD(100, 340);
+    firePointer(c, 'pointercancel', { pointerType: 'touch', button: 0 });
+    fireTouch(document, 'touchend', []);
+    await wait(80);
+    check('pointercancel(브라우저가 스크롤을 가져감) 후에는 선택되지 않는다', selN() === 0);
+
+    // 6-5) 두 번째 탭 = 편집 진입 (미뤄도 순서는 그대로)
+    PD(100, 340); fireTouch(document, 'touchend', []);
+    await wait(80);
+    check('첫 탭으로 선택된 뒤', selN() === 1);
+    PD(110, 345);
+    await wait(40);
+    fireTouch(document, 'touchend', []);
+    await wait(120);
+    check('이미 선택된 상자를 다시 탭하면 편집 모드로 들어간다', tb.classList.contains('edit'));
+    try { window.commitEditingText && window.commitEditingText(tb); } catch {}
+    tb.classList.remove('edit');
+    const cc = tb.querySelector('.tb-content'); if (cc) cc.contentEditable = 'false';
+    await wait(60);
+
+    // 6-6) 데스크톱(마우스)은 예전 그대로 — 누르는 순간 선택
+    await wait(700);
+    empty(); firePointer(window, 'pointerup', { pointerType: 'touch', buttons: 0 });
+    await wait(700);
+    firePointer(c, 'pointerdown', { pointerType: 'mouse', clientX: 100, clientY: 340, button: 0, detail: 1 });
+    await wait(60);
+    check('마우스(데스크톱)는 누르는 순간 곧장 선택된다 — 불변', selN() === 1);
+    firePointer(window, 'pointerup', { pointerType: 'mouse', buttons: 0 });
     await wait(60);
   }
 
