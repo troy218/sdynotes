@@ -13424,6 +13424,14 @@ function _tightLineBackspace(c,w){
             addPin(pageIdx,p.x,p.y);
             return;
         }
+        // 14.69 · 모바일(터치) — 글상자·이미지·획 '선택'은 누르는 순간이 아니라
+        //   손가락을 뗄 때 확정한다. 스크롤·핀치 중에 손가락이 글상자 위에
+        //   닿았다고 선택(손잡이·작업판)이 덥석 붙으면 화면 이동이 방해받는다.
+        //   마우스·펜(데스크톱)과 끌기 손잡이·편집 중인 상자는 이 게이트를 타지
+        //   않는다 — 판정과 손뗌 확정은 10c-mobile-touch.js 가 맡는다.
+        try{
+            if(typeof _sdyTapHoldSelect==='function'&&_sdyTapHoldSelect(e,pageIdx)) return;
+        }catch(_e){}
         // 10.4 · 잠긴 요소도 바로 선택해 움직일 수 있다
         //   (안내 토스트 제거 — 잠금은 삭제·내용편집 방지 용도로만 남는다)
         try{ tblTouch(e,pageIdx,t); }catch(err){}
@@ -15003,6 +15011,7 @@ function _tightLineBackspace(c,w){
         moreTab(want);
         // 열 때 토글류 버튼의 현재 상태를 반영
         try{ updatePageInfo(); updateLockUI(); }catch(e){}
+        try{ syncPhToolsTab(); }catch(e){}   // 14.69 · 폰 전용 '도구' 칸의 글자 크기 표시
         try{ document.querySelectorAll('#moreSheet .ptool').forEach(b=>
                 b.classList.toggle('active',b.dataset.p===(doc&&doc.paper))); }catch(e){}
     }
@@ -15022,6 +15031,18 @@ function _tightLineBackspace(c,w){
     }
     // 서랍 항목 실행 후 닫기 (mi = more item)
     function mi(fn){ try{ fn(); }finally{ closeMore(); } }
+
+    // 14.69 · 폰 세로: 도구막대는 '꼭 필요한 것만' 두 줄로 줄이고 글꼴·글자 크기·
+    //   취소선·정렬·스티커·페인트·찾기는 서랍의 '도구' 칸(폰에서만 렌더)으로 옮겼다.
+    //   여기는 그 칸의 글자 크기 표시를 툴바 입력칸(#fsInput)과 맞춰 주는 창구다.
+    function syncPhToolsTab(){
+        const v=document.getElementById('phFsVal'), f=document.getElementById('fsInput');
+        if(v&&f) v.textContent=f.value;
+    }
+    function phFs(d){
+        try{ chFS(d); }catch(e){}
+        syncPhToolsTab();
+    }
 
     function toggleSide(){
         sideOpen=!sideOpen;
@@ -18045,6 +18066,94 @@ function _tightLineBackspace(c,w){
         window.addEventListener('touchcancel',()=>finish(true),{capture:true,passive:true});
     })();
 
+    // ── ④ 누르고 '떼야' 선택 — 스크롤·핀치 중에 글상자가 덥석 잡히지 않게 ──
+    // 14.69 · 폰에서 화면을 스크롤/핀치하다가 손가락이 글상자 위를 지나가면
+    //   예전엔 pointerdown 순간에 선택(손잡이·작업판까지)이 붙었다. 그 때문에
+    //   종이 위에 손가락을 얹는 것만으로도 조작이 엉켰다.
+    //   이제 터치에서는 '선택'을 손가락을 뗄 때까지 미룬다:
+    //     · 누르는 동안은 아무것도 선택하지 않는다 → 스크롤·핀치는 방해받지 않는다
+    //     · 손가락이 12px 이상 움직이거나(스크롤) 두 번째 손가락이 닿으면(핀치) 취소
+    //     · 그대로 떼면 그때 onPaperDown 을 다시 돌려 선택을 확정한다
+    //   끌기/리사이즈 손잡이·편집 중인 상자·표 조작점은 즉시 처리(끌기가 살아야 한다).
+    //   마우스·펜(데스크톱)은 e.pointerType 이 달라 이 게이트를 아예 타지 않는다.
+    let _tapSel=null;          // 미뤄 둔 선택 {e,pi,x,y,touch}
+    let _tapSelReplay=false;   // 손 뗀 뒤 확정 실행 중 (재귀 방지)
+    let _tapSelMulti=false;    // 두 손가락 이상 제스처(핀치) 중
+    let _touchActive=false;    // 지금 제스처에 touch 이벤트가 실제로 흐르는가
+    const _TAP_SLOP=12;        // 이만큼 움직이면 '탭'이 아니라 스크롤로 본다
+
+    function _sdyTapHoldSelect(e,pageIdx){
+        if(_tapSelReplay) return false;                       // 확정 실행 중 — 그대로 진행한다
+        if(!e||e.pointerType!=='touch') return false;         // 마우스·펜(데스크톱)은 즉시 선택
+        // 배치/붙이기 모드에서의 탭은 '놓기' 동작이라 미루지 않는다
+        try{ if(textToolActive||pinMode||placeMode||tablePlace) return false; }catch(err){ return false; }
+        if(_tapSelMulti) return true;                         // 핀치 중 — 아무것도 선택하지 않는다
+        if(_sdyPalmNow()) return false;                       // 손바닥 거부 중이면 _palmGate 가 이미 막는다
+        const t=e.target;
+        if(!t||!t.closest||!_palmInEditor(t)) return false;
+        // 잡아서 끄는 손잡이·표 조작점·편집 중인 상자(캐럿)는 즉시 — 끌기가 살아 있어야 한다
+        if(t.closest('.handle,.tb-edge,.tb-move,.el-del,.tbl-box,.tbl-edge,.tbl-div,.tbl-h,.tbl-stretch')) return false;
+        const host=t.closest('.tb')||t.closest('.paper-img')||t.closest('.stroke-g')||t.closest('.latex-box');
+        if(!host) return false;                               // 빈 종이 — 기존 경로(스크롤 우선) 그대로
+        if(host.classList.contains('edit')) return false;     // 글자 편집 중 캐럿은 즉시
+        // 이미 선택된 요소: '글자 위 탭 = 편집 진입'만 미룬다.
+        //   나머지는 그 자리에서 끌기(이동)가 시작되므로 즉시 처리해야 한다.
+        try{
+            const already=host.classList.contains('sel')||host.classList.contains('msel')
+                ||(typeof multiSel!=='undefined'&&multiSel.some(m=>m.id===host.dataset.id));
+            if(already&&!(host.classList.contains('tb')&&t.closest('.tb-content'))) return false;
+        }catch(err){}
+        _tapSel={e:e,pi:pageIdx,x:e.clientX,y:e.clientY,touch:_touchActive};
+        return true;                                          // 선택은 손 뗄 때로 미룬다
+    }
+
+    function _tapSelDrop(){ _tapSel=null; }
+    function _tapSelMove(e){
+        if(!_tapSel) return;
+        if(!e.touches||e.touches.length!==1){ _tapSel=null; return; }      // 두 번째 손가락 = 핀치
+        const t=e.touches[0];
+        if(Math.hypot(t.clientX-_tapSel.x,t.clientY-_tapSel.y)>_TAP_SLOP) _tapSel=null;  // 스크롤
+    }
+    function _tapSelCommit(){
+        const j=_tapSel; _tapSel=null;
+        if(!j) return;
+        if(_sdyPalmNow()) return;
+        if(!j.e.target||j.e.target.isConnected===false) return;   // 그 사이 쪽이 다시 그려졌다
+        _tapSelReplay=true;
+        try{
+            onPaperDown(j.e,j.pi);                            // 지금 확정 — 1탭 = 선택, 2탭 = 편집
+            // 상자를 눌러 '끌기 준비'까지 생긴 경우(상자 몸통 탭) 여기서 정리한다.
+            // 진짜 pointerup 은 이미 지나갔으므로 그대로 두면 다음 탭까지 끌기가 남는다.
+            try{ if(typeof finishEditorPointer==='function') finishEditorPointer(); }catch(err){}
+        }catch(err){}
+        _tapSelReplay=false;
+    }
+    function _tapSelUp(e){
+        if(e&&e.touches&&e.touches.length) return;            // 아직 손가락이 남아 있다
+        _tapSelMulti=false; _touchActive=false;
+        _tapSelCommit();
+    }
+    window.addEventListener('touchstart',e=>{
+        _touchActive=true;
+        if(e.touches&&e.touches.length>1){ _tapSel=null; _tapSelMulti=true; }
+    },{capture:true,passive:true});
+    window.addEventListener('touchmove',_tapSelMove,{capture:true,passive:true});
+    window.addEventListener('touchend',_tapSelUp,{capture:true,passive:true});
+    window.addEventListener('touchcancel',e=>{
+        _tapSel=null;
+        if(!e||!e.touches||!e.touches.length){ _tapSelMulti=false; _touchActive=false; }
+    },{capture:true,passive:true});
+    // 브라우저가 제스처(스크롤·핀치)를 가져갔다는 확정 신호
+    window.addEventListener('pointercancel',e=>{ if(!e||e.pointerType==='touch') _tapSel=null; },{capture:true,passive:true});
+    // touchend 가 아예 오지 않는 포인터 — 읽기 쪽(미리보기)을 탭하면 pointerdown 은
+    // 쪽 준비로 넘어가고, 준비가 끝난 뒤 pointerdown+pointerup 만 '재생'된다
+    // (06b-read-layer._replayPagePointer). 그때는 pointerup 에서 확정한다.
+    // 실제 터치(touchstart 가 흐른 제스처)는 위에서 본 대로 touchend 가 맡는다.
+    window.addEventListener('pointerup',e=>{
+        if(!e||e.pointerType!=='touch'||_touchActive) return;
+        if(_tapSel&&!_tapSel.touch) _tapSelCommit();
+    },{capture:true,passive:true});
+
 /* APP-PART:10c-mobile-touch.js:END */
 
 /* === src/app/11a-text-style.js ===
@@ -18331,7 +18440,9 @@ function _tightLineBackspace(c,w){
     }
     document.addEventListener('click',e=>{
         if(!e.target.closest('.split-btn')) closePops();
-        if(!e.target.closest('.font-wrap')) closeFontMenu();
+        // 14.69 · 폰 세로에서는 글꼴 버튼이 툴바에 없고 더보기 서랍('도구' 칸)에 있다.
+        //   그 버튼은 .font-wrap 밖이라 그대로면 '방금 연 클릭'이 곧장 메뉴를 닫는다.
+        if(!e.target.closest('.font-wrap')&&!e.target.closest('[data-sdy-font-open]')) closeFontMenu();
     });
 
     // 서식 연산의 공통 진입 래퍼. 저장해 둔 선택을 살려 fn 에게 host 를 넘기고,

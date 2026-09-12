@@ -1081,6 +1081,14 @@
             addPin(pageIdx,p.x,p.y);
             return;
         }
+        // 14.69 · 모바일(터치) — 글상자·이미지·획 '선택'은 누르는 순간이 아니라
+        //   손가락을 뗄 때 확정한다. 스크롤·핀치 중에 손가락이 글상자 위에
+        //   닿았다고 선택(손잡이·작업판)이 덥석 붙으면 화면 이동이 방해받는다.
+        //   마우스·펜(데스크톱)과 끌기 손잡이·편집 중인 상자는 이 게이트를 타지
+        //   않는다 — 판정과 손뗌 확정은 10c-mobile-touch.js 가 맡는다.
+        try{
+            if(typeof _sdyTapHoldSelect==='function'&&_sdyTapHoldSelect(e,pageIdx)) return;
+        }catch(_e){}
         // 10.4 · 잠긴 요소도 바로 선택해 움직일 수 있다
         //   (안내 토스트 제거 — 잠금은 삭제·내용편집 방지 용도로만 남는다)
         try{ tblTouch(e,pageIdx,t); }catch(err){}

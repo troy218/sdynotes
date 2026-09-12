@@ -282,7 +282,9 @@
     }
     document.addEventListener('click',e=>{
         if(!e.target.closest('.split-btn')) closePops();
-        if(!e.target.closest('.font-wrap')) closeFontMenu();
+        // 14.69 · 폰 세로에서는 글꼴 버튼이 툴바에 없고 더보기 서랍('도구' 칸)에 있다.
+        //   그 버튼은 .font-wrap 밖이라 그대로면 '방금 연 클릭'이 곧장 메뉴를 닫는다.
+        if(!e.target.closest('.font-wrap')&&!e.target.closest('[data-sdy-font-open]')) closeFontMenu();
     });
 
     // 서식 연산의 공통 진입 래퍼. 저장해 둔 선택을 살려 fn 에게 host 를 넘기고,

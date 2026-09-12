@@ -3,7 +3,7 @@
      app.py는 Flask 단일 프로세스, 이 HTML은 Supabase JS와 Flask API를 함께 사용한다. -->
 <html lang="ko" data-theme="pro" class="theme-pro">
 <head>
-<link rel="stylesheet" href="sdynotes.css?v=14.68.0">
+<link rel="stylesheet" href="sdynotes.css?v=14.69.0">
     <script>
     /* 14.47 · 테마 선적용 — 첫 페인트 전에 저장된 테마를 입혀 화면 깜빡임을 막는다.
        저장값이 없으면 새 기본인 'pro'(14.48 · 밝은 전문 디자인)로 시작한다. */
@@ -28,7 +28,7 @@
          · 이 파일·sdynotes.js·sdynotes.css·src 모듈을 고쳤으면 ?v= 도 꼭 올려라.
            nginx 가 1년 immutable 로 캐싱해서, ?v= 가 그대로면 이미 접속한
            브라우저가 옛 파일을 1년간 계속 쓴다. (전체 목록: config.js 상단) -->
-    <meta name="application-version" content="14.68.0">
+    <meta name="application-version" content="14.69.0">
     <title>SDYnotes</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -529,7 +529,7 @@
                 <!-- ═══ Word-like Formatting Group ═══ -->
                 <div class="tb-group fmt-group" role="group" aria-label="글자 서식" data-tool-group="글자 서식">
                     <div class="font-wrap">
-                        <button id="fontBtn" class="font-btn" onmousedown="saveSel();event.preventDefault()" onclick="toggleFontMenu()" title="글꼴">
+                        <button id="fontBtn" class="font-btn tb-hide-ph" onmousedown="saveSel();event.preventDefault()" onclick="toggleFontMenu()" title="글꼴">
                             <span id="fontLabel">프리텐다드</span><i class="ri-arrow-down-s-fill"></i>
                         </button>
                         <div id="fontMenu" class="font-menu"></div>
@@ -538,7 +538,7 @@
                     <span class="tool-sep tb-hide-sm"></span>
 
                     <button onclick="chFS(-2)" onmousedown="event.preventDefault()" class="tool-btn sm tb-hide-sm tb-hide-md" title="글씨 작게"><i class="ri-subtract-line"></i></button>
-                    <input id="fsInput" aria-label="글자 크기" type="text" inputmode="numeric" pattern="[0-9]*" value="16" onpointerdown="saveSel()" onfocus="this.select()" oninput="this.value=this.value.replace(/[^0-9]/g,'')" onchange="if(/^\d+$/.test(this.value))setFS(+this.value);else this.value=curFontSize" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}" title="글자 크기 (선택 영역에 여러 크기가 섞이면 -)">
+                    <input id="fsInput" class="tb-hide-ph" aria-label="글자 크기" type="text" inputmode="numeric" pattern="[0-9]*" value="16" onpointerdown="saveSel()" onfocus="this.select()" oninput="this.value=this.value.replace(/[^0-9]/g,'')" onchange="if(/^\d+$/.test(this.value))setFS(+this.value);else this.value=curFontSize" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}" title="글자 크기 (선택 영역에 여러 크기가 섞이면 -)">
                     <button onclick="chFS(2)" onmousedown="event.preventDefault()" class="tool-btn sm tb-hide-sm tb-hide-md" title="글씨 크게"><i class="ri-add-line"></i></button>
 
                     <span class="tool-sep tb-hide-sm"></span>
@@ -565,39 +565,40 @@
                         <div class="color-popover" id="hlPop"></div>
                     </div>
 
-                    <span class="tool-sep"></span>
+                    <span class="tool-sep tb-hide-ph"></span>
 
                     <button onclick="setAlign('left')" class="tool-btn sm tb-hide-sm" title="왼쪽 정렬"><i class="ri-align-left"></i></button>
-                    <button onclick="setAlign('center')" class="tool-btn sm" title="가운데 정렬"><i class="ri-align-center"></i></button>
+                    <button onclick="setAlign('center')" class="tool-btn sm tb-hide-ph" title="가운데 정렬"><i class="ri-align-center"></i></button>
                     <button onclick="setAlign('right')" class="tool-btn sm tb-hide-sm" title="오른쪽 정렬"><i class="ri-align-right"></i></button>
                 </div>
 
-                <span class="tool-sep"></span>
+                <span class="tool-sep tb-hide-ph"></span>
 
                 <!-- ═══ Insert Group ═══ -->
-                <div class="tb-group" role="group" aria-label="넣기" data-tool-group="넣기">
+                <div class="tb-group insert-group" role="group" aria-label="넣기" data-tool-group="넣기">
                     <button onclick="toggleTextTool()" id="textToolBtn" class="tool-btn" title="텍스트 상자"><i class="ri-text"></i></button>
                     <button onclick="triggerImgUpload()" class="tool-btn" title="사진 추가"><i class="ri-image-add-line"></i></button>
-                    <button onclick="openStickers()" id="stkBtn" class="tool-btn" title="스티커 넣기"><i class="ri-sticky-note-line"></i></button>
+                    <button onclick="openStickers()" id="stkBtn" class="tool-btn tb-hide-ph" title="스티커 넣기"><i class="ri-sticky-note-line"></i></button>
                     <button onclick="openTableModal()" class="tool-btn tb-hide-sm" title="표 삽입"><i class="ri-table-line"></i></button>
                     <button onclick="openLatexModal()" class="tool-btn tb-hide-sm" title="수식 삽입"><i class="ri-function-line"></i></button>
                 </div>
 
-                <span class="tool-sep"></span>
+                <span class="tool-sep tb-sep-ph"></span>
 
                 <!-- ═══ Draw Group · 14.18.3 펜/형광펜은 '넣기'와 따로 분리 ═══ -->
                 <div class="tb-group draw-group" role="group" aria-label="그리기" data-tool-group="그리기">
                     <button onclick="togglePen()" id="penBtn" class="tool-btn" title="펜 쓰기 / 종료"><i class="ri-pen-nib-line"></i></button>
                     <button onclick="toggleHighlighter()" id="highlighterBtn" class="tool-btn" title="형광펜 쓰기 / 종료"><i class="ri-mark-pen-line"></i></button>
-                    <button onclick="togglePaint()" id="paintBtn" class="tool-btn" title="페인트 · 닫힌 그림 안쪽 채우기 / 종료"><i class="ri-paint-fill"></i></button>
+                    <button onclick="togglePaint()" id="paintBtn" class="tool-btn tb-hide-ph" title="페인트 · 닫힌 그림 안쪽 채우기 / 종료"><i class="ri-paint-fill"></i></button>
                 </div>
 
-                <span class="tool-sep"></span>
+                <span class="tool-sep tb-hide-ph"></span>
 
-                <!-- ═══ Core Tools Group ═══ -->
-                <div class="tb-group" role="group" aria-label="찾기" data-tool-group="찾기">
-                    <button onclick="openPanel('words')" id="wfBtn" class="tool-btn js-wf" title="주요어 분석"><i class="ri-contrast-2-line"></i></button>
-                    <button onclick="toggleFind()" id="findBtn" class="tool-btn" title="검색"><i class="ri-search-line"></i></button>
+                <!-- ═══ Core Tools Group ═══
+                     14.69 · 폰 세로에서는 묶음째 숨긴다 — 찾기/주요어는 더보기 서랍(도구·보기)에 있다 -->
+                <div class="tb-group find-group tb-hide-ph" role="group" aria-label="찾기" data-tool-group="찾기">
+                    <button onclick="openPanel('words')" id="wfBtn" class="tool-btn js-wf tb-hide-ph" title="주요어 분석"><i class="ri-contrast-2-line"></i></button>
+                    <button onclick="toggleFind()" id="findBtn" class="tool-btn tb-hide-ph" title="검색"><i class="ri-search-line"></i></button>
                 </div>
             </div>
 
@@ -609,7 +610,7 @@
 
                 <span class="tool-sep"></span>
 
-                <div class="pg-nav" role="group" aria-label="페이지 이동">
+                <div class="pg-nav tb-hide-ph" role="group" aria-label="페이지 이동">
                     <button title="이전 페이지" aria-label="이전 페이지" onclick="goToPage((+document.getElementById('pgNow').value||1)-1)"><i class="ri-arrow-up-s-line"></i></button>
                     <input id="pgNow" aria-label="현재 페이지" type="number" min="1" value="1">
                     <span class="tot" id="pgTot">/ 1</span>
@@ -617,7 +618,7 @@
                 </div>
 
                 <button onclick="openMore('note')" class="tool-btn tb-labeled" data-tool-label="더보기" title="도구 더보기 · 노트 설정"><i class="ri-settings-3-line"></i></button>
-                <button onclick="openExportModal()" class="tool-btn accent tb-labeled" data-tool-label="내보내기" title="내보내기"><i class="ri-share-box-line"></i></button>
+                <button onclick="openExportModal()" class="tool-btn accent tb-labeled tb-hide-ph" data-tool-label="내보내기" title="내보내기"><i class="ri-share-box-line"></i></button>
             </div>
 
 
@@ -633,6 +634,8 @@
                 <div class="more-head">
                     <div class="more-tabs">
                         <button data-mt="insert" onclick="moreTab('insert')" class="on">넣기</button>
+                        <!-- 14.69 · 폰 세로 도구막대에서 옮겨 온 나머지 도구 (폰에서만 보인다) -->
+                        <button data-mt="tools" onclick="moreTab('tools')">도구</button>
                         <button data-mt="pages"  onclick="moreTab('pages')">페이지</button>
                         <button data-mt="view"   onclick="moreTab('view')">보기</button>
                         <button data-mt="note"   onclick="moreTab('note')">노트</button>
@@ -647,6 +650,29 @@
                             <button onclick="mi(()=>openLatexModal())"><i class="ri-function-line"></i><span>수식</span></button>
                             <button onclick="mi(()=>insertCheckbox())"><i class="ri-checkbox-line"></i><span>체크상자</span></button>
                             <button onclick="mi(()=>triggerImgUpload())"><i class="ri-image-add-line"></i><span>사진</span></button>
+                        </div>
+                    </div>
+
+                    <!-- 14.69 · 폰 세로: 도구막대는 '꼭 필요한 것만' 두 줄로 줄이고
+                         나머지는 여기로 옮겼다. 데스크톱에서는 이 칸이 렌더되지 않는다. -->
+                    <div class="more-sec more-sec-ph" data-ms="tools" hidden>
+                        <div class="more-row">
+                            <span>글자 크기</span>
+                            <div class="ph-fs">
+                                <button type="button" onclick="phFs(-2)" aria-label="글자 크기 작게"><i class="ri-subtract-line"></i></button>
+                                <b id="phFsVal">16</b>
+                                <button type="button" onclick="phFs(2)" aria-label="글자 크기 크게"><i class="ri-add-line"></i></button>
+                            </div>
+                        </div>
+                        <div class="more-grid">
+                            <button data-sdy-font-open onclick="mi(()=>toggleFontMenu())"><i class="ri-font-size-2"></i><span>글꼴</span></button>
+                            <button onclick="mi(()=>execFmt('strike'))"><i class="ri-strikethrough"></i><span>취소선</span></button>
+                            <button onclick="mi(()=>setAlign('left'))"><i class="ri-align-left"></i><span>왼쪽 정렬</span></button>
+                            <button onclick="mi(()=>setAlign('center'))"><i class="ri-align-center"></i><span>가운데 정렬</span></button>
+                            <button onclick="mi(()=>setAlign('right'))"><i class="ri-align-right"></i><span>오른쪽 정렬</span></button>
+                            <button onclick="mi(()=>openStickers())"><i class="ri-sticky-note-line"></i><span>스티커</span></button>
+                            <button onclick="mi(()=>togglePaint())"><i class="ri-paint-fill"></i><span>페인트</span></button>
+                            <button onclick="mi(()=>toggleFind())"><i class="ri-search-line"></i><span>찾기</span></button>
                         </div>
                     </div>
 
@@ -2692,17 +2718,17 @@
 <!-- 14.23.0 · 노트 해돌이(AI 도우미) UI 는 편집기 안 #noteOtter 옆으로 옮겼다 — 아이콘 버튼·뜨는 창은 없다. -->
 
 
-<script src="sdynotes.js?v=14.68.0" defer></script>
-<script src="src/music-player.js?v=14.68.0" defer></script>
-<script src="src/focus-clock.js?v=14.68.0" defer></script>
-<script src="src/live-updates.js?v=14.68.0" defer></script>
-<script src="src/idle-worker.js?v=14.68.0" defer></script>
-<script src="src/mobile-viewport.js?v=14.68.0" defer></script>
-<script src="src/auth.js?v=14.68.0" defer></script>
-<script src="src/ai-assistant.js?v=14.68.0" defer></script>
-<script src="src/chat.js?v=14.68.0" defer></script>
-<script src="src/translate.js?v=14.68.0" defer></script>
-<script src="src/cards.js?v=14.68.0" defer></script>
-<script src="src/server-status.js?v=14.68.0" defer></script>
+<script src="sdynotes.js?v=14.69.0" defer></script>
+<script src="src/music-player.js?v=14.69.0" defer></script>
+<script src="src/focus-clock.js?v=14.69.0" defer></script>
+<script src="src/live-updates.js?v=14.69.0" defer></script>
+<script src="src/idle-worker.js?v=14.69.0" defer></script>
+<script src="src/mobile-viewport.js?v=14.69.0" defer></script>
+<script src="src/auth.js?v=14.69.0" defer></script>
+<script src="src/ai-assistant.js?v=14.69.0" defer></script>
+<script src="src/chat.js?v=14.69.0" defer></script>
+<script src="src/translate.js?v=14.69.0" defer></script>
+<script src="src/cards.js?v=14.69.0" defer></script>
+<script src="src/server-status.js?v=14.69.0" defer></script>
 </body>
 </html>

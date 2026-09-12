@@ -960,6 +960,13 @@
             border-radius:8px;background:var(--bg2);color:var(--text1);font-size:13px;outline:none;
         }
         .more-row .page-jump{width:62px;text-align:center;margin-left:auto;}
+
+        /* 14.69 · 폰 세로 도구막대는 '꼭 필요한 것만' 두 줄로 줄였다. 거기서 뺀
+           도구(글꼴·글자 크기·취소선·정렬·스티커·페인트·찾기)는 더보기 서랍의
+           '도구' 칸으로 옮겼고, 그 칸은 세로 폰에서만 보인다(문서 끝 블록).
+           데스크톱·태블릿·가로 폰에서는 아래 선언이 그대로 렌더를 막는다. */
+        .more-tabs button[data-mt="tools"]{display:none;}
+        .more-sec[data-ms="tools"]{display:none;}
         .tool-btn{
             width:36px;height:36px;display:flex;align-items:center;justify-content:center;
             border-radius:3px;border:none;background:transparent;color:var(--text2);
@@ -9170,61 +9177,76 @@ html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   14.68 · 폰 세로 에디터 조작 강화 — 모바일 전용 (데스크톱 규칙 불변)
+   14.69 · 폰 세로: 편집 도구막대는 '꼭 필요한 것만' 두 줄 (데스크톱 규칙 불변)
 
-   ① 도구막대: 가로 스크롤 없이 '모든 도구를 한 번에' 보여 준다.
-      1줄 = 뒤로/제목/되돌리기/페이지/더보기/내보내기,
-      그 아래 = 글자 서식·넣기·그리기·찾기 도구 전체를 줄바꿈 배치.
-      좁은 화면에서 숨기던(.tb-hide-sm) 도구도 세로 폰에서는 전부 표시.
-   ② 그리기 도구막대: 색·굵기·도형·지우개·손바닥 차단을 한 번에 모두.
-      (가로 스크롤로 도구를 찾지 않아도 된다)
-   ③ 그리기 도구막대가 열리면 본문 아래 여백을 그만큼 더 확보.
-   ④ 더보기 서랍은 세로 폰에서 바닥 시트 — 높아진 도구막대와 안 겹친다.
-   (폰 가로는 예전의 한 줄 가로 스크롤 도구막대를 그대로 유지한다.)
+   14.68 의 '모든 도구 줄바꿈 노출'은 세로 폰에서 도구막대가 화면 높이의
+   1/5 을 잡아먹었다(4줄). 이제 세로 폰 도구막대는 딱 두 줄이다.
+     1줄 = 제목 · 되돌리기/다시실행 · 더보기   (뒤로 버튼은 14.60-B 부터 전 플랫폼 숨김)
+     2줄 = 글상자 · 사진 · 펜 · 형광펜 │ 굵게 · 기울임 · 밑줄 · 글자색 · 형광펜색
+   2줄은 360px 폰에서도 줄바꿈 없이 한 줄로 들어간다(≈333px).
+   도구막대에서 뺀 나머지(글꼴 · 글자 크기 · 취소선 · 정렬 · 스티커 · 페인트 ·
+   찾기)는 더보기 서랍의 '도구' 칸으로 옮겼다 — 그 칸도 폰에서만 렌더된다.
+   (표·수식·체크상자·쪽 목록·내보내기는 이미 서랍의 넣기/보기/노트 칸에 있다)
+   가로 폰·태블릿·데스크톱은 이 미디어쿼리 밖이라 예전 그대로다.
    ═══════════════════════════════════════════════════════════════════ */
 @media (max-width:640px) and (orientation:portrait){
-  /* ── ① 메인 도구막대: 한 줄 스크롤 → 전체 노출 줄바꿈 ── */
+  /* ── ① 도구막대: 4줄 전체 노출 → 꼭 필요한 것만 2줄 ── */
   .editor-toolbar{
     flex-wrap:wrap!important;align-content:flex-start;
     overflow-x:hidden!important;overflow-y:visible!important;
     touch-action:manipulation!important;
-    row-gap:3px;
+    row-gap:3px;min-height:0!important;
   }
   .editor-toolbar .tb-left{order:1;flex:1 1 auto;min-width:0;}
   .editor-toolbar .tb-right{order:2;flex:0 0 auto;flex-wrap:nowrap;}
   .editor-toolbar .tb-mid{
     order:3;flex:1 1 100%;min-width:100%;
-    flex-wrap:wrap;justify-content:center;row-gap:3px;
-    padding-top:4px;margin-top:2px;border-top:1px solid var(--border);
+    flex-wrap:wrap;justify-content:center;row-gap:3px;gap:3px;
+    padding-top:3px;margin-top:1px;border-top:1px solid var(--border);
   }
-  /* 묶음 안에서도 줄바꿈 — 글자 서식 묶음이 화면 폭을 넘기지 않게 */
-  .editor-toolbar .tb-mid .tb-group{flex-wrap:wrap;row-gap:2px;max-width:100%;}
-  /* 좁은 화면에서 숨기던 도구(취소선·좌우정렬·표·수식·글자크기±)를 전부 표시 */
-  .editor-toolbar .tb-hide-sm{display:inline-flex!important;}
-  .editor-toolbar #saveState{display:none!important;}   /* 1줄 공간 확보 — 저장 상태는 제목 옆에서 제외 */
-  /* 도구 버튼은 콤팩트하게 — 스크롤 없이 전부 보이도록 */
+  /* 2줄 읽는 순서: 넣기 → 그리기 │ 서식 (DOM 순서만 바꾸고 내용은 그대로) */
+  .editor-toolbar .tb-mid .insert-group{order:1;}
+  .editor-toolbar .tb-mid .draw-group{order:2;}
+  .editor-toolbar .tb-mid .tb-sep-ph{order:3;height:20px;margin:0 3px;}
+  .editor-toolbar .tb-mid .fmt-group{order:4;flex-wrap:nowrap;max-width:100%;}
+  /* 도구막대에서 뺀 도구 — 더보기 서랍 '도구' 칸에서 쓴다 */
+  .editor-toolbar .tb-hide-ph{display:none!important;}
+  /* 1줄: 제목 · 되돌리기/다시실행 · 더보기 (버튼 38px) */
   .editor-toolbar .tb-left .tool-btn,
   .editor-toolbar .tb-right .tool-btn{
-    width:36px!important;min-width:36px;height:36px!important;min-height:36px;
+    width:38px!important;min-width:38px;height:38px!important;min-height:38px;
   }
-  .editor-toolbar .tb-mid .tool-btn,
-  .editor-toolbar .tb-mid .tool-btn.sm{
+  .editor-toolbar #edTitle{
+    flex:1 1 auto!important;width:auto!important;min-width:0!important;
+    min-height:38px;font-size:16px!important;
+  }
+  .editor-toolbar #saveState{display:none!important;}
+  /* 2줄: 콤팩트하지만 손가락이 눌리는 31~34px */
+  .editor-toolbar .tb-mid .tool-btn{
     width:34px!important;min-width:34px;height:34px!important;min-height:34px;
     font-size:17px!important;border-radius:9px;
   }
-  .editor-toolbar .tb-mid .split-btn .main{min-width:30px;width:30px;height:34px;}
-  .editor-toolbar .tb-mid .split-btn .caret{width:14px;height:34px;}
-  .editor-toolbar .tb-mid .tool-sep{height:20px;margin:0 1px;}
-  .editor-toolbar #fsInput{width:38px!important;min-width:38px;height:32px;padding:0 2px;}
-  .editor-toolbar .font-btn{max-width:78px;height:32px;padding:0 6px;}
-  .editor-toolbar .font-btn span{display:none;}         /* 글꼴은 아이콘만 — 다른 도구에 자리 양보 */
-  .editor-toolbar #edTitle{flex:1 1 72px!important;width:auto;min-width:60px!important;}
-  .editor-toolbar .pg-nav{padding:2px 4px!important;min-height:36px;}
-  .editor-toolbar .pg-nav button{width:28px;height:28px;}
-  .editor-toolbar .pg-nav input{width:32px;height:30px;}
-  .editor-toolbar .pg-nav .tot{font-size:11px;}
+  .editor-toolbar .tb-mid .tool-btn.sm{
+    width:31px!important;min-width:31px;height:31px!important;min-height:31px;
+    font-size:15px!important;
+  }
+  .editor-toolbar .tb-mid .split-btn{height:32px;}
+  .editor-toolbar .tb-mid .split-btn .main{min-width:27px;width:27px;height:32px;}
+  .editor-toolbar .tb-mid .split-btn .caret{width:14px;height:32px;}
+  .editor-toolbar .tb-mid .tb-group{flex-wrap:nowrap;max-width:100%;}
 
-  /* ── ② 그리기 도구막대: 가로 스크롤 → 전체 노출 줄바꿈 ── */
+  /* ── ② 더보기 서랍의 폰 전용 '도구' 칸 — 툴바에서 옮겨 온 나머지가 여기 산다 ── */
+  .more-tabs button[data-mt="tools"]{display:inline-flex;}
+  .more-sec[data-ms="tools"]:not([hidden]){display:block;}
+  .ph-fs{display:flex;align-items:center;gap:8px;margin-left:auto;}
+  .ph-fs button{
+    width:44px;height:44px;min-width:44px;border-radius:11px;
+    border:1px solid var(--border);background:var(--bg2);color:var(--text1);
+    font-size:18px;display:flex;align-items:center;justify-content:center;
+  }
+  .ph-fs b{min-width:40px;text-align:center;font-size:16px;color:var(--text1);}
+
+  /* ── ③ 그리기 도구막대: 가로 스크롤 → 전체 노출 줄바꿈 (14.68 유지) ── */
   .draw-toolbar{
     left:max(6px,var(--ph-left))!important;right:max(6px,var(--ph-right))!important;
     bottom:calc(var(--ph-safe) + 8px)!important;
@@ -9244,12 +9266,12 @@ html.theme-pro .pro-brand .link-bar{justify-content:flex-start;}
   .draw-toolbar .tool-sep{height:26px;margin:0;}
   .draw-toolbar .palm-btn.active{background:var(--accent);color:#fff;box-shadow:0 2px 6px rgba(79,110,247,.35);}
 
-  /* ── ③ 그리기 도구막대가 열려 있는 동안 본문 하단 여백 ── */
+  /* ── ④ 그리기 도구막대가 열려 있는 동안 본문 하단 여백 ── */
   .editor:has(#drawToolbar[style*="flex"]) .editor-body{
     padding-bottom:calc(var(--ph-safe) + 190px)!important;
   }
 
-  /* ── ④ 더보기 서랍은 세로 폰에서 바닥 시트 (높아진 도구막대와 겹침 방지) ── */
+  /* ── ⑤ 더보기 서랍은 세로 폰에서 바닥 시트 ── */
   .more-panel{
     top:auto!important;bottom:0!important;left:0!important;right:0!important;
     width:100%!important;max-width:none!important;
