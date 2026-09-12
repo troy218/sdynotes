@@ -44,3 +44,6 @@ imported_docs/_owners.json
 .well-known/assetlinks.json
 play/playstore/twa/twa-manifest.json
 play/playstore/twa/android/
+
+# 스토어 이미지용 폰트 캐시 (store-art.mjs 가 npm 에서 자동으로 받는다)
+play/playstore/.cache/
