@@ -396,6 +396,39 @@ try {
     await wait(60);
   }
 
+  /* ── 7) 더보기 서랍의 폰 전용 '도구' 칸 — 툴바에서 옮긴 도구들이 실제로 돈다 ── */
+  {
+    const moreBtn = [...document.querySelectorAll('.editor-toolbar .tb-right button')]
+      .find((b) => /openMore\(/.test(b.getAttribute('onclick') || ''));
+    check('세로 폰 툴바에 더보기 버튼이 남아 있다', !!moreBtn);
+    moreBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await wait(100);
+    check('더보기 서랍이 열린다', document.getElementById('moreSheet').classList.contains('show'));
+    const tab = document.querySelector('#moreSheet .more-tabs button[data-mt="tools"]');
+    const sec = document.querySelector('#moreSheet .more-sec[data-ms="tools"]');
+    check("서랍에 폰 전용 '도구' 탭과 칸이 있다", !!tab && !!sec);
+    tab.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await wait(60);
+    check("'도구' 탭을 누르면 그 칸만 보인다",
+      sec.hidden === false && document.querySelector('#moreSheet .more-sec[data-ms="insert"]').hidden === true);
+    const fsVal = document.getElementById('phFsVal'), fsIn = document.getElementById('fsInput');
+    check('서랍의 글자 크기 표시가 툴바 입력칸과 같다', fsVal.textContent === fsIn.value);
+    const before = +fsIn.value || 0;
+    window.phFs(2);
+    await wait(80);
+    check("서랍의 '+' 로 글자 크기가 커지고 표시가 따라온다",
+      (+fsIn.value) > before && fsVal.textContent === fsIn.value);
+    const fontBtn = [...sec.querySelectorAll('.more-grid button')]
+      .find((b) => /toggleFontMenu/.test(b.getAttribute('onclick') || ''));
+    fontBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await wait(150);
+    check('서랍의 글꼴 버튼이 글꼴 메뉴를 열고 서랍은 닫힌다',
+      document.getElementById('fontMenu').classList.contains('show')
+      && !document.getElementById('moreSheet').classList.contains('show'));
+    try { window.closeFontMenu(); } catch {}
+    await wait(60);
+  }
+
   const runtimeFatal = errors.filter((m) => !/net::ERR|Could not load|Not implemented|localStorage|scrollTo/i.test(m));
   check('런타임 오류 없음', runtimeFatal.length === 0);
   if (runtimeFatal.length) console.log(runtimeFatal.slice(0, 4).join('\n---\n'));
