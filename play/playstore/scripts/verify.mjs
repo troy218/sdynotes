@@ -155,6 +155,8 @@ check(backend.includes("app.post('/api/auth/account/delete'"), '서버에 계정
 check(backend.includes('friendsPurgeUser') && backend.includes('dmPurgeUser'),
   '친구·대화 기록까지 함께 지움', '관계 데이터 정리가 빠짐');
 const swSrc = fs.readFileSync(path.join(OUT, 'sw.js'), 'utf8');
+check(fs.existsSync(path.join(OUT, 'app', 'account.js')) && fs.existsSync(path.join(OUT, 'app', 'account.css')),
+  '계정 자산이 모두 실림', 'account 자산이 빠짐');
 check(swSrc.includes("'/privacy'") && swSrc.includes("'/terms'"),
   '오프라인에서도 약관 페이지가 열림', '약관 페이지가 미리 받기 목록에 없음');
 
@@ -167,6 +169,57 @@ for (const rel of ['legal/privacy.html', 'legal/terms.html']) {
 }
 if (ph.length) console.log(`  ⚠️  제출 전 채울 자리표시자: ${ph.join(' · ')}`);
 else ok('자리표시자 없음 — 그대로 제출 가능');
+
+// ── 6-a-2. 논문 로컬화 + TWA ────────────────────────────────────────────
+console.log('\n6-a-2. 논문 로컬화 · TWA');
+for (const f of ['app/doc-store.js', 'app/local-docs.js']) {
+  check(exists(f), f, `${f} 없음`);
+}
+const ld = fs.readFileSync(path.join(OUT, 'app', 'local-docs.js'), 'utf8');
+check(ld.includes('/api/import/bundle/') && ld.includes('/api/import/release/'),
+  '논문을 기기로 옮기고 서버 사본 삭제를 요청', '옮기기·삭제 흐름이 없음');
+check(ld.includes("'/api/import/docfile/'") || ld.includes('/api/import/docfile/'),
+  '기기에 있으면 서버를 거치지 않고 읽음', '기기 우선 읽기가 없음');
+check(swSrc.includes('SDYDocStore'),
+  '서비스워커가 논문 배경 이미지를 기기에서 서빙',
+  '서비스워커에 논문 서빙이 없음 — 서버를 지우면 그림이 깨진다');
+check(swSrc.indexOf('doc-store.js') < swSrc.indexOf('PRECACHE'),
+  '서비스워커가 doc-store 를 먼저 불러옴', 'importScripts 순서가 어긋남');
+
+const htmlOrder = html.indexOf('/app/local-docs.js');
+check(htmlOrder > 0 && htmlOrder < html.indexOf('src="sdynotes.js'),
+  'local-docs.js 가 앱 본체보다 먼저 실행됨',
+  '순서가 뒤바뀜 — 앱이 서버 주소를 그대로 쓰게 된다');
+check(/music-store\.js/.test(html) && /doc-store\.js/.test(html),
+  '두 저장소 스크립트가 모두 실림', '저장소 스크립트가 빠짐');
+
+const plans = fs.readFileSync(path.join(PKG, 'plans.mjs'), 'utf8');
+check(/price:\s*4900/.test(plans), '프리미엄 4,900원', '4,900원이 아님');
+check(/price:\s*3000/.test(plans), '논문 100편 3,000원', '3,000원 크레딧이 없음');
+check(plans.includes('INFINITY') || plans.includes('Infinity'),
+  '논문 편수 무제한이 요금제에 반영', '무제한 표시가 없음');
+
+const twaGuide = fs.existsSync(path.join(PKG, 'twa', 'twa-manifest.example.json'));
+check(twaGuide, 'TWA 매니페스트 예시가 있음', 'twa-manifest.example.json 없음');
+check(fs.existsSync(path.join(PKG, 'scripts', 'twa-prepare.mjs')),
+  'TWA 준비 스크립트 있음', 'twa-prepare.mjs 없음');
+check(fs.existsSync(path.join(REPO, 'server', 'src', 'routes', 'wellknown.js')),
+  '서버가 assetlinks.json 을 내보냄',
+  'assetlinks 라우트가 없음 — TWA 가 주소창 있는 모드로 열린다');
+check(fs.existsSync(path.join(REPO, 'server', 'src', 'lib', 'bundle.js')),
+  '번들 형식이 한 곳에 있음(서버·검사가 같은 코드)',
+  'server/src/lib/bundle.js 없음 — 형식이 두 곳에 흩어진다');
+const ldSrc2 = fs.readFileSync(path.join(OUT, 'app', 'local-docs.js'), 'utf8');
+check(ldSrc2.includes('imageResponse'),
+  '그림 응답 모양도 한 곳에서 만듦(img·page·bg)',
+  'local-docs 가 그림 응답을 직접 만든다 — sw.js 와 어긋날 수 있다');
+check(/putFile|listFiles/.test(fs.readFileSync(path.join(OUT, 'app', 'doc-store.js'), 'utf8')),
+  '서버 파일(.src 원본 PDF 등)도 기기에 그대로 보관',
+  '원본 파일 보관 경로가 없음 — 지우면 되살릴 수 없다');
+
+const fg = fs.existsSync(path.join(OUT, 'store', 'feature-graphic-1024x500.png'));
+const fgSize = fg ? fs.statSync(path.join(OUT, 'store', 'feature-graphic-1024x500.png')).size : 0;
+check(fg && fgSize > 8000, '스토어 피처 그래픽 1024×500 (Play 필수)', '피처 그래픽이 없음');
 
 // ── 6-b. 이름표 ──────────────────────────────────────────────────────────
 console.log('\n6-b. 이름표(notesis)');

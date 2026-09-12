@@ -14,6 +14,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 importScripts('/app/music-store.js');
+importScripts('/app/doc-store.js');    // 논문(가져온 문서)을 기기에서 서빙
 
 // 빌드가 아래 두 줄을 실제 값으로 바꾼다.
 const BUILD = '__SDY_BUILD__';
@@ -158,6 +159,24 @@ self.addEventListener('fetch', (event) => {
       const blob = await self.SDYMusicStore.coverBlob(id);
       if (!blob) return new Response('없음', { status: 404, headers: { 'Cache-Control': 'no-store' } });
       return withRange(blob, null, blob.type || 'image/jpeg');
+    })());
+    return;
+  }
+
+  // ②-b 논문 배경 이미지·쪽 미리보기 — 기기에 있으면 기기에서 (서버는 이미 지웠다)
+  //  응답 모양은 doc-store.js 의 imageResponse 한 곳에서만 만든다.
+  //  (img·page 는 그림 자체, bg 는 {ok,url} JSON — 틀리면 그림이 통째로 안 나온다)
+  const mImg = /^\/api\/import\/(img|page|bg)\/(.+)$/.exec(url.pathname);
+  if (mImg && self.SDYDocStore) {
+    event.respondWith((async () => {
+      try {
+        const rest = mImg[2].split('/').map(decodeURIComponent);
+        const r = await self.SDYDocStore.imageResponse(mImg[1], rest);
+        if (r) return r;
+      } catch (e) { /* 아래에서 서버로 넘긴다 */ }
+      // 기기에 없으면 서버에 아직 있을 수 있다(다른 기기에서 가져온 논문)
+      try { return await fetch(req); }
+      catch (e) { return new Response('', { status: 404 }); }
     })());
     return;
   }

@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APP, BRAND, rebrand, brandLine } from '../features.mjs';
+import { execFileSync } from 'node:child_process';
 import { buildIcons } from './icons.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -121,17 +122,19 @@ const headBlock = `<link rel="manifest" href="/manifest.webmanifest">
 html = html.replace(HEAD_ANCHOR, `$1\n    ${headBlock}`);
 if (html === before) die('앱 메타를 끼워 넣지 못했습니다');
 
-// 로컬 음악 셔틀은 반드시 music-player.js 보다 먼저 실행돼야 한다.
-//   (플레이어가 fetch 를 가로채인 상태에서 시작해야 한다)
-const MUSIC_ANCHOR = /(\s*)(<script src="src\/music-player\.js[^"]*" defer><\/script>)/;
-if (!MUSIC_ANCHOR.test(html)) die('sdynotes.html 에서 music-player.js 스크립트 태그를 찾지 못했습니다');
-html = html.replace(MUSIC_ANCHOR,
-  `\n<script src="/app/pwa.js?v=${VERSION}" defer></script>` +
-  `\n<script src="/app/account.js?v=${VERSION}" defer></script>` +
-  `\n<script src="/app/local-music.js?v=${VERSION}" defer></script>$1$2`);
+// 발매판 스크립트는 전부 원본 번들(sdynotes.js) **앞**에 둔다.
+//   · local-music.js / local-docs.js 는 fetch 를 가로채므로, 가로채는 대상
+//     (music-player.js·에디터)보다 먼저 준비돼 있어야 한다.
+//   · defer 는 순서를 보장하므로 이 위치만 지키면 나머지는 알아서 맞는다.
+const BUNDLE_ANCHOR = /(\s*)(<script src="sdynotes\.js[^"]*" defer><\/script>)/;
+if (!BUNDLE_ANCHOR.test(html)) die('sdynotes.html 에서 sdynotes.js 스크립트 태그를 찾지 못했습니다');
+const appScripts = ['pwa.js', 'account.js', 'music-store.js', 'local-music.js', 'doc-store.js', 'local-docs.js']
+  .map((f) => `<script src="/app/${f}?v=${VERSION}" defer></script>`)
+  .join('\n');
+html = html.replace(BUNDLE_ANCHOR, `\n${appScripts}$1$2`);
 
 write(path.join(OUT, 'sdynotes.html'), html);
-log('   메타 주입 · pwa.js·account.js·local-music.js 를 플레이어 앞에 배치');
+log('   메타 주입 · 발매판 스크립트 6개를 원본 번들 앞에 배치');
 
 // ── ⑥ 매니페스트 ──────────────────────────────────────────────────────────
 log('⑥ 매니페스트');
@@ -172,6 +175,7 @@ if (!sw.includes("__SDY_BUILD__")) die('sw.js 에 __SDY_BUILD__ 자리표시자�
 // 미리 받을 목록 = 앱 셸 그대로. 실제 파일이 없으면 설치가 계속 실패하므로
 // 목록에 넣기 전에 존재를 확인한다.
 const shell = new Set(['/', '/manifest.webmanifest', '/icons/favicon-32.png',
+  '/.well-known/assetlinks.json',
   '/privacy', '/terms', '/legal/privacy.html', '/legal/terms.html',
   '/icons/icon-144.png', '/icons/icon-192.png', '/icons/icon-512.png',
   '/icons/maskable-512.png', '/icons/apple-touch-icon.png']);
@@ -184,7 +188,10 @@ for (const f of ['/sdynotes.js', '/sdynotes.css']) shell.add(f);
 
 // 확장자 없는 주소는 서버가 파일로 내보내는 경로다 — 실제 파일로 바꿔서 확인한다.
 const ROUTE_FILE = { '/': 'sdynotes.html', '/privacy': 'legal/privacy.html', '/terms': 'legal/terms.html' };
+// assetlinks.json 은 빌드 산출물이 아니라 서버가 지문으로 만들어 내보낸다.
+const RUNTIME_ONLY = new Set(['/.well-known/assetlinks.json']);
 const fileOf = (u) => path.join(OUT, (ROUTE_FILE[u] || u.replace(/^\//, '')));
+for (const u of RUNTIME_ONLY) shell.delete(u);   // 런타임 생성물은 미리 받지 않는다
 const missing = [...shell].filter((u) => !fs.existsSync(fileOf(u)));
 if (missing.length) die('미리 받기 목록에 없는 파일이 있습니다: ' + missing.join(', '));
 
@@ -195,10 +202,28 @@ sw = sw.replace('__SDY_BUILD__', BUILD)
 write(path.join(OUT, 'sw.js'), rebrand(sw));
 
 let shellBytes = 0;
-for (const u of shell) shellBytes += fs.statSync(fileOf(u)).size;
+for (const u of shell) {
+  if (RUNTIME_ONLY.has(u)) continue;
+  shellBytes += fs.statSync(fileOf(u)).size;
+}
 log(`   /sw.js — 미리 받기 ${shell.size}개 · ${(shellBytes / 1048576).toFixed(2)}MB`);
 
-// ── ⑧ 빌드 기록 ──────────────────────────────────────────────────────────
+// ── ⑧ 스토어 등록 이미지 (Play 피처 그래픽은 필수) ──────────────────────
+if (SKIP_ICONS) {
+  log('⑧ 스토어 이미지 — 건너뜀(--no-icons)');
+} else {
+  log('⑧ 스토어 등록 이미지');
+  try {
+    execFileSync(process.execPath, [path.join(HERE, 'store-art.mjs')], { stdio: 'pipe' });
+    log('   build/store/feature-graphic-1024x500.png · cover-1200x630.png');
+  } catch (e) {
+    // 폰트·ImageMagick 이 없는 환경에서도 앱 빌드는 끝나야 한다
+    log('   ⚠️  스토어 이미지를 만들지 못했습니다 — ' + String(e.message).split('\n')[0]);
+    log('      나중에 node scripts/store-art.mjs 로 따로 만들 수 있습니다.');
+  }
+}
+
+// ── ⑨ 빌드 기록 ──────────────────────────────────────────────────────────
 write(path.join(OUT, 'version.json'), JSON.stringify({
   app: APP.shortName,
   version: VERSION,

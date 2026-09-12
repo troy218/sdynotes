@@ -1,0 +1,32 @@
+{
+  "packageId": "app.notesis.notes",
+  "host": "YOUR-DOMAIN.example.com",
+  "name": "notesis — 논문 읽는 노트",
+  "launcherName": "notesis",
+  "display": "standalone",
+  "themeColor": "#14366E",
+  "navigationColor": "#14366E",
+  "backgroundColor": "#0F2A5A",
+  "startUrl": "/",
+  "iconUrl": "https://notesis.example.com/icons/icon-512.png",
+  "maskableIconUrl": "https://notesis.example.com/icons/maskable-512.png",
+  "monochromeIconUrl": "",
+  "webManifestUrl": "https://notesis.example.com/manifest.webmanifest",
+  "appVersionName": "14.69.0",
+  "appVersionCode": 14069000,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "enableNotifications": false,
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuestApp": false,
+  "orientation": "any",
+  "fingerprints": [
+    {
+      "name": "서명 키",
+      "value": "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "webviewFallback": "none"
+}

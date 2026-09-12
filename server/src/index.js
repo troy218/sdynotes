@@ -30,6 +30,8 @@ import { registerMisc } from './routes/misc.js';
 import { registerPapers } from './routes/papers.js';
 import { registerMusic } from './routes/music.js';
 import { registerChat } from './routes/chat.js';
+import { registerImportBundle } from './routes/importBundle.js';
+import { registerWellKnown } from './routes/wellknown.js';
 import { registerDb } from './routes/db.js';
 import { registerAuth } from './routes/auth.js';
 import { registerFriends } from './routes/friends.js';
@@ -75,6 +77,8 @@ registerMisc(app);
 registerPapers(app); // 등록한 키워드로 찾는 arXiv 오늘의 추천 논문
 registerMusic(app, { worker });
 registerChat(app);
+registerImportBundle(app);   // 16.7 · 변환 결과를 기기로 내보내고 서버 사본 삭제
+registerWellKnown(app);      // 16.8 · TWA 증명서 (/.well-known/assetlinks.json)
 registerDb(app);
 registerAuth(app);
 registerFriends(app);   // 16.3 · 친구 (회원끼리)

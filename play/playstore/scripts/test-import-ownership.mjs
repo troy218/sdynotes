@@ -130,9 +130,54 @@ const after = await store.importsUsage('u_me');
 check(after.bytes === 0 && after.count === 0, '내 사용량이 0 이 됨', `아직 ${mb(after.bytes)} 남음`);
 
 // ── ⑤ 남의 것은 건드리지 않는가 (가장 중요) ──────────────────────────────
-const otherLeft = fs.readdirSync(DOCS).filter((n) => n.startsWith('cccc333.'));
-check(otherLeft.length > 0, '다른 회원 논문은 그대로', '남의 논문까지 지움 — 큰 사고');
-check((await store.importsUsage('u_other')).count === 1, '다른 회원 사용량도 그대로', '남의 사용량이 사라짐');
+// u_other 의 논문은 위에서 '기기로 옮김'으로 정상 삭제됐다.
+//  여기서 확인할 것은 **계정 삭제가 다른 회원 문서를 건드리지 않는가** 다.
+const beforeOther = fs.readdirSync(DOCS).length;
+const purgedMe = await store.importsPurgeUser('u_me');
+check(purgedMe.docs === 0, '이미 옮긴 회원은 계정 삭제로 지울 문서가 없음', `문서 ${purgedMe.docs}개를 지움`);
+check(fs.readdirSync(DOCS).length === beforeOther, '다른 회원 문서는 그대로', '남의 문서를 지움 — 큰 사고');
+check((await store.importsUsage('u_other')).count === 1,
+  '다른 회원 사용량은 그대로', '남의 사용량이 잘못 바뀜');
+
+// ── ⑤-b 기기로 내보내기 → 서버 사본 삭제 (16.7 의 핵심) ──────────────────
+const list = await store.importsBundleList(other.jid);
+// 이 픽스처의 문서는 4개 파일(.json.gz · .s0.gz · .s1.gz · .meta.json) + 배경 이미지
+check(!!list && list.docs.length === 4 && list.images.length === other.pages && list.files === 4 + other.pages,
+  `번들 목록: 문서 ${list && list.docs.length}개 + 배경 ${list && list.images.length}개 = ${list && list.files}개`,
+  `번들 목록이 이상함: ${list ? `문서 ${list.docs.length} · 배경 ${list.images.length} · 합 ${list.files}` : 'null'}`);
+check(list && list.bytes === other.bytes,
+  `번들 용량이 문서 용량과 같음 (${mb(list.bytes)})`,
+  `번들 용량이 다름: ${mb(list ? list.bytes : 0)} vs ${mb(other.bytes)}`);
+
+// 크기가 안 맞으면 지우지 않는다 (반쯤 받은 것을 지우면 논문이 사라진다)
+const mismatch = await store.importsRelease(other.jid, 'u_other', { bytes: other.bytes - 1234 });
+check(!mismatch.ok && mismatch.code === 'size_mismatch',
+  '내려받은 크기가 다르면 삭제를 거절', '크기가 다른데 지워 버림(위험)');
+check(fs.existsSync(path.join(DOCS, 'cccc333.json.gz')),
+  '거절했으면 파일이 그대로 남음', '거절했는데 파일이 사라짐');
+
+// 남의 문서는 지울 수 없다
+const notMine = await store.importsRelease(other.jid, 'u_me', { bytes: other.bytes });
+check(!notMine.ok && notMine.code === 'not_owner',
+  '임자가 아니면 삭제 거절', '남의 논문을 지울 수 있음(큰 사고)');
+
+// 올바른 요청 — 다 받았다고 알리면 지운다
+const rel = await store.importsRelease(other.jid, 'u_other', { bytes: other.bytes, files: list.files });
+check(rel.ok && rel.docs >= 1, `기기로 옮긴 뒤 문서 ${rel.docs}개 삭제`, `삭제 실패: ${rel.error || ''}`);
+check(!fs.existsSync(path.join(DOCS, 'cccc333.json.gz')),
+  '서버에서 문서 본문이 사라짐', '문서가 아직 남음');
+check(rel.bytes === other.bytes, `삭제한 용량 ${mb(rel.bytes)}`, `삭제 용량이 다름(${mb(rel.bytes)})`);
+
+// 기록은 남는다 — "이 논문은 그 기기에 있다"를 서버도 알아야 한다
+const localList = await store.importsLocalList('u_other');
+check(localList.some((d) => d.jid === other.jid),
+  '기기로 옮긴 논문을 기록해 둠(기기 간 안내에 필요)', '옮긴 논문 기록이 없음');
+check((await store.importsUsage('u_other')).bytes === 0,
+  '옮긴 뒤에는 서버 사용량이 0', '옮겼는데 사용량이 남음');
+
+// 두 번 불러도 안전한가
+const again2 = await store.importsRelease(other.jid, 'u_other', {});
+check(again2.ok && again2.already, '같은 삭제를 다시 불러도 안전(already)', '두 번째 삭제가 실패로 응답');
 
 // ── ⑥ 임자 없는 문서는 보고되는가 (운영자가 확인할 수 있게) ─────────────
 await store.importsRecord('dddd444', '', { name: '임자 미상' });

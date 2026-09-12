@@ -164,6 +164,25 @@ const server = http.createServer((req, res) => {
   // 오프라인에서도 앱이 열려야 하므로 서비스워커·매니페스트를 최우선으로 보낸다
   if (urlPath.indexOf('/api/') === 0) return proxy(req, res);
 
+  // TWA 증명서 — 실제 서버(server/src/routes/wellknown.js)와 같은 모양으로 내보낸다.
+  //  운영에서는 server/src 가 담당하고, 여기서는 미리보기에서 확인만 할 수 있게 한다.
+  if (urlPath === '/.well-known/assetlinks.json') {
+    const repoRoot = path.resolve(ROOT, '..', '..', '..');
+    const f = path.join(repoRoot, '.well-known', 'assetlinks.json');
+    try {
+      const body = fs.readFileSync(f);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      return res.end(body);
+    } catch (e) {
+      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({
+        ok: false,
+        error: '아직 서명 지문이 등록되지 않았습니다',
+        how: 'node play/playstore/scripts/twa-prepare.mjs --fingerprint <SHA256>'
+      }));
+    }
+  }
+
   // 약관·개인정보 — 스토어 심사에서 요구하는 주소. 확장자 없이도 열리게 한다.
   const LEGAL = { '/privacy': 'legal/privacy.html', '/terms': 'legal/terms.html' };
   if (LEGAL[urlPath]) return serveStatic(req, res, '/' + LEGAL[urlPath]) || send(res, 404, '없음');

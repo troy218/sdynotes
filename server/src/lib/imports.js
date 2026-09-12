@@ -197,6 +197,116 @@ export async function importsPurgeUser(uid) {
   return { docs, bytes };
 }
 
+// ── 기기로 내보내기 (서버는 변환만 하고 보관하지 않는다) ─────────────────
+// 16.7 · 사용자 결정 — "서버에서 변환해서 그 기기로 보낸 뒤 서버에서는 지운다".
+//   왜: 서버 보관은 원가가 선형으로 늘고, 연구자에게는 '논문이 서버에 남는다'가
+//   곧 거부감이다. 변환(CPU)만 서버가 하고 보관은 기기가 맡는다.
+//
+//   지우는 순서는 **반드시** 내려받기 완료 뒤다. 실패하면 서버에 그대로 남는 쪽이
+//   안전하다(사용자가 다시 받으면 된다). 그래서 번들에 매니페스트를 넣어
+//   기기가 "다 받았다"를 증명한 뒤에만 지운다.
+
+// 문서 하나를 이루는 파일 목록 (문서 본문 + 배경 이미지)
+export async function importsBundleList(jid) {
+  await load();
+  const id = String(jid || '').replace(/[^0-9a-zA-Z_-]/g, '');
+  if (!id) return null;
+  const docs = [];
+  let bytes = 0;
+  for (const f of docFiles(id)) {
+    docs.push({ name: path.basename(f.path), file: f.path });
+    bytes += f.bytes;
+  }
+  if (!docs.length) return null;
+
+  const images = [];
+  for (const n of rasterNames(id)) {
+    const p2 = path.join(DIRS.img, n);
+    try {
+      const st2 = fs.statSync(p2);
+      images.push({ name: n, file: p2 });
+      bytes += st2.size;
+    } catch { /* 없으면 건너뜀 */ }
+  }
+  return { jid: id, docs, images, bytes, files: docs.length + images.length };
+}
+
+// ── 서버 사본 삭제 (기기가 다 받은 뒤에만 호출된다) ──────────────────────
+//   다른 문서가 함께 쓰는 이미지는 남긴다. 공유 여부는 다른 문서들의 본문을
+//   훑어서 판단한다(이미지 이름은 문서 본문 안에 들어 있다).
+export async function importsRelease(jid, uid, confirm = {}) {
+  await load();
+  const id = String(jid || '').replace(/[^0-9a-zA-Z_-]/g, '');
+  if (!id) return { ok: false, error: 'jid 없음' };
+
+  const rec = st[id];
+  const me = String(uid || '');
+  // 임자가 있으면 임자만 지울 수 있다. 임자가 없는(옛) 문서는 jid 를 아는 사람이 지운다.
+  if (rec && rec.uid && me && String(rec.uid) !== me) {
+    return { ok: false, error: '이 문서를 가져온 회원이 아니에요', code: 'not_owner' };
+  }
+
+  const list = await importsBundleList(id);
+  if (!list) {
+    if (rec) { delete st[id]; await save(); }
+    return { ok: true, already: true, docs: 0, images: 0, bytes: 0 };
+  }
+
+  // 기기가 받은 양과 지금 서버가 가진 양이 다르면 지우지 않는다.
+  //  (내려받는 사이에 다시 변환됐거나 잘린 경우 — 남겨 두는 쪽이 안전하다)
+  if (Number.isFinite(confirm.bytes) && confirm.bytes > 0 && confirm.bytes !== list.bytes) {
+    return {
+      ok: false, code: 'size_mismatch',
+      error: '내려받은 크기와 서버의 크기가 달라요 · 기기에서 다시 시도해 주세요',
+      server_bytes: list.bytes, client_bytes: confirm.bytes,
+    };
+  }
+
+  // 다른 회원·다른 문서가 쓰는 이미지 이름 모으기
+  const keep = new Set();
+  for (const [otherJid, other] of Object.entries(st)) {
+    if (otherJid === id || !other) continue;
+    if (other.uid && me && String(other.uid) !== me && String(other.uid) !== '') continue;
+    for (const n of rasterNames(otherJid)) keep.add(n);
+  }
+
+  let bytes = 0, nDocs = 0, nImages = 0;
+  for (const f of list.docs) {
+    try { const s2 = fs.statSync(f.file); await fsp.unlink(f.file); bytes += s2.size; nDocs += 1; }
+    catch { /* 이미 없음 */ }
+  }
+  for (const im of list.images) {
+    if (keep.has(im.name)) continue;
+    try { const s2 = fs.statSync(im.file); await fsp.unlink(im.file); bytes += s2.size; nImages += 1; }
+    catch { /* noop */ }
+  }
+
+  // 기록은 남긴다 — "이 논문은 기기에 있다"를 서버도 알아야 계정 삭제가 깔끔하다.
+  st[id] = {
+    uid: (rec && rec.uid) || me,
+    at: (rec && rec.at) || Date.now() / 1000,
+    bytes: 0, local: true,
+    released_at: Date.now() / 1000,
+    pages: (rec && rec.pages) || 0,
+    name: (rec && rec.name) || '',
+  };
+  await save();
+
+  return { ok: true, docs: nDocs, images: nImages, bytes, kept_shared: list.images.length - nImages };
+}
+
+// 기기에 있다고 표시된 문서들 — 서버에 파일이 없어도 '누가 가져갔는지'는 남는다
+export async function importsLocalList(uid) {
+  await load();
+  const me = String(uid || '');
+  const out = [];
+  for (const [jid, rec] of Object.entries(st)) {
+    if (!rec || !rec.local || String(rec.uid) !== me) continue;
+    out.push({ jid, at: rec.released_at || rec.at, pages: rec.pages, name: rec.name });
+  }
+  return out.sort((a, b) => (b.at || 0) - (a.at || 0));
+}
+
 // 임자 없는 문서 찾기 — 계정 삭제로 지울 수 없는 것들. 운영자가 확인할 수 있게.
 export async function importsOrphans() {
   await load();

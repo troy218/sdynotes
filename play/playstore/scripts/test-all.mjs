@@ -11,6 +11,7 @@
      ③ 계정 삭제     test-account-delete.mjs  (서버 파일에서 정말 사라지는가)
      ④ 삭제 화면     test-account-ui.mjs      (눌러서 끝까지 되는가 · jsdom)
      ⑤ 논문 임자·용량 test-import-ownership.mjs (무제한 요금제의 안전장치)
+     ⑥ 논문 기기 이관 test-local-docs.mjs (변환 → 기기 저장 → 서버 삭제)
    ═══════════════════════════════════════════════════════════════════════════ */
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -24,7 +25,8 @@ const STEPS = [
   ['구조 검사', 'verify.mjs', []],
   ['계정 삭제(서버)', 'test-account-delete.mjs', []],
   ['계정 삭제(화면)', 'test-account-ui.mjs', []],
-  ['논문 임자·용량', 'test-import-ownership.mjs', []]
+  ['논문 임자·용량', 'test-import-ownership.mjs', []],
+  ['논문 기기 이관', 'test-local-docs.mjs', []]
 ];
 
 let failed = 0;
