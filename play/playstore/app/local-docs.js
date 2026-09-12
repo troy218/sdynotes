@@ -66,7 +66,7 @@
   function notHere() {
     return json({
       ok: false, local_missing: true,
-      error: '이 논문은 다른 기기에 있어요 · 그 기기에서 열거나, PDF를 다시 가져와 주세요'
+      error: '이 논문은 그 기기에 있어요 · 프리미엄이면 클라우드에 보관되어 어디서나 열립니다'
     }, 409);
   }
   function say(msg, ms) {

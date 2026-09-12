@@ -60,6 +60,17 @@ window.toast = (m) => { toasts.push(m); };
 const calls = [];
 window.fetch = async (url, init) => {
   calls.push({ url: String(url), body: init && init.body, headers: (init && init.headers) || {} });
+  // 요금제 조회 — 프리미엄(클라우드)으로 답해 요금제 줄이 제대로 뜨는지 본다
+  if (String(url).includes('/api/auth/storage')) {
+    return {
+      ok: true, status: 200,
+      json: async () => ({
+        ok: true, cloud: true, keeps_copy: true, quota: 200 * 1024 * 1024 * 1024,
+        plan: { id: 'premium', name: '프리미엄', price: 14900, keeps_copy: true, cloud_bytes: 200 * 1024 * 1024 * 1024, papers_per_month: null },
+        papers: { count: 3, bytes: 3 * 1024 * 1024 * 1024, this_month: 3, per_month: null },
+      })
+    };
+  }
   return {
     ok: true, status: 200,
     json: async () => ({ ok: true, removed: { email: 'me@example.com', nick: '나', sessions: 2 }, kept: { local_notes: true } })
@@ -76,6 +87,13 @@ const block = window.document.querySelector('.sdy-acc-block');
 check(!!block, "계정 창에 '내 데이터' 칸이 붙음", '칸이 붙지 않음');
 check(!!window.document.querySelector('.sdy-acc-info'),
   '노트·필기가 기기에 있다는 안내가 보임', '데이터 위치 안내가 없음');
+// 요금제 줄 — 결제한 사람이 "내 논문이 어디 있나"를 계정 화면에서 바로 안다
+const planBox = window.document.querySelector('.sdy-acc-plan');
+check(!!planBox, '계정 창에 요금제 줄이 붙음', '요금제 줄이 없음');
+const planText = planBox ? planBox.textContent : '';
+check(/프리미엄/.test(planText) && /클라우드/.test(planText) && /GB/.test(planText),
+  `요금제·클라우드 사용량이 보임 (${planText.slice(0, 40)}…)`, `요금제 줄 내용이 이상함: ${planText}`);
+
 const links = [...window.document.querySelectorAll('.sdy-acc-links a')].map((a) => a.getAttribute('href'));
 check(links.includes('/privacy') && links.includes('/terms'),
   `약관 링크: ${links.join(' · ')}`, '약관 링크가 없음: ' + links.join(','));

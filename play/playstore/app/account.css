@@ -112,3 +112,10 @@
 @media (prefers-reduced-motion: reduce) {
   .sdy-del-wrap { transition: none; }
 }
+
+/* 요금제 줄 — 무료(기기 전용) / 프리미엄(클라우드) */
+.sdy-acc-plan{display:block;margin:0 0 10px;padding:10px 12px;border-radius:10px;
+  background:rgba(91,141,239,.10);line-height:1.5}
+.sdy-acc-plan b{color:#DCE8FF}
+.sdy-acc-plan span{color:#9FB6DA}
+.sdy-acc-plan-sub{margin-top:4px;color:#8FA6C9;font-size:12px;line-height:1.45}
