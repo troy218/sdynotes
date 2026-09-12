@@ -1,0 +1,72 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SDYnotes 발매판 · 앱 모드에서만 필요한 최소한의 스타일
+
+   앱 본체 CSS(sdynotes.css)는 건드리지 않는다. 여기 있는 것은 전부
+   sdy- 접두사를 쓰는 새 요소라 기존 화면과 충돌하지 않는다.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 설치/오프라인 띠 ───────────────────────────────────────────────────── */
+#sdyPwaBar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  transform: translate(-50%, 24px);
+  display: none;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 24px));
+  padding: 10px 12px 10px 16px;
+  border-radius: 14px;
+  background: #14366E;
+  color: #fff;
+  font-size: 13.5px;
+  line-height: 1.35;
+  box-shadow: 0 10px 30px rgba(9, 22, 48, .35);
+  z-index: 2147483000;      /* 앱의 뜨는 창들보다 위 */
+  transition: transform .22s ease, opacity .22s ease;
+  opacity: 0;
+}
+#sdyPwaBar.on {
+  display: flex;
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+#sdyPwaBar.idle { background: #33405a; }
+.sdy-pwa-msg { flex: 1 1 auto; }
+.sdy-pwa-btn {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 9px;
+  padding: 7px 13px;
+  background: #fff;
+  color: #14366E;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sdy-pwa-btn:active { transform: scale(.97); }
+.sdy-pwa-x {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: #cbd6ea;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 2px;
+  cursor: pointer;
+}
+
+/* ── 앱으로 열었을 때(standalone) ───────────────────────────────────────── */
+/* 주소창이 없으므로 위아래 노치 영역을 비켜 준다. */
+@media (display-mode: standalone) {
+  body.sdy-app {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* 앱으로 열면 설치 띠는 의미가 없다 */
+  #sdyPwaBar[data-install] { display: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #sdyPwaBar { transition: none; }
+}

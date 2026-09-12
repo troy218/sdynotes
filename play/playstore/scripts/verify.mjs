@@ -1,0 +1,196 @@
+#!/usr/bin/env node
+/* ═══════════════════════════════════════════════════════════════════════════
+   발매판 검사 — 빌드가 실제로 쓸 수 있는 상태인지 확인한다
+
+   검사하는 것
+     · 앱 셸·아이콘·매니페스트가 다 있는가
+     · 아이콘이 진짜 PNG 이고 크기가 맞는가
+     · 서비스워커가 클래식 스크립트인가(importScripts 를 쓰므로 ESM 이면 안 된다)
+     · 음악이 정말 기기에서 도는가 (셔틀이 플레이어보다 먼저 오는가)
+     · **원본 소스가 손대지 않은 채인가** (git 으로 확인)
+
+   실행: node scripts/verify.mjs
+   ═══════════════════════════════════════════════════════════════════════════ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { APP } from '../features.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PKG = path.resolve(HERE, '..');
+const REPO = path.resolve(PKG, '..', '..');
+const OUT = path.join(PKG, 'build');
+
+let pass = 0, fail = 0;
+const ok = (m) => { pass++; console.log('  ✅ ' + m); };
+const bad = (m) => { fail++; console.log('  ❌ ' + m); };
+const check = (cond, good, badMsg) => (cond ? ok(good) : bad(badMsg));
+
+function exists(rel) { return fs.existsSync(path.join(OUT, rel)); }
+function pngSize(file) {
+  const b = fs.readFileSync(file);
+  const sig = b.slice(0, 8).toString('hex');
+  if (sig !== '89504e470d0a1a0a') return null;
+  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+}
+
+console.log('\n발매판 검사\n');
+
+// ── 1. 빌드 존재 ─────────────────────────────────────────────────────────
+console.log('1. 앱 셸');
+if (!fs.existsSync(OUT)) {
+  console.log('  ❌ build/ 가 없습니다 — node scripts/build.mjs 를 먼저 실행하세요\n');
+  process.exit(1);
+}
+for (const f of ['sdynotes.html', 'sdynotes.css', 'sdynotes.js', 'sw.js',
+  'manifest.webmanifest', 'version.json',
+  'app/music-store.js', 'app/local-music.js', 'app/pwa.js', 'app/pwa.css',
+  'src/music-player.js']) {
+  check(exists(f), f, `${f} 없음`);
+}
+
+// ── 2. 매니페스트 ────────────────────────────────────────────────────────
+console.log('\n2. 매니페스트');
+let man = null;
+try { man = JSON.parse(fs.readFileSync(path.join(OUT, 'manifest.webmanifest'), 'utf8')); }
+catch (e) { bad('manifest.webmanifest 를 읽을 수 없음: ' + e.message); }
+if (man) {
+  check(!!man.name && !!man.short_name, `이름: ${man.name}`, 'name/short_name 없음');
+  check(!!man.start_url && !!man.scope, `start_url ${man.start_url} · scope ${man.scope}`, 'start_url/scope 없음');
+  check(['standalone', 'fullscreen', 'minimal-ui'].includes(man.display),
+    `display: ${man.display}`, `display 가 설치형이 아님(${man.display})`);
+  const sizes = (man.icons || []).map((i) => i.sizes);
+  check(sizes.includes('192x192') && sizes.includes('512x512'),
+    '아이콘 192·512 있음', '아이콘 192x192 / 512x512 가 있어야 설치 가능');
+  check((man.icons || []).some((i) => String(i.purpose || '').includes('maskable')),
+    'maskable 아이콘 있음', 'maskable 아이콘이 없으면 안드로이드가 아이콘을 잘라 보여줌');
+  check(/^#/.test(man.theme_color || ''), `theme_color ${man.theme_color}`, 'theme_color 없음');
+}
+
+// ── 3. 아이콘 ────────────────────────────────────────────────────────────
+console.log('\n3. 아이콘(실제 PNG 인지)');
+for (const [f, w, h] of [
+  ['icons/icon-192.png', 192, 192],
+  ['icons/icon-512.png', 512, 512],
+  ['icons/maskable-512.png', 512, 512],
+  ['icons/apple-touch-icon.png', 180, 180],
+  ['icons/favicon-32.png', 32, 32]
+]) {
+  const p = path.join(OUT, f);
+  if (!fs.existsSync(p)) { bad(`${f} 없음`); continue; }
+  const s = pngSize(p);
+  if (!s) { bad(`${f} 가 PNG 가 아님`); continue; }
+  check(s.w === w && s.h === h, `${f} ${s.w}×${s.h}`, `${f} 크기가 ${w}×${h} 가 아님(${s.w}×${s.h})`);
+}
+
+// ── 4. 서비스워커 ────────────────────────────────────────────────────────
+console.log('\n4. 서비스워커');
+const sw = fs.readFileSync(path.join(OUT, 'sw.js'), 'utf8');
+check(!sw.includes('__SDY_BUILD__'), '빌드 번호가 실제 값으로 들어감', '빌드 번호 자리표시자가 그대로 남아 있음');
+check(/importScripts\(/.test(sw), 'importScripts 로 저장소를 함께 씀', 'importScripts 가 없음');
+check(!/^\s*(import|export)\s/m.test(sw),
+  '클래식 스크립트(ESM 아님) — importScripts 사용 가능',
+  'ESM 문법(import/export)이 섞여 있음: 서비스워커 등록이 실패할 수 있음');
+check(sw.includes('/api/music/file/'), '음원 요청을 기기에서 응답', '음원 가로채기 코드가 없음');
+check(sw.includes('Content-Range'), 'Range 응답 지원(음악 시크)', 'Range 처리가 없어 탐색이 끊길 수 있음');
+
+const precache = (sw.match(/const PRECACHE = \[([\s\S]*?)\];/) || [])[1] || '';
+const listed = [...precache.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+check(listed.length >= 8, `미리 받기 ${listed.length}개`, '미리 받기 목록이 비어 있음');
+const gone = listed.filter((u) => u !== '/' && !fs.existsSync(path.join(OUT, u.replace(/^\//, ''))));
+check(gone.length === 0, '미리 받기 목록의 파일이 모두 실재', '없는 파일: ' + gone.join(', '));
+
+// ── 5. HTML 끼워 넣기 ────────────────────────────────────────────────────
+console.log('\n5. 앱 메타 주입');
+const html = fs.readFileSync(path.join(OUT, 'sdynotes.html'), 'utf8');
+check(html.includes('rel="manifest"'), '매니페스트 연결', 'manifest 링크 없음');
+check(html.includes('name="theme-color"'), 'theme-color', 'theme-color 없음');
+check(html.includes('apple-touch-icon'), '애플 터치 아이콘', 'apple-touch-icon 없음');
+check(html.includes('/app/pwa.js'), 'pwa.js 주입', 'pwa.js 없음');
+check(html.includes('/app/local-music.js'), 'local-music.js 주입', 'local-music.js 없음');
+
+const iLocal = html.indexOf('/app/local-music.js');
+const iPlayer = html.indexOf('src/music-player.js');
+check(iLocal > 0 && iPlayer > 0 && iLocal < iPlayer,
+  '로컬 음악 셔틀이 플레이어보다 먼저 실행됨',
+  '순서가 뒤바뀜 — 플레이어가 서버 주소를 그대로 쓰게 된다');
+
+// ── 6. 음악 로컬화 ───────────────────────────────────────────────────────
+console.log('\n6. 음악이 기기에서 도는가');
+const lm = fs.readFileSync(path.join(OUT, 'app/local-music.js'), 'utf8');
+const ms = fs.readFileSync(path.join(OUT, 'app/music-store.js'), 'utf8');
+check(/window\.fetch\s*=/.test(lm), 'fetch 를 가로챈다(플레이어 무수정)', 'fetch 가로채기가 없음');
+for (const ep of ['/api/music/list', '/api/music/upload', '/api/music/delete', '/api/music/norm']) {
+  check(lm.includes(ep), `${ep} 를 기기가 처리`, `${ep} 처리가 없음 — 서버로 새어 나간다`);
+}
+check(!/^\s*(import|export)\s/m.test(ms), 'music-store.js 가 클래식 스크립트(서비스워커 공용)',
+  'music-store.js 에 ESM 문법이 있음 — importScripts 로 못 불러온다');
+check(!/indexedDB/.test(html), 'indexedDB 접근이 HTML 밖에 있음(앱 셸이 가벼움)', '');
+
+// ── 6-b. 이름표 ──────────────────────────────────────────────────────────
+console.log('\n6-b. 이름표(notesis)');
+const titleTag = (/<title>([^<]*)<\/title>/.exec(html) || [])[1] || '';
+check(titleTag === APP.brand, `문서 제목: ${titleTag}`, `문서 제목이 ${APP.brand} 가 아님(${titleTag})`);
+check(html.includes(APP.brand), `화면 이름: ${APP.brand}`, '화면에 새 이름이 없음');
+if (man) {
+  check(String(man.name).startsWith(APP.brand), `스토어 이름: ${man.name}`, `name 이 ${APP.brand} 로 시작하지 않음`);
+  check(man.short_name === APP.brand, `홈 화면 이름: ${man.short_name}`, `short_name 이 ${APP.brand} 가 아님`);
+  check(man.id === APP.id, `앱 id: ${man.id}`, `id 가 ${APP.id} 가 아님`);
+}
+check(html.includes(`content="${APP.shortName}"`), 'iOS 홈 화면 이름', 'apple-mobile-web-app-title 없음');
+check(!fs.existsSync(path.join(OUT, 'src', 'app')),
+  '개발용 원본(src/app)은 발매판에 없음', 'src/app 이 딸려 들어감 — 앱 셸이 불필요하게 커짐');
+
+// 옛 이름이 남았는가 — 옛 제목 무시 규칙(legacy guard)에 쓰인 것은 예외로 본다.
+const stray = [];
+for (const rel of ['sdynotes.html', 'sdynotes.css', 'sdynotes.js', 'sw.js',
+  'app/local-music.js', 'app/pwa.js', 'app/pwa.css', 'app/music-store.js']) {
+  const text = fs.readFileSync(path.join(OUT, rel), 'utf8');
+  text.split('\n').forEach((line, i) => {
+    if (!line.includes('SDYnotes')) return;
+    if (/test\(String\(S\.appTitle\)/.test(line)) return;   // 의도된 legacy 판정
+    stray.push(`${rel}:${i + 1}`);
+  });
+}
+check(stray.length === 0, '옛 이름(SDYnotes)이 화면에 남지 않음', '옛 이름이 남음: ' + stray.join(', '));
+
+// ── 6-c. 패치한 코드가 문법적으로 멀쩡한가 ───────────────────────────────
+console.log('\n6-c. 코드 구문');
+for (const rel of ['sdynotes.js', 'src/music-player.js', 'sw.js',
+  'app/local-music.js', 'app/pwa.js', 'app/music-store.js']) {
+  try {
+    execFileSync(process.execPath, ['--check', path.join(OUT, rel)], { stdio: 'pipe' });
+    ok(`${rel} 구문 정상`);
+  } catch (e) {
+    bad(`${rel} 구문 오류: ${String(e.stderr || e.message).split('\n')[0]}`);
+  }
+}
+
+// ── 7. 원본 불변 ─────────────────────────────────────────────────────────
+console.log('\n7. 원본 소스가 손대지 않았는가');
+try {
+  const st = execFileSync('git', ['status', '--porcelain'], { cwd: REPO, encoding: 'utf8' });
+  // 발매판이 의도적으로 손대는 파일(앱 코드가 아님)
+  const ALLOW = new Set(['.gitignore', 'docs/store_plan.md']);
+  const dirty = st.split('\n').filter(Boolean)
+    // ?? = 새로 만든 파일(원본 수정이 아니다). 추적 중인 파일의 변경·삭제만 본다.
+    .filter((l) => !l.startsWith('??'))
+    // git status 는 앞 2글자가 상태 코드다(XY 경로). 그 뒤부터가 경로.
+    .map((l) => l.slice(3).trim().replace(/^"|"$/g, ''))
+    .map((p2) => (p2.includes(' -> ') ? p2.split(' -> ')[1] : p2))
+    .filter((p) => p && !p.startsWith('play/') && !ALLOW.has(p));
+  check(dirty.length === 0,
+    '손댄 원본 파일 없음 (play/ 밖은 전부 그대로)',
+    '원본이 수정됨: ' + dirty.join(', '));
+} catch (e) {
+  bad('git 확인 실패: ' + e.message);
+}
+
+// ── 결과 ─────────────────────────────────────────────────────────────────
+console.log('\n' + '─'.repeat(56));
+console.log(fail === 0
+  ? `✅ 전부 통과 — ${pass}개`
+  : `❌ ${fail}개 실패 · ${pass}개 통과`);
+console.log('─'.repeat(56) + '\n');
+process.exit(fail === 0 ? 0 : 1);
