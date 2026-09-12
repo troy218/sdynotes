@@ -102,16 +102,16 @@ check(otherUsage.bytes === other.bytes && otherUsage.count === 1,
 
 // ── ② 무제한(기본값)에서는 통과 ──────────────────────────────────────────
 process.env.SDY_IMPORT_QUOTA_MB = '0';
-check((await store.importsCheckQuota('u_me')).unlimited,
-  'SDY_IMPORT_QUOTA_MB=0 → 무제한(통과)', '무제한인데 막음');
+check((await store.importsCheckQuota({ uid: 'u_me', plan: 'premium' })).unlimited,
+  'SDY_IMPORT_QUOTA_MB=0 → 무제한(운영자 비상 스위치)', '무제한인데 막음');
 
 // ── ③ 용량이 꽉 차면 막는다 ──────────────────────────────────────────────
 process.env.SDY_IMPORT_QUOTA_MB = '3';        // 3MB — 이미 16MB 넘게 씀
-const q = await store.importsCheckQuota('u_me');
+const q = await store.importsCheckQuota({ uid: 'u_me', plan: 'premium' });
 check(!q.ok && q.quota === 3 * 1024 * 1024,
   '용량 초과면 막고 남은 양을 알려 줌', '용량을 넘었는데 통과시킴');
 check(q.over_by > 0, `초과분 ${mb(q.over_by)} 를 계산해 줌`, '초과분을 안 알려 줌');
-check((await store.importsCheckQuota('u_new')).ok, '논문이 없는 새 회원은 통과', '새 회원을 막음');
+check((await store.importsCheckQuota({ uid: 'u_new', plan: 'premium' })).ok, '논문이 없는 새 회원은 통과', '새 회원을 막음');
 delete process.env.SDY_IMPORT_QUOTA_MB;
 
 // ── ④ 계정 삭제 → 디스크에서 진짜 사라지는가 ─────────────────────────────
@@ -138,6 +138,36 @@ check(purgedMe.docs === 0, '이미 옮긴 회원은 계정 삭제로 지울 문�
 check(fs.readdirSync(DOCS).length === beforeOther, '다른 회원 문서는 그대로', '남의 문서를 지움 — 큰 사고');
 check((await store.importsUsage('u_other')).count === 1,
   '다른 회원 사용량은 그대로', '남의 사용량이 잘못 바뀜');
+
+// ── ⑤-a 요금제에 따라 갈리는가 (17.0 · 컴퓨터 위주 + 클라우드) ───────────
+const { PLANS, planSummary, planKeepsCopy, planCloudBytes } = await import(path.join(REPO, 'server/src/lib/plans.js'));
+const free = { uid: 'u_free', plan: 'free' };
+const prem = { uid: 'u_prem', plan: 'premium' };
+
+check(planKeepsCopy(free) === false && planKeepsCopy(prem) === true,
+  '무료는 기기 보관 · 프리미엄은 서버 보관',
+  `보관 구분이 틀림: free=${planKeepsCopy(free)} premium=${planKeepsCopy(prem)}`);
+check(planCloudBytes(prem) === 200 * 1024 * 1024 * 1024,
+  '프리미엄 클라우드 200GB', `클라우드 값이 다름: ${planCloudBytes(prem)}`);
+check(planCloudBytes(free) === 0,
+  '무료는 서버 보관 0 — 변환 후 지운다', `무료 보관 값이 다름: ${planCloudBytes(free)}`);
+
+const qFree = await store.importsCheckQuota(free);
+check(qFree.ok && qFree.keeps_copy === false && qFree.papers_per_month === 5,
+  '무료는 용량이 아니라 편수(월 5편)로 막는다', `무료 정책 이상: ${JSON.stringify(qFree).slice(0, 80)}`);
+const qPrem = await store.importsCheckQuota(prem);
+check(qPrem.ok && qPrem.keeps_copy === true && qPrem.quota === 200 * 1024 * 1024 * 1024,
+  '프리미엄은 200GB 상한으로 막는다', `프리미엄 정책 이상: ${JSON.stringify(qPrem).slice(0, 80)}`);
+
+// 이번 달 편수 세기 (무료 월 5편 판정의 근거)
+const nNow = await store.importsPapersThisMonth('u_other');
+check(nNow >= 1, `이번 달 가져온 편수를 센다 (${nNow}편)`, '편수 집계가 0');
+const nOld = await store.importsPapersThisMonth('없는회원');
+check(nOld === 0, '가져온 것이 없는 회원은 0편', `0이 아님: ${nOld}`);
+
+const sum = planSummary(prem);
+check(sum.price === 14900 && sum.cloud_bytes === 200 * 1024 * 1024 * 1024,
+  '요약(계정 화면·상태 확인용)도 같은 값', `요약이 다름: ${JSON.stringify(sum)}`);
 
 // ── ⑤-b 기기로 내보내기 → 서버 사본 삭제 (16.7 의 핵심) ──────────────────
 const list = await store.importsBundleList(other.jid);

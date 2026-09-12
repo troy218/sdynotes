@@ -15,12 +15,13 @@ import {
   otpIssue, otpVerifyAndLogin, otpRateStatus, otpRateHit, passwordLogin,
   emailValid, sanitizeEmail, sanitizeNick,
   requireUser, extractUserToken, userLogout, userChangeNick, userChangePassword, userByTokenSync,
-  userDeleteAccount,
+  userByUidSync, userDeleteAccount,
 } from '../lib/userauth.js';
 import { notifyAddInternal } from '../lib/notifyAdd.js';
 import { friendsPurgeUser } from '../lib/friends.js';
 import { dmPurgeUser } from '../lib/dmstore.js';
-import { importsPurgeUser, importsUsage, importsQuotaBytes } from '../lib/imports.js';
+import { importsPurgeUser, importsUsage, importsPapersThisMonth } from '../lib/imports.js';
+import { planSummary } from '../lib/plans.js';
 
 const DEV_CODE = ['1', 'true', 'yes'].includes(String(process.env.SDY_AUTH_DEV_CODE || '').toLowerCase());
 
@@ -155,16 +156,25 @@ export function registerAuth(app) {
   // ── 보관 용량 ──────────────────────────────────────────────────────────
   //  16.6 · 논문 불러오기는 구독자 무제한, 대신 서버 보관 용량은 정해져 있다.
   //  화면이 그 사실을 숨기지 않고 보여줄 수 있게 숫자를 돌려준다.
+  // 내 요금제와 보관 상태 — 앱이 "서버에 두나, 기기에 두나"를 이걸로 정한다.
+  //  (무료는 서버 보관 0 = 변환 후 기기로 옮기고 지운다 / 프리미엄은 클라우드 200GB)
   app.get('/api/auth/storage', async (req, reply) => {
     const u = bearerUser(req);
     if (!u) return reply.code(401).send({ ok: false, error: '로그인이 필요해요' });
+    const rec = userByUidSync(u.uid) || u;
     const usage = await importsUsage(u.uid);
-    const quota = importsQuotaBytes();
+    const plan = planSummary(rec);
+    const quota = plan.cloud_bytes;                 // 0 = 서버에 두지 않음
+    const papersThisMonth = await importsPapersThisMonth(u.uid);
     return reply.send({
       ok: true,
-      papers: { count: usage.count, bytes: usage.bytes },
-      quota,                       // 0 = 무제한
-      unlimited: quota === 0,
+      plan: plan,
+      // 앱이 바로 쓰는 결론 두 가지
+      cloud: quota > 0,                              // 서버에 보관하는 요금제인가
+      keeps_copy: plan.keeps_copy,
+      papers: { count: usage.count, bytes: usage.bytes, this_month: papersThisMonth, per_month: plan.papers_per_month },
+      quota,
+      unlimited: quota === 0 && plan.papers_per_month === null,
       docs: usage.docs.slice(0, 50).map((d) => ({ jid: d.jid, bytes: d.bytes, at: d.at, name: d.name })),
     });
   });

@@ -12,7 +12,8 @@ import { compressOptions, noCompressForBinaryRoutes } from './lib/perf.js';
 import { sessionsLoad } from './lib/admin.js';
 import { createWorkerProxy } from './lib/workerProxy.js';
 import { extractUserToken, userByTokenSync } from './lib/userauth.js';
-import { importsBoot, importsRecord, importsCheckQuota } from './lib/imports.js';
+import { importsBoot, importsRecord, importsCheckQuota, importsPapersThisMonth } from './lib/imports.js';
+import { planSummary } from './lib/plans.js';
 
 import { registerPages } from './routes/pages.js';
 import { registerSync } from './routes/sync.js';
@@ -120,24 +121,37 @@ await importsBoot();    // 16.6 · 가져온 문서의 임자·용량 기록
 //  ② 잡이 만들어지면 그 회원을 임자로 적어 둔다 — 계정 삭제 때 함께 지우기 위해서
 async function importDocGuard(req, reply, worker) {
   let uid = '';
+  let user = null;
   try {
     const tok = extractUserToken(req);
-    const u = tok ? userByTokenSync(tok) : null;
-    uid = (u && u.uid) || '';
+    user = tok ? userByTokenSync(tok) : null;
+    uid = (user && user.uid) || '';
   } catch { uid = ''; }
 
   if (uid) {
     try {
-      const q = await importsCheckQuota(uid);
+      const q = await importsCheckQuota(user);
       if (!q.ok) {
+        // ① 클라우드가 가득 찬 프리미엄 — 오래된 논문을 지우면 다시 된다
         return reply.code(413).send({
           ok: false, code: 'import_quota',
-          error: '보관 용량이 가득 찼어요 · 오래된 논문을 정리하면 다시 가져올 수 있어요',
-          used: q.usage.bytes, quota: q.quota,
+          error: '클라우드가 가득 찼어요 · 오래된 논문을 정리하면 다시 가져올 수 있어요',
+          used: q.usage.bytes, quota: q.quota, keeps_copy: q.keeps_copy, plan: planSummary(user),
         });
       }
+      // ② 무료 회원의 월 편수 (기기 전용이라 용량으로는 못 막는다)
+      if (!q.keeps_copy && q.papers_per_month != null) {
+        const used = await importsPapersThisMonth(uid);
+        if (used >= q.papers_per_month) {
+          return reply.code(429).send({
+            ok: false, code: 'import_papers',
+            error: `이번 달 ${q.papers_per_month}편을 다 썼어요 · 프리미엄이면 편수 제한 없이 가져올 수 있어요`,
+            used, per_month: q.papers_per_month, plan: planSummary(user),
+          });
+        }
+      }
     } catch (e) {
-      console.error(`[imports] 용량 확인 실패: ${e?.message || e}`);   // 확인이 안 되면 통과시킨다
+      console.error(`[imports] 사용량 확인 실패: ${e?.message || e}`);   // 확인이 안 되면 통과시킨다
     }
   }
 

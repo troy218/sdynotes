@@ -116,7 +116,11 @@ function passwordMatches(rec, password) {
 }
 function publicUser(rec) {
   if (!rec) return null;
-  return { uid: rec.uid, email: rec.email, nick: rec.nick, needs_password: !hasPassword(rec) };
+  return {
+    uid: rec.uid, email: rec.email, nick: rec.nick,
+    needs_password: !hasPassword(rec),
+    plan: rec.plan || 'free', plan_until: rec.plan_until || 0,   // 요금제(클라우드 보관 여부를 가른다)
+  };
 }
 async function issueSessionFor(rec) {
   const now = Date.now() / 1000;
@@ -145,6 +149,11 @@ export async function userByEmail(email) {
 export async function userByUid(uid) {
   const u = await usersLoad();
   return u[uid] || null;
+}
+// 동기 판 — 요금제·용량 확인처럼 요청 경로에서 바로 써야 할 때 (부팅 때 이미 읽어 둔다)
+export function userByUidSync(uid) {
+  if (!users) return null;
+  return users[String(uid || '')] || null;
 }
 // 16.3 · 닉네임으로 회원 찾기 (친구 요청 등록용 — normNick 비교와 같은 규칙)
 export async function userByNick(nick) {
@@ -228,6 +237,7 @@ export async function otpVerifyAndLogin(email, code, nickWanted, passwordWanted)
     if (!passwordValid(passwordWanted)) return { ok: false, error: `비밀번호는 ${PASS_MIN}자 이상으로 입력해 주세요`, need_password: true };
     user = {
       uid: 'u_' + crypto.randomBytes(9).toString('hex'),
+      plan: 'free',                       // 가입은 무료부터 — 클라우드는 결제 후
       email, nick,
       pass: passRecord(passwordWanted),
       created_at: new Date().toISOString(),
@@ -303,6 +313,35 @@ export function requireUser(req) {
 //   안 지우는 것 — 노트 본문·필기·PDF. 그건 계정이 아니라 **기기**에 딸린 것이라
 //   서버에 없고, 지우면 오히려 사용자 데이터를 함부로 없애는 셈이 된다.
 //   (앱 화면도 이 구분을 그대로 안내한다.)
+// ── 요금제 바꾸기 (결제 연동 지점) ──────────────────────────────────────
+//   웹 결제(토스·스토어 밖)와 스토어 결제(IAP)가 같은 함수를 부른다.
+//   되돌릴 수 있게 기록(plan_source·plan_order)을 남긴다.
+export async function userSetPlan(uid, planId, opts = {}) {
+  await usersLoad();
+  const rec = userByUidSync(uid);
+  if (!rec) return { ok: false, error: '회원 없음' };
+  const { planApply } = await import('./plans.js');
+  const r = planApply(rec, planId, opts);
+  if (r.ok) {
+    await usersSave();
+    console.log(`[plans] ${rec.nick || rec.uid} → ${r.plan}` + (opts.source ? ` (${opts.source})` : ''));
+  }
+  return r;
+}
+
+// 구독 만료를 정리한다 (서버가 주기적으로 또는 요청 때 확인)
+export async function userExpirePlans() {
+  await usersLoad();
+  const { planExpireCheck } = await import('./plans.js');
+  let n = 0;
+  for (const rec of Object.values(users || {})) {
+    if (!rec || !rec.plan_until) continue;
+    if (planExpireCheck(rec).expired) n += 1;
+  }
+  if (n) { await usersSave(); console.log(`[plans] 만료된 구독 ${n}건을 무료로 되돌림`); }
+  return n;
+}
+
 export async function userDeleteAccount(uid) {
   await usersLoad();
   const u = users[uid];

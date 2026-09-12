@@ -180,6 +180,10 @@ check(ld.includes('/api/import/bundle/') && ld.includes('/api/import/release/'),
   '논문을 기기로 옮기고 서버 사본 삭제를 요청', '옮기기·삭제 흐름이 없음');
 check(ld.includes("'/api/import/docfile/'") || ld.includes('/api/import/docfile/'),
   '기기에 있으면 서버를 거치지 않고 읽음', '기기 우선 읽기가 없음');
+check(ld.includes('/api/auth/storage'),
+  '요금제를 물어 서버 보관/기기 보관을 가름', '요금제 확인이 없음 — 클라우드 원본을 지울 수 있다');
+check(/state\.cloud/.test(ld) && /keepServer/.test(ld),
+  '클라우드 요금제면 서버 사본을 지우지 않음', '클라우드 갈래가 없음');
 check(swSrc.includes('SDYDocStore'),
   '서비스워커가 논문 배경 이미지를 기기에서 서빙',
   '서비스워커에 논문 서빙이 없음 — 서버를 지우면 그림이 깨진다');
@@ -194,10 +198,21 @@ check(/music-store\.js/.test(html) && /doc-store\.js/.test(html),
   '두 저장소 스크립트가 모두 실림', '저장소 스크립트가 빠짐');
 
 const plans = fs.readFileSync(path.join(PKG, 'plans.mjs'), 'utf8');
-check(/price:\s*4900/.test(plans), '프리미엄 4,900원', '4,900원이 아님');
+check(/price:\s*14900/.test(plans), '프리미엄 14,900원', '14,900원이 아님');
 check(/price:\s*3000/.test(plans), '논문 100편 3,000원', '3,000원 크레딧이 없음');
-check(plans.includes('INFINITY') || plans.includes('Infinity'),
+check(plans.includes('Infinity'),
   '논문 편수 무제한이 요금제에 반영', '무제한 표시가 없음');
+check(/200 \* 1024 \* 1024 \* 1024/.test(plans), '개인 클라우드 200GB', '200GB 표기가 없음');
+check(/cloudPlans:\s*\['premium'\]/.test(plans), '클라우드 요금제가 프리미엄 하나로 명시됨', 'cloudPlans 없음');
+check(/web:\s*true/.test(plans) && /store:\s*true/.test(plans), '스토어 + 웹 결제 둘 다', '결제 경로 표기가 없음');
+
+// ── 두 요금제 정의가 어긋나지 않는가 (팔아 놓고 막으면 사고다) ────────────
+const srvPlans = fs.readFileSync(path.join(REPO, 'server', 'src', 'lib', 'plans.js'), 'utf8');
+check(/price:\s*14900/.test(srvPlans), '서버도 프리미엄 14,900원', '서버 값이 다름 — 광고와 실제가 어긋난다');
+check(/SDY_PREMIUM_CLOUD_GB',\s*200/.test(srvPlans) || /PREMIUM_CLOUD_GB/, '서버 클라우드 기본값 200GB', '서버 클라우드 값이 없음');
+check(/keepsCopy:\s*true/.test(srvPlans) && /keepsCopy:\s*false/.test(srvPlans),
+  '서버가 요금제별 보관 여부를 구분', '보관 여부 구분이 없음');
+check(/cloudBytes:\s*\(\)\s*=>\s*0/.test(srvPlans), '무료는 서버 보관 0(기기 전용)', '무료 보관 설정이 없음');
 
 const twaGuide = fs.existsSync(path.join(PKG, 'twa', 'twa-manifest.example.json'));
 check(twaGuide, 'TWA 매니페스트 예시가 있음', 'twa-manifest.example.json 없음');

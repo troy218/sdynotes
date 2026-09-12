@@ -1,7 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    notesis 발매판 · 논문도 기기로 (서버는 변환만)
 
-   사용자 결정: "내 서버에서 변환해서 그 로컬 기기에 보내준 후 서버에서는 지우는 방향."
+   사용자 결정 (두 단계로 이어짐)
+     ① "내 서버에서 변환해서 그 로컬 기기에 보내준 후 서버에서는 지우는 방향."
+     ② "논문은 보통 컴터로 많이 보니 컴터 위주… 요금제를 비싸게 올리고 개인
+        클라우드 공간을 주자. 컴터로 보고 편집, 패드로는 필기."
+
+   그래서 지금은 **요금제에 따라 두 갈래**다:
+     · 무료      — ① 그대로. 서버는 변환만 하고, 기기가 다 받으면 지운다.
+     · 프리미엄  — ② 서버가 원본(200GB). 컴퓨터·패드·폰이 같은 것을 보고,
+                   기기 사본은 오프라인용이다(지우라고 하지 않는다).
 
    어떻게 (원본 코드는 한 줄도 고치지 않는다)
      원본 앱은 가져온 논문을 `/api/import/…` 로 다룬다. 이 파일이 그 주소들을
@@ -29,6 +37,26 @@
   var raw = window.fetch.bind(window);
   var migrating = {};         // jid -> Promise (동시에 두 번 옮기지 않는다)
 
+  // ── 내 요금제: 서버에 두나(클라우드), 기기에 두나 ─────────────────────
+  //   무료      — 서버는 변환만. 다 받으면 서버 사본을 지운다(프라이버시 + 서버비 0)
+  //   프리미엄  — 서버가 원본(200GB). 컴퓨터·패드가 같은 것을 본다.
+  //               기기에는 **오프라인용 사본**만 두고, 지우라고 하지 않는다.
+  //  서버가 없거나 로그인 전이면 무료로 본다(안전한 쪽 = 기기에 두기).
+  var state = { plan: 'free', cloud: false, loaded: false };
+  function loadPlan() {
+    return raw('/api/auth/storage', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (d && d.ok) {
+          state.plan = (d.plan && d.plan.id) || 'free';
+          state.cloud = !!d.cloud;
+        }
+        state.loaded = true;
+        return state;
+      })
+      .catch(function () { state.loaded = true; return state; });
+  }
+
   function json(obj, status) {
     return new Response(JSON.stringify(obj), {
       status: status || 200,
@@ -48,6 +76,8 @@
   // ── 서버에서 기기로 옮기기 ──────────────────────────────────────────────
   //  순서: 받기 → 매니페스트 확인 → 저장 → 다 됐으면 서버에 알려 지우게 한다.
   //  어느 단계에서 실패해도 서버 파일은 그대로다(다음에 다시 시도한다).
+  //  opts.keepServer = true 이면 기기에 담기만 하고 **서버 사본은 지우지 않는다**
+  //   (클라우드 요금제 — 서버가 원본이라 지우면 다른 기기에서 못 연다)
   function migrate(jid, opts) {
     var id = String(jid || '');
     if (!id) return Promise.resolve({ ok: false, error: 'jid 없음' });
@@ -56,6 +86,10 @@
 
     var p = (async function () {
       try {
+        // 요금제를 모르는 채로 옮기면 **클라우드 원본을 지워 버릴 수 있다.** 먼저 확인한다.
+        if (!state.loaded) { try { await loadPlan(); } catch (e) {} }
+        // 클라우드 요금제면 서버 사본을 지우지 않는다(다른 기기가 봐야 한다)
+        var keepServer = opts.keepServer !== undefined ? !!opts.keepServer : state.cloud;
         if (await Store.has(id)) return { ok: true, already: true };
         var r = await raw('/api/import/bundle/' + encodeURIComponent(id), { cache: 'no-store' });
         if (!r.ok) {
@@ -99,9 +133,16 @@
         await Store.putDoc({
           jid: id, total: total, version: version, pages: pages,
           importedAt: Date.now(), released: false,
+          cloud: keepServer,                       // 클라우드 문서인가(읽을 때 서버를 먼저 본다)
           bytes: res.bytes || 0, name: (res.manifest && res.manifest.name) || ''
         });
         await Store.persist();
+
+        if (keepServer) {
+          // 클라우드 — 기기 사본은 오프라인용일 뿐이다. 서버는 그대로 둔다.
+          say('이 기기에도 저장했어요 · 원본은 클라우드에 있어요', 2800);
+          return { ok: true, files: res.files, bytes: res.bytes, cloud: true };
+        }
 
         // 다 받았다고 서버에 알린다 → 서버가 사본을 지운다
         try {
@@ -139,8 +180,22 @@
 
   // ── 기기가 답하는 부분 ──────────────────────────────────────────────────
   async function docfile(id, url, method, init) {
+    if (!state.loaded) { try { await loadPlan(); } catch (e) {} }
     if (!(await Store.has(id))) return null;          // 서버로 넘긴다(아직 안 옮겨짐)
     var d = await Store.doc(id);
+
+    // 클라우드 문서는 **서버가 원본**이다 — 컴퓨터에서 고친 것이 패드에도 보여야 한다.
+    //  온라인이면 서버가 답하게 두고, 닿지 않을 때만 기기 사본으로 읽는다(비행기·지하철).
+    //  (예전에 무료로 받아 둔 문서도 클라우드로 올라가면 서버가 우선이다)
+    if (d && (d.cloud || state.cloud)) {
+      if (method === 'POST') return null;             // 편집 저장은 서버로 (다른 기기가 봐야 한다)
+      try {
+        var api = '/api/import/docfile/' + encodeURIComponent(id) + (url.search || '');
+        var fresh = await raw(api, { cache: 'no-cache' });
+        if (fresh && fresh.ok) return fresh;          // 최신본(다른 기기에서 고친 것 포함)
+      } catch (e) { /* 오프라인 — 아래 기기 사본으로 */ }
+      // 서버에 닿지 못했다 → 기기 사본으로 계속 읽는다(빈 화면을 만들지 않는다)
+    }
 
     if (method === 'POST') {
       // 원본은 편집한 쪽을 서버에 저장한다. 기기에서는 기기에 저장한다.
@@ -244,6 +299,8 @@
   window.addEventListener('load', function () {
     setTimeout(async function () {
       try {
+        var ps = await loadPlan();
+        if (ps.cloud) return;        // 클라우드 요금제는 서버가 원본 — 옮겨 오지 않는다
         var r = await raw('/api/import/local', { cache: 'no-store' });
         if (!r.ok) return;
         var d = await r.json().catch(function () { return {}; });
@@ -256,6 +313,6 @@
     }, 4000);
   });
 
-  window.SDY_localDocs = { migrate: migrate, store: Store };
+  window.SDY_localDocs = { migrate: migrate, store: Store, plan: function () { return state; }, refreshPlan: loadPlan };
   try { window.dispatchEvent(new CustomEvent('sdy-local-docs-ready')); } catch (e) {}
 })();

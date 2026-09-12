@@ -25,6 +25,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { DIRS } from './paths.js';
 import { readJson, writeJsonAtomic, withLock } from './store.js';
+import { planById, planCloudBytes, planKeepsCopy } from './plans.js';
 
 const FILE = path.join(DIRS.docs, '_owners.json');
 
@@ -140,25 +141,83 @@ export async function importsUsage(uid) {
   return { uid: me, bytes, count: docs.length, docs };
 }
 
-export function importsQuotaBytes() {
-  // 0 이면 무제한. 기본값은 넉넉하게(2GB) 두어 구독자 약속을 지킨다.
-  const mb = parseInt(process.env.SDY_IMPORT_QUOTA_MB || '2048', 10);
-  return Number.isFinite(mb) && mb > 0 ? mb * 1024 * 1024 : 0;
+// 이 회원이 쓸 수 있는 서버 보관량(바이트).
+//   0 이면 '서버에 두지 않는다'는 뜻이다 — 무료 회원은 변환 후 기기로 보내고 지운다.
+//   프리미엄은 클라우드 200GB(요금제 파일이 정한다).
+// 운영자가 전역으로 거는 상한 (장애 대응·임시 무제한).
+//   SDY_IMPORT_QUOTA_MB=0  → 용량으로는 막지 않는다(편수 규칙은 그대로)
+//   SDY_IMPORT_QUOTA_MB=512 → 요금제와 무관하게 512MB
+function quotaOverrideBytes() {
+  const raw = process.env.SDY_IMPORT_QUOTA_MB;
+  if (raw === undefined || raw === '') return null;
+  const mb = parseInt(raw, 10);
+  if (!Number.isFinite(mb) || mb < 0) return null;
+  return mb > 0 ? mb * 1024 * 1024 : 0;      // 0 = 무제한
 }
 
-// 이 회원이 지금 가져와도 되는가 (무제한이면 항상 통과)
-export async function importsCheckQuota(uid) {
-  const quota = importsQuotaBytes();
-  const usage = await importsUsage(uid);
-  if (!quota) return { ok: true, unlimited: true, usage };
+export function importsQuotaBytes(user) {
+  // 옛 호출(인자 없음)은 안전 상한(SDY_IMPORT_QUOTA_MB)으로 답한다.
+  if (user === undefined) {
+    const o = quotaOverrideBytes();
+    if (o !== null) return o;
+    const mb = parseInt(process.env.SDY_IMPORT_QUOTA_MB || '2048', 10);
+    return Number.isFinite(mb) && mb > 0 ? mb * 1024 * 1024 : 0;
+  }
+  // 요금제가 보관하지 않으면 0 — 다만 옛 방식(환경변수 상한)이 있으면 그걸 안전판으로 쓴다
+  //  (기기로 못 옮기는 브라우저에서 변환 결과가 남는 경우가 있어 0 으로 두지 않는다)
+  if (!planKeepsCopy(user)) return 0;
+  return planCloudBytes(user);
+}
+
+// 이 회원이 지금 가져와도 되는가
+export async function importsCheckQuota(user) {
+  const usage = await importsUsage(user && user.uid);
+
+  // 운영자 전역 상한이 걸려 있으면 그걸 먼저 본다
+  const ov = quotaOverrideBytes();
+  if (ov !== null) {
+    if (!ov) return { ok: true, unlimited: true, keeps_copy: planKeepsCopy(user), usage, quota: 0 };
+    const overOv = usage.bytes >= ov;
+    return {
+      ok: !overOv, unlimited: false, keeps_copy: planKeepsCopy(user), usage, quota: ov,
+      over_by: overOv ? usage.bytes - ov : 0,
+    };
+  }
+
+  const quota = importsQuotaBytes(user);
+  if (!quota) {
+    // 서버에 두지 않는 요금제 — 용량이 아니라 **편수**로 막는다(무료 월 5편)
+    const perMonth = planById(user && user.plan).papersPerMonth();
+    return {
+      ok: true, unlimited: false, keeps_copy: false, usage, quota: 0,
+      papers_per_month: perMonth === Infinity ? null : perMonth,
+    };
+  }
   const over = usage.bytes >= quota;
   return {
     ok: !over,
     unlimited: false,
+    keeps_copy: true,
     usage,
     quota,
     over_by: over ? usage.bytes - quota : 0,
   };
+}
+
+// 이 회원이 이번 달에 가져온 편수 (무료 등급의 월 5편 판정)
+export async function importsPapersThisMonth(uid) {
+  await load();
+  const me = String(uid || '');
+  const now = new Date();
+  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000 -
+    now.getTimezoneOffset() * 60;
+  let n = 0;
+  for (const rec of Object.values(st || {})) {
+    if (!rec || String(rec.uid || '') !== me) continue;
+    if (Number(rec.at || 0) < monthStart) continue;
+    n += 1;
+  }
+  return n;
 }
 
 // ── 정리 ─────────────────────────────────────────────────────────────────
@@ -296,6 +355,7 @@ export async function importsRelease(jid, uid, confirm = {}) {
 }
 
 // 기기에 있다고 표시된 문서들 — 서버에 파일이 없어도 '누가 가져갔는지'는 남는다
+// 기기에 옮겨 둔(서버에서 지운) 문서들 — 무료 회원의 '다른 기기에서 열기' 안내용
 export async function importsLocalList(uid) {
   await load();
   const me = String(uid || '');

@@ -41,31 +41,40 @@ export const PLANS = [
   {
     id: 'premium',
     name: '프리미엄',
-    price: 4900,
+    price: 14900,
     period: '월',
-    tagline: '논문을 끝없이 읽는 사람을 위한 것',
+    tagline: '컴퓨터로 읽고 편집하고, 패드로 필기',
     recommended: true,
     includes: [
       '논문 가져오기 — 편수 제한 없음',
+      // 핵심: 요금제를 올린 이유가 이 한 줄이다
+      '개인 클라우드 200GB — 논문도 필기도 보관',
+      '컴퓨터·패드·폰이 같은 상태 (열면 최신)',
       'AI 요약·번역 — 월 300회',
-      '논문 챗 · 공동 편집',
-      '기기 간 노트 맞추기'
+      '논문 챗 · 공동 편집'
     ],
-    serverCost: '약 1,500~3,000원 + AI 초과분'
+    serverCost: '스토리지 약 4,000원 + AI 약 3,000원 (200GB · 300회 기준)'
   }
 ];
 
-/* 가져오기 정책 — 서버는 변환만 하고 보관은 기기가 한다(16.7).
-   그래서 '편수'가 아니라 '한 번에 옮기는 양'이 서버 부담을 정한다. */
+/* 가져오기 정책 — **요금제에 따라 두 갈래**다 (사용자 결정 두 번에 걸쳐 확정)
+
+     무료      서버는 변환만. 기기가 다 받으면 서버 사본을 지운다.
+               → 서버비 0, "논문이 서버에 남지 않는다"는 약속. 월 5편.
+     프리미엄  서버가 원본(200GB). 컴퓨터에서 읽고 편집하고, 패드로 필기한다.
+               → 기기 사본은 오프라인용. 편수 제한 없음.
+
+   숫자의 진실은 서버에 있다 — server/src/lib/plans.js 가 실제로 막는 값이고,
+   여기 값은 사람에게 보여 주는 값이다. verify.mjs 가 둘을 대조한다. */
 export const IMPORT_POLICY = {
-  free: { papersPerMonth: 5, maxPages: 1200 },
-  papers: { papersPerMonth: Infinity, maxPages: 1200 },
-  premium: { papersPerMonth: Infinity, maxPages: 1200 },
-  // 변환 결과는 기기로 넘기고 서버에서는 지운다.
-  //   기기 저장이 실패한 채로 남는 사본이 서버가 잠깐 들고 있는 유일한 것이다.
-  serverKeepsCopy: false,
-  // 옛 기기·옛 브라우저(번들을 못 받는 경우)를 위한 안전판.
-  //   0 이면 무제한. 기본 2GB — 이 경로로 남는 문서만 여기에 걸린다.
+  free: { papersPerMonth: 5, maxPages: 1200, cloudBytes: 0 },
+  papers: { papersPerMonth: Infinity, maxPages: 1200, cloudBytes: 0 },
+  premium: { papersPerMonth: Infinity, maxPages: 1200, cloudBytes: 200 * 1024 * 1024 * 1024 },
+  // 무료는 서버가 보관하지 않는다(변환 후 기기로). 프리미엄은 보관한다.
+  serverKeepsCopy: { free: false, papers: false, premium: true },
+  // 어느 요금제가 보관형인가 — 코드가 헷갈리지 않게 한 줄로
+  cloudPlans: ['premium'],
+  // 옛 기기·옛 브라우저(번들을 못 받는 경우)를 위한 안전판. 0 이면 무제한.
   serverQuotaMB: 2048
 };
 
@@ -74,6 +83,16 @@ export const AI_CREDITS = {
   free: { perMonth: 20, label: '월 20회' },
   papers: { total: 100, label: '100회' },
   premium: { perMonth: 300, label: '월 300회' }
+};
+
+/* 결제 — 스토어와 웹 둘 다 (사용자 결정).
+   스토어: 수수료 20~30%지만 심사·환불이 단순하고 신뢰가 높다.
+   웹    : 수수료 0% — 컴퓨터로 읽는 사람이 많으니 컴퓨터에서 결제하는 길을 둔다. */
+export const PAYMENT = {
+  store: true,          // 갤럭시스토어 · 구글플레이 IAP
+  web: true,            // 웹 결제(카드·간편결제) — 앱 안에서 '웹에서 결제' 안내
+  storeFeeHint: '갤럭시 20% · 플레이 20~30% (2025-05 부터 국내 인하)',
+  webFeeHint: 'PG 수수료 2~3% 수준'
 };
 
 export function planById(id) {

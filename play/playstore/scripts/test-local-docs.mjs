@@ -184,6 +184,19 @@ sandbox.fetch = async function (input, init) {
     const r = await store.importsRelease(jid, ownerOf[jid] || 'u_scan', body);
     return new Response(JSON.stringify(r), { status: r.ok ? 200 : 409 });
   }
+  if (u.pathname === '/api/auth/storage') {
+    // 요금제에 따라 답이 달라진다 (앱은 이걸 보고 서버 보관/기기 보관을 가른다)
+    const premium = !!sandbox.__premium;
+    return new Response(JSON.stringify(premium ? {
+      ok: true, cloud: true, keeps_copy: true, quota: 200 * 1024 * 1024 * 1024,
+      plan: { id: 'premium', name: '프리미엄', price: 14900, keeps_copy: true, cloud_bytes: 200 * 1024 * 1024 * 1024, papers_per_month: null },
+      papers: { count: 0, bytes: 0, this_month: 0, per_month: null },
+    } : {
+      ok: true, cloud: false, keeps_copy: false, quota: 0,
+      plan: { id: 'free', name: '무료', price: 0, keeps_copy: false, cloud_bytes: 0, papers_per_month: 5 },
+      papers: { count: 0, bytes: 0, this_month: 1, per_month: 5 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
   if (u.pathname === '/api/import/local') {
     const uid = u.searchParams.get('uid') || 'u_scan';   // 앱은 토큰을 쓴다(검사에선 생략)
     const docs = await store.importsLocalList(uid);
@@ -342,7 +355,38 @@ chunkSize = 65536;
 check(r4.ok, `7바이트씩 도착해도 정확히 받음 (${r4.files}개 · ${r4.bytes}B)`, `작은 조각 처리 실패: ${r4.error}`);
 check((await Store.slice(JID3, 0, 1)).length === 1, '그 문서도 읽힘', '작은 조각 문서를 못 읽음');
 
-// ── ⑧ 임자가 아니면 못 지운다 (남의 논문 보호) ──────────────────────────
+// ── ⑧ 프리미엄(클라우드)은 서버 사본을 지우지 않는다 ────────────────────
+//  여기서 틀리면 **결제한 회원의 원본이 사라진다**(컴퓨터에서 못 연다).
+const JID4 = 'cloud444';
+const F = 'ff66ff66ff66ff66.png';
+fs.writeFileSync(path.join(DOCS, JID4 + '.json.gz'), zlib.gzipSync(JSON.stringify([pageEl(0, F), pageEl(1, F)])));
+fs.writeFileSync(path.join(IMG, F), Buffer.alloc(4096, 6));
+await store.importsRecord(JID4, 'u_cloud', { name: '클라우드 논문.pdf' });
+const list4 = await store.importsBundleList(JID4);
+bundleFor[JID4] = bundleBuffer(list4);
+bundleFor[JID4].__jid = JID4;
+statusFor[JID4] = { files: list4.files, bytes: list4.bytes };
+ownerOf[JID4] = 'u_cloud';
+
+sandbox.__premium = true;                       // 요금제를 프리미엄으로
+await Docs.refreshPlan();
+const rc = await Docs.migrate(JID4);
+check(rc.ok && rc.cloud === true, `프리미엄: 기기에도 저장하되 클라우드가 원본 (${rc.files}개)`, `클라우드 이관 실패: ${rc.error}`);
+check(fs.existsSync(path.join(DOCS, JID4 + '.json.gz')),
+  '프리미엄은 서버 사본을 지우지 않음 — 컴퓨터에서도 열려야 한다', '결제 회원의 원본을 지움 — 큰 사고');
+const d4 = await Store.doc(JID4);
+check(d4 && d4.cloud === true, '그 문서를 클라우드 문서로 표시', 'cloud 표시가 없음');
+
+// 클라우드 문서는 **서버가 우선** (다른 기기에서 고친 것이 보여야 한다)
+const beforeReq = requests.length;
+const fCloud = await sandbox.fetch('/api/import/docfile/' + JID4 + '?from=0&to=2');
+check(requests.slice(beforeReq).some((r) => r.includes('/api/import/docfile/')),
+  '클라우드 문서를 읽으면 서버에 물어봄(최신본)', '기기 사본만 읽음 — 컴퓨터 편집이 안 보인다');
+
+sandbox.__premium = false;
+await Docs.refreshPlan();
+
+// ── ⑨ 임자가 아니면 못 지운다 (남의 논문 보호) ──────────────────────────
 const bad = await store.importsRelease(JID3, 'u_other', { bytes: 1 });
 check(!bad.ok && bad.code === 'not_owner', '임자가 아니면 삭제 거절', '남의 논문을 지울 수 있음');
 
