@@ -33,3 +33,17 @@ _yt_cookies.txt.bak
 # 배포용 스냅샷 압축본 — 리포지토리에 넣지 않음
 *.zip
 music_norm/
+
+# 발매판 조립 결과물 — build.mjs 가 언제든 다시 만든다
+play/playstore/build/
+
+# 가져온 문서의 임자·용량 기록 (운영 데이터)
+imported_docs/_owners.json
+
+# TWA — 지문이 든 생성물 (twa-prepare.mjs 가 만든다)
+.well-known/assetlinks.json
+play/playstore/twa/twa-manifest.json
+play/playstore/twa/android/
+
+# 스토어 이미지용 폰트 캐시 (store-art.mjs 가 npm 에서 자동으로 받는다)
+play/playstore/.cache/

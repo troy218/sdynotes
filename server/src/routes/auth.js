@@ -15,8 +15,13 @@ import {
   otpIssue, otpVerifyAndLogin, otpRateStatus, otpRateHit, passwordLogin,
   emailValid, sanitizeEmail, sanitizeNick,
   requireUser, extractUserToken, userLogout, userChangeNick, userChangePassword, userByTokenSync,
+  userByUidSync, userDeleteAccount,
 } from '../lib/userauth.js';
 import { notifyAddInternal } from '../lib/notifyAdd.js';
+import { friendsPurgeUser } from '../lib/friends.js';
+import { dmPurgeUser } from '../lib/dmstore.js';
+import { importsPurgeUser, importsUsage, importsPapersThisMonth } from '../lib/imports.js';
+import { planSummary } from '../lib/plans.js';
 
 const DEV_CODE = ['1', 'true', 'yes'].includes(String(process.env.SDY_AUTH_DEV_CODE || '').toLowerCase());
 
@@ -146,6 +151,74 @@ export function registerAuth(app) {
   app.post('/api/auth/logout', async (req, reply) => {
     await userLogout(extractUserToken(req));
     return reply.send({ ok: true });
+  });
+
+  // ── 보관 용량 ──────────────────────────────────────────────────────────
+  //  16.6 · 논문 불러오기는 구독자 무제한, 대신 서버 보관 용량은 정해져 있다.
+  //  화면이 그 사실을 숨기지 않고 보여줄 수 있게 숫자를 돌려준다.
+  // 내 요금제와 보관 상태 — 앱이 "서버에 두나, 기기에 두나"를 이걸로 정한다.
+  //  (무료는 서버 보관 0 = 변환 후 기기로 옮기고 지운다 / 프리미엄은 클라우드 200GB)
+  app.get('/api/auth/storage', async (req, reply) => {
+    const u = bearerUser(req);
+    if (!u) return reply.code(401).send({ ok: false, error: '로그인이 필요해요' });
+    const rec = userByUidSync(u.uid) || u;
+    const usage = await importsUsage(u.uid);
+    const plan = planSummary(rec);
+    const quota = plan.cloud_bytes;                 // 0 = 서버에 두지 않음
+    const papersThisMonth = await importsPapersThisMonth(u.uid);
+    return reply.send({
+      ok: true,
+      plan: plan,
+      // 앱이 바로 쓰는 결론 두 가지
+      cloud: quota > 0,                              // 서버에 보관하는 요금제인가
+      keeps_copy: plan.keeps_copy,
+      papers: { count: usage.count, bytes: usage.bytes, this_month: papersThisMonth, per_month: plan.papers_per_month },
+      quota,
+      unlimited: quota === 0 && plan.papers_per_month === null,
+      docs: usage.docs.slice(0, 50).map((d) => ({ jid: d.jid, bytes: d.bytes, at: d.at, name: d.name })),
+    });
+  });
+
+  // ── 계정 삭제 ──────────────────────────────────────────────────────────
+  //  16.5 · 스토어 심사 요건 — 앱 안에서 계정을 지울 수 있어야 한다
+  //  (Apple 5.1.1(v) · Google Play 데이터 삭제 정책).
+  //
+  //  실수로 지우는 일이 없게, 본문에 **가입 이메일을 그대로 적어야** 지워진다.
+  //  노트·필기·PDF 는 계정이 아니라 기기에 딸린 것이라 서버에 없다 —
+  //  지우지 않고, 응답에도 그 사실을 담아 화면이 그대로 안내하게 한다.
+  app.post('/api/auth/account/delete', async (req, reply) => {
+    const u = bearerUser(req);
+    if (!u) return reply.code(401).send({ ok: false, error: '로그인이 필요해요' });
+    const typed = String((req.body || {}).confirm || '').trim().toLowerCase();
+    if (!typed) {
+      return reply.code(400).send({
+        ok: false, code: 'confirm_required',
+        error: '확인을 위해 가입 이메일을 그대로 적어 주세요',
+        email: u.email,
+      });
+    }
+    if (typed !== String(u.email || '').trim().toLowerCase()) {
+      return reply.code(400).send({ ok: false, code: 'confirm_mismatch', error: '이메일이 맞지 않아요' });
+    }
+    // 이 회원이 낀 관계·대화를 함께 정리한다 (없는 모듈이어도 계정 삭제는 계속된다)
+    let friends = 0, threads = 0, papers = { docs: 0, bytes: 0 };
+    try { friends = await friendsPurgeUser(u.uid); } catch { /* noop */ }
+    try { threads = await dmPurgeUser(u.uid); } catch { /* noop */ }
+    // 서버에 남은 가져온 논문(문서 본문 + 배경 이미지)도 함께 지운다.
+    //  — 스토어 심사 요건 '개인정보 파기'에 여기가 빠지면 안 된다.
+    try { papers = await importsPurgeUser(u.uid); } catch { /* noop */ }
+    const r = await userDeleteAccount(u.uid);
+    if (!r.ok) return reply.code(404).send(r);
+    console.log(`[auth] 계정 삭제 — ${r.removed.email} (${r.removed.nick}) · 세션 ${r.removed.sessions} · 친구 ${friends} · 대화 ${threads} · 논문 ${papers.docs}편(${Math.round(papers.bytes / 1048576)}MB)`);
+    return reply.send({
+      ok: true,
+      removed: {
+        email: r.removed.email, nick: r.removed.nick, sessions: r.removed.sessions,
+        friends, threads, papers: papers.docs, paper_bytes: papers.bytes,
+      },
+      // 화면이 그대로 안내할 수 있게 남기는 것도 알려 준다
+      kept: { local_notes: true, local_files: true },
+    });
   });
 
   // ── 닉네임 중복 확인 (회원가입 화면에서 미리 검사) ──

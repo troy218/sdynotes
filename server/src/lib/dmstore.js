@@ -54,6 +54,27 @@ function save() {
   if (saveT.unref) saveT.unref();
 }
 // 종료·테스트가 기다릴 수 있게 즉시 저장
+// 계정 삭제 시 — 이 회원이 낀 대화방과 거기 딸린 파일을 지운다.
+//   상대방의 대화 목록에서도 함께 사라진다(회원이 없어진 뒤의 대화는 열 수 없다).
+export async function dmPurgeUser(uid) {
+  const me = String(uid || '');
+  if (!me) return 0;
+  await load();
+  let n = 0;
+  for (const pk of Object.keys(st.threads)) {
+    if (!participants(pk).includes(me)) continue;
+    delete st.threads[pk];
+    n += 1;
+  }
+  for (const fid of Object.keys(st.files)) {
+    const rec = st.files[fid];
+    // 파일 레코드의 대화 키는 pair 다 (dmFileAdd 참고)
+    if (rec && participants(rec.pair || '').includes(me)) delete st.files[fid];
+  }
+  dmFlush();
+  return n;
+}
+
 export function dmFlush() {
   if (!st) return Promise.resolve();
   if (saveT) { clearTimeout(saveT); saveT = null; }
