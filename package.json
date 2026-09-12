@@ -6,7 +6,6 @@
   "main": "server/src/index.js",
   "scripts": {
     "test": "node scripts/bundle-frontend.mjs --check && node scripts/run-all-tests.mjs",
-    "check:launch": "node scripts/check-launch.mjs",
     "test:only": "node scripts/run-all-tests.mjs --only",
     "test:strict": "node scripts/run-all-tests.mjs --strict",
     "bump": "node scripts/bump-version.mjs",

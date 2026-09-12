@@ -11,9 +11,6 @@ import { APP_VERSION, oracleStorage } from './lib/config.js';
 import { compressOptions, noCompressForBinaryRoutes } from './lib/perf.js';
 import { sessionsLoad } from './lib/admin.js';
 import { createWorkerProxy } from './lib/workerProxy.js';
-import { extractUserToken, userByTokenSync } from './lib/userauth.js';
-import { importsBoot, importsRecord, importsCheckQuota, importsPapersThisMonth } from './lib/imports.js';
-import { planSummary } from './lib/plans.js';
 
 import { registerPages } from './routes/pages.js';
 import { registerSync } from './routes/sync.js';
@@ -31,8 +28,6 @@ import { registerMisc } from './routes/misc.js';
 import { registerPapers } from './routes/papers.js';
 import { registerMusic } from './routes/music.js';
 import { registerChat } from './routes/chat.js';
-import { registerImportBundle } from './routes/importBundle.js';
-import { registerWellKnown } from './routes/wellknown.js';
 import { registerDb } from './routes/db.js';
 import { registerAuth } from './routes/auth.js';
 import { registerFriends } from './routes/friends.js';
@@ -78,21 +73,15 @@ registerMisc(app);
 registerPapers(app); // 등록한 키워드로 찾는 arXiv 오늘의 추천 논문
 registerMusic(app, { worker });
 registerChat(app);
-registerImportBundle(app);   // 16.7 · 변환 결과를 기기로 내보내고 서버 사본 삭제
-registerWellKnown(app);      // 16.8 · TWA 증명서 (/.well-known/assetlinks.json)
 registerDb(app);
 registerAuth(app);
 registerFriends(app);   // 16.3 · 친구 (회원끼리)
 registerDm(app);        // 16.3 · 친구와의 1:1 대화 + 회원 SSE
 
 // worker proxy for the import pipeline (kept verbatim in Python)
-// 16.6 · /api/import/doc 만 전용으로 등록한다 (아래 목록에서 뺐다) —
-//   잡을 만든 순간 '누가 가져왔는지'를 적어 두고, 구독자 용량을 넘었는지 본다.
-//   응답이 작은 JSON(수 KB)이라 통째로 받아 읽어도 부담이 없다.
-app.post('/api/import/doc', (req, reply) => importDocGuard(req, reply, worker));
-
 for (const [method, url] of [
   ['POST', '/api/import/upload'],
+  ['POST', '/api/import/doc'],
   ['POST', '/api/import/reconv'],
   ['GET', '/api/import/status'],
   ['GET', '/api/import/docfile/:jid'],
@@ -114,83 +103,6 @@ await sessionsLoad();
 await userAuthBoot();   // 16.4 · 회원(등록 OTP + 비밀번호) 사용자·세션 읽어 두기
 await friendsBoot();    // 16.3 · 친구 관계 읽어 두기
 await dmBoot();         // 16.3 · 1:1 대화 저장소 읽어 두기
-await importsBoot();    // 16.6 · 가져온 문서의 임자·용량 기록
-
-// ── 16.6 · 가져오기 전용 입구 ────────────────────────────────────────────
-//  ① 용량이 꽉 찬 회원이면 워커에 넘기지 않고 바로 알린다(CPU·디스크를 쓰지 않는다)
-//  ② 잡이 만들어지면 그 회원을 임자로 적어 둔다 — 계정 삭제 때 함께 지우기 위해서
-async function importDocGuard(req, reply, worker) {
-  let uid = '';
-  let user = null;
-  try {
-    const tok = extractUserToken(req);
-    user = tok ? userByTokenSync(tok) : null;
-    uid = (user && user.uid) || '';
-  } catch { uid = ''; }
-
-  if (uid) {
-    try {
-      const q = await importsCheckQuota(user);
-      if (!q.ok) {
-        // ① 클라우드가 가득 찬 프리미엄 — 오래된 논문을 지우면 다시 된다
-        return reply.code(413).send({
-          ok: false, code: 'import_quota',
-          error: '클라우드가 가득 찼어요 · 오래된 논문을 정리하면 다시 가져올 수 있어요',
-          used: q.usage.bytes, quota: q.quota, keeps_copy: q.keeps_copy, plan: planSummary(user),
-        });
-      }
-      // ② 무료 회원의 월 편수 (기기 전용이라 용량으로는 못 막는다)
-      if (!q.keeps_copy && q.papers_per_month != null) {
-        const used = await importsPapersThisMonth(uid);
-        if (used >= q.papers_per_month) {
-          return reply.code(429).send({
-            ok: false, code: 'import_papers',
-            error: `이번 달 ${q.papers_per_month}편을 다 썼어요 · 프리미엄이면 편수 제한 없이 가져올 수 있어요`,
-            used, per_month: q.papers_per_month, plan: planSummary(user),
-          });
-        }
-      }
-    } catch (e) {
-      console.error(`[imports] 사용량 확인 실패: ${e?.message || e}`);   // 확인이 안 되면 통과시킨다
-    }
-  }
-
-  // 응답에서 jid 를 읽어야 하므로 이 요청만 작은 본문을 모아서 본다
-  const send = reply.send.bind(reply);
-  reply.send = (payload) => {
-    try {
-      if (payload && typeof payload.pipe === 'function') {
-        const chunks = [];
-        payload.on('data', (c) => chunks.push(c));
-        payload.on('end', () => {
-          const buf = Buffer.concat(chunks);
-          recordFrom(buf, uid);
-          send(buf);
-        });
-        payload.on('error', () => send(payload));
-        return reply;
-      }
-      recordFrom(payload, uid);
-    } catch (e) {
-      console.error(`[imports] 임자 기록 실패: ${e?.message || e}`);
-    }
-    return send(payload);
-  };
-
-  return worker.proxy(req, reply);
-}
-
-function recordFrom(payload, uid) {
-  if (!payload) return;
-  let j = null;
-  try {
-    const text = Buffer.isBuffer(payload) ? payload.toString('utf8') : String(payload);
-    j = JSON.parse(text);
-  } catch { return; }
-  if (!j || !j.jid) return;
-  importsRecord(j.jid, uid, { pages: j.pages || j.total || 0, name: j.name || '' })
-    .catch((e) => console.error(`[imports] 기록 실패: ${e?.message || e}`));
-}
 
 const port = parseInt(process.env.PORT || '5000', 10);
 
