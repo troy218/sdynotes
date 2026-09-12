@@ -7,7 +7,8 @@
    그 안에 **서명 키의 SHA-256 지문**이 들어간다.
 
    쓰는 법
-     node scripts/twa-prepare.mjs --host notesis.example.com
+     node scripts/twa-prepare.mjs                 # 도메인은 site.mjs 에서 온다
+     node scripts/twa-prepare.mjs --host 다른주소
      node scripts/twa-prepare.mjs --keystore android.keystore --alias notesis
      node scripts/twa-prepare.mjs --fingerprint AB:CD:... [--fingerprint ...]
      node scripts/twa-prepare.mjs --print        # 지금 설정만 보기
@@ -25,6 +26,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { APP } from '../features.mjs';
+// 도메인은 발매판 공통 출처(site.mjs)에서 온다 — 옛 주소 → notesis.com 이전도 그 한 줄이다.
+import { activeDomain } from '../../../site.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, '..');
@@ -88,9 +91,7 @@ if (!prints.length && fs.existsSync(ASSETLINKS)) {
   } catch { /* noop */ }
 }
 
-const host = val('--host') || (fs.existsSync(MANIFEST)
-  ? (JSON.parse(fs.readFileSync(MANIFEST, 'utf8')).host || '')
-  : '');
+const host = val('--host') || activeDomain();
 
 // ── --print ─────────────────────────────────────────────────────────────
 if (has('--print') || (!prints.length && !host)) {
