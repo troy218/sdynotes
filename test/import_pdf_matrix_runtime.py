@@ -321,6 +321,22 @@ class MatrixPageTest(unittest.TestCase):
         for junk in ("0 1", "1 0", "x y z", "h 1 1"):
             self.assertNotIn(junk, got, got)
 
+    def test_matrix_pages_leave_no_loose_delimiters(self):
+        """15.12 · 구분자만 남은 날 글자 상자가 있으면 안 된다.
+
+        \\begin{bmatrix} · \\begin{pmatrix} 는 TeX 이 [ ] ( ) 를 직접 그리고
+        \\cdots 는 마침표를 다시 조판한 것뿐이다. 그런데도 원본 PDF 의 괄호
+        글리프를 '어느 식도 먹지 않은 잉크'로 되살리면 행렬 위에 괄호가
+        겹쳐 그려진다. 본문 '(3.7)' 처럼 글자가 섞인 상자는 정상이다.
+        """
+        junk = set("[](){}|‖·⋅⋯⋮⋱…• ‹›\u0012\u0013\u0016\u0017")
+        for key in ("physics", "arch", "tex"):
+            for t in self._text(key):
+                s = t.replace("\u00a0", " ").strip()
+                self.assertTrue(s, f"{key}: 빈 글 상자가 남았다")
+                self.assertTrue(any(ch not in junk for ch in s),
+                                f"{key}: 구분자만 남은 상자 — {s!r}")
+
     def test_equation_number_stays_text(self):
         self.assertTrue(any("(3.7)" in t for t in self._text("physics")))
 
