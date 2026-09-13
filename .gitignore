@@ -18,6 +18,10 @@ imported/
 imported_docs/
 import_uploads/
 import_jobs/
+converter_uploads/
+converter_jobs/
+converter_output/
+converter_tmp/
 stickers/
 cards/
 wallpaper/

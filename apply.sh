@@ -42,6 +42,9 @@ die(){ echo -e "\n\033[1;31m✗ $*\033[0m"; exit 1; }
 [ -f "$SRC/sdynotes.html" ]      || die "sdynotes.html 이 없습니다 (현재 위치: $SRC)"
 [ -f "$SRC/sdynotes.css" ]       || die "sdynotes.css 가 없습니다 — HTML이 참조하는 스타일 파일입니다 (현재 위치: $SRC)"
 [ -f "$SRC/sdynotes.js" ]        || die "sdynotes.js 가 없습니다 — HTML이 참조하는 스크립트 파일입니다 (현재 위치: $SRC)"
+[ -f "$SRC/converter.html" ]     || die "converter.html 이 없습니다 — standalone PDF 변환기입니다"
+[ -f "$SRC/converter.css" ]      || die "converter.css 가 없습니다 — standalone PDF 변환기입니다"
+[ -f "$SRC/converter.js" ]       || die "converter.js 가 없습니다 — standalone PDF 변환기입니다"
 [ -d "$SRC/src" ]                || die "src/ 폴더가 없습니다 — HTML이 src/*.js 를 ?v= 와 함께 따로 받습니다 (분리 JS, 배포 필수)"
 [ -f "$SRC/package.json" ]       || die "package.json 이 없습니다"
 [ -f "$SRC/server/src/index.js" ] || die "server/src/index.js 가 없습니다 — zip에 server/ 폴더를 통째로 넣어 주세요"
@@ -113,6 +116,9 @@ deploy_atomic "$SRC/sdynotes.css"  "$APP_DIR/sdynotes.css"
 deploy_atomic "$SRC/package.json"  "$APP_DIR/package.json"
 [ -f "$SRC/package-lock.json" ] && deploy_atomic "$SRC/package-lock.json" "$APP_DIR/package-lock.json"
 deploy_atomic "$SRC/sdynotes.html" "$APP_DIR/sdynotes.html"
+deploy_atomic "$SRC/converter.html" "$APP_DIR/converter.html"
+deploy_atomic "$SRC/converter.css" "$APP_DIR/converter.css"
+deploy_atomic "$SRC/converter.js" "$APP_DIR/converter.js"
 rm -rf "$APP_DIR/server" "$APP_DIR/worker" "$APP_DIR/scripts"
 cp -r "$SRC/server" "$APP_DIR/server"
 cp -r "$SRC/worker" "$APP_DIR/worker"
@@ -131,6 +137,7 @@ fi
 sudo chown -R "$USER:$USER" "$APP_DIR"
 
 ok "sdynotes.html / .css / .js 배포됨 ($(du -h "$APP_DIR/sdynotes.html" | cut -f1), $(du -h "$APP_DIR/sdynotes.css" | cut -f1), $(du -h "$APP_DIR/sdynotes.js" | cut -f1))"
+ok "converter.html / .css / .js 배포됨 (standalone PDF → Word)"
 ok "src/ (브라우저 분리 JS $(find "$APP_DIR/src" -maxdepth 1 -name '*.js' 2>/dev/null | wc -l)개) + server/ + worker/ + package.json"
 
 # ── Node 의존성 설치 ────────────────────────────────────────
@@ -442,7 +449,7 @@ if command -v nginx > /dev/null; then
 server {
     listen 80 default_server;
     server_name _;
-    client_max_body_size 100M;
+    client_max_body_size 512M;
     # 14.13.5 · 버전화된 프런트 에셋 — nginx 가 디스크에서 직접 내보내고 1년 캐시
     #   (URL 의 ?v= 가 배포마다 바뀐다 → stale 리스크 없음, 재확인 왕복 제로)
     location = /sdynotes.js {
