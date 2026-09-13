@@ -36,6 +36,39 @@ assert.match(read('server/src/index.js'), /isConverterHost/);
 assert.match(converter, /from \. import importer as _engine/);
 assert.match(converter, /_engine\._imp_convert_pdf\(/);
 assert.doesNotMatch(converter, /page\.get_text\(/);
+
+// The site renderer stores imported PDF text as absolutely positioned spans.
+// Word must receive page-anchored chunks, not one normal-flow textbox that
+// rewraps differently from the SDYnotes canvas.
+assert.match(converter, /class _TightSpanParser/);
+assert.match(converter, /data-pdf-w/);
+assert.match(converter, /_add_tight_text_boxes\(/);
+assert.match(converter, /base_x \+ float\(sp\.get\("left"\)/);
+assert.match(converter, /base_y \+ float\(sp\.get\("top"\)/);
+assert.match(converter, /lineRule"\), "exact"/);
+assert.match(converter, /def _word_font/);
+assert.doesNotMatch(converter, /spacing\.set\(qn\("w:line"\), "240"\)/);
+
+// Images/backgrounds are inserted as Word drawing anchors relative to the page,
+// not as CSS-sized inline pictures.  The background layer is explicitly behind
+// the document and SVG parser assets are rasterized for Word compatibility.
+assert.match(converter, /drawing\.find\(qn\("wp:inline"\)\)/);
+assert.match(converter, /OxmlElement\("wp:anchor"\)/);
+assert.match(converter, /relativeFrom", "page"/);
+assert.match(converter, /"behindDoc", "1" if z == 0 else "0"/);
+assert.match(converter, /pymupdf\.open\(stream=raw, filetype="svg"\)/);
+
+// Imported display and inline formulas stay as editable Word equation objects
+// (OMML).  Plain Unicode is only a failure fallback.
+assert.match(converter, /class _LatexOmmlParser/);
+assert.match(converter, /OxmlElement\("m:oMath"\)/);
+assert.match(converter, /def _add_math_box/);
+assert.match(converter, /_add_math_box\(paragraph, element, 50, counter\)/);
+assert.match(converter, /m:f/);
+assert.match(converter, /m:sSubSup/);
+assert.match(converter, /m:rad/);
+assert.match(converter, /displayMath/);
+
 assert.match(apply, /converter\.html/);
 assert.match(apply, /converter\.css/);
 assert.match(apply, /converter\.js/);
