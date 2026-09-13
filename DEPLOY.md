@@ -18,29 +18,47 @@ PDF 파서를 복사하거나 별도 엔진을 유지하지 않는다. `bash app
 
 **`apply.sh`는 TLS를 전혀 만지지 않는다** (스크립트에 `443`/`ssl_certificate`/
 `certbot`이 한 줄도 없고, nginx도 `listen 80 default_server; server_name _;`만
-쓴다). 새 서브도메인을 열 때 실제로 필요한 것은 **기존 Let's Encrypt 인증서에
-그 이름을 추가하는 것 하나**다. DNS(DuckDNS는 `*.sdynotes.duckdns.org`가
-와일드카드라 등록 불필요), nginx(`server_name _` + `proxy_set_header Host $host`
-라서 새 vhost 불필요), 앱(`converterAccess.js` 기본값에 `latexripper`가 이미
+쓴다). 새 서브도메인을 열 때 필요한 것은 **둘**이다 — ① 인증서에 이름 추가,
+② nginx `server_name` 확장. DNS(DuckDNS는 `*.sdynotes.duckdns.org`가
+와일드카드라 등록 불필요)와 앱(`converterAccess.js` 기본값에 `latexripper`가 이미
 포함)은 손댈 게 없다.
 
+> **②가 필요한 이유**: `certbot --nginx`(installer)가 한 번이라도 돌았다면
+> certbot이 `server_name _`를 `server_name sdynotes.duckdns.org`로 **교체**하고
+> 블록을 443 본문 + 80 리다이렉트 둘로 쪼갠다. 그 결과 443은 이름 불일치로
+> 인증서 오류, 80은 `location`이 없어 서브도메인에 **nginx 404**를 반환한다.
+> `apply.sh`의 보강 스크립트는 파일 수준 `grep`으로 "이미 있음" 판정해서 두 번째
+> `server{}`를 영원히 건너뛰므로 **재실행해도 고쳐지지 않는다.**
+
 ```bash
-# 현재 인증서 확인
+# ① 현재 인증서/설정 확인
 sudo certbot certificates
-# 같은 라인지에 이름만 추가 — nginx 설정은 건드리지 않고 live/…/fullchain.pem 이 제자리 갱신됨
-sudo certbot certonly --nginx \
+sudo grep -nE 'listen|server_name|ssl_certificate' /etc/nginx/sites-available/memo
+
+# ② 같은 라인지에 이름만 추가 — nginx 설정은 건드리지 않고 live/…/fullchain.pem 이 제자리 갱신됨
+#    --expand 가 핵심(없으면 대화형 프롬프트에서 중단). installer 형태 `certbot --nginx` 는 금지.
+sudo certbot certonly --nginx --expand \
   --cert-name sdynotes.duckdns.org \
   -d sdynotes.duckdns.org \
   -d latexripper.sdynotes.duckdns.org \
   -d converter.sdynotes.duckdns.org
-sudo systemctl reload nginx
+
+# ③ nginx server_name 확장 + 443 default_server (idempotent)
+CONF=/etc/nginx/sites-available/memo
+sudo cp -a "$CONF" "$CONF.bak.$(date +%Y%m%d-%H%M%S)"
+sudo sed -i 's/server_name sdynotes\.duckdns\.org;/server_name sdynotes.duckdns.org latexripper.sdynotes.duckdns.org converter.sdynotes.duckdns.org;/g' "$CONF"
+sudo sed -i 's/listen 443 ssl;/listen 443 ssl default_server;/' "$CONF"
+#   + 80 블록의 `if ($host = sdynotes.duckdns.org)` 아래에 새 호스트용 `if` 두 줄 추가 (수동)
+
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
 > ⚠️ `.env`에 `SDY_CONVERTER_HOSTS`가 있으면 기본 호스트 목록을 **보완하지 않고
 > 통째로 대체**한다. 쓸 거면 두 이름을 쉼표로 다 적고, 아니면 줄을 지운다.
 
-와일드카드(DNS-01) 발급, 443 블록이 아예 없을 때의 nginx 설정 전체, 배포 후
-검증 명령, 증상별 원인 표는 **[`docs/subsite_https.md`](docs/subsite_https.md)**.
+와일드카드(DNS-01) 발급, 80 리다이렉트 블록의 `if` 전문, 443 블록이 아예 없을 때의
+nginx 설정 전체, 배포 후 검증 명령, 증상별 원인 표는
+**[`docs/subsite_https.md`](docs/subsite_https.md)**.
 
 > **주의**: GitHub 는 2021년부터 URL에 토큰을 박는 방식(`https://user:token@...`)을
 > **deprecated** 처리하고 2025년 8월부터는 **Basic Auth 자격증명을 강제로 거부**할
