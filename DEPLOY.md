@@ -1,5 +1,19 @@
 # 토큰 한 줄 배포 (Oracle VM 안에서 실행)
 
+## standalone PDF → Word 변환기
+
+`converter.sdynotes.duckdns.org`(기존 `latexripper.sdynotes.duckdns.org` 별칭도
+허용)을 같은 Node/worker 앞에 연결하면 `https://converter.sdynotes.duckdns.org/`가
+독립 업로드 화면이 된다. DNS와 TLS 인증서가 이 서버를 가리키면 별도 설정 없이
+사용할 수 있고, Node가 Host를 다시 검사하므로 `sdynotes` 주소의 `/converter`나
+converter 주소의 SDYnotes API는 404다. 로그인·노트 저장소도 사용하지 않는다.
+
+PDF 변환은 `worker/sdynotes_worker/importer.py`의 기존 `_imp_convert_pdf()`를
+그대로 호출하고, `converter.py`는 그 결과를 DOCX 서식으로 배치하는 역할만 한다.
+PDF 파서를 복사하거나 별도 엔진을 유지하지 않는다. `bash apply.sh`가
+`converter.html/css/js`와 worker/server를 함께 설치한다. 호스트를 바꾸려면
+`.env`에 `SDY_CONVERTER_HOSTS=converter.example.com`처럼 쉼표로 지정한다.
+
 > **주의**: GitHub 는 2021년부터 URL에 토큰을 박는 방식(`https://user:token@...`)을
 > **deprecated** 처리하고 2025년 8월부터는 **Basic Auth 자격증명을 강제로 거부**할
 > 예정이라, 가능하면 `https://x-access-token:$GH_TOKEN@github.com/...` 형태를

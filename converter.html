@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="SDYnotes PDF to Word">
+  <title>PDF → Word · SDYnotes PDF 엔진</title>
+  <link rel="stylesheet" href="/converter.css?v=14.71.1">
+</head>
+<body>
+  <main class="shell">
+    <header class="brand">
+      <div class="brand-mark" aria-hidden="true">↗</div>
+      <div>
+        <p class="eyebrow">SDYnotes PDF ENGINE</p>
+        <h1>PDF를 Word로</h1>
+      </div>
+    </header>
+
+    <section class="card" aria-labelledby="page-title">
+      <div class="intro">
+        <h2 id="page-title">PDF 문서 변환기</h2>
+        <p>PDF의 본문·수식·그림 배치를 유지해 편집 가능한 Word 파일로 변환합니다.</p>
+      </div>
+
+      <form id="converterForm" novalidate>
+        <label id="dropZone" class="drop-zone" for="pdfInput" tabindex="0">
+          <input id="pdfInput" type="file" accept="application/pdf,.pdf" hidden>
+          <span class="upload-icon" aria-hidden="true">↑</span>
+          <strong id="dropTitle">PDF를 여기에 놓거나 파일을 선택하세요</strong>
+          <span id="dropHint">PDF 파일 1개 · 최대 120MB</span>
+        </label>
+        <p id="fileName" class="file-name" hidden></p>
+        <button id="convertButton" class="primary" type="submit" disabled>Word로 변환</button>
+      </form>
+
+      <div id="progress" class="progress" hidden aria-live="polite">
+        <div class="progress-head">
+          <strong id="progressTitle">PDF를 분석하고 있습니다</strong>
+          <span id="progressPct">0%</span>
+        </div>
+        <div class="track"><span id="progressBar"></span></div>
+        <p id="progressText">같은 SDYnotes PDF 파서로 페이지를 읽는 중입니다.</p>
+      </div>
+
+      <div id="result" class="result" hidden aria-live="polite">
+        <span class="success-icon" aria-hidden="true">✓</span>
+        <div>
+          <strong id="resultTitle">Word 파일이 준비되었습니다</strong>
+          <p id="resultText"></p>
+        </div>
+        <a id="downloadLink" class="download" href="#" download>DOCX 다운로드</a>
+      </div>
+
+      <p id="error" class="error" hidden role="alert"></p>
+      <button id="resetButton" class="secondary" type="button" hidden>다른 PDF 변환하기</button>
+    </section>
+
+    <footer>PDF 파싱은 SDYnotes와 동일한 엔진을 사용하며, 업로드한 파일은 변환 후 보관하지 않습니다.</footer>
+  </main>
+  <script src="/converter.js?v=14.71.1"></script>
+</body>
+</html>

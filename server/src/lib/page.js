@@ -5,25 +5,33 @@ import zlib from 'node:zlib';
 import { HTML_PATH, BASE_DIR } from './paths.js';
 
 const cache = { mtime: 0, raw: null, gz: null, etag: '' };
+const converterCache = { mtime: 0, raw: null, gz: null, etag: '' };
+
+function bytesFor(filePath, target) {
+  const st = fs.statSync(filePath);
+  if (target.mtime !== st.mtimeMs) {
+    const raw = fs.readFileSync(filePath);
+    target.mtime = st.mtimeMs;
+    target.raw = raw;
+    target.gz = zlib.gzipSync(raw, { level: 6 });
+    target.etag = `"${crypto.createHash('md5').update(raw).digest('hex').slice(0, 16)}"`;
+  }
+  return target;
+}
 
 function pageBytes() {
-  const st = fs.statSync(HTML_PATH);
-  if (cache.mtime !== st.mtimeMs) {
-    const raw = fs.readFileSync(HTML_PATH);
-    cache.mtime = st.mtimeMs;
-    cache.raw = raw;
-    cache.gz = zlib.gzipSync(raw, { level: 6 });
-    cache.etag = `"${crypto.createHash('md5').update(raw).digest('hex').slice(0, 16)}"`;
-  }
-  return cache;
+  return bytesFor(HTML_PATH, cache);
+}
+
+function converterPageBytes() {
+  return bytesFor(`${BASE_DIR}/converter.html`, converterCache);
 }
 
 export function pageEtag() {
   return pageBytes().etag;
 }
 
-export function servePage(req, reply) {
-  const c = pageBytes();
+function serveHtmlBytes(req, reply, c) {
   const ifNone = req.headers['if-none-match'];
   if (ifNone && ifNone === c.etag) {
     reply.code(304)
@@ -47,11 +55,25 @@ export function servePage(req, reply) {
   }
 }
 
+export function servePage(req, reply) {
+  serveHtmlBytes(req, reply, pageBytes());
+}
+
+export function serveConverterPage(req, reply) {
+  try {
+    serveHtmlBytes(req, reply, converterPageBytes());
+  } catch {
+    reply.code(404).send('Not found');
+  }
+}
+
 // 16.2 · 정적 에셋(sdynotes.js · sdynotes.css) — 개발/미리보기용 셀프 호스팅.
 // 운영 배포에선 nginx location / 이 디스크에서 먼저 주므로 여기는 예비 경로다.
 const ASSETS = {
   '/sdynotes.js': { file: 'sdynotes.js', type: 'text/javascript; charset=utf-8' },
   '/sdynotes.css': { file: 'sdynotes.css', type: 'text/css; charset=utf-8' },
+  '/converter.js': { file: 'converter.js', type: 'text/javascript; charset=utf-8' },
+  '/converter.css': { file: 'converter.css', type: 'text/css; charset=utf-8' },
   '/assets/fonts/tinos-LICENSE.txt': { file: 'server/assets/fonts/tinos-LICENSE.txt', type: 'text/plain; charset=utf-8' },
   '/assets/fonts/arimo-LICENSE.txt': { file: 'server/assets/fonts/arimo-LICENSE.txt', type: 'text/plain; charset=utf-8' },
   '/assets/fonts/computer-modern-LICENSE.txt': { file: 'server/assets/fonts/computer-modern-LICENSE.txt', type: 'text/plain; charset=utf-8' },

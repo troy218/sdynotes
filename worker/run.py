@@ -14,6 +14,7 @@ from sdynotes_worker.core import app
 # 로컬 라우트 등록 (cloud_routes 는 music_cloud 로 이관)
 from sdynotes_worker import common  # noqa: F401  (상수/경로/락 초기화)
 from sdynotes_worker import importer  # noqa: F401  (가져오기, 원본 그대로)
+from sdynotes_worker import converter  # noqa: F401  (standalone PDF → Word, same parser)
 from sdynotes_worker import music     # noqa: F401  (음악 태깅/유튜브/인식, 원본 그대로)
 from sdynotes_worker import extra     # noqa: F401  (play 로컬)
 from sdynotes_worker import music_cloud  # noqa: F401  (클라우드 음악 변이 + 라우트 교체)

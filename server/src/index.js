@@ -32,6 +32,8 @@ import { registerDb } from './routes/db.js';
 import { registerAuth } from './routes/auth.js';
 import { registerFriends } from './routes/friends.js';
 import { registerDm } from './routes/dm.js';
+import { registerConverter } from './routes/converter.js';
+import { isConverterHost, isConverterPath, converterNotFound } from './lib/converterAccess.js';
 import { userAuthBoot } from './lib/userauth.js';
 import { friendsBoot } from './lib/friends.js';
 import { dmBoot } from './lib/dmstore.js';
@@ -46,6 +48,19 @@ const app = Fastify({
   trustProxy: true,
 });
 
+// Host isolation is enforced before multipart parsing and before any normal
+// SDYnotes route runs.  A request arriving on the converter hostname can see
+// only its own page/assets/API; conversely, /converter is not reachable through
+// the notes hostname.  This makes the standalone page a genuinely separate
+// service even though both surfaces share one process and one PDF engine.
+app.addHook('onRequest', async (req, reply) => {
+  const converterHost = isConverterHost(req);
+  if (converterHost && !isConverterPath(req.url)) return converterNotFound(reply);
+  if (!converterHost && isConverterPath(req.url) && req.url.split('?', 1)[0] !== '/') {
+    return converterNotFound(reply);
+  }
+});
+
 await app.register(cors, { origin: true });
 await app.register(multipart, { limits: { fileSize: 512 * 1024 * 1024, files: 1 } });
 // 14.13.5 · 2코어 박스 — JSON 응답 압축을 켠다. MB 단위 동기화/목록 페이로드의
@@ -57,6 +72,7 @@ await app.register(compress, compressOptions());
 
 const worker = createWorkerProxy({ app });
 
+registerConverter(app, { worker });
 registerPages(app);
 registerSync(app);
 registerAdmin(app);
