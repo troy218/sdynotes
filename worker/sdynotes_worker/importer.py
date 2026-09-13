@@ -436,6 +436,8 @@ MATH_FONTS = (
     "bbm", "dsfont",
     # 10.1 · pdflatex txfonts/newtx (rtxmi·rtxbmi·txsy·txex 계열)
     "txmi", "txbmi", "txsy", "txex",
+    # 15.11 · dsrom(ℂ)·Fourier-Cal·Pazo/Fourier-Blackboard (6문서 무충돌 확인)
+    "dsrom", "mathcal", "blackboard",
 )
 MATH_AMBIG_FONTS = (
     "cmr", "stixgeneral", "stix", "xits", "euclid", "texgyre",
@@ -450,6 +452,8 @@ _MATH_DOMAIN_WORDS = {
     "ads", "ds", "cft", "sym", "iib", "kk", "bps", "lsz", "qft", "ir", "uv",
     "minkowski", "feynman", "carrollian", "flat", "bulk", "boundary", "null",
     "vol", "dvol", "dd", "dmu", "measure", "delta", "mellin", "witten",
+    # 15.0 - asymmetry resource-theory notation (SLD/RLD-QFI, QGT, QLAN).
+    "qfi", "sld", "rld", "qgt", "qlan",
 }
 
 
@@ -468,13 +472,14 @@ def _is_math_identifier(text):
         return True
     # Keep this explicit: treating every all-caps English word as notation
     # would make headings and prose around a display equation look mathematical.
-    return bool(re.fullmatch(r"(?:AdS|dS|CFT|SYM|IIB|KK|BPS|LSZ|QFT|Minkowski)[0-9]*", t))
+    return bool(re.fullmatch(r"(?:AdS|dS|CFT|SYM|IIB|KK|BPS|LSZ|QFT|Minkowski|SLD|RLD|QFI|QGT|QLAN)[0-9]*", t))
 
 
 def _math_font_style(font):
     """Return a KaTeX style implied by a TeX math font, if it is known."""
     n = re.sub(r"[^a-z0-9]", "", (font or "").split("+")[-1].lower())
-    if any(k in n for k in ("msbm", "bbm", "dsfont", "blackboard", "dsss")):
+    if any(k in n for k in ("msbm", "bbm", "dsfont", "blackboard", "dsss",
+                                   "dsrom")):
         return "bb"
     if any(k in n for k in ("rsfs", "mathrsfs", "eusm")):
         return "scr"
@@ -486,6 +491,9 @@ def _math_font_style(font):
         return "sf"
     if "cmtt" in n or "typewriter" in n:
         return "tt"
+    # 15.11 · Fourier-Math-Cal (\mathcal). "cal" 단독은 small-caps 오탐 우려.
+    if "mathcal" in n:
+        return "cal"
     # CMSY is where Computer Modern stores uppercase calligraphic letters.
     if "cmsy" in n and not any(k in n for k in ("cmex", "cmssym")):
         return "cal"
@@ -612,7 +620,10 @@ _MATH_WORDS = {
     "hom", "aut", "gl", "sl", "so", "su", "dim", "codim", "supp", "const", "var", "cov",
     "erf", "sinc", "pr", "opt", "attn", "top", "topk", "mlp", "ffn", "gelu", "relu",
     "softmax", "proj", "qkv", "mqa", "gqa", "kv", "hbm", "hbf", "gpu", "sram", "tsv", "ecc",
-    "base", "out", "gate", "route", "gcd", "lcm"
+    "base", "out", "gate", "route", "gcd", "lcm",
+    # 15.0 - roman notation of quantum-info papers (Hilbert-Schmidt norm HS,
+    # structural constant C_tail, operator Wt). Never standalone prose words.
+    "hs", "wt", "tail"
 }
 
 _COMMON_PROSE = {
@@ -795,7 +806,16 @@ def _spans_to_clean_latex(spans):
                 else:
                     res.append(r"\text{" + word + r"} ")
             else:
-                res.append(_style_latex_atom(t, style))
+                _atom = t.strip()
+                if _atom in ("{", "}"):
+                    # 15.0 - 집합 괄호 낱자. 이스케이프 없이 내보내면 KaTeX
+                    # 그룹으로 굳어 괄호 글리프가 사라진다.
+                    res.append("\\" + _atom)
+                elif _atom == "\\":
+                    # 15.0 - 낱 백슬래시(setminus). raw 로 내보내면 파스 오류다.
+                    res.append(r"\setminus ")
+                else:
+                    res.append(_style_latex_atom(t, style))
 
     out = "".join(res)
     out = re.sub(r"\s+", " ", out).strip()
@@ -1261,6 +1281,24 @@ _CMEX_STD = {
     80: "summation", 81: "product", 86: "coproduct",
     112: "radical", 113: "radicalbig",
 }
+
+# ── 15.12 · 행렬 구분자 '잉크 회계' ────────────────────────────
+# \begin{bmatrix} 는 TeX 이 [ ] 를 직접 그린다. 그런데 글자 단위 오라클
+# (_oracle_ch) 은 "\begin{bmatrix}" 라는 문자열 속에 '[' 가 없다고 판단해서,
+# 원본 PDF 의 '[', ']' 글리프와 CMEX 확장 조각(bracketleftbigg …) 을
+# "어느 식도 먹지 않은 잉크" 로 보고 되살려 버린다. 그대로 두면 행렬 위에
+# 날 괄호가 겹쳐 그려진다. 구분자만큼은 환경 이름과 \left·\right 로 따로
+# 확인해야 한다.
+_MAT_DELIM_ENV = {"(": "pmatrix", ")": "pmatrix",
+                  "[": "bmatrix", "]": "bmatrix",
+                  "{": "Bmatrix", "}": "Bmatrix",
+                  "|": "vmatrix", "‖": "Vmatrix"}
+# _CMEX_STD 슬롯 가운데 '큰 구분자' 조각만 (나머지는 연산자·적분 기호)
+_CMEX_DELIM_SLOT = {0: "(", 1: ")", 2: "[", 3: "]",
+                    8: "{", 9: "}", 12: "|", 13: "‖",
+                    16: "(", 17: ")", 18: "(", 19: ")",
+                    20: "(", 21: ")", 22: "[", 23: "]",
+                    24: "{", 25: "}"}
 
 
 # ── 14.47 · Symbol 글꼴 PUA 디코딩 ──────────────────────────────
@@ -1847,7 +1885,12 @@ _SYM = {
     "↘": r"\searrow", "↗": r"\nearrow", "↙": r"\swarrow", "↖": r"\nwarrow",
     "⊸": r"\multimap", "⋎": r"\curlyvee", "⋏": r"\curlywedge",
     "⊲": r"\vartriangleleft", "⊳": r"\vartriangleright",
+    # 15.0 - indicator 1 (U+E001 private slot, see _INDICATOR_PRIVATE).
+    "\ue001": r"\mathbb{1}",
 }
+
+# F158(Type3) '1' = indicator blackboard-1. Measured on 2609.11926 p40.
+_INDICATOR_PRIVATE = "\ue001"
 
 _MATHOP = re.compile(r"^(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|"
                      r"exp|log|ln|lim|det|dim|ker|deg|gcd|max|min|sup|inf|arg|Tr|tr)$")
@@ -1889,6 +1932,8 @@ def _tok_tex(t):
     if t in _GREEK: return _GREEK[t]
     if t in _SYM:   return _SYM[t]
     if t in "%#&_{}$": return "\\" + t
+    if t == "\\":
+        return r"\setminus"   # 15.0 - 낱 백슬래시는 파스 오류 대신 setminus
     return t
 
 
@@ -2745,7 +2790,8 @@ def _linear(boxes, rules, depth):
     return " ".join(x for x in out if x).strip()
 
 
-def region_boxes(doc, page, rect, gtables=None, rd=None, vlines=None):
+def region_boxes(doc, page, rect, gtables=None, rd=None, vlines=None,
+                     allow_ids=None):
     """페이지의 한 영역에서 Box 목록을 만든다 (CMEX 글리프 해석 포함).
 
     rd 를 넘기면 페이지 rawdict 를 다시 읽지 않는다 — 행렬 후보를 여러 개
@@ -2783,6 +2829,10 @@ def region_boxes(doc, page, rect, gtables=None, rd=None, vlines=None):
                     cx = (bb[0] + bb[2]) / 2.0
                     cy = (bb[1] + bb[3]) / 2.0
                     if not (x0 - 1 <= cx <= x1 + 1 and y0 - 1 <= cy <= y1 + 1):
+                        continue
+                    # 15.1 · 인라인 런 전용: 허용 id 집합이 있으면 그 글자만
+                    # (rect 스캔이 옆·아랫줄 산문을 빨아들이는 오염 원천 차단).
+                    if allow_ids is not None and id(ch) not in allow_ids:
                         continue
                     role = None
                     tex = None
@@ -2828,6 +2878,28 @@ def region_boxes(doc, page, rect, gtables=None, rd=None, vlines=None):
                             if c and 0xE000 <= ord(c) <= 0xF8FF:
                                 out.append(Box(bb[0], bb[1], bb[2], bb[3],
                                                "\ue000", size, "pua"))
+                                continue
+                            # 15.5 · 살균된(sanitized) CMEX 문자(∑·∫·∏…):
+                            # 바이트 슬롯 역조회가 안 되면 유니코드 경로로
+                            # 복원한다. 버리면 ∑ 가 식에서 증발한다.
+                            # (ASCII 는 여전히 버린다 — Z·p 쓰레기 방지.)
+                            if c and len(c) == 1 and c.strip() \
+                               and ord(c) > 0xFF:
+                                _tex2 = _tok_tex(c)
+                                if _tex2 and _tex2.strip():
+                                    _role2 = None
+                                    if c in ("∫", "∑", "∏", "∮"):
+                                        _role2 = "op"
+                                        # _tok_tex 은 ∑→\Sigma(문자)로 준다.
+                                        # CMEX 자리 연산자는 \sum 계열로 강제한다.
+                                        _tex2 = {"∫": "\\int", "∑": "\\sum",
+                                                 "∏": "\\prod",
+                                                 "∮": "\\oint"}[c]
+                                    elif c == "√":
+                                        _role2 = "radical"
+                                    out.append(Box(bb[0], bb[1], bb[2], bb[3],
+                                                   _tex2, size, _role2,
+                                                   style=None))
                             continue
                     else:
                         if not c.strip():
@@ -2844,6 +2916,10 @@ def region_boxes(doc, page, rect, gtables=None, rd=None, vlines=None):
                                 continue
                             if dec is not False:
                                 c = dec
+                        if short.upper() == "F158" and c == "1":
+                            # 15.0 - Type3 single-glyph font: this '1' is
+                            # the indicator 1, not the digit one.
+                            c = _INDICATOR_PRIVATE
                         tex = _tok_tex(c)
                         if c in ("|",):
                             role = "vbar"
@@ -2851,6 +2927,11 @@ def region_boxes(doc, page, rect, gtables=None, rd=None, vlines=None):
                             role = "radical"
                         elif c in ("∫", "∑", "∏", "∮"):
                             role = "op"
+                            # 15.11l · 자리 연산자는 \sum 계열로 강제한다
+                            # (_tok_tex 은 ∑→\Sigma(문자)로 준다).
+                            tex = {"∫": "\\int", "∑": "\\sum",
+                                   "∏": "\\prod",
+                                   "∮": "\\oint"}[c]
                         elif tex in _ACCENT_TEX:
                             # A standalone TeX accent glyph (ˆ ˜ ¯ …). It is a
                             # command, not an atom: it must adopt the letter it
@@ -4651,7 +4732,9 @@ def _latex_is_sane(t):
     #   (cases 큰중괄호 = \left\{ … \right. 처럼 짝이 없는 정상적인 경우가 있다)
     if (len(re.findall(r"(?<!\\)\{", t)) != len(re.findall(r"(?<!\\)\}", t))):
         return False
-    if t.count(r"\left") != t.count(r"\right"):
+    # 15.8 · \leftrightarrow 안의 "left" 를 세면 안 된다. 명령어로 센다.
+    if (len(re.findall(r"\\left(?![A-Za-z])", t))
+            != len(re.findall(r"\\right(?![A-Za-z])", t))):
         return False
     # A command with no argument is a KaTeX parse error, so the element would
     # render as a red error string instead of an equation. _tidy_latex repairs
@@ -4663,14 +4746,20 @@ def _latex_is_sane(t):
     if re.match(r"^\s*[_^]", t):
         return False
     # 알맹이가 거의 없는 것 (\sqrt 하나 등)
-    if len(re.sub(r"[\s\\{}^_]|left|right|begin|end|aligned", "", t)) < 2:
+    # 15.0 - 기준을 2자 → 1자로. 흔한 인라인 수식은 낱문자 한 글자(n, x, K)이다.
+    # 디스플레이 검증은 _tex_is_figure_junk가 담당하므로 기존 흐름은 안전하다.
+    if not re.sub(r"[\s\\{}^_]|left|right|begin|end|aligned", "", t):
         return False
     return True
 
 
-def region_to_latex(doc, page, rect, gtables=None, rules=None, vlines=None):
+def region_to_latex(doc, page, rect, gtables=None, rules=None, vlines=None,
+                    rd=None, allow_ids=None):
     """PDF 영역 → LaTeX 한 줄."""
-    boxes = region_boxes(doc, page, rect, gtables, vlines=vlines)
+    # 15.0 - rd를 재사용하면 페이지 rawdict를 다시 읽지 않는다
+    # (인라인 수식이 한 쪽에 수백 개).
+    boxes = region_boxes(doc, page, rect, gtables, rd=rd, vlines=vlines,
+                             allow_ids=allow_ids)
     if not boxes:
         return ""
     if rules is None:
@@ -4864,6 +4953,23 @@ def _drop_contained_math(regs):
                     and o["x1"] + 1.2 >= r["x1"] and o["y1"] + 1.2 >= r["y1"]):
                 contained = True
                 break
+        if contained and r.get("text") == "|" and "¯" in (r.get("inline_raw") or "") \
+           and o.get("inline") and r.get("inline"):
+            # 15.11o · 삼켜진 합성파이프는 버리지 않고 컨테이너가 흡수한다
+            # (id 소비 + tex 위치병합) — 막대 구멍 방지.
+            try:
+                _pcx = (r["x0"] + r["x1"]) / 2.0
+                _ocx = (o["x0"] + o["x1"]) / 2.0
+                _ids = list(o.get("inline_ids") or []) + list(r.get("inline_ids") or [])
+                o["inline_ids"] = sorted(set(_ids))
+                if _pcx < _ocx:
+                    o["text"] = ("| " + (o.get("text") or "")).strip()
+                    o["inline_raw"] = "¯" + (o.get("inline_raw") or "")
+                else:
+                    o["text"] = ((o.get("text") or "") + " |").strip()
+                    o["inline_raw"] = (o.get("inline_raw") or "") + "¯"
+            except Exception:
+                pass
         if not contained:
             keep.append(r)
     keep.sort(key=lambda r: (r["y0"], r["x0"]))
@@ -5684,6 +5790,1635 @@ def _big_math_bands(page, avoid=None):
 
     return bands, rules, gtables
 
+# ═══════════════════════════════════════════════════════════
+#  15.1 · 인라인 수식 추출 (inline math reconstruction)
+# ═══════════════════════════════════════════════════════════
+#  본문 줄 안에 박힌 $...$ 를 디스플레이와 같은 2D 엔진(region_to_latex)으로
+#  복원한다. 실패하면 1D 폴백(_spans_to_clean_latex), 그것도 실패하면 거부해서
+#  원본 글리프(배경 벡터/텍스트) 그대로 둔다 — 구멍도 쓰레기도 만들지 않는다.
+#
+#  15.1 변경 (실측 결함 수정):
+#   · 행(row) 단위 분할: MuPDF 가 크기별로 쪼갠 줄(본문/첨자)을 시각 행으로
+#     합쳐서 분할한다. 줄 단위 분할은 옆 줄 조각을 섞어 "mKiss" 쓰레기를 냈다.
+#   · allow_ids 화이트리스트: 런 글자以外는 rect 스캔이 절대 못 끌어들인다.
+#   · 유령 bbox 내성 rect: CMSY − 같은 17pt 명목 상자가 rect 를 부풀려
+#     아랫줄 산문을 빨아들이던 오염을 원천 차단한다.
+#   · 커버리지 상한 + 인용 번호 트림: 과잉 복원·인용 접착을 거부한다.
+#
+#  분류 원칙 (실측 기반):
+#   · 수식 글꼴(CMMI·CMSY·CMEX·MSAM·MSBM·EUFM·CMSS·F158) = 앵커
+#   · 그리스 문자·수식 기호(어느 글꼴이든) = 앵커
+#   · 겸용 글꼴(CMR·STIX·XITS…)의 숫자·괄호·연산 문장부호 = 접착 대상
+#   · 겸용 글꼴의 영문자는 낱말 단위로: 산문 낱말이면 절단선,
+#     연산자(log·exp·Tr…)·수학 표기(SLD·QFI…)·첨자 크기면 접착
+#   · 본문 글꼴(SFRM·Nimbus·Times·CMBX·CMTI…) = 언제나 절단선
+#   · 인용 번호([12]·(2024)·위첨자 숫자)·식 번호는 절대 수식이 아니다
+
+_INLINE_MATH_FONTS = MATH_FONTS + ("cmss",)
+_INLINE_AMBIG_FONTS = MATH_AMBIG_FONTS + ("lmr", "ecrm")
+
+# 겸용 글꼴에서 수식 안에 들어갈 수 있는 낱자 (앵커·연산자 문맥에서만 수락)
+_INLINE_JOIN_PUNCT = set("=()[]{}|/\\+-*<>!?:;,.\"'@#%&$~_^–—·⋅×÷±′″…¯")
+
+# 다른 줄에 떠서 조판되는 악센트 (회수 대상)
+_INLINE_ACCENTS = set("ˆ˜~¯ˉ´`˘ˇ˙¨˚")
+
+# 런 끝의 문장부호는 산문으로 되돌린다
+_INLINE_TRIM_TAIL = set(".,;:!?")
+
+# 런 앞의 문장부호도 산문으로 되돌린다 (앞점 . 은 소수점일 수 있어 제외)
+_INLINE_TRIM_HEAD = set(",;:!?")
+
+# 매달린 중위 연산자 (줄바뀜 절단). 텍스트로 돌아가도 똑같이 보인다.
+_INLINE_TRIM_DANGLE = set("=<>+-*/|~−–—∈∉⊂⊃≈≠≤≥±×÷→←↔")
+
+# 결합 슬래시 부정의 엔진 출력 (KaTeX 유효 명령만 수락한다)
+_INLINE_NEG_OK = {
+    "\\subset": "\\nsubset",
+    "\\supset": "\\nsupset",
+    "\\subseteq": "\\nsubseteq",
+    "\\supseteq": "\\nsupseteq",
+    "\\in": "\\notin",
+    "\\le": "\\nleq",
+    "\\ge": "\\ngeq",
+}
+
+# LaTeX 명령으로 굳는 연산자 이름 (커버리지 역산용)
+_INLINE_CMD_WORDS = (
+    "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "limsup", "liminf",
+    "sin", "cos", "tan", "cot", "sec", "csc", "exp", "log", "ln", "lim",
+    "det", "dim", "ker", "deg", "gcd", "max", "min", "sup", "inf", "arg",
+)
+
+# 1~2자 대명사·전치사: 인라인에서만 추가로 차단한다.
+# (원본 _COMMON_PROSE 는 건드리지 않는다 — 다른 경로에 영향 없음.)
+_INLINE_EXTRA_PROSE = {
+    "it", "its", "or", "on", "at", "an", "no", "up", "us", "vs", "as", "if",
+    "of", "in", "is", "to",
+}
+
+
+def _inline_font_kind(font):
+    """글꼴 → 'math' | 'ambig' | 'text'."""
+    n = re.sub(r"[^a-z0-9]", "", (font or "").split("+")[-1].lower())
+    if n == "f158":
+        return "math"      # Type3 지시함수 𝟙 전용 글꼴
+    if any(k in n for k in _INLINE_MATH_FONTS):
+        return "math"
+    if any(k in n for k in _INLINE_AMBIG_FONTS):
+        return "ambig"
+    return "text"
+
+
+def _inline_tex_covers(raw, tex):
+    """복원된 LaTeX 가 원본 글자를 빠짐없이(그리고 과잉 없이) 품고 있는가."""
+    if not tex or not raw or not raw.strip():
+        return False
+    # 행렬·cases·aligned 는 인라인이 아니다 → 1D 폴백으로 (호출측에서 처리)
+    if r"\begin{" in tex:
+        return False
+    if _inline_frac_has_equals(tex):
+        return False
+    if tex.count("{") != tex.count("}"):
+        return False
+    # 숫자: 전부 있어야 한다
+    for c in raw:
+        if c.isdigit() and c not in tex:
+            return False
+    # 15.10 · 아스키 막대기(|)는 tex 에 흔적이 있어야 한다
+    # (|||||∑ → \sum 유실 차단. 비아스키 루프에 안 들어가므로 따로 잰다)
+    if "|" in raw and not any(
+            k in tex for k in ("|", "vert", "Vert", "mid", "parallel")):
+        return False
+    # 괄호: 원본 개수는 유지돼야 한다 (tidy 가 보정한 \\left. 등은 초과분 허용)
+    for c in "()[]":
+        if raw.count(c) > tex.count(c):
+            return False
+    # 영문자: 명령어 이름(\\log 등)은 원상복구한 뒤 60% 이상
+    flat = tex
+    for w in _INLINE_CMD_WORDS:
+        flat = re.sub(r"\\" + w + r"(?![A-Za-z])", w, flat)
+    flat = re.sub(r"\\[A-Za-z]+", " ", flat)
+    stripped = re.sub(r"[^A-Za-z]", "", flat).lower()
+    want = [c.lower() for c in raw if c.isalpha() and c.isascii()]
+    if want:
+        have, need = {}, {}
+        for c in stripped:
+            have[c] = have.get(c, 0) + 1
+        for c in want:
+            need[c] = need.get(c, 0) + 1
+        ok = sum(min(have.get(c, 0), n) for c, n in need.items())
+        if ok < max(1, int(len(want) * 0.6 + 0.5)):
+            return False
+        # 15.1 · 상한: 옆·아랫줄 산문을 빨아들인 과잉 복원을 거부한다.
+        # 정상 복원은 명령어 제거 후 원본과 글자 수가 거의 같다
+        # (\\mathrm{...}·\\text{...} 내용은 원본과 1:1이므로 부풀지 않는다).
+        if len(stripped) > max(3, int(len(want) * 1.5) + 1):
+            return False
+    # 비아스키(그리스·기호): 매핑표에 있는 것은 명령이 있어야 한다
+    for c in raw:
+        if c.isascii() or c.isspace():
+            continue
+        import unicodedata as _ud
+        if _ud.combining(c):
+            continue      # 결합 문자(부정 슬래시 등)는 본문에 흡수/제거된다
+        frag = _SYM.get(c) or _GREEK.get(c) or _GREEK.get(_LOOKALIKE.get(c, c))
+        if frag is None:
+            # 15.10 · 막대기(|·∣ U+2223)는 _SYM 에 없지만 삼키면 구멍이다.
+            # tex 에 막대기 흔적(|·vert·mid·parallel)이 없으면 거부한다.
+            if c == "\u2223" and not any(
+                    k in tex for k in ("|", "vert", "Vert", "mid",
+                                       "parallel")):
+                return False
+            continue      # 매핑표에 없는 낱기호는 관대하게 통과
+        if frag in tex:
+            continue
+        # 15.8 · 결합 슬래시(̸) 부정: 엔진이 \nsubset 계열로 굳혔으면 수락한다
+        if "\u0338" in raw and frag in _INLINE_NEG_OK \
+           and _INLINE_NEG_OK[frag] in tex:
+            continue
+        return False
+    return True
+
+
+def _inline_hits_band(rect, big_bands):
+    """밴드와 조금이라도 겹치면 True (밴드·디스플레이가 우선권을 가진다)."""
+    for m in big_bands or []:
+        if min(rect[2], m[2]) - max(rect[0], m[0]) > 1.0 \
+           and min(rect[3], m[3]) - max(rect[1], m[1]) > 1.0:
+            return True
+    return False
+
+
+def _inline_expand_ok(e, main_sz):
+    """분수 확장으로 흡수해도 되는 글자인가 (산문 제외)."""
+    if e["kind"] == "math":
+        return True
+    if e["kind"] != "ambig":
+        return False
+    c = e["c"]
+    if e["size"] < main_sz * 0.85:
+        return True
+    if c.isdigit() or c in _INLINE_JOIN_PUNCT:
+        return True
+    return bool(c in _GREEK or c in _LOOKALIKE or c in _MATH_SIGNS)
+
+
+def _inline_expand_rect(rect, run_ids, char_index, rules, main_sz,
+                             row_ids=None):
+    """쌓인 인라인 분수(규칙선)와 윗줄 악센트를 런에 붙인다.
+
+    반환: (확장 rect, 추가 소비 id 집합). 산문이 끼면 확장하지 않는다.
+    15.2 · row_ids 가 있으면 같은 시각 행의 글자만 흡수한다
+    (아랫 행 수식을 분모로 납치하던 오염 차단).
+    """
+    x0, y0, x1, y1 = rect
+    extra = set()
+    if rules:
+        for r in rules:
+            rcy = (r[1] + r[3]) / 2.0
+            if not (y0 - 10.0 <= rcy <= y1 + 10.0):
+                continue
+            if min(x1, r[2]) - max(x0, r[0]) < 3.0:
+                continue
+            up = [e for e in char_index
+                  if e["c"].strip() and _inline_expand_ok(e, main_sz)
+                  and (row_ids is None or e.get("line") in row_ids)
+                  and r[0] - 2.0 <= e["cx"] <= r[2] + 2.0
+                  and rcy - 12.0 <= e["cy"] <= rcy - 1.5]
+            dn = [e for e in char_index
+                  if e["c"].strip() and _inline_expand_ok(e, main_sz)
+                  and (row_ids is None or e.get("line") in row_ids)
+                  and r[0] - 2.0 <= e["cx"] <= r[2] + 2.0
+                  and rcy + 1.5 <= e["cy"] <= rcy + 12.0]
+            if not up or not dn:
+                continue
+            nx0 = min([x0, r[0]] + [e["x0"] for e in up + dn])
+            ny0 = min([y0] + [e["y0"] for e in up + dn])
+            nx1 = max([x1, r[2]] + [e["x1"] for e in up + dn])
+            ny1 = max([y1] + [e["y1"] for e in up + dn])
+            if (ny1 - ny0) > 34.0 or (nx1 - nx0) > 520.0:
+                continue
+            known = run_ids | extra | set(e["id"] for e in up + dn)
+            bad = False
+            for e in char_index:
+                if not e["c"].strip() or e["id"] in known:
+                    continue
+                if nx0 <= e["cx"] <= nx1 and ny0 <= e["cy"] <= ny1 \
+                   and not _inline_expand_ok(e, main_sz):
+                    bad = True
+                    break
+            if bad:
+                continue
+            x0, y0, x1, y1 = nx0, ny0, nx1, ny1
+            extra.update(e["id"] for e in up + dn)
+    for e in char_index:
+        if e["c"] not in _INLINE_ACCENTS or e["id"] in extra \
+           or e["id"] in run_ids or e["kind"] == "text" \
+           or (row_ids is not None and e.get("line") not in row_ids):
+            continue
+        if not (x0 - 1.0 <= e["cx"] <= x1 + 1.0):
+            continue
+        if y0 - 7.0 <= e["y1"] <= y0 + 1.0:
+            y0 = min(y0, e["y0"])
+            x0 = min(x0, e["x0"])
+            x1 = max(x1, e["x1"])
+            extra.add(e["id"])
+    return [x0, y0, x1, y1], extra
+
+
+def _inline_tight_rect(run, main_sz):
+    """유령 bbox 에 흔들리지 않는 타이트 rect.
+
+    TeX 글꼴의 명목 bbox 는 잉크보다 훨씬 클 수 있다
+    (CMSY − 가 17pt). min/max 를 그대로 쓰면 rect 가 옆·아랫줄까지
+    닿아 산문을 빨아들이므로, 중앙값 키로 유령을 걸러낸다.
+    """
+    hs = sorted(it["y1"] - it["y0"] for it in run)
+    h_med = hs[len(hs) // 2] if hs else main_sz
+    if not h_med or h_med <= 0:
+        h_med = main_sz
+    # 전부 비정상적으로 크면(외톨이 유령) 중앙 기준으로 재구성한다
+    if h_med > 1.5 * main_sz:
+        cys = sorted(it["cy"] for it in run)
+        cym = cys[len(cys) // 2]
+        hh = 0.65 * main_sz
+        return [min(it["x0"] for it in run), cym - hh,
+                max(it["x1"] for it in run), cym + hh]
+    slim = [it for it in run if (it["y1"] - it["y0"]) <= 1.6 * h_med] or run
+    x0 = min(it["x0"] for it in run)
+    x1 = max(it["x1"] for it in run)
+    y0 = min(it["y0"] for it in slim)
+    y1 = max(it["y1"] for it in slim)
+    # 그래도 너무 크면(첨자+유령 혼재) 중앙 기준으로 자른다
+    if y1 - y0 > 2.2 * h_med:
+        cys = sorted(it["cy"] for it in slim)
+        cym = cys[len(cys) // 2]
+        y0 = max(y0, cym - 1.1 * h_med)
+        y1 = min(y1, cym + 1.1 * h_med)
+    return [x0, y0, x1, y1]
+
+
+def _inline_run_to_latex(run, rect, page, doc, rd, gtables, rules, vlines,
+                         allow_ids=None):
+    """런 → LaTeX. 2D 우선, 1D 폴백, 둘 다 실패하면 빈 문자열(거부)."""
+    raw = "".join(it["c"] for it in run)
+    try:
+        tex2 = region_to_latex(doc, page, tuple(rect), gtables, rules,
+                               vlines, rd=rd, allow_ids=allow_ids)
+    except Exception:
+        tex2 = ""
+    # 15.3 · 2D 가 베이스라인을 헷갈리면(선행 _{…} 등) 버리고 1D 로 간다
+    if tex2 and _inline_tex_covers(raw, tex2) \
+            and _inline_tex_sane_final(tex2):
+        # 엇갈린 쌓임에서 건진 \frac 은 분자·분모가 뒤섞인 것이다 → 거부
+        if r"\frac" in tex2 and _inline_run_interleaved(run, raw):
+            return ""
+        return tex2
+    # 15.4 · 엇갈린 쌓임은 1D 도 쓰레기이므로 여기서 거부한다
+    if _inline_run_interleaved(run, raw):
+        return 
+    # 1D 폴백: 런 글자로 pseudo-span 을 지어 첨자만 살린다
+    try:
+        pseudo = []
+        for it in run:
+            ch = it["ch"]
+            c = it["c"]
+            if (it["font"] or "").split("+")[-1].upper() == "F158" and c == "1":
+                c = _INDICATOR_PRIVATE
+            key = (it["font"], it["size"])
+            atom = {"c": c,
+                    "origin": ch.get("origin") or (it["x0"], it["y1"]),
+                    "bbox": [it["x0"], it["y0"], it["x1"], it["y1"]]}
+            if pseudo and pseudo[-1][0] == key:
+                pseudo[-1][1].append(atom)
+            else:
+                pseudo.append([key, [atom]])
+        spans = [{"font": f, "size": s, "chars": chs} for (f, s), chs in pseudo]
+        tex1 = _spans_to_clean_latex(spans)
+    except Exception:
+        tex1 = ""
+    if tex1 and _inline_tex_covers(raw, tex1) \
+            and _inline_tex_sane_final(tex1):
+        return tex1
+    return ""
+
+
+def _inline_trim_citations(run, main_sz, row_cy):
+    """런 양 끝의 인용 번호 조각을 산문으로 되돌린다.
+
+    행 단위 분할에서는 위첨자 인용 번호가 옆 수식에 붙을 수 있다
+    ("p(K)12"). 잘라내도 숫자·괄호는 텍스트로 똑같이 보이므로 무손실이다.
+    """
+    def _is_cit_digits(seg):
+        if not seg or len(seg) > 4:
+            return False
+        if any(not it["c"].isdigit() for it in seg):
+            return False
+        asz = sum(it["size"] for it in seg) / len(seg)
+        acy = sum(it["cy"] for it in seg) / len(seg)
+        return asz < main_sz * 0.88 and acy < row_cy - main_sz * 0.15
+
+    run = list(run)
+    # 앞: [12]·(2024)·윗첨자 맨숫자
+    while len(run) > 1:
+        if run[0]["c"] in "[(":
+            op = run[0]["c"]
+            cl = "]" if op == "[" else ")"
+            k = 1
+            while k < len(run) and k <= 6 and run[k]["c"].isdigit():
+                k += 1
+            if 2 <= k <= 6 and k < len(run) and run[k]["c"] == cl:
+                del run[:k + 1]
+                continue
+            break
+        k = 0
+        while k < len(run) and k < 4 and run[k]["c"].isdigit():
+            k += 1
+        if k > 0 and _is_cit_digits(run[:k]):
+            del run[:k]
+            continue
+        break
+    # 뒤: [12]·(2024)·윗첨자 맨숫자
+    while len(run) > 1:
+        if run[-1]["c"] in "])":
+            cl = run[-1]["c"]
+            op = "[" if cl == "]" else "("
+            k = len(run) - 2
+            while k >= max(0, len(run) - 7) and run[k]["c"].isdigit():
+                k -= 1
+            ndig = len(run) - 2 - k
+            if k >= 0 and run[k]["c"] == op and 1 <= ndig <= 4:
+                del run[k:]
+                continue
+            break
+        k = len(run) - 1
+        while k >= max(0, len(run) - 4) and run[k]["c"].isdigit():
+            k -= 1
+        seg = run[k + 1:]
+        if seg and _is_cit_digits(seg):
+            del run[k + 1:]
+            continue
+        break
+    return run
+
+
+def _inline_line_base(ln):
+    """줄의 기준선(대표 origin y). 유령 bbox 와 무관하게 안정적이다."""
+    ys = []
+    for sp in ln.get("spans", []) or []:
+        for ch in sp.get("chars", []) or []:
+            o = ch.get("origin")
+            if o:
+                try:
+                    ys.append(float(o[1]))
+                except Exception:
+                    pass
+    if not ys:
+        return None
+    ys.sort()
+    return ys[len(ys) // 2]
+
+
+def _inline_row_groups(cands):
+    """시각 행 묶기: 베이스라인 ±7pt + x 겹침(또는 6pt 이내).
+
+    cands: (ln, base, x0, x1) 목록. 반환: [[ln, ...], ...].
+    15.11k · 한쪽이 작은 줄(첨자)이면 Δ8까지 합병한다. 밴드 분리·cy
+    절단이 진짜 다른 줄 합침은 막는다.
+    """
+    n = len(cands)
+    parent = list(range(n))
+    _lsz = []
+    for _c in cands:
+        try:
+            _ss = sorted(float(_sp.get("size") or 10)
+                         for _sp in _c[0].get("spans", []) or [])
+            _lsz.append(_ss[len(_ss) // 2] if _ss else 10.0)
+        except Exception:
+            _lsz.append(10.0)
+
+    def _find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def _union(a, b):
+        ra, rb = _find(a), _find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for i in range(n):
+        a = cands[i]
+        for j in range(i + 1, n):
+            b = cands[j]
+            _d = abs(a[1] - b[1])
+            if _d > 7.0:
+                if _d > 8.0 or min(_lsz[i], _lsz[j]) >= \
+                        0.85 * max(_lsz[i], _lsz[j]):
+                    continue
+            if max(a[2], b[2]) - min(a[3], b[3]) > 6.0:
+                continue
+            _union(i, j)
+    groups = {}
+    for i in range(n):
+        groups.setdefault(_find(i), []).append(cands[i][0])
+    return list(groups.values())
+
+
+def _inline_rect_overlap_frac(a, b):
+    """a 면적 중 b 와 겹치는 비율."""
+    area = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    if area <= 0:
+        return 0.0
+    ov = max(0.0, min(a[2], b[2]) - max(a[0], b[0])) \
+        * max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    return ov / area
+
+
+def _inline_line_in_bands(bb, big_bands):
+    """줄 제외 판정: 원본 _in_big 과 같은 의미(중심점 기준)."""
+    cx = (bb[0] + bb[2]) / 2.0
+    cy = (bb[1] + bb[3]) / 2.0
+    for m in big_bands or []:
+        if m[0] - 2 <= cx <= m[2] + 2 and m[1] - 2 <= cy <= m[3] + 2:
+            return True
+    return False
+
+
+def _inline_line_hit_disp(bb, disp_rects, frac=0.25):
+    """줄 면적의 frac 이상을 디스플레이가 덮으면 True.
+
+    15pt짜리 마이크로 display('x=0' 같은 합산 극한 조각)가 132pt 행 전체를
+    인라인에서 제외시키던 과잉 차단을 막는다.
+    """
+    for m in disp_rects or []:
+        if _inline_rect_overlap_frac(bb, m) > frac:
+            return True
+    return False
+
+
+def _inline_trim_parens(run):
+    """양 끝의 짝 잃은 괄호를 산문으로 되돌린다 (텍스트로 남아 무손실)."""
+    run = list(run)
+    while len(run) > 1 and run[0]["c"] in ")]}":
+        del run[0]
+    while len(run) > 1 and run[-1]["c"] in ")]}":
+        depth = 0
+        for it in run[:-1]:
+            if it["c"] in "([{":
+                depth += 1
+            elif it["c"] in ")]}":
+                depth -= 1
+        if depth <= 0:
+            run.pop()
+        else:
+            break
+    while len(run) > 1 and run[-1]["c"] in "([{":
+        run.pop()
+    return run
+
+
+def _inline_run_interleaved(run, raw):
+    """런 글자가 여러 줄에 x-엇갈림(전이 8+·길이 40+)으로 섞였는가.
+
+    쌓인 두 수식이 x-정렬에서 뒤섞이면 1D 선형 조립은 쓰레기를 낸다
+    (2D 는 시도해볼 수 있다). 위·아래첨자 정도의 전이는 허용한다.
+    """
+    if len(raw.strip()) <= 40:
+        return False
+    n, prev = 0, None
+    for it in run:
+        ln = it.get("ln")
+        if prev is not None and ln != prev:
+            n += 1
+            if n > 8:
+                return True
+        prev = ln
+    return False
+
+
+def _inline_frac_has_equals(tex):
+    """\\frac 인자 안에 날 '=' 이 있으면 True (조립 오류 신호).
+
+    등호는 분수 바깥에 있어야 한다. 인자 안에 박혔으면 분자·분모를
+    잘못 주운 것이다 (엇갈린 두 수식에서 건진 경우).
+    """
+    for m in re.finditer(r"\\[dt]?frac\b", tex):
+        i = m.end()
+        for _ in range(2):
+            while i < len(tex) and tex[i] in " \t":
+                i += 1
+            if i >= len(tex) or tex[i] != "{":
+                break
+            depth, j = 0, i
+            while j < len(tex):
+                if tex[j] == "{" and (j == 0 or tex[j - 1] != "\\"):
+                    depth += 1
+                elif tex[j] == "}" and (j == 0 or tex[j - 1] != "\\"):
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            if re.search(r"(?<!\\)=", tex[i + 1:j]):
+                return True
+            i = j + 1
+    return False
+
+
+def _inline_recover_balance(run):
+    """괄호 불균형 런(줄바뀜 절단)을 살릴 수 있는 만큼 살린다.
+
+    균형 잡힌 런은 손대지 않는다. 앞쪽 열린 괄호 → 뒤쪽 여분 순으로
+    덜어내고, 매달린 연산자·함수 이름(log 등)도 떼어낸다.
+    잘린 조각은 텍스트로 남아 똑같이 보인다 (소비 경계가 단어를 끊는다).
+    """
+    run = list(run)
+
+    def _bal(rr):
+        o = sum(1 for it in rr if it["c"] in "([{")
+        c = sum(1 for it in rr if it["c"] in ")]}")
+        return o == c
+
+    if _bal(run):
+        return run
+    while len(run) > 1 and not _bal(run) and run[0]["c"] in "([{":
+        del run[0]
+    while len(run) > 1 and not _bal(run):
+        run.pop()
+    if len(run) <= 1 or not _bal(run):
+        return run
+    while len(run) > 1 and run[-1]["c"] in _INLINE_TRIM_DANGLE:
+        run.pop()
+    # 매달린 함수 이름 (…−1log → …−1)
+    while len(run) > 2:
+        j = len(run) - 1
+        while j >= 0 and run[j]["c"].isalpha() and run[j]["c"].isascii():
+            j -= 1
+        word = "".join(it["c"] for it in run[j + 1:])
+        if len(word) >= 2 and word in _INLINE_CMD_WORDS:
+            del run[j + 1:]
+        else:
+            break
+    return run
+
+
+_SCRIPTGATE_STY = re.compile(
+    r"\\(?:mathrm|text|mathbf|mathsf|mathtt|mathcal|mathbb|mathscr|"
+    r"mathfrak|boldsymbol)\b")
+
+
+def _scriptgate_group(tex, i):
+    # i 는 여는 중괄호 위치. 대응 닫기까지 내용을 돌려준다.
+    d, j = 0, i
+    n = len(tex)
+    while j < n:
+        if tex[j] == "{" and (j == 0 or tex[j - 1] != "\\"):
+            d += 1
+        elif tex[j] == "}" and (j == 0 or tex[j - 1] != "\\"):
+            d -= 1
+            if d == 0:
+                return tex[i + 1:j], j + 1
+        j += 1
+    return "", n
+
+
+def _scriptgate_have(tex):
+    # ^/_ 그룹 + 분수 인자 + 장식 원자 속 영숫자 (소문자채움 집계).
+    got = []
+    i, n = 0, len(tex)
+    while i < n:
+        _m = None
+        _nargs = 1
+        if tex[i] in "^_" and i + 1 < n and tex[i + 1] == "{":
+            i += 1
+        else:
+            _mf = re.match(r"\\[dt]?frac\b", tex[i:])
+            _ms = None if _mf else _SCRIPTGATE_STY.match(tex[i:])
+            if _mf:
+                _nargs = 2
+            elif not _ms:
+                i += 1
+                continue
+            i += (_mf.end() if _mf else _ms.end())
+            while i < n and tex[i] in " \t":
+                i += 1
+        for _ in range(_nargs):
+            while i < n and tex[i] in " \t":
+                i += 1
+            if i >= n or tex[i] != "{":
+                break
+            _body, i = _scriptgate_group(tex, i)
+            got.append(_body)
+    from collections import Counter as _Counter
+    return _Counter(c.lower() for _b in got for c in _b
+                    if c.isascii() and (c.isalpha() or c.isdigit()))
+
+
+def _inline_scriptgate(run, final):
+    # 위치상 첨자(작고 줄에서 벗어난 영숫자)가 tex 의 ^/_·분수·장식
+    # 안에 들어있는지 잰다. 60% 미만이면 메인라인 풀림(꼬임)으로
+    # 보고 거부한다 — 원본 텍스트가 배경에 남는다.
+    if not run:
+        return True
+    from collections import Counter as _Counter
+    _sizes = sorted(it["size"] for it in run)
+    _main = _sizes[-1] if _sizes else 10.0
+    _base = [it["cy"] for it in run if it["size"] >= _main * 0.85]
+    if not _base:
+        return True
+    _base_cy = sorted(_base)[len(_base) // 2]
+    _need = _Counter()
+    for _it in run:
+        _c = _it["c"]
+        if not (_c.isascii() and (_c.isalpha() or _c.isdigit())):
+            continue
+        if _it["size"] >= _main * 0.85:
+            continue
+        if abs(_it["cy"] - _base_cy) <= 0.25 * _main:
+            continue
+        _need[_c.lower()] += 1
+    if not _need:
+        return True
+    _have = _scriptgate_have(final)
+    _ok = sum(min(_have.get(_c, 0), _n) for _c, _n in _need.items())
+    _tot = sum(_need.values())
+    return _ok >= max(1, int(_tot * 0.6 + 0.5))
+
+
+def _inline_finalize_tex(raw, fx, tex):
+    """정화된 최종 tex 에 커버리지 게이트. 살릴 것만 살린다.
+
+    tidy 가 무인자 \\sqrt·매달린 명령을 벗기므로 정화 뒤에 다시 잰다.
+    CMEX(P=∑ …) 는 명령으로 굳음이 보장돼 글자 게이트에서 뺀다.
+    fx: raw 와 같은 길이의 폰트 표식 ('E' = CMEX, 그 외 '.').
+    살리면 정화된 tex, 못 살리면 None (원본 텍스트가 배경에 남는다).
+    """
+    try:
+        final = _pdf_text_to_latex(tex)
+    except Exception:
+        return None
+    if not final or not _latex_is_sane(final):
+        return None
+    if re.search(r"(?<!\\)&", final):
+        return None
+    if not _inline_tex_covers(raw, final):
+        return None
+    letters = {c.lower() for c in final if c.isalpha() and c.isascii()}
+    for c, k in zip(raw, fx):
+        if c.isascii() and c.isalpha() and k != "E" \
+           and c.lower() not in letters:
+            return None
+    return final
+
+
+def _inline_tex_sane_final(tex):
+    """_pdf_one_page 와 같은 최종 술식 + & 검사."""
+    try:
+        final = _pdf_text_to_latex(tex)
+    except Exception:
+        return False
+    if not final or not _latex_is_sane(final):
+        return False
+    if re.search(r"(?<!\\)&", final):
+        return False
+    return True
+
+
+def _inline_math_for_row(row_lines, page, doc, rd, gtables, rules, vlines,
+                         big_bands, char_index, display_rects=()):
+    """시각 행 안의 인라인 수식들을 LaTeX 영역으로 바꾼다.
+
+    MuPDF 가 크기별로 쪼갠 줄(본문/첨자)을 한 행으로 합쳐서 분할하므로
+    "p(K)" + 아래첨자 "miss" 가 하나의 런으로 모인다.
+
+    반환: (regions, consumed). regions 는 math_regions 와 같은 모양
+    (display False, inline True), consumed 은 텍스트 경로에서 빼야 할
+    글리프 dict 의 id 집합.
+    """
+    regions, consumed_all = [], set()
+    spans = [(ln, sp) for ln in row_lines for sp in (ln.get("spans") or [])]
+    if not spans:
+        return regions, consumed_all
+    sizes = [float(sp.get("size") or 10) for _ln, sp in spans
+             if _span_text(sp).strip()]
+    if not sizes:
+        # 15.11d · span 텍스트가 비어도 chars 는 살아있다 (prime/⊥).
+        # 글자 없는 행은 뒤에서 런이 안 생겨 무해하다.
+        sizes = [float(sp.get("size") or 10) for _ln, sp in spans
+                 if sp.get("chars")]
+        if not sizes:
+            return regions, consumed_all
+    main_sz = sorted(sizes)[len(sizes) // 2]
+    row_ids = set(id(ln) for ln in row_lines)
+
+    items = []
+    for ln, sp in spans:
+        font = sp.get("font") or ""
+        kind = _inline_font_kind(font)
+        size = float(sp.get("size") or 10)
+        for ch in (sp.get("chars") or []):
+            c = ch.get("c") or ""
+            bb = ch.get("bbox")
+            if not bb:
+                continue
+            items.append({"ch": ch, "c": c, "x0": bb[0], "y0": bb[1],
+                          "x1": bb[2], "y1": bb[3],
+                          "cx": (bb[0] + bb[2]) / 2.0,
+                          "cy": (bb[1] + bb[3]) / 2.0,
+                          "size": size, "kind": kind, "font": font,
+                          "ln": id(ln), "cls": None, "word": ""})
+    items.sort(key=lambda d: (d["x0"], d["y0"]))
+    if not items:
+        return regions, consumed_all
+    # 15.4 · 행 중앙값은 분수·첨자 줄에 끌려내려갈 수 있다. 글자가 가장 많은
+    # 줄(본줄)의 크기를 기준으로 삼아야 hit 같은 아래첨자가 산문으로 안 갈린다.
+    try:
+        _cnt = {}
+        for _it in items:
+            if _it["c"].strip():
+                _cnt[_it["ln"]] = _cnt.get(_it["ln"], 0) + 1
+        if _cnt:
+            _dom = max(sorted(_cnt), key=lambda k: _cnt[k])
+            _dsizes = sorted(_it["size"] for _it in items
+                             if _it["ln"] == _dom and _it["c"].strip())
+            if _dsizes:
+                main_sz = _dsizes[len(_dsizes) // 2]
+    except Exception:
+        pass
+
+    # ── 1차 분류 ──
+    for it in items:
+        c = it["c"]
+        if not c.strip():
+            it["cls"] = "space"
+        elif it["kind"] == "math":
+            it["cls"] = "anchor"
+        elif c in _GREEK or c in _LOOKALIKE or c in _MATH_SIGNS:
+            it["cls"] = "anchor"
+        elif it["kind"] == "text" and c.isascii() and c.isalpha() \
+                and "ital" in re.sub(r"[^a-z0-9]", "",
+                                     (it.get("font") or "").split("+")[-1].lower()):
+            # 15.11 · Fourier/Pazo 문서의 라틴 변수는 텍스트 이탤릭에 산다.
+            # ambig-letter 로 넣어 약한무리(산문/수식) 판정을 그대로 탄다.
+            it["cls"] = "ambig-letter"
+        elif it["kind"] == "ambig":
+            if c.isalpha():
+                it["cls"] = "ambig-letter"
+            elif c.isdigit() or c in _INLINE_JOIN_PUNCT:
+                it["cls"] = "strong"
+            else:
+                it["cls"] = "other"
+        else:
+            it["cls"] = "prose"
+
+    # ── 겸용 영문자는 낱말 단위로 산문/수식을 가른다 ──
+    weak_groups = []
+    i = 0
+    while i < len(items):
+        if items[i]["cls"] != "ambig-letter":
+            i += 1
+            continue
+        j = i
+        while (j + 1 < len(items)
+               and items[j + 1]["cls"] == "ambig-letter"
+               and items[j + 1]["x0"] - items[j]["x1"]
+               <= max(1.5, 0.35 * items[j]["size"])
+               and abs(items[j + 1]["cy"] - items[j]["cy"])
+               <= max(1.5, 0.3 * items[j]["size"])):
+            j += 1
+        word = "".join(items[k]["c"] for k in range(i, j + 1))
+        low = word.lower()
+        wsize = sum(items[k]["size"] for k in range(i, j + 1)) / (j - i + 1)
+        _ti = all(items[k].get("kind") == "text" for k in range(i, j + 1))
+        if wsize < main_sz * 0.85:
+            cls = "strong"        # 첨자 크기 로만 라벨 (hor·gen·diag·ins·hit …)
+            _sub = "small"
+        elif low in _COMMON_PROSE or low in _INLINE_EXTRA_PROSE:
+            cls = "prose"
+            _sub = "prose"
+        elif low in _MATH_WORDS or _is_math_identifier(word):
+            cls = "strong"
+            _sub = "ident"
+        elif len(word) <= 2:
+            cls = "weak"
+            _sub = "weak"
+            weak_groups.append((i, j))
+        else:
+            cls = "prose"
+            _sub = "prose"
+        if _sub in ("small", "ident") and _ti:
+            # 15.11f · 텍스트 이탤릭 낱말은 수식에 딱 붙어야 살린다
+            # ("Gram" 같은 산문 낱말이 식별자로 둔갑하는 것을 막는다).
+            # 수학 낱말(log·sin…)은 자명이라 그대로 둔다.
+            _madj = False
+            _lim = max(1.5, 0.30 * main_sz)
+            _pa, _na = i - 1, j + 1
+            if _pa >= 0 and items[_pa]["cls"] in ("anchor", "strong") \
+               and items[_pa]["cls"] != "space" \
+               and items[i]["x0"] - items[_pa]["x1"] <= _lim:
+                _madj = True
+            if _na < len(items) and items[_na]["cls"] in ("anchor", "strong") \
+               and items[_na]["cls"] != "space" \
+               and items[_na]["x0"] - items[j]["x1"] <= _lim:
+                _madj = True
+            if not _madj:
+                cls = "prose"
+        for k in range(i, j + 1):
+            items[k]["cls"] = cls
+            items[k]["word"] = word
+        i = j + 1
+
+    # ── weak(1~2자 비산문 낱말): 수식에 딱 붙어 있을 때만 접착 ──
+    # "jth" 의 th 는 살리고, "it $x$" 의 it 은 산문으로 남긴다.
+    tight = max(1.5, 0.30 * main_sz)
+    for (a, b) in weak_groups:
+        ok = False
+        p = a - 1
+        p_space = False
+        while p >= 0 and items[p]["cls"] == "space":
+            p_space = True
+            p -= 1
+        n = b + 1
+        n_space = False
+        while n < len(items) and items[n]["cls"] == "space":
+            n_space = True
+            n += 1
+        if p >= 0 and items[p]["cls"] in ("anchor", "strong") \
+           and not p_space \
+           and items[a]["x0"] - items[p]["x1"] <= tight:
+            ok = True
+        if n < len(items) and items[n]["cls"] in ("anchor", "strong") \
+           and not n_space \
+           and items[n]["x0"] - items[b]["x1"] <= tight:
+            ok = True
+        for k in range(a, b + 1):
+            items[k]["cls"] = "strong" if ok else "prose"
+
+    # ── 15.11b · 텍스트 숫자·구두점·외톨이: 수식에 닿으면 접착 ──
+    # "i=1" 의 1, "{x, y}" 의 콤마·외톨이 (Fourier/Pazo: 텍스트 폰트).
+    # 이웃 스캔은 cy가 다른 줄(위·아래첨자 행)을 건너뛴다 — x-순서 섀도잉
+    # ("i=1" 의 1 앞을 윗첨자 N이 가림)을 피한다. 공백은 건너뛰되 전체
+    # 폭(_wide3) 안에 씨앗(anchor|strong)이 있어야 한다. 마침표는
+    # 문장 종결자라 제외, 숫자-숫자 사이 소수점만 살린다. e.g./i.e. 의
+    # 낱자는 살리지 않는다. 여러 글자 낱말은 절대 안 건든다 (방화벽).
+    _tight3 = max(1.5, 0.30 * main_sz)
+    _wide3 = max(2.5, 0.50 * main_sz)
+    _cy3 = max(2.5, 0.80 * main_sz)
+
+    def _scan_seed(_k, _d):
+        _i = _k + _d
+        while 0 <= _i < len(items):
+            _o = items[_i]
+            if _o["cls"] == "space":
+                _i += _d
+                continue
+            if abs(_o["cy"] - items[_k]["cy"]) > _cy3:
+                _i += _d       # 다른 줄 — 섀도잉이므로 건너뛴다
+                continue
+            if items[_k]["c"] == "¯" and _o["c"] == "¯" and _o["cls"] == "prose" \
+               and abs(_o["x0"] - items[_k]["x0"]) < 1.5:
+                _i += _d       # 수직 파이프 후보 — 동료 막대를 투과한다
+                continue
+            return _i
+        return -1
+
+    def _span_to(_k, _i):
+        if _i < 0:
+            return 1e9
+        _a, _b = (items[_k], items[_i]) if _k < _i \
+            else (items[_i], items[_k])
+        return _b["x0"] - _a["x1"]
+
+    def _is_single(_k):
+        _it = items[_k]
+        _lim = max(1.5, 0.35 * _it["size"])
+        for _d in (-1, 1):
+            _i = _k + _d
+            if 0 <= _i < len(items):
+                _o = items[_i]
+                if _o["c"].isalpha() and _o["c"].isascii() \
+                   and abs(_o["cy"] - _it["cy"]) <= max(1.5, 0.3 * _it["size"]) \
+                   and ((_o["x0"] - _it["x1"]) if _d > 0
+                        else (_it["x0"] - _o["x1"])) <= _lim:
+                    return False
+        return True
+
+    def _is_eg(_k):
+        # e.g./i.e. — 낱자 + 무공백 마침표 + 영문자
+        _i = _k + 1
+        if _i < len(items) and items[_i]["c"] == "." \
+           and items[_i]["cls"] != "space" \
+           and abs(items[_i]["cy"] - items[_k]["cy"]) <= _cy3 \
+           and items[_i]["x0"] - items[_k]["x1"] <= _tight3:
+            _j = _i + 1
+            if _j < len(items) and items[_j]["c"].isalpha() \
+               and abs(items[_j]["cy"] - items[_k]["cy"]) <= _cy3:
+                return True
+        return False
+
+    for _round in range(5):
+        _moved = False
+        for _k, _it in enumerate(items):
+            if _it["cls"] != "prose" or _it["kind"] != "text":
+                continue
+            _c = _it["c"]
+            _is_ital1 = (
+                _c.isascii() and _c.isalpha() and "ital" in re.sub(
+                    r"[^a-z0-9]", "",
+                    (_it.get("font") or "").split("+")[-1].lower())
+                and _is_single(_k) and not _is_eg(_k))
+            _is_prom = _c.isdigit() or _c in _INLINE_JOIN_PUNCT or _is_ital1 or (_c in _INLINE_ACCENTS and _c not in "~´`")
+            if not _is_prom:
+                continue
+            _p = _scan_seed(_k, -1)
+            _n = _scan_seed(_k, +1)
+            if _c == ".":
+                _ok = (_p >= 0 and _n >= 0
+                       and items[_p]["c"].isdigit()
+                       and items[_n]["c"].isdigit()
+                       and _span_to(_k, _p) <= _tight3
+                       and _span_to(_k, _n) <= _tight3)
+            else:
+                _ok = ((_p >= 0
+                        and items[_p]["cls"] in ("anchor", "strong")
+                        and _span_to(_k, _p) <= _wide3)
+                       or (_n >= 0
+                           and items[_n]["cls"] in ("anchor", "strong")
+                           and _span_to(_k, _n) <= _wide3))
+            if _ok:
+                _it["cls"] = "strong"
+                _moved = True
+        if not _moved:
+            break
+
+    # ── 15.11h · cy 밴드 분리: 한 줄에 두 시각 줄이 섞였으면 밴드별로
+    # 런을 만든다 (섀도우 프랑켄 방지). 작은 글자(첨자·프라임)는 가까운
+    # 본줄 밴드에 붙는다. 밴드가 하나면 순서를 안 건든다.
+    _mains = [it for it in items if it["size"] >= main_sz * 0.85]
+    _mains.sort(key=lambda d: d["cy"])
+    _bands = []
+    for _m in _mains:
+        if _bands and _m["cy"] - _bands[-1][1] <= max(1.5, 0.6 * main_sz):
+            _bands[-1][1] = max(_bands[-1][1], _m["cy"])
+            _bands[-1][2].append(_m)
+        else:
+            _bands.append([_m["cy"], _m["cy"], [_m]])
+    _band_of = {}
+    for _bi, (_lo, _hi, _ms) in enumerate(_bands):
+        for _m in _ms:
+            _band_of[id(_m)] = _bi
+    if _bands:
+        for _s in items:
+            if id(_s) in _band_of:
+                continue
+            _bi = min(range(len(_bands)),
+                      key=lambda i: abs(_s["cy"] - (_bands[i][0]
+                                                   + _bands[i][1]) / 2))
+            _band_of[id(_s)] = _bi
+    if len(_bands) > 1:
+        items.sort(key=lambda d: (_band_of.get(id(d), 0), d["x0"], d["y0"]))
+
+    # ── 런 형성: anchor·strong 의 최대 연속. 산문 공백·산문에서 절단 ──
+    gap_lim = max(8.0, 0.8 * main_sz)
+    _cycut = max(4.0, 0.8 * main_sz)
+    runs = []
+    cur = []
+    for _idx, it in enumerate(items):
+        cls = it["cls"]
+        if cls in ("anchor", "strong"):
+            if cur and it["x0"] - cur[-1]["x1"] > gap_lim:
+                runs.append(cur)
+                cur = []
+            # 15.11f · 줄이 다른 글자는 잇지 않는다 (한 MuPDF 줄 안의
+            # 두 시각 줄이 합쳐져도 샐러드가 안 생긴다). 첨자(Δ3~5pt)는
+            # 그대로 잇는다.
+            # 15.11i · 본줄에서 벗어난 작은 글자(프라임 위+아래첨자 아래
+            # 같이 퍼진 식)는 본줄 중앙값 기준으로 잇는다.
+            if cur and abs(it["cy"] - cur[-1]["cy"]) > _cycut:
+                _mcys = sorted(_c["cy"] for _c in cur
+                               if _c["size"] >= main_sz * 0.85)
+                if not _mcys:
+                    _mcys = sorted(_c["cy"] for _c in cur)
+                _med = _mcys[len(_mcys) // 2]
+                if not (it["size"] < main_sz * 0.85
+                        and abs(it["cy"] - _med) > 0.15 * main_sz
+                        and abs(it["cy"] - _med) <= max(1.5, 0.6 * main_sz)
+                        and it["x0"] - cur[-1]["x1"]
+                        <= max(1.5, 0.30 * main_sz)):
+                    runs.append(cur)
+                    cur = []
+            cur.append(it)
+        elif cls == "space":
+            _ncls = None
+            _j = _idx + 1
+            while _j < len(items) and items[_j]["cls"] == "space":
+                _j += 1
+            if _j < len(items):
+                _ncls = items[_j]["cls"]
+            # 15.11 · 양옆이 수식인 얇은 텍스트 공백도 접착제
+            # (단어 공백은 그대로 절단 — 두 식 합침 방지).
+            _thin = (it["x1"] - it["x0"]) <= max(2.0, 0.25 * main_sz)
+            if cur and (it["kind"] in ("math", "ambig")
+                        or (_thin and _ncls in ("anchor", "strong"))):
+                pass              # 수식 사이 공백(TeX 간격)은 접착제
+            elif cur:
+                runs.append(cur)
+                cur = []
+        elif cur:
+            # 15.11e · 섀도잉 브리지: cur 와 줄이 다른 산문·공백 뒤에
+            # 스크립트-위치 anchor·strong(작고 줄에서 벗어나고 틈 없이
+            # 닿음)이 오면 자르지 않고 잇는다 (β′ 의 ′).
+            # 같은 줄 산문은 그대로 절단 — 두 식 합침 방지.
+            _br = False
+            _ccy = cur[-1]["cy"]
+            _cmain = max(main_sz, cur[-1]["size"])
+            _tol = max(1.5, 0.60 * _cmain)
+            if abs(it["cy"] - _ccy) > _tol:
+                _j = _idx + 1
+                while _j < len(items) \
+                        and items[_j]["cls"] not in ("anchor", "strong") \
+                        and abs(items[_j]["cy"] - _ccy) > _tol:
+                    _j += 1
+                if _j < len(items) \
+                        and items[_j]["cls"] in ("anchor", "strong"):
+                    _nx = items[_j]
+                    if _nx["size"] < _cmain * 0.85 \
+                       and abs(_nx["cy"] - _ccy) > 0.15 * _cmain \
+                       and abs(_nx["cy"] - _ccy) <= _tol \
+                       and _nx["x0"] - cur[-1]["x1"] <= max(1.5, 0.30 * _cmain):
+                        _br = True
+            if not _br:
+                runs.append(cur)
+                cur = []
+    if cur:
+        runs.append(cur)
+    if not runs:
+        return regions, consumed_all
+
+    cys = sorted(it["cy"] for it in items if it["cls"] != "space")
+    row_cy = cys[len(cys) // 2] if cys else 0.0
+
+    for run in runs:
+        # 인용 번호 조각([12]·윗첨자 숫자)은 산문으로 되돌린다
+        run = _inline_trim_citations(run, main_sz, row_cy)
+        run = _inline_trim_parens(run)
+        # 꼬리 문장부호는 산문으로 되돌린다 (앵커여도 — CMMI 콤마는 산문 콤마)
+        while len(run) > 1 and run[-1]["c"] in _INLINE_TRIM_TAIL:
+            run.pop()
+        # 앞쪽 문장부호도 산문으로 되돌린다 (", 2, *" 의 앞 콤마)
+        while len(run) > 1 and run[0]["c"] in _INLINE_TRIM_HEAD:
+            del run[0]
+        # 15.8 · 괄호 불균형(줄바뀜 절단)은 살릴 수 있는 만큼 살린다
+        run = _inline_recover_balance(run)
+        if not run:
+            continue
+        raw = "".join(it["c"] for it in run)
+        if not raw.strip() or len(raw.strip()) > 160:
+            continue
+        # 괄호 불균형 런은 쪼개진 조각이다 (p(Kh·=Pr(X …) → 거부하고 배경 유지
+        if sum(raw.count(c) for c in "([{") != sum(raw.count(c) for c in ")]}"):
+            continue
+        has_anchor = any(it["cls"] == "anchor" for it in run)
+        words_in = set(it["word"] for it in run if it.get("word"))
+        has_op = any(len(w) >= 2 and (w.lower() in _MATH_WORDS
+                                     or _is_math_identifier(w))
+                     for w in words_in)
+        has_digit = any(it["c"].isdigit() for it in run)
+        has_paren = any(it["c"] in "()[]{}" for it in run)
+        has_mp = any(it["c"] in "=+-*/<>|_^" for it in run)
+        # 앵커 없는 순수 CMR 런은 연산자+숫자/괄호일 때만 (log 2).
+        # "(e)" "(2024)" 같은 산문 괄호는 여기서 탈락한다.
+        if not has_anchor and not (has_op and (has_digit or has_paren
+                                              or has_mp)):
+            continue
+        # 한 글자: 앵커 낱자(변수·그리스·기호)만. 외톨이 숫자·문장부호·
+        # 대시(−)는 산문이다 (배경에 그대로 남아 구멍이 안 난다).
+        if len(run) == 1:
+            cc = run[0]["c"]
+            if not (run[0]["cls"] == "anchor"
+                    and (cc.isalnum() or cc in _GREEK
+                         or cc in "∞∂∇∫∑∏√∀∃∆Ω")):
+                continue
+        t = raw.strip()
+        if _CITE_BRACKET.match(t) or _is_equation_label(t) \
+           or _line_is_citation_only(t) \
+           or _is_citation_token(t, superscript=True):
+            continue
+        # 위첨자 맨숫자(인용 번호)와 런 위첨자를 가른다: 줄보다 위+작으면 인용
+        if has_digit and all(it["c"].isdigit() or it["c"] in "–—, "
+                             for it in run):
+            asz = sum(it["size"] for it in run) / len(run)
+            acy = sum(it["cy"] for it in run) / len(run)
+            if asz < main_sz * 0.88 and acy < row_cy - main_sz * 0.15:
+                continue
+        run_ids = set(id(it["ch"]) for it in run)
+        # 앞에서 확장된 런이 먹은 글자는 두 겹을 막기 위해 건너뛴다
+        if run_ids & consumed_all:
+            continue
+        rect = _inline_tight_rect(run, main_sz)
+        if rect[2] - rect[0] > 520.0 or rect[3] - rect[1] > 60.0:
+            continue
+        if _inline_hits_band(rect, big_bands):
+            continue
+        if display_rects and _inline_line_hit_disp(rect, display_rects,
+                                                   frac=0.30):
+            continue
+        rect2, extra = _inline_expand_rect(rect, run_ids, char_index,
+                                           rules, main_sz, row_ids)
+        if _inline_hits_band(rect2, big_bands):
+            rect2, extra = rect, set()
+        elif display_rects and _inline_hits_band(rect2, display_rects):
+            rect2, extra = rect, set()
+        # 15.11g · extra 책임제: 소비된 글자는 런에 편입시켜 커버리지
+        # 게이트가 보게 한다. 엔진이 못 그리면 거부돼 텍스트로 산다.
+        if extra:
+            _have = set(id(it["ch"]) for it in run)
+            _add = [it for it in items if id(it["ch"]) in extra
+                    and id(it["ch"]) not in _have]
+            if _add:
+                run = run + _add
+                run.sort(key=lambda d: (d["x0"], d["y0"]))
+                raw = "".join(it["c"] for it in run)
+                if sum(raw.count(c) for c in "([{") != \
+                   sum(raw.count(c) for c in ")]}"):
+                    continue
+                run_ids = set(id(it["ch"]) for it in run)
+                has_anchor = any(it["cls"] == "anchor" for it in run)
+                words_in = set(it["word"] for it in run if it.get("word"))
+                has_op = any(len(w) >= 2 and (w.lower() in _MATH_WORDS
+                                             or _is_math_identifier(w))
+                             for w in words_in)
+                has_digit = any(it["c"].isdigit() for it in run)
+        # 15.11m · 같은 x 에 쌓인 막대(¯ 세로스택 |)는 파이프 하나로
+        # 합친다 (바-게이트 윗줄 오독 방지 + 단어계약 tex 커버).
+        # 합치고 남은 가장자리·한가운데 처리는 아래와 같다.
+        _bars0 = [it for it in run if it["c"] == "¯"]
+        if len(_bars0) >= 2:
+            _bars0.sort(key=lambda d: (d["x0"], d["cy"]))
+            _cl = [[_bars0[0]]]
+            for _b in _bars0[1:]:
+                if abs(_b["x0"] - _cl[-1][-1]["x0"]) < 1.5:
+                    _cl[-1].append(_b)
+                else:
+                    _cl.append([_b])
+            _drop = set()
+            _pipe = []
+            for _c in _cl:
+                _cys = [it["cy"] for it in _c]
+                if len(_c) >= 2 and max(_cys) - min(_cys) > 3.0:
+                    _x = sum(it["x0"] for it in _c) / len(_c)
+                    _yc = sum(it["cy"] for it in _c) / len(_c)
+                    _y0 = _yc - 0.5 * main_sz
+                    _y1 = _yc + 0.5 * main_sz
+                    _syn = {"ch": _c[0]["ch"], "c": "|",
+                            "x0": _x - 0.5, "y0": _y0,
+                            "x1": _x + 0.5, "y1": _y1,
+                            "cx": _x, "cy": (_y0 + _y1) / 2.0,
+                            "size": main_sz, "kind": "math",
+                            "font": "CMSY10", "ln": _c[0]["ln"],
+                            "cls": "anchor", "word": "",
+                            "synpipe": True,
+                            "bar_ids": [id(it["ch"]) for it in _c],
+                            "bar_bb": [min(it["x0"] for it in _c),
+                                       min(it["y0"] for it in _c),
+                                       max(it["x1"] for it in _c),
+                                       max(it["y1"] for it in _c)]}
+                    _pipe.append(_syn)
+                    for it in _c:
+                        _drop.add(id(it))
+                    # 합쳐진 막대도 소비 유지 (두 겹 방지)
+                    run_ids.update(id(it["ch"]) for it in _c)
+            if _pipe:
+                run = [it for it in run if id(it) not in _drop] + _pipe
+                run.sort(key=lambda d: (d["x0"], d["y0"]))
+                # 선행·후행 합성파이프는 엔진이 못 삼키니 분리 방출한다.
+                while run and run[0].get("synpipe"):
+                    _sp = run.pop(0)
+                    _bb = _sp.get("bar_bb") or [_sp["x0"], _sp["y0"],
+                                                _sp["x1"], _sp["y1"]]
+                    regions.append(
+                        {"x0": _bb[0], "y0": _bb[1], "x1": _bb[2],
+                         "y1": _bb[3], "display": False, "text": "|",
+                         "size": _sp["size"], "inline": True,
+                         "inline_ids": list(_sp.get("bar_ids") or []),
+                         "inline_raw": "¯", "inline_fx": "."})
+                    consumed_all.update(_sp.get("bar_ids") or [])
+                    run_ids.discard(id(_sp["ch"]))
+                while run and run[-1].get("synpipe"):
+                    _sp = run.pop()
+                    _bb = _sp.get("bar_bb") or [_sp["x0"], _sp["y0"],
+                                                _sp["x1"], _sp["y1"]]
+                    regions.append(
+                        {"x0": _bb[0], "y0": _bb[1], "x1": _bb[2],
+                         "y1": _bb[3], "display": False, "text": "|",
+                         "size": _sp["size"], "inline": True,
+                         "inline_ids": list(_sp.get("bar_ids") or []),
+                         "inline_raw": "¯", "inline_fx": "."})
+                    consumed_all.update(_sp.get("bar_ids") or [])
+                    run_ids.discard(id(_sp["ch"]))
+                if not run:
+                    continue
+                raw = "".join(it["c"] for it in run)
+                run_ids = set(id(it["ch"]) for it in run) | run_ids
+        # 15.11i/j · 같은 x 에 쌓인 막대(¯×2 이상, 세로 |)는 바-게이트가
+        # 윗줄로 오독한다. 가장자리 쌓임은 떼어내고(텍스트로 산다) 나머지를
+        # 살리고, 한가운데 쌓임은 런 전체를 거부한다(원본이 남는다).
+        _bars = [it for it in run if it["c"] == "¯"]
+        _stacked_ids = set()
+        for _ai in range(len(_bars)):
+            for _bi in range(_ai + 1, len(_bars)):
+                if abs(_bars[_ai]["x0"] - _bars[_bi]["x0"]) < 1.5 \
+                   and abs(_bars[_ai]["cy"] - _bars[_bi]["cy"]) > 3.0:
+                    _stacked_ids.add(id(_bars[_ai]))
+                    _stacked_ids.add(id(_bars[_bi]))
+        if _stacked_ids:
+            _nb = [it for it in run if id(it) not in _stacked_ids]
+            _lead = 0
+            while _lead < len(run) and id(run[_lead]) in _stacked_ids:
+                _lead += 1
+            _trail = 0
+            while _trail < len(run) \
+                    and id(run[len(run) - 1 - _trail]) in _stacked_ids:
+                _trail += 1
+            if _lead + _trail >= len(_stacked_ids) and _nb \
+               and any(it["cls"] == "anchor" for it in _nb):
+                run = _nb
+                raw = "".join(it["c"] for it in run)
+                if sum(raw.count(c) for c in "([{") != \
+                   sum(raw.count(c) for c in ")]}"):
+                    continue
+                run_ids = set(id(it["ch"]) for it in run)
+            else:
+                continue
+        tex = _inline_run_to_latex(run, rect2, page, doc, rd, gtables,
+                                   rules, vlines,
+                                   allow_ids=(run_ids | extra))
+        # 합성파이프가 윗첨자로 오독되면 본줄로 강등한다.
+        if tex and any(it.get("synpipe") for it in run) and "^{|}" in tex:
+            tex = tex.replace("^{|}", "|").replace("^{ | }", "|")
+        if not tex:
+            continue
+        # 15.9 · 정화된 최종 tex 에 커버리지 게이트 (tidy 가 벗긴 √·탈락
+        # 글자는 텍스트로 돌린다 — 지워진 채 구멍이 나느니 원본이 낫다).
+        # 정화된 tex 를 저장한다 (el 단계 재 정화는 등멱).
+        fx = "".join("E" if "CMEX" in (it.get("font") or "") else "."
+                     for it in run)
+        final = _inline_finalize_tex(raw, fx, tex)
+        if final is None:
+            continue
+        # 15.11c · 위치-첨자 게이트 (꼬인 런은 텍스트로 돌린다).
+        if not _inline_scriptgate(run, final):
+            continue
+        regions.append({"x0": rect2[0], "y0": rect2[1], "x1": rect2[2],
+                        "y1": rect2[3], "display": False, "text": final,
+                        "size": max(it["size"] for it in run),
+                        "inline": True,
+                        "inline_ids": sorted(run_ids | extra),
+                        "inline_raw": raw, "inline_fx": fx})
+        consumed_all.update(run_ids)
+        consumed_all.update(extra)
+    return regions, consumed_all
+
+
+def _inline_math_for_line(ln, page, doc, rd, gtables, rules, vlines,
+                          big_bands, char_index):
+    """낱줄 호출(디버그·호환용): 한 줄짜리 행으로 취급한다."""
+    return _inline_math_for_row([ln], page, doc, rd, gtables, rules,
+                                vlines, big_bands, char_index, ())
+
+
+def _inline_is_micro_rect(t):
+    """15pt짜리 ∑-극한 조각 같은 마이크로 display 인가."""
+    try:
+        return (t[2] - t[0]) < 40.0 and (t[3] - t[1]) < 14.0
+    except Exception:
+        return False
+
+
+def _inline_math_for_page(rd, page, doc, gtables, rules, vlines, big_bands,
+                          char_index, avoid, math_avoid, display_regions):
+    """페이지 전체 인라인 패스: 적격 줄 → 시각 행 묶기 → 행별 분할."""
+    regions, consumed = [], set()
+    disp_rects = []
+    for r in display_regions or []:
+        if r.get("display"):
+            try:
+                disp_rects.append((r["x0"], r["y0"], r["x1"], r["y1"]))
+            except Exception:
+                pass
+    cands = []
+    for blk in rd.get("blocks", []) or []:
+        if blk.get("type") != 0:
+            continue
+        for ln in blk.get("lines", []) or []:
+            if ln.get("_swallowed"):
+                continue
+            # 15.7 · 마이크로 display(∑ 극한 조각 등) 줄은 인라인 행에 둔다.
+            # 런이 품으면 병합 단계에서 display 쪽을 버리고, 런이 탈락하면
+            # display 가 살아남는다 — 어느 쪽도 구멍이 안 난다.
+            _mc = ln.get("_math_cut")
+            # 15.7b · 마이크로-cut 줄은 자기 display 와 100% 겹친다.
+            # display-겹침 제외를 적용하면 행에 못 들고, 병합 단계에서
+            # display 가 버려져 구멍이 난다 → 겹침 검사를 건너뛴다.
+            # (마이크로 줄이 진짜 display 와 겹칠 일은 없다.)
+            _mc_micro = _mc is not None and _inline_is_micro_rect(_mc)
+            if _mc is not None and not _mc_micro:
+                continue
+            if (ln.get("dir") or (1, 0))[0] < .98:
+                continue
+            bb = ln.get("bbox") or [0, 0, 0, 0]
+            if _pdf_contained(bb, avoid, tolerance=0):
+                continue
+            if _pdf_intersects(bb, (avoid or []) + (math_avoid or [])):
+                continue
+            if _inline_line_in_bands(bb, big_bands):
+                continue
+            if disp_rects and not _mc_micro \
+                    and _inline_line_hit_disp(bb, disp_rects):
+                continue
+            base = _inline_line_base(ln)
+            if base is None:
+                continue
+            cands.append((ln, base, bb[0], bb[2]))
+    for grp in _inline_row_groups(cands):
+        try:
+            regs, cons = _inline_math_for_row(
+                grp, page, doc, rd, gtables, rules, vlines,
+                big_bands, char_index, disp_rects)
+        except Exception:
+            continue
+        regions.extend(regs)
+        consumed.update(cons)
+    return regions, consumed
+
+_ACCENT_CMDS = ("\\hat", "\\tilde", "\\widetilde", "\\bar", "\\overline",
+                "\\acute", "\\check", "\\dot", "\\ddot", "\\vec",
+                "\\mathring", "\\widehat")
+_ACCENT_CHARS = set("ˆ˜ˇ˙¨˚′")
+
+
+def _oracle_ch(c, tex):
+    """글리프 문자 c 가 latex tex 에 토큰으로 존재하는가(양방향)."""
+    if not tex or not c:
+        return False
+    if c in tex:
+        return True
+    try:
+        t = _pdf_text_to_latex(c) or ""
+    except Exception:
+        t = ""
+    return bool(t) and (t in tex)
+
+
+def _accent_sub(c, tex):
+    """악센트/막대 글리프 잉크를 latex 악센트 명령이 대체하는가."""
+    if c == "¯":
+        return any(k in (tex or "") for k in ("\\bar", "\\overline", "|", "\\|"))
+    if c in _ACCENT_CHARS:
+        return any(k in (tex or "") for k in _ACCENT_CMDS)
+    return False
+
+
+def _mat_delim_covered(c, tex):
+    """15.12 · 글리프 c 가 행렬 영역의 구분자/줄임표로 이미 그려지는가.
+
+    글자 단위 오라클(_oracle_ch)이 놓치는 경우를 메운다.
+      · '\begin{bmatrix}' 는 '[' 가 없지만 TeX 이 [ ] 를 직접 그린다.
+      · CMEX 확장 조각(bracketleftbigg)도 마찬가지.
+      · '\cdots' 는 마침표 세 개를 다시 조판한 것뿐이다.
+    여기서 True 면 그 글리프는 되살리지 않는다 (겹쳐 그려지는 것 방지).
+    """
+    if not tex or not c:
+        return False
+    # ── 줄임표: \cdots · \vdots · \ddots ──
+    if c in _MAT_DOTS and any(
+            k in tex for k in (r"\cdots", r"\vdots", r"\ddots",
+                               r"\ldots", r"\dots")):
+        return True
+    d = _CMEX_DELIM_SLOT.get(ord(c)) if len(c) == 1 else None
+    if d is None:
+        d = c if c in _MAT_DELIM_ENV else None
+    if not d:
+        return False
+    env = _MAT_DELIM_ENV.get(d)
+    if env and f"\\begin{{{env}}}" in tex:
+        return True
+    # \{ \} 는 LaTeX 에서 이스케이프한 형태로 적힌다.
+    esc = r"\{" if d == "{" else (r"\}" if d == "}" else d)
+    if f"\\left{esc}" in tex or f"\\right{esc}" in tex:
+        return True
+    # vmatrix 계열은 구분자를 글자 그대로 쓰는 경우가 있다.
+    return d in ("|", "‖") and d in tex
+
+
+def _wordmodel_repair(lines, regions, rd, consumed_ids):
+    """15.11p · 잉크 회계 수리: 모든 글리프가 정확히 1회 렌더되도록 보장."""
+    consumed_ids = consumed_ids or set()
+
+    def _rd_lines():
+        for blk in rd.get("blocks", []):
+            if blk.get("type") != 0:
+                continue
+            for ln in blk.get("lines", []):
+                if (ln.get("dir") or (1, 0))[0] < .98:
+                    continue
+                yield ln
+
+    def _keptbb():
+        s = set()
+        for ln in lines:
+            for wd in ln.get("words", []):
+                for ch in wd.get("chars", []):
+                    s.add(id(ch["b"]))
+        return s
+
+    def _cov(ch, tol=0.2):
+        bb = ch.get("bbox")
+        if not bb:
+            return None
+        cx, cy = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
+        for r in regions:
+            if r["x0"] - tol <= cx <= r["x1"] + tol \
+               and r["y0"] - tol <= cy <= r["y1"] + tol:
+                return r
+        return None
+
+    def _vis_chars(ln):
+        out = []
+        for sp in ln.get("spans", []):
+            if sp.get("alpha", 255) == 0:
+                continue
+            for ch in (sp.get("chars") or []):
+                if (ch.get("c") or "").strip() and ch.get("bbox"):
+                    out.append(ch)
+        return out
+
+    keptbb = _keptbb()
+
+    # ── P2: 첨자 크기 kept 단어 중 tex 가 커버하는 것은 제거 ──
+    for ln in lines:
+        for wd in list(ln.get("words", [])):
+            if wd.get("_wm3"):
+                continue
+            wsz = float(wd.get("size") or 10)
+            cx = (wd["x0"] + wd["x1"]) / 2
+            cy = (wd["y0"] + wd["y1"]) / 2
+            for r in regions:
+                if not (r["x0"] - .2 <= cx <= r["x1"] + .2
+                        and r["y0"] - .2 <= cy <= r["y1"] + .2):
+                    continue
+                if wsz >= float(r.get("size") or 10) * 1.08:
+                    continue
+                tex = r.get("text") or ""
+                if all(_oracle_ch(ch.get("c") or "", tex) for ch in wd["chars"]):
+                    ln["words"].remove(wd)
+                break
+    lines[:] = [ln for ln in lines if ln.get("words")]
+    keptbb = _keptbb()
+
+    # ── P1c: 영역이 소비한 글리프는 전부 bbox 에 포함 (tex≡raw 보증) ──
+    idmap = {}
+    for blk in rd.get("blocks", []):
+        if blk.get("type") != 0:
+            continue
+        for ln in blk.get("lines", []):
+            for sp in ln.get("spans", []):
+                for ch in (sp.get("chars") or []):
+                    if ch.get("bbox"):
+                        idmap[id(ch)] = ch
+    for r in regions:
+        for cid in (r.get("inline_ids") or []):
+            ch = idmap.get(cid)
+            if not ch:
+                continue
+            bb = ch["bbox"]
+            cx, cy = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
+            if not (r["x0"] - .2 <= cx <= r["x1"] + .2
+                    and r["y0"] - .2 <= cy <= r["y1"] + .2):
+                r["x0"] = min(r["x0"], bb[0]); r["y0"] = min(r["y0"], bb[1])
+                r["x1"] = max(r["x1"], bb[2]); r["y1"] = max(r["y1"], bb[3])
+
+    # ── P1: dead-line tail → 소유 영역 bbox 확장 (tex 가 이미 그림) ──
+    for r in regions:
+        rcy = (r["y0"] + r["y1"]) / 2.0
+        tex = r.get("text") or ""
+        if not tex:
+            continue
+        for _pass in range(3):
+            grew = False
+            for ln in _rd_lines():
+                if ln.get("_swallowed") or ln.get("_math_cut"):
+                    continue
+                bb = ln.get("bbox")
+                if not bb:
+                    continue
+                cy = (bb[1] + bb[3]) / 2.0
+                if abs(cy - rcy) > 5.0:
+                    continue
+                gap = max(0.0, max(r["x0"] - bb[2], bb[0] - r["x1"]))
+                if gap > 3.5:
+                    continue
+                vis = _vis_chars(ln)
+                if not vis:
+                    continue
+                if any(id(ch["bbox"]) in keptbb for ch in vis):
+                    continue
+                if any(id(ch) in consumed_ids for ch in vis):
+                    continue
+                if not all(_oracle_ch(ch.get("c") or "", tex) for ch in vis):
+                    continue
+                r["x0"] = min(r["x0"], bb[0]); r["y0"] = min(r["y0"], bb[1])
+                r["x1"] = max(r["x1"], bb[2]); r["y1"] = max(r["y1"], bb[3])
+                grew = True
+            if not grew:
+                break
+
+    # ── P2': 45% 정리에 사라질 kept 단어 중 tex 미커버는 _wm3 로 보호 ──
+    for ln in lines:
+        for wd in ln.get("words", []):
+            if wd.get("_wm3"):
+                continue
+            wa = max(1e-6, (wd["x1"] - wd["x0"]) * (wd["y1"] - wd["y0"]))
+            for r in regions:
+                ox = min(wd["x1"], r["x1"] + 0.4) - max(wd["x0"], r["x0"] - 0.4)
+                oy = min(wd["y1"], r["y1"] + 0.6) - max(wd["y0"], r["y0"] - 0.6)
+                if ox > 0 and oy > 0 and (ox * oy) / wa >= 0.45:
+                    tex = r.get("text") or ""
+                    if not all(_oracle_ch(ch.get("c") or "", tex)
+                               for ch in wd["chars"]):
+                        wd["_wm3"] = 1
+                    break
+
+    # ── P3: covered ∧ 미소비 ∧ tex 불일치 ∧ 대체없음 → kept 단어 복귀 ──
+    # 15.11p2 · 중간 소비집합(_consumed_all)이 아니라 최종 영역 ids 기준
+    # (병합에서 ids 가 떨어진 글리프도 고아로 복귀해야 함)
+    consumed_ids = set()
+    for r in regions:
+        consumed_ids |= set(r.get("inline_ids") or [])
+    keptbb = _keptbb()
+    newlines = []
+    for ln in _rd_lines():
+        orph = []
+        for sp in ln.get("spans", []):
+            if sp.get("alpha", 255) == 0:
+                continue
+            for ch in (sp.get("chars") or []):
+                c = ch.get("c") or ""
+                if not c.strip() or not ch.get("bbox"):
+                    continue
+                if id(ch["bbox"]) in keptbb or id(ch) in consumed_ids:
+                    continue
+                R = _cov(ch)
+                if R is None:
+                    continue
+                tex = R.get("text") or ""
+                # 15.12 · 행렬 구분자/줄임표는 \begin{bmatrix}·\cdots 가 이미
+                # 그리므로 '남은 잉크'로 되살리지 않는다 (겹침 방지).
+                if (_oracle_ch(c, tex) or _accent_sub(c, tex)
+                        or _mat_delim_covered(c, tex)):
+                    continue
+                orph.append((ch, sp))
+        if not orph:
+            continue
+        words, cur, prev = [], [], None
+        for ch, sp in orph:
+            bb = ch["bbox"]
+            if prev is not None and bb[0] - prev[2] > max(2.0, float(sp.get("size") or 10) * 0.25):
+                words.append(cur)
+                cur = []
+            cur.append({
+                "c": ch.get("c"), "b": bb,
+                "o": ch.get("origin") or (bb[0], bb[3]),
+                "sz": float(sp.get("size") or 10),
+                "bold": bool((sp.get("flags", 0) or 0) & 16),
+                "ital": bool((sp.get("flags", 0) or 0) & 2),
+                "col": sp.get("color", 0),
+                "font": sp.get("font", ""),
+                "flags": sp.get("flags", 0),
+                "break": False,
+            })
+            prev = bb
+        if cur:
+            words.append(cur)
+        lw = []
+        for wd in words:
+            x0 = min(c["b"][0] for c in wd); y0 = min(c["b"][1] for c in wd)
+            x1 = max(c["b"][2] for c in wd); y1 = max(c["b"][3] for c in wd)
+            lw.append({"x0": x0, "y0": y0, "x1": x1, "y1": y1,
+                       "size": wd[0]["sz"], "chars": wd, "_wm3": 1})
+        if lw:
+            newlines.append({
+                "x0": min(w["x0"] for w in lw), "y0": min(w["y0"] for w in lw),
+                "x1": max(w["x1"] for w in lw), "y1": max(w["y1"] for w in lw),
+                "base": lw[0]["chars"][0]["o"][1], "words": lw,
+                "blk": -1, "has_math": False, "font": "",
+            })
+    if newlines:
+        lines.extend(newlines)
+    return regions
+
 
 def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=False):
     """한 페이지에서 단어를 뽑는다 (rawdict, 문자 단위 좌표 기반).
@@ -5701,6 +7436,33 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
         _pg_vlines = page_vlines(page)
     except Exception:
         _pg_vlines = []
+    # 15.0 · 페이지 글자 색인. 인라인 분수 확장·악센트 회수가 매 런마다
+    # rawdict 를 다시 훑지 않게 한 번만 만든다.
+    _pg_char_index = []
+    try:
+        for _cib in rd.get("blocks", []):
+            if _cib.get("type") != 0:
+                continue
+            for _cil in _cib.get("lines", []):
+                for _cisp in _cil.get("spans", []):
+                    _cifn = _cisp.get("font") or ""
+                    _cik = _inline_font_kind(_cifn)
+                    _cisz = float(_cisp.get("size") or 10)
+                    for _cich in (_cisp.get("chars") or []):
+                        _cibb = _cich.get("bbox")
+                        if not _cibb:
+                            continue
+                        _pg_char_index.append({
+                            "id": id(_cich), "c": _cich.get("c") or "",
+                            "x0": _cibb[0], "y0": _cibb[1],
+                            "x1": _cibb[2], "y1": _cibb[3],
+                            "cx": (_cibb[0] + _cibb[2]) / 2.0,
+                            "cy": (_cibb[1] + _cibb[3]) / 2.0,
+                            "kind": _cik, "size": _cisz, "font": _cifn,
+                            "line": id(_cil),
+                        })
+    except Exception:
+        _pg_char_index = []
 
     lines = []
     math_regions = []
@@ -5758,6 +7520,7 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
     big_bands = []
     _gt = {}
     _rules = []
+    doc = page.parent   # 15.0 - 빅밴드 실패에도 인라인 복원이 doc 을 쓴다
     try:
         bands, _rules, _gt = _big_math_bands(page, avoid=(avoid or []) + (math_avoid or []))
         doc = page.parent
@@ -5875,6 +7638,17 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
             big_bands.append(bb)
     except Exception as e:
         print(f"[import] 큰 수식 복원 건너뜀: {e}")
+    # 15.0 · 인라인 복원용 원료 보험. 빅밴드가 실패해도 글리프표·규칙선은 확보한다.
+    if not _gt:
+        try:
+            _gt = glyph_tables_full(page.parent, page)
+        except Exception:
+            _gt = {}
+    if not _rules:
+        try:
+            _rules = page_rules(page)
+        except Exception:
+            _rules = []
 
     def _in_big(bb):
         """이 줄이 이미 '큰 수식' 밴드에 들어갔는가."""
@@ -5923,25 +7697,10 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
                          if _b.get("type") == 0 for ln in _b.get("lines", [])]
     except Exception:
         _all_rd_lines = []
-    for bi, blk in enumerate(rd.get("blocks", [])):
-        if blk.get("type") != 0:
-            continue
-        blines = blk.get("lines", [])
-        # 8.20: 블록 일부를 수식으로 잘라내지 않는다. 각 줄을 아래에서
-        # "줄 전체 LaTeX" 또는 "줄 전체 텍스트" 중 하나로만 결정한다.
-        for ln in blines:
-            # 10.4 · 표 안 글자는 칸 텍스트로 옮겨지므로 줄 경로에서는 뺀다
-            if (ln.get("dir") or (1, 0))[0] < .98:
-                continue
-            if _pdf_contained(ln.get("bbox") or [0, 0, 0, 0], avoid, tolerance=0):
-                continue
-            # 9.3 · 큰 수식 밴드에 이미 들어간 줄은 건너뛴다.
-            # (같은 글자가 LaTeX 와 텍스트 두 겹으로 나오는 것을 막는다)
-            if _in_big(ln.get("bbox")):
-                continue
-            _sanitize_line_glyphs(ln, _gt)   # 10.1 · 확장글꼴 글자 정리
-            # 독립 수식으로 확실한 줄만 줄 전체를 LaTeX로 보존한다.
-            # 14.48 · 산문 행의 조각(위 _line_row_prose)은 독립 수식이 아니다.
+    # ── 15.1 · pre-pass: 디스플레이 확정 (기존 루프 안 로직을 그대로 앞으로) ──
+    # 인라인 행(row) 묶음이 디스플레이 영역을 미리 알아야 하므로 순서를 나눈다.
+    # (판정 순서·조건이 동일하므로 디스플레이 결과는 전과 완전히 같다.)
+    def _try_display(ln):
             if (not _pdf_intersects(ln.get("bbox", (0, 0, 0, 0)), (avoid or []) + (math_avoid or []))
                     and _is_display_formula_line(ln)
                     and not _line_row_prose.get(id(ln), False)
@@ -6025,7 +7784,10 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
                                     _ln2["_swallowed"] = True
                     except Exception:
                         pass
+                    # 15.0 - 최종 술식으로 미리 검증. 여기서 떨어지면 소비 안 함
+                    # (검증 실패작이 _math_cut 으로 텍스트를 지우는 구멍 차단).
                     if (x1 > x0 and y1 > y0 and mtext and not _tex_is_figure_junk(mtext)
+                            and _latex_is_sane(_pdf_text_to_latex(mtext))
                             and not _touches_prose((x0, y0, x1, y1))
                             and not _cuts_big_band((x0, y0, x1, y1))
                             # 14.70 · 막대 하나짜리 조각(\Biggr\|_{op})은
@@ -6040,7 +7802,59 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
                         ln["_math_cut"] = (x0, y0, x1, y1)
                 except Exception:
                     pass
+    for _blk in rd.get("blocks", []):
+        if _blk.get("type") != 0:
+            continue
+        for _ln in _blk.get("lines", []):
+            # 10.4 · 표 안 글자는 칸 텍스트로 옮겨지므로 줄 경로에서는 뺀다
+            if ((_ln.get("dir") or (1, 0))[0] < .98):
+                continue
+            if _pdf_contained(_ln.get("bbox") or [0, 0, 0, 0], avoid, tolerance=0):
+                continue
+            # 9.3 · 큰 수식 밴드에 이미 들어간 줄은 건너뛴다.
+            if _in_big(_ln.get("bbox")):
+                continue
+            _sanitize_line_glyphs(_ln, _gt)   # 10.1 · 확장글꼴 글자 정리
+            _try_display(_ln)
+    # ── 15.1 · 인라인 행 패스: MuPDF 가 크기별로 쪼갠 줄을 시각 행으로 합쳐
+    #       $...$ 런을 분할한다. 실패해도 산문은 그대로 남는다. ──
+    _consumed_all = set()
+    try:
+        _regs_all, _consumed_all = _inline_math_for_page(
+            rd, page, doc, _gt, _rules, _pg_vlines, big_bands,
+            _pg_char_index, avoid, math_avoid, math_regions)
+        if _regs_all:
+            math_regions.extend(_regs_all)
+    except Exception as _e:
+        print(f"[import] 인라인 수식 건너뜀: {_e}")
+        _consumed_all = set()
+
+    for bi, blk in enumerate(rd.get("blocks", [])):
+        if blk.get("type") != 0:
+            continue
+        blines = blk.get("lines", [])
+        # 8.20: 블록 일부를 수식으로 잘라내지 않는다. 각 줄을 아래에서
+        # "줄 전체 LaTeX" 또는 "줄 전체 텍스트" 중 하나로만 결정한다.
+        for ln in blines:
+            # 10.4 · 표 안 글자는 칸 텍스트로 옮겨지므로 줄 경로에서는 뺀다
+            if (ln.get("dir") or (1, 0))[0] < .98:
+                continue
+            if _pdf_contained(ln.get("bbox") or [0, 0, 0, 0], avoid, tolerance=0):
+                continue
+            # 9.3 · 큰 수식 밴드에 이미 들어간 줄은 건너뛴다.
+            # (같은 글자가 LaTeX 와 텍스트 두 겹으로 나오는 것을 막는다)
+            if _in_big(ln.get("bbox")):
+                continue
+            _sanitize_line_glyphs(ln, _gt)   # 10.1 · 확장글꼴 글자 정리
+            # 독립 수식으로 확실한 줄만 줄 전체를 LaTeX로 보존한다.
+            # 14.48 · 산문 행의 조각(위 _line_row_prose)은 독립 수식이 아니다.
+            pass  # 15.1 · 디스플레이는 위 pre-pass에서 확정됨
             # LaTeX로 확정되지 않은 줄은 수식 글꼴이 섞여 있어도 전부 텍스트로 남긴다.
+            # 15.0 · 슈퍼라인에 흡수된 줄은 수식 영역에 들어갔으므로 건너뛴다
+            # (텍스트로 다시 내면 두 겹이 된다).
+            if ln.get("_swallowed"):
+                continue
+            # 15.1 · 인라인은 위 행(row) 패스에서 확정됨 (소비 집합은 _consumed_all).
             chars = []
             fcount = {}
             # 9.0 · 이 줄에서 수식 본체를 이미 떼어냈으면 남은 글자(식 번호 등)는
@@ -6052,7 +7866,9 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
                     continue  # invisible OCR is not another visible text layer
                 size = sp.get("size") or 10
                 fname = (sp.get("font") or "").lower()
-                if preserve_math_glyphs and any(f in fname for f in MATH_FONTS):
+                # 15.0 · F158(Type3 𝟙)은 브라우저 글꼴에 없는 모양이라 원본 유지
+                if preserve_math_glyphs and (any(f in fname for f in MATH_FONTS)
+                        or fname.split("+")[-1].strip() == "f158"):
                     # A math-only font has a different encoding/shape from a
                     # browser text font. If not reconstructed above, leave its
                     # ORIGINAL glyph paths on the background; do not invent a
@@ -6069,6 +7885,20 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
                     if not c.strip() or not bb:
                         pending_space = pending_space or bool(c and c.isspace())
                         continue
+                    if id(ch) in _consumed_all:
+                        # 15.0 · 인라인 수식으로 소비된 글리프 (LaTeX 가 대신한다)
+                        pending_space = True
+                        continue
+                    _cut = ln.get("_math_cut")
+                    if _cut is not None:
+                        # 15.0 · 디스플레이 본체에 들어간 글리프도 글자 단위로
+                        # 정확히 뺀다 (단어 면적 제거보다 정밀. 식 번호는 밖에 있어 유지).
+                        _ccx = (bb[0] + bb[2]) / 2.0
+                        _ccy = (bb[1] + bb[3]) / 2.0
+                        if _cut[0] - 0.2 <= _ccx <= _cut[2] + 0.2 \
+                           and _cut[1] - 0.2 <= _ccy <= _cut[3] + 0.2:
+                            pending_space = True
+                            continue
                     if _pdf_contained(bb, avoid, tolerance=0):
                         pending_space = True
                         continue
@@ -6122,10 +7952,16 @@ def _pdf_page_lines(page, avoid=None, math_avoid=None, preserve_math_glyphs=Fals
                     "font": max(fcount, key=fcount.get) if fcount else "",
                 })
     # 인접한 인라인 수식 영역을 병합 (한 수식이 여러 span 으로 쪼개진 경우)
-    math_regions = _merge_math_regions(math_regions)
+    math_regions = _merge_math_regions(
+        math_regions, (doc, page, rd, _gt, _rules, _pg_vlines))
     math_regions = _drop_contained_math(math_regions)
     # 9.0 · 식에서 떨어져 나온 위/아래첨자 조각을 되찾아 온다.
     _absorb_orphan_scripts(lines, math_regions)
+    # 15.11p · 잉크 회계 수리 (P1/P2/P3)
+    try:
+        math_regions = _wordmodel_repair(lines, math_regions, rd, _consumed_all)
+    except Exception:
+        pass
     lines = [ln for ln in lines if ln["words"]]
     for ln in lines:
         ln["x0"] = min(w["x0"] for w in ln["words"]); ln["y0"] = min(w["y0"] for w in ln["words"])
@@ -6331,7 +8167,40 @@ def _absorb_orphan_scripts(lines, math_regions):
                     break
 
 
-def _merge_math_regions(regions):
+def _inline_reconstruct_merge(p, r, ctx, urect):
+    """겹친 인라인 두 개를 같은 2D 엔진으로 다시 조립한다. 실패하면 None.
+
+    ctx = (doc, page, rd, gtables, rules, vlines).
+    합본 raw(이어붙인 멀티셋)가 새 tex 에 다 들어갈 때만 수락한다.
+    """
+    try:
+        doc, page, rd, gtables, rules, vlines = ctx
+        allow = set(p.get("inline_ids") or []) | set(r.get("inline_ids") or [])
+        if not allow:
+            return None
+        raw = (p.get("inline_raw") or "") + (r.get("inline_raw") or "")
+        tex = region_to_latex(doc, page, tuple(urect), gtables, rules,
+                              vlines, rd=rd, allow_ids=allow)
+        if not tex:
+            return None
+        # 15.9 · 정화된 최종 tex 에 커버리지 게이트 (M2 와 같은 술식).
+        fxf = _inline_finalize_tex(
+            raw, (p.get("inline_fx") or "") + (r.get("inline_fx") or ""), tex)
+        if fxf is None:
+            return None
+        return {"x0": urect[0], "y0": urect[1], "x1": urect[2], "y1": urect[3],
+                "display": False, "text": fxf,
+                "size": max(float(p.get("size") or 0),
+                            float(r.get("size") or 0)) or 10,
+                "inline": True, "inline_ids": sorted(allow),
+                "inline_raw": raw,
+                "inline_fx": (p.get("inline_fx") or "")
+                + (r.get("inline_fx") or "")}
+    except Exception:
+        return None
+
+
+def _merge_math_regions(regions, merge_ctx=None):
     """같은 줄에 붙어 있는 수식 조각들을 하나의 영역으로 합친다.
 
     인테그랄·분수처럼 여러 span(글꼴)이 이어붙어 하나의 수식을 이루는 경우
@@ -6356,9 +8225,12 @@ def _merge_math_regions(regions):
         # 수식 조각 사이의 실제 조판 간격만 합친다. 허용 폭이 글자 높이보다
         # 크던 예전 값은 식 뒤의 짧은 단어까지 한 이미지로 합칠 수 있었다.
         join_gap = max(2.2, max(mh, rh) * 0.68)
+        # 15.0 - 인라인 런은 이미 최대 묶음이다. 산문을 사이에 두고 합치면
+        # 산문이 지워진다.
         if (v_overlap > -min(mh, rh) * 0.35 or v_close) and h_gap <= join_gap \
            and not m["display"] and not r["display"] \
-           and not m.get("big") and not r.get("big"):
+           and not m.get("big") and not r.get("big") \
+           and not m.get("inline") and not r.get("inline"):
             m["x1"] = max(m["x1"], r["x1"])
             m["y0"] = min(m["y0"], r["y0"])
             m["y1"] = max(m["y1"], r["y1"])
@@ -6393,6 +8265,37 @@ def _merge_math_regions(regions):
                     out.append(r)
                     continue
                 if (ox * oy) / min(ra, pa) > 0.5:       # 사실상 같은 식 → 합친다
+                    # 15.7 · 인라인 안에 든 마이크로 display(∑ 극한 조각)는
+                    # 인라인 런이 이미 품고 있다 → display 쪽을 버린다.
+                    # (합치면 꼬리에 "x = 0" 이 붙는다.)
+                    _small, _big = (r, p) if ra <= pa else (p, r)
+                    if _big.get("inline") and not _big.get("display") \
+                       and _small.get("display") \
+                       and _inline_is_micro_rect((float(_small["x0"]),
+                                                  float(_small["y0"]),
+                                                  float(_small["x1"]),
+                                                  float(_small["y1"]))):
+                        if _small is r:
+                            continue
+                        out[-1] = r
+                        continue
+                    # 15.7 · 인라인끼리 겹치면(쌓인 분수 본체+분모) 2D 로
+                    # 다시 조립해 본다. 실패하면 아래 기존 방식(이어붙이기).
+                    if p.get("inline") and r.get("inline") \
+                       and not p.get("display") and not r.get("display") \
+                       and merge_ctx is not None:
+                        _rec = _inline_reconstruct_merge(
+                            p, r, merge_ctx,
+                            (min(p["x0"], r["x0"]), min(p["y0"], r["y0"]),
+                             max(p["x1"], r["x1"]), max(p["y1"], r["y1"])))
+                        if _rec is not None:
+                            p["x0"], p["y0"], p["x1"], p["y1"] = \
+                                _rec["x0"], _rec["y0"], _rec["x1"], _rec["y1"]
+                            p["text"] = _rec["text"]
+                            p["inline_ids"] = _rec["inline_ids"]
+                            p["inline_raw"] = _rec["inline_raw"]
+                            p["size"] = _rec["size"]
+                            continue
                     p["x0"] = min(p["x0"], r["x0"]); p["y0"] = min(p["y0"], r["y0"])
                     p["x1"] = max(p["x1"], r["x1"]); p["y1"] = max(p["y1"], r["y1"])
                     p["text"] = ((p.get("text") or "") + " " + (r.get("text") or "")).strip()
@@ -6455,6 +8358,8 @@ _LATEX_SYMBOLS = {
     "⊗": r"\otimes", "⊕": r"\oplus", "∧": r"\wedge", "∨": r"\vee",
     "⟨": r"\langle", "⟩": r"\rangle",
     "∗": r"\ast",
+    # 15.0 - indicator 1 (same value as _SYM; 1-D inline fallback path).
+    "\ue001": r"\mathbb{1}",
 }
 _LATEX_GREEK = {
     # 같은 모양 다른 코드포인트도 함께 (µ MICRO SIGN, Ω OHM SIGN, ∆ INCREMENT)
@@ -6793,6 +8698,9 @@ def _pdf_one_page(doc, pno, on_page_done, cache=None,
             for ln in lines:
                 keep = []
                 for wd in ln["words"]:
+                    if wd.get("_wm3"):
+                        keep.append(wd)
+                        continue
                     wa = max(1e-6, (wd["x1"] - wd["x0"]) * (wd["y1"] - wd["y0"]))
                     inside = False
                     for r in math_regions:
