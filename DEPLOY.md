@@ -14,6 +14,34 @@ PDF 파서를 복사하거나 별도 엔진을 유지하지 않는다. `bash app
 `converter.html/css/js`와 worker/server를 함께 설치한다. 호스트를 바꾸려면
 `.env`에 `SDY_CONVERTER_HOSTS=converter.example.com`처럼 쉼표로 지정한다.
 
+### 서브사이트 HTTPS 붙이기 (`latexripper.sdynotes.duckdns.org` 등)
+
+**`apply.sh`는 TLS를 전혀 만지지 않는다** (스크립트에 `443`/`ssl_certificate`/
+`certbot`이 한 줄도 없고, nginx도 `listen 80 default_server; server_name _;`만
+쓴다). 새 서브도메인을 열 때 실제로 필요한 것은 **기존 Let's Encrypt 인증서에
+그 이름을 추가하는 것 하나**다. DNS(DuckDNS는 `*.sdynotes.duckdns.org`가
+와일드카드라 등록 불필요), nginx(`server_name _` + `proxy_set_header Host $host`
+라서 새 vhost 불필요), 앱(`converterAccess.js` 기본값에 `latexripper`가 이미
+포함)은 손댈 게 없다.
+
+```bash
+# 현재 인증서 확인
+sudo certbot certificates
+# 같은 라인지에 이름만 추가 — nginx 설정은 건드리지 않고 live/…/fullchain.pem 이 제자리 갱신됨
+sudo certbot certonly --nginx \
+  --cert-name sdynotes.duckdns.org \
+  -d sdynotes.duckdns.org \
+  -d latexripper.sdynotes.duckdns.org \
+  -d converter.sdynotes.duckdns.org
+sudo systemctl reload nginx
+```
+
+> ⚠️ `.env`에 `SDY_CONVERTER_HOSTS`가 있으면 기본 호스트 목록을 **보완하지 않고
+> 통째로 대체**한다. 쓸 거면 두 이름을 쉼표로 다 적고, 아니면 줄을 지운다.
+
+와일드카드(DNS-01) 발급, 443 블록이 아예 없을 때의 nginx 설정 전체, 배포 후
+검증 명령, 증상별 원인 표는 **[`docs/subsite_https.md`](docs/subsite_https.md)**.
+
 > **주의**: GitHub 는 2021년부터 URL에 토큰을 박는 방식(`https://user:token@...`)을
 > **deprecated** 처리하고 2025년 8월부터는 **Basic Auth 자격증명을 강제로 거부**할
 > 예정이라, 가능하면 `https://x-access-token:$GH_TOKEN@github.com/...` 형태를
